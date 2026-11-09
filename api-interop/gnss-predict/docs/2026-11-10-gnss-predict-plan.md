@@ -246,6 +246,15 @@ fx = Path("api-interop/gnss-predict/tests/fixtures"); fx.mkdir(parents=True, exi
 - [ ] **Step 2: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_tle_fetch.py`
 
 ```python
+import shutil
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+
+from gnss_predict.errors import TleTooOldError, TleUnavailableError
+from gnss_predict.tle_fetch import check_tle_age, fetch_gps_tle, parse_tle_file, parse_tle_text, tle_checksum
+
 FX = Path(__file__).parent / "fixtures"
 UTC = timezone.utc
 
@@ -326,8 +335,6 @@ class TestFetch(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in cache.iterdir()), ["gps_20261105T0000Z.tle"])
 ```
 
-(ใส่ import ที่จำเป็น: `shutil`, `tempfile`, `unittest`, `datetime`, `timezone`, `Path` และฟังก์ชันจาก `gnss_predict.tle_fetch`)
-
 - [ ] **Step 3: รันให้เห็นว่าไม่ผ่าน**
 
 Run: `cd api-interop/gnss-predict && python3 -m unittest tests.test_tle_fetch -v`
@@ -378,34 +385,86 @@ git commit -m "feat(gnss-predict): fetch, cache and parse GPS TLEs from CelesTra
 ใช้ console ปลอมที่เป็น shell script เมื่อถูกเรียกด้วย `[console, "--run", script, "--logfile", log]` จะได้ `$4` = path ของ log
 
 ```python
+import tempfile
+import unittest
+from pathlib import Path
+
+from gnss_predict.errors import GmatNotFoundError, GmatRunError
+from gnss_predict.run_gmat import find_gmat_console, gmat_version, run_script
+
+
 def fake_console(d: Path, body: str) -> Path:
     p = d / "GmatConsole"
     p.write_text("#!/bin/sh\n" + body + "\n")
     p.chmod(0o755)
     return p
 
-class TestFind(unittest.TestCase):
-    def test_env_var(self):            # GMAT_BIN ชี้ไปไฟล์ที่รันได้ → คืน path นั้น
-    def test_env_var_missing_file(self):   # GMAT_BIN ชี้ไปไฟล์ที่ไม่มี → GmatNotFoundError
-    def test_repo_default(self):       # ไม่มี GMAT_BIN แต่มี <repo_root>/application/bin/GmatConsole → คืน path นั้น
+
+class TmpCase(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.d = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+
+class TestFind(TmpCase):
+    def test_env_var(self):
+        c = fake_console(self.d, "exit 0")
+        self.assertEqual(find_gmat_console(environ={"GMAT_BIN": str(c)}, repo_root=self.d / "repo"), c)
+
+    def test_env_var_missing_file(self):
+        with self.assertRaises(GmatNotFoundError):
+            find_gmat_console(environ={"GMAT_BIN": str(self.d / "nope")}, repo_root=self.d)
+
+    def test_repo_default(self):
+        bin_dir = self.d / "application" / "bin"
+        bin_dir.mkdir(parents=True)
+        c = fake_console(bin_dir, "exit 0")
+        self.assertEqual(find_gmat_console(environ={}, repo_root=self.d), c)
+
     def test_not_found_mentions_env(self):
-        with tempfile.TemporaryDirectory() as d, self.assertRaises(GmatNotFoundError) as cm:
-            find_gmat_console(environ={}, repo_root=Path(d))
+        with self.assertRaises(GmatNotFoundError) as cm:
+            find_gmat_console(environ={}, repo_root=self.d)
         self.assertIn("GMAT_BIN", str(cm.exception))
 
-class TestRun(unittest.TestCase):
+
+class TestRun(TmpCase):
+    def setUp(self):
+        super().setUp()
+        self.script = self.d / "s.script"
+        self.script.write_text("% empty\n")
+        self.log = self.d / "gmat.log"
+
+    def run_with(self, body: str, timeout_s: float = 10) -> None:
+        run_script(fake_console(self.d, body), self.script, self.log, timeout_s=timeout_s)
+
     def test_success_runs_in_console_dir(self):
-        # body: 'pwd > "$4"'  → ไม่ raise และ log มี path ของโฟลเดอร์ console
+        self.run_with('pwd -P > "$4"')
+        self.assertEqual(Path(self.log.read_text().strip()), self.d.resolve())
+
     def test_nonzero_exit(self):
-        # body: 'echo boom > "$4"; exit 1'  → GmatRunError และข้อความมี "boom"
+        with self.assertRaises(GmatRunError) as cm:
+            self.run_with('echo boom > "$4"; exit 1')
+        self.assertIn("boom", str(cm.exception))
+
     def test_error_in_log_with_zero_exit(self):
-        # body: 'echo "**** ERROR **** Interpreter Exception" > "$4"'  → GmatRunError
+        with self.assertRaises(GmatRunError):
+            self.run_with('echo "**** ERROR **** Interpreter Exception" > "$4"')
+
     def test_timeout(self):
-        # body: 'sleep 5', timeout_s=0.5  → GmatRunError
+        with self.assertRaises(GmatRunError):
+            self.run_with("sleep 5", timeout_s=0.5)
+
+
+class TestVersion(TmpCase):
     def test_version(self):
-        # body: 'echo "GMAT R2026a"; echo "Build Date: x"'  → gmat_version(...) == "GMAT R2026a"
+        c = fake_console(self.d, 'echo ""; echo "GMAT R2026a"; echo "Build Date: x"')
+        self.assertEqual(gmat_version(c), "GMAT R2026a")
+
     def test_version_failure(self):
-        # body: 'exit 3'  → gmat_version(...) == "unknown"
+        self.assertEqual(gmat_version(fake_console(self.d, "exit 3")), "unknown")
 ```
 
 - [ ] **Step 2: รันให้เห็นว่าไม่ผ่าน**
@@ -495,6 +554,16 @@ open(dst, "w").write("\n".join(head + out + ["EOF"]) + "\n")
 - [ ] **Step 3: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_sp3.py`
 
 ```python
+import gzip
+import math
+import tempfile
+import unittest
+from datetime import date, timedelta
+from pathlib import Path
+
+from gnss_predict.errors import Sp3FormatError
+from gnss_predict.sp3 import Sp3Orbit, choose_sp3_name, gps_week, interpolate, prns_with_data, read_sp3
+
 FX = Path(__file__).parent / "fixtures"
 
 class TestNames(unittest.TestCase):
@@ -528,10 +597,20 @@ class TestRead(unittest.TestCase):
                     self.assertTrue(25000 < math.hypot(*p) < 27500)
 
     def test_gz_same_as_plain(self):
-        # gzip fixture ลงไฟล์ชั่วคราวแล้ว read_sp3 ต้องได้ Sp3Orbit เท่ากัน
+        with tempfile.TemporaryDirectory() as d:
+            gz = Path(d) / "sample.sp3.gz"
+            gz.write_bytes(gzip.compress((FX / "sample.sp3").read_bytes()))
+            self.assertEqual(read_sp3(gz), self.orbit)
 
     def test_non_gps_time_system_rejected(self):
-        # แทน " GPS " ในบรรทัดที่ขึ้นต้นด้วย "%c" ด้วย " UTC " แล้ว read_sp3 → Sp3FormatError
+        lines = (FX / "sample.sp3").read_text().splitlines(keepends=True)
+        i = next(k for k, l in enumerate(lines) if l.startswith("%c"))
+        lines[i] = lines[i].replace(" GPS ", " UTC ", 1)
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "utc.sp3"
+            p.write_text("".join(lines))
+            with self.assertRaises(Sp3FormatError):
+                read_sp3(p)
 
     def test_prns_with_data(self):
         self.assertEqual(prns_with_data(self.orbit), {16, 22})
@@ -717,6 +796,14 @@ git commit -m "test(gnss-predict): capture GMAT topocentric report for 2 TLE sat
 - [ ] **Step 2: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_script_gen.py`
 
 ```python
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+
+from gnss_predict.gmat_time import format_gmat_epoch, parse_gmat_epoch
+from gnss_predict.script_gen import render_script
+from gnss_predict.tle_fetch import parse_tle_file
+
 UTC = timezone.utc
 FX = Path(__file__).parent / "fixtures"
 
@@ -803,23 +890,59 @@ git commit -m "feat(gnss-predict): generate GMAT visibility script from TLE entr
 - [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_report.py`
 
 ทุกเทสต์ copy `fixtures/report_2sat.txt` ไปเป็น `report.txt` ในโฟลเดอร์ชั่วคราว แล้วแก้ไฟล์ตามที่แต่ละเทสต์ต้องการ
+เทสต์อาศัยรูปแบบเวลา `10 Nov 2026 HH:MM:SS.mmm` ที่ยืนยันแล้วใน Task 6
 
 ```python
+import csv
+import shutil
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from gnss_predict.errors import ReportError
+from gnss_predict.report import check_epochs, read_report
+
+FX = Path(__file__).parent / "fixtures"
 START = datetime(2026, 11, 10, tzinfo=timezone.utc)
 
-class TestReadReport(unittest.TestCase):
+
+class ReportCase(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.work = Path(self._tmp.name)
+        shutil.copy(FX / "report_2sat.txt", self.work / "report.txt")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def edit(self, fn) -> None:
+        p = self.work / "report.txt"
+        p.write_text("".join(fn(p.read_text().splitlines(keepends=True))))
+
+
+class TestReadReport(ReportCase):
     def test_reads_all(self):
         s = read_report(self.work, [16, 22])
         self.assertEqual(len(s), 242)
         self.assertEqual(s[0].t, START)
-        # ค่าของแถวข้อมูลแรกต้องตรงกับที่อ่านจาก fixture ด้วย csv ในเทสต์เอง (คอลัมน์ G16.THBKTopo.X/Y/Z)
+        with open(FX / "report_2sat.txt", newline="") as f:
+            rows = list(csv.reader(f))
+        first = {h.strip(): v.strip() for h, v in zip(rows[0], rows[1])}
+        g16 = next(x for x in s if x.prn == 16 and x.t == START)
+        self.assertEqual((g16.s_km, g16.e_km, g16.z_km),
+                         tuple(float(first[f"G16.THBKTopo.{c}"]) for c in "XYZ"))
 
     def test_duplicate_last_row_dropped(self):
-        # ต่อท้ายไฟล์ด้วยแถวสุดท้ายซ้ำอีกแถว → ยังได้ 242
+        self.edit(lambda L: L + [L[-1] if L[-1].endswith("\n") else "\n" + L[-1]])
+        self.assertEqual(len(read_report(self.work, [16, 22])), 242)
 
     def test_time_rounding(self):
-        # แก้เวลาแถว 00:00:30.000 เป็น 00:00:29.999 → ต้องมี sample ที่ t == START + 30 s และไม่มี 29.999
-        # และ check_epochs(s, START, 1, 30) ต้องไม่ raise
+        self.edit(lambda L: [l.replace("10 Nov 2026 00:00:30.000", "10 Nov 2026 00:00:29.999") for l in L])
+        s = read_report(self.work, [16, 22])
+        self.assertIn(START + timedelta(seconds=30), {x.t for x in s})
+        self.assertTrue(all(x.t.microsecond == 0 for x in s))
+        check_epochs(s, START, 1, 30)
 
     def test_missing_prn_column(self):
         with self.assertRaises(ReportError):
@@ -829,10 +952,20 @@ class TestReadReport(unittest.TestCase):
         with self.assertRaises(ReportError):
             read_report(self.work / "nope", [16])
 
-class TestCheckEpochs(unittest.TestCase):
-    def test_complete(self):        # check_epochs(read_report(...), START, 1, 30) ไม่ raise
-    def test_gap(self):             # ลบแถว 00:10:00 ออกจาก fixture → ReportError ที่ข้อความมี "00:10:00"
-    def test_wrong_start(self):     # check_epochs(samples, START + 30 s, 1, 30) → ReportError
+
+class TestCheckEpochs(ReportCase):
+    def test_complete(self):
+        check_epochs(read_report(self.work, [16, 22]), START, 1, 30)
+
+    def test_gap(self):
+        self.edit(lambda L: [l for l in L if "10 Nov 2026 00:10:00.000" not in l])
+        with self.assertRaises(ReportError) as cm:
+            check_epochs(read_report(self.work, [16, 22]), START, 1, 30)
+        self.assertIn("00:10:00", str(cm.exception))
+
+    def test_wrong_start(self):
+        with self.assertRaises(ReportError):
+            check_epochs(read_report(self.work, [16, 22]), START + timedelta(seconds=30), 1, 30)
 ```
 
 - [ ] **Step 2: รันให้เห็นว่าไม่ผ่าน**
@@ -884,6 +1017,19 @@ git commit -m "feat(gnss-predict): read GMAT report into SEZ samples and verify 
 - [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_predict.py`
 
 ```python
+import json
+import os
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
+
+from gnss_predict.__main__ import main
+from gnss_predict.predict import build_meta, output_name, parse_start, rows_from_samples, write_outputs
+from gnss_predict.report import SezSample
+from gnss_predict.tle_fetch import parse_tle_file
+
 UTC = timezone.utc
 NOW = datetime(2026, 11, 10, 15, 20, tzinfo=UTC)
 FX = Path(__file__).parent / "fixtures"
@@ -933,9 +1079,22 @@ class TestOutputs(unittest.TestCase):
         self.assertEqual(len(m["tle_sha256"]), 64)
 
     def test_write_outputs(self):
-        # เขียน rows สองแถวลง tmp: ได้ไฟล์ csv ที่บรรทัดแรกเป็น "DAY,Time,PRN,Az,El,IPP_Lat,IPP_Lon,MF"
-        # ไม่มี "\r", ไม่ขึ้นต้นด้วย BOM, มี <ชื่อ>.meta.json ข้างกัน, ไม่มีไฟล์ *.tmp เหลือ
-        # และเรียกซ้ำด้วยชื่อเดิมได้ (เขียนทับ)
+        rows = [["2026-11-10", "00:00:00", "G16", "1.000", "2.000", "3.0000", "4.0000", "0.50000"],
+                ["2026-11-10", "00:00:30", "G16", "1.000", "2.000", "3.0000", "4.0000", "0.50000"]]
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "out"                      # ยังไม่มี ต้องถูกสร้าง
+            p = write_outputs(rows, {"k": "ค่า"}, out, "x.csv")
+            self.assertEqual(p, out / "x.csv")
+            raw = p.read_bytes()
+            self.assertFalse(raw.startswith(b"\xef\xbb\xbf"))
+            self.assertNotIn(b"\r", raw)
+            lines = raw.decode("utf-8").splitlines()
+            self.assertEqual(lines[0], "DAY,Time,PRN,Az,El,IPP_Lat,IPP_Lon,MF")
+            self.assertEqual(len(lines), 3)
+            self.assertEqual(json.loads((out / "x.meta.json").read_text(encoding="utf-8")), {"k": "ค่า"})
+            write_outputs(rows[:1], {"k": 2}, out, "x.csv")   # เขียนทับ
+            self.assertEqual(len(p.read_text().splitlines()), 2)
+            self.assertEqual(list(out.glob("*.tmp")), [])
 
 class TestMainWithoutGmat(unittest.TestCase):
     def test_old_tle_exits_1(self):
@@ -955,18 +1114,55 @@ class TestMainWithoutGmat(unittest.TestCase):
 - [ ] **Step 2: เขียน integration test** `tests/test_integration_gmat.py`
 
 ```python
-def gmat_available() -> bool:   # True ถ้า find_gmat_console() ไม่ raise
+import csv
+import json
+import math
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+
+from gnss_predict.__main__ import main
+from gnss_predict.errors import GmatNotFoundError
+from gnss_predict.predict import predict_samples
+from gnss_predict.run_gmat import find_gmat_console
+from gnss_predict.tle_fetch import parse_tle_file
+
+FX = Path(__file__).parent.resolve() / "fixtures"
+START = datetime(2026, 11, 10, tzinfo=timezone.utc)
+
+
+def gmat_available() -> bool:
+    try:
+        find_gmat_console()
+        return True
+    except GmatNotFoundError:
+        return False
+
 
 @unittest.skipUnless(gmat_available(), "ไม่มี GmatConsole")
 class TestIntegration(unittest.TestCase):
     def test_predict_samples_ranges(self):
-        # predict_samples(entries จาก gps_2sat.tle, ..., start 2026-11-10T00:00Z, hours 1, step 30, tmp, console)
-        # → 242 samples, ทุกตัวมี √(s²+e²+z²) อยู่ระหว่าง 19000 ถึง 27000
+        entries, _ = parse_tle_file(FX / "gps_2sat.tle")
+        with tempfile.TemporaryDirectory() as d:
+            s = predict_samples(entries, FX / "gps_2sat.tle", START, 1, 30, Path(d), find_gmat_console())
+        self.assertEqual(len(s), 242)
+        for x in s:
+            self.assertTrue(19000.0 < math.sqrt(x.s_km ** 2 + x.e_km ** 2 + x.z_km ** 2) < 27000.0)
 
     def test_cli_end_to_end(self):
-        # main(["--start", "2026-11-10T00:00Z", "--hours", "1", "--min-el", "-90",
-        #       "--tle-file", <gps_2sat.tle>, "--out-dir", tmp]) == 0
-        # CSV มีข้อมูล 242 แถว และ header ตรง, meta["prns_included"] == [16, 22], ไม่มีโฟลเดอร์ work-* เหลือ
+        with tempfile.TemporaryDirectory() as d:
+            rc = main(["--start", "2026-11-10T00:00Z", "--hours", "1", "--min-el", "-90",
+                       "--tle-file", str(FX / "gps_2sat.tle"), "--out-dir", d])
+            self.assertEqual(rc, 0)
+            out = Path(d) / "thbk_gnss_pred_20261110T0000Z_1h.csv"
+            with out.open(newline="") as f:
+                rows = list(csv.reader(f))
+            self.assertEqual(rows[0], ["DAY", "Time", "PRN", "Az", "El", "IPP_Lat", "IPP_Lon", "MF"])
+            self.assertEqual(len(rows) - 1, 242)
+            meta = json.loads((Path(d) / "thbk_gnss_pred_20261110T0000Z_1h.meta.json").read_text())
+            self.assertEqual(meta["prns_included"], [16, 22])
+            self.assertEqual(list(Path(d).glob("work-*")), [])
 ```
 
 - [ ] **Step 3: รันให้เห็นว่าไม่ผ่าน**
@@ -1000,7 +1196,9 @@ Expected: ERROR `No module named 'gnss_predict.predict'`
 11. ลบ work dir ถ้าไม่ได้ใส่ `--keep-work`
 12. พิมพ์ path ของ CSV และคำเตือนทั้งหมด
 
-`GnssPredictError` ทุกตัวให้พิมพ์ข้อความลง stderr แล้วคืน 1
+`GnssPredictError` ทุกตัวให้พิมพ์ข้อความลง stderr แล้วคืน 1 ส่วน path ของ `--tle-file`, `--cache-dir` และ `--out-dir`
+ต้อง `.resolve()` ก่อนใช้ เพราะ GMAT รันโดยใช้ `application/bin` เป็นโฟลเดอร์ทำงาน
+ท้ายไฟล์ต้องมี `if __name__ == "__main__": sys.exit(main())` เพื่อให้เทสต์ import `main` ได้โดยไม่รันทันที
 
 - [ ] **Step 6: รันให้ผ่าน**
 
@@ -1039,7 +1237,19 @@ git commit -m "feat(gnss-predict): add prediction pipeline, CSV/meta output and 
 - [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน** `tests/test_validate.py`
 
 ```python
+import math
+import unittest
+from datetime import datetime, timedelta, timezone
+
+from gnss_predict.config import THBK_ECEF_M, THBK_LAT_DEG, THBK_LON_DEG
+from gnss_predict.geometry import ecef_to_az_el
+from gnss_predict.report import SezSample
+from gnss_predict.sp3 import Sp3Orbit
+from gnss_predict.validate import Pair, az_diff, make_pairs, reference_az_el, summarize
+
 T0 = datetime(2026, 11, 10, tzinfo=timezone.utc)
+STA = tuple(c / 1000.0 for c in THBK_ECEF_M)
+
 def pairs(n, d_el=0.0, d_az=0.0, el=45.0, prn=16):
     return [Pair(prn, T0 + timedelta(seconds=30 * i), 100.0 + d_az, el + d_el, 100.0, el) for i in range(n)]
 
@@ -1074,15 +1284,43 @@ class TestSummarize(unittest.TestCase):
     def test_too_few_pairs_fails(self):
         self.assertFalse(summarize(pairs(1), {16}, {16})["passed"])
 
+EPOCHS = [T0 + timedelta(minutes=15 * i) for i in range(30)]
+
+def moving(t):
+    # จุดเริ่มอยู่ห่างสถานี 20000 กม. ตามแกน z แล้วเคลื่อนที่ตามแกน y 3.9 กม./วินาที
+    # ทิศที่มองจากสถานีจึงเปลี่ยนตามเวลา (ถ้าเคลื่อนที่ในแนวเส้นตรงผ่านสถานี มุมจะคงที่และเทสต์จะตรวจอะไรไม่ได้)
+    dt = (t - T0).total_seconds()
+    return (STA[0], STA[1] + 3.9 * dt, STA[2] + 20000.0)
+
+def enu_point(el_deg, az_deg, rng=20000.0):
+    la, lo = math.radians(THBK_LAT_DEG), math.radians(THBK_LON_DEG)
+    up = (math.cos(la) * math.cos(lo), math.cos(la) * math.sin(lo), math.sin(la))
+    north = (-math.sin(la) * math.cos(lo), -math.sin(la) * math.sin(lo), math.cos(la))
+    east = (-math.sin(lo), math.cos(lo), 0.0)
+    e, a = math.radians(el_deg), math.radians(az_deg)
+    return tuple(STA[j] + rng * (math.cos(e) * math.cos(a) * north[j] + math.cos(e) * math.sin(a) * east[j]
+                                 + math.sin(e) * up[j]) for j in range(3))
+
 class TestReference(unittest.TestCase):
     def test_uses_gps_time_offset(self):
-        # Sp3Orbit สังเคราะห์: 30 epoch ห่างกัน 15 นาที เริ่ม T0 PRN 16 อยู่ที่ THBK + (0, 0, 0) + v·Δt
-        # โดย v = (0, 0, 3.9) กม./วินาที ซึ่งเป็นเส้นตรง Lagrange จึงคืนค่าได้ตรง
-        # ที่ t = T0 + 3 ชม.: reference_az_el(...) ต้องเท่ากับ ecef_to_az_el(ตำแหน่งที่ t + 18 s, ...)
-        # และต้องไม่เท่ากับ ecef_to_az_el(ตำแหน่งที่ t, ...)
+        orbit = Sp3Orbit("GPS", EPOCHS, {16: [moving(e) for e in EPOCHS]})   # เส้นตรง Lagrange จึงคืนค่าได้ตรง
+        t = T0 + timedelta(hours=3, minutes=7)
+        got = reference_az_el(orbit, 16, t)
+        exp = ecef_to_az_el(moving(t + timedelta(seconds=18)), STA, THBK_LAT_DEG, THBK_LON_DEG)
+        self.assertAlmostEqual(got[0], exp[0], places=6)
+        self.assertAlmostEqual(got[1], exp[1], places=6)
+        wrong = ecef_to_az_el(moving(t), STA, THBK_LAT_DEG, THBK_LON_DEG)
+        self.assertGreater(abs(got[0] - wrong[0]) + abs(got[1] - wrong[1]), 1e-3)
 
     def test_make_pairs_filters_min_el(self):
-        # samples สองตัวที่ El อ้างอิงต่ำกว่า/สูงกว่า 10° → make_pairs(..., min_el=10.0) คืนเฉพาะตัวหลัง
+        orbit = Sp3Orbit("GPS", EPOCHS, {16: [enu_point(60.0, 30.0)] * 30, 22: [enu_point(5.0, 0.0)] * 30})
+        t = T0 + timedelta(hours=3)
+        samples = [SezSample(t, 16, 0.0, 0.0, 20200.0), SezSample(t, 22, -20000.0, 0.0, 0.0)]
+        got = make_pairs(samples, orbit, 10.0)
+        self.assertEqual([p.prn for p in got], [16])
+        self.assertAlmostEqual(got[0].el_ref, 60.0, places=6)
+        self.assertAlmostEqual(got[0].az_ref, 30.0, places=6)
+        self.assertAlmostEqual(got[0].el_pred, 90.0, places=6)
 ```
 
 - [ ] **Step 2: รันให้เห็นว่าไม่ผ่าน**
