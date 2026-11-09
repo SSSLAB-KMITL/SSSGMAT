@@ -87,8 +87,11 @@ api-interop/gnss-predict/
 │   └── 2026-11-10-gnss-predict-design.md   (ไฟล์นี้)
 ├── gnss_predict/
 │   ├── __init__.py
-│   ├── __main__.py           CLI สำหรับพยากรณ์
-│   ├── config.py             ค่าคงที่: พิกัด THBK, Re, shell, step, URL
+│   ├── __main__.py           CLI สำหรับพยากรณ์ (argparse และ exit code)
+│   ├── predict.py            ลำดับการพยากรณ์, แปลงเป็นแถว CSV, เขียนผลลัพธ์และ meta
+│   ├── config.py             ค่าคงที่: พิกัด THBK, Re, shell, step, URL, เกณฑ์การตรวจ
+│   ├── errors.py             exception ทั้งหมด สืบทอดจาก GnssPredictError
+│   ├── gmat_time.py          แปลงเวลาเป็นและจากรูปแบบ UTCGregorian ของ GMAT (ไม่ขึ้นกับ locale)
 │   ├── tle_fetch.py          ดาวน์โหลด, cache, อ่าน TLE, จับคู่ PRN ↔ NORAD
 │   ├── script_gen.py         สร้าง GMAT script จาก template
 │   ├── run_gmat.py           หา GmatConsole และรัน script
@@ -139,9 +142,10 @@ class TleEntry:
     name: str           # บรรทัดชื่อ เช่น "GPS BIIF-1  (PRN 25)"
     epoch: datetime     # epoch ของ TLE เป็น UTC (timezone-aware)
 
-def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: float = 30) -> Path
+def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: float = 30,
+                  now: datetime | None = None) -> tuple[Path, list[str]]   # (ไฟล์, คำเตือน)
 def parse_tle_file(path: Path) -> tuple[list[TleEntry], list[str]]   # (รายการที่ใช้ได้, คำเตือน)
-def check_tle_age(entries: list[TleEntry], start: datetime,
+def check_tle_age(entries: list[TleEntry], start: datetime, hours: float,
                   warn_days: float = TLE_WARN_DAYS, max_days: float = TLE_MAX_DAYS) -> list[str]
 ```
 
@@ -157,7 +161,7 @@ def check_tle_age(entries: list[TleEntry], start: datetime,
 
 ```python
 def render_script(entries: list[TleEntry], tle_path: Path, start: datetime, hours: float,
-                  step_s: int, report_path: Path) -> str
+                  step_s: int, work_dir: Path) -> str     # รายงานเขียนลง work_dir/report.txt
 ```
 
 แทนค่าลง `templates/thbk_visibility.script.tmpl` path ทุกตัวใน script เป็น absolute path
@@ -230,7 +234,7 @@ class SezSample:
     e_km: float
     z_km: float
 
-def read_report(path: Path, prns: list[int]) -> list[SezSample]
+def read_report(work_dir: Path, prns: list[int]) -> list[SezSample]   # อ่าน report.txt หรือ report_Gxx.txt
 def check_epochs(samples: list[SezSample], start: datetime, hours: float, step_s: int) -> None
 ```
 
@@ -370,6 +374,9 @@ python3 -m gnss_predict.validate --tle-file PATH (--day YYYY-MM-DD | --sp3 PATH)
 **ไฟล์ meta** ชื่อเดียวกันแต่นามสกุล `.meta.json` เก็บข้อมูลที่ต้องใช้ตอนรันซ้ำ:
 `start_utc`, `hours`, `step_s`, `min_el`, `shell_km`, `station` (lat, lon, height_m), `tle_file`, `tle_sha256`,
 `tle_epoch_min`, `tle_epoch_max`, `prns_included`, `prns_missing`, `warnings`, `gmat_version`, `generated_at_utc`
+
+`prns_included` คือ PRN ทุกดวงที่มี TLE ใช้ได้และถูกส่งเข้า GMAT ไม่ว่าจะขึ้นเหนือ `--min-el` หรือไม่
+`prns_missing` คือ PRN จาก 1–32 ที่ไม่อยู่ใน `prns_included`
 
 **การเขียนไฟล์** เขียนลง `<ชื่อ>.tmp` ก่อนแล้วค่อย `os.replace` เพื่อไม่ให้ไปป์ไลน์อ่านไฟล์ที่เขียนไม่เสร็จ
 
