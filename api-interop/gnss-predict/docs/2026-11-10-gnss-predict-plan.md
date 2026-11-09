@@ -752,7 +752,8 @@ Expected (แบบหลายดวงใช้ได้): `exit=0`, log ไ�
 
 - [ ] **Step 3: ตรวจความสมเหตุสมผล**
 
-ทุกแถวต้องมีระยะ √(X² + Y² + Z²) ของทั้งสองดวงอยู่ระหว่าง 19,000 ถึง 27,000 กม. และเวลาต้องเพิ่มทีละ 30 วินาที
+ทุกแถวต้องมีระยะ √(X² + Y² + Z²) ของทั้งสองดวงอยู่ระหว่าง 19,000 ถึง 34,000 กม. แถวที่ Z ≥ 0 (เหนือขอบฟ้า)
+ต้องไม่เกิน 27,000 กม. และเวลาต้องเพิ่มทีละ 30 วินาที
 
 - [ ] **Step 4: ถ้า Step 2 หรือ 3 ไม่ผ่านเพราะสั่งหลายดวงพร้อมกันไม่ได้** ให้แก้ script เป็นแบบสำรองในหัวข้อ 5.3 ของ spec
 (หนึ่ง `ReportFile` ชื่อ `report_Gxx.txt` และหนึ่ง `Propagate` ต่อหนึ่งดวง) แล้วทำ Step 2–3 ใหม่
@@ -1148,7 +1149,10 @@ class TestIntegration(unittest.TestCase):
             s = predict_samples(entries, FX / "gps_2sat.tle", START, 1, 30, Path(d), find_gmat_console())
         self.assertEqual(len(s), 242)
         for x in s:
-            self.assertTrue(19000.0 < math.sqrt(x.s_km ** 2 + x.e_km ** 2 + x.z_km ** 2) < 27000.0)
+            rng = math.sqrt(x.s_km ** 2 + x.e_km ** 2 + x.z_km ** 2)
+            self.assertTrue(19000.0 < rng < 34000.0)       # ใต้ขอบฟ้าไกลได้ถึงราว 33,000 กม.
+            if x.z_km >= 0:
+                self.assertLess(rng, 27000.0)              # เหนือขอบฟ้าอยู่ราว 20,200–25,800 กม.
 
     def test_cli_end_to_end(self):
         with tempfile.TemporaryDirectory() as d:
