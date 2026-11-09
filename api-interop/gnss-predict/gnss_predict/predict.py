@@ -47,7 +47,8 @@ def rows_from_samples(samples: list[SezSample], min_el: float, shell_km: float) 
             continue
         lat, lon = ipp(THBK_LAT_DEG, THBK_LON_DEG, az, el, shell_km=shell_km)
         t = s.t.astimezone(timezone.utc)
-        rows.append([f"{t:%Y-%m-%d}", f"{t:%H:%M:%S}", sat_name(s.prn), f"{az:.3f}", f"{el:.3f}",
+        az_out = round(az, 3) % 360.0          # 359.9997 ปัดแล้วได้ 360.000 ต้องวนกลับเป็น 0.000
+        rows.append([f"{t:%Y-%m-%d}", f"{t:%H:%M:%S}", sat_name(s.prn), f"{az_out:.3f}", f"{el:.3f}",
                      f"{lat:.4f}", f"{lon:.4f}", f"{mapping_factor(el, shell_km=shell_km):.5f}"])
     rows.sort(key=lambda r: (r[0], r[1], r[2]))
     return rows

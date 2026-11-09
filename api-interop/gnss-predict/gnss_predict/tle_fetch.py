@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from http.client import HTTPException
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -101,7 +102,7 @@ def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: floa
         entries, _ = parse_tle_text(data.decode("utf-8", errors="replace"))
         if not entries:
             raise ValueError("ข้อมูลที่ได้ไม่ใช่ TLE ที่ใช้ได้")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, HTTPException) as exc:   # IncompleteRead เป็น HTTPException ไม่ใช่ OSError
         cached = sorted(cache_dir.glob("gps_*.tle"))
         if not cached:
             raise TleUnavailableError(f"ดาวน์โหลด TLE ไม่สำเร็จ ({exc}) และไม่มีไฟล์ใน {cache_dir}") from exc

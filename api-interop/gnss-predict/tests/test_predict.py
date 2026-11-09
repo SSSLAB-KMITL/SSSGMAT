@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import tempfile
 import unittest
@@ -47,6 +48,12 @@ class TestRows(unittest.TestCase):
         self.assertRegex(rows[1][3], r"^\d{1,3}\.\d{3}$")             # Az ที่จุดเหนือศีรษะไม่มีนิยาม ตรวจแค่รูปแบบ
         self.assertEqual(rows[1][4:], ["90.000", "13.7298", "100.7812", "1.00000"])
         self.assertEqual(len(rows_from_samples(s, -90.0, 400.0)), 3)
+
+    def test_az_just_below_360_prints_as_zero(self):
+        # Az = 359.9997° ปัดทศนิยม 3 ตำแหน่งแล้วต้องได้ "0.000" ไม่ใช่ "360.000" (ช่วงที่ README บอกคือ [0, 360))
+        e = -20000.0 * math.tan(math.radians(0.0003))
+        rows = rows_from_samples([SezSample(datetime(2026, 11, 10, tzinfo=UTC), 7, -20000.0, e, 10000.0)], 0.0, 400.0)
+        self.assertEqual(rows[0][3], "0.000")
 
 class TestOutputs(unittest.TestCase):
     def test_meta_counts_invisible_prns_as_included(self):

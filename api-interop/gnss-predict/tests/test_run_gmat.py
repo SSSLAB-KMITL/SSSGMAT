@@ -57,6 +57,18 @@ class TestRun(TmpCase):
         self.run_with('pwd -P > "$4"')
         self.assertEqual(Path(self.log.read_text().strip()), self.d.resolve())
 
+    def test_symlinked_console_runs_in_real_bin_dir(self):
+        # GMAT_BIN อาจเป็น symlink ที่อยู่นอกโฟลเดอร์ bin เช่น /usr/local/bin/GmatConsole
+        # GMAT ต้องรันในโฟลเดอร์ของไฟล์จริง ไม่อย่างนั้นจะหา startup file ไม่เจอ
+        bin_dir = self.d / "gmat" / "bin"
+        bin_dir.mkdir(parents=True)
+        real = fake_console(bin_dir, 'pwd -P > "$4"')
+        link_dir = self.d / "elsewhere"
+        link_dir.mkdir()
+        (link_dir / "GmatConsole").symlink_to(real)
+        run_script(link_dir / "GmatConsole", self.script, self.log)
+        self.assertEqual(Path(self.log.read_text().strip()), bin_dir.resolve())
+
     def test_nonzero_exit(self):
         with self.assertRaises(GmatRunError) as cm:
             self.run_with('echo boom > "$4"; exit 1')

@@ -1,6 +1,8 @@
 import shutil
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,6 +80,33 @@ class TestFetch(unittest.TestCase):
     def test_failure_without_cache_raises(self):
         with tempfile.TemporaryDirectory() as d, self.assertRaises(TleUnavailableError):
             fetch_gps_tle(Path(d), url=(Path(d) / "missing.tle").as_uri(), now=self.NOW)
+
+    def test_fetch_truncated_body_falls_back(self):
+        # เซิร์ฟเวอร์ประกาศ Content-Length 5000 แต่ส่งมาแค่บางส่วนแล้วตัดการเชื่อมต่อ → http.client.IncompleteRead
+        class Truncating(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "5000")
+                self.end_headers()
+                self.wfile.write(b"GPS BIIR-5  (PRN 22)\r\n1 26407U")
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Truncating)
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                shutil.copy(FX / "gps_sample.tle", Path(d) / "gps_20261105T0000Z.tle")
+                url = f"http://127.0.0.1:{server.server_address[1]}/gps.tle"
+                path, warns = fetch_gps_tle(Path(d), url=url, timeout_s=5, now=self.NOW)
+                self.assertEqual(path.name, "gps_20261105T0000Z.tle")
+                self.assertEqual(len(warns), 1)
+        finally:
+            thread.join(5)
+            server.server_close()
 
     def test_fetch_non_tle_body_falls_back(self):
         with tempfile.TemporaryDirectory() as d:

@@ -42,7 +42,8 @@ def run_script(console: Path, script: Path, log: Path, timeout_s: float = 600) -
     cmd = [str(console), "--run", str(script), "--logfile", str(log)]
     try:
         # แยก process group เพื่อ kill ได้ทั้งกลุ่มตอนหมดเวลา ไม่ให้ process ลูกถือ pipe ค้างไว้
-        proc = subprocess.Popen(cmd, cwd=Path(console).parent, stdout=subprocess.PIPE,
+        # cwd ต้องเป็นโฟลเดอร์ของไฟล์จริง GMAT_BIN อาจเป็น symlink ที่อยู่นอก bin/ ของ GMAT
+        proc = subprocess.Popen(cmd, cwd=Path(console).resolve().parent, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as exc:
         raise GmatRunError(f"เรียก GMAT ไม่ได้: {exc}") from exc
@@ -66,7 +67,7 @@ def gmat_version(console: Path) -> str:
     """
     try:
         r = subprocess.run([str(console), "--version"], capture_output=True, text=True, timeout=30,
-                           cwd=Path(console).parent)
+                           cwd=Path(console).resolve().parent)
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
     if r.returncode != 0:
