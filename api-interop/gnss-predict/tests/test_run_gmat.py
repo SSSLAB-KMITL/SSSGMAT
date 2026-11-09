@@ -72,9 +72,18 @@ class TestRun(TmpCase):
 
 
 class TestVersion(TmpCase):
+    # GmatConsole --version จริงพิมพ์ banner ดอกจันก่อน และไม่มีเลขรุ่น มีแค่ "Build Date:"
+    BANNER = ('echo "********************"; echo "***  GMAT Console Application"; echo ""; '
+              'echo "Build Date: Nov 10 2026  04:09:15"')
+
     def test_version(self):
-        c = fake_console(self.d, 'echo ""; echo "GMAT R2026a"; echo "Build Date: x"')
-        self.assertEqual(gmat_version(c), "GMAT R2026a")
+        c = fake_console(self.d, self.BANNER)
+        self.assertEqual(gmat_version(c), "GmatConsole (Build Date: Nov 10 2026 04:09:15)")
+
+    def test_version_uses_symlink_target_name(self):
+        real = fake_console(self.d, self.BANNER).rename(self.d / "GmatConsole-R2026a")
+        (self.d / "GmatConsole").symlink_to(real.name)
+        self.assertEqual(gmat_version(self.d / "GmatConsole"), "GmatConsole-R2026a (Build Date: Nov 10 2026 04:09:15)")
 
     def test_version_failure(self):
         self.assertEqual(gmat_version(fake_console(self.d, "exit 3")), "unknown")

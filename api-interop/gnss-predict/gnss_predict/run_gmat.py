@@ -60,10 +60,17 @@ def run_script(console: Path, script: Path, log: Path, timeout_s: float = 600) -
 
 
 def gmat_version(console: Path) -> str:
+    """ชื่อไฟล์จริงของ GmatConsole (มีเลขรุ่น เช่น GmatConsole-R2026a) ต่อด้วยบรรทัด Build Date
+
+    GmatConsole --version ไม่พิมพ์เลขรุ่น จึงใช้ชื่อไฟล์ที่ symlink ชี้ไปแทน
+    """
     try:
-        r = subprocess.run([str(console), "--version"], capture_output=True, text=True, timeout=30)
+        r = subprocess.run([str(console), "--version"], capture_output=True, text=True, timeout=30,
+                           cwd=Path(console).parent)
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
     if r.returncode != 0:
         return "unknown"
-    return next((l.strip() for l in r.stdout.splitlines() if l.strip()), "unknown")
+    name = Path(console).resolve().name
+    build = next((" ".join(l.split()) for l in r.stdout.splitlines() if l.strip().startswith("Build Date:")), None)
+    return f"{name} ({build})" if build else name
