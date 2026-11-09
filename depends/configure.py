@@ -412,8 +412,9 @@ def build_wxWidgets():
 	
 			if sys.platform == 'darwin':
 				# wxWidgets needs these flags on OSX
+				# NOTE on libtiff, regex: use the copies bundled with wx; Homebrew libs are arm64-only, which breaks the universal build.
 				# NOTE on liblzma: The Mac build/test machine contains liblzma (via homebrew 'xz'), which conflicts with the wxWidgets build process
-				OSXFLAGS = '--enable-universal_binary=x86_64,arm64 --with-osx_cocoa --without-liblzma --with-macosx-version-min=' + osx_min_version
+				OSXFLAGS = '--enable-universal_binary=x86_64,arm64 --with-osx_cocoa --without-liblzma --with-libtiff=builtin --with-regex=builtin --with-macosx-version-min=' + osx_min_version
 			else:
 				OSXFLAGS = ''
 	
