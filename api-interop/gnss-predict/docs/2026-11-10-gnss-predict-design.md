@@ -32,7 +32,9 @@
   `P1, P2, L1, L2` ซึ่งข้อมูลพยากรณ์ไม่มี)
 - GNSS ระบบอื่น (GLONASS, Galileo, BeiDou)
 - การแสดงผลบน GUI แบบ real-time
-- การคำนวณย้อนหลังด้วย SP3 (GMAT R2026a ไม่มีตัวอ่าน SP3)
+- การใช้ SP3 เป็นข้อมูลขาเข้าของการพยากรณ์ (GMAT R2026a ไม่มีตัวอ่าน SP3) SP3 ใช้เฉพาะตอนตรวจความแม่นยำ
+  ในหัวข้อ 11.4 และอ่านด้วย Python ไม่ผ่าน GMAT
+- การเทียบกับคอลัมน์ `Az`/`El` ของเครื่องรับในไฟล์ THBK (ผู้ใช้เลือกตรวจกับ SP3 อย่างเดียว)
 - การตรวจสถานะ healthy ของดาวเทียม (TLE ไม่มีข้อมูลนี้)
 - การแก้ C++ ของ GMAT
 
@@ -91,8 +93,9 @@ api-interop/gnss-predict/
 │   ├── script_gen.py         สร้าง GMAT script จาก template
 │   ├── run_gmat.py           หา GmatConsole และรัน script
 │   ├── report.py             อ่านไฟล์รายงานของ GMAT
-│   ├── geometry.py           SEZ → Az/El, IPP, MF
-│   └── validate.py           เทียบผลกับไฟล์ THBK จริง
+│   ├── geometry.py           SEZ → Az/El, ECEF → Az/El, IPP, MF
+│   ├── sp3.py                ดาวน์โหลดและอ่าน SP3, interpolate ตำแหน่ง (ใช้เฉพาะตอนตรวจ)
+│   └── validate.py           เทียบผลพยากรณ์กับตำแหน่งจาก SP3
 ├── templates/
 │   └── thbk_visibility.script.tmpl
 └── tests/
@@ -101,6 +104,7 @@ api-interop/gnss-predict/
     ├── test_tle_fetch.py
     ├── test_script_gen.py
     ├── test_report.py
+    ├── test_sp3.py
     └── test_integration_gmat.py   ข้ามอัตโนมัติถ้าไม่มี GmatConsole
 ```
 
@@ -116,6 +120,9 @@ api-interop/gnss-predict/
 | `THBK_LAT_DEG` | 13.729779 | แปลงจาก `APPROX POSITION XYZ` ใน header RINEX ของ THBK (WGS84) |
 | `THBK_LON_DEG` | 100.781151 | เช่นเดียวกัน |
 | `THBK_HEIGHT_M` | 6.4 | ความสูงเหนือทรงรี เช่นเดียวกัน |
+| `THBK_ECEF_M` | (−1159211.0035, 6087676.9700, 1503957.7161) | `APPROX POSITION XYZ` ใน header RINEX ของ THBK ใช้ตอนตรวจกับ SP3 |
+| `GPS_UTC_OFFSET_S` | 18 | GPST − UTC ไม่มี leap second ใหม่ตั้งแต่ 1 ม.ค. 2017 (ตรวจกับ IERS Bulletin C ตอนลงมือ) |
+| `CDDIS_PRODUCTS_URL` | `ftp://gdc.cddis.eosdis.nasa.gov/gnss/products` | วิธีเดียวกับ `TrainingModel/src/fetch_cddis_2026.py` |
 | `RE_KM` | 6371.0 | เท่ากับ `RE_KM` ใน `t02_5_rebuild_tec.py` |
 | `SHELL_KM` | 400.0 | เท่ากับ `SHELL_KM` ใน `t02_5_rebuild_tec.py` |
 | `STEP_S` | 30 | เท่ากับ `EPOCH_SEC` ใน `t02_5_rebuild_tec.py` |
@@ -239,9 +246,11 @@ def sez_to_az_el(s_km: float, e_km: float, z_km: float) -> tuple[float, float]
 def ipp(lat_deg: float, lon_deg: float, az_deg: float, el_deg: float,
         re_km: float = RE_KM, shell_km: float = SHELL_KM) -> tuple[float, float]
 def mapping_factor(el_deg: float, re_km: float = RE_KM, shell_km: float = SHELL_KM) -> float
+def ecef_to_az_el(sat_km: tuple[float, float, float], sta_km: tuple[float, float, float],
+                  lat_deg: float, lon_deg: float) -> tuple[float, float]
 ```
 
-สูตรอยู่ในหัวข้อ 6
+สูตรอยู่ในหัวข้อ 6 `ecef_to_az_el` ใช้เฉพาะตอนตรวจกับ SP3 และไม่ผ่าน GMAT เพื่อให้เป็นการตรวจที่เป็นอิสระ
 
 ### 5.7 `__main__.py` (CLI)
 
@@ -264,18 +273,43 @@ python3 -m gnss_predict [--start 2026-11-11T00:00Z] [--hours 24] [--step 30]
 
 exit code: 0 สำเร็จ, 1 ข้อผิดพลาดที่คาดไว้ (TLE, GMAT, รายงาน), 2 ใส่ตัวเลือกผิด
 
-### 5.8 `validate.py`
+### 5.8 `sp3.py`
+
+```python
+@dataclass(frozen=True)
+class Sp3Orbit:
+    time_system: str                                  # จาก header ต้องเป็น "GPS"
+    epochs: list[datetime]                            # GPST, ห่างกัน 15 นาที
+    positions: dict[int, list[tuple[float, float, float] | None]]   # PRN → ตำแหน่ง ECEF (กม.) ต่อ epoch
+
+def fetch_sp3(day: date, cache_dir: Path) -> Path
+def read_sp3(path: Path) -> Sp3Orbit                  # อ่านได้ทั้ง .SP3 และ .SP3.gz
+def interpolate(orbit: Sp3Orbit, prn: int, t_gpst: datetime) -> tuple[float, float, float] | None
+```
+
+- `fetch_sp3` ดึงจาก `CDDIS_PRODUCTS_URL/<GPS week>/` ด้วย `curl --ssl-reqd -u anonymous:anonymous`
+  แบบเดียวกับ `fetch_cddis_2026.py` ลองชื่อ `IGS0OPSFIN_<YYYYDDD>0000_01D_15M_ORB.SP3.gz` ก่อน ถ้าไม่มีจึงใช้
+  `IGS0OPSRAP_<YYYYDDD>0000_01D_15M_ORB.SP3.gz` ถ้าไม่มีทั้งสองแบบ raise `Sp3UnavailableError` ทุกครั้งต้อง
+  list ไดเรกทอรีก่อนดาวน์โหลด ไม่เดาว่าไฟล์มีอยู่
+- `read_sp3` อ่านเฉพาะบรรทัดตำแหน่งของ GPS (`PG01` ถึง `PG32`) ตำแหน่งที่เป็น 0.000000 หรือ 999999.999999
+  ถือว่าไม่มีข้อมูล ถ้า time system ใน header ไม่ใช่ `GPS` ให้ raise
+- `interpolate` ใช้ Lagrange 10 จุด (5 จุดก่อนและ 5 จุดหลัง t) คืน `None` ถ้ามีจุดไม่ครบ 5 จุดในฝั่งใดฝั่งหนึ่ง
+  หรือมีจุดใดในหน้าต่างไม่มีข้อมูล ผลคือประเมินได้ประมาณ 01:00–22:45 GPST ของไฟล์รายวัน
+
+### 5.9 `validate.py`
 
 ```
-python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file PATH
-                                 [--min-el 10] [--out-dir DIR]
+python3 -m gnss_predict.validate --tle-file PATH (--day YYYY-MM-DD | --sp3 PATH)
+                                 [--min-el 10] [--cache-dir DIR] [--out-dir DIR]
 ```
 
-อ่านวันที่จากคอลัมน์ `DAY` ของไฟล์อ้างอิง พยากรณ์ 00:00–24:00 UTC ของวันนั้นด้วย TLE ที่ระบุ
-โดยไม่กรอง El (เทียบเท่า `--min-el -90`) เพื่อไม่ให้แถวที่อยู่ใกล้เกณฑ์หายไปก่อน join จากนั้นจึง join กับไฟล์อ้างอิงด้วย `(DAY, Time, PRN)` คำนวณสถิติตามหัวข้อ 11.4 เขียนรายงาน
-`validation_<วันที่>.json` และ `.md` ลง `out-dir` คืน exit code 0 ถ้าผ่านเกณฑ์ และ 1 ถ้าไม่ผ่าน
-
-ไฟล์อ้างอิงเป็นข้อมูลของ TrainingModel และอยู่นอก repo นี้ จึงส่ง path เข้ามาเป็น argument ไม่ copy เข้า repo
+1. อ่าน TLE แล้วตรวจว่า epoch ของทุกดวงที่ใช้ห่างจากวันตรวจไม่เกิน 2 วัน ถ้าเกินให้หยุด (exit 1)
+2. ใช้ไฟล์ `--sp3` หรือดาวน์โหลดของวัน `--day` ด้วย `fetch_sp3`
+3. พยากรณ์ 00:00–24:00 UTC ของวันนั้นด้วย GMAT โดยไม่กรอง El (เทียบเท่า `--min-el -90`)
+4. ที่แต่ละ epoch t (UTC) และแต่ละ PRN คำนวณค่าจริงจาก `interpolate(orbit, prn, t + 18 วินาที)` แล้วใช้
+   `ecef_to_az_el` กับ `THBK_ECEF_M` แถวที่ interpolate ไม่ได้จะถูกข้าม
+5. คำนวณสถิติตามหัวข้อ 11.4 เขียน `validation_<วันที่>.json` และ `.md` ลง `out-dir`
+   คืน exit code 0 ถ้าผ่านเกณฑ์ และ 1 ถ้าไม่ผ่าน
 
 ## 6. คณิตศาสตร์
 
@@ -293,6 +327,14 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 - ψ = π/2 − El − asin(k)  (มุมที่ศูนย์กลางโลกระหว่างสถานีกับ IPP)
 - φ_IPP = asin(sin φ · cos ψ + cos φ · sin ψ · cos Az)
 - λ_IPP = λ + atan2(sin ψ · sin Az · cos φ, cos ψ − sin φ · sin φ_IPP) แล้วจัดให้อยู่ในช่วง (−180, 180]
+
+**ECEF เป็น Az/El (ใช้ตอนตรวจกับ SP3)** ให้ d = ตำแหน่งดาวเทียม − ตำแหน่งสถานี (ECEF, กม.)
+
+- N = −sin φ cos λ · dx − sin φ sin λ · dy + cos φ · dz
+- E = −sin λ · dx + cos λ · dy
+- U = cos φ cos λ · dx + cos φ sin λ · dy + sin φ · dz
+- Az = atan2(E, N) จัดให้อยู่ใน [0, 360) และ El = atan2(U, √(N² + E²))
+- เป็นสูตรเดียวกับ SEZ เมื่อ S = −N และ Z = U
 
 **Mapping factor** สูตรเดียวกับ `mapping()` ใน `t02_5_rebuild_tec.py` คือ VTEC = STEC × MF
 
@@ -372,7 +414,7 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 - งานทั้งหมดอยู่บน `feature/gnss-predict` และแตะเฉพาะ `api-interop/gnss-predict/`
 - `.gitignore` หลักของ GMAT ละเว้น `*.md` ทั้ง repo จึงเพิ่ม `api-interop/gnss-predict/.gitignore` ที่มี
   `!*.md` รวมทั้ง `cache/` และ `output/` ส่วนไฟล์ spec นี้ commit ไปก่อนด้วย `git add -f`
-- ไม่ commit ข้อมูลของ TrainingModel และไม่ commit ไฟล์ TLE ที่ดาวน์โหลดมา ยกเว้น fixture ขนาดเล็กใน `tests/fixtures/`
+- ไม่ commit ข้อมูลของ TrainingModel และไม่ commit ไฟล์ TLE หรือ SP3 ที่ดาวน์โหลดมา ยกเว้น fixture ขนาดเล็กใน `tests/fixtures/`
 
 ## 11. การทดสอบ
 
@@ -389,8 +431,11 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 - `ipp` ที่ Az = 0°, El = 30° ได้ละติจูด = φ + 5.4260° และลองจิจูดเท่าเดิม
 - `ipp` ที่ Az = 90° ได้ลองจิจูดมากกว่าสถานี ส่วนที่ Az = 270° ได้ลองจิจูดน้อยกว่าสถานี
 - `ipp` ที่ลองจิจูดใกล้ 180° ได้ผลอยู่ในช่วง (−180, 180]
+- `ecef_to_az_el`: สถานีที่ (0°, 0°) บนผิวโลก ดาวเทียมอยู่บนแกน x ไกลออกไป → El = 90°
+  และดาวเทียมที่เลื่อนไปทาง +z (ทิศเหนือ) → Az = 0°
+- `ecef_to_az_el` กับ `sez_to_az_el` ได้ค่าเท่ากันเมื่อแปลงเวกเตอร์เดียวกันด้วย S = −N, Z = U
 
-### 11.2 `test_tle_fetch.py`, `test_script_gen.py`, `test_report.py` (ไม่ต้องใช้เน็ตหรือ GMAT)
+### 11.2 `test_tle_fetch.py`, `test_script_gen.py`, `test_report.py`, `test_sp3.py` (ไม่ต้องใช้เน็ตหรือ GMAT)
 
 - อ่าน `fixtures/gps_sample.tle` (TLE จริงจาก CelesTrak 3 ชุด และชุดเสียที่ตั้งใจใส่ 2 ชุด) ได้ PRN, เลข NORAD และ epoch
   ถูกต้อง ส่วนชุดเสียถูกข้ามพร้อมคำเตือน
@@ -399,6 +444,10 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 - `fetch_gps_tle` ที่ดาวน์โหลดไม่ได้ (จำลองด้วย URL ที่ใช้ไม่ได้) จะคืนไฟล์ใน cache และ raise ถ้า cache ว่าง
 - `render_script` กับ fixture 2 ดวงได้ผลตรงกับ `fixtures/expected_2sat.script` ทุกตัวอักษร
 - `read_report` กับ `fixtures/report_2sat.txt` อ่านค่าได้ถูก ตัดเวลาซ้ำออก และ `check_epochs` raise เมื่อขาด epoch
+- `read_sp3` กับ `fixtures/sample.sp3` (SP3 จริงที่ตัดเหลือ 2 ดวง 24 epoch) อ่าน epoch, PRN และตำแหน่งได้ถูก
+  ค่า 0.000000 กลายเป็น `None` และไฟล์ที่ time system ไม่ใช่ `GPS` ถูก raise
+- `interpolate` ที่ epoch ตรงกับข้อมูลได้ค่าเดิมทุกตำแหน่ง ส่วนระหว่าง epoch ใช้ข้อมูลทุก 30 นาทีของ fixture
+  ทำนายจุดที่ตัดออกไป (จุด 15 นาที) ได้คลาดไม่เกิน 1 ม. และคืน `None` เมื่ออยู่ใกล้ขอบไฟล์
 
 ### 11.3 `test_integration_gmat.py` (ข้ามอัตโนมัติถ้าหา GmatConsole ไม่เจอ)
 
@@ -407,14 +456,14 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 
 ### 11.4 การตรวจความแม่นยำกับข้อมูลจริง (acceptance)
 
-ค่าอ้างอิงคือคอลัมน์ `Az` และ `El` ในไฟล์ THBK ซึ่งเครื่องรับคำนวณจาก broadcast ephemeris
-ไฟล์ล่าสุดที่มีคือ `TrainingModel/exports/fortest2026Aoswa/CSV/THBK291_26_GPS.csv` (18 ต.ค. 2026)
+ค่าอ้างอิงคือ Az/El ที่คำนวณจากวงโคจรละเอียด SP3 ของ IGS (ความแม่นยำระดับเซนติเมตร) ผ่าน `sp3.py`
+และ `ecef_to_az_el` โดยไม่ผ่าน GMAT ใช้ `validate.py` (หัวข้อ 5.9)
 
-**เงื่อนไขของ TLE:** epoch ของ TLE ต้องห่างจากวันอ้างอิงไม่เกิน 2 วัน ให้ตรงกับการใช้งานจริง
-ที่พยากรณ์ด้วย TLE อายุไม่เกินราว 1–2 วัน TLE ย้อนหลังต้องดาวน์โหลดจาก Space-Track (`gp_history`
-ต้องมีบัญชีฟรี) แล้วส่งเข้าทาง `--tle-file`
+**เงื่อนไขของ TLE:** epoch ของ TLE ต้องห่างจากวันตรวจไม่เกิน 2 วัน ให้ตรงกับการใช้งานจริงที่พยากรณ์ด้วย TLE
+อายุไม่เกินราว 1–2 วัน วิธีทำ: ดึง TLE ด้วย `fetch_gps_tle` (เก็บไว้ใน cache) แล้วตรวจกับวันล่าสุดที่ CDDIS
+มี SP3 แบบ rapid ซึ่งช้ากว่าเวลาจริงราว 1–2 วัน ไม่ต้องใช้บัญชีใด ๆ
 
-**เกณฑ์ผ่าน** คิดจากทุกแถวที่ join ได้และ El อ้างอิง ≥ 10°
+**เกณฑ์ผ่าน** คิดจากทุกแถวที่มีทั้งค่าพยากรณ์และค่าจาก SP3 และ El จาก SP3 ≥ 10°
 
 | ค่า | เกณฑ์ |
 |---|---|
@@ -422,15 +471,16 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 | percentile ที่ 99 ของ \|ΔEl\| | ≤ 0.2° |
 | ค่ากลางของ \|ΔAz\| (เฉพาะ El < 80°) | ≤ 0.1° |
 | percentile ที่ 99 ของ \|ΔAz\| (เฉพาะ El < 80°) | ≤ 0.5° |
-| PRN ที่เห็นในไฟล์อ้างอิงแต่ไม่มีในผลพยากรณ์ | ต้องไม่มี (ยกเว้น PRN ที่ไม่มีใน TLE ซึ่งต้องรายงาน) |
+| PRN ในผลพยากรณ์ที่ไม่มีใน SP3 | ต้องไม่มี (ถ้ามีแปลว่าจับคู่ PRN ผิด) |
+| PRN ใน SP3 ที่ไม่มีในผลพยากรณ์ | รายงานอย่างเดียว (SP3 รวมดาวเทียมที่ไม่อยู่ในกลุ่ม gps-ops ด้วย) |
 
 ΔAz คิดแบบวนรอบ: ((Az_pred − Az_ref + 180) mod 360) − 180
 
 รายงานแยกรายดวงทุกครั้ง ถ้าไม่ผ่าน ห้ามตัดดวงที่คลาดออกเพื่อให้ผ่าน ต้องหาสาเหตุก่อน
 (เช่น ดาวเทียมจุดเครื่องยนต์ปรับวงโคจร หรือ PRN ถูกสลับไปใช้กับดาวเทียมดวงอื่น)
 
-**การตรวจเสริม (ไม่มีเกณฑ์ผ่าน/ไม่ผ่าน):** ใช้ TLE ล่าสุดตอนพัฒนา propagate ย้อนกลับไปวันอ้างอิง
-แล้วรายงานความคลาดตามอายุ TLE ใช้ประกอบการตั้งค่า `TLE_WARN_DAYS` และ `TLE_MAX_DAYS`
+ค่า `TLE_WARN_DAYS` = 7 และ `TLE_MAX_DAYS` = 30 เป็นค่าเริ่มต้นที่ยังไม่ได้วัด การตรวจนี้ยืนยันความแม่นยำเฉพาะ
+TLE ที่อายุไม่เกิน 2 วัน
 
 ## 12. ความเสี่ยง
 
@@ -438,6 +488,7 @@ python3 -m gnss_predict.validate --reference PATH/THBKddd_yy_GPS.csv --tle-file 
 |---|---|---|
 | R1 | `SPICESGP4` อาจ propagate หลายดวงในคำสั่งเดียวไม่ได้ | ทดสอบเป็นงานแรกหลัง build ผ่าน ถ้าไม่ได้ใช้รูปแบบสำรองในหัวข้อ 5.3 |
 | R2 | build GMAT บน arm64 กับ Xcode และ CMake รุ่นใหม่อาจไม่ผ่าน | จำกัดเวลา 2 ชั่วโมง แล้วใช้ชุดที่ build แล้วตามหัวข้อ 9 |
-| R3 | หา TLE ย้อนหลังสำหรับ acceptance ไม่ได้ | ต้องใช้บัญชี Space-Track ของผู้ใช้ ถ้าไม่มี ต้องตกลงวิธีตรวจใหม่ก่อนประกาศว่าผ่าน |
+| R3 | CDDIS ปิด FTPS แบบ anonymous หรือเปลี่ยนชื่อไฟล์/โฟลเดอร์ของ SP3 | `fetch_sp3` list ไดเรกทอรีก่อนเสมอ ถ้าดึงไม่ได้ให้ดาวน์โหลด SP3 เองแล้วส่งผ่าน `--sp3` |
 | R4 | ข้อความ error ใน log ของ GMAT อาจไม่ใช่ `**** ERROR ****` ทุกกรณี | การตรวจจำนวน epoch ในรายงานจะจับความล้มเหลวที่หลุดไปได้ |
 | R5 | startup file เรียก plugin ที่ไม่ได้ build (MATLAB, Python, proprietary) | ตรวจตอนรัน `Ex_TLE_Propagation.script` ว่าเป็นแค่คำเตือนและรันต่อได้ |
+| R6 | เวลา GPST กับ UTC ต่างกันไม่ใช่ 18 วินาที (มี leap second ใหม่) | ตรวจกับ IERS Bulletin C ตอนลงมือ ถ้าใช้ค่าผิด 1 วินาที ดาวเทียมจะคลาดราว 3.9 กม. คิดเป็นมุมราว 0.01° ซึ่งการตรวจจับได้ยาก จึงต้องตรวจจากแหล่งข้อมูล |
