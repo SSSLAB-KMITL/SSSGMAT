@@ -1,0 +1,113 @@
+"""ดาวน์โหลด, เก็บ cache และอ่าน TLE ของดาวเทียม GPS (หัวข้อ 5.2 ของ spec)"""
+
+import os
+import re
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+from .config import CELESTRAK_GPS_URL, TLE_MAX_DAYS, TLE_WARN_DAYS
+from .errors import TleTooOldError, TleUnavailableError
+
+_PRN_RE = re.compile(r"\(PRN\s*(\d{1,2})\)")
+
+
+@dataclass(frozen=True)
+class TleEntry:
+    prn: int
+    norad: str
+    name: str
+    epoch: datetime
+
+
+def tle_checksum(line: str) -> int:
+    """checksum ของ TLE: ผลรวมตัวเลขใน 68 ตัวอักษรแรก นับ '-' เป็น 1 แล้ว mod 10"""
+    return sum(int(c) if c.isdigit() else (1 if c == "-" else 0) for c in line[:68]) % 10
+
+
+def _valid(line: str) -> bool:
+    return len(line) >= 69 and line[68].isdigit() and tle_checksum(line) == int(line[68])
+
+
+def _epoch(line1: str) -> datetime:
+    field = line1[18:32]
+    yy, doy = int(field[:2]), float(field[2:])
+    year = 2000 + yy if yy < 57 else 1900 + yy
+    return datetime(year, 1, 1, tzinfo=timezone.utc) + timedelta(days=doy - 1)
+
+
+def parse_tle_text(text: str) -> tuple[list[TleEntry], list[str]]:
+    """อ่าน TLE รูปแบบ 3 บรรทัด คืน (รายการที่ใช้ได้เรียงตาม PRN, คำเตือน)"""
+    lines = [l.rstrip() for l in text.replace("\r", "").split("\n")]
+    by_prn: dict[int, TleEntry] = {}
+    warnings: list[str] = []
+    i = 0
+    while i < len(lines):
+        l1 = lines[i]
+        if not (l1.startswith("1 ") and i + 1 < len(lines) and lines[i + 1].startswith("2 ")):
+            i += 1
+            continue
+        l2 = lines[i + 1]
+        name = lines[i - 1] if i > 0 and not lines[i - 1].startswith(("1 ", "2 ")) else ""
+        norad = l1[2:7].strip()
+        i += 2
+        if not (_valid(l1) and _valid(l2)):
+            warnings.append(f"ข้าม TLE ของ NORAD {norad} ({name}): checksum ไม่ถูกต้อง")
+            continue
+        m = _PRN_RE.search(name)
+        if not m:
+            warnings.append(f"ข้าม TLE ของ NORAD {norad} ({name}): ไม่พบเลข PRN ในชื่อ")
+            continue
+        prn = int(m.group(1))
+        if not 1 <= prn <= 32:
+            warnings.append(f"ข้าม TLE ของ NORAD {norad} ({name}): PRN {prn} อยู่นอกช่วง 1–32")
+            continue
+        entry = TleEntry(prn, norad, name, _epoch(l1))
+        if prn not in by_prn or entry.epoch > by_prn[prn].epoch:
+            by_prn[prn] = entry
+    return [by_prn[p] for p in sorted(by_prn)], warnings
+
+
+def parse_tle_file(path: Path) -> tuple[list[TleEntry], list[str]]:
+    return parse_tle_text(Path(path).read_bytes().decode("utf-8", errors="replace"))
+
+
+def check_tle_age(entries: list[TleEntry], start: datetime, hours: float,
+                  warn_days: float = TLE_WARN_DAYS, max_days: float = TLE_MAX_DAYS) -> list[str]:
+    """อายุ TLE = ค่ามากสุดของ |t − epoch| เมื่อ t คือเวลาเริ่มหรือสิ้นสุดช่วง คิดจากทุกดวง"""
+    end = start + timedelta(hours=hours)
+    ages = [max(abs((start - e.epoch).total_seconds()), abs((end - e.epoch).total_seconds())) / 86400.0
+            for e in entries]
+    if not ages:
+        return []
+    age = max(ages)
+    if age > max_days:
+        raise TleTooOldError(f"TLE เก่าเกินไป: อายุสูงสุด {age:.1f} วัน (เกณฑ์ {max_days:g} วัน)")
+    if age > warn_days:
+        return [f"TLE อายุสูงสุด {age:.1f} วัน เกิน {warn_days:g} วัน ความแม่นยำอาจลดลง"]
+    return []
+
+
+def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: float = 30,
+                  now: datetime | None = None) -> tuple[Path, list[str]]:
+    """ดาวน์โหลด TLE แล้วเก็บเป็น cache/gps_<เวลา UTC>.tle ถ้าไม่สำเร็จใช้ไฟล์ล่าสุดใน cache"""
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    now = now or datetime.now(timezone.utc)
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "gnss-predict/0.1"}), timeout=timeout_s) as resp:
+            data = resp.read()
+        entries, _ = parse_tle_text(data.decode("utf-8", errors="replace"))
+        if not entries:
+            raise ValueError("ข้อมูลที่ได้ไม่ใช่ TLE ที่ใช้ได้")
+    except (OSError, ValueError) as exc:
+        cached = sorted(cache_dir.glob("gps_*.tle"))
+        if not cached:
+            raise TleUnavailableError(f"ดาวน์โหลด TLE ไม่สำเร็จ ({exc}) และไม่มีไฟล์ใน {cache_dir}") from exc
+        return cached[-1], [f"ดาวน์โหลด TLE ไม่สำเร็จ ({exc}) ใช้ไฟล์ใน cache แทน: {cached[-1].name}"]
+    path = cache_dir / f"gps_{now:%Y%m%dT%H%MZ}.tle"
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+    return path, []
