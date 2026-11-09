@@ -1,0 +1,80 @@
+import math
+import unittest
+from gnss_predict.geometry import sez_to_az_el, ipp, mapping_factor, ecef_to_az_el
+from gnss_predict.config import THBK_LAT_DEG, THBK_LON_DEG
+
+
+class TestSezToAzEl(unittest.TestCase):
+    def test_zenith(self):
+        self.assertAlmostEqual(sez_to_az_el(0, 0, 20000)[1], 90.0, places=9)
+
+    def test_cardinal_directions(self):
+        for (s, e), az_exp in {(-20000, 0): 0.0, (0, 20000): 90.0, (20000, 0): 180.0, (0, -20000): 270.0}.items():
+            az, el = sez_to_az_el(s, e, 0)
+            self.assertAlmostEqual(az, az_exp, places=9)
+            self.assertAlmostEqual(el, 0.0, places=9)
+
+    def test_az_always_in_0_360(self):
+        # e ติดลบนิดเดียว: atan2 ได้ราว −2.9e-16 องศา และค่านี้ % 360 ได้ 360.0 พอดีใน float
+        for s, e in [(-20000, -1e-13), (-20000, 0.0), (-20000, -0.0), (5, -5), (-5, -5)]:
+            az, _ = sez_to_az_el(s, e, 100)
+            self.assertGreaterEqual(az, 0.0)
+            self.assertLess(az, 360.0)
+
+
+class TestMappingFactor(unittest.TestCase):
+    def test_reference_values(self):
+        for el, mf in [(90, 1.00000), (30, 0.57965), (10, 0.37598)]:
+            self.assertAlmostEqual(mapping_factor(el), mf, places=5)
+
+    def test_matches_t02_5_formula(self):
+        for el in range(0, 91, 5):
+            ref = math.sqrt(1.0 - (6371.0 * math.cos(math.radians(el)) / (6371.0 + 400.0)) ** 2)
+            self.assertAlmostEqual(mapping_factor(el), ref, places=12)
+
+
+class TestIpp(unittest.TestCase):
+    def test_zenith_is_station(self):
+        lat, lon = ipp(THBK_LAT_DEG, THBK_LON_DEG, 123.0, 90.0)
+        self.assertAlmostEqual(lat, THBK_LAT_DEG, places=9)
+        self.assertAlmostEqual(lon, THBK_LON_DEG, places=9)
+
+    def test_north_el30(self):
+        lat, lon = ipp(THBK_LAT_DEG, THBK_LON_DEG, 0.0, 30.0)
+        self.assertAlmostEqual(lat, THBK_LAT_DEG + 5.4260, places=4)
+        self.assertAlmostEqual(lon, THBK_LON_DEG, places=9)
+
+    def test_east_west(self):
+        self.assertGreater(ipp(THBK_LAT_DEG, THBK_LON_DEG, 90.0, 30.0)[1], THBK_LON_DEG)
+        self.assertLess(ipp(THBK_LAT_DEG, THBK_LON_DEG, 270.0, 30.0)[1], THBK_LON_DEG)
+
+    def test_dateline_wrap(self):
+        _, lon = ipp(0.0, 179.9, 90.0, 30.0)
+        self.assertGreater(lon, -180.0)
+        self.assertLessEqual(lon, 180.0)
+        self.assertLess(lon, 0.0)
+
+
+class TestEcefToAzEl(unittest.TestCase):
+    STA = (6378.137, 0.0, 0.0)   # (lat 0, lon 0) บนผิวโลก
+
+    def test_overhead(self):
+        self.assertAlmostEqual(ecef_to_az_el((26000.0, 0.0, 0.0), self.STA, 0.0, 0.0)[1], 90.0, places=9)
+
+    def test_north(self):
+        az, el = ecef_to_az_el((26000.0, 0.0, 5000.0), self.STA, 0.0, 0.0)
+        self.assertAlmostEqual(az, 0.0, places=9)
+        self.assertTrue(0.0 < el < 90.0)
+
+    def test_consistent_with_sez(self):
+        # ที่ (0°, 0°): N = dz, E = dy, U = dx  ดังนั้น S = −dz, Z = dx
+        for d in [(15000.0, 3000.0, -4000.0), (2000.0, -9000.0, 7000.0), (100.0, 1.0, -20000.0)]:
+            sat = tuple(a + b for a, b in zip(self.STA, d))
+            got = ecef_to_az_el(sat, self.STA, 0.0, 0.0)
+            exp = sez_to_az_el(-d[2], d[1], d[0])
+            self.assertAlmostEqual(got[0], exp[0], places=9)
+            self.assertAlmostEqual(got[1], exp[1], places=9)
+
+
+if __name__ == "__main__":
+    unittest.main()
