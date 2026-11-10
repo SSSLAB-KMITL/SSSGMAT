@@ -1,7 +1,7 @@
 import math
 import unittest
-from gnss_predict.geometry import sez_to_az_el, ipp, mapping_factor, ecef_to_az_el
-from gnss_predict.config import THBK_LAT_DEG, THBK_LON_DEG
+from gnss_predict.geometry import sez_to_az_el, ipp, mapping_factor, ecef_to_az_el, geodetic_to_ecef, ecef_to_aer
+from gnss_predict.config import THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M, THBK_ECEF_M
 
 
 class TestSezToAzEl(unittest.TestCase):
@@ -74,6 +74,42 @@ class TestEcefToAzEl(unittest.TestCase):
             exp = sez_to_az_el(-d[2], d[1], d[0])
             self.assertAlmostEqual(got[0], exp[0], places=9)
             self.assertAlmostEqual(got[1], exp[1], places=9)
+
+
+class TestGeodeticToEcef(unittest.TestCase):
+    def test_geodetic_to_ecef_matches_thbk_header(self):
+        x, y, z = geodetic_to_ecef(THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M)
+        for got, ref in zip((x, y, z), THBK_ECEF_M):
+            self.assertAlmostEqual(got, ref / 1000, delta=0.001)       # ≤ 1 ม. (ผลจริงราว 6 ซม.)
+
+    def test_equator_and_poles(self):
+        a, b = 6378.137, 6378.137 * (1 - 1 / 298.257223563)
+        for got, ref in zip(geodetic_to_ecef(0.0, 0.0, 0.0), (a, 0.0, 0.0)):
+            self.assertAlmostEqual(got, ref, places=9)
+        for got, ref in zip(geodetic_to_ecef(0.0, 90.0, 1000.0), (0.0, a + 1.0, 0.0)):
+            self.assertAlmostEqual(got, ref, places=9)
+        for got, ref in zip(geodetic_to_ecef(90.0, 0.0, 0.0), (0.0, 0.0, b)):
+            self.assertAlmostEqual(got, ref, places=9)
+
+    def test_height_adds_along_the_normal(self):
+        lo = geodetic_to_ecef(45.0, 30.0, 0.0)
+        hi = geodetic_to_ecef(45.0, 30.0, 10000.0)
+        self.assertAlmostEqual(math.dist(lo, hi), 10.0, places=9)
+
+
+class TestEcefToAer(unittest.TestCase):
+    def test_ecef_to_aer_zenith(self):
+        sta = geodetic_to_ecef(0.0, 0.0, 0.0)
+        az, el, rng = ecef_to_aer((sta[0] + 20000.0, sta[1], sta[2]), sta, 0.0, 0.0)
+        self.assertAlmostEqual(el, 90.0, places=6)
+        self.assertAlmostEqual(rng, 20000.0, places=6)
+
+    def test_matches_ecef_to_az_el_and_range(self):
+        sta = geodetic_to_ecef(THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M)
+        sat = (sta[0] + 12000.0, sta[1] - 8000.0, sta[2] + 15000.0)
+        az, el, rng = ecef_to_aer(sat, sta, THBK_LAT_DEG, THBK_LON_DEG)
+        self.assertEqual((az, el), ecef_to_az_el(sat, sta, THBK_LAT_DEG, THBK_LON_DEG))
+        self.assertAlmostEqual(rng, math.sqrt(12000.0 ** 2 + 8000.0 ** 2 + 15000.0 ** 2), places=9)
 
 
 if __name__ == "__main__":

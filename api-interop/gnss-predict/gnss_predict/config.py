@@ -1,5 +1,6 @@
 """ค่าคงที่ทั้งหมดของ gnss_predict (ที่มาของแต่ละค่าอยู่ในหัวข้อ 5.1 ของ spec)"""
 
+import os
 from pathlib import Path
 
 # สถานี THBK: แปลงจาก APPROX POSITION XYZ ใน header RINEX (WGS84)
@@ -35,3 +36,29 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CACHE_DIR = PKG_ROOT / "cache"
 DEFAULT_OUT_DIR = PKG_ROOT / "output"
 TEMPLATE_PATH = PKG_ROOT / "templates" / "thbk_visibility.script.tmpl"
+
+# ---- GNSS Studio engine (หัวข้อ 5.1 ของ spec engine) ----
+CELESTRAK_GP_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=json"
+GNSS_GROUPS = {"G": "gps-ops", "R": "glo-ops", "E": "galileo", "C": "beidou"}
+CELESTRAK_MIN_INTERVAL_S = 7200       # ส่ง request ได้ไม่เกิน 1 ครั้งต่อกลุ่มต่อรอบอัปเดต 2 ชม.
+
+IGS_META_URL = "https://files.igs.org/pub/station/general/igs_satellite_metadata.snx"
+CDDIS_BRDC_URL = "ftp://gdc.cddis.eosdis.nasa.gov/gnss/data/daily/{year}/brdc/"
+# ลำดับความสำคัญของ SP3 MGEX ที่ใช้เป็นค่าจริงตอนตรวจ (ตัวแรกที่มีไฟล์)
+MGX_SP3_PREFERENCE = ("COD0MGXFIN", "GFZ0MGXRAP", "WUM0MGXRAP")
+
+AGE_OK_DAYS = 2.0                     # วัดแล้ว: ภายในเกณฑ์นี้ความแม่นยำผ่านเกณฑ์
+AGE_SHOWN_MAX_DAYS = 7.0              # ค่าที่ตั้ง ยังไม่ได้วัด
+BRDC_MAX_TK_S = 14400                 # ใช้ ephemeris ที่ |tk| ≤ 4 ชม.
+
+CZML_STEP_S = 300
+CZML_LAGRANGE_DEGREE = 7
+
+# WGS84 (หัวข้อ 7.1)
+WGS84_A_KM = 6378.137
+WGS84_F = 1 / 298.257223563
+
+DATA_DIR = Path(os.environ.get("GNSS_STUDIO_DATA", PKG_ROOT / "data"))
+
+# เพิ่มทุกครั้งที่การคำนวณเปลี่ยน ใช้ใน hash และ manifest
+ENGINE_VERSION = "0.2.0"

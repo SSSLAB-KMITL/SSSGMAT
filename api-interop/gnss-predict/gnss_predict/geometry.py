@@ -5,7 +5,7 @@
 
 import math
 
-from .config import RE_KM, SHELL_KM
+from .config import RE_KM, SHELL_KM, WGS84_A_KM, WGS84_F
 
 
 def _azimuth(east: float, north: float) -> float:
@@ -50,3 +50,21 @@ def ecef_to_az_el(sat_km: tuple[float, float, float], sta_km: tuple[float, float
     east = -math.sin(lon) * dx + math.cos(lon) * dy
     up = math.cos(lat) * math.cos(lon) * dx + math.cos(lat) * math.sin(lon) * dy + math.sin(lat) * dz
     return _azimuth(east, north), math.degrees(math.atan2(up, math.hypot(north, east)))
+
+
+def geodetic_to_ecef(lat_deg: float, lon_deg: float, h_m: float) -> tuple[float, float, float]:
+    """พิกัดภูมิศาสตร์ WGS84 (องศา, เมตรเหนือ ellipsoid) → ECEF (กม.) ตามหัวข้อ 7.1 ของ spec engine"""
+    lat, lon = math.radians(lat_deg), math.radians(lon_deg)
+    e2 = WGS84_F * (2.0 - WGS84_F)
+    n = WGS84_A_KM / math.sqrt(1.0 - e2 * math.sin(lat) ** 2)
+    h = h_m / 1000.0
+    return ((n + h) * math.cos(lat) * math.cos(lon),
+            (n + h) * math.cos(lat) * math.sin(lon),
+            (n * (1.0 - e2) + h) * math.sin(lat))
+
+
+def ecef_to_aer(sat_km: tuple[float, float, float], sta_km: tuple[float, float, float],
+                lat_deg: float, lon_deg: float) -> tuple[float, float, float]:
+    """ตำแหน่ง ECEF ของดาวเทียมและสถานี → (Az, El, ระยะ กม.)"""
+    az, el = ecef_to_az_el(sat_km, sta_km, lat_deg, lon_deg)
+    return az, el, math.dist(sat_km, sta_km)
