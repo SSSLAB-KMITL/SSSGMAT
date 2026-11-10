@@ -223,6 +223,12 @@ class TestReadNav(unittest.TestCase):
             (d / "trunc.rnx.gz").write_bytes(gzip.compress(NAV.read_bytes())[:200])
             with self.assertRaises(BrdcUnavailableError):
                 read_nav(d / "trunc.rnx.gz")
+            flipped = bytearray(gzip.compress(NAV.read_bytes()))               # ไฟล์ gzip เสียกลางทาง: zlib.error
+            for k in range(40, 60):
+                flipped[k] ^= 0xFF
+            (d / "flipped.rnx.gz").write_bytes(bytes(flipped))
+            with self.assertRaises(BrdcUnavailableError):
+                read_nav(d / "flipped.rnx.gz")
 
 
 class TestFetch(unittest.TestCase):

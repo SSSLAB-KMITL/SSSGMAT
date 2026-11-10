@@ -8,6 +8,7 @@ import gzip
 import math
 import os
 import subprocess
+import zlib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -110,7 +111,7 @@ def read_nav(path: Path) -> Nav:
     try:
         with opener(path, "rt", encoding="ascii", errors="replace") as f:
             lines = f.read().splitlines()
-    except (OSError, EOFError) as e:
+    except (OSError, EOFError, zlib.error) as e:       # gzip ที่ถูกตัดท้าย (EOFError) หรือข้อมูลเสียกลางทาง (zlib.error)
         raise BrdcUnavailableError(f"อ่าน {path.name} ไม่ได้ ({e})") from e
     try:
         version, kind = float(lines[0][:9]), lines[0][20:21]
