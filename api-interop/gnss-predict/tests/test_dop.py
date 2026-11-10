@@ -2,6 +2,7 @@ import math
 import random
 import unittest
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 
 from gnss_predict.analyze import AerRow
 from gnss_predict.dop import Dop, dop, dop_series
@@ -19,6 +20,27 @@ def geom(n, th):
 
 def row(prn, el, az=0.0, time_utc=T0):
     return AerRow(time_utc, prn, az, el, 20000.0, 0.0, 0.0, 1.0)
+
+
+def exact_q(az_el_deg):
+    """Q = (HᵀH)⁻¹ แบบเลขตรง (Fraction) ด้วยเกาส์-จอร์แดนที่เขียนแยกจาก dop.py
+    แถว H = [cos El sin Az, cos El cos Az, sin El, 1] คือแกน E, N, U, นาฬิกา"""
+    h = []
+    for az_deg, el_deg in az_el_deg:
+        az, el = math.radians(az_deg), math.radians(el_deg)
+        h.append([Fraction(math.cos(el) * math.sin(az)), Fraction(math.cos(el) * math.cos(az)),
+                  Fraction(math.sin(el)), Fraction(1)])
+    a = [[sum(r[i] * r[j] for r in h) for j in range(4)] + [Fraction(int(i == j)) for j in range(4)]
+         for i in range(4)]
+    for col in range(4):
+        p = next(r for r in range(col, 4) if a[r][col] != 0)
+        a[col], a[p] = a[p], a[col]
+        a[col] = [v / a[col][col] for v in a[col]]
+        for r in range(4):
+            if r != col:
+                f = a[r][col]
+                a[r] = [v - f * w for v, w in zip(a[r], a[col])]
+    return [row[4:] for row in a]
 
 
 class TestDop(unittest.TestCase):
@@ -53,6 +75,22 @@ class TestDop(unittest.TestCase):
         self.assertAlmostEqual(d.hdop ** 2, d.edop ** 2 + d.ndop ** 2, delta=1e-12)
         self.assertAlmostEqual(d.gdop ** 2, d.pdop ** 2 + d.tdop ** 2, delta=1e-12)
         self.assertAlmostEqual(d.pdop ** 2, d.hdop ** 2 + d.vdop ** 2, delta=1e-12)
+
+    def test_azimuth_convention_asymmetric(self):
+        """E = cos El sin Az, N = cos El cos Az: เรขาคณิตที่ไม่สมมาตรหมุน ทำให้ EDOP ≠ NDOP
+        ถ้าสลับคอลัมน์ sin กับ cos ค่าทั้งสองจะสลับกันและ test นี้ต้อง fail"""
+        sats = [(0.0, 20.0), (180.0, 20.0), (0.0, 60.0), (180.0, 60.0), (90.0, 40.0), (270.0, 40.0), (45.0, 70.0)]
+        q = exact_q(sats)
+        d = dop(sats)
+        self.assertGreater(d.edop, d.ndop)
+        self.assertGreater(float(q[0][0]), float(q[1][1]))                      # ตัวผกผันแบบเลขตรงยืนยันทิศทาง
+        for got, ref in ((d.edop, math.sqrt(q[0][0])), (d.ndop, math.sqrt(q[1][1])), (d.vdop, math.sqrt(q[2][2])),
+                         (d.tdop, math.sqrt(q[3][3])), (d.hdop, math.sqrt(q[0][0] + q[1][1])),
+                         (d.pdop, math.sqrt(q[0][0] + q[1][1] + q[2][2])),
+                         (d.gdop, math.sqrt(q[0][0] + q[1][1] + q[2][2] + q[3][3]))):
+            self.assertAlmostEqual(got, float(ref), delta=1e-10)
+        self.assertAlmostEqual(d.edop, 0.9087440895, delta=1e-9)
+        self.assertAlmostEqual(d.ndop, 0.6589854992, delta=1e-9)
 
     def test_input_order_does_not_matter(self):
         sats = geom(5, 25.0)
@@ -98,7 +136,8 @@ class TestDopSeries(unittest.TestCase):
         by = {r["system"]: r for r in dop_series(rows, FAC, flags)}
         self.assertEqual(by["G"]["n_visible"], 4)          # G02 (El = เกณฑ์), G05 (ธงไม่ตัด), G06, G07
 
-    def test_every_time_gets_five_rows_even_when_empty(self):
+    def test_every_row_time_gets_five_rows_without_times_utc(self):
+        """ไม่ส่ง times_utc: แกนเวลาคือเวลาที่มีใน rows เท่านั้น (เวลาที่ไม่มีแถวเลยจึงไม่มี)"""
         t1 = T0 + timedelta(seconds=30)
         t2 = T0 + timedelta(seconds=60)
         rows = [row("G01", 50.0, time_utc=T0), row("R01", 50.0, time_utc=t2)]
@@ -109,6 +148,34 @@ class TestDopSeries(unittest.TestCase):
         self.assertEqual({r["system"]: r["n_visible"] for r in out[5:]}, {"ALL": 1, "G": 0, "R": 1, "E": 0, "C": 0})
         self.assertNotIn(t1, [r["time_utc"] for r in out])
         self.assertEqual(dop_series([], FAC, {}), [])
+
+    def test_times_utc_adds_epochs_without_rows(self):
+        """epoch ที่ไม่มีดาวเหนือขอบฟ้าเลย (aer_rows ตัด El < 0) ต้องได้ครบ 5 แถว n_visible 0 และ DOP เป็น None"""
+        t1 = T0 + timedelta(seconds=30)
+        t2 = T0 + timedelta(seconds=60)
+        t3 = T0 + timedelta(seconds=90)
+        rows = [row("G01", 50.0, time_utc=t2), row("G02", 50.0, time_utc=T0)]   # rows ไม่เรียงเวลา
+        out = dop_series(rows, FAC, {}, times_utc=[T0, t1, t2, t3])
+        self.assertEqual(len(out), 20)
+        self.assertEqual([r["time_utc"] for r in out], [T0] * 5 + [t1] * 5 + [t2] * 5 + [t3] * 5)
+        for block in range(4):
+            self.assertEqual([r["system"] for r in out[block * 5:block * 5 + 5]], ["ALL", "G", "R", "E", "C"])
+        for r in out[5:10] + out[15:]:                     # t1 และ t3 ไม่มีแถวใน rows
+            self.assertEqual(r["n_visible"], 0)
+            for key in ("gdop", "pdop", "hdop", "vdop", "edop", "ndop", "tdop"):
+                self.assertIsNone(r[key])
+        self.assertEqual({r["system"]: r["n_visible"] for r in out[10:15]},
+                         {"ALL": 1, "G": 1, "R": 0, "E": 0, "C": 0})
+
+    def test_times_utc_union_with_row_times_sorted_and_unique(self):
+        """ผลคือ union ที่เรียงแล้วของ times_utc กับเวลาใน rows (รับ iterable ใด ๆ และเวลาซ้ำนับครั้งเดียว)"""
+        t1 = T0 + timedelta(seconds=30)
+        t2 = T0 + timedelta(seconds=60)
+        rows = [row("G01", 50.0, time_utc=t2), row("G01", 50.0, time_utc=t1)]
+        out = dop_series(rows, FAC, {}, times_utc=iter([T0, t1, T0]))
+        self.assertEqual([r["time_utc"] for r in out], [T0] * 5 + [t1] * 5 + [t2] * 5)
+        self.assertEqual(dop_series([], FAC, {}, times_utc=[]), [])
+        self.assertEqual(len(dop_series([], FAC, {}, times_utc=[T0])), 5)
 
     def test_below_threshold_only_time_still_listed(self):
         out = dop_series([row("G01", 5.0)], FAC, {})

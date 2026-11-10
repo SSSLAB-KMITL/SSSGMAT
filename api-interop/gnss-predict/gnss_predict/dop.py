@@ -7,7 +7,9 @@
 """
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 
 from .analyze import AerRow
 from .catalog import DOP_EXCLUDED_FLAGS
@@ -72,11 +74,15 @@ def dop(az_el_deg: list[tuple[float, float]]) -> Dop | None:
     )
 
 
-def dop_series(rows: list[AerRow], fac: Facility, flags: dict[str, frozenset[str]]) -> list[dict]:
-    """หนึ่งแถวต่อเวลาต่อ system เรียง ALL, G, R, E, C ทุกเวลาใน rows ได้ครบ 5 แถวแม้ไม่มีดาวที่ใช้ได้
+def dop_series(rows: list[AerRow], fac: Facility, flags: dict[str, frozenset[str]],
+               times_utc: Iterable[datetime] | None = None) -> list[dict]:
+    """หนึ่งแถวต่อเวลาต่อ system เรียง ALL, G, R, E, C
+    แกนเวลาคือเวลาที่เรียงแล้วของ `times_utc` (ถ้าให้) รวมกับเวลาทุกแถวใน rows ทุกเวลาได้ครบ 5 แถวแม้ไม่มีดาวที่ใช้ได้
+    ต้องส่ง `times_utc` (เช่น eph.times_utc) เมื่อ rows มาจาก aer_rows เพราะ aer_rows ตัดแถว El < 0 ทิ้ง
+    จุดเวลาที่ไม่มีดาวเหนือขอบฟ้าเลยจึงไม่อยู่ใน rows
     n_visible นับดาวที่ El ≥ min_el_deg และไม่มีธงใน DOP_EXCLUDED_FLAGS (PRN ที่ไม่อยู่ใน flags ไม่มีธง)
     ค่า DOP เป็น None เมื่อ `dop` คืน None"""
-    by_time: dict = {}
+    by_time: dict = {t: [] for t in times_utc} if times_utc is not None else {}
     for r in rows:
         by_time.setdefault(r.time_utc, [])
         if r.el_deg >= fac.min_el_deg and not (flags.get(r.prn, frozenset()) & DOP_EXCLUDED_FLAGS):
