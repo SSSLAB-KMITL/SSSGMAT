@@ -153,7 +153,7 @@ def position_km(nav: Nav, prn: str, t_gpst: datetime) -> tuple[float, float, flo
 ```
 
 - `read_nav` เก็บทุกระบบไว้ตรวจว่ามี broadcast และค่า health แต่ `position_km` คำนวณเฉพาะ G, E, C
-- health: G ใช้ SV health, E ใช้ SV health (ทุกบิตเป็น 0 ถือว่าดี), C ใช้ SatH1, R ใช้ health flag ตามตำแหน่งใน RINEX 3.04 ค่า ≠ 0 ถือว่า `healthy = False`
+- health ตาม RINEX 3.04: G, E, C อ่านช่องที่ 2 ของ BROADCAST ORBIT - 6 (G: SV health, E: SV health, C: SatH1) ส่วน R อ่านช่องที่ 4 ของ BROADCAST ORBIT - 1 (health, 0 = OK) ค่า ≠ 0 ถือว่า `healthy = False`
 - `position_km` เลือก ephemeris ที่ |tk| น้อยที่สุด ถ้า |tk| > `BRDC_MAX_TK_S` คืน `None` สูตรอยู่ในหัวข้อ 7.4
 
 ### 5.5 `catalog.py`
@@ -443,8 +443,9 @@ class ใหม่ทั้งหมดสืบจาก `GnssPredictError` แ
 | | `catalog_field` | นิยาม Alpha-5 | 99999 → `99999`, 100000 → `A0000`, 100744 → `A0744`, 339999 → `Z9999`, 340000 → ValueError |
 | | กติกาดาวน์โหลด | นาฬิกาและ opener จำลอง | ภายใน 7200 วินาทีไม่ส่ง request, ได้ 403 แล้วไม่ลองซ้ำและคืนไฟล์เดิม |
 | `test_igs_meta.py` | จับคู่ PRN | ไฟล์ IGS metadata ย่อ | 56564 → C01 ณ 2026-11-09, 44542 → C40 ณ 2026-11-09, PRN ไม่มีวันสิ้นสุด, ดาวที่หมดช่วงคืน None, PRN เปลี่ยนกลางช่วงพบใน `prn_changes` |
-| `test_brdc.py` | `position_km` | SP3 จริงของวันเดียวกัน (fixture ย่อ) | C และ E คลาดไม่เกิน 10 ม. รวมดาว GEO อย่างน้อย 1 ดวง |
-| | health และการมีอยู่ | RINEX nav ย่อ | ค่า health ≠ 0 ได้ `healthy = False` |
+| `test_brdc.py` | `position_km` ดาว MEO/IGSO | SP3 จริงของวันเดียวกัน (fixture ย่อ) | C และ E คลาดไม่เกิน 10 ม. |
+| | `position_km` ดาว BDS GEO | คุณสมบัติทางกายภาพของวงโคจร GEO เพราะ MGEX SP3 ทุกชุดที่ตรวจไม่มี BDS GEO | ตลอด 24 ชม.: รัศมี 42,164 ± 50 กม., ค่าเฉลี่ยละติจูดอยู่ใน ±0.5°, ลองจิจูดแกว่งไม่เกิน 0.5° (ผลจริงของ C01: รัศมี 42,143–42,186 กม., ละติจูด ±0.46°, ลองจิจูด 140.00–140.12°; ถ้าไม่หมุน Rx(−5°) ละติจูดเฉลี่ยเลื่อนไปราว −3°) |
+| | health และการมีอยู่ | RINEX nav จริง: R13, R27, E14, E18 มี health ≠ 0 ในไฟล์ 2026-11-09 | ได้ `healthy = False` ส่วน G และ C ที่ไม่มีตัวอย่างจริง ใช้ record ที่แก้ค่า health ตามเอกสาร RINEX 3.04 |
 | `test_catalog.py` | ธงและตัวกรอง | fixture ที่ออกแบบให้ครบทุกธง | ธงและการซ่อนตามตารางหัวข้อ 6, PRN ซ้ำ |
 | `test_scenario.py` | ตรวจ scenario | กรณีผิดทีละข้อ | ข้อความระบุ path ของช่อง |
 | `test_propagate.py` | script และ parser | ข้อความรายงานตัวอย่าง | ชื่อ Spacecraft และ Id เป็น PRN, ดวงที่หายถูกตัดพร้อมคำเตือน |
@@ -453,7 +454,7 @@ class ใหม่ทั้งหมดสืบจาก `GnssPredictError` แ
 | | ขอบช่วง access | อนุกรมมุมเงยสังเคราะห์ที่รู้จุดตัด | คลาดไม่เกิน 1 วินาที, ช่วงที่ชนขอบถูกตัด |
 | | MF | สูตร `mapping()` ใน TrainingModel | ต่าง 0 ที่ El 0–90° ทุก 0.001° |
 | | `legacy_rows` | ผลของ `predict.rows_from_samples` เดิมจากข้อมูลชุดเดียวกัน | คอลัมน์และรูปแบบเหมือนเดิม |
-| `test_dop.py` | GDOP/PDOP/HDOP/VDOP | ค่าจาก `dops()` ของ RTKLIB ที่บันทึกเป็น fixture พร้อมสคริปต์ที่ใช้สร้าง | ต่างไม่เกิน 1e-9 |
+| `test_dop.py` | GDOP/PDOP/HDOP/VDOP/EDOP/NDOP/TDOP | สูตรปิดของเรขาคณิตที่แก้ด้วยมือได้: ดาว 1 ดวงที่จุดยอด + n ดวงที่มุมเงย θ ทิศกระจายเท่ากัน ให้ EDOP = NDOP = √(2/(n cos²θ)), VDOP = √((1+n)/(n(1−sin θ)²)), TDOP = √((1+n sin²θ)/(n(1−sin θ)²)) (เมทริกซ์ H แบบเดียวกับ `dops()` ของ RTKLIB ซึ่งตรวจจากซอร์สโค้ดแล้ว) | n = 3, θ = 30°: HDOP 1.333333, VDOP 2.309401, TDOP 1.527525, PDOP 2.666667, GDOP 3.073181 ต่างไม่เกิน 1e-6 และ n = 5, θ = 15° ตามสูตร |
 | | EDOP/NDOP/TDOP | เอกลักษณ์ | HDOP² = EDOP² + NDOP², GDOP² = PDOP² + TDOP² (ต่างไม่เกิน 1e-12) |
 | | ดาวไม่พอ | — | 3 ดวงคืน None |
 | `test_bundle.py` | hash และการเขียน | — | ข้อมูลเดิมได้ hash เดิม, เขียนไม่เสร็จไม่ทิ้งโฟลเดอร์ปลายทาง |
