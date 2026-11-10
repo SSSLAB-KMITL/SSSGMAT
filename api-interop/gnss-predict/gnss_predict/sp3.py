@@ -220,7 +220,7 @@ def choose_mgx_sp3_name(listing: list[str], day: date) -> str | None:
 
 def fetch_mgx_sp3(day: date, cache_dir: Path) -> Path:
     """ดาวน์โหลด SP3 MGEX ของวันนั้นจาก CDDIS ผ่าน FTPS แบบ anonymous (list ไดเรกทอรีก่อนเสมอ)"""
-    url = f"{CDDIS_PRODUCTS_URL}/mgex/{gps_week(day)}/"
+    url = f"{CDDIS_PRODUCTS_URL}/{gps_week(day)}/"      # ไฟล์ MGEX อยู่ในไดเรกทอรีเดียวกับ IGS ไม่ใช่ mgex/
     listing = subprocess.run(_CURL + ["--list-only", url], capture_output=True, text=True)
     if listing.returncode != 0:
         raise Sp3UnavailableError(f"list {url} ไม่ได้ (curl exit {listing.returncode}) ดาวน์โหลด SP3 เองแล้วใช้ --sp3")
