@@ -1,10 +1,12 @@
 """เขียน CZML แบบเก็บเฉพาะข้อมูลสำหรับ Cesium (หัวข้อ 5.9 ของ spec engine)
 
 - `satellites_czml` ให้ packet `document` ตามด้วยดาวละหนึ่ง packet (`sat/<PRN>`)
-- `access_czml` ให้ packet ของ facility (`fac/<name>`) และเส้น access (`access/<name>/<PRN>`) ไม่มี packet
-  `document` ผู้เรียกต่อผลของสองฟังก์ชันเข้าเป็นไฟล์เดียว เพราะเส้น access อ้างตำแหน่ง `sat/<PRN>#position`
+- `access_czml` ให้ packet `document` (ไม่มี clock) ตามด้วย facility (`fac/<name>`) และเส้น access
+  (`access/<name>/<PRN>`) CZML ทุกไฟล์ต้องขึ้นต้นด้วย `document` เส้น access อ้างตำแหน่ง `sat/<PRN>#position`
+  ของไฟล์ดาว ฝั่ง Web จึงต้องโหลดสองไฟล์เข้า data source เดียวกัน
 - ตำแหน่งเป็น `cartesian` ในกรอบ FIXED หน่วยเมตร (Ephemeris เก็บกิโลเมตร) เวลาของตัวอย่างเป็นวินาทีจาก `epoch`
 - ไม่ใส่สี ความหนา วัสดุ label หรือ path สไตล์มาจาก `scenario.json` ฝั่ง Web
+  เส้น access มี `arcType: "NONE"` เพราะเป็นรูปทรงของเส้น (ช่วงตรงจากสถานีถึงดาว) ไม่ใช่สไตล์
 - Cesium ถือว่า `show` ที่ไม่ระบุเป็นจริง จึงระบุ `show` ครอบคลุมทั้งช่วงวิเคราะห์ทั้งส่วนที่เป็นเท็จและจริง
 """
 
@@ -131,10 +133,11 @@ def access_czml(facility: Facility, intervals: dict[str, list[_Span]],
     start, stop = _utc(period[0]), _utc(period[1])
     if stop <= start:
         raise ValueError("ช่วงวิเคราะห์ต้องมี stop หลัง start")
-    packets: list[dict] = [{
-        "id": f"fac/{facility.name}",
-        "position": {"cartographicDegrees": [facility.lon_deg, facility.lat_deg, facility.alt_m]},
-    }]
+    packets: list[dict] = [
+        {"id": "document", "version": "1.0"},
+        {"id": f"fac/{facility.name}",
+         "position": {"cartographicDegrees": [facility.lon_deg, facility.lat_deg, facility.alt_m]}},
+    ]
     for prn, ivs in intervals.items():
         merged = _merged_access(ivs, start, stop)
         if not merged:
@@ -143,6 +146,7 @@ def access_czml(facility: Facility, intervals: dict[str, list[_Span]],
             "id": f"access/{facility.name}/{prn}",
             "polyline": {
                 "positions": {"references": [f"fac/{facility.name}#position", f"sat/{prn}#position"]},
+                "arcType": "NONE",
                 "show": _show_intervals(merged, start, stop),
             },
         })

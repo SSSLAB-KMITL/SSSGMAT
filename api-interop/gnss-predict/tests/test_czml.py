@@ -167,7 +167,9 @@ class TestAccessCzml(unittest.TestCase):
                          [(f"{iso(0)}/{iso(600)}", False), (f"{iso(600)}/{iso(1200)}", True),
                           (f"{iso(1200)}/{iso(3600)}", False)])
         self.assertNotIn("material", a["polyline"])
-        self.assertEqual(set(a["polyline"]), {"positions", "show"})
+        self.assertEqual(a["polyline"]["arcType"], "NONE")
+        self.assertEqual(set(a["polyline"]), {"positions", "show", "arcType"})
+        self.assertEqual(pk[0], {"id": "document", "version": "1.0"})
         f = next(p for p in pk if p["id"] == "fac/THBK")
         self.assertEqual(f["position"]["cartographicDegrees"], [100.781151, 13.729779, 6.4])
         self.assertEqual(set(f), {"id", "position"})
@@ -197,11 +199,11 @@ class TestAccessCzml(unittest.TestCase):
     def test_sat_without_access_in_period_gets_no_line(self):
         pk = access_czml(THBK, {"G01": [], "G02": [Iv(t(5000), t(6000))], "G03": [Iv(t(100), t(200))]},
                          (t(0), t(3600)))
-        self.assertEqual([p["id"] for p in pk], ["fac/THBK", "access/THBK/G03"])
+        self.assertEqual([p["id"] for p in pk], ["document", "fac/THBK", "access/THBK/G03"])
 
     def test_no_intervals_gives_only_the_facility(self):
         pk = access_czml(THBK, {}, (t(0), t(3600)))
-        self.assertEqual([p["id"] for p in pk], ["fac/THBK"])
+        self.assertEqual([p["id"] for p in pk], ["document", "fac/THBK"])
 
     def test_bad_period_raises_value_error(self):
         with self.assertRaises(ValueError):
