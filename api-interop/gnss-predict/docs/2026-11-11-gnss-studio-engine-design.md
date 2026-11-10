@@ -154,7 +154,8 @@ def position_km(nav: Nav, prn: str, t_gpst: datetime) -> tuple[float, float, flo
 
 - `read_nav` เก็บทุกระบบไว้ตรวจว่ามี broadcast และค่า health แต่ `position_km` คำนวณเฉพาะ G, E, C
 - health ตาม RINEX 3.04: G, E, C อ่านช่องที่ 2 ของ BROADCAST ORBIT - 6 (G: SV health, E: SV health, C: SatH1) ส่วน R อ่านช่องที่ 4 ของ BROADCAST ORBIT - 1 (health, 0 = OK) ค่า ≠ 0 ถือว่า `healthy = False`
-- `position_km` เลือก ephemeris ที่ |tk| น้อยที่สุด ถ้า |tk| > `BRDC_MAX_TK_S` คืน `None` สูตรอยู่ในหัวข้อ 7.4
+- `position_km` เลือก ephemeris ที่ |tk| น้อยที่สุด โดย tk คิดจากเวลาสัมบูรณ์ (week × 604800 + toe) ไม่ห่อค่าเข้า ±302400 วินาที
+  ถ้า |tk| > `BRDC_MAX_TK_S` คืน `None` สูตรอยู่ในหัวข้อ 7.4
 
 ### 5.5 `catalog.py`
 
@@ -196,7 +197,9 @@ class EngineScenario:
 def load_scenario(path: Path) -> EngineScenario
 ```
 
-ตรวจ `format == "gnss-studio-scenario/1"`, `start < stop`, ช่วงไม่เกิน 7 วัน, `step_s` อยู่ใน 1–3600 และหาร 86400 ลงตัว, ละติจูดและลองจิจูดอยู่ในช่วง, ชื่อ object ไม่ซ้ำ
+ตรวจ `format == "gnss-studio-scenario/1"`, `start < stop`, ช่วงไม่เกิน 7 วัน, start และ stop เป็นวินาทีเต็มและ (stop − start) หารด้วย `step_s` ลงตัว,
+`step_s` อยู่ใน 1–3600 และหาร 86400 ลงตัว (ไม่มีช่อง `step_s` ใช้ 30), ละติจูดและลองจิจูดอยู่ในช่วง,
+ชื่อ object ตรง `^[A-Za-z0-9_-]{1,32}$` และไม่ซ้ำกันแบบไม่แยกตัวพิมพ์เล็กใหญ่, `orbit_snapshot` เป็นชื่อที่ปลอดภัยแบบเดียวกัน (ใช้เป็นชื่อโฟลเดอร์)
 ผิดข้อใดให้ raise `ScenarioError` ระบุ path ของช่อง เช่น `objects[0].position.lat_deg`
 
 ### 5.7 `propagate.py`
@@ -239,11 +242,12 @@ def access_czml(facility: Facility, intervals: dict[str, list[Interval]],
                 period: tuple[datetime, datetime]) -> list[dict]
 ```
 
-- packet แรกคือ `{"id": "document", "version": "1.0", "clock": {...}}` ช่วงเวลาตาม analysis period
+- packet แรกของ `scene.czml` คือ `{"id": "document", "version": "1.0", "clock": {...}}` ช่วงเวลาตาม analysis period
+- `access.czml` ขึ้นต้นด้วย packet document ของตัวเอง `{"id": "document", "version": "1.0"}` (ไม่มี clock) เพราะ CZML ทุกไฟล์ต้องขึ้นต้นด้วย document
 - ดาว: `id = "sat/<PRN>"`, `availability` = ช่วงวิเคราะห์, `position` แบบ `cartesian` (วินาทีจาก epoch, x, y, z เป็นเมตร), `referenceFrame: "FIXED"`, `interpolationAlgorithm: "LAGRANGE"`, `interpolationDegree: 7`
 - จุดตัวอย่างทุก `step_s` และใส่จุดเวลาจบเสมอ
 - Facility: `id = "fac/<name>"`, `position.cartographicDegrees`
-- เส้น access: `id = "access/<facility>/<PRN>"`, polyline อ้าง `fac/<name>#position` และ `sat/<PRN>#position`, `show` เป็นจริงเฉพาะช่วง access
+- เส้น access: `id = "access/<facility>/<PRN>"`, polyline อ้าง `fac/<name>#position` และ `sat/<PRN>#position`, `"arcType": "NONE"` (เส้นตรงจากสถานีถึงดาว ไม่โค้งตามผิวโลก), `show` เป็นจริงเฉพาะช่วง access
 - ไม่ใส่สี ขนาด หรือ label
 
 ### 5.10 `analyze.py`
@@ -277,11 +281,14 @@ class Dop:
     gdop: float; pdop: float; hdop: float; vdop: float; edop: float; ndop: float; tdop: float
 
 def dop(az_el_deg: list[tuple[float, float]]) -> Dop | None
-def dop_series(rows: list[AerRow], fac: Facility, flags: dict[str, frozenset[str]]) -> list[dict]
+def dop_series(rows: list[AerRow], fac: Facility, flags: dict[str, frozenset[str]],
+               times_utc: Iterable[datetime] | None = None) -> list[dict]
 ```
 
 - `dop` คืน `None` ถ้ามีดาวน้อยกว่า 4 ดวงหรือเมทริกซ์ไม่มีตัวผกผัน
 - `dop_series` คืนแถวต่อเวลาต่อ `system` ∈ {`ALL`, `G`, `R`, `E`, `C`} มี `n_visible` และค่า DOP (ว่างถ้าเป็น `None`)
+- แกนเวลาคือ `times_utc` (ถ้าให้) รวมกับเวลาของแถวใน `rows` ผู้เรียกส่ง `eph.times_utc` เพราะ `aer_rows` ตัดแถว El < 0
+  จุดเวลาที่ไม่มีดาวเหนือขอบฟ้าเลยจึงยังได้แถว (`n_visible` = 0, DOP ว่าง)
 - ดาวที่ใช้: El ≥ `min_el_deg` และไม่มีธง `too_old`, `no_broadcast`, `unhealthy`
 
 ### 5.12 `bundle.py`
@@ -326,7 +333,7 @@ def validate_ephemeris(pred_sp3: Path, truth_sp3: Path, nav: Nav | None, fac: Fa
 
 ### 5.15 CLI เดิม (`tle_fetch.py`)
 
-- `fetch_gps_tle` เปลี่ยนไปดึง `gps-ops` เป็น OMM ผ่าน `omm.fetch_group` แล้วแปลงเป็นไฟล์ `gps_<เวลา>.tle` แบบเดิม (บรรทัดชื่อคงชื่อจาก CelesTrak เพื่อให้ regex `(PRN nn)` เดิมใช้ได้) และเก็บ `gps_<เวลา>.omm.json` คู่กัน
+- `fetch_gps_tle` เปลี่ยนไปดึง `gps-ops` เป็น OMM ผ่าน `omm.fetch_group` แล้วแปลงเป็นไฟล์ `gps_<เวลา>.tle` แบบเดิม (บรรทัดชื่อคงชื่อจาก CelesTrak เพื่อให้ regex `(PRN nn)` เดิมใช้ได้) และเก็บ OMM ไว้คู่กันเป็น `gps-ops_<เวลา>.json` (ชื่อที่ `omm.fetch_group` เขียน)
 - `Spacecraft.Id` ของ CLI เดิมใช้ช่องหมายเลขแคตตาล็อก 5 ตัวอักษรของบรรทัด 1 (Alpha-5 เมื่อเกิน 99999)
 - คำสั่ง ตัวเลือก ชื่อไฟล์ และคอลัมน์ CSV ไม่เปลี่ยน
 
@@ -368,7 +375,8 @@ X = (N + h) cos φ cos λ, Y = (N + h) cos φ sin λ, Z = (N(1 − e²) + h) sin
 
 ### 7.4 ตำแหน่งจาก broadcast (G, E, C)
 
-- tk = t − toe ในเวลาของระบบ (BDT = GPST − 14 วินาที) ปรับให้อยู่ใน ±302400 วินาที
+- tk = t − (week × 604800 + toe) โดย t นับเป็นวินาทีจากจุดเริ่มสัปดาห์ที่ 0 ของเวลาระบบ (GPST สำหรับ G และ E, BDT = GPST − 14 วินาที สำหรับ C)
+  โดย week คือเลขสัปดาห์ใน record เดียวกับ toe ไม่ห่อค่าเข้า ±302400 วินาที เวลาที่ห่างจาก ephemeris เป็นสัปดาห์เต็มจึงไม่ถูกจับคู่ผิด
 - แก้สมการ Kepler ด้วยการวนซ้ำ 30 รอบ แล้วคำนวณ u, r, i ด้วยค่าแก้ Cuc, Cus, Crc, Crs, Cic, Cis และ IDOT
 - ดาวทั่วไป: Ω = Ω₀ + (Ω̇ − ωe) tk − ωe toe
 - BDS GEO (C01–C05, C59–C63): Ω = Ω₀ + Ω̇ tk − ωe toe คำนวณตำแหน่งในกรอบกลาง แล้วหมุนด้วย Rx(−5°) และ Rz(ωe tk)
