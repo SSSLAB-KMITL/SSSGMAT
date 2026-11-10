@@ -173,6 +173,8 @@ python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 
 - `validate` ที่ไม่ระบุ `--sp3` จะดาวน์โหลด SP3 ของวันนั้นจาก CDDIS ตามลำดับ `COD0MGXFIN`, `GFZ0MGXRAP`, `WUM0MGXRAP`
   ลงใน `<data>/truth/` ถ้ามีไฟล์ของวันนั้นใน `<data>/truth/` อยู่แล้วจะใช้ไฟล์นั้นโดยไม่ต่อเน็ต (ตัวแรกตามลำดับเดียวกัน)
   ไฟล์ SP3 ที่เสียหรือดาวน์โหลดไม่ครบได้ `TRUTH_UNREADABLE` ให้ลบไฟล์นั้นแล้วรันใหม่
+  broadcast ของวันที่ตรวจใช้ไฟล์ที่มีอยู่แล้วใน `brdc/` ของ snapshot หรือใน `<data>/orbits/_cache/` ก่อน
+  ถ้าไม่มีจึงดาวน์โหลดลง `<data>/orbits/_cache/`
   ผลที่ไม่ผ่านเกณฑ์ไม่ใช่ error ให้ดูช่อง `pass` ใน JSON
 - พิมพ์ path ของผลลัพธ์บรรทัดแรก ตามด้วย `<level>: <ข้อความ>` ของแต่ละคำเตือน
   exit code: `0` สำเร็จ, `1` ข้อผิดพลาดที่คาดไว้ (พิมพ์รหัสและข้อความลง stderr), `2` ใส่ตัวเลือกผิด
@@ -210,7 +212,8 @@ python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 
 ```
 data/
   orbits/
-    _cache/                       ไฟล์ที่ดาวน์โหลด (ชื่อมีเวลา), celestrak_state.json, brdc/ (broadcast ที่ validate ใช้)
+    _cache/                       ไฟล์ที่ดาวน์โหลด: OMM และ IGS metadata (ชื่อมีเวลา), broadcast BRDC00IGS_R_*.rnx.gz
+                                  ที่ fetch และ validate ใช้, celestrak_state.json (ใช้ร่วมกับ CLI เดิม)
     <YYYYMMDDTHHMMZ>/             snapshot หนึ่งชุด ใช้ร่วมกันทุก scenario
       gps-ops.json glo-ops.json galileo.json beidou.json      OMM JSON จาก CelesTrak
       igs_satellite_metadata.snx

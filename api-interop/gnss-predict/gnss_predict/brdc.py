@@ -59,9 +59,14 @@ class Nav:
     records: dict[str, list[NavRecord]]       # PRN -> record เรียงตามลำดับในไฟล์
 
 
+def brdc_file_name(day: date) -> str:
+    """ชื่อไฟล์ broadcast รายวันแบบ mixed ของ IGS สำหรับวันนั้น"""
+    return f"BRDC00IGS_R_{day.year}{day.timetuple().tm_yday:03d}0000_01D_MN.rnx.gz"
+
+
 def fetch_brdc(day: date, dest_dir: Path) -> Path:
-    """ดาวน์โหลด broadcast รายวันแบบ mixed ของวันนั้นจาก CDDIS ผ่าน FTPS แบบ anonymous"""
-    name = f"BRDC00IGS_R_{day.year}{day.timetuple().tm_yday:03d}0000_01D_MN.rnx.gz"
+    """ดาวน์โหลด broadcast รายวันแบบ mixed ของวันนั้นจาก CDDIS ผ่าน FTPS แบบ anonymous (มีใน dest_dir แล้วคืนทันที)"""
+    name = brdc_file_name(day)
     url = CDDIS_BRDC_URL.format(year=day.year)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)

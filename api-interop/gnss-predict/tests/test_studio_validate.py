@@ -403,7 +403,8 @@ class TestRunValidate(RunValidateCase):
                           "validation_2026-11-10.md"])
         self.assertEqual([m.code for m in msgs if m.code == "BRDC_UNAVAILABLE"], ["BRDC_UNAVAILABLE"])
         self.assertEqual(next(m for m in msgs if m.code == "BRDC_UNAVAILABLE").level, "warning")
-        self.mocks["fetch_brdc"].assert_called_once_with(date(2026, 11, 10), self.data / "orbits" / "_cache" / "brdc")
+        # snapshot มี broadcast ของ 2026-11-09 เท่านั้น จึงต้องดึงของ 2026-11-10 ลง cache เดียวกับ fetch
+        self.mocks["fetch_brdc"].assert_called_once_with(date(2026, 11, 10), self.data / "orbits" / "_cache")
 
         doc = json.loads((ephem / "validation_2026-11-10.json").read_bytes().decode("utf-8"))
         self.assertEqual((doc["day"], doc["scenario"], doc["ephem_hash"], doc["facility"], doc["truth_file"]),
@@ -485,6 +486,25 @@ class TestRunValidate(RunValidateCase):
         self.assertEqual(sats["C01"]["truth"], "brdc")                      # C01 อยู่ใน nav fixture แต่ไม่อยู่ใน SP3
         self.assertGreater(sats["C01"]["pairs"], 0)
         self.assertEqual(sats["R05"]["truth"], "unverified")                # GLONASS ไม่ใช้ broadcast
+
+    def test_broadcast_already_on_disk_is_used_without_fetch(self):
+        # broadcast ของวันที่ตรวจที่มีอยู่แล้วใน brdc/ ของ snapshot หรือใน orbits/_cache/ ใช้ได้เลยโดยไม่ดึงใหม่
+        name = "BRDC00IGS_R_20263140000_01D_MN.rnx.gz"                       # 2026-11-10 = DOY 314
+        self.mocks["fetch_brdc"].side_effect = AssertionError("ไม่ควรดึง broadcast ใหม่")
+        for folder in (self.data / "orbits" / SNAPSHOT_NAME / "brdc", self.data / "orbits" / "_cache"):
+            with self.subTest(folder=folder.name):
+                shutil.rmtree(self.sc / "ephem", ignore_errors=True)
+                folder.mkdir(parents=True, exist_ok=True)
+                (folder / name).write_bytes(gzip.compress(NAV_FILE.read_bytes()))
+                try:
+                    ephem, msgs = self.run_it()
+                finally:
+                    (folder / name).unlink()
+                self.assertNotIn("BRDC_UNAVAILABLE", [m.code for m in msgs])
+                sats = json.loads((ephem / "validation_2026-11-10.json").read_bytes())["satellites"]
+                self.assertEqual(sats["C01"]["truth"], "brdc")
+                self.assertGreater(sats["C01"]["pairs"], 0)
+        self.mocks["fetch_brdc"].assert_not_called()
 
     def test_unreadable_broadcast_is_a_warning(self):
         bad = self.data / "bad.rnx"

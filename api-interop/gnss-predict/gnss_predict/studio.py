@@ -34,7 +34,7 @@ from urllib.request import urlopen
 
 from . import brdc
 from .analyze import AerRow, Interval, access_intervals, aer_rows, global_statistics, legacy_rows
-from .brdc import Nav, fetch_brdc, read_nav
+from .brdc import Nav, brdc_file_name, fetch_brdc, read_nav
 from .bundle import build_manifest, file_sha256, input_hash, write_bundle
 from .catalog import BRDC_DIR, IGS_METADATA_FILE, Catalog, CatalogSatellite, broadcast_file, build_catalog, is_shown
 from .config import BRDC_DAYS_BACK, CELESTRAK_STATE_FILE, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
@@ -450,11 +450,19 @@ def _write_atomic(path: Path, data: bytes) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def _validate_nav(day: date, data_dir: Path) -> tuple[Nav | None, list[Message]]:
-    """broadcast ของวัน day สำหรับดาว G/E/C ที่ไม่มีใน SP3 จริง ดึงหรืออ่านไม่ได้: ไม่มี nav พร้อม BRDC_UNAVAILABLE"""
-    cache = Path(data_dir) / ORBITS_DIR / CACHE_DIR / BRDC_DIR
+def _validate_nav(day: date, data_dir: Path, snapshot_dir: Path) -> tuple[Nav | None, list[Message]]:
+    """broadcast ของวัน day สำหรับดาว G/E/C ที่ไม่มีใน SP3 จริง
+
+    ใช้ไฟล์ของวันนั้นที่มีอยู่แล้วใน `<snapshot>/brdc/` หรือ `<data>/orbits/_cache/` (cache เดียวกับที่ fetch ใช้)
+    ก่อน ถ้าไม่มีจึงดึงลง `<data>/orbits/_cache/` ดึงหรืออ่านไม่ได้: ไม่มี nav พร้อม BRDC_UNAVAILABLE
+    """
+    cache = Path(data_dir) / ORBITS_DIR / CACHE_DIR
+    gz = brdc_file_name(day)
+    candidates = [folder / name for folder in (Path(snapshot_dir) / BRDC_DIR, cache)
+                  for name in (gz, gz.removesuffix(".gz"))]
+    local = next((p for p in candidates if p.is_file()), None)
     try:
-        return read_nav(fetch_brdc(day, cache)), []
+        return read_nav(local if local is not None else fetch_brdc(day, cache)), []
     except (BrdcUnavailableError, OSError) as exc:      # OSError: เรียก curl ไม่ได้
         return None, [Message("BRDC_UNAVAILABLE", "warning",
                               f"ไม่มีไฟล์ broadcast ของวันที่ {day.isoformat()} ({exc}) "
@@ -515,7 +523,7 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     report("truth", 0.6)
     truth = _validate_truth(day, data_dir, sp3)
     report("brdc", 0.7)
-    nav, validate_messages = _validate_nav(day, data_dir)
+    nav, validate_messages = _validate_nav(day, data_dir, Path(data_dir) / ORBITS_DIR / sc.orbit_snapshot)
     report("compare", 0.8)
     manifest = _read_manifest(ephem_dir)
     ages = {s["prn"]: s.get("age_days") for s in manifest.data["satellites"]}
