@@ -4,7 +4,8 @@
 state file เก็บ {"<group>": {"last_request": "<ISO Z>", "last_success": "<ISO Z>"}}
 - last_request บันทึกทุกครั้งที่ได้คำตอบจาก server (ทุก HTTP status รวม 200 ที่เนื้อหาใช้ไม่ได้)
 - last_success บันทึกเมื่อได้ OMM ที่ใช้ได้และเขียน cache แล้ว
-- error ที่ต่อ server ไม่ได้เลย (URLError, timeout) ไม่บันทึก เพราะ server ไม่ได้รับ request
+- error ที่ต่อ server ไม่ได้เลย (URLError: DNS, connect รวมถึง connect timeout) ไม่บันทึก เพราะ server ไม่ได้รับ request
+  ส่วน error หลังส่ง request ไปแล้ว (timeout หรือ connection reset ตอนรอคำตอบหรืออ่าน body) บันทึกเหมือนได้คำตอบ
 """
 
 import json
@@ -14,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPException
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S
@@ -182,7 +183,9 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
 
     คืน (ไฟล์ล่าสุดของกลุ่ม, ข้อความ) ไฟล์ล่าสุดคือชื่อที่เรียงแล้วมากที่สุดของ <group>_*.json
     - ส่ง request ไปไม่ถึง CELESTRAK_MIN_INTERVAL_S จาก last_request: ไม่ส่ง ใช้ไฟล์เดิม + ORBIT_RATE_LIMITED_LOCAL (info)
-    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM) หรือต่อเน็ตไม่ได้: ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning)
+    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM, timeout หรืออ่านไม่จบหลังส่ง request) หรือต่อเน็ตไม่ได้:
+      ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning) บันทึก last_request ทุกกรณี ยกเว้นที่ server ไม่ได้รับ
+      request เลย (URLError: DNS, connect รวมถึง connect timeout)
     - ไม่มีไฟล์ให้ใช้: OrbitUnavailableError
     url: ใช้แทน URL ของ CelesTrak (เช่น file:// ใน CLI เดิมและ test)
     """
@@ -214,9 +217,11 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
         reason = f"อ่านคำตอบไม่จบ: {exc}"
     except ValueError as exc:              # เนื้อหาไม่ใช่ JSON ของ OMM (UnicodeDecodeError และ JSONDecodeError เป็น ValueError)
         reason = f"คำตอบไม่ใช่ OMM: {exc}"
-    except OSError as exc:                 # URLError, timeout, ต่อไม่ได้
+    except URLError as exc:                # DNS, connect (รวม connect timeout): urlopen ห่อเฉพาะความล้มเหลวก่อนส่ง request
         reason = str(exc)
         server_replied = False
+    except OSError as exc:                 # timeout, connection reset ตอนรอคำตอบหรืออ่าน body: server ได้รับ request แล้ว
+        reason = str(exc) or type(exc).__name__
     else:
         path = dest_dir / f"{group}_{now.astimezone(_UTC):%Y%m%dT%H%MZ}.json"
         _write_atomic(path, data)

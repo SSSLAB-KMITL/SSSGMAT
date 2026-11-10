@@ -24,11 +24,20 @@ def tle_pairs(path: Path):
     return [(l, lines[i + 1]) for i, l in enumerate(lines[:-1]) if l.startswith("1 ") and lines[i + 1].startswith("2 ")]
 
 
+class ReadFails:
+    """ตัวแทน body ที่ resp.read() จะ raise (เช่น timeout ระหว่างอ่าน)"""
+
+    def __init__(self, exc: Exception):
+        self.exc = exc
+
+
 class _Resp:
-    def __init__(self, body: bytes):
+    def __init__(self, body):
         self._body = body
 
     def read(self):
+        if isinstance(self._body, ReadFails):
+            raise self._body.exc
         return self._body
 
     def __enter__(self):
@@ -246,6 +255,45 @@ class TestFetch(unittest.TestCase):
         self.assertEqual(self.state_of()["last_request"], "2026-11-11T06:00:00Z")   # ต่อ server ไม่ได้ ไม่บันทึกเวลา request
         self.fetch(op, now=later + timedelta(seconds=60))                           # จึงลองใหม่ได้
         self.assertEqual(len(op.calls), 3)
+
+    def test_fetch_failure_after_request_sent_is_recorded(self):
+        # urlopen ห่อเฉพาะความล้มเหลวก่อนส่ง request ใน URLError: timeout/reset ตอนรอคำตอบหรืออ่าน body ออกมาเป็น OSError ตรง ๆ
+        # server ได้รับ request แล้ว จึงต้องบันทึก last_request เพื่อไม่ให้เกิน 1 ครั้งต่อ 2 ชม.
+        later = T0 + timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
+        failures = {"opener raises TimeoutError": TimeoutError(),
+                    "read raises TimeoutError": ReadFails(TimeoutError("timed out")),
+                    "opener raises ConnectionResetError": ConnectionResetError(104, "Connection reset by peer")}
+        for label, failure in failures.items():
+            with self.subTest(label):
+                self.setUp()
+                op = FakeOpener(self.body, failure)
+                first, _ = self.fetch(op)
+                path, msgs = self.fetch(op, now=later)
+                self.assertEqual((path, msgs[0].code, msgs[0].level), (first, "ORBIT_DOWNLOAD_FAILED", "warning"))
+                self.assertTrue(msgs[0].text.strip())
+                self.assertEqual(self.state_of(), {"last_request": "2026-11-11T08:00:00Z",
+                                                   "last_success": "2026-11-11T06:00:00Z"})
+                self.assertEqual(len(list(self.dest.iterdir())), 1)
+                path2, msgs2 = self.fetch(op, now=later + timedelta(seconds=60))   # ต้องไม่ส่งซ้ำใน 2 ชม.
+                self.assertEqual((len(op.calls), path2, msgs2[0].code), (2, first, "ORBIT_RATE_LIMITED_LOCAL"))
+
+    def test_fetch_timeout_without_cache_raises_and_records_request(self):
+        for label, failure in {"opener": TimeoutError(), "read": ReadFails(TimeoutError())}.items():
+            with self.subTest(label):
+                self.setUp()
+                op = FakeOpener(failure)
+                with self.assertRaises(OrbitUnavailableError):
+                    self.fetch(op)
+                self.assertEqual(self.state_of(), {"last_request": "2026-11-11T06:00:00Z"})
+                with self.assertRaises(OrbitUnavailableError):
+                    self.fetch(op, now=T0 + timedelta(seconds=60))
+                self.assertEqual(len(op.calls), 1)
+
+    def test_fetch_connect_timeout_wrapped_in_urlerror_is_not_recorded(self):
+        op = FakeOpener(URLError(TimeoutError("timed out")))
+        with self.assertRaises(OrbitUnavailableError):
+            self.fetch(op)
+        self.assertFalse(self.state.exists())
 
     def test_fetch_no_cache_raises(self):
         op = FakeOpener(URLError("ต่อไม่ได้"))
