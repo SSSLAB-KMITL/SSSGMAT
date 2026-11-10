@@ -49,6 +49,7 @@ CDDIS_BRDC_URL = "ftp://gdc.cddis.eosdis.nasa.gov/gnss/data/daily/{year}/brdc/"
 MGX_SP3_PREFERENCE = ("COD0MGXFIN", "GFZ0MGXRAP", "WUM0MGXRAP")
 
 AGE_OK_DAYS = 2.0                     # วัดแล้ว: ภายในเกณฑ์นี้ความแม่นยำผ่านเกณฑ์
+VALIDATION_MIN_SAT_PAIRS = 20         # validate: รายดวงที่มีคู่น้อยกว่านี้ไม่ตัดสิน (insufficient_data)
 AGE_SHOWN_MAX_DAYS = 7.0              # ค่าที่ตั้ง ยังไม่ได้วัด
 BRDC_MAX_TK_S = 14400                 # ใช้ ephemeris ที่ |tk| ≤ 4 ชม.
 BRDC_DAYS_BACK = (1, 2)               # fetch: ไฟล์ broadcast รายวันที่ครบวันล่าสุด ลองของเมื่อวาน (UTC) แล้วของสองวันก่อน

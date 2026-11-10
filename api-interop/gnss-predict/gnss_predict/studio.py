@@ -1,14 +1,17 @@
-"""GNSS Studio engine: ดึงข้อมูลวงโคจร, propagate และ analyze (หัวข้อ 5.13 ของ spec engine)
+"""GNSS Studio engine: ดึงข้อมูลวงโคจร, propagate, analyze และ validate (หัวข้อ 5.13 ของ spec engine)
 
     python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC]
     python3 -m gnss_predict.studio propagate --scenario DIR [--data DIR]
     python3 -m gnss_predict.studio analyze   --scenario DIR --facility NAME [--data DIR]
+    python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 FILE] [--facility NAME] [--data DIR]
 
-- ทุกคำสั่งเป็นฟังก์ชันที่ server เรียกได้ตรง (`fetch_snapshot`, `run_propagate`, `run_analyze`) CLI แค่แปลง argument
+- ทุกคำสั่งเป็นฟังก์ชันที่ server เรียกได้ตรง (`fetch_snapshot`, `run_propagate`, `run_analyze`, `run_validate`)
+  CLI แค่แปลง argument
 - โครงสร้างบนดิสก์ตามหัวข้อ 7.1 ของ spec ภาพรวม: `<data>/orbits/<YYYYMMDDTHHMMZ>/` (cache ดาวน์โหลดอยู่ที่
   `<data>/orbits/_cache/`), `<scenario>/ephem/<hash>/` และ `<scenario>/access/<facility>/<hash>/`
 - โฟลเดอร์ผลลัพธ์เขียนครั้งเดียวด้วย `write_bundle` ถ้ามีโฟลเดอร์ของ hash เดียวกันอยู่แล้วคืนโฟลเดอร์นั้นทันที (ผลเดิม)
-  และคืนข้อความที่บันทึกไว้ใน manifest.json ของผลนั้น
+  และคืนข้อความที่บันทึกไว้ใน manifest.json ของผลนั้น (validate ไม่สร้างโฟลเดอร์ใหม่: เขียน validation_<วัน>.json/.md
+  เพิ่มในโฟลเดอร์ ephem แบบ atomic ทีละไฟล์ แทนที่ไฟล์ของวันเดียวกันที่มีอยู่)
 - `progress(stage, fraction)`: stage เป็นชื่อขั้นภาษาอังกฤษ fraction 0–1 ของทั้งฟังก์ชัน
   เรียกด้วย 0.0 ตอนเริ่มและ 1.0 ตอนจบ (ไม่เรียก 1.0 ถ้าจบด้วย exception)
 - CLI พิมพ์ path ผลลัพธ์บรรทัดแรกตามด้วย `<level>: <text>` ของแต่ละ Message ลง stdout
@@ -20,6 +23,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import sys
 import tempfile
 from collections.abc import Callable
@@ -30,20 +34,22 @@ from urllib.request import urlopen
 
 from . import brdc
 from .analyze import AerRow, Interval, access_intervals, aer_rows, global_statistics, legacy_rows
+from .brdc import Nav, fetch_brdc, read_nav
 from .bundle import build_manifest, file_sha256, input_hash, write_bundle
 from .catalog import BRDC_DIR, IGS_METADATA_FILE, Catalog, CatalogSatellite, broadcast_file, build_catalog, is_shown
 from .config import BRDC_DAYS_BACK, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
 from .czml import access_czml, satellites_czml
 from .dop import dop_series
 from .errors import (BrdcUnavailableError, GnssPredictError, Message, NoSatellitesError, OrbitUnavailableError,
-                     ScenarioError)
+                     ScenarioError, Sp3UnavailableError)
 from .igs_meta import fetch_metadata
 from .omm import fetch_group
 from .predict import HEADER as LEGACY_HEADER
 from .propagate import ephemeris_from_sp3, propagate
 from .run_gmat import find_gmat_console, gmat_version
 from .scenario import EngineScenario, Facility, load_scenario
-from .sp3 import write_sp3
+from .sp3 import fetch_mgx_sp3, write_sp3
+from .studio_validate import validate_ephemeris, validation_markdown
 
 Progress = Callable[[str, float], None]
 
@@ -59,6 +65,9 @@ ACCESS_DIR = "access"
 MANIFEST = "manifest.json"
 PREDICTED_SP3 = "predicted.sp3"
 SCENE_CZML = "scene.czml"
+TRUTH_DIR = "truth"
+VALIDATION_DIR = "validation"
+HISTORY_FILE = "history.jsonl"
 
 AER_HEADER = ["time_utc", "prn", "az_deg", "el_deg", "range_km", "ipp_lat_deg", "ipp_lon_deg", "mf"]
 DOP_HEADER = ["time_utc", "system", "n_visible", "gdop", "pdop", "hdop", "vdop", "edop", "ndop", "tdop"]
@@ -430,6 +439,95 @@ def run_analyze(scenario_dir: Path, facility: str, data_dir: Path = DATA_DIR, co
     return out, messages + access_messages
 
 
+# ---------- validate ----------
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """เขียนไฟล์ข้างปลายทางแล้ว os.replace (ผู้อ่านเห็นไฟล์เก่าหรือไฟล์ใหม่ครบ ไม่เห็นไฟล์ที่เขียนค้าง)"""
+    tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _validate_nav(day: date, data_dir: Path) -> tuple[Nav | None, list[Message]]:
+    """broadcast ของวัน day สำหรับดาว G/E/C ที่ไม่มีใน SP3 จริง ดึงหรืออ่านไม่ได้: ไม่มี nav พร้อม BRDC_UNAVAILABLE"""
+    cache = Path(data_dir) / ORBITS_DIR / CACHE_DIR / BRDC_DIR
+    try:
+        return read_nav(fetch_brdc(day, cache)), []
+    except (BrdcUnavailableError, OSError) as exc:      # OSError: เรียก curl ไม่ได้
+        return None, [Message("BRDC_UNAVAILABLE", "warning",
+                              f"ไม่มีไฟล์ broadcast ของวันที่ {day.isoformat()} ({exc}) "
+                              "ดาว GPS, Galileo และ BeiDou ที่ไม่มีใน SP3 จริงจึงตรวจไม่ได้")]
+
+
+def _validate_truth(day: date, data_dir: Path, sp3: Path | None) -> Path:
+    if sp3 is not None:
+        if not Path(sp3).is_file():
+            raise Sp3UnavailableError(f"ไม่พบไฟล์ SP3 {sp3}")
+        return Path(sp3)
+    try:
+        return fetch_mgx_sp3(day, Path(data_dir) / TRUTH_DIR)
+    except OSError as exc:                               # เรียก curl ไม่ได้
+        raise Sp3UnavailableError(f"ดาวน์โหลด SP3 ของวันที่ {day.isoformat()} ไม่ได้ ({exc}) "
+                                  "ดาวน์โหลด SP3 เองแล้วใช้ --sp3") from exc
+
+
+def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: Path | None = None,
+                 facility: str | None = None, console: Path | None = None,
+                 progress: Progress | None = None) -> tuple[Path, list[Message]]:
+    """เทียบ predicted.sp3 ของวัน day กับ SP3 MGEX จริง (ดึงเองถ้าไม่ระบุ sp3) แล้วเขียน
+    `validation_<day>.json` และ `.md` ลงโฟลเดอร์ ephem และต่อท้าย `<data_dir>/validation/history.jsonl` หนึ่งบรรทัด
+
+    คืนโฟลเดอร์ ephem กับข้อความของ propagate (ถ้ามีผลเดิมใช้ทันทีเหมือน run_analyze) ต่อด้วยข้อความของ validate
+    facility เป็นจุดที่วัด Az/El ค่าตั้งต้นคือ Facility แรกใน scenario ดวงที่ไม่มีใน SP3 ใช้ broadcast ของวันนั้นแทน
+    ผลที่ไม่ผ่านเกณฑ์ไม่ใช่ error: ดูได้จากช่อง pass ของ JSON
+    """
+    report = _reporter(progress)
+    report("scenario", 0.0)
+    scenario_dir = Path(scenario_dir)
+    sc = _load(scenario_dir)
+    if facility is not None:
+        fac = _find_facility(sc, facility)
+    elif sc.facilities:
+        fac = sc.facilities[0]
+    else:
+        raise ScenarioError("scenario.json ไม่มี Facility ให้เป็นจุดวัด Az/El ของการตรวจ", "objects")
+    day_start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+    if not (sc.start < day_start + timedelta(days=1) and sc.stop >= day_start):        # ตรวจก่อนดาวน์โหลดอะไร
+        raise ScenarioError(f"ช่วงวิเคราะห์ของ scenario ({_iso_s(sc.start)} ถึง {_iso_s(sc.stop)}) "
+                            f"ไม่ครอบคลุมวันที่ {day.isoformat()}", "analysis_period")
+
+    ephem_dir, messages = run_propagate(scenario_dir, data_dir, console,
+                                        progress=lambda stage, f: report(f"propagate.{stage}", 0.6 * f))
+    report("truth", 0.6)
+    truth = _validate_truth(day, data_dir, sp3)
+    report("brdc", 0.7)
+    nav, validate_messages = _validate_nav(day, data_dir)
+    report("compare", 0.8)
+    manifest = _read_manifest(ephem_dir)
+    ages = {s["prn"]: s.get("age_days") for s in manifest.data["satellites"]}
+    result = validate_ephemeris(ephem_dir / PREDICTED_SP3, truth, nav, fac, manifest.flags, ages, day)
+
+    report("write", 0.9)
+    created = _iso_s(datetime.now(timezone.utc))
+    document = {**result, "scenario": sc.name, "ephem_hash": ephem_dir.name, "facility": fac.name,
+                "created_utc": created, "messages": [m.to_dict() for m in validate_messages]}
+    _write_atomic(ephem_dir / f"validation_{day.isoformat()}.json", _json_bytes(document))
+    _write_atomic(ephem_dir / f"validation_{day.isoformat()}.md",
+                  validation_markdown(result, scenario=sc.name, ephem_hash=ephem_dir.name,
+                                      facility=fac.name).encode("utf-8"))
+    history = Path(data_dir) / VALIDATION_DIR / HISTORY_FILE
+    history.parent.mkdir(parents=True, exist_ok=True)
+    record = {key: document[key] for key in ("day", "scenario", "ephem_hash", "truth_file", "pass", "systems",
+                                             "failing", "created_utc")}
+    with open(history, "ab") as f:
+        f.write(_json_bytes(record, compact=True))
+    report("done", 1.0)
+    return ephem_dir, messages + validate_messages
+
+
 # ---------- CLI ----------
 
 def _systems_arg(text: str) -> str:
@@ -438,6 +536,16 @@ def _systems_arg(text: str) -> str:
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from None
     return text.upper()
+
+
+def _day_arg(text: str) -> date:
+    try:
+        day = date.fromisoformat(text)
+        if day.isoformat() != text:                      # Python 3.11+ รับ YYYYMMDD ด้วย
+            raise ValueError(text)
+        return day
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD ได้ {text!r}") from None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -461,6 +569,14 @@ def _parser() -> argparse.ArgumentParser:
     analyze.add_argument("--scenario", type=Path, required=True, help=scenario_help)
     analyze.add_argument("--facility", required=True, help="ชื่อ Facility ใน scenario")
     analyze.add_argument("--data", type=Path, default=DATA_DIR, help=data_help)
+
+    validate = sub.add_parser("validate", help="เทียบ predicted.sp3 ของวันที่ระบุกับ SP3 MGEX จริง "
+                                               "ได้ validation_<วัน>.json/.md ใน ephem/<hash>/")
+    validate.add_argument("--scenario", type=Path, required=True, help=scenario_help)
+    validate.add_argument("--day", type=_day_arg, required=True, help="วันที่ตรวจ (UTC) รูปแบบ YYYY-MM-DD")
+    validate.add_argument("--sp3", type=Path, help="ใช้ไฟล์ SP3 นี้แทนการดาวน์โหลด SP3 MGEX ของวันนั้น")
+    validate.add_argument("--facility", help="ชื่อ Facility ที่วัด Az/El (ค่าเริ่มต้น: Facility แรกใน scenario)")
+    validate.add_argument("--data", type=Path, default=DATA_DIR, help=data_help)
     return p
 
 
@@ -475,8 +591,11 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> int:
             path, messages = fetch_snapshot(data_dir, now or datetime.now(timezone.utc), systems=args.systems)
         elif args.command == "propagate":
             path, messages = run_propagate(args.scenario.resolve(), data_dir)
-        else:
+        elif args.command == "analyze":
             path, messages = run_analyze(args.scenario.resolve(), args.facility, data_dir)
+        else:
+            path, messages = run_validate(args.scenario.resolve(), args.day, data_dir,
+                                          args.sp3.resolve() if args.sp3 else None, args.facility)
     except GnssPredictError as exc:
         print(f"error: {getattr(exc, 'code', type(exc).__name__)}: {exc}", file=sys.stderr)
         return 1
