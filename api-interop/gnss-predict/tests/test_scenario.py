@@ -221,6 +221,32 @@ class TestErrors(ScenarioTestCase):
         self.assertInvalid(merge(valid(), {"analysis_period": {"start": START, "stop": "2026-11-19T00:00:01Z"}}),
                            "analysis_period")
 
+    def test_period_must_be_whole_seconds(self):
+        # ตารางเวลามีทั้งต้นและปลาย จึงต้องเป็นวินาทีเต็ม
+        for period in ({"start": "2026-11-12T00:00:00.500Z", "stop": STOP},
+                       {"start": START, "stop": "2026-11-13T00:00:00.250Z"},
+                       {"start": "2026-11-12T00:00:00.000001Z", "stop": "2026-11-13T00:00:00.000001Z"}):
+            with self.subTest(period=period):
+                self.assertInvalid(merge(valid(), {"analysis_period": period}), "analysis_period")
+
+    def test_period_must_be_a_multiple_of_step(self):
+        for stop, step in (("2026-11-12T00:00:50Z", 30), ("2026-11-12T00:30:00Z", 3600),
+                           ("2026-11-12T00:00:01Z", 60), ("2026-11-13T00:00:07Z", 30)):
+            with self.subTest(stop=stop, step=step):
+                e = self.assertInvalid(
+                    merge(valid(), {"analysis_period": {"start": START, "stop": stop}, "step_s": step}),
+                    "analysis_period")
+                self.assertTrue(any("฀" <= ch <= "๿" for ch in str(e)))
+
+    def test_period_that_is_a_multiple_of_step_is_accepted(self):
+        for stop, step in (("2026-11-12T00:01:00Z", 30), ("2026-11-12T00:00:30Z", 30),
+                           ("2026-11-12T01:00:00Z", 3600), ("2026-11-12T00:00:07Z", 1),
+                           ("2026-11-12T00:15:00.000Z", 300)):       # .000 ถือเป็นวินาทีเต็ม
+            with self.subTest(stop=stop, step=step):
+                s = load_scenario(self.write(
+                    merge(valid(), {"analysis_period": {"start": START, "stop": stop}, "step_s": step})))
+                self.assertEqual((s.stop - s.start).total_seconds() % s.step_s, 0)
+
     def test_bad_times(self):
         bad = {"start": "not a time", "stop": STOP}
         self.assertInvalid(merge(valid(), {"analysis_period": bad}), "analysis_period.start")

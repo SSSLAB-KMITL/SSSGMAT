@@ -8,6 +8,8 @@
   ถ้าไม่มีช่อง `step_s` เลย ส่วนที่มีแต่ผิด (รวม null) ยัง error
 - ชื่อ object ต้องตรง `^[A-Za-z0-9_-]{1,32}$` (D6) เพราะใช้เป็นชื่อโฟลเดอร์และ id ของ CZML และต้องไม่ซ้ำกัน
   โดยไม่แยกตัวพิมพ์เล็กใหญ่ (macOS แยกโฟลเดอร์ THBK กับ thbk ไม่ได้) นับทุก class รวม Constellation
+- ตารางเวลาของ engine คือ start + k·step_s ทุก k จนถึง stop (รวมทั้งสองปลาย) จึงต้อง start/stop เป็นวินาทีเต็ม
+  และ (stop − start) หารด้วย step_s ลงตัว ผิดข้อใดให้ error ที่ field `analysis_period`
 - เฉพาะ class Facility และ Satellite ที่ส่งต่อให้ engine ตามลำดับใน `objects`
 """
 
@@ -181,12 +183,17 @@ def load_scenario(path: Path) -> EngineScenario:
         raise _fail("analysis_period", "เวลาเริ่มต้องอยู่ก่อนเวลาจบ")
     if stop - start > MAX_PERIOD:
         raise _fail("analysis_period", "ช่วงวิเคราะห์ต้องไม่เกิน 7 วัน")
+    if start.microsecond or stop.microsecond:       # ตารางเวลา start + k·step_s รวมทั้งต้นและปลาย ต้องเป็นวินาทีเต็ม
+        raise _fail("analysis_period", "เวลาเริ่มและเวลาจบต้องเป็นวินาทีเต็ม (ไม่มีเศษวินาที)")
 
     step_s = data["step_s"] if "step_s" in data else STEP_S      # spec 7.3: ตั้งต้น 30 วินาที
     if isinstance(step_s, bool) or not isinstance(step_s, int):
         raise _fail("step_s", "ต้องเป็นจำนวนเต็มวินาที")
     if not 1 <= step_s <= MAX_STEP_S or SECONDS_PER_DAY % step_s:
         raise _fail("step_s", "ต้องอยู่ระหว่าง 1 ถึง 3600 และหาร 86400 ลงตัว")
+    if (stop - start).total_seconds() % step_s:
+        raise _fail("analysis_period", f"ความยาวช่วงวิเคราะห์ต้องหารด้วย step_s ({step_s} วินาที) ลงตัว "
+                                       "เพื่อให้เวลาจบตรงกับจุดในตารางเวลาพอดี")
 
     snapshot = data.get("orbit_snapshot")
     if not isinstance(snapshot, str) or not _SAFE_NAME.fullmatch(snapshot):
