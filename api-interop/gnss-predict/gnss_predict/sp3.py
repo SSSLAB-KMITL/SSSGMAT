@@ -222,19 +222,25 @@ def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW)
     return _lagrange(xs, [series[w] for w in window], (t - t0).total_seconds())
 
 
+def _mgx_sp3_names(day: date) -> list[str]:
+    """ชื่อไฟล์ SP3 MGEX ของวันนั้นตามลำดับ MGX_SP3_PREFERENCE"""
+    doy = day.timetuple().tm_yday
+    return [f"{prefix}_{day.year}{doy:03d}0000_01D_05M_ORB.SP3.gz" for prefix in MGX_SP3_PREFERENCE]
+
+
 def choose_mgx_sp3_name(listing: list[str], day: date) -> str | None:
     """เลือก SP3 MGEX ของวันนั้นตามลำดับ MGX_SP3_PREFERENCE ตัวแรกที่มีในรายการ"""
-    doy = day.timetuple().tm_yday
     names = set(listing)
-    for prefix in MGX_SP3_PREFERENCE:
-        name = f"{prefix}_{day.year}{doy:03d}0000_01D_05M_ORB.SP3.gz"
-        if name in names:
-            return name
-    return None
+    return next((name for name in _mgx_sp3_names(day) if name in names), None)
 
 
 def fetch_mgx_sp3(day: date, cache_dir: Path) -> Path:
-    """ดาวน์โหลด SP3 MGEX ของวันนั้นจาก CDDIS ผ่าน FTPS แบบ anonymous (list ไดเรกทอรีก่อนเสมอ)"""
+    """SP3 MGEX ของวันนั้น: ถ้ามีใน cache_dir แล้วคืนไฟล์นั้นทันทีโดยไม่ใช้เน็ต (ตัวแรกตามลำดับ MGX_SP3_PREFERENCE)
+    ไม่งั้น list ไดเรกทอรีของ CDDIS ผ่าน FTPS แบบ anonymous แล้วดาวน์โหลดตัวแรกตามลำดับที่มี"""
+    cache_dir = Path(cache_dir)
+    cached = next((cache_dir / name for name in _mgx_sp3_names(day) if (cache_dir / name).is_file()), None)
+    if cached is not None:
+        return cached
     url = f"{CDDIS_PRODUCTS_URL}/{gps_week(day)}/"      # ไฟล์ MGEX อยู่ในไดเรกทอรีเดียวกับ IGS ไม่ใช่ mgex/
     listing = subprocess.run(_CURL + ["--list-only", url], capture_output=True, text=True)
     if listing.returncode != 0:
@@ -243,7 +249,6 @@ def fetch_mgx_sp3(day: date, cache_dir: Path) -> Path:
     if name is None:
         raise Sp3UnavailableError(
             f"ยังไม่มี SP3 MGEX ({', '.join(MGX_SP3_PREFERENCE)}) ของวันที่ {day} ใน {url}")
-    cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     dst = cache_dir / name
     if dst.exists():

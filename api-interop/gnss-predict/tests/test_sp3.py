@@ -1,14 +1,16 @@
 import gzip
 import math
+import subprocess
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
-from gnss_predict.errors import Sp3FormatError
+from gnss_predict.errors import Sp3FormatError, Sp3UnavailableError
 from gnss_predict.sp3 import (
-    Sp3Orbit, choose_mgx_sp3_name, choose_sp3_name, gps_week, interpolate, lagrange_at, prns_with_data,
-    read_sp3, read_sp3_all, write_sp3,
+    Sp3Orbit, choose_mgx_sp3_name, choose_sp3_name, fetch_mgx_sp3, gps_week, interpolate, lagrange_at,
+    prns_with_data, read_sp3, read_sp3_all, write_sp3,
 )
 
 FX = Path(__file__).parent / "fixtures"
@@ -345,6 +347,36 @@ class TestMgxName(unittest.TestCase):
                  "IGS0OPSFIN_20262910000_01D_15M_ORB.SP3.gz", "WUM0MGXRAP_20262910000_01D_05M_ORB.SP3.gz"]
         self.assertEqual(choose_mgx_sp3_name(names, d), names[3])
         self.assertIsNone(choose_mgx_sp3_name([], d))
+
+
+class TestFetchMgx(unittest.TestCase):
+    DAY = date(2026, 11, 9)                          # DOY 313
+
+    @staticmethod
+    def name(prefix: str, doy: int = 313) -> str:
+        return f"{prefix}_2026{doy:03d}0000_01D_05M_ORB.SP3.gz"
+
+    def test_cached_file_used_without_listing(self):
+        # ตรวจซ้ำแบบไม่มีเน็ตได้ถ้ามี SP3 ของวันนั้นใน cache แล้ว: ไม่เรียก curl เลย เลือกตามลำดับ MGX_SP3_PREFERENCE
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch("gnss_predict.sp3.subprocess.run", side_effect=AssertionError("ไม่ควรเรียก curl")) as run:
+            cache = Path(d)
+            for name in (self.name("WUM0MGXRAP"), self.name("GFZ0MGXRAP"), self.name("COD0MGXFIN", 314),
+                         self.name("COD0MGXFIN") + ".part"):
+                (cache / name).write_bytes(b"sp3")
+            self.assertEqual(fetch_mgx_sp3(self.DAY, cache), cache / self.name("GFZ0MGXRAP"))
+            (cache / self.name("COD0MGXFIN")).write_bytes(b"sp3")
+            self.assertEqual(fetch_mgx_sp3(self.DAY, cache), cache / self.name("COD0MGXFIN"))
+            run.assert_not_called()
+
+    def test_lists_cddis_when_nothing_cached(self):
+        failed = subprocess.CompletedProcess([], 7, "", "")
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch("gnss_predict.sp3.subprocess.run", return_value=failed) as run:
+            (Path(d) / self.name("COD0MGXFIN", 314)).write_bytes(b"sp3")          # ของวันอื่นไม่นับ
+            with self.assertRaises(Sp3UnavailableError):
+                fetch_mgx_sp3(self.DAY, Path(d))
+        self.assertIn("--list-only", run.call_args.args[0])
 
 
 if __name__ == "__main__":

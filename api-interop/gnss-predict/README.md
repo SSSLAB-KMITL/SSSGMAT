@@ -171,6 +171,8 @@ python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 
   IGS metadata ดึงใหม่เมื่อไฟล์ใน cache อายุเกิน 24 ชม. ถ้าดึง broadcast ไม่ได้ทั้งของเมื่อวานและสองวันก่อน
   snapshot จะไม่มี `brdc/` และมีคำเตือน `BRDC_UNAVAILABLE`
 - `validate` ที่ไม่ระบุ `--sp3` จะดาวน์โหลด SP3 ของวันนั้นจาก CDDIS ตามลำดับ `COD0MGXFIN`, `GFZ0MGXRAP`, `WUM0MGXRAP`
+  ลงใน `<data>/truth/` ถ้ามีไฟล์ของวันนั้นใน `<data>/truth/` อยู่แล้วจะใช้ไฟล์นั้นโดยไม่ต่อเน็ต (ตัวแรกตามลำดับเดียวกัน)
+  ไฟล์ SP3 ที่เสียหรือดาวน์โหลดไม่ครบได้ `TRUTH_UNREADABLE` ให้ลบไฟล์นั้นแล้วรันใหม่
   ผลที่ไม่ผ่านเกณฑ์ไม่ใช่ error ให้ดูช่อง `pass` ใน JSON
 - พิมพ์ path ของผลลัพธ์บรรทัดแรก ตามด้วย `<level>: <ข้อความ>` ของแต่ละคำเตือน
   exit code: `0` สำเร็จ, `1` ข้อผิดพลาดที่คาดไว้ (พิมพ์รหัสและข้อความลง stderr), `2` ใส่ตัวเลือกผิด
