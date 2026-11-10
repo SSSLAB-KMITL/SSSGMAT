@@ -41,7 +41,7 @@ from .config import BRDC_DAYS_BACK, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
 from .czml import access_czml, satellites_czml
 from .dop import dop_series
 from .errors import (BrdcUnavailableError, GnssPredictError, Message, NoSatellitesError, OrbitUnavailableError,
-                     ScenarioError, Sp3UnavailableError)
+                     ResultCorruptError, ScenarioError, Sp3UnavailableError)
 from .igs_meta import fetch_metadata
 from .omm import fetch_group
 from .predict import HEADER as LEGACY_HEADER
@@ -163,8 +163,8 @@ def _read_manifest(bundle_dir: Path) -> _StoredManifest:
         messages = [Message(m["code"], m["level"], m["text"], m.get("object")) for m in data["messages"]]
         flags = {s["prn"]: frozenset(s["flags"]) for s in data["satellites"]}
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        raise GnssPredictError(f"อ่าน {path} ไม่ได้ ({type(exc).__name__}: {exc}) "
-                               f"ให้ลบโฟลเดอร์ {bundle_dir} แล้วรันใหม่") from exc
+        raise ResultCorruptError(f"อ่าน {path} ไม่ได้ ({type(exc).__name__}: {exc}) "
+                                 f"ให้ลบโฟลเดอร์ {bundle_dir} แล้วรันใหม่") from exc
     return _StoredManifest(data, messages, flags)
 
 
@@ -597,7 +597,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> int:
             path, messages = run_validate(args.scenario.resolve(), args.day, data_dir,
                                           args.sp3.resolve() if args.sp3 else None, args.facility)
     except GnssPredictError as exc:
-        print(f"error: {getattr(exc, 'code', type(exc).__name__)}: {exc}", file=sys.stderr)
+        print(f"error: {exc.code}: {exc}", file=sys.stderr)
         return 1
     print(path)
     for m in messages:

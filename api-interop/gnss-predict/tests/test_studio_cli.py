@@ -303,6 +303,15 @@ class TestRunPropagate(FakeGmat):
         self.assertNotEqual(other, first)
         self.assertIn("R10", read_sp3_all(other / "predicted.sp3"))
 
+    def test_corrupt_manifest_is_result_corrupt(self):
+        ephem, _ = run_propagate(self.sc, data_dir=self.data)
+        (ephem / "manifest.json").write_text("{ไม่ใช่ JSON", encoding="utf-8")
+        code, out, err = run_main(["propagate", "--scenario", str(self.sc), "--data", str(self.data)])
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("error: RESULT_CORRUPT: "), err)
+        self.assertIn(str(ephem.resolve()), err)
+        self.assertNotIn("Traceback", err)
+
     def test_gmat_drops_every_satellite(self):
         def drop_all(sats, start, stop, step_s, work_dir, console, timeout_s=900):
             eph, _ = fake_propagate(sats, start, stop, step_s, work_dir, console)

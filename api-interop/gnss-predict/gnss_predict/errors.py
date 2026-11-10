@@ -1,6 +1,6 @@
 """ข้อผิดพลาดที่คาดไว้ทั้งหมด CLI จะแปลง GnssPredictError ทุกตัวเป็น exit code 1
 
-class ที่มี attribute `code` ตรงกับรหัสในตารางหัวข้อ 9 ของ spec engine
+ทุก class ประกาศ attribute `code` ของตัวเองตามรหัสในตารางหัวข้อ 9 ของ spec engine (CLI ของ studio พิมพ์รหัสนี้)
 """
 
 from dataclasses import dataclass
@@ -19,15 +19,15 @@ class Message:
 
 
 class GnssPredictError(Exception):
-    pass
+    code = "ENGINE_ERROR"
 
 
 class TleUnavailableError(GnssPredictError):
-    pass
+    code = "ORBIT_SOURCE_UNAVAILABLE"
 
 
 class TleTooOldError(GnssPredictError):
-    pass
+    code = "TLE_TOO_OLD"
 
 
 class GmatNotFoundError(GnssPredictError):
@@ -39,7 +39,8 @@ class GmatRunError(GnssPredictError):
 
 
 class ReportError(GnssPredictError):
-    pass
+    """รายงานของ GMAT ไม่มี อ่านไม่ได้ หรือ epoch ไม่ครบ"""
+    code = "GMAT_FAILED"
 
 
 class Sp3UnavailableError(GnssPredictError):
@@ -47,7 +48,8 @@ class Sp3UnavailableError(GnssPredictError):
 
 
 class Sp3FormatError(GnssPredictError):
-    pass
+    """ไฟล์ SP3 เปิดหรืออ่านไม่ได้ (gzip เสีย ถูกตัดท้าย ไม่ใช่ SP3) หรือ time system ไม่ใช่ GPS"""
+    code = "TRUTH_UNREADABLE"
 
 
 class OrbitUnavailableError(GnssPredictError):
@@ -72,3 +74,8 @@ class NoSatellitesError(GnssPredictError):
 
 class BrdcUnavailableError(GnssPredictError):
     code = "BRDC_UNAVAILABLE"
+
+
+class ResultCorruptError(GnssPredictError):
+    """manifest.json ของโฟลเดอร์ผลลัพธ์ที่มีอยู่แล้วอ่านไม่ได้"""
+    code = "RESULT_CORRUPT"

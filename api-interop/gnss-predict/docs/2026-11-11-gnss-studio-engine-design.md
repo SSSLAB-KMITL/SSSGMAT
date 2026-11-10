@@ -424,7 +424,7 @@ GDOP = √(Q₁₁+Q₂₂+Q₃₃+Q₄₄), PDOP = √(Q₁₁+Q₂₂+Q₃₃)
 
 | รหัส | ระดับ | เมื่อไร | class |
 |---|---|---|---|
-| `ORBIT_SOURCE_UNAVAILABLE` | หยุด | ดึง OMM ไม่ได้และไม่มีไฟล์ | `OrbitUnavailableError` |
+| `ORBIT_SOURCE_UNAVAILABLE` | หยุด | ดึง OMM ไม่ได้และไม่มีไฟล์ | `OrbitUnavailableError`, `TleUnavailableError` (CLI เดิม) |
 | `ORBIT_DOWNLOAD_FAILED` | เตือน | ดึงไม่ได้หรือได้ 403 แต่มีไฟล์เดิม | — |
 | `ORBIT_RATE_LIMITED_LOCAL` | info | ยังไม่ครบ 2 ชม. จากครั้งก่อน ใช้ไฟล์เดิม | — |
 | `IGS_META_UNAVAILABLE` | หยุด | ไม่มี IGS metadata | `IgsMetadataUnavailableError` |
@@ -432,14 +432,19 @@ GDOP = √(Q₁₁+Q₂₂+Q₃₃+Q₄₄), PDOP = √(Q₁₁+Q₂₂+Q₃₃)
 | `BRDC_UNAVAILABLE` | เตือน | ไม่มีไฟล์ broadcast | — |
 | `SCENARIO_INVALID` | หยุด | `scenario.json` ผิด | `ScenarioError` |
 | `NO_SATELLITES` | หยุด | กรองแล้วไม่เหลือดาว | `NoSatellitesError` |
-| `GMAT_NOT_FOUND`, `GMAT_FAILED` | หยุด | ของเดิม | `GmatNotFoundError`, `GmatRunError` |
+| `GMAT_NOT_FOUND`, `GMAT_FAILED` | หยุด | ของเดิม (รวมรายงานของ GMAT ที่อ่านไม่ได้หรือ epoch ไม่ครบ) | `GmatNotFoundError`, `GmatRunError`, `ReportError` |
+| `TLE_TOO_OLD` | หยุด (CLI เดิม) | TLE อายุเกิน `TLE_MAX_DAYS` | `TleTooOldError` |
 | `SAT_MISSING_FROM_GMAT` | เตือน | ดวงใดหายจากรายงาน | — |
 | `SAT_FLAGGED` | เตือน | ดาวมีธง (หนึ่งข้อความต่อดวง) | — |
 | `DOP_GAPS` | เตือน | มีช่วงที่ ALL มีดาวน้อยกว่า 4 ดวง (ระบุจำนวนจุดเวลา) | — |
 | `TRUTH_UNAVAILABLE` | หยุด (validate) | ไม่มี SP3 ของวันนั้น | `Sp3UnavailableError` (เดิม) |
+| `TRUTH_UNREADABLE` | หยุด (validate) | ไฟล์ SP3 เปิดหรืออ่านไม่ได้ (gzip เสียหรือถูกตัดท้าย, ไม่ใช่ SP3, time system ไม่ใช่ GPS) | `Sp3FormatError` (เดิม) |
+| `RESULT_CORRUPT` | หยุด | `manifest.json` ของโฟลเดอร์ผลลัพธ์ที่มีอยู่แล้วอ่านไม่ได้ (ให้ลบโฟลเดอร์นั้นแล้วรันใหม่) | `ResultCorruptError` |
+| `ENGINE_ERROR` | หยุด | ค่าตั้งต้นของ class ฐาน (ข้อผิดพลาดที่คาดไว้ที่ไม่มีรหัสเฉพาะ) | `GnssPredictError` |
 
 `Message` คือ `{"code", "level": "info|warning|error", "text" (ภาษาไทย), "object" (ชื่อ object หรือ null)}`
 class ใหม่ทั้งหมดสืบจาก `GnssPredictError` และ `TleUnavailableError` เดิมยังมีอยู่สำหรับ CLI เดิม
+ทุก class ประกาศ `code` ของตัวเองตามตารางนี้ CLI ของ studio พิมพ์ `error: <code>: <ข้อความ>` ลง stderr
 
 ## 10. การทดสอบ
 

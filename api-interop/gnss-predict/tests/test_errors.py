@@ -1,5 +1,7 @@
+import inspect
 import unittest
 
+from gnss_predict import errors
 from gnss_predict.errors import (
     BrdcUnavailableError, GmatNotFoundError, GmatRunError, GnssPredictError,
     IgsMetadataUnavailableError, Message, NoSatellitesError, OrbitUnavailableError,
@@ -42,6 +44,32 @@ class TestErrors(unittest.TestCase):
         for cls, code in expected.items():
             self.assertEqual(cls.code, code)
             self.assertTrue(issubclass(cls, GnssPredictError))
+
+    def test_every_error_class_declares_its_own_code(self):
+        # ทุก class ใน errors.py ต้องมีรหัสของตัวเอง CLI ของ studio พิมพ์ exc.code เสมอ
+        classes = [c for _, c in inspect.getmembers(errors, inspect.isclass) if issubclass(c, GnssPredictError)]
+        for cls in classes:
+            with self.subTest(cls=cls.__name__):
+                code = cls.__dict__.get("code")
+                self.assertIsInstance(code, str)
+                self.assertRegex(code, r"^[A-Z][A-Z_]+$")
+        self.assertGreaterEqual(len(classes), 14)
+
+    def test_codes_of_legacy_and_generic_errors(self):
+        expected = {
+            "GnssPredictError": "ENGINE_ERROR",
+            "ReportError": "GMAT_FAILED",
+            "Sp3FormatError": "TRUTH_UNREADABLE",
+            "TleUnavailableError": "ORBIT_SOURCE_UNAVAILABLE",
+            "TleTooOldError": "TLE_TOO_OLD",
+            "ResultCorruptError": "RESULT_CORRUPT",
+        }
+        for name, code in expected.items():
+            with self.subTest(name=name):
+                cls = getattr(errors, name, None)
+                self.assertIsNotNone(cls, name)
+                self.assertTrue(issubclass(cls, GnssPredictError))
+                self.assertEqual(cls.__dict__.get("code"), code)
 
     def test_scenario_error_keeps_text(self):
         e = ScenarioError("ชื่อไม่ถูกต้อง", field="objects[1].name")
