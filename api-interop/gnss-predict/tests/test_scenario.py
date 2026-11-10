@@ -240,9 +240,11 @@ class TestErrors(ScenarioTestCase):
         for step in (0, -30, 7, 3601, 7200, 86400, 30.0, 30.5, "30", True, None):
             with self.subTest(step=step):
                 self.assertInvalid(merge(valid(), {"step_s": step}), "step_s")
+
+    def test_missing_step_defaults_to_30(self):
         d = valid()
         del d["step_s"]
-        self.assertInvalid(d, "step_s")
+        self.assertEqual(load_scenario(self.write(d)).step_s, 30)
 
     def test_good_steps_that_divide_a_day(self):
         for step in (1, 2, 5, 30, 60, 300, 900, 3600):
@@ -338,6 +340,16 @@ class TestErrors(ScenarioTestCase):
         self.assertInvalid(with_object(2, name="GPS"), "objects[2].name")
         d = valid()
         d["objects"].append({"class": "Satellite", "name": "G01", "norad": 5})
+        self.assertInvalid(d, "objects[3].name")
+
+    def test_duplicate_names_are_case_insensitive(self):
+        d = valid()
+        d["objects"].insert(1, {"class": "Facility", "name": "thbk",
+                                "position": {"type": "Geodetic", "lat_deg": 0.0, "lon_deg": 0.0, "alt_m": 0.0}})
+        self.assertInvalid(d, "objects[1].name")                  # THBK มาก่อน thbk
+        self.assertInvalid(with_object(1, name="thbk"), "objects[1].name")   # Constellation ชนกับ Facility
+        d = valid()
+        d["objects"].append({"class": "Satellite", "name": "g01", "norad": 5})
         self.assertInvalid(d, "objects[3].name")
 
 

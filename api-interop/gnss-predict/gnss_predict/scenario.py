@@ -4,9 +4,10 @@
 - ผิดข้อใดให้ raise `ScenarioError` ที่ระบุ path ของช่อง เช่น `objects[0].position.lat_deg`
   ความผิดระดับไฟล์ (ไม่มีไฟล์, JSON เสีย, รากไม่ใช่ object) ใช้ field `<file>`
 - ค่าตั้งต้นเมื่อไม่มีช่อง: `ionosphere.shell_km` = SHELL_KM, `satellite_filter.*` = False,
-  `constraints.elevation_angle_min_deg` = 0.0 (D5: STK ไม่มี constraint ตั้งต้น)
+  `constraints.elevation_angle_min_deg` = 0.0 (D5: STK ไม่มี constraint ตั้งต้น), `step_s` = STEP_S (30)
+  ถ้าไม่มีช่อง `step_s` เลย ส่วนที่มีแต่ผิด (รวม null) ยัง error
 - ชื่อ object ต้องตรง `^[A-Za-z0-9_-]{1,32}$` (D6) เพราะใช้เป็นชื่อโฟลเดอร์และ id ของ CZML และต้องไม่ซ้ำกัน
-  (นับทุก class รวม Constellation)
+  โดยไม่แยกตัวพิมพ์เล็กใหญ่ (macOS แยกโฟลเดอร์ THBK กับ thbk ไม่ได้) นับทุก class รวม Constellation
 - เฉพาะ class Facility และ Satellite ที่ส่งต่อให้ engine ตามลำดับใน `objects`
 """
 
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import SHELL_KM
+from .config import SHELL_KM, STEP_S
 from .errors import ScenarioError
 
 FORMAT = "gnss-studio-scenario/1"
@@ -181,7 +182,7 @@ def load_scenario(path: Path) -> EngineScenario:
     if stop - start > MAX_PERIOD:
         raise _fail("analysis_period", "ช่วงวิเคราะห์ต้องไม่เกิน 7 วัน")
 
-    step_s = data.get("step_s")
+    step_s = data["step_s"] if "step_s" in data else STEP_S      # spec 7.3: ตั้งต้น 30 วินาที
     if isinstance(step_s, bool) or not isinstance(step_s, int):
         raise _fail("step_s", "ต้องเป็นจำนวนเต็มวินาที")
     if not 1 <= step_s <= MAX_STEP_S or SECONDS_PER_DAY % step_s:
@@ -211,9 +212,9 @@ def load_scenario(path: Path) -> EngineScenario:
         if not isinstance(cls, str):
             raise _fail(f"{path_i}.class", "ต้องระบุ class เป็นข้อความ")
         obj_name = _safe_name(obj.get("name"), f"{path_i}.name")
-        if obj_name in seen:
-            raise _fail(f"{path_i}.name", f"ชื่อ '{obj_name}' ซ้ำกับ object ก่อนหน้า")
-        seen.add(obj_name)
+        if obj_name.casefold() in seen:
+            raise _fail(f"{path_i}.name", f"ชื่อ '{obj_name}' ซ้ำกับ object ก่อนหน้า (ไม่แยกตัวพิมพ์เล็กใหญ่)")
+        seen.add(obj_name.casefold())
         if cls == "Facility":
             facilities.append(_facility(obj, obj_name, path_i))
         elif cls == "Satellite":
