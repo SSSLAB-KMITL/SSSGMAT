@@ -63,3 +63,12 @@ DATA_DIR = Path(os.environ.get("GNSS_STUDIO_DATA", PKG_ROOT / "data"))
 
 # เพิ่มทุกครั้งที่การคำนวณเปลี่ยน ใช้ใน hash และ manifest
 ENGINE_VERSION = "0.2.0"
+
+# ---- broadcast ephemeris (หัวข้อ 3 และ 7.4 ของ spec engine) ----
+# GM (ม.³/วินาที²) และ ωe (เรเดียน/วินาที) ของแต่ละระบบตาม ICD ของระบบนั้น
+BRDC_GM = {"G": 3.986005e14, "E": 3.986004418e14, "C": 3.986004418e14}     # GPS ตาม IS-GPS-200
+BRDC_OMEGA_E = {"G": 7.2921151467e-5, "E": 7.2921151467e-5, "C": 7.292115e-5}
+BDT_GPST_OFFSET_S = 14                # BDT = GPST − 14 วินาที (Galileo GST = GPST)
+BDS_GEO_PRNS = frozenset(f"C{n:02d}" for n in (*range(1, 6), *range(59, 64)))   # C01–C05 และ C59–C63
+BDS_GEO_TILT_DEG = 5.0                # ดาว GEO ของ BDS หมุนด้วย Rx(−5°) ก่อน Rz(ωe·tk)
+KEPLER_ITERATIONS = 30
