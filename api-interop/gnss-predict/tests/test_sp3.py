@@ -149,6 +149,27 @@ class TestReadAll(unittest.TestCase):
             with self.assertRaises(Sp3FormatError):
                 read_sp3_all(p)
 
+    def test_truncated_gz_is_format_error(self):
+        data = gzip.compress((FXS / "mgx_sample.sp3").read_bytes())
+        with tempfile.TemporaryDirectory() as d:
+            gz = Path(d) / "COD0MGXFIN_20263130000_01D_05M_ORB.SP3.gz"
+            gz.write_bytes(data[:len(data) // 2])                    # ดาวน์โหลดไม่ครบ: EOFError จาก gzip
+            for reader in (read_sp3_all, read_sp3):
+                with self.subTest(reader=reader.__name__):
+                    with self.assertRaises(Sp3FormatError) as ctx:
+                        reader(gz)
+                    self.assertIn(str(gz), str(ctx.exception))
+
+    def test_html_saved_as_gz_is_format_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            gz = Path(d) / "COD0MGXFIN_20263130000_01D_05M_ORB.SP3.gz"
+            gz.write_bytes(b"<!DOCTYPE html>\n<html><body>Earthdata Login</body></html>\n")   # gzip.BadGzipFile
+            for reader in (read_sp3_all, read_sp3):
+                with self.subTest(reader=reader.__name__):
+                    with self.assertRaises(Sp3FormatError) as ctx:
+                        reader(gz)
+                    self.assertIn(str(gz), str(ctx.exception))
+
     def test_malformed_position_line_rejected(self):
         lines = (FXS / "mgx_sample.sp3").read_text().splitlines(keepends=True)
         i = next(k for k, l in enumerate(lines) if l.startswith("PG01"))

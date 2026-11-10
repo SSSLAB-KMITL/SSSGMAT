@@ -6,6 +6,7 @@
 """
 
 import contextlib
+import gzip
 import io
 import json
 import math
@@ -518,8 +519,14 @@ class TestRunValidate(RunValidateCase):
         self.assertFalse((self.data / "validation").exists())
 
     def test_missing_sp3_file(self):
-        with self.assertRaises(Sp3UnavailableError):
-            self.run_it(sp3=self.data / "nope.sp3")
+        self.mocks["propagate"].side_effect = AssertionError("ต้องตรวจ --sp3 ก่อน propagate")
+        for missing in (self.data / "nope.sp3", self.data):                 # ไม่มีไฟล์ หรือเป็นโฟลเดอร์
+            with self.subTest(sp3=missing):
+                with self.assertRaises(Sp3UnavailableError) as ctx:
+                    self.run_it(sp3=missing)
+                self.assertIn(str(missing), str(ctx.exception))
+        self.mocks["propagate"].assert_not_called()
+        self.assertFalse((self.sc / "ephem").exists())
         self.assertFalse((self.data / "validation").exists())
 
     def test_truth_unavailable_propagates(self):
@@ -548,6 +555,21 @@ class TestValidateCli(RunValidateCase):
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
         self.assertIn("TRUTH_UNAVAILABLE", err)
+
+    def test_cli_corrupt_truth_exit_1(self):
+        whole = gzip.compress(self.truth.read_bytes())
+        bad = {"truncated.SP3.gz": whole[:len(whole) // 2],                                   # EOFError
+               "html.SP3.gz": b"<!DOCTYPE html>\n<html><body>Earthdata Login</body></html>\n"}   # BadGzipFile
+        for name, data in bad.items():
+            with self.subTest(name=name):
+                path = self.data / name
+                path.write_bytes(data)
+                code, out, err = run_main(self.base_args() + ["--sp3", str(path)])
+                self.assertEqual((code, out), (1, ""))
+                self.assertTrue(err.startswith("error: TRUTH_UNREADABLE: "), err)
+                self.assertIn(name, err)
+                self.assertNotIn("Traceback", err)
+        self.assertFalse((self.data / "validation").exists())
 
     def test_cli_argument_errors_exit_2(self):
         scen = ["--scenario", str(self.sc)]

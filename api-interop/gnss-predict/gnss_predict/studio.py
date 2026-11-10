@@ -41,7 +41,7 @@ from .config import BRDC_DAYS_BACK, CELESTRAK_STATE_FILE, DATA_DIR, ENGINE_VERSI
 from .czml import access_czml, satellites_czml
 from .dop import dop_series
 from .errors import (BrdcUnavailableError, GnssPredictError, Message, NoSatellitesError, OrbitUnavailableError,
-                     ResultCorruptError, ScenarioError, Sp3UnavailableError)
+                     ResultCorruptError, ScenarioError, Sp3FormatError, Sp3UnavailableError)
 from .igs_meta import fetch_metadata
 from .omm import fetch_group
 from .predict import HEADER as LEGACY_HEADER
@@ -461,11 +461,21 @@ def _validate_nav(day: date, data_dir: Path) -> tuple[Nav | None, list[Message]]
                               "ดาว GPS, Galileo และ BeiDou ที่ไม่มีใน SP3 จริงจึงตรวจไม่ได้")]
 
 
+def _check_sp3_arg(sp3: Path) -> None:
+    """ไฟล์ SP3 ที่ผู้ใช้ระบุต้องมีอยู่และเปิดอ่านได้ ตรวจก่อน propagate เพื่อไม่เสียเวลารัน GMAT
+    (เนื้อไฟล์ตรวจตอน read_sp3_all ซึ่งให้ Sp3FormatError)"""
+    if not Path(sp3).is_file():
+        raise Sp3UnavailableError(f"ไม่พบไฟล์ SP3 {sp3}")
+    try:
+        with open(sp3, "rb"):
+            pass
+    except OSError as exc:
+        raise Sp3FormatError(f"เปิดไฟล์ SP3 {sp3} ไม่ได้ ({exc})") from exc
+
+
 def _validate_truth(day: date, data_dir: Path, sp3: Path | None) -> Path:
     if sp3 is not None:
-        if not Path(sp3).is_file():
-            raise Sp3UnavailableError(f"ไม่พบไฟล์ SP3 {sp3}")
-        return Path(sp3)
+        return Path(sp3)                                 # ตรวจแล้วด้วย _check_sp3_arg
     try:
         return fetch_mgx_sp3(day, Path(data_dir) / TRUTH_DIR)
     except OSError as exc:                               # เรียก curl ไม่ได้
@@ -497,6 +507,8 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     if not (sc.start < day_start + timedelta(days=1) and sc.stop >= day_start):        # ตรวจก่อนดาวน์โหลดอะไร
         raise ScenarioError(f"ช่วงวิเคราะห์ของ scenario ({_iso_s(sc.start)} ถึง {_iso_s(sc.stop)}) "
                             f"ไม่ครอบคลุมวันที่ {day.isoformat()}", "analysis_period")
+    if sp3 is not None:
+        _check_sp3_arg(sp3)
 
     ephem_dir, messages = run_propagate(scenario_dir, data_dir, console,
                                         progress=lambda stage, f: report(f"propagate.{stage}", 0.6 * f))

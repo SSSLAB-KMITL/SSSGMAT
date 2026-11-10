@@ -10,6 +10,7 @@ read_sp3_all, lagrange_at, choose_mgx_sp3_name, fetch_mgx_sp3 และ write_sp
 import gzip
 import os
 import subprocess
+import zlib
 from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -79,11 +80,21 @@ def _parse_epoch(line: str) -> datetime:
                     round((sec - whole) * 1e6), tzinfo=timezone.utc)
 
 
+def _read_lines(path: Path) -> list[str]:
+    """บรรทัดทั้งหมดของไฟล์ SP3 (.gz หรือไม่ก็ได้) เปิดหรืออ่านไม่ได้ได้ Sp3FormatError ที่บอก path เต็ม"""
+    opener = gzip.open if path.name.endswith(".gz") else open
+    try:
+        with opener(path, "rt", encoding="ascii", errors="replace") as f:
+            return f.read().splitlines()
+    # gzip.BadGzipFile (เช่นหน้า HTML ที่บันทึกเป็น .gz) เป็น OSError, gzip ที่ถูกตัดท้ายได้ EOFError
+    except (OSError, EOFError, zlib.error, UnicodeDecodeError) as exc:
+        raise Sp3FormatError(f"อ่านไฟล์ SP3 {path} ไม่ได้ ({type(exc).__name__}: {exc}) ไฟล์อาจเสีย ดาวน์โหลดไม่ครบ "
+                             "หรือไม่ใช่ SP3 ถ้าเป็นไฟล์ที่ดาวน์โหลดเก็บไว้ ให้ลบไฟล์นี้แล้วรันใหม่") from exc
+
+
 def read_sp3(path: Path) -> Sp3Orbit:
     path = Path(path)
-    opener = gzip.open if path.name.endswith(".gz") else open
-    with opener(path, "rt", encoding="ascii", errors="replace") as f:
-        lines = f.read().splitlines()
+    lines = _read_lines(path)
     time_system = next((l[9:12] for l in lines if l.startswith("%c")), "")
     if time_system != "GPS":
         raise Sp3FormatError(f"{path.name}: time system คือ '{time_system}' ต้องเป็น 'GPS'")
@@ -158,11 +169,10 @@ def read_sp3_all(path: Path) -> dict[str, SatSeries]:
 
     ข้ามตำแหน่งที่เป็น 0 ทั้งสามแกนและค่าที่ |v| ≥ 999999 ไม่เชื่อจำนวน epoch และดาวใน header
     (ไฟล์ที่ตัดย่อยังมี header เดิม) อ่านถึง 'EOF' หรือท้ายไฟล์
+    ไฟล์ที่เปิดหรืออ่านไม่ได้ (gzip เสียหรือถูกตัดท้าย) หรือไม่ใช่ SP3 ของเวลา GPS: Sp3FormatError
     """
     path = Path(path)
-    opener = gzip.open if path.name.endswith(".gz") else open
-    with opener(path, "rt", encoding="ascii", errors="replace") as f:
-        lines = f.read().splitlines()
+    lines = _read_lines(path)
     time_system = next((l[9:12] for l in lines if l.startswith("%c")), "")
     if time_system != "GPS":
         raise Sp3FormatError(f"{path.name}: time system คือ '{time_system}' ต้องเป็น 'GPS'")
