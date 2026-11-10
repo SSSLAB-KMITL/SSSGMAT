@@ -4,12 +4,11 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from http.client import HTTPException
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from .config import CELESTRAK_GPS_URL, TLE_MAX_DAYS, TLE_WARN_DAYS
-from .errors import TleTooOldError, TleUnavailableError
+from .errors import OrbitUnavailableError, TleTooOldError, TleUnavailableError
+from .omm import fetch_group, read_omm, to_tle_lines
 
 _PRN_RE = re.compile(r"\(PRN\s*(\d{1,2})\)")
 
@@ -90,25 +89,48 @@ def check_tle_age(entries: list[TleEntry], start: datetime, hours: float,
     return []
 
 
+def _write_tle_from_omm(omm_path: Path, tle_path: Path) -> list[str]:
+    """แปลง OMM เป็นไฟล์ TLE 3 บรรทัด (บรรทัดชื่อ = OBJECT_NAME) เขียนแบบ atomic คืนคำเตือนของรายการที่ข้าม
+    ถ้าไม่มีรายการที่แปลงได้เลยให้ ValueError"""
+    blocks: list[str] = []
+    warnings: list[str] = []
+    for rec in read_omm(omm_path):
+        try:
+            line1, line2 = to_tle_lines(rec)
+        except ValueError as exc:
+            warnings.append(f"ข้าม OMM ของ NORAD {rec.norad} ({rec.name}): {exc}")
+            continue
+        blocks.append(f"{rec.name}\n{line1}\n{line2}\n")
+    if not blocks:
+        raise ValueError(f"ไม่มี OMM ที่แปลงเป็น TLE ได้ใน {omm_path.name}")
+    tmp = tle_path.with_name(tle_path.name + ".tmp")
+    tmp.write_bytes("".join(blocks).encode("utf-8"))
+    os.replace(tmp, tle_path)
+    return warnings
+
+
 def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: float = 30,
                   now: datetime | None = None) -> tuple[Path, list[str]]:
-    """ดาวน์โหลด TLE แล้วเก็บเป็น cache/gps_<เวลา UTC>.tle ถ้าไม่สำเร็จใช้ไฟล์ล่าสุดใน cache"""
+    """ดึง OMM กลุ่ม gps-ops (omm.fetch_group) แล้วแปลงเป็น cache/gps_<เวลา UTC>.tle ถ้ายังไม่มี
+
+    เลขแคตตาล็อกเกิน 99999 ใช้ Alpha-5 ในช่อง 5 ตัวอักษรของบรรทัด 1 ถ้าดึงหรือแปลงไม่สำเร็จ
+    ใช้ gps_*.tle ล่าสุดใน cache พร้อมคำเตือน และถ้าไม่มีเลยจึง TleUnavailableError
+    """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     now = now or datetime.now(timezone.utc)
+    warnings: list[str] = []
     try:
-        with urlopen(Request(url, headers={"User-Agent": "gnss-predict/0.1"}), timeout=timeout_s) as resp:
-            data = resp.read()
-        entries, _ = parse_tle_text(data.decode("utf-8", errors="replace"))
-        if not entries:
-            raise ValueError("ข้อมูลที่ได้ไม่ใช่ TLE ที่ใช้ได้")
-    except (OSError, ValueError, HTTPException) as exc:   # IncompleteRead เป็น HTTPException ไม่ใช่ OSError
+        omm_path, messages = fetch_group("gps-ops", cache_dir, cache_dir / "celestrak_state.json", now,
+                                         timeout_s=timeout_s, url=url)
+        warnings = [m.text for m in messages]
+        stamp = omm_path.stem.removeprefix("gps-ops_")
+        path = cache_dir / f"gps_{stamp}.tle"
+        if not path.exists():
+            warnings += _write_tle_from_omm(omm_path, path)
+    except (OrbitUnavailableError, ValueError) as exc:   # ValueError: OMM ในไฟล์เสียหรือแปลงไม่ได้
         cached = sorted(cache_dir.glob("gps_*.tle"))
         if not cached:
             raise TleUnavailableError(f"ดาวน์โหลด TLE ไม่สำเร็จ ({exc}) และไม่มีไฟล์ใน {cache_dir}") from exc
         return cached[-1], [f"ดาวน์โหลด TLE ไม่สำเร็จ ({exc}) ใช้ไฟล์ใน cache แทน: {cached[-1].name}"]
-    path = cache_dir / f"gps_{now:%Y%m%dT%H%MZ}.tle"
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
-    return path, []
+    return path, warnings

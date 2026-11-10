@@ -14,7 +14,7 @@ RE_KM = 6371.0
 SHELL_KM = 400.0
 STEP_S = 30
 
-CELESTRAK_GPS_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle"
+CELESTRAK_GPS_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=json"
 TLE_WARN_DAYS = 7.0
 TLE_MAX_DAYS = 30.0
 

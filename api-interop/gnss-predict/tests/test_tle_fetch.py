@@ -1,15 +1,17 @@
+import json
 import shutil
 import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from gnss_predict.errors import TleTooOldError, TleUnavailableError
 from gnss_predict.tle_fetch import check_tle_age, fetch_gps_tle, parse_tle_file, parse_tle_text, tle_checksum
 
 FX = Path(__file__).parent / "fixtures"
+FXS = FX / "studio"
 UTC = timezone.utc
 
 
@@ -64,10 +66,37 @@ class TestFetch(unittest.TestCase):
 
     def test_success_writes_timestamped_cache(self):
         with tempfile.TemporaryDirectory() as d:
-            path, warns = fetch_gps_tle(Path(d), url=(FX / "gps_sample.tle").as_uri(), now=self.NOW)
+            path, warns = fetch_gps_tle(Path(d), url=(FXS / "snapshot" / "gps-ops.json").as_uri(), now=self.NOW)
             self.assertEqual(path.name, "gps_20261110T1200Z.tle")
             self.assertEqual(warns, [])
-            self.assertEqual(len(parse_tle_file(path)[0]), 3)
+            self.assertEqual(len(parse_tle_file(path)[0]), 2)
+
+    def test_six_digit_catalog_number_becomes_alpha5(self):
+        with tempfile.TemporaryDirectory() as d:
+            records = json.loads((FXS / "snapshot" / "gps-ops.json").read_text())
+            records[0]["NORAD_CAT_ID"] = 100744
+            src = Path(d) / "gps-ops.json"
+            src.write_text(json.dumps(records))
+            cache = Path(d) / "cache"
+            path, warns = fetch_gps_tle(cache, url=src.as_uri(), now=self.NOW)
+            entries, parse_warns = parse_tle_file(path)
+            self.assertEqual(warns, [])
+            self.assertEqual(parse_warns, [])
+            self.assertEqual([(e.prn, e.norad, e.name) for e in entries],
+                             [(1, "A0744", "GPS BIII-7  (PRN 01)"), (22, "26407", "GPS BIIR-5  (PRN 22)")])
+
+    def test_second_call_within_interval_reuses_cache_without_request(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "gps-ops.json"
+            shutil.copy(FXS / "snapshot" / "gps-ops.json", src)
+            cache = Path(d) / "cache"
+            first, _ = fetch_gps_tle(cache, url=src.as_uri(), now=self.NOW)
+            src.unlink()   # ถ้าส่ง request ซ้ำจะอ่านไม่ได้และเกิดคำเตือนว่าดาวน์โหลดไม่สำเร็จ
+            second, warns = fetch_gps_tle(cache, url=src.as_uri(), now=self.NOW + timedelta(hours=1))
+            self.assertEqual(second, first)
+            self.assertEqual(len(warns), 1)
+            self.assertNotIn("ไม่สำเร็จ", warns[0])
+            self.assertEqual(sorted(p.name for p in cache.glob("gps*")), ["gps-ops_20261110T1200Z.json", "gps_20261110T1200Z.tle"])
 
     def test_failure_falls_back_to_newest_cache(self):
         with tempfile.TemporaryDirectory() as d:
@@ -88,7 +117,7 @@ class TestFetch(unittest.TestCase):
                 self.send_response(200)
                 self.send_header("Content-Length", "5000")
                 self.end_headers()
-                self.wfile.write(b"GPS BIIR-5  (PRN 22)\r\n1 26407U")
+                self.wfile.write(b'[{"OBJECT_NAME": "GPS')
                 self.close_connection = True
 
             def log_message(self, *args):
@@ -100,7 +129,7 @@ class TestFetch(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as d:
                 shutil.copy(FX / "gps_sample.tle", Path(d) / "gps_20261105T0000Z.tle")
-                url = f"http://127.0.0.1:{server.server_address[1]}/gps.tle"
+                url = f"http://127.0.0.1:{server.server_address[1]}/gps.json"
                 path, warns = fetch_gps_tle(Path(d), url=url, timeout_s=5, now=self.NOW)
                 self.assertEqual(path.name, "gps_20261105T0000Z.tle")
                 self.assertEqual(len(warns), 1)
@@ -117,7 +146,7 @@ class TestFetch(unittest.TestCase):
             shutil.copy(FX / "gps_sample.tle", cache / "gps_20261105T0000Z.tle")
             path, warns = fetch_gps_tle(cache, url=junk.as_uri(), now=self.NOW)
             self.assertEqual(path.name, "gps_20261105T0000Z.tle")
-            self.assertEqual(sorted(p.name for p in cache.iterdir()), ["gps_20261105T0000Z.tle"])
+            self.assertEqual(sorted(p.name for p in cache.glob("gps*")), ["gps_20261105T0000Z.tle"])
 
 
 if __name__ == "__main__":
