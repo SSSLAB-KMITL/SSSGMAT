@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import CELESTRAK_GPS_URL, TLE_MAX_DAYS, TLE_WARN_DAYS
+from .config import CELESTRAK_GPS_URL, CELESTRAK_STATE_FILE, TLE_MAX_DAYS, TLE_WARN_DAYS
 from .errors import OrbitUnavailableError, TleTooOldError, TleUnavailableError
 from .omm import fetch_group, read_omm, to_tle_lines
 
@@ -110,20 +110,25 @@ def _write_tle_from_omm(omm_path: Path, tle_path: Path) -> list[str]:
 
 
 def fetch_gps_tle(cache_dir: Path, url: str = CELESTRAK_GPS_URL, timeout_s: float = 30,
-                  now: datetime | None = None) -> tuple[Path, list[str]]:
-    """ดึง OMM กลุ่ม gps-ops (omm.fetch_group) แล้วแปลงเป็น cache/gps_<เวลา UTC>.tle ถ้ายังไม่มี
+                  now: datetime | None = None, omm_cache_dir: Path | None = None) -> tuple[Path, list[str]]:
+    """ดึง OMM กลุ่ม gps-ops (omm.fetch_group) แล้วแปลงเป็น <cache_dir>/gps_<เวลา UTC>.tle ถ้ายังไม่มี
 
+    OMM (gps-ops_<เวลา>.json) และ celestrak_state.json อยู่ใน omm_cache_dir (ไม่ระบุ = cache_dir)
+    CLI เดิมส่ง config.OMM_CACHE_DIR ซึ่งเป็น cache ของ studio เพื่อให้นับกติกา 2 ชม. ร่วมกัน
+    ถ้าครั้งก่อนเพิ่งส่งไปไม่ถึง 2 ชม. ใช้ OMM ล่าสุดใน omm_cache_dir โดยไม่นับเป็นคำเตือน
+    (ข้อความระดับ info ของ fetch_group ไม่อยู่ในคำเตือนที่คืน)
     เลขแคตตาล็อกเกิน 99999 ใช้ Alpha-5 ในช่อง 5 ตัวอักษรของบรรทัด 1 ถ้าดึงหรือแปลงไม่สำเร็จ
-    ใช้ gps_*.tle ล่าสุดใน cache พร้อมคำเตือน และถ้าไม่มีเลยจึง TleUnavailableError
+    ใช้ gps_*.tle ล่าสุดใน cache_dir พร้อมคำเตือน และถ้าไม่มีเลยจึง TleUnavailableError
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    omm_dir = Path(omm_cache_dir) if omm_cache_dir is not None else cache_dir
     now = now or datetime.now(timezone.utc)
     warnings: list[str] = []
     try:
-        omm_path, messages = fetch_group("gps-ops", cache_dir, cache_dir / "celestrak_state.json", now,
+        omm_path, messages = fetch_group("gps-ops", omm_dir, omm_dir / CELESTRAK_STATE_FILE, now,
                                          timeout_s=timeout_s, url=url)
-        warnings = [m.text for m in messages]
+        warnings = [m.text for m in messages if m.level != "info"]
         stamp = omm_path.stem.removeprefix("gps-ops_")
         path = cache_dir / f"gps_{stamp}.tle"
         if not path.exists():

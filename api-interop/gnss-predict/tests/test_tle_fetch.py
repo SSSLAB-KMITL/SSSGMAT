@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from gnss_predict.errors import TleTooOldError, TleUnavailableError
+from gnss_predict.omm import fetch_group
 from gnss_predict.tle_fetch import check_tle_age, fetch_gps_tle, parse_tle_file, parse_tle_text, tle_checksum
 
 FX = Path(__file__).parent / "fixtures"
@@ -94,8 +95,7 @@ class TestFetch(unittest.TestCase):
             src.unlink()   # ถ้าส่ง request ซ้ำจะอ่านไม่ได้และเกิดคำเตือนว่าดาวน์โหลดไม่สำเร็จ
             second, warns = fetch_gps_tle(cache, url=src.as_uri(), now=self.NOW + timedelta(hours=1))
             self.assertEqual(second, first)
-            self.assertEqual(len(warns), 1)
-            self.assertNotIn("ไม่สำเร็จ", warns[0])
+            self.assertEqual(warns, [])            # ORBIT_RATE_LIMITED_LOCAL เป็นระดับ info ไม่ใช่คำเตือน
             self.assertEqual(sorted(p.name for p in cache.glob("gps*")), ["gps-ops_20261110T1200Z.json", "gps_20261110T1200Z.tle"])
 
     def test_failure_falls_back_to_newest_cache(self):
@@ -137,6 +137,34 @@ class TestFetch(unittest.TestCase):
             thread.join(5)
             server.server_close()
 
+    def test_studio_then_legacy_share_one_request(self):
+        # studio ดึง gps-ops ลง cache กลางแล้ว CLI เดิมเรียกภายใน 2 ชม. ด้วย omm_cache_dir เดียวกัน:
+        # ต้องมี request ถึง server ครั้งเดียว และ CLI เดิมยังได้ gps_<เวลา>.tle ที่ใช้ได้จาก OMM ของ studio
+        with tempfile.TemporaryDirectory() as d, CountingServer() as server:
+            shared, legacy = Path(d) / "orbits" / "_cache", Path(d) / "cache"
+            omm, msgs = fetch_group("gps-ops", shared, shared / "celestrak_state.json", self.NOW, url=server.url)
+            self.assertEqual((omm.name, msgs, server.count), ("gps-ops_20261110T1200Z.json", [], 1))
+            path, warns = fetch_gps_tle(legacy, url=server.url, now=self.NOW + timedelta(hours=1),
+                                        omm_cache_dir=shared)
+            self.assertEqual(server.count, 1)
+            self.assertEqual(path, legacy / "gps_20261110T1200Z.tle")
+            self.assertEqual(warns, [])
+            self.assertEqual([e.prn for e in parse_tle_file(path)[0]], [1, 22])
+            self.assertEqual(sorted(p.name for p in legacy.iterdir()), ["gps_20261110T1200Z.tle"])
+            self.assertEqual(sorted(p.name for p in shared.iterdir()),
+                             ["celestrak_state.json", "gps-ops_20261110T1200Z.json"])
+
+    def test_legacy_then_studio_share_one_request(self):
+        with tempfile.TemporaryDirectory() as d, CountingServer() as server:
+            shared, legacy = Path(d) / "orbits" / "_cache", Path(d) / "cache"
+            path, warns = fetch_gps_tle(legacy, url=server.url, now=self.NOW, omm_cache_dir=shared)
+            self.assertEqual((path.name, warns, server.count), ("gps_20261110T1200Z.tle", [], 1))
+            omm, msgs = fetch_group("gps-ops", shared, shared / "celestrak_state.json",
+                                    self.NOW + timedelta(hours=1), url=server.url)
+            self.assertEqual(server.count, 1)
+            self.assertEqual(omm, shared / "gps-ops_20261110T1200Z.json")
+            self.assertEqual([m.code for m in msgs], ["ORBIT_RATE_LIMITED_LOCAL"])
+
     def test_fetch_non_tle_body_falls_back(self):
         with tempfile.TemporaryDirectory() as d:
             junk = Path(d) / "junk.txt"
@@ -147,6 +175,37 @@ class TestFetch(unittest.TestCase):
             path, warns = fetch_gps_tle(cache, url=junk.as_uri(), now=self.NOW)
             self.assertEqual(path.name, "gps_20261105T0000Z.tle")
             self.assertEqual(sorted(p.name for p in cache.glob("gps*")), ["gps_20261105T0000Z.tle"])
+
+
+class CountingServer:
+    """HTTP server บน 127.0.0.1 ที่ตอบ gps-ops.json ของ fixture ทุกครั้งและนับจำนวน request"""
+
+    def __enter__(self):
+        body = (FXS / "snapshot" / "gps-ops.json").read_bytes()
+        counter = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                counter.count += 1
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.count = 0
+        self.server = HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/gp.php?GROUP=gps-ops&FORMAT=json"
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.thread.join(5)
+        self.server.server_close()
 
 
 if __name__ == "__main__":

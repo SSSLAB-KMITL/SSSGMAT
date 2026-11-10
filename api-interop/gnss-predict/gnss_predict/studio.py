@@ -37,7 +37,7 @@ from .analyze import AerRow, Interval, access_intervals, aer_rows, global_statis
 from .brdc import Nav, fetch_brdc, read_nav
 from .bundle import build_manifest, file_sha256, input_hash, write_bundle
 from .catalog import BRDC_DIR, IGS_METADATA_FILE, Catalog, CatalogSatellite, broadcast_file, build_catalog, is_shown
-from .config import BRDC_DAYS_BACK, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
+from .config import BRDC_DAYS_BACK, CELESTRAK_STATE_FILE, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
 from .czml import access_czml, satellites_czml
 from .dop import dop_series
 from .errors import (BrdcUnavailableError, GnssPredictError, Message, NoSatellitesError, OrbitUnavailableError,
@@ -54,8 +54,7 @@ from .studio_validate import validate_ephemeris, validation_markdown
 Progress = Callable[[str, float], None]
 
 ORBITS_DIR = "orbits"
-CACHE_DIR = "_cache"
-CELESTRAK_STATE_FILE = "celestrak_state.json"
+CACHE_DIR = "_cache"                       # <data>/orbits/_cache เดียวกับ config.OMM_CACHE_DIR ของ CLI เดิม
 SHA256SUMS = "SHA256SUMS"
 SNAPSHOT_TIME_FMT = "%Y%m%dT%H%MZ"
 

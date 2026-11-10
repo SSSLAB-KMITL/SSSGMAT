@@ -50,16 +50,19 @@ python3 -m gnss_predict --tle-file cache/gps_20261109T2018Z.tle --keep-work
 | `--min-el` | 0 | ส่งออกเฉพาะแถวที่ El ≥ ค่านี้ |
 | `--shell-km` | 400 | ความสูง shell ไอโอโนสเฟียร์ (เท่ากับใน `t02_5_rebuild_tec.py`) |
 | `--tle-file` | ไม่ระบุ | ใช้ไฟล์ TLE นี้แทนการดาวน์โหลด (ใช้เมื่อต้องการรันซ้ำให้ได้ผลเดิม) |
-| `--cache-dir` | `cache/` | ที่เก็บ TLE ที่ดาวน์โหลด |
+| `--cache-dir` | `cache/` | ที่เก็บ TLE ที่แปลงจาก OMM (ตัว OMM และ `celestrak_state.json` อยู่ใน `data/orbits/_cache/`) |
 | `--out-dir` | `output/` | ที่เก็บผลลัพธ์ |
 | `--keep-work` | ปิด | เก็บ GMAT script, รายงาน และ log ไว้ใน `out-dir/work-<เวลา>/` |
 
 exit code: `0` สำเร็จ, `1` ข้อผิดพลาดที่คาดไว้ (TLE, GMAT, รายงาน), `2` ใส่ตัวเลือกผิด
 
-ข้อมูลวงโคจรดาวน์โหลดจาก CelesTrak กลุ่ม `gps-ops` เป็น OMM (JSON) เก็บไว้ใน `cache/gps-ops_<เวลา UTC>.json`
+ข้อมูลวงโคจรดาวน์โหลดจาก CelesTrak กลุ่ม `gps-ops` เป็น OMM (JSON) เก็บไว้ใน `data/orbits/_cache/gps-ops_<เวลา UTC>.json`
 แล้วแปลงเป็น `cache/gps_<เวลา UTC>.tle` (ดาวที่หมายเลขแคตตาล็อกเกิน 99999 ใช้ Alpha-5 ในช่อง 5 ตัวอักษร)
-ส่ง request ได้ไม่เกิน 1 ครั้งต่อ 2 ชั่วโมง (เวลาที่ส่งล่าสุดอยู่ใน `cache/celestrak_state.json`) ถ้าดาวน์โหลดไม่ได้
-หรือ CelesTrak ตอบกลับเป็นข้อความที่ไม่ใช่ OMM (เช่นเมื่อดาวน์โหลดถี่เกินกำหนด) จะใช้ไฟล์ล่าสุดใน cache พร้อมคำเตือน
+ส่ง request ได้ไม่เกิน 1 ครั้งต่อ 2 ชั่วโมง (เวลาที่ส่งล่าสุดอยู่ใน `data/orbits/_cache/celestrak_state.json`)
+CLI นี้กับ GNSS Studio (หัวข้อ 7) ใช้ `data/orbits/_cache/` เดียวกันเป็นค่าตั้งต้น (หรือ `$GNSS_STUDIO_DATA/orbits/_cache/`
+ถ้าตั้งตัวแปรนี้) จึงนับกติกา 2 ชั่วโมงร่วมกัน ถ้าอีกเครื่องมือเพิ่งดึง `gps-ops` ไปจะใช้ OMM ไฟล์นั้นโดยไม่ส่ง request ซ้ำและไม่เตือน
+ถ้าดาวน์โหลดไม่ได้หรือ CelesTrak ตอบกลับเป็นข้อความที่ไม่ใช่ OMM (เช่นเมื่อดาวน์โหลดถี่เกินกำหนด)
+จะใช้ไฟล์ล่าสุดใน cache พร้อมคำเตือน
 TLE อายุเกิน 7 วันจะมีคำเตือน และถ้าเกิน 30 วันจะหยุด
 
 พยากรณ์ 24 ชม. ครบ 32 ดวงใช้เวลาราว 6 วินาที
@@ -163,6 +166,8 @@ python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 
   รันซ้ำด้วยข้อมูลเดิมได้โฟลเดอร์เดิมทันทีโดยไม่รัน GMAT ทุกโฟลเดอร์ผลลัพธ์เขียนลงโฟลเดอร์ชั่วคราวก่อนแล้ว rename ทั้งชุด
 - กติกา CelesTrak: ส่ง request ได้ไม่เกิน 1 ครั้งต่อกลุ่มต่อ 2 ชม. (เวลาที่ส่งล่าสุดอยู่ใน `<data>/orbits/_cache/celestrak_state.json`)
   ถ้าดึงไม่ได้หรือได้คำตอบที่ไม่ใช่ OMM จะไม่ลองซ้ำ ใช้ไฟล์ล่าสุดใน cache พร้อมคำเตือน `ORBIT_DOWNLOAD_FAILED`
+  CLI เดิม (หัวข้อ 2) เก็บ OMM `gps-ops` และ `celestrak_state.json` ใน `data/orbits/_cache/` เดียวกัน
+  เมื่อ `--data` เป็นค่าตั้งต้น ทั้งสองเครื่องมือจึงนับกติกา 2 ชม. ร่วมกันและใช้ OMM ที่อีกฝั่งเพิ่งดึงได้
   IGS metadata ดึงใหม่เมื่อไฟล์ใน cache อายุเกิน 24 ชม. ถ้าดึง broadcast ไม่ได้ทั้งของเมื่อวานและสองวันก่อน
   snapshot จะไม่มี `brdc/` และมีคำเตือน `BRDC_UNAVAILABLE`
 - `validate` ที่ไม่ระบุ `--sp3` จะดาวน์โหลด SP3 ของวันนั้นจาก CDDIS ตามลำดับ `COD0MGXFIN`, `GFZ0MGXRAP`, `WUM0MGXRAP`

@@ -98,6 +98,7 @@ tests/
 | `BRDC_MAX_TK_S` | `14400` (ใช้ ephemeris ที่ \|tk\| ≤ 4 ชม.) |
 | `CZML_STEP_S`, `CZML_LAGRANGE_DEGREE` | `300`, `7` |
 | `DATA_DIR` | `Path(os.environ.get("GNSS_STUDIO_DATA", PKG_ROOT / "data"))` |
+| `OMM_CACHE_DIR`, `CELESTRAK_STATE_FILE` | `DATA_DIR / "orbits" / "_cache"`, `"celestrak_state.json"` (cache ของ OMM ที่ CLI เดิมและ studio ใช้ร่วมกัน) |
 | `ENGINE_VERSION` | `"0.2.0"` เพิ่มทุกครั้งที่การคำนวณเปลี่ยน ใช้ใน hash และ manifest |
 
 ### 5.2 `omm.py`
@@ -333,7 +334,8 @@ def validate_ephemeris(pred_sp3: Path, truth_sp3: Path, nav: Nav | None, fac: Fa
 
 ### 5.15 CLI เดิม (`tle_fetch.py`)
 
-- `fetch_gps_tle` เปลี่ยนไปดึง `gps-ops` เป็น OMM ผ่าน `omm.fetch_group` แล้วแปลงเป็นไฟล์ `gps_<เวลา>.tle` แบบเดิม (บรรทัดชื่อคงชื่อจาก CelesTrak เพื่อให้ regex `(PRN nn)` เดิมใช้ได้) และเก็บ OMM ไว้คู่กันเป็น `gps-ops_<เวลา>.json` (ชื่อที่ `omm.fetch_group` เขียน)
+- `fetch_gps_tle` เปลี่ยนไปดึง `gps-ops` เป็น OMM ผ่าน `omm.fetch_group` แล้วแปลงเป็นไฟล์ `gps_<เวลา>.tle` แบบเดิม (บรรทัดชื่อคงชื่อจาก CelesTrak เพื่อให้ regex `(PRN nn)` เดิมใช้ได้) และเก็บ OMM เป็น `gps-ops_<เวลา>.json` (ชื่อที่ `omm.fetch_group` เขียน)
+- `fetch_gps_tle(cache_dir, ..., omm_cache_dir=None)`: OMM และ `celestrak_state.json` อยู่ใน `omm_cache_dir` (ไม่ระบุ = `cache_dir`) ส่วน `gps_<เวลา>.tle` อยู่ใน `cache_dir` CLI เดิมส่ง `OMM_CACHE_DIR` ซึ่งเป็น `<data>/orbits/_cache` ของ studio เพื่อให้สองเครื่องมือนับกติกา CelesTrak ร่วมกัน (กติกานับต่อ IP) ข้อความระดับ info เช่น `ORBIT_RATE_LIMITED_LOCAL` ไม่เป็นคำเตือนของ CLI เดิม
 - `Spacecraft.Id` ของ CLI เดิมใช้ช่องหมายเลขแคตตาล็อก 5 ตัวอักษรของบรรทัด 1 (Alpha-5 เมื่อเกิน 99999)
 - คำสั่ง ตัวเลือก ชื่อไฟล์ และคอลัมน์ CSV ไม่เปลี่ยน
 

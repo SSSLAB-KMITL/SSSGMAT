@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import DEFAULT_CACHE_DIR, DEFAULT_OUT_DIR, SHELL_KM, STEP_S
+from .config import DEFAULT_CACHE_DIR, DEFAULT_OUT_DIR, OMM_CACHE_DIR, SHELL_KM, STEP_S
 from .errors import GnssPredictError, TleUnavailableError
 from .predict import build_meta, output_name, parse_start, predict_samples, rows_from_samples, write_outputs
 from .run_gmat import find_gmat_console, gmat_version
@@ -26,7 +26,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--min-el", type=float, default=0.0, help="ส่งออกเฉพาะแถวที่ El ≥ ค่านี้ (องศา)")
     p.add_argument("--shell-km", type=float, default=SHELL_KM, help="ความสูงของ shell ไอโอโนสเฟียร์ (กม.)")
     p.add_argument("--tle-file", type=Path, help="ใช้ไฟล์ TLE นี้แทนการดาวน์โหลด")
-    p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR, help="ที่เก็บ TLE ที่ดาวน์โหลด")
+    p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR,
+                   help="ที่เก็บ TLE ที่แปลงจาก OMM (OMM และเวลาที่ส่งคำขอเก็บร่วมกับ studio ใน data/orbits/_cache/)")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR, help="ที่เก็บผลลัพธ์")
     p.add_argument("--keep-work", action="store_true", help="เก็บ script, รายงาน และ log ของ GMAT ไว้")
     return p
@@ -39,7 +40,7 @@ def _run(args: argparse.Namespace, start: datetime, now: datetime) -> int:
         if not tle_path.is_file():
             raise TleUnavailableError(f"ไม่พบไฟล์ TLE: {tle_path}")
     else:
-        tle_path, w = fetch_gps_tle(args.cache_dir.resolve(), now=now)
+        tle_path, w = fetch_gps_tle(args.cache_dir.resolve(), now=now, omm_cache_dir=OMM_CACHE_DIR)
         warnings += w
     entries, w = parse_tle_file(tle_path)
     warnings += w

@@ -62,6 +62,10 @@ WGS84_A_KM = 6378.137
 WGS84_F = 1 / 298.257223563
 
 DATA_DIR = Path(os.environ.get("GNSS_STUDIO_DATA", PKG_ROOT / "data"))
+# OMM ที่ดาวน์โหลดและ celestrak_state.json ของ CLI เดิมกับ studio อยู่ที่เดียวกัน
+# เพราะกติกา CelesTrak (1 ครั้งต่อกลุ่มต่อ 2 ชม.) นับต่อ IP ไม่ใช่ต่อเครื่องมือ
+OMM_CACHE_DIR = DATA_DIR / "orbits" / "_cache"
+CELESTRAK_STATE_FILE = "celestrak_state.json"
 
 # เพิ่มทุกครั้งที่การคำนวณเปลี่ยน ใช้ใน hash และ manifest
 ENGINE_VERSION = "0.2.0"

@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
+from gnss_predict import config, studio
 from gnss_predict.__main__ import main
+from gnss_predict.errors import TleUnavailableError
 from gnss_predict.predict import build_meta, output_name, parse_start, rows_from_samples, write_outputs
 from gnss_predict.report import SezSample
 from gnss_predict.tle_fetch import parse_tle_file
@@ -92,6 +94,14 @@ class TestMainWithoutGmat(unittest.TestCase):
     def test_missing_gmat_exits_1(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"GMAT_BIN": "/nonexistent/GmatConsole"}):
             self.assertEqual(main(["--start", "2026-11-10", "--tle-file", str(FX / "gps_2sat.tle"), "--out-dir", d], now=NOW), 1)
+
+    def test_download_uses_studio_omm_cache(self):
+        # CLI เดิมเก็บ OMM และ celestrak_state.json ที่เดียวกับ studio เพื่อนับกติกา 2 ชม. ร่วมกัน
+        self.assertEqual(config.OMM_CACHE_DIR, config.DATA_DIR / studio.ORBITS_DIR / studio.CACHE_DIR)
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch("gnss_predict.__main__.fetch_gps_tle", side_effect=TleUnavailableError("ไม่มีเน็ต")) as fetch:
+            self.assertEqual(main(["--start", "2026-11-11", "--cache-dir", d, "--out-dir", d], now=NOW), 1)
+        fetch.assert_called_once_with(Path(d).resolve(), now=NOW, omm_cache_dir=config.OMM_CACHE_DIR)
 
     def test_bad_start_exits_2(self):
         with self.assertRaises(SystemExit) as cm:
