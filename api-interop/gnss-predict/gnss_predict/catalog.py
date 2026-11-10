@@ -90,18 +90,24 @@ def _read_igs(snapshot_dir: Path) -> IgsMetadata:
         raise IgsMetadataUnavailableError(f"อ่าน IGS metadata ไม่ได้ ({path}): {exc}") from exc
 
 
-def _read_broadcast(snapshot_dir: Path) -> tuple[dict[str, BroadcastStatus] | None, Message | None]:
-    """(สถานะ broadcast ของแต่ละ PRN, None) หรือ (None, BRDC_UNAVAILABLE) เมื่อใช้ไฟล์ broadcast ไม่ได้"""
-    folder = snapshot_dir / BRDC_DIR
+def broadcast_file(snapshot_dir: Path) -> Path | None:
+    """ไฟล์ broadcast ที่ build_catalog ใช้: ชื่อที่เรียงแล้วมากที่สุดใน brdc/ ที่ลงท้าย .rnx หรือ .rnx.gz ไม่มีคืน None"""
+    folder = Path(snapshot_dir) / BRDC_DIR
     try:
         files = sorted(p for p in folder.iterdir() if p.is_file() and p.name.lower().endswith((".rnx", ".rnx.gz")))
     except OSError:                                    # ไม่มีโฟลเดอร์, ไม่ใช่โฟลเดอร์, อ่านไม่ได้
         files = []
-    if not files:
-        reason = f"ไม่พบไฟล์ broadcast (.rnx หรือ .rnx.gz) ใน {folder}"
+    return files[-1] if files else None
+
+
+def _read_broadcast(snapshot_dir: Path) -> tuple[dict[str, BroadcastStatus] | None, Message | None]:
+    """(สถานะ broadcast ของแต่ละ PRN, None) หรือ (None, BRDC_UNAVAILABLE) เมื่อใช้ไฟล์ broadcast ไม่ได้"""
+    path = broadcast_file(snapshot_dir)
+    if path is None:
+        reason = f"ไม่พบไฟล์ broadcast (.rnx หรือ .rnx.gz) ใน {snapshot_dir / BRDC_DIR}"
     else:
         try:
-            return broadcast_status(read_nav(files[-1])), None
+            return broadcast_status(read_nav(path)), None
         except BrdcUnavailableError as exc:
             reason = str(exc)
     return None, Message("BRDC_UNAVAILABLE", "warning",
