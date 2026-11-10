@@ -43,6 +43,7 @@ GNSS_GROUPS = {"G": "gps-ops", "R": "glo-ops", "E": "galileo", "C": "beidou"}
 CELESTRAK_MIN_INTERVAL_S = 7200       # ส่ง request ได้ไม่เกิน 1 ครั้งต่อกลุ่มต่อรอบอัปเดต 2 ชม.
 
 IGS_META_URL = "https://files.igs.org/pub/station/general/igs_satellite_metadata.snx"
+IGS_META_MAX_AGE_S = 86400             # ไฟล์ IGS metadata อายุเกินนี้ถึงดึงใหม่ (24 ชม.)
 CDDIS_BRDC_URL = "ftp://gdc.cddis.eosdis.nasa.gov/gnss/data/daily/{year}/brdc/"
 # ลำดับความสำคัญของ SP3 MGEX ที่ใช้เป็นค่าจริงตอนตรวจ (ตัวแรกที่มีไฟล์)
 MGX_SP3_PREFERENCE = ("COD0MGXFIN", "GFZ0MGXRAP", "WUM0MGXRAP")
