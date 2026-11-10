@@ -421,5 +421,94 @@ class TestRunAnalyze(FakeGmat):
         self.assertTrue(any(line.startswith("warning: ") for line in lines[1:]))
 
 
+class TestHashInputs(FakeGmat):
+    """ข้อมูลตั้งต้นทุกตัวตามหัวข้อ 5.12 ของ spec engine ต้องเปลี่ยนชื่อโฟลเดอร์ผล (ไม่งั้นจะได้ผลเก่าที่ไม่ตรง)"""
+
+    def ephem_name(self) -> str:
+        return run_propagate(self.sc, data_dir=self.data)[0].name
+
+    def test_ephem_hash_changes_with_every_input(self):
+        base = self.ephem_name()
+        names = {}
+        snapshot = self.data / "orbits" / SNAPSHOT_NAME
+        used = json.loads((self.sc / "ephem" / base / "manifest.json").read_bytes())["inputs"]["files_sha256"]
+        self.assertEqual(len(used), 6)
+        for rel in used:                                    # ไบต์ของทุกไฟล์ใน snapshot ที่ build_catalog อ่าน
+            path = snapshot / rel
+            original = path.read_bytes()
+            path.write_bytes(original + b"\n")             # ความหมายเดิม ไบต์ต่าง
+            try:
+                names[f"file {rel}"] = self.ephem_name()
+            finally:
+                path.write_bytes(original)
+        self.assertEqual(self.ephem_name(), base)          # คืนไฟล์แล้วได้โฟลเดอร์เดิม
+
+        def scenario_variant(key, change):
+            data = scenario_data()
+            change(data)
+            write_scenario(self.sc, data)
+            names[key] = self.ephem_name()
+
+        scenario_variant("start", lambda d: d["analysis_period"].update(start="2026-11-10T01:00:00Z"))
+        scenario_variant("stop", lambda d: d["analysis_period"].update(stop="2026-11-10T05:00:00Z"))
+        scenario_variant("step_s", lambda d: d.update(step_s=600))
+        scenario_variant("satellites", lambda d: d.update(objects=[o for o in d["objects"] if o["name"] != "E11"]))
+        write_scenario(self.sc, scenario_data())
+        with mock.patch.object(studio, "ENGINE_VERSION", "9.9.9"):
+            names["engine_version"] = self.ephem_name()
+
+        for key, name in names.items():
+            self.assertNotEqual(name, base, key)
+        self.assertEqual(len(set(names.values())), len(names), names)
+
+    def test_access_hash_changes_with_facility_and_shell(self):
+        base = run_analyze(self.sc, "THBK", data_dir=self.data)[0]
+
+        def facility(d):
+            return next(o for o in d["objects"] if o["class"] == "Facility")
+
+        variants = {
+            "min_el": lambda d: facility(d)["constraints"].update(elevation_angle_min_deg=15.0),
+            "latitude": lambda d: facility(d)["position"].update(lat_deg=THBK_LAT_DEG + 0.5),
+            "shell_km": lambda d: d["ionosphere"].update(shell_km=350.0),
+        }
+        names = {}
+        for key, change in variants.items():
+            data = scenario_data()
+            change(data)
+            write_scenario(self.sc, data)
+            acc, _ = run_analyze(self.sc, "THBK", data_dir=self.data)
+            self.assertEqual(acc.parent, base.parent, key)
+            names[key] = acc.name
+        for key, name in names.items():
+            self.assertNotEqual(name, base.name, key)
+        self.assertEqual(len(set(names.values())), len(names), names)
+        self.assertEqual(self.propagate.call_count, 1)     # Facility และ shell_km ไม่อยู่ใน hash ของ ephem
+
+
+class TestDopWithEmptySky(FakeGmat):
+    # ทุกดวงเริ่มใต้ขอบฟ้า: 20 จุดเวลาแรก (00:00–01:35) ไม่มีดาวเหนือขอบฟ้าเลย จึงไม่มีแถวใน aer.csv
+    EMPTY_SKY = {"G01": (0.0, -25.5, 46.5), "E11": (120.0, -25.5, 58.5), "R05": (240.0, -25.5, 70.5),
+                 "C01": (300.0, -25.5, 34.5), "G22": (60.0, -25.5, 52.5)}
+
+    def test_epochs_without_any_satellite_still_have_dop_rows(self):
+        with mock.patch.dict(PLAN, self.EMPTY_SKY):
+            acc, msgs = run_analyze(self.sc, "THBK", data_dir=self.data)
+        aer_times = {line.split(",")[0] for line in (acc / "aer.csv").read_text(encoding="utf-8").splitlines()[1:]}
+        dop = [line.split(",") for line in (acc / "dop.csv").read_text(encoding="utf-8").splitlines()[1:]]
+        self.assertEqual(len(dop), 73 * 5)
+        empty = sorted({r[0] for r in dop} - aer_times)
+        self.assertEqual(len(empty), 20)
+        self.assertEqual((empty[0], empty[-1]), ("2026-11-10T00:00:00Z", "2026-11-10T01:35:00Z"))
+        for t in empty:
+            rows = [r for r in dop if r[0] == t]
+            self.assertEqual([r[1:] for r in rows], [[system, "0"] + [""] * 7 for system in ("ALL", "G", "R", "E", "C")])
+        gaps = sum(1 for r in dop if r[1] == "ALL" and r[3] == "")
+        self.assertGreaterEqual(gaps, len(empty))
+        dop_gaps = [m for m in msgs if m.code == "DOP_GAPS"]
+        self.assertEqual(len(dop_gaps), 1)
+        self.assertIn(f"{gaps} จาก 73 จุดเวลา", dop_gaps[0].text)
+
+
 if __name__ == "__main__":
     unittest.main()
