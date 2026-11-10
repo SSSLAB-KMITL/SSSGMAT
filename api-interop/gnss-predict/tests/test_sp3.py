@@ -271,6 +271,32 @@ class TestLagrangeAt(unittest.TestCase):
         self.assertIsNone(lagrange_at(series, at(19) + timedelta(seconds=10)))
         self.assertIsNone(lagrange_at({}, self.T0))
 
+    def test_lagrange_at_pins_first_key(self):
+        series = self._series()
+        first = min(series)
+        self.assertEqual(lagrange_at(series, first), series[first])        # t ตรงกับจุดแรกพอดี คืนค่าที่เก็บไว้
+        self.assertIsNone(lagrange_at(series, first + timedelta(seconds=1)))
+
+    def test_lagrange_at_none_across_hole(self):
+        at = lambda k: self.T0 + timedelta(seconds=300 * k)
+        full = self._series(50)
+        series = {t: p for k, (t, p) in enumerate(full.items()) if not 15 <= k <= 30}   # ลบ epoch ตรงกลาง 16 จุด
+        self.assertIsNone(lagrange_at(series, at(31.5)))      # จุดก่อนหน้า 4 จุดมาจาก 4.5 ชม. ก่อน
+        self.assertIsNone(lagrange_at(series, at(20.5)))      # t อยู่ในช่องว่างเอง
+        self.assertIsNone(lagrange_at(series, at(14.5)))      # หน้าต่างคร่อมช่องว่าง
+        self.assertIsNotNone(lagrange_at(series, at(8.5)))    # ช่องว่างอยู่นอกหน้าต่าง ยังใช้ได้
+        self.assertIsNotNone(lagrange_at(series, at(40.5)))   # หลังช่องว่าง กลับมาใช้ได้เมื่อมีจุดครบ
+        want = self._poly(300 * 8.5 / 3000)
+        for g, w in zip(lagrange_at(series, at(8.5)), want):
+            self.assertAlmostEqual(g, w, delta=1e-9)
+
+    def test_lagrange_at_none_when_one_epoch_missing(self):
+        at = lambda k: self.T0 + timedelta(seconds=300 * k)
+        series = self._series()
+        del series[at(8)]                                      # ระยะห่าง 600 s เทียบ 300 s เกิน 1.5 เท่า
+        self.assertIsNone(lagrange_at(series, at(9.5)))
+        self.assertIsNotNone(lagrange_at(series, at(14.5)))    # หน้าต่าง 10..19 ไม่มีช่องว่าง
+
     def test_lagrange_at_half_window(self):
         at = lambda k: self.T0 + timedelta(seconds=300 * k)
         cubic = lambda u: (1 + 2 * u - u**2 + 0.5 * u**3, u**3, -u)

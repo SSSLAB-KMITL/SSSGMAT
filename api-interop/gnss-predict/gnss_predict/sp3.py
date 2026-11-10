@@ -147,6 +147,7 @@ _SATS_PER_LINE = 17
 _MIN_SAT_LINES = 5          # SP3-c/d: บรรทัด '+' และ '++' อย่างน้อย 5 บรรทัด
 _BAD_VALUE = 999999.0       # SP3 ใช้ 999999.999999 แทนค่าที่ไม่มี (ตำแหน่ง 0.000000 ก็คือไม่มีเช่นกัน)
 _CLOCK_UNKNOWN = 999999.999999
+_MAX_STEP_RATIO = 1.5       # lagrange_at: ระยะห่างระหว่างจุดในหน้าต่างห่างกันเกินอัตรานี้ถือว่ามีช่องว่าง
 _COMMENT = "GNSS Studio predicted orbit from TLE/SGP4 (GMAT)"
 
 SatSeries = dict[datetime, Position]
@@ -190,7 +191,8 @@ def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW)
     """ตำแหน่งที่เวลา t ด้วย Lagrange 2 × half_window จุด (ค่าเริ่มต้น 10 จุด)
 
     ต้องมีจุดก่อน t และหลัง t ข้างละ half_window จุด ไม่งั้นคืน None ถ้า t ตรงกับจุดที่มี คืนค่านั้นเลย
-    (เหมือน interpolate) ไม่ตรวจช่องว่างระหว่างจุด ผู้เรียกต้องรู้ว่า series ถี่พอ
+    (เหมือน interpolate) ถ้าในหน้าต่างมีช่องว่าง (ระยะห่างระหว่างจุดที่ติดกันมากสุด > 1.5 เท่าของน้อยสุด
+    เช่น read_sp3_all ตัด epoch ที่เป็น 0 หรือ 999999 ออก) คืน None
     """
     if half_window < 1:
         raise ValueError("half_window ต้องมากกว่า 0")
@@ -204,6 +206,9 @@ def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW)
     window = times[lo:hi]
     t0 = window[half_window - 1]
     xs = [(w - t0).total_seconds() for w in window]
+    steps = [b - a for a, b in zip(xs, xs[1:])]
+    if max(steps) > _MAX_STEP_RATIO * min(steps):   # มีช่องว่างในหน้าต่าง (รวมช่วงที่ t อยู่) ไม่ interpolate ข้าม
+        return None
     return _lagrange(xs, [series[w] for w in window], (t - t0).total_seconds())
 
 
