@@ -5,16 +5,19 @@
 //     ฟอร์มสะอาด + root ใหม่ต่างจาก base -> เปลี่ยน base และช่องเงียบ ๆ
 //     ฟอร์มมีค่าแก้ค้าง + root ใหม่ต่างจาก base -> conflicted (Apply ถามด้วยกล่อง Reload / Cancel แทนการส่ง)
 //     root ใหม่เท่า base (แท็บอื่นแก้ object อื่น) -> ไม่เกี่ยวกับฟอร์มนี้ ค่าที่แก้ค้างส่งต่อได้ด้วย ETag ใหม่ล่าสุด
+//   การเทียบแต่ละครั้งเป็น GET หนึ่งครั้ง: มีใหม่กว่าเข้ามา = ยกเลิกอันเก่า (ผลที่ตอบทีหลังทิ้ง) และ Apply ที่กดระหว่างที่การเทียบยังค้างอยู่
+//   รอให้การเทียบจบก่อนแล้วค่อยตัดสินว่าส่งหรือถามด้วยกล่อง (ไม่ตัดสินจากสถานะที่ยังไม่รู้ว่าเก่าไหม)
 // - Apply ส่งผ่าน store (คิวเขียนทีละอย่าง ETag ล่าสุด) ตรวจก่อนส่งในเครื่อง ส่งเฉพาะที่เปลี่ยน; สำเร็จ = โหลดค่าที่ server เก็บจริงมาแทน
+//   (store รีเฟรชผลลัพธ์เองเมื่อผลลัพธ์เก่า จึงไม่ต้องสั่งซ้ำที่นี่)
 //   ระหว่างที่หน้าต่างเขียนเองหรือกำลัง Reload ETag ที่เปลี่ยนเป็นของตัวเอง ไม่นับเป็นการแก้จากที่อื่น
 // - 412 จริง (ETag เก่าตอนส่ง): store ตั้ง conflict ซึ่งจะเปิดกล่องของทั้งแอป หน้าต่างนี้รับกล่องเป็นของตัวเอง (clearConflict แล้วเปิดกล่องของตน)
 //   เพื่อให้ Reload ดึงทั้ง scenario และค่าของ object นี้ใหม่ และทิ้งค่าที่แก้ไว้ ส่วน Cancel เก็บค่าที่แก้ไว้และยังเป็น conflicted
+// - Reload ใช้ข้อมูลใหม่ได้ก็ต่อเมื่อมาถึงจริง: useScenario.reload() คืน false เมื่อโหลดไม่สำเร็จ (มันรายงานเองแล้วไม่โยน) -> กล่องคงอยู่ ค่าที่แก้คงอยู่ ไม่ส่งอะไร
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, errorText, isAbortError } from "../../api/client";
 import { isConflict, reportWriteError } from "../../api/writes";
 import { msg } from "../../labels/messages.th";
-import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import {
   applyValues, deepEqual, diffTree, fieldFromServer, isDirty, locateField, valuesFrom,
@@ -31,7 +34,7 @@ export interface EditorConfig {
   /** อ่าน root ล่าสุดจากต้นทาง (object: GET ของ server; Scenario: doc ใน store) */
   load(signal: AbortSignal | undefined): Promise<Tree>;
   /** ส่ง patch (เฉพาะที่เปลี่ยน) ผ่าน store */
-  save(patch: Tree): Promise<{ stale: boolean }>;
+  save(patch: Tree): Promise<unknown>;
   /** รูปแบบเวลาของช่องเวลา (Scenario) */
   timeContext(base: Tree): TimeContext;
   /** state ของ store เปลี่ยนในแบบที่อาจหมายถึง root นี้เปลี่ยน */
@@ -62,6 +65,7 @@ export interface Editor {
   setUi(key: string, value: boolean): void;
   /** true = ไม่มีอะไรค้าง (ไม่ได้แก้ หรือส่งสำเร็จ) false = ยังค้างอยู่ (ผิด ขัดแย้ง หรือ server ปฏิเสธ) */
   apply(): Promise<boolean>;
+  /** Reload ในกล่อง conflict: ได้ข้อมูลใหม่จริง = ทิ้งค่าที่แก้แล้วปิดกล่อง; ไม่ได้ = กล่องคงอยู่ ค่าที่แก้คงอยู่ */
   reload(): Promise<void>;
   /** Cancel ในกล่อง conflict: เก็บค่าที่แก้ไว้ */
   dismissConflict(): void;
@@ -89,20 +93,39 @@ export function useEditor(config: EditorConfig): Editor {
   const dirty = base !== null && isDirty(values, initial);
 
   // callback ของ store และ promise ที่ตอบทีหลังอ่านค่าล่าสุดผ่าน ref (ไม่ใช่ค่าที่ closure ตอนสร้าง)
+  // (render ตั้งทุกครั้ง; adopt และ markConflicted ตั้งทันทีด้วย เพื่อให้ Apply ที่รอการเทียบอ่านผลของการเทียบนั้นได้โดยไม่ต้องรอ render)
   const latest = useRef({ base, values, dirty, conflicted });
   latest.current = { base, values, dirty, conflicted };
   /** กำลังเขียนหรือ Reload เอง: ETag ที่เปลี่ยนระหว่างนี้เป็นของเรา */
   const working = useRef(false);
+  /** Apply กำลังทำงาน (รวมช่วงรอการเทียบ): กดซ้ำไม่ทำอะไร */
+  const entered = useRef(false);
   const seq = useRef(0);
+  /** การเทียบกับ server ที่ค้างอยู่ (ล่าสุดเท่านั้น) และตัวยกเลิกของมัน */
+  const checking = useRef<Promise<void> | null>(null);
+  const checkCtl = useRef<AbortController | null>(null);
 
-  /** root ใหม่ทั้งก้อน: ทิ้งค่าที่แก้ ข้อผิดพลาด และสถานะขัดแย้ง */
-  const adopt = useCallback((root: Tree): void => {
+  const markConflicted = useCallback((value: boolean): void => {
+    latest.current.conflicted = value;
+    setConflicted(value);
+  }, []);
+
+  /**
+   * root ใหม่ทั้งก้อน: ทิ้งค่าที่แก้ ข้อผิดพลาด และสถานะขัดแย้ง
+   * keepAdded = ตามค่าของ server เงียบ ๆ หรือหลัง Apply (ไม่ใช่ Reload): แถวที่ผู้ใช้เพิ่มเองใน ui (true) ยังอยู่ ไม่หายไปพร้อมการโหลดค่าใหม่
+   */
+  const adopt = useCallback((root: Tree, keepAdded = false): void => {
+    const next = valuesFrom(root, cfg.current.specs, cfg.current.timeContext(root));
+    latest.current = { base: root, values: next, dirty: false, conflicted: false };
     setBase(root);
-    setValues(valuesFrom(root, cfg.current.specs, cfg.current.timeContext(root)));
+    setValues(next);
     setErrors({});
     setGeneral(null);
     setConflicted(false);
-    setUiState(NONE);
+    setUiState((u) => {
+      const added = keepAdded ? Object.entries(u).filter(([, v]) => v) : [];
+      return added.length === 0 ? NONE : Object.fromEntries(added);
+    });
     setLoadError(null);
     setStatus("ready");
   }, []);
@@ -131,31 +154,41 @@ export function useEditor(config: EditorConfig): Editor {
 
   // ---------- การแก้จากที่อื่น ----------
   useEffect(() => {
-    let check = 0;
-    return useScenario.subscribe((next, prev) => {
+    const unsubscribe = useScenario.subscribe((next, prev) => {
       if (working.current || latest.current.base === null) return;
       if (!cfg.current.watches(next, prev)) return;
-      const mine = ++check;
-      void cfg.current.load(undefined).then(
+      checkCtl.current?.abort(); // การเทียบเก่ากว่านี้ไม่มีความหมายแล้ว (และไม่ต้องรอคำตอบของมัน)
+      const ctl = new AbortController();
+      checkCtl.current = ctl;
+      const done: Promise<void> = cfg.current.load(ctl.signal).then(
         (fresh) => {
           const now = latest.current;
-          if (mine !== check || working.current || now.base === null) return;
-          if (deepEqual(fresh, now.base)) setConflicted(false); // แท็บอื่นแก้อย่างอื่น: ไม่เกี่ยวกับฟอร์มนี้
-          else if (now.dirty) setConflicted(true);
-          else adopt(fresh);
+          if (ctl !== checkCtl.current || working.current || now.base === null) return;
+          if (deepEqual(fresh, now.base)) markConflicted(false); // แท็บอื่นแก้อย่างอื่น: ไม่เกี่ยวกับฟอร์มนี้
+          else if (now.dirty) markConflicted(true);
+          else adopt(fresh, true);
         },
         (e: unknown) => {
-          if (e instanceof ApiError && e.status === 404 && mine === check) fail(e); // object ถูกลบหรือเปลี่ยนชื่อ
+          if (e instanceof ApiError && e.status === 404 && ctl === checkCtl.current) fail(e); // object ถูกลบหรือเปลี่ยนชื่อ
         },
-      );
+      ).finally(() => {
+        if (checking.current === done) checking.current = null;
+      });
+      checking.current = done;
     });
-  }, [config.identity, adopt, fail]);
+    return () => {
+      unsubscribe();
+      checkCtl.current?.abort();
+      checkCtl.current = null;
+      checking.current = null;
+    };
+  }, [config.identity, adopt, fail, markConflicted]);
 
   // ขัดแย้งแต่ผู้ใช้แก้คืนจนไม่เหลือค่าที่แก้ไว้แล้ว: ไม่มีอะไรให้เสีย ตามค่าของ server ทันที (ไม่ปล่อยให้ฟอร์มสะอาดแสดงค่าเก่า)
   useEffect(() => {
     if (!conflicted || dirty || working.current) return;
     const ctl = new AbortController();
-    cfg.current.load(ctl.signal).then(adopt, () => undefined);
+    cfg.current.load(ctl.signal).then((fresh) => adopt(fresh, true), () => undefined);
     return () => ctl.abort();
   }, [conflicted, dirty, adopt]);
 
@@ -178,10 +211,10 @@ export function useEditor(config: EditorConfig): Editor {
     if (first !== undefined) showPage(first.id);
   }, []);
 
-  const apply = useCallback(async (): Promise<boolean> => {
+  const send = useCallback(async (): Promise<boolean> => {
     const now = latest.current;
     const c = cfg.current;
-    if (now.base === null || working.current) return false;
+    if (now.base === null) return false;
     if (!now.dirty) return true;
     if (now.conflicted) {
       setConflictOpen(true);
@@ -200,20 +233,17 @@ export function useEditor(config: EditorConfig): Editor {
     setErrors({});
     setGeneral(null);
     try {
-      if (Object.keys(patch).length > 0) {
-        const { stale } = await c.save(patch);
-        if (stale) void useResults.getState().refresh();
-      }
+      if (Object.keys(patch).length > 0) await c.save(patch);
       try {
-        adopt(await c.load(undefined));
+        adopt(await c.load(undefined), true);
       } catch {
-        adopt(edited); // เขียนสำเร็จแต่อ่านกลับไม่ได้: ใช้ค่าที่เพิ่งส่ง การแก้ครั้งถัดไปจากที่อื่นจะทำให้เทียบใหม่
+        adopt(edited, true); // เขียนสำเร็จแต่อ่านกลับไม่ได้: ใช้ค่าที่เพิ่งส่ง การแก้ครั้งถัดไปจากที่อื่นจะทำให้เทียบใหม่
       }
       return true;
     } catch (e) {
       if (isConflict(e)) {
         useScenario.getState().clearConflict(); // หน้าต่างนี้รับกล่อง 412 ไว้เอง (Reload ต้องดึงค่าของ object นี้ใหม่ด้วย)
-        setConflicted(true);
+        markConflicted(true);
         setConflictOpen(true);
         return false;
       }
@@ -230,13 +260,33 @@ export function useEditor(config: EditorConfig): Editor {
       working.current = false;
       setBusy(false);
     }
-  }, [adopt, showFirstError]);
+  }, [adopt, markConflicted, showFirstError]);
+
+  const apply = useCallback(async (): Promise<boolean> => {
+    if (entered.current || working.current || latest.current.base === null) return false;
+    entered.current = true;
+    try {
+      // การเทียบกับ server ที่ยังค้างอยู่ตัดสินก่อน: ถ้า object เปลี่ยนไปแล้ว ต้องถามด้วยกล่อง ไม่ใช่ส่งทับ
+      if (checking.current !== null) {
+        setBusy(true);
+        try {
+          while (checking.current !== null) await checking.current;
+        } finally {
+          setBusy(false);
+        }
+      }
+      return await send();
+    } finally {
+      entered.current = false;
+    }
+  }, [send]);
 
   const reload = useCallback(async (): Promise<void> => {
     working.current = true;
     setBusy(true);
     try {
-      await useScenario.getState().reload();
+      // useScenario.reload() ไม่โยนเมื่อโหลดไม่สำเร็จ (รายงานเองแล้วคืน false): ถ้าไม่ได้ข้อมูลใหม่จริง ห้ามถือว่า store สดและห้ามทิ้งค่าที่แก้
+      if (!(await useScenario.getState().reload())) return;
       adopt(await cfg.current.load(undefined));
       setConflictOpen(false);
     } catch (e) {

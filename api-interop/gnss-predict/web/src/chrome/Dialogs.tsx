@@ -55,7 +55,15 @@ export function ConflictBox({ open, onReload, onCancel }: ConflictBoxProps) {
 function ConflictDialog() {
   const open = useScenario((s) => s.conflict);
   // Reload สำเร็จ = reload() ล้างธง conflict แล้วกล่องปิดเอง; ล้มเหลว = กล่องคงอยู่ให้ลองใหม่
-  return <ConflictBox open={open} onReload={() => useScenario.getState().reload()} onCancel={() => useScenario.getState().clearConflict()} />;
+  return (
+    <ConflictBox
+      open={open}
+      onReload={async () => {
+        await useScenario.getState().reload();
+      }}
+      onCancel={() => useScenario.getState().clearConflict()}
+    />
+  );
 }
 
 // ---------- job ที่ผู้ใช้สั่งล้มเหลว ----------

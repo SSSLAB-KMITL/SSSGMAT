@@ -418,6 +418,34 @@ describe("writes", () => {
     expect(paths(f)).toEqual([`GET ${BASE}`, `GET ${BASE}/objects`]);
   });
 
+  test("reload says true when the fresh doc and tree arrived", async () => {
+    stubFetch({
+      [`GET ${BASE}`]: { json: DOC, headers: { ETag: E3 } },
+      [`GET ${BASE}/objects`]: { json: TREE, headers: { ETag: E3 } },
+    });
+    await expect(st().reload()).resolves.toBe(true);
+  });
+
+  test("reload says false, keeps the doc and the conflict flag, and reports, when the fresh data did not arrive", async () => {
+    stubFetch({ [`PATCH ${BASE}/objects/Satellite/G01`]: { status: 412, json: { code: "ETAG_MISMATCH", text: "x" } } });
+    await st().patchObject("Satellite", "G01", {}).catch(() => undefined);
+    const before = st().doc;
+    stubFetch({
+      [`GET ${BASE}`]: { status: 500, json: { code: "INTERNAL", text: "อ่านไม่ได้" } },
+      [`GET ${BASE}/objects`]: { json: TREE, headers: { ETag: E3 } },
+    });
+    await expect(st().reload()).resolves.toBe(false);
+    expect(st().conflict).toBe(true);
+    expect(st().doc).toBe(before);
+    expect(st().etag).toBe(E1);
+    expect(useMessages.getState().items.some((m) => m.code === "INTERNAL")).toBe(true);
+  });
+
+  test("reload says false when no scenario is open", async () => {
+    st().close();
+    await expect(st().reload()).resolves.toBe(false);
+  });
+
   test("putDoc sends a changed copy with If-Match and reads X-Results-Stale", async () => {
     const f = stubFetch({
       [`PUT ${BASE}`]: (c) => ({ json: c.body, headers: { ETag: E2, "X-Results-Stale": "true" } }),

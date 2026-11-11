@@ -143,6 +143,19 @@ describe("valuesFrom and applyValues for an object page", () => {
     expect(diffPages(facility, applyValues(facility, valuesFrom(facility, specs), specs).edited)).toEqual({});
   });
 
+  test("Max must not be below Min, whichever of the two the user changed; a blank Max has no such limit", () => {
+    const withMax = { ...facility, constraints: { elevation_angle_min_deg: 10, elevation_angle_max_deg: 60 } };
+    const v = valuesFrom(withMax, specs);
+    const msgMax = msg("props.maxBelowMin");
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_max_deg": "9.5" }, specs).errors["constraints.elevation_angle_max_deg"]).toBe(msgMax);
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_min_deg": "61" }, specs).errors["constraints.elevation_angle_max_deg"]).toBe(msgMax);
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_max_deg": "10" }, specs).errors).toEqual({});
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_min_deg": "-5", "constraints.elevation_angle_max_deg": "-5" }, specs).errors).toEqual({});
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_min_deg": "80", "constraints.elevation_angle_max_deg": "" }, specs).errors).toEqual({});
+    // a Max that is itself out of range is reported as that, not as below Min
+    expect(applyValues(withMax, { ...v, "constraints.elevation_angle_max_deg": "95" }, specs).errors["constraints.elevation_angle_max_deg"]).toBe(msg("props.rangeBetween", { min: -90, max: 90 }));
+  });
+
   test("a field that was not touched is not checked, so a value the server already holds never blocks Apply", () => {
     const odd = { ...facility, basic: { ...facility.basic, position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 1e300 } } };
     const values = { ...valuesFrom(odd, specs), "basic.description": "x" };

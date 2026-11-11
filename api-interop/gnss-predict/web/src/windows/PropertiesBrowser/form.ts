@@ -105,8 +105,11 @@ export interface TimeContext {
 
 export type Spec =
   | { kind: "text"; key: string; fallback: string }
-  /** gt = มากกว่า (ไม่รวมค่านั้น), min/max = รวมค่านั้น; nullable = ว่างได้ (null); fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ */
-  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number }
+  /**
+   * gt = มากกว่า (ไม่รวมค่านั้น), min/max = รวมค่านั้น; fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ (null = ว่างได้);
+   * notBelow = key ของช่องตัวเลขอีกช่องที่ช่องนี้ต้องไม่น้อยกว่า (Max ไม่ต่ำกว่า Min) ข้ามเมื่อช่องนี้ว่าง
+   */
+  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number; notBelow?: string }
   /** fallback null = ว่างได้ (null) และแสดงเป็นข้อความว่าง */
   | { kind: "choice"; key: string; options: readonly string[]; fallback: string | null }
   | { kind: "bool"; key: string; fallback: boolean }
@@ -118,7 +121,7 @@ export type Spec =
   | { kind: "offset"; key: string; fallback: string };
 
 const text = (key: string, fallback = ""): Spec => ({ kind: "text", key, fallback });
-const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
+const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number; notBelow?: string } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
 const choice = (key: string, options: readonly string[], fallback: string | null): Spec => ({ kind: "choice", key, options, fallback });
 const bool = (key: string, fallback: boolean): Spec => ({ kind: "bool", key, fallback });
 const color = (key: string): Spec => ({ kind: "color", key });
@@ -140,7 +143,7 @@ export const OBJECT_SPECS: Record<ObjectClass, readonly Spec[]> = {
     num("basic.position.alt_m", 0),
     ...DESCRIPTION,
     num("constraints.elevation_angle_min_deg", 0, { min: -90, max: 90 }),
-    num("constraints.elevation_angle_max_deg", null, { min: -90, max: 90 }),
+    num("constraints.elevation_angle_max_deg", null, { min: -90, max: 90, notBelow: "constraints.elevation_angle_min_deg" }),
     ...ATTRIBUTES_2D(false),
   ],
   Satellite: [
@@ -325,6 +328,15 @@ export function applyValues(
     const parsed = parseSpec(spec, values[spec.key], ctx, example);
     if (parsed.ok) setAt(edited, spec.key, parsed.value);
     else errors[spec.key] = parsed.error;
+  }
+  // ตัวเลขที่ต้องไม่น้อยกว่าอีกช่อง (Max ไม่ต่ำกว่า Min): เทียบเมื่อช่องใดช่องหนึ่งเปลี่ยน ทั้งสองอ่านได้ และช่องนี้ไม่ว่าง; ผิดที่ช่องนี้ (Max)
+  for (const spec of specs) {
+    if (spec.kind !== "number" || spec.notBelow === undefined) continue;
+    if (!changed(spec.key) && !changed(spec.notBelow)) continue;
+    if (errors[spec.key] !== undefined || errors[spec.notBelow] !== undefined) continue;
+    const high = getAt(edited, spec.key);
+    const low = getAt(edited, spec.notBelow);
+    if (typeof high === "number" && typeof low === "number" && high < low) errors[spec.key] = msg("props.maxBelowMin");
   }
   // เวลาที่ต้องอยู่หลังอีกช่อง: เทียบเมื่อช่องใดช่องหนึ่งเปลี่ยน และทั้งสองอ่านได้
   for (const spec of specs) {

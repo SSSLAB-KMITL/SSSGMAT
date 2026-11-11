@@ -37,6 +37,7 @@ describe("412 conflict dialog", () => {
     const user = userEvent.setup();
     const reload = vi.fn(async () => {
       useScenario.setState({ conflict: false }); // the real reload() clears the flag once it has loaded
+      return true;
     });
     useScenario.setState({ conflict: true, reload });
     render(<Dialogs />);
@@ -47,7 +48,7 @@ describe("412 conflict dialog", () => {
 
   test("the dialog stays while the reload is loading, and stays open if reload() fails (flag still set)", async () => {
     const user = userEvent.setup();
-    const reload = vi.fn(async () => undefined); // a failed reload leaves conflict = true
+    const reload = vi.fn(async () => false); // a failed reload leaves conflict = true
     useScenario.setState({ conflict: true, reload });
     render(<Dialogs />);
     await user.click(screen.getByRole("button", { name: t("dialog.reload") }));

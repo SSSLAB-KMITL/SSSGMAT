@@ -13,7 +13,7 @@ import { useResults } from "../../src/stores/results";
 import { useScenario, type ScenarioDoc } from "../../src/stores/scenario";
 import { PropertiesBrowser, registerPropertiesBrowserPanel } from "../../src/windows/PropertiesBrowser/PropertiesBrowser";
 import { resetAll } from "./helpers/chrome";
-import { stubFetch, type Call, type Handler, type Reply } from "./helpers/fake-fetch";
+import { deferred, stubFetch, type Call, type Handler, type Reply } from "./helpers/fake-fetch";
 import { loadObjects, makeScenarioDoc, makeTree } from "./helpers/objects";
 
 // ---------- what the server holds ----------
@@ -225,6 +225,8 @@ describe("Apply on an object", () => {
     expect(call.body).toEqual({ constraints: { elevation_angle_min_deg: 15 } });
     expect(call.headers.get("If-Match")).toBe('"e1"');
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true)); // the whole Apply is over
+    expect(refresh).toHaveBeenCalledTimes(1); // the store refreshes after a stale write; the window does not ask again
   });
 
   test("a result that is not stale does not refresh the results", async () => {
@@ -622,6 +624,8 @@ describe("Scenario pages", () => {
     expect(putBody(f).headers.get("If-Match")).toBe('"e1"');
     expect(sent(f, "PATCH", "")).toHaveLength(0);
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true));
+    expect(refresh).toHaveBeenCalledTimes(1); // putDoc refreshes after a stale PUT; the window does not ask again
   });
 
   test("a PUT whose results are not stale does not refresh them", async () => {
@@ -813,7 +817,7 @@ describe("Facility pages", () => {
     await openPage("2D Graphics - Attributes");
     expect(input(t("field.color")).type).toBe("color");
     expect(input(t("field.color")).value).toBe("#ff79e6");
-    expect(optionValues(select(t("field.markerStyle")))).toEqual([...ENUMS.MarkerStyle]);
+    expect(optionValues(select(t("field.markerStyle")))).toEqual(["", ...ENUMS.MarkerStyle]);
     expect(input(t("field.inheritFromScenario")).type).toBe("checkbox");
     expect(input(t("field.inheritFromScenario")).checked).toBe(true);
     expect(screen.queryByLabelText(t("field.lineStyle"))).toBeNull(); // a Facility has no line
@@ -1001,8 +1005,8 @@ describe("Satellite pages", () => {
     await mountSatellite();
     await openPage("2D Graphics - Attributes");
     expect(input(t("field.color")).type).toBe("color");
-    expect(optionValues(select(t("field.lineStyle")))).toEqual([...ENUMS.LineStyle]);
-    expect(optionValues(select(t("field.markerStyle")))).toEqual([...ENUMS.MarkerStyle]);
+    expect(optionValues(select(t("field.lineStyle")))).toEqual(["", ...ENUMS.LineStyle]);
+    expect(optionValues(select(t("field.markerStyle")))).toEqual(["", ...ENUMS.MarkerStyle]);
     expect(input(t("field.lineWidth")).value).toBe("1");
     await type(t("field.lineWidth"), "2.5");
     await user.selectOptions(select(t("field.lineStyle")), "Dashed");
@@ -1428,5 +1432,301 @@ describe("odds and ends", () => {
     registerPropertiesBrowserPanel();
     registerPropertiesBrowserPanel(); // registering twice is harmless
     expect(getPanelDef("propertiesBrowser")?.component).toBe(PropertiesBrowser);
+  });
+});
+
+// ---------- fix round 1 ----------
+
+const pagesWithMin = (min: number, over: Record<string, unknown> = {}) => ({ ...structuredClone(THBK_PAGES), constraints: { elevation_angle_min_deg: min }, ...over });
+const fromOtherTab = (etag: string) => act(() => useScenario.setState({ etag, doc: makeScenarioDoc() }));
+const pageReads = (f: ReturnType<typeof stubFetch>, obj: string) => f.calls.filter((c) => c.method === "GET" && c.path === `${API}/objects/${obj}`).length;
+const reloadButton = () => screen.getByRole("button", { name: t("dialog.reload") }) as HTMLButtonElement;
+const reloadFinished = () => waitFor(() => expect(reloadButton().disabled).toBe(false));
+
+describe("a Reload that did not bring fresh data", () => {
+  const unreadable: Reply = { status: 500, json: { code: "INTERNAL", text: "อ่าน scenario ไม่ได้" } };
+
+  test("object window, scenario unreadable: the box stays, the edit stays, nothing is sent; a retry then works", async () => {
+    let scenarioReads = 0;
+    const f = server({ [`GET ${API}`]: () => (++scenarioReads === 1 ? unreadable : { json: makeScenarioDoc(), headers: { ETag: '"e3"' } }) });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    pages = pagesWithMin(20);
+    fromOtherTab('"e2"');
+    await screen.findByText(msg("props.conflicted"));
+    await user.click(button(t("dialog.apply")));
+    await screen.findByRole("dialog", { name: msg("conflict.title") });
+    const reads = pageReads(f, "Facility/THBK");
+
+    await user.click(reloadButton());
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "INTERNAL")).toBe(true));
+    await reloadFinished();
+    expect(screen.getByRole("dialog", { name: msg("conflict.title") })).toBeDefined(); // the box is still there to try again
+    expect(input(t("field.min")).value).toBe("15"); // the edit is not thrown away
+    expect(screen.getByText(msg("props.conflicted"))).toBeDefined();
+    expect(pageReads(f, "Facility/THBK")).toBe(reads); // nothing was adopted from a half-done reload
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+
+    await user.click(reloadButton());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(input(t("field.min")).value).toBe("20");
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+  });
+
+  test("object window, the scenario came but the pages did not: the box stays and the edit stays", async () => {
+    let reads = 0;
+    const f = server({
+      [`PATCH ${API}/objects/Facility/THBK`]: { status: 412, json: { code: "STALE_ETAG", text: "scenario ถูกแก้จากที่อื่น" } },
+      [`GET ${API}/objects/Facility/THBK`]: () => (++reads === 2 ? unreadable : { json: pages, headers: { ETag: '"e1"' } }),
+    });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    await user.click(button(t("dialog.apply")));
+    await screen.findByRole("dialog", { name: msg("conflict.title") });
+    pages = pagesWithMin(20);
+    await user.click(reloadButton());
+    await waitFor(() => expect(reads).toBe(2));
+    await reloadFinished();
+    expect(screen.getByRole("dialog", { name: msg("conflict.title") })).toBeDefined();
+    expect(input(t("field.min")).value).toBe("15");
+    expect(patches(f, "Facility/THBK")).toHaveLength(1); // only the original PATCH that got the 412
+    await user.click(reloadButton());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(input(t("field.min")).value).toBe("20");
+  });
+
+  test("Scenario window, scenario unreadable: the box stays, the edit stays, no second PUT; a retry shows the newer document", async () => {
+    let scenarioReads = 0;
+    const newer = makeScenarioDoc({ description: "จากแท็บอื่น" });
+    const f = server({
+      [`PUT ${API}`]: { status: 412, json: { code: "STALE_ETAG", text: "scenario ถูกแก้จากที่อื่น" } },
+      [`GET ${API}`]: () => (++scenarioReads === 1 ? unreadable : { json: newer, headers: { ETag: '"e3"' } }),
+    });
+    await mountScenario();
+    await openPage("Basic - Description");
+    await user.type(input(t("field.shortDescription")), "ของฉัน");
+    await user.click(button(t("dialog.apply")));
+    await screen.findByRole("dialog", { name: msg("conflict.title") });
+
+    await user.click(reloadButton());
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "INTERNAL")).toBe(true));
+    await reloadFinished();
+    expect(screen.getByRole("dialog", { name: msg("conflict.title") })).toBeDefined();
+    expect(input(t("field.shortDescription")).value).toBe("ของฉัน"); // not replaced by the old document
+    expect(sent(f, "PUT", "")).toHaveLength(1);
+
+    await user.click(reloadButton());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(input(t("field.shortDescription")).value).toBe("จากแท็บอื่น");
+    expect(sent(f, "PUT", "")).toHaveLength(1);
+  });
+});
+
+describe("Apply and a check of the server that is still on its way", () => {
+  /** the Nth read of the pages (1 = the first load) waits for the test */
+  function gatedPages(n: number) {
+    const gate = deferred<Reply>();
+    let reads = 0;
+    const handler = (): Reply | Promise<Reply> => (++reads === n ? gate.promise : { json: pages, headers: { ETag: '"e1"' } });
+    return { gate, handler, reads: () => reads };
+  }
+
+  test("an external change followed by Apply before the check returns: the check decides, and a changed object gives the dialog and no PATCH", async () => {
+    const g = gatedPages(2);
+    const f = server({ [`GET ${API}/objects/Facility/THBK`]: g.handler });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    fromOtherTab('"e2"');
+    await waitFor(() => expect(g.reads()).toBe(2)); // the check is out
+    await user.click(button(t("dialog.apply")));
+    expect(patches(f, "Facility/THBK")).toHaveLength(0); // waiting for the check, not sending
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    g.gate.resolve({ json: pagesWithMin(20), headers: { ETag: '"e2"' } });
+    expect(await screen.findByRole("dialog", { name: msg("conflict.title") })).toBeDefined();
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+  });
+
+  test("when the check finds the object unchanged, the waiting Apply goes ahead with the newest ETag", async () => {
+    const g = gatedPages(2);
+    const f = server({ [`GET ${API}/objects/Facility/THBK`]: g.handler });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    fromOtherTab('"e2"');
+    await waitFor(() => expect(g.reads()).toBe(2));
+    await user.click(button(t("dialog.apply")));
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+    g.gate.resolve({ json: pages, headers: { ETag: '"e2"' } });
+    await waitFor(() => expect(patches(f, "Facility/THBK")).toHaveLength(1));
+    expect(patches(f, "Facility/THBK")[0].headers.get("If-Match")).toBe('"e2"');
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("OK waits for the check too, and does not close the window when the object changed", async () => {
+    const g = gatedPages(2);
+    const f = server({ [`GET ${API}/objects/Facility/THBK`]: g.handler });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    fromOtherTab('"e2"');
+    await waitFor(() => expect(g.reads()).toBe(2));
+    await user.click(button(t("dialog.ok")));
+    g.gate.resolve({ json: pagesWithMin(20), headers: { ETag: '"e2"' } });
+    await screen.findByRole("dialog", { name: msg("conflict.title") });
+    expect(closePanel).not.toHaveBeenCalled();
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+  });
+
+  test("a burst of changes: an older check that answers late does not override the newest one", async () => {
+    let reads = 0;
+    const older = deferred<Reply>();
+    const newest = deferred<Reply>();
+    const f = server({
+      [`GET ${API}/objects/Facility/THBK`]: () => {
+        reads++;
+        return reads === 2 ? older.promise : reads === 3 ? newest.promise : { json: pages, headers: { ETag: '"e1"' } };
+      },
+    });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    fromOtherTab('"e2"');
+    await waitFor(() => expect(reads).toBe(2));
+    fromOtherTab('"e3"');
+    await waitFor(() => expect(reads).toBe(3));
+    const signals = f.fn.mock.calls.filter(([url]) => String(url).endsWith("/objects/Facility/THBK")).map(([, init]) => (init as RequestInit).signal);
+    expect(signals.map((signal) => signal?.aborted)).toEqual([false, true, false]); // the older check was cancelled when the newer one started
+    newest.resolve({ json: pages, headers: { ETag: '"e3"' } }); // the newest says: unchanged
+    older.resolve({ json: pagesWithMin(20), headers: { ETag: '"e2"' } }); // the older said: changed, but it is out of date
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText(msg("props.conflicted"))).toBeNull();
+    expect(input(t("field.min")).value).toBe("15");
+  });
+});
+
+describe("a row the user added to the Active list", () => {
+  const list = () => within(screen.getByRole("listbox", { name: t("field.active") }));
+  const addElevation = async () => {
+    await user.click(button(t("dialog.add")));
+    const dialog = await screen.findByRole("dialog", { name: t("field.selectConstraintsToAdd") });
+    await user.selectOptions(within(dialog).getByRole("listbox") as unknown as HTMLSelectElement, "Elevation Angle");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  };
+
+  test("stays after the form silently takes new values from the server", async () => {
+    pages = pagesWithMin(0);
+    const f = server();
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await addElevation();
+    expect(list().getAllByRole("option")).toHaveLength(1);
+    pages = pagesWithMin(0, { basic: { description: "จากแท็บอื่น", long_description: "", position: THBK_PAGES.basic.position } });
+    fromOtherTab('"e2"');
+    await waitFor(() => expect(pageReads(f, "Facility/THBK")).toBe(2));
+    await openPage("Basic - Description");
+    await waitFor(() => expect(input(t("field.shortDescription")).value).toBe("จากแท็บอื่น")); // it did refresh
+    await openPage("Constraints - Active");
+    expect(list().getAllByRole("option").map((o) => o.textContent)).toEqual(["Elevation Angle"]);
+  });
+
+  test("stays after an Apply of something else", async () => {
+    pages = pagesWithMin(0);
+    const f = server();
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await addElevation();
+    await openPage("Basic - Description");
+    await user.type(input(t("field.shortDescription")), "x");
+    pages = pagesWithMin(0, { basic: { description: "x", long_description: "", position: THBK_PAGES.basic.position } });
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, "Facility/THBK")).toHaveLength(1));
+    await waitFor(() => expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true));
+    await openPage("Constraints - Active");
+    expect(list().getAllByRole("option")).toHaveLength(1);
+  });
+
+  test("goes away with Reload, which drops everything the user did", async () => {
+    pages = pagesWithMin(0);
+    server({ [`PATCH ${API}/objects/Facility/THBK`]: { status: 412, json: { code: "STALE_ETAG", text: "x" } } });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await addElevation();
+    await type(t("field.min"), "5");
+    await user.click(button(t("dialog.apply")));
+    const dialog = await screen.findByRole("dialog", { name: msg("conflict.title") });
+    pages = pagesWithMin(0);
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.reload") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(list().queryAllByRole("option")).toHaveLength(0);
+  });
+});
+
+describe("colour and choice controls", () => {
+  test("picking black when there is no colour yet registers", async () => {
+    pages = structuredClone(G01_PAGES);
+    (pages.graphics2d as Record<string, unknown>).color = null;
+    const f = server({});
+    await mountSatellite();
+    await openPage("2D Graphics - Attributes");
+    expect((button(t("dialog.clear")) as HTMLButtonElement).disabled).toBe(true); // nothing to clear
+    fireEvent.change(input(t("field.color")), { target: { value: "#000000" } });
+    expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, "Satellite/G01")).toHaveLength(1));
+    expect(patches(f, "Satellite/G01")[0].body).toEqual({ graphics2d: { color: "#000000" } });
+  });
+
+  test("a nullable choice keeps its blank option after a value is picked, and blank sends null", async () => {
+    pages = structuredClone(G01_PAGES);
+    const f = server();
+    await mountSatellite();
+    await openPage("2D Graphics - Attributes");
+    expect(select(t("field.markerStyle")).value).toBe("Circle");
+    expect(optionValues(select(t("field.markerStyle")))[0]).toBe("");
+    await user.selectOptions(select(t("field.markerStyle")), "");
+    expect(select(t("field.markerStyle")).value).toBe("");
+    expect(optionValues(select(t("field.markerStyle")))[0]).toBe(""); // still there, so it can be picked again
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, "Satellite/G01")).toHaveLength(1));
+    expect(patches(f, "Satellite/G01")[0].body).toEqual({ graphics2d: { marker_style: null } });
+  });
+
+  test("a choice that is not nullable has no blank option", async () => {
+    pages = structuredClone(G01_PAGES);
+    server();
+    await mountSatellite();
+    await openPage("2D Graphics - Pass");
+    expect(optionValues(select(t("field.leadType")))).toEqual([...ENUMS.LeadType]);
+  });
+
+  test("Max below Min is stopped with a Thai message on Max; Max equal to Min is fine", async () => {
+    const f = server();
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.max"), "5"); // Min is 10
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.max")))).toBe(msg("props.maxBelowMin"));
+    expect(input(t("field.max")).getAttribute("aria-invalid")).toBe("true");
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
+    await type(t("field.max"), "10");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, "Facility/THBK")).toHaveLength(1));
+    expect(patches(f, "Facility/THBK")[0].body).toEqual({ constraints: { elevation_angle_max_deg: 10 } });
+  });
+
+  test("raising Min above an existing Max is stopped too", async () => {
+    pages = pagesWithMin(10, { constraints: { elevation_angle_min_deg: 10, elevation_angle_max_deg: 60 } });
+    const f = server();
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "70");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.max")))).toBe(msg("props.maxBelowMin"));
+    expect(patches(f, "Facility/THBK")).toHaveLength(0);
   });
 });

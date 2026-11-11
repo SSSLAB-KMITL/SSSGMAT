@@ -20,7 +20,10 @@ export interface EditorApi {
   values: Values;
   errors: Errors;
   set(key: string, value: Value): void;
-  /** สถานะของหน้าที่ไม่ใช่ค่าของ server เช่น Elevation Angle อยู่ในรายการ Active หรือไม่ (ล้างเมื่อโหลดค่าใหม่) */
+  /**
+   * สถานะของหน้าที่ไม่ใช่ค่าของ server: true = แถวที่ผู้ใช้เพิ่มเอง (Add... ในรายการ Active) ทั้งที่ค่าของ server ยังไม่แสดงแถวนั้น, false = แถวที่ผู้ใช้เอาออก
+   * true อยู่รอดตอนฟอร์มตามค่าของ server เงียบ ๆ และหลัง Apply; ทั้งหมดถูกล้างเมื่อ Reload (ทิ้งทุกอย่างที่ผู้ใช้ทำ)
+   */
   ui: Record<string, boolean>;
   setUi(key: string, value: boolean): void;
 }
@@ -74,6 +77,7 @@ export function NumberRow({ k, label, unit }: RowProps & { unit?: string }) {
   );
 }
 
+/** nullable = ค่า null (ใช้ค่าตั้งต้น) เลือกกลับมาได้เสมอ: ตัวเลือกว่างอยู่หน้าสุดตลอด ไม่หายเมื่อเลือกค่าอื่นแล้ว */
 export function ChoiceRow({ k, label, options, labelOf, nullable = false }: RowProps & { options: readonly string[]; labelOf(code: string): string; nullable?: boolean }) {
   const api = useEditorApi();
   const value = text(api, k);
@@ -81,7 +85,7 @@ export function ChoiceRow({ k, label, options, labelOf, nullable = false }: RowP
     <FormField label={label} error={api.errors[k]}>
       {(control) => (
         <select {...control} value={value} onChange={(e) => api.set(k, e.target.value)}>
-          {nullable && value === "" && <option value="" />}
+          {nullable && <option value="" />}
           {options.map((code) => (
             <option key={code} value={code}>
               {labelOf(code)}
@@ -104,6 +108,12 @@ export function CheckRow({ k, label }: RowProps) {
   );
 }
 
+/**
+ * ช่องสีที่ยังไม่ได้ตั้ง (null) แสดงด้วยสีนี้แทนดำสนิท: input type=color ไม่ยิง change เมื่อเลือกสีเท่ากับค่าที่แสดงอยู่ ถ้าแสดง #000000 การเลือกสีดำจะไม่ถูกบันทึก
+ * (#000001 ดำเกือบสนิท ไม่มีใครเลือกตั้งใจ; ทุกสีอื่นรวมดำสนิทยิง change ตามปกติ)
+ */
+const UNSET_SWATCH = "#000001";
+
 /** สี: ช่องเลือกสี (input type=color) กับปุ่ม Clear (ว่าง = null คือไม่ได้ตั้งสีเอง) */
 export function ColorRow({ k, label }: RowProps) {
   const api = useEditorApi();
@@ -112,7 +122,7 @@ export function ColorRow({ k, label }: RowProps) {
     <FormField label={label} error={api.errors[k]}>
       {({ id, "aria-invalid": invalid, "aria-describedby": describedBy }) => (
         <div className="color-row">
-          <input id={id} type="color" className="color-input" aria-invalid={invalid} aria-describedby={describedBy} value={value === "" ? "#000000" : value} onChange={(e) => api.set(k, e.target.value)} />
+          <input id={id} type="color" className="color-input" aria-invalid={invalid} aria-describedby={describedBy} value={value === "" ? UNSET_SWATCH : value} onChange={(e) => api.set(k, e.target.value)} />
           <span className="color-text">{value === "" ? "—" : value}</span>
           <button type="button" className="btn" disabled={value === ""} onClick={() => api.set(k, "")}>
             {t("dialog.clear")}

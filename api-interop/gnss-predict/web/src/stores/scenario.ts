@@ -87,8 +87,12 @@ interface ScenarioState {
   loadFailure: { name: string; status: number; code: string } | null;
   /** เปิด scenario; true = เปิดได้ false = เปิดไม่ได้ (มีข้อความใน Message Viewer และ loadFailure; scenario ที่เปิดอยู่ก่อนไม่เปลี่ยน) */
   load(name: string): Promise<boolean>;
-  /** โหลด doc + tree ใหม่จาก server แล้วล้าง conflict (ล้มเหลว = ข้อความใน Message Viewer และ conflict ค้างอยู่) */
-  reload(): Promise<void>;
+  /**
+   * โหลด doc + tree ใหม่จาก server แล้วล้าง conflict; true = ข้อมูลใหม่เข้า store แล้ว
+   * ล้มเหลว (ไม่มี scenario, อ่านไม่ได้, ถูกยกเลิก, ถูกสลับ scenario ระหว่างโหลด) = false ข้อความใน Message Viewer, doc/ETag เดิมและ conflict ค้างอยู่ ไม่โยน
+   * ผู้เรียกที่จะใช้ค่าใน store ต่อ (Reload ของ Properties Browser) ต้องดูค่านี้ก่อน
+   */
+  reload(): Promise<boolean>;
   /** Cancel ในกล่อง 412: ปิดกล่องโดยไม่โหลดใหม่ (ค่าบนหน้านี้คงเดิม ETag ยังเก่า เขียนครั้งต่อไปจะได้ 412 อีก) */
   clearConflict(): void;
   /** โหลดใหม่เงียบ ๆ ถ้า ETag บน server ต่างจากที่ถืออยู่ (ตอนต่อ SSE ใหม่เพื่อปิดช่องว่างที่ event หลุด) */
@@ -364,15 +368,17 @@ export const useScenario = create<ScenarioState>()((set, get) => {
 
     reload: async () => {
       const name = get().name;
-      if (name === null) return;
+      if (name === null) return false;
       try {
         await pull();
       } catch (e) {
-        if (isAbortError(e)) return;
+        if (isAbortError(e)) return false;
         report("error", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.reloadFailed", { name, message: errorText(e) }));
-        return;
+        return false;
       }
-      if (get().name === name) set({ conflict: false });
+      if (get().name !== name) return false;
+      set({ conflict: false });
+      return true;
     },
 
     clearConflict: () => set({ conflict: false }),
