@@ -7,6 +7,8 @@ interface Props {
   time: string | null;
   /** click on the "Module menu" button; the menu itself comes in Task 18 */
   onModuleMenu?: () => void;
+  /** the Module menu's item "Time Controller" (Task 18) calls this to open the module's Time Controller window */
+  onOpenTimeController?: () => void;
 }
 
 /**

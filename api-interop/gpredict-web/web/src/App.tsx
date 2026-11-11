@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { errorText, getModules, putTabs, retryModule } from "./api";
+import { errorText, getModules, putTabs, resetClock, retryModule } from "./api";
 import { ModuleHeader } from "./components/ModuleHeader";
 import { ModuleView } from "./components/ModuleView";
 import { NoticeStrip } from "./components/NoticeStrip";
 import { Overlay } from "./components/Overlay";
 import { Tabs } from "./components/Tabs";
+import { TimeController } from "./components/TimeController";
 import { pruneDismissed, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice } from "./notices";
 import { overlayFor } from "./overlay";
@@ -26,6 +27,7 @@ export function App() {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [loadFailed, setLoadFailed] = useState(false);
   const [loaded, setLoaded] = useState(false); // GET /api/modules has answered at least once
+  const [timeController, setTimeController] = useState<string | null>(null); // module whose Time Controller is open
   const nextLocalId = useRef(0);
 
   const addLocalError = useCallback((text: string) => {
@@ -71,6 +73,27 @@ export function App() {
   useEffect(() => {
     if (closeCode !== null) void reloadModules();
   }, [closeCode, reloadModules]);
+
+  // the module of the Time Controller was closed or deleted: its window goes with it (no reset, the clock is gone too)
+  useEffect(() => {
+    if (loaded && timeController !== null && !open.includes(timeController)) setTimeController(null);
+  }, [loaded, open, timeController]);
+
+  /**
+   * Open the Time Controller of a module (the Module menu's "Time Controller", Task 18). One window at a time: another
+   * module's window is closed, which resets its clock like closing it does (ref §9). The window shows while its module's
+   * tab is the active one; the tick it follows is that tab's.
+   */
+  const openTimeController = useCallback(
+    (name: string) => {
+      if (timeController !== null && timeController !== name) {
+        resetClock(timeController).catch((e) => addLocalError(errorText(e)));
+      }
+      setTimeController(name);
+    },
+    [timeController, addLocalError],
+  );
+  const closeTimeController = useCallback(() => setTimeController(null), []);
 
   const retry = useCallback(
     async (module: string) => {
@@ -128,12 +151,25 @@ export function App() {
         loaded && <div className="empty">ยังไม่มี module ที่เปิดอยู่ เปิดได้จาก File → Open module หรือ File → New module</div>
       ) : (
         <div className="module">
-          <ModuleHeader key={current} time={tick?.t ?? null} />
+          <ModuleHeader
+            key={current}
+            time={tick?.t ?? null}
+            onOpenTimeController={() => openTimeController(current)}
+          />
           <div className="module-body">
             {config !== null && <ModuleView module={current} config={config} tick={tick} onSaveConfig={saveConfig} />}
             <Overlay state={overlayFor(tick, connected, closeCode)} onRetry={() => retry(current)} />
           </div>
         </div>
+      )}
+      {current !== null && timeController === current && (
+        <TimeController
+          key={current}
+          module={current}
+          tick={tick}
+          onClose={closeTimeController}
+          onResetFailed={addLocalError}
+        />
       )}
     </div>
   );

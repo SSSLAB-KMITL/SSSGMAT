@@ -438,3 +438,219 @@ body {
   margin: 4px 0;
   background: var(--border);
 }
+
+/* ---------------------------------------------------------------- floating window (title bar, drag, close) */
+
+.float-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  max-width: 100vw;
+  max-height: 100vh;
+  background: var(--window);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+.float-title {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 4px 2px 32px; /* the left padding balances the close button, so the title stays centred */
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  cursor: default;
+  user-select: none;
+  touch-action: none;
+}
+.float-title-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.float-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+}
+.float-body {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+/* ---------------------------------------------------------------- spin button */
+
+.spin {
+  display: inline-flex;
+  align-items: stretch;
+}
+.spin-input {
+  width: 4.5em;
+  padding: 2px 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px 0 0 3px;
+}
+.spin-input:read-only {
+  background: var(--bar);
+}
+.spin-step {
+  min-width: 26px;
+  padding: 0 6px;
+  border-left-width: 0;
+  border-radius: 0;
+}
+.spin-step:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.spin-step[aria-disabled="true"] {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+
+/* ---------------------------------------------------------------- calendar */
+
+.calendar {
+  width: 196px;
+  font-variant-numeric: tabular-nums;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  user-select: none;
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-month {
+  flex: 1;
+  text-align: center;
+}
+.cal-year {
+  min-width: 3em;
+  text-align: center;
+}
+.cal-arrow {
+  padding: 0 5px;
+  line-height: 20px;
+}
+.cal-arrow[aria-disabled="true"] {
+  color: var(--text-dim);
+}
+.cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 2px;
+}
+.cal-dayname {
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.cal-day {
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: default;
+}
+.cal-day.other {
+  color: var(--text-dim);
+}
+.calendar:not(.read-only) .cal-day:hover:not(.selected) {
+  background: var(--hover);
+}
+.cal-day.selected {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+/* ---------------------------------------------------------------- Time Controller */
+
+.tc-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.tc-spins {
+  display: grid;
+  flex: 1;
+  grid-template-columns: auto auto;
+  gap: 4px 5px;
+  align-items: center;
+  justify-content: end;
+}
+.tc-label {
+  text-align: right;
+}
+.tc-slider {
+  display: block;
+  width: 100%;
+  margin: 10px 0 4px;
+}
+.tc-error {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+.tc-separator {
+  margin: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.tc-buttons {
+  display: flex;
+  align-items: center;
+}
+.tc-state {
+  flex: 1;
+  min-width: 0;
+  margin-right: 10px;
+}
+.tc-reset {
+  margin-right: 10px;
+}
+.tc-toggles {
+  display: flex;
+}
+.tc-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 0;
+}
+.tc-toggle:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.tc-toggle:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.tc-toggle + .tc-toggle {
+  border-left-width: 0;
+}
+.tc-toggle.active {
+  background: var(--pressed);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
