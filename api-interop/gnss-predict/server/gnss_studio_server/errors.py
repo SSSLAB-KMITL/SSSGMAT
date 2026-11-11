@@ -41,7 +41,8 @@ def _engine_error(request: Request, exc: GnssPredictError) -> JSONResponse:
 
 def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     first = exc.errors()[0] if exc.errors() else {}
-    loc = [str(p) for p in first.get("loc", ())[1:]]           # ตัด body/query/path ออก เหลือชื่อช่อง
+    # ตัด body/query/path ออก เหลือชื่อช่อง; JSON ที่อ่านไม่ได้มี loc เป็นตำแหน่งตัวอักษร ไม่ใช่ชื่อช่อง
+    loc = [] if first.get("type") == "json_invalid" else [str(p) for p in first.get("loc", ())[1:]]
     return error_response(422, "SCENARIO_INVALID", VALIDATION_TEXT, ".".join(loc) or None, first.get("msg"))
 
 

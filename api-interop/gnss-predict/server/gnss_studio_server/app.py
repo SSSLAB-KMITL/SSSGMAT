@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from .config import Config
 from .errors import install_error_handlers
 from .log import make_logger
-from .routes import health
+from .routes import health, scenarios
+from .store import ScenarioStore
 
 
 def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
@@ -14,8 +15,10 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app = FastAPI(title="GNSS Studio", openapi_url="/api/openapi.json", docs_url="/api/docs", redoc_url=None)
     app.state.config = config
     app.state.start_background = start_background
+    app.state.store = ScenarioStore(config.data_dir)
     app.state.logger, app.state.log_handler = make_logger(config.data_dir)
     web_root = config.web_dist.resolve()
     install_error_handlers(app, web_root if web_root.is_dir() else None)
     app.include_router(health.router, prefix="/api")
+    app.include_router(scenarios.router, prefix="/api")
     return app
