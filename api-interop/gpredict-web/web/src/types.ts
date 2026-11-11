@@ -135,32 +135,33 @@ export interface ClockUpdate {
 export type TickStatus = "ok" | "computing" | "failed";
 
 /**
- * One satellite of a tick. Numbers are plain JSON numbers; the server sends null instead of NaN/Infinity
- * (a rare, logged case), which `fmtFixed` shows as "-".
+ * One satellite of a tick. The measured numbers are `number | null`: the server sends null instead of NaN/Infinity
+ * (a rare, logged case, app.py `_finite`), so a view must handle null (`fmtFixed` shows it as "-"). `norad` and `orbit`
+ * are always integers; `next_aos`, `next_los` and `always` are null when there is no such event.
  */
 export interface SatState {
   norad: number;
   name: string;
-  az: number;
-  el: number;
+  az: number | null;
+  el: number | null;
   /** "↑" approaching, "↓" receding, "G" GEO, "D" decayed, "↺" / "↷" turning */
   dir: string;
-  ra: number;
-  dec: number;
-  range_km: number;
-  range_rate_kms: number;
-  lat_deg: number;
-  lon_deg: number;
+  ra: number | null;
+  dec: number | null;
+  range_km: number | null;
+  range_rate_kms: number | null;
+  lat_deg: number | null;
+  lon_deg: number | null;
   /** 6-character Maidenhead locator */
   ssp: string;
-  footprint_km: number;
-  alt_km: number;
-  vel_kms: number;
-  doppler_hz: number;
-  loss_db: number;
-  delay_ms: number;
-  ma: number;
-  phase_deg: number;
+  footprint_km: number | null;
+  alt_km: number | null;
+  vel_kms: number | null;
+  doppler_hz: number | null;
+  loss_db: number | null;
+  delay_ms: number | null;
+  ma: number | null;
+  phase_deg: number | null;
   orbit: number;
   /** "-", "V", "D" or "E" */
   vis: string;
