@@ -36,8 +36,25 @@ const SYSTEM_OPTIONS = [
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
-function isEntry(x: unknown): x is CatalogEntry {
-  return isRecord(x) && typeof x.prn === "string" && typeof x.system === "string" && typeof x.norad === "number" && Array.isArray(x.flags);
+const text = (x: unknown): string => (typeof x === "string" ? x : "");
+
+/**
+ * แถวจาก server -> CatalogEntry ที่หน้าต่างอ่านได้โดยไม่ล้ม: ต้องมี PRN (ข้อความ), system (ข้อความ) และ NORAD (เลขจำนวนเต็ม) ไม่งั้นทิ้ง (แยกดาวไม่ได้)
+ * ช่องอื่นที่ผิดชนิดหรือเป็น null (SVN, block, ชื่อ CelesTrak = "" ; age_days = NaN แสดง "—" ; flags เก็บเฉพาะที่เป็นข้อความ)
+ */
+function toEntry(x: unknown): CatalogEntry | null {
+  if (!isRecord(x) || typeof x.prn !== "string" || typeof x.system !== "string" || !Number.isInteger(x.norad)) return null;
+  return {
+    prn: x.prn,
+    system: x.system,
+    svn: text(x.svn),
+    norad: x.norad as number,
+    block: text(x.block),
+    celestrak_name: text(x.celestrak_name),
+    omm_epoch: text(x.omm_epoch),
+    age_days: typeof x.age_days === "number" ? x.age_days : Number.NaN,
+    flags: Array.isArray(x.flags) ? x.flags.filter((f): f is string => typeof f === "string") : [],
+  };
 }
 
 /** ISO ที่ server รับ: เหมือน store (Date.toISOString()) อ่านไม่ได้ก็ส่งตามที่เก็บไว้ ให้ server เป็นคนปฏิเสธ */
@@ -81,7 +98,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
     apiGet<unknown>(`/catalog?${query}`, { signal: ctl.signal })
       .then(({ data }) => {
         if (!Array.isArray(data)) throw new RangeError("the catalog is not a list");
-        setLoad({ status: "ready", entries: data.filter(isEntry) });
+        setLoad({ status: "ready", entries: data.flatMap((x) => toEntry(x) ?? []) });
       })
       .catch((e: unknown) => {
         if (!ctl.signal.aborted) setLoad({ status: "error", message: errorText(e) });

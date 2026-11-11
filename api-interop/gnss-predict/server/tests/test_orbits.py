@@ -7,12 +7,14 @@ fixture `snapshot` (conftest.py) คือ snapshot ของ engine ที่ c
 import json
 import re
 import shutil
+import subprocess
 import urllib.request
 from datetime import datetime
 
 import pytest
 
 from conftest import SNAPSHOT_ID, SNAPSHOT_SRC
+from gnss_predict import igs_meta, omm
 from gnss_predict.catalog import build_catalog
 
 ERROR_KEYS = {"code", "text", "field", "detail"}
@@ -197,10 +199,28 @@ def write_state(data_dir, content):
 
 @pytest.fixture
 def no_network(monkeypatch):
-    """endpoint อ่านอย่างเดียว: ถ้าไปแตะเน็ตให้ test ล้ม"""
+    """endpoint อ่านอย่างเดียว: ถ้าไปแตะเน็ตให้ test ล้ม
+
+    omm.py และ igs_meta.py ทำ `from urllib.request import urlopen` ตอน import (และใช้เป็นค่าตั้งต้นของพารามิเตอร์ opener) การแทน urllib.request.urlopen
+    อย่างเดียวจึงไม่ครอบคลุม: แทนชื่อที่ผูกในสองโมดูลนั้นด้วย และ OpenerDirector.open ที่ urlopen ตัวเดิมเรียกจริง กับ curl (subprocess) ของ broadcast จาก CDDIS
+    """
     def refuse(*args, **kwargs):
         raise AssertionError("fetch-status must not touch the network")
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(omm, "urlopen", refuse)
+    monkeypatch.setattr(igs_meta, "urlopen", refuse)
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", refuse)
+    monkeypatch.setattr(subprocess, "run", refuse)
+
+
+def test_no_network_guard_covers_every_binding_the_engine_downloads_through(no_network):
+    for opener in (urllib.request.urlopen, omm.urlopen, igs_meta.urlopen):
+        with pytest.raises(AssertionError, match="network"):
+            opener("https://celestrak.org/")
+    with pytest.raises(AssertionError, match="network"):
+        urllib.request.build_opener().open("https://files.igs.org/")      # ที่ urlopen ตัวเดิม (ค่าตั้งต้นของ opener ในโมดูล) เรียกจริง
+    with pytest.raises(AssertionError, match="network"):
+        subprocess.run(["curl", "ftp://gdc.cddis.eosdis.nasa.gov/"])
 
 
 def test_fetch_status_without_state_file(client, data_dir, no_network):

@@ -15,6 +15,7 @@ import { msg } from "../../labels/messages.th";
 import type { ObjectPages, ScenarioDoc } from "../../stores/scenario";
 import { formatTime, parseOffset, type DateFormat } from "../../time/format";
 import { parseIsoUtc, parseTime } from "../../time/parse";
+import { fail, parseDecimal, pass, type Parsed as FieldParsed } from "../fieldRules";
 
 export type ObjectClass = "Facility" | "Satellite" | "Constellation";
 export type Tree = Record<string, unknown>;
@@ -255,25 +256,14 @@ export function durationText(start: string, stop: string, ctx: TimeContext): str
 
 // ---------- ค่าในฟอร์ม -> root ----------
 
-const NUMBER_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-type Parsed = { ok: true; value: unknown } | { ok: false; error: string };
-const fail = (error: string): Parsed => ({ ok: false, error });
-const pass = (value: unknown): Parsed => ({ ok: true, value });
+type Parsed = FieldParsed<unknown>;
 
 function parseNumber(spec: Extract<Spec, { kind: "number" }>, input: string): Parsed {
   const trimmed = input.trim();
   if (trimmed === "") return spec.fallback === null ? pass(null) : fail(msg("props.notNumber"));
-  if (!NUMBER_RE.test(trimmed)) return fail(msg("props.notNumber"));
-  const n = Number(trimmed);
-  if (!Number.isFinite(n)) return fail(msg("props.notFinite"));
-  if (spec.gt !== undefined && !(n > spec.gt)) return fail(msg("props.rangeGreater", { min: spec.gt }));
-  if (spec.min !== undefined && spec.max !== undefined && (n < spec.min || n > spec.max)) {
-    return fail(msg("props.rangeBetween", { min: spec.min, max: spec.max }));
-  }
-  if (spec.min !== undefined && spec.max === undefined && n < spec.min) return fail(msg("props.rangeAtLeast", { min: spec.min }));
-  return pass(n);
+  return parseDecimal(trimmed, { gt: spec.gt, min: spec.min, max: spec.max });
 }
 
 /** เวลา ISO ที่ API ใช้: ลงท้าย Z วินาทีเต็ม (มีมิลลิวินาทีเมื่อไม่ใช่ศูนย์) */

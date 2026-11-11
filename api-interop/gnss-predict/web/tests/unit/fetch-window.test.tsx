@@ -191,6 +191,36 @@ describe("Fetch Now", () => {
     expect(fetchNow().disabled).toBe(false);
   });
 
+  const HOSTS = ["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"];
+  const WAITING = {
+    groups: Object.fromEntries(["gps-ops", "glo-ops", "galileo", "beidou"].map((g) => [g, { last_request_utc: "2026-11-12T10:30:00Z", next_allowed_utc: "2026-11-12T12:30:00Z" }])),
+  };
+
+  test("the confirmation names every host a fetch can contact: CelesTrak, IGS and CDDIS", async () => {
+    server();
+    await mounted();
+    await user.click(fetchNow());
+    const text = within(screen.getByRole("dialog")).getByText(msg("fetch.confirm")).textContent ?? "";
+    for (const host of HOSTS) expect(text, host).toContain(host);
+  });
+
+  test("with every CelesTrak group still rate-limited the confirmation still says IGS and CDDIS may be contacted", async () => {
+    server({ "GET /api/orbits/fetch-status": { json: WAITING } });
+    await mounted();
+    await screen.findByText(msg("fetch.nextAvailable", { time: "12 Nov 2026 12:30:00.000 UTCG" })); // every group must wait
+    await user.click(fetchNow());
+    const text = within(screen.getByRole("dialog")).getByText(msg("fetch.confirm")).textContent ?? "";
+    for (const host of HOSTS) expect(text, host).toContain(host);
+    expect(text).toMatch(/ยังอาจ/);
+  });
+
+  test("a window with no snapshot also names every host in its hint", async () => {
+    server({ "GET /api/orbits": { json: [] } });
+    mount();
+    const hint = await screen.findByText(msg("fetch.noSnapshot"));
+    for (const host of HOSTS) expect(hint.textContent, host).toContain(host);
+  });
+
   test("Escape in the confirmation also sends nothing", async () => {
     const f = server();
     await mounted();

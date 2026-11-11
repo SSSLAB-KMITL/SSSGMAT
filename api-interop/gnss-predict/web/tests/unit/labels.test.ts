@@ -449,3 +449,53 @@ describe("Thai messages", () => {
     expect(msg("daily.runNowConfirm")).toMatch(/อินเทอร์เน็ต/);
   });
 });
+
+describe("consent texts name every host that a download contacts", () => {
+  // the engine's own list (config.py): CelesTrak OMM (https), IGS satellite metadata (https), CDDIS broadcast ephemeris (ftps via curl);
+  // fetch_snapshot contacts exactly these, and so do the daily job and the scheduler (validation reads SP3 from CDDIS)
+  const config = readFileSync(resolve(__dirname, "../../../gnss_predict/config.py"), "utf8");
+  const hostOf = (name: string): string => {
+    const m = new RegExp(`^${name} = "[a-z]+://([^/"]+)/`, "m").exec(config);
+    expect(m, `${name} not found in gnss_predict/config.py`).not.toBeNull();
+    return m![1];
+  };
+  const HOSTS = [hostOf("CELESTRAK_GP_URL"), hostOf("IGS_META_URL"), hostOf("CDDIS_BRDC_URL")];
+
+  test("the engine's hosts are the three the texts are written for", () => {
+    expect(HOSTS).toEqual(["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"]);
+  });
+
+  test.each(["fetch.confirm", "daily.runNowConfirm", "daily.applyConfirm", "daily.warnEnabled", "fetch.noSnapshot", "fetch.queued"] as const)(
+    "%s lists CelesTrak, IGS and CDDIS with their hosts",
+    (key) => {
+      const text = msg(key, { time: "21:00", job: "j-1" });
+      for (const host of HOSTS) expect(text, host).toContain(host);
+    },
+  );
+
+  test("the Fetch Now confirmation says the other hosts may still be contacted when CelesTrak is rate-limited", () => {
+    expect(msg("fetch.confirm")).toMatch(/จำกัดความถี่/);
+    expect(msg("fetch.confirm")).toMatch(/ยังอาจ/);
+  });
+
+  test("the note about the next CelesTrak time does not suggest that waiting avoids every download", () => {
+    const text = msg("fetch.nextAvailable", { time: "x" });
+    expect(text).toMatch(/IGS/);
+    expect(text).toMatch(/CDDIS/);
+  });
+
+  test("the daily warning says a save can start the job as well as a server start", () => {
+    const text = msg("daily.warnEnabled", { time: "21:00" });
+    expect(text).toMatch(/Apply/);
+    expect(text).toMatch(/เริ่ม server/);
+    expect(text).toMatch(/ดาวน์โหลดทันที/);
+    expect(text).toMatch(/MGEX/);
+  });
+
+  test("the Apply confirmation says when it may start and that it downloads", () => {
+    const text = msg("daily.applyConfirm", { time: "21:00" });
+    expect(text).toMatch(/21:00/);
+    expect(text).toMatch(/60 วินาที/);
+    expect(text).toMatch(/อินเทอร์เน็ต/);
+  });
+});

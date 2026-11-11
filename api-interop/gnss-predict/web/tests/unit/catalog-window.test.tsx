@@ -128,6 +128,21 @@ describe("the table", () => {
     expect(screen.queryAllByRole("row")).toEqual([]);
   });
 
+  test("an entry whose SVN, block, name or age is null (or flags hold junk) still shows, can be searched, and does not crash the window", async () => {
+    const odd = { ...sat("E11", 37846, "x"), svn: null, block: null, celestrak_name: null, age_days: null, flags: ["stale", null, 7] };
+    server({ "GET /api/catalog": { json: [odd, sat("E14", 40128, "GALILEO 7 (27)"), { prn: null, system: "E", norad: 1, flags: [] }, { prn: "E99", system: "E", norad: "5", flags: [] }, null] } });
+    await mount();
+    expect(prns()).toEqual(["E11", "E14"]); // the two that cannot be told apart (no PRN, NORAD not a number) are left out
+    expect(cellsOf(rowOf("E11"))).toEqual(["E11", "", "37846", "", "", "—", t("option.flag.stale")]);
+    await user.type(searchBox(), "galileo");
+    expect(prns()).toEqual(["E14"]);
+    await user.clear(searchBox());
+    await user.type(searchBox(), "e11");
+    expect(prns()).toEqual(["E11"]);
+    click("E11");
+    expect(selected()).toEqual(["E11"]);
+  });
+
   test("says so when no scenario is open and asks nothing of the server", () => {
     useScenario.getState().close();
     const f = server();

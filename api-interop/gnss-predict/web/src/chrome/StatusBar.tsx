@@ -9,7 +9,7 @@ import { isEnabled, runCommand } from "../commands";
 import { satelliteInfo } from "../data/catalog";
 import { t } from "../labels/labels";
 import { msg } from "../labels/messages.th";
-import { useJobs, type Job } from "../stores/jobs";
+import { isActiveJob, useJobs, type Job } from "../stores/jobs";
 import { useLayout } from "../stores/layout";
 import { messageKey, report, useMessages } from "../stores/messages";
 import { useResults } from "../stores/results";
@@ -144,7 +144,7 @@ function useRunningJob(): Job | undefined {
     const own = scenario === null ? undefined : useJobs.getState().activeFor(scenario);
     if (own !== undefined) return own;
     return Object.values(jobs)
-      .filter((j) => j.kind === "daily" && (j.state === "running" || j.state === "queued"))
+      .filter((j) => j.kind === "daily" && isActiveJob(j))
       .sort((a, b) => a.id.localeCompare(b.id))
       .at(-1);
   }, [jobs, scenario]);

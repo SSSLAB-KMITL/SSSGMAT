@@ -19,7 +19,7 @@ import { useTimeFormatter } from "../../chrome/hooks";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
-import { useJobs } from "../../stores/jobs";
+import { isActiveJob, useJobs } from "../../stores/jobs";
 import { useLayout } from "../../stores/layout";
 import { report } from "../../stores/messages";
 import { useSettings, type Settings } from "../../stores/settings";
@@ -96,13 +96,25 @@ function validate(d: Draft): { errors: Errors; doc: Settings | null } {
   };
 }
 
+/** เวลา UTC ของ run_at_utc ("HH:MM") ในวันเดียวกับ now */
+const todayAt = (now: Date, hhmm: string): number => Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), Number(hhmm.slice(0, 2)), Number(hhmm.slice(3, 5)));
+
+/**
+ * การบันทึกนี้อาจทำให้ server เริ่มดึงข้อมูลเองไหม (server §9.3: ตัวตั้งเวลาตรวจทุก 60 วินาที และสั่ง job daily ของวันถัดไปเมื่อ enabled และ now >= run_at_utc ของวันนี้ UTC
+ * ถ้ายังไม่มีผลของวันนั้น): ต้องขอความยินยอมก่อนเมื่อค่าที่จะบันทึก enabled และ (เพิ่งเปิด หรือเปลี่ยน run_at_utc) และเวลา UTC ตอนนี้เลย run_at_utc ใหม่แล้ว
+ * แก้ช่องอื่นที่เปิดอยู่แล้ว หรือปิดงาน ไม่ถามเพราะไม่ได้ทำให้เริ่มงานที่ไม่เคยเริ่ม
+ */
+function mayStartDownload(saved: Draft, next: Settings, now: Date): boolean {
+  const { enabled, run_at_utc: runAt } = next.daily;
+  if (!enabled || !(!saved.enabled || runAt !== saved.runAt)) return false;
+  return now.getTime() >= todayAt(now, runAt);
+}
+
 /** `<data_dir>/daily/latest.csv` ใช้ตัวคั่นแบบเดียวกับ data_dir (Windows ใช้ \) */
 function csvPath(dataDir: string): string {
   const sep = dataDir.includes("\\") && !dataDir.includes("/") ? "\\" : "/";
   return `${dataDir.replace(/[\\/]+$/, "")}${sep}daily${sep}latest.csv`;
 }
-
-const isActive = (state: string): boolean => state === "queued" || state === "running";
 
 export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Partial<PanelProps>) {
   const { format } = useTimeFormatter();
@@ -116,7 +128,9 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
   const [running, setRunning] = useState(false);
   const health = useSettings((s) => s.health);
   const daily = useJobs((s) => s.daily) ?? health?.daily ?? null;
-  const dailyActive = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "daily" && isActive(j.state)));
+  const dailyJobActive = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "daily" && isActiveJob(j)));
+  // งานรันอยู่ได้แม้ไม่มี record ของ job ในหน้านี้ (เปิดหน้าเว็บกลางงาน หรือ SSE ยังไม่ส่ง): สถานะ running จาก /health หรือ event daily ก็ห้ามสั่งซ้ำ
+  const dailyActive = dailyJobActive || daily?.state === "running";
 
   useEffect(() => {
     let live = true;
@@ -152,7 +166,7 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
 
   const close = (): void => useLayout.getState().closePanel(panelId);
 
-  /** Apply: true = ไม่มีอะไรค้าง (บันทึกแล้ว หรือไม่มีอะไรเปลี่ยน) */
+  /** Apply: true = ไม่มีอะไรค้าง (บันทึกแล้ว หรือไม่มีอะไรเปลี่ยน); ไม่ยินยอมในกล่องถาม = false ไม่ส่งอะไร */
   const apply = async (): Promise<boolean> => {
     if (saving || !ready) return false;
     if (!dirty) return true;
@@ -161,8 +175,9 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
     setGeneral(null);
     setNotice(null);
     if (result.doc === null) return false;
-    setSaving(true);
+    setSaving(true); // ระหว่างถามก็นับว่ากำลังบันทึก: กด Apply ซ้ำไม่ได้
     try {
+      if (mayStartDownload(base, result.doc, new Date()) && !(await confirm(msg("daily.applyConfirm", { time: result.doc.daily.run_at_utc })))) return false;
       await useSettings.getState().saveSettings(result.doc);
       const saved = useSettings.getState().settings;
       if (saved !== null) {
@@ -275,10 +290,16 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
             {row("field.tecCsv", health === null ? DASH : csvPath(health.data_dir))}
           </dl>
           <div className="daily-run">
-            <button type="button" className="btn" disabled={running || dailyActive} onClick={() => void runNow()}>
+            <button
+              type="button"
+              className="btn"
+              disabled={running || dailyActive}
+              title={dailyActive ? msg("daily.runningNow") : undefined}
+              onClick={() => void runNow()}
+            >
               {t("dialog.runNow")}
             </button>
-            <span className="daily-hint">{msg("daily.runNowHint")}</span>
+            <span className="daily-hint">{dailyActive ? msg("daily.runningNow") : msg("daily.runNowHint")}</span>
           </div>
         </section>
 

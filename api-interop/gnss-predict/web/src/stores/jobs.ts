@@ -38,6 +38,9 @@ export interface Job extends JobEvent {
   origin?: "user" | "scheduler";
 }
 
+/** job ที่ยังรอหรือกำลังรัน (ที่เดียวของกติกานี้: Dialogs, StatusBar, หน้าต่าง Fetch Orbit Data / Daily Forecast Settings ใช้ตัวนี้) */
+export const isActiveJob = (job: Pick<JobEvent, "state">): boolean => job.state === "queued" || job.state === "running";
+
 export interface DailyStatus {
   state: "idle" | "running" | "ok" | "failed";
   last_run_utc: string | null;
@@ -69,7 +72,7 @@ export const useJobs = create<JobsState>()((set, get) => ({
   onDailyEvent: (d) => set({ daily: d }),
 
   activeFor: (scenario) => {
-    const active = Object.values(get().jobs).filter((j) => j.scenario === scenario && (j.state === "running" || j.state === "queued"));
+    const active = Object.values(get().jobs).filter((j) => j.scenario === scenario && isActiveJob(j));
     const rank = (j: Job) => (j.state === "running" ? 1 : 0);
     // id ขึ้นต้นด้วยเวลา (j-YYYYMMDDThhmmss-xxxx) เรียงตามตัวอักษรได้ใหม่สุดท้ายสุด
     active.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));

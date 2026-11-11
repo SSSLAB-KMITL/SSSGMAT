@@ -5,19 +5,32 @@ import { msg } from "../labels/messages.th";
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const pass = <T,>(value: T): Parsed<T> => ({ ok: true, value });
-const fail = (error: string): Parsed<never> => ({ ok: false, error });
+export const pass = <T,>(value: T): Parsed<T> => ({ ok: true, value });
+export const fail = (error: string): Parsed<never> => ({ ok: false, error });
 
 const DECIMAL_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const INTEGER_RE = /^[+-]?\d+$/;
 
-/** เลขทศนิยม (ไม่ใส่ range = ไม่จำกัดช่วง); ข้อความว่างไม่ใช่ตัวเลข */
-export function parseDecimal(text: string, range?: { min: number; max: number }): Parsed<number> {
+/** ขอบเขตของเลขทศนิยม: gt = มากกว่า (ไม่รวมค่านั้น), min/max = ช่วงปิด (min อย่างเดียว = ไม่ต่ำกว่า; max อย่างเดียวไม่มีผล) */
+export interface DecimalRange {
+  gt?: number;
+  min?: number;
+  max?: number;
+}
+
+/**
+ * เลขทศนิยมจากข้อความ: ไวยากรณ์ตัวเลขชุดเดียวของทั้งแอป (Insert STK Objects ใช้ตรงนี้ และ Properties Browser: form.ts parseNumber เรียกตัวนี้)
+ * ข้อความว่างไม่ใช่ตัวเลข (ผู้เรียกที่ยอมให้ว่าเป็น null ตรวจเองก่อน)
+ */
+export function parseDecimal(text: string, range: DecimalRange = {}): Parsed<number> {
   const trimmed = text.trim();
   if (!DECIMAL_RE.test(trimmed)) return fail(msg("props.notNumber"));
   const n = Number(trimmed);
   if (!Number.isFinite(n)) return fail(msg("props.notFinite"));
-  if (range !== undefined && (n < range.min || n > range.max)) return fail(msg("props.rangeBetween", range));
+  const { gt, min, max } = range;
+  if (gt !== undefined && !(n > gt)) return fail(msg("props.rangeGreater", { min: gt }));
+  if (min !== undefined && max !== undefined && (n < min || n > max)) return fail(msg("props.rangeBetween", { min, max }));
+  if (min !== undefined && max === undefined && n < min) return fail(msg("props.rangeAtLeast", { min }));
   return pass(n);
 }
 

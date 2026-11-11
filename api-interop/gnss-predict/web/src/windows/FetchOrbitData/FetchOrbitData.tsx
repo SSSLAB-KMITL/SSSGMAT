@@ -16,7 +16,7 @@ import { useTimeFormatter } from "../../chrome/hooks";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
-import { useJobs } from "../../stores/jobs";
+import { isActiveJob, useJobs } from "../../stores/jobs";
 import { report } from "../../stores/messages";
 import { parseIsoUtc } from "../../time/parse";
 
@@ -81,15 +81,13 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
-const isActive = (state: string): boolean => state === "queued" || state === "running";
-
 export function FetchOrbitData(_props: Partial<PanelProps>) {
   const { format } = useTimeFormatter();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [asking, setAsking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const fetching = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "fetch" && isActive(j.state)));
+  const fetching = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "fetch" && isActiveJob(j)));
   const now = useNow(30_000);
   const control = useRef<AbortController | null>(null);
 
@@ -117,7 +115,7 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
         if (state.jobs === prev.jobs) return;
         const done = Object.values(state.jobs).some((job) => {
           const before = prev.jobs[job.id];
-          return before !== job && job.state === "succeeded" && (job.kind === "fetch" || job.kind === "daily") && before !== undefined && isActive(before.state);
+          return before !== job && job.state === "succeeded" && (job.kind === "fetch" || job.kind === "daily") && before !== undefined && isActiveJob(before);
         });
         if (done) refresh();
       }),

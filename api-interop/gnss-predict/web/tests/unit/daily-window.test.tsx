@@ -72,13 +72,18 @@ const replace = async (input: HTMLInputElement, text: string) => {
 };
 const confirmDialog = () => screen.getByRole("dialog");
 
+const MORNING = new Date("2026-11-12T10:00:00Z"); // before every run time these tests use, so Apply does not ask for consent unless a test sets another time
+
 beforeEach(() => {
   resetAll();
   flow = fakeFlow();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(MORNING);
   user = userEvent.setup();
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -294,6 +299,7 @@ describe("the same rules as the server, checked before sending", () => {
   ])("the edge values %s / %s / %s / %s / %s are accepted", async (time, name, keep, hours, days) => {
     const f = server();
     await mounted();
+    await user.click(enabled()); // off: moving the run time before "now" would otherwise ask for consent (tested below)
     await replace(runAt(), time);
     await replace(facility(), name);
     await replace(retention(), keep);
@@ -302,8 +308,169 @@ describe("the same rules as the server, checked before sending", () => {
     await user.click(apply());
     await waitFor(() => expect(puts(f)).toHaveLength(1));
     expect((puts(f)[0].body as { daily: Record<string, unknown> }).daily).toEqual({
-      enabled: true, run_at_utc: time, facility: name, retention_days: Number(keep.trim()), validation_retry_hours: Number(hours), validation_give_up_days: Number(days),
+      enabled: false, run_at_utc: time, facility: name, retention_days: Number(keep.trim()), validation_retry_hours: Number(hours), validation_give_up_days: Number(days),
     });
+  });
+});
+
+// Server §9.3: with the job on, a tick after today's run_at_utc starts the forecast (and downloads) about 60 s after the settings are saved,
+// so a save that switches the job on, or moves its time, while "now" is already past that time needs the user's consent first
+describe("Apply asks for consent when saving may start a download", () => {
+  const at = (iso: string) => vi.setSystemTime(new Date(iso));
+  const off = (over: Partial<typeof SETTINGS.daily> = {}) => ({ json: { ...SETTINGS, daily: { ...SETTINGS.daily, enabled: false, ...over } } });
+  const askText = (time = "21:00") => msg("daily.applyConfirm", { time });
+
+  test("switching the job on after today's run time asks, in Thai, naming the hosts and the 60 seconds", async () => {
+    at("2026-11-12T22:00:00Z"); // New York (the suite's TZ) is at 17:00: only a UTC reading says "after 21:00"
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(askText())).toBeDefined();
+    for (const host of ["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"]) expect(askText()).toContain(host);
+    expect(askText()).toMatch(/60 วินาที/);
+    expect(puts(f)).toHaveLength(0);
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { daily: { enabled: boolean } }).daily.enabled).toBe(true);
+  });
+
+  test("Cancel sends nothing, keeps the form as it was (still to be applied) and the window open", async () => {
+    at("2026-11-12T22:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(puts(f)).toHaveLength(0);
+    expect(enabled().checked).toBe(true);
+    expect(apply().disabled).toBe(false);
+    expect(flow.closePanel).not.toHaveBeenCalled();
+    expect(useSettings.getState().settings?.daily.enabled).toBe(false);
+  });
+
+  test("OK of the window asks the same, and a Cancel keeps the window open", async () => {
+    at("2026-11-12T22:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(ok());
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(puts(f)).toHaveLength(0);
+    expect(flow.closePanel).not.toHaveBeenCalled();
+    await user.click(ok());
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(flow.closePanel).toHaveBeenCalledWith("dailyForecastSettings"));
+    expect(puts(f)).toHaveLength(1);
+  });
+
+  test("switching the job on before today's run time does not ask", async () => {
+    at("2026-11-12T20:59:59Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("at exactly the run time it asks (the scheduler starts at or after it)", async () => {
+    at("2026-11-12T21:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    expect(await screen.findByRole("dialog")).toBeDefined();
+    expect(puts(f)).toHaveLength(0);
+  });
+
+  test("the day does not matter, only the time of day in UTC (just after midnight is before 21:00)", async () => {
+    at("2026-11-13T00:00:30Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+  });
+
+  test("moving the run time to before now while the job is already on asks, and names the new time", async () => {
+    at("2026-11-12T12:00:00Z");
+    const f = server(); // enabled, 21:00
+    await mounted();
+    await replace(runAt(), "11:30");
+    await user.click(apply());
+    expect(within(await screen.findByRole("dialog")).getByText(askText("11:30"))).toBeDefined();
+    expect(puts(f)).toHaveLength(0);
+  });
+
+  test("moving the run time to after now while the job is already on does not ask", async () => {
+    at("2026-11-12T12:00:00Z");
+    const f = server();
+    await mounted();
+    await replace(runAt(), "12:01");
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("other edits while the job is on do not ask, even long after the run time", async () => {
+    at("2026-11-12T23:00:00Z");
+    const f = server();
+    await mounted();
+    await replace(retention(), "45");
+    await replace(facility(), "THBK2");
+    await replace(token(), "other");
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("switching the job off does not ask", async () => {
+    at("2026-11-12T23:00:00Z");
+    const f = server();
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("a job that stays off does not ask when its time is moved", async () => {
+    at("2026-11-12T23:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await replace(runAt(), "05:00");
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("a form with mistakes is refused first, without asking", async () => {
+    at("2026-11-12T22:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await replace(retention(), "0");
+    await user.click(apply());
+    expect(errorOf(retention())).toBe(msg("props.rangeBetween", { min: 1, max: 3650 }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(puts(f)).toHaveLength(0);
+  });
+
+  test("while the question is open the form cannot be sent a second time", async () => {
+    at("2026-11-12T22:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: t("dialog.apply"), hidden: true })); // the window sits behind the question
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
   });
 });
 
@@ -352,6 +519,7 @@ describe("the warning", () => {
     expect(line).toBeDefined();
     expect(msg("daily.warnEnabled", { time: "21:00" })).toMatch(/21:00/);
     expect(msg("daily.warnEnabled", { time: "21:00" })).toMatch(/ดาวน์โหลดทันที/);
+    expect(msg("daily.warnEnabled", { time: "21:00" })).toMatch(/Apply/); // a save can start it too, not only a server start
   });
 
   test("it follows the checkbox and the run time typed in the form", async () => {
@@ -436,6 +604,7 @@ describe("Run Now", () => {
     await user.click(runNow());
     expect(within(confirmDialog()).getByText(msg("daily.runNowConfirm"))).toBeDefined();
     expect(msg("daily.runNowConfirm")).toMatch(/อินเทอร์เน็ต/);
+    for (const host of ["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"]) expect(msg("daily.runNowConfirm"), host).toContain(host);
     await user.click(within(confirmDialog()).getByRole("button", { name: t("dialog.cancel") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(f.count(RUN)).toBe(0);
@@ -518,6 +687,30 @@ describe("Run Now", () => {
     await mounted();
     act(() => useJobs.getState().onJobEvent(jobEvent({ id: "j-f", kind: "fetch", state: "running" })));
     expect(runNow().disabled).toBe(false);
+  });
+
+  test("it is off, with a Thai reason, while the daily status says running even though no job record is known", async () => {
+    const running = { ...HEALTH, daily: { state: "running", last_run_utc: null, next_run_utc: null, for_date: "2026-11-13" } };
+    const f = server({ "GET /api/health": { json: running } });
+    await mounted();
+    await waitFor(() => expect(runNow().disabled).toBe(true));
+    expect(useJobs.getState().jobs).toEqual({});
+    expect(screen.getByText(msg("daily.runningNow"))).toBeDefined();
+    expect(runNow().title).toBe(msg("daily.runningNow"));
+    fireEvent.click(runNow());
+    expect(f.count(RUN)).toBe(0);
+    // the stream says it ended: the button comes back and the reason goes
+    act(() => useJobs.getState().onDailyEvent({ state: "ok", last_run_utc: "2026-11-12T10:05:00Z", next_run_utc: null, for_date: "2026-11-13" }));
+    expect(runNow().disabled).toBe(false);
+    expect(screen.queryByText(msg("daily.runningNow"))).toBeNull();
+  });
+
+  test("a queued or running daily job shows the same reason", async () => {
+    server();
+    await mounted();
+    expect(screen.queryByText(msg("daily.runningNow"))).toBeNull();
+    act(() => useJobs.getState().onJobEvent(jobEvent({ state: "running" })));
+    expect(screen.getByText(msg("daily.runningNow"))).toBeDefined();
   });
 
   test("says that it runs with the saved settings", async () => {

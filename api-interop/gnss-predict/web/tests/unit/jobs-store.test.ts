@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useJobs, type JobEvent } from "../../src/stores/jobs";
+import { isActiveJob, useJobs, type JobEvent } from "../../src/stores/jobs";
 import { stubFetch } from "./helpers/fake-fetch";
 
 const ev = (over: Partial<JobEvent> = {}): JobEvent => ({
@@ -64,5 +64,18 @@ describe("useJobs", () => {
     expect(useJobs.getState().daily).toBeNull();
     useJobs.getState().onDailyEvent(daily);
     expect(useJobs.getState().daily).toEqual(daily);
+  });
+});
+
+describe("isActiveJob", () => {
+  test("a queued or running job is active; a finished one is not", () => {
+    for (const state of ["queued", "running"] as const) expect(isActiveJob(ev({ state })), state).toBe(true);
+    for (const state of ["succeeded", "failed", "cancelled"] as const) expect(isActiveJob(ev({ state })), state).toBe(false);
+  });
+
+  test("activeFor uses the same rule", () => {
+    useJobs.getState().onJobEvent(ev({ id: "a", state: "queued" }));
+    useJobs.getState().onJobEvent(ev({ id: "b", state: "cancelled" }));
+    expect(useJobs.getState().activeFor("E2E")?.id).toBe("a");
   });
 });

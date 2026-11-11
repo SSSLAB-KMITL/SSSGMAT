@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { t } from "../labels/labels";
 import { msg } from "../labels/messages.th";
-import { useJobs, type Job } from "../stores/jobs";
+import { isActiveJob, useJobs, type Job } from "../stores/jobs";
 import { useScenario } from "../stores/scenario";
 
 // ---------- 412: scenario ถูกแก้จากที่อื่น ----------
@@ -98,7 +98,7 @@ function JobFailedDialog() {
       const scenario = useScenario.getState().name;
       const fresh: Job[] = [];
       for (const job of Object.values(jobs).sort((a, b) => a.id.localeCompare(b.id))) {
-        if (job.state === "queued" || job.state === "running") {
+        if (isActiveJob(job)) {
           seenActive.add(job.id);
           continue;
         }
