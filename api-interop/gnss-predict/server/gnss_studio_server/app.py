@@ -12,7 +12,8 @@ from .events import EventBus
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
-from .routes import access, events, health, jobs, objects, orbits, results, scenarios
+from .routes import access, events, health, jobs, objects, orbits, results, scenarios, settings, validation
+from .settings import ignore_change
 from .store import ScenarioStore
 
 
@@ -46,6 +47,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.bus = EventBus(app.state.logger)
     app.state.jobs = JobManager(config.data_dir, app.state.bus, runner=ProcessRunner(gmat_bin=config.gmat_bin),
                                 logger=app.state.logger)
+    app.state.settings_on_change = ignore_change      # PUT /api/settings เรียกหลังบันทึก (ตัวตั้งเวลาแทนที่ใน Task 11)
     app.state.sse_ping_s = SSE_PING_S               # test ตั้งให้สั้นลงได้ (ต้องตั้งก่อนเปิด /api/events)
     web_root = config.web_dist.resolve()
     install_error_handlers(app, web_root if web_root.is_dir() else None)
@@ -57,4 +59,6 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(results.router, prefix="/api")
     app.include_router(access.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(validation.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
     return app

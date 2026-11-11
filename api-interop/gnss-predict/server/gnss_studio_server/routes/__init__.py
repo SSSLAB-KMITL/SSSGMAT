@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import Request
 
 from ..config import Config
@@ -36,3 +38,8 @@ def get_plans(request: Request) -> PlanCache:
 def get_digests(request: Request) -> FileDigests:
     """dependency: แคช SHA-256 ของไฟล์ผลลัพธ์ของแอปที่รับ request นี้"""
     return request.app.state.digests
+
+
+def get_logger(request: Request) -> logging.Logger:
+    """dependency: logger ของแอปที่รับ request นี้ (เขียนลง data/logs/server.log)"""
+    return request.app.state.logger

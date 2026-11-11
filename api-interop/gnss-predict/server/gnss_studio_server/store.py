@@ -53,7 +53,8 @@ def check_etag(current: str, if_match: str | None) -> None:
         raise ApiError(412, "ETAG_MISMATCH", "scenario ถูกแก้จากที่อื่นแล้ว โหลดใหม่ก่อนบันทึก", detail=current)
 
 
-def _write_atomic(path: Path, data: bytes) -> None:
+def write_atomic(path: Path, data: bytes) -> None:
+    """เขียนไฟล์ข้างปลายทางแล้ว os.replace (ผู้อ่านเห็นไฟล์เก่าหรือไฟล์ใหม่ครบ ไม่เห็นไฟล์ที่เขียนค้าง) ใช้ร่วมกับ settings"""
     tmp = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex[:8]}")
     try:
         tmp.write_bytes(data)
@@ -238,13 +239,13 @@ class ScenarioStore:
             fresh = not target.exists()
             target.mkdir(parents=True, exist_ok=True)
             try:
-                _write_atomic(target / SCENARIO_FILE, data)
+                write_atomic(target / SCENARIO_FILE, data)
                 try:
                     workbook = (source / WORKBOOK_FILE).read_bytes()
                 except FileNotFoundError:
                     workbook = None
                 if workbook is not None:
-                    _write_atomic(target / WORKBOOK_FILE, workbook)
+                    write_atomic(target / WORKBOOK_FILE, workbook)
             except BaseException:
                 if fresh:
                     shutil.rmtree(target, ignore_errors=True)
@@ -282,4 +283,4 @@ class ScenarioStore:
         with self._locked(name):
             if not (directory / SCENARIO_FILE).is_file():
                 raise ApiError(404, "NOT_FOUND", f"ไม่พบ scenario {name}")
-            _write_atomic(directory / WORKBOOK_FILE, data)
+            write_atomic(directory / WORKBOOK_FILE, data)
