@@ -465,7 +465,7 @@ describe("consent texts name every host that a download contacts", () => {
     expect(HOSTS).toEqual(["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"]);
   });
 
-  test.each(["fetch.confirm", "daily.runNowConfirm", "daily.applyConfirm", "daily.warnEnabled", "fetch.noSnapshot", "fetch.queued"] as const)(
+  test.each(["fetch.confirm", "daily.runNowConfirm", "daily.confirmForecast", "daily.warnEnabled", "fetch.noSnapshot", "fetch.queued"] as const)(
     "%s lists CelesTrak, IGS and CDDIS with their hosts",
     (key) => {
       const text = msg(key, { time: "21:00", job: "j-1" });
@@ -492,10 +492,19 @@ describe("consent texts name every host that a download contacts", () => {
     expect(text).toMatch(/MGEX/);
   });
 
-  test("the Apply confirmation says when it may start and that it downloads", () => {
-    const text = msg("daily.applyConfirm", { time: "21:00" });
+  test("the Apply confirmation says when the forecast may start and that it downloads", () => {
+    const text = msg("daily.confirmForecast", { time: "21:00" });
     expect(text).toMatch(/21:00/);
     expect(text).toMatch(/60 วินาที/);
     expect(text).toMatch(/อินเทอร์เน็ต/);
+  });
+
+  test("the validation part names the CDDIS host and MGEX (the validation reads SP3 from CDDIS), and is asked whenever the job is switched on", () => {
+    const text = msg("daily.confirmValidation");
+    expect(text).toContain(HOSTS[2]);
+    expect(text).toMatch(/MGEX/);
+    expect(text).toMatch(/60 วินาที/);
+    expect(text).toMatch(/อินเทอร์เน็ต/);
+    expect(msg("daily.confirmSave")).toMatch(/\?$/);
   });
 });

@@ -313,27 +313,65 @@ describe("the same rules as the server, checked before sending", () => {
   });
 });
 
-// Server §9.3: with the job on, a tick after today's run_at_utc starts the forecast (and downloads) about 60 s after the settings are saved,
-// so a save that switches the job on, or moves its time, while "now" is already past that time needs the user's consent first
+// Server §9.3-9.4: with the job on, the scheduler (ticking every 60 s) starts the forecast when now >= today's run_at_utc, and the validation of past days
+// (MGEX SP3 from CDDIS) at any time of day. So a save that switches the job on always needs the user's consent (validation download, plus the forecast
+// download when it is already past run_at_utc), and a save that moves run_at_utc to before now while the job is on needs it for the forecast download
 describe("Apply asks for consent when saving may start a download", () => {
   const at = (iso: string) => vi.setSystemTime(new Date(iso));
   const off = (over: Partial<typeof SETTINGS.daily> = {}) => ({ json: { ...SETTINGS, daily: { ...SETTINGS.daily, enabled: false, ...over } } });
-  const askText = (time = "21:00") => msg("daily.applyConfirm", { time });
+  const forecast = (time = "21:00") => msg("daily.confirmForecast", { time });
+  const validation = () => msg("daily.confirmValidation");
+  const CDDIS = "gdc.cddis.eosdis.nasa.gov";
+  const dialogText = () => screen.getByRole("dialog").textContent ?? "";
 
-  test("switching the job on after today's run time asks, in Thai, naming the hosts and the 60 seconds", async () => {
+  test("switching the job on after today's run time asks, in Thai, naming both downloads: the validation (CDDIS) and the forecast (CelesTrak, IGS, CDDIS)", async () => {
     at("2026-11-12T22:00:00Z"); // New York (the suite's TZ) is at 17:00: only a UTC reading says "after 21:00"
     const f = server({ "GET /api/settings": off() });
     await mounted();
     await user.click(enabled());
     await user.click(apply());
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(askText())).toBeDefined();
-    for (const host of ["celestrak.org", "files.igs.org", "gdc.cddis.eosdis.nasa.gov"]) expect(askText()).toContain(host);
-    expect(askText()).toMatch(/60 วินาที/);
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(validation());
+    expect(dialogText()).toContain(forecast());
+    expect(dialogText()).toContain(msg("daily.confirmSave"));
+    for (const host of ["celestrak.org", "files.igs.org", CDDIS]) expect(dialogText(), host).toContain(host);
+    expect(dialogText()).toMatch(/60 วินาที/);
+    expect(dialogText()).toMatch(/MGEX/);
     expect(puts(f)).toHaveLength(0);
-    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
     await waitFor(() => expect(puts(f)).toHaveLength(1));
     expect((puts(f)[0].body as { daily: { enabled: boolean } }).daily.enabled).toBe(true);
+  });
+
+  test("switching the job on BEFORE today's run time still asks, and names the validation download (CDDIS) but not a forecast one", async () => {
+    at("2026-11-12T20:59:59Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(validation());
+    expect(dialogText()).toContain(CDDIS);
+    expect(dialogText()).toMatch(/MGEX/);
+    expect(dialogText()).not.toContain(forecast());
+    expect(dialogText()).not.toContain("celestrak.org");
+    expect(puts(f)).toHaveLength(0);
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+  });
+
+  test("before the run time, Cancel sends nothing too", async () => {
+    at("2026-11-12T08:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(puts(f)).toHaveLength(0);
+    expect(enabled().checked).toBe(true);
+    expect(apply().disabled).toBe(false);
+    expect(flow.closePanel).not.toHaveBeenCalled();
   });
 
   test("Cancel sends nothing, keeps the form as it was (still to be applied) and the window open", async () => {
@@ -367,42 +405,59 @@ describe("Apply asks for consent when saving may start a download", () => {
     expect(puts(f)).toHaveLength(1);
   });
 
-  test("switching the job on before today's run time does not ask", async () => {
-    at("2026-11-12T20:59:59Z");
-    const f = server({ "GET /api/settings": off() });
-    await mounted();
-    await user.click(enabled());
-    await user.click(apply());
-    await waitFor(() => expect(puts(f)).toHaveLength(1));
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  test("at exactly the run time it asks (the scheduler starts at or after it)", async () => {
+  test("at exactly the run time the forecast download is named too (the scheduler starts at or after it)", async () => {
     at("2026-11-12T21:00:00Z");
     const f = server({ "GET /api/settings": off() });
     await mounted();
     await user.click(enabled());
     await user.click(apply());
-    expect(await screen.findByRole("dialog")).toBeDefined();
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(forecast());
+    expect(dialogText()).toContain(validation());
     expect(puts(f)).toHaveLength(0);
   });
 
-  test("the day does not matter, only the time of day in UTC (just after midnight is before 21:00)", async () => {
+  test("the day does not matter, only the time of day in UTC (just after midnight is before 21:00: validation only)", async () => {
     at("2026-11-13T00:00:30Z");
     const f = server({ "GET /api/settings": off() });
     await mounted();
     await user.click(enabled());
     await user.click(apply());
-    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(validation());
+    expect(dialogText()).not.toContain(forecast());
+    expect(puts(f)).toHaveLength(0);
   });
 
-  test("moving the run time to before now while the job is already on asks, and names the new time", async () => {
+  test("switching on while moving the run time asks once, with the forecast named only when the NEW time has passed", async () => {
+    at("2026-11-12T12:00:00Z");
+    const f = server({ "GET /api/settings": off() });
+    await mounted();
+    await user.click(enabled());
+    await replace(runAt(), "11:30");
+    await user.click(apply());
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(forecast("11:30"));
+    expect(dialogText()).toContain(validation());
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await replace(runAt(), "12:30");
+    await user.click(apply());
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(validation());
+    expect(dialogText()).not.toContain(forecast("12:30"));
+    expect(puts(f)).toHaveLength(0);
+  });
+
+  test("moving the run time to before now while the job is already on asks, naming the forecast download and the new time", async () => {
     at("2026-11-12T12:00:00Z");
     const f = server(); // enabled, 21:00
     await mounted();
     await replace(runAt(), "11:30");
     await user.click(apply());
-    expect(within(await screen.findByRole("dialog")).getByText(askText("11:30"))).toBeDefined();
+    await screen.findByRole("dialog");
+    expect(dialogText()).toContain(forecast("11:30"));
+    expect(dialogText()).not.toContain(validation()); // the job was already on: only the forecast start is new
     expect(puts(f)).toHaveLength(0);
   });
 

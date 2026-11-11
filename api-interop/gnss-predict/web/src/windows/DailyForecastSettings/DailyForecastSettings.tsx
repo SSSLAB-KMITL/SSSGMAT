@@ -4,7 +4,8 @@
 // - Apply = PUT /settings ทั้งก้อน (server ต้องการครบทุกช่อง) 422 ที่ field แบบ `daily.run_at_utc` ขึ้นที่ช่องนั้น (ขอบแดง) OK = Apply แล้วปิด
 // - แสดงเวลาตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี = UTCG) สถานะมาจาก event `daily` ของ SSE (useJobs.daily) หรือ /health ตอนเปิดหน้าต่าง
 //   ที่อยู่ CSV = `<data_dir>/daily/latest.csv` แสดงเป็นข้อความ (data_dir มาจาก /health)
-// - ผู้ใช้ห้ามถูกดาวน์โหลดโดยไม่ยินยอม: การเปิดหน้าต่างและ Apply ไม่ดึงอะไร Run Now ถามยืนยันเป็นภาษาไทยก่อนทุกครั้ง แล้วจึง POST /daily/run
+// - ผู้ใช้ห้ามถูกดาวน์โหลดโดยไม่ยินยอม: การเปิดหน้าต่างไม่ดึงอะไร Apply ถามยืนยันก่อนเมื่อการบันทึกอาจให้ server เริ่มดาวน์โหลดเอง (เปิดงาน = ตรวจย้อนหลังจาก CDDIS เสมอ,
+//   ถึง run_at_utc แล้ว = พยากรณ์ด้วย; ดู consentNeeded) Run Now ถามยืนยันเป็นภาษาไทยก่อนทุกครั้ง แล้วจึง POST /daily/run
 //   (ไม่มี body = วันถัดไปตาม UTC) ใส่ job เป็น queued ใน useJobs; 409 (มี job ของวันนั้นอยู่แล้ว) ได้ข้อความไทย Run Now ใช้ค่าที่บันทึกแล้ว ไม่ใช่ค่าที่แก้ค้าง
 // - เปิดงานประจำวัน (enabled) แล้วแสดงคำเตือนไทยว่า ถ้า server เริ่มหลังเวลา run_at_utc (ก่อน 24:00 UTC) จะดาวน์โหลดทันที (server §9.3)
 
@@ -100,14 +101,29 @@ function validate(d: Draft): { errors: Errors; doc: Settings | null } {
 const todayAt = (now: Date, hhmm: string): number => Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), Number(hhmm.slice(0, 2)), Number(hhmm.slice(3, 5)));
 
 /**
- * การบันทึกนี้อาจทำให้ server เริ่มดึงข้อมูลเองไหม (server §9.3: ตัวตั้งเวลาตรวจทุก 60 วินาที และสั่ง job daily ของวันถัดไปเมื่อ enabled และ now >= run_at_utc ของวันนี้ UTC
- * ถ้ายังไม่มีผลของวันนั้น): ต้องขอความยินยอมก่อนเมื่อค่าที่จะบันทึก enabled และ (เพิ่งเปิด หรือเปลี่ยน run_at_utc) และเวลา UTC ตอนนี้เลย run_at_utc ใหม่แล้ว
- * แก้ช่องอื่นที่เปิดอยู่แล้ว หรือปิดงาน ไม่ถามเพราะไม่ได้ทำให้เริ่มงานที่ไม่เคยเริ่ม
+ * การบันทึกนี้อาจทำให้ server เริ่มดาวน์โหลดเองภายในประมาณ 60 วินาทีไหม (ตัวตั้งเวลาอ่านค่าตั้งใหม่ทุก tick):
+ * - validation: เพิ่งเปิดงาน (false -> true) ไม่ว่ากี่โมง เพราะขั้นตรวจย้อนหลัง (server §9.4) อ่าน SP3 ของ MGEX จาก CDDIS ของวันที่ผ่านมาได้ทันที
+ * - forecast: ค่าที่จะบันทึก enabled และ (เพิ่งเปิด หรือเปลี่ยน run_at_utc) และเวลา UTC ตอนนี้ถึง run_at_utc ใหม่ของวันนี้แล้ว (server §9.3: now >= run_at_utc
+ *   ก่อน 24:00 UTC และยังไม่มีผลของวันถัดไป จึงสั่ง job daily ของวันถัดไป)
+ * แก้ช่องอื่นขณะเปิดอยู่แล้ว หรือปิดงาน ไม่ถาม เพราะไม่ได้ทำให้เริ่มงานที่ไม่เคยเริ่ม
  */
-function mayStartDownload(saved: Draft, next: Settings, now: Date): boolean {
+function consentNeeded(saved: Draft, next: Settings, now: Date): { forecast: boolean; validation: boolean } {
   const { enabled, run_at_utc: runAt } = next.daily;
-  if (!enabled || !(!saved.enabled || runAt !== saved.runAt)) return false;
-  return now.getTime() >= todayAt(now, runAt);
+  if (!enabled) return { forecast: false, validation: false };
+  const switchedOn = !saved.enabled;
+  return { validation: switchedOn, forecast: (switchedOn || runAt !== saved.runAt) && now.getTime() >= todayAt(now, runAt) };
+}
+
+/** คำถามของกล่องยืนยันก่อนบันทึก (ส่วนที่เข้าเงื่อนไขตามลำดับ แล้วคำถาม); null = ไม่ต้องถาม */
+function consentQuestion(saved: Draft, next: Settings, now: Date): string | null {
+  const need = consentNeeded(saved, next, now);
+  if (!need.forecast && !need.validation) return null;
+  const parts = [
+    ...(need.forecast ? [msg("daily.confirmForecast", { time: next.daily.run_at_utc })] : []),
+    ...(need.validation ? [msg("daily.confirmValidation")] : []),
+    msg("daily.confirmSave"),
+  ];
+  return parts.join("\n\n");
 }
 
 /** `<data_dir>/daily/latest.csv` ใช้ตัวคั่นแบบเดียวกับ data_dir (Windows ใช้ \) */
@@ -177,7 +193,8 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
     if (result.doc === null) return false;
     setSaving(true); // ระหว่างถามก็นับว่ากำลังบันทึก: กด Apply ซ้ำไม่ได้
     try {
-      if (mayStartDownload(base, result.doc, new Date()) && !(await confirm(msg("daily.applyConfirm", { time: result.doc.daily.run_at_utc })))) return false;
+      const question = consentQuestion(base, result.doc, new Date());
+      if (question !== null && !(await confirm(question))) return false;
       await useSettings.getState().saveSettings(result.doc);
       const saved = useSettings.getState().settings;
       if (saved !== null) {

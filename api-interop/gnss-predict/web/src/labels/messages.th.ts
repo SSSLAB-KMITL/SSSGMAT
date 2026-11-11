@@ -9,7 +9,8 @@ import { fillPlaceholders } from "./labels";
  * และ Fetch Now ใช้ชุดเดียวกัน; การตรวจย้อนหลังของงานประจำวันอ่าน SP3 ของ MGEX จาก CDDIS host เดิม)
  * ข้อความที่ขอความยินยอมให้ดาวน์โหลดต้องไล่ครบทุก host (labels.test.ts ตรวจกับ config.py)
  */
-const SOURCES = "CelesTrak (celestrak.org), IGS (files.igs.org) และ CDDIS (gdc.cddis.eosdis.nasa.gov)";
+const CDDIS = "CDDIS (gdc.cddis.eosdis.nasa.gov)";
+const SOURCES = `CelesTrak (celestrak.org), IGS (files.igs.org) และ ${CDDIS}`;
 
 const MESSAGES = {
   // คำอธิบายธงดาวจาก engine (W9) ธงทั้งหกต้องมีครบ ธงที่บอกว่าไม่ถูกนำไปคำนวณ DOP ต้องตรงกับ DOP_EXCLUDED_FLAGS ใน gnss_predict/catalog.py (test ตรวจ)
@@ -110,7 +111,11 @@ const MESSAGES = {
   // Daily Forecast Settings (spec §11, server §9)
   "daily.timeInvalid": "ต้องเป็นเวลา UTC รูปแบบ HH:MM เช่น 21:00 (00:00 ถึง 23:59)",
   "daily.warnEnabled": `เปิดงานประจำวันอยู่: server จะเชื่อมต่ออินเทอร์เน็ตดาวน์โหลดจาก ${SOURCES} ทุกวันตอน {time} UTC และอ่าน SP3 ของ MGEX จาก CDDIS เพื่อตรวจย้อนหลัง ถ้าเวลาปัจจุบันเลย {time} UTC (ก่อน 24:00 UTC) แล้วและยังไม่มีผลของวันถัดไป งานจะเริ่มดาวน์โหลดทันที ภายในประมาณ 60 วินาทีหลังกด Apply หรือหลังเริ่ม server`,
-  "daily.applyConfirm": `งานประจำวันตั้งไว้ที่ {time} UTC และตอนนี้เลยเวลานั้นแล้ว (ก่อน 24:00 UTC) หลังบันทึก server อาจเริ่มพยากรณ์ของวันถัดไปภายในประมาณ 60 วินาที โดยเชื่อมต่ออินเทอร์เน็ตดาวน์โหลดจาก ${SOURCES} บันทึกค่าตั้งนี้หรือไม่?`,
+  // ขอความยินยอมก่อนบันทึกค่าตั้งที่อาจให้ server เริ่มดาวน์โหลดเองภายในประมาณ 60 วินาที (ตัวตั้งเวลาตรวจทุก 60 วินาที): ประกอบเป็นกล่องเดียวตามที่เข้าเงื่อนไข
+  // ส่วนพยากรณ์ = เลย run_at_utc ของวันนี้แล้ว (server §9.3) ส่วนตรวจย้อนหลัง = เปิดงานประจำวัน ไม่ว่ากี่โมง (server §9.4: อ่าน SP3 ของ MGEX จาก CDDIS)
+  "daily.confirmForecast": `ตอนนี้เลยเวลา {time} UTC ของงานประจำวันแล้ว (ก่อน 24:00 UTC) หลังบันทึก server อาจเริ่มพยากรณ์ของวันถัดไปภายในประมาณ 60 วินาที โดยเชื่อมต่ออินเทอร์เน็ตดาวน์โหลดจาก ${SOURCES}`,
+  "daily.confirmValidation": `การเปิดงานประจำวันทำให้ server อาจเริ่มตรวจย้อนหลังของวันที่ผ่านมาภายในประมาณ 60 วินาทีหลังบันทึก โดยเชื่อมต่ออินเทอร์เน็ตดาวน์โหลด SP3 ของ MGEX จาก ${CDDIS}`,
+  "daily.confirmSave": "บันทึกค่าตั้งนี้หรือไม่?",
   "daily.runningNow": "งานประจำวันกำลังรันหรือรออยู่ รอให้เสร็จก่อนแล้วสั่งใหม่",
   "daily.loadFailed": "อ่านค่าตั้งงานประจำวันจาก server ไม่สำเร็จ: {message}",
   "daily.saved": "บันทึกค่าตั้งงานประจำวันแล้ว",
