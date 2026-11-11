@@ -1,0 +1,59 @@
+/* สีและขนาดทั้งหมดของหน้าเว็บอยู่ที่นี่ที่เดียว (โทนสว่างแบบโปรแกรมเดสก์ท็อป ตัวอักษร system UI 12 px)
+   ไฟล์อื่นใช้ผ่าน var(--...) เท่านั้น ห้ามใส่ค่าสีตรง ๆ
+   คู่ข้อความ/พื้นที่ tests/unit/theme.test.ts ตรวจ contrast WCAG AA (>= 4.5:1) ต้องเป็นสี hex ตรง ๆ ไม่ใช่ var() */
+:root {
+  color-scheme: light;
+
+  /* พื้นผิว */
+  --bg: #f0f0f0;
+  --panel: #ffffff;
+  --border: #8f8f8f;
+
+  /* ข้อความ */
+  --text: #1b1b1b;
+  --text-muted: #555555;
+
+  /* เมนูบาร์ */
+  --menu-bg: #ececec;
+  --menu-text: #1b1b1b;
+
+  /* แถบชื่อหน้าต่าง */
+  --titlebar-bg: #d6dbe3;
+  --titlebar-active-bg: #1f4e8c;
+  --titlebar-active-text: #ffffff;
+
+  /* แถวที่เลือก */
+  --selected-bg: #2563b0;
+  --selected-text: #ffffff;
+
+  /* สถานะ (ใช้เป็นสีข้อความหรือเส้นบนพื้น --panel ได้) */
+  --danger: #b3261e;
+  --warning: #8a5300;
+
+  /* ตัวอักษร: system UI และ monospace สำหรับตัวเลขและเวลา ไม่โหลดฟอนต์จากเครือข่าย */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", Thonburi, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-size: 12px;
+
+  /* สีของระบบดาวเทียมและวัตถุในฉาก (spec §14) */
+  --color-gps: #ffd23f;
+  --color-glonass: #ff6b6b;
+  --color-galileo: #4fd47e;
+  --color-beidou: #45c8ff;
+  --color-facility: #ff79e6;
+  --color-access: #9dff6b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-size);
+}
