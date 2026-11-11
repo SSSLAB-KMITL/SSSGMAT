@@ -19,6 +19,7 @@ from gpredict_web.passes import find_passes, usable_span
 from gpredict_web.satdb import gmat_name
 from gpredict_web.store import Qth
 from gnss_predict import config as engine_config
+from gnss_predict.astro import gmst_rad
 from gnss_predict.errors import GmatNotFoundError
 from gnss_predict.geometry import ecef_to_aer
 from gnss_predict.propagate import propagate
@@ -70,8 +71,24 @@ def _spec(norad: int, designator: str, ndot: str, bstar: str, inc: float, raan: 
 
 
 # epoch ของทั้งสามดวงคือ 26313.50000000 (9 พ.ย. 2026 12:00 UTC)
+EPOCH = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=313.5 - 1.0)
+GEO_RAAN_DEG, GEO_ARGP_DEG = 90.0, 270.0
+
+
+def _geo_mean_anomaly_deg() -> float:
+    """mean anomaly ของ GEO ที่ทำให้ลองจิจูดใต้ดาว ณ epoch เท่ากับของ THBK (100.781°E)
+
+    ค่า 180° ของ plan (RAAN 90 + argp 270 + MA 180) ได้ลองจิจูด ≈ 48.7°W: GEO อยู่ใต้ขอบฟ้าของ THBK (El ≈ -61°) ตลอดเวลา
+    เกณฑ์ Az/El ของ spec 9.2 ซึ่งตรวจเฉพาะที่ El > 0 จึงไม่มีอะไรให้เทียบ ที่ e ≈ 0 และ i ≈ 0 มุมเฉื่อยของดาวคือ
+    RAAN + argp + MA และลองจิจูดคือมุมนั้นลบ GMST จึงได้ MA = (lon_THBK + GMST(epoch) - RAAN - argp) mod 360
+    ส่วน element อื่นคงตาม plan (i 0.05, e 0.0001, n 1.00271000)"""
+    ma = engine_config.THBK_LON_DEG + math.degrees(gmst_rad(EPOCH)) - GEO_RAAN_DEG - GEO_ARGP_DEG
+    return round(ma % 360.0, 4) % 360.0
+
+
 ISS = _spec(25544, "98067A", " .00016717", " 30164-3", 51.64, 208.9163, "0006317", 69.9862, 25.2906, 15.49438945)
-GEO = _spec(90001, "26001A", " .00000000", " 00000+0", 0.05, 90.0, "0001000", 270.0, 180.0, 1.00271)
+GEO = _spec(90001, "26001A", " .00000000", " 00000+0", 0.05, GEO_RAAN_DEG, "0001000", GEO_ARGP_DEG,
+            _geo_mean_anomaly_deg(), 1.00271)
 MOLNIYA = _spec(90002, "26002A", " .00000000", " 00000+0", 63.4, 120.0, "7000000", 270.0, 0.0, 2.006)
 SPECS = [ISS, GEO, MOLNIYA]
 NAMES = {ISS.prn: "ISS", GEO.prn: "GEO", MOLNIYA.prn: "Molniya"}
@@ -102,7 +119,7 @@ class InterpolationVsGmatTest(unittest.TestCase):
 
         # 1. ช่วง 16 ชม. ทุก 30 วินาทีผ่าน EphemManager แล้วหา pass แรกของ ISS
         #    T เลือกให้ pass แรกสูง (Max El ราว 48°) และ Molniya อยู่เหนือขอบฟ้าตลอดช่วงเทียบ เพื่อให้เกณฑ์ Az/El มีค่าให้เทียบจริง
-        #    (GEO ตามที่กำหนดอยู่ใต้ขอบฟ้าของ THBK ที่ราว -61° ตลอดเวลา จึงเทียบ Az/El ไม่ได้ ตรวจแค่ตำแหน่งกับ range rate)
+        #    (GEO วางไว้เหนือลองจิจูดของ THBK ด้วย mean anomaly ที่คำนวณ ดู _geo_mean_anomaly_deg)
         cls.window = window_for(datetime(2026, 11, 10, 5, 0, tzinfo=UTC), 1)
         manager = EphemManager(cfg, find_console=lambda: CONSOLE, start_worker=False)
         cls.addClassCleanup(manager.close)
@@ -143,7 +160,7 @@ class InterpolationVsGmatTest(unittest.TestCase):
         positions = cls.direct.positions_km[spec.prn]
         velocities = cls.direct.velocities_kms[spec.prn]
         m = {"samples": 0, "visible": 0, "pos_m": 0.0, "az_deg": 0.0, "el_deg": 0.0, "rate_ms": 0.0,
-             "max_el_deg": -90.0}
+             "max_el_deg": -90.0, "min_el_deg": 90.0}
         for t, r_gmat, v_gmat in zip(cls.direct.times_utc, positions, velocities):
             state = ephem.state_at(t)
             if state is None:
@@ -154,6 +171,7 @@ class InterpolationVsGmatTest(unittest.TestCase):
             m["pos_m"] = max(m["pos_m"], math.dist(state[0], r_gmat) * 1000.0)
             m["rate_ms"] = max(m["rate_ms"], abs(ours["range_rate_kms"] - ref["range_rate_kms"]) * 1000.0)
             m["max_el_deg"] = max(m["max_el_deg"], ref["el"])
+            m["min_el_deg"] = min(m["min_el_deg"], ref["el"])
             if ref["el"] > 0.0:                                       # Az/El เทียบเฉพาะตอนดาวอยู่เหนือขอบฟ้า
                 m["visible"] += 1
                 m["az_deg"] = max(m["az_deg"], _angle_diff_deg(ours["az"], ref["az"]))
@@ -183,9 +201,9 @@ class InterpolationVsGmatTest(unittest.TestCase):
               f"max El {cls.iss_pass.max_el:.2f}", file=sys.stderr)
         for s in SPECS:
             m = cls.metrics[s.prn]
-            print(f"  {NAMES[s.prn]:8s} n={m['samples']} visible={m['visible']} max El {m['max_el_deg']:.2f}: "
-                  f"pos {m['pos_m']:.4f} m, Az {m['az_deg']:.6f} deg, El {m['el_deg']:.6f} deg, "
-                  f"range rate {m['rate_ms']:.6f} m/s", file=sys.stderr)
+            print(f"  {NAMES[s.prn]:8s} n={m['samples']} visible={m['visible']} El {m['min_el_deg']:.2f}..{m['max_el_deg']:.2f}: "
+                  f"pos {m['pos_m']:.4f} m, Az {m['az_deg']:.2e} deg, El {m['el_deg']:.2e} deg, "
+                  f"range rate {m['rate_ms']:.2e} m/s", file=sys.stderr)
         print(f"  ISS AOS error {cls.aos_los['aos_s']:.4f} s, LOS error {cls.aos_los['los_s']:.4f} s",
               file=sys.stderr)
 
@@ -206,10 +224,12 @@ class InterpolationVsGmatTest(unittest.TestCase):
         self.assertTrue(start <= self.iss_pass.aos < self.iss_pass.los <= stop)
         self.assertEqual(len(self.direct.times_utc), SPAN_S // DIRECT_STEP_S + 1)
 
-    def test_iss_and_molniya_are_visible_so_the_az_el_comparison_is_not_vacuous(self):
-        self.assertGreater(self.metrics[ISS.prn]["visible"], 60)
-        self.assertGreater(self.metrics[MOLNIYA.prn]["visible"], 60)
+    def test_all_three_satellites_are_visible_so_the_az_el_comparison_is_not_vacuous(self):
+        for s in SPECS:
+            with self.subTest(NAMES[s.prn]):
+                self.assertGreater(self.metrics[s.prn]["visible"], 60)
         self.assertGreater(self.iss_pass.max_el, 10.0)
+        self.assertGreater(self.metrics[GEO.prn]["min_el_deg"], 60.0)         # GEO อยู่เหนือ THBK ตลอดช่วงเทียบ
 
     # ---- เกณฑ์ความแม่น (ทุกวินาทีของช่วง 2 ชม. ทั้ง 3 ดวง)
 
