@@ -261,8 +261,10 @@ class EphemManager:
         self._queue: deque[_Job] = deque()
         self._running: _Job | None = None
         self._closed = False
+        self._worker: threading.Thread | None = None
         if start_worker:
-            threading.Thread(target=self._work_loop, name="gpredict-web-gmat", daemon=True).start()
+            self._worker = threading.Thread(target=self._work_loop, name="gpredict-web-gmat", daemon=True)
+            self._worker.start()
 
     # ---- API
 
@@ -356,7 +358,9 @@ class EphemManager:
                 shutil.rmtree(d, ignore_errors=True)
 
     def drain(self) -> None:
-        """ทำงานในคิวให้หมดใน thread ที่เรียก (ใช้เมื่อ start_worker=False)"""
+        """ทำงานในคิวให้หมดใน thread ที่เรียก ใช้ได้เฉพาะ start_worker=False (คิวมีผู้รันได้คนเดียว: _running มีช่องเดียว)"""
+        if self._worker is not None:
+            raise RuntimeError("drain() ใช้ไม่ได้เมื่อมี worker thread ของคิว GMAT (start_worker=True)")
         while True:
             with self._lock:
                 job = self._take_locked()

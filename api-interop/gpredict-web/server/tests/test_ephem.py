@@ -531,6 +531,11 @@ class WorkerThreadTest(ManagerTestBase):
         self.assertEqual(codes(m.status("A")), ("ok", []))
         self.assertIsNotNone(m.get(s1, self.w))
 
+    def test_drain_refused_while_worker_thread_runs(self):
+        m = self.manager(start_worker=True)                    # manager() ปิดให้ใน cleanup
+        with self.assertRaises(RuntimeError):
+            m.drain()
+
     def test_close_kills_running_job(self):
         started, release_fake = threading.Event(), threading.Event()
 
