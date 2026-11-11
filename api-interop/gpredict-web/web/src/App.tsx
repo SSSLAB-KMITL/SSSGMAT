@@ -18,6 +18,7 @@ import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice, SatNameMap } from "./notices";
 import { overlayFor } from "./overlay";
+import { runQuit } from "./quit";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
 import { activeTab, windowTitle } from "./tabs";
@@ -227,15 +228,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
     });
   }, [current]);
 
-  /** File → Quit (Ctrl+Q): stop the server; the page then says so */
-  const quit = useCallback(async () => {
-    try {
-      await quitServer();
-      onStopped();
-    } catch (e) {
-      addLocalError(errorText(e));
-    }
-  }, [onStopped, addLocalError]);
+  /** File → Quit (Ctrl+Q): stop the server and the page says so; a server that cannot be stopped from here says why instead */
+  const quit = useCallback(() => runQuit(quitServer, onStopped, addLocalError), [onStopped, addLocalError]);
 
   const barAction = useCallback(
     (action: BarAction) => {

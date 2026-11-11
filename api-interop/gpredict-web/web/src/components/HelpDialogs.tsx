@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { errorText, getLicense } from "../api";
+import { errorText, getLicense, getReadme } from "../api";
 import { FloatingWindow } from "./FloatingWindow";
 
-/** (ของเรา) The user manual of Gpredict Web is the README of this program, not Gpredict's PDF manual (Task 19 writes it). */
+/** (ของเรา) The user manual of Gpredict Web is the README of this program, not Gpredict's PDF manual. */
 const README_PATH = "api-interop/gpredict-web/README.md";
 
 function CloseButton({ onClose }: { onClose: () => void }) {
@@ -15,19 +15,54 @@ function CloseButton({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** The text a request gives (the licence, the README), or the Thai text of why it could not be read. Fetched once, when the window opens. */
+function useFetchedText(load: () => Promise<string>): { text: string | null; error: string | null } {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    load().then(
+      (t) => alive && setText(t),
+      (e: unknown) => alive && setError(errorText(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [load]);
+
+  return { text, error };
+}
+
+/** The scrolling window of a long text, or the reason there is none. */
+function TextBody({ text, error, label, loading }: { text: string | null; error: string | null; label: string; loading: string }) {
+  return error !== null ? (
+    <p className="dialog-error" role="alert">
+      {error}
+    </p>
+  ) : (
+    <pre className="license-text" tabIndex={0} aria-label={label}>
+      {text ?? loading}
+    </pre>
+  );
+}
+
 /**
- * Help → Online help (ref §1; ของเรา for the text): Gpredict shows an info box with a link to its website; this one names the
- * README of Gpredict Web by its path in the repository, as plain text (no link: the program points nowhere outside itself).
+ * Help → Online help (ref §1; ของเรา for the text): Gpredict shows an info box with a link to its website; this one shows the
+ * README of Gpredict Web in a window that scrolls (GET /api/readme), with the README's path in the repository as plain text.
+ * No link: the program points nowhere outside itself.
  */
 export function OnlineHelpDialog({ onClose }: { onClose: () => void }) {
+  const { text, error } = useFetchedText(getReadme);
   return (
-    <FloatingWindow title="Online help" onClose={onClose}>
+    <FloatingWindow title="Online help" onClose={onClose} width={720}>
       <div className="dialog">
         <p className="dialog-text">
-          คู่มือการใช้งาน Gpredict Web อยู่ในไฟล์ README ของโปรแกรม:
+          คู่มือการใช้งาน Gpredict Web คือไฟล์ README ของโปรแกรม:
           {"\n"}
           <code className="dialog-path">{README_PATH}</code>
         </p>
+        <TextBody text={text} error={error} label="README" loading="กำลังอ่าน README.md…" />
         <CloseButton onClose={onClose} />
       </div>
     </FloatingWindow>
@@ -36,32 +71,11 @@ export function OnlineHelpDialog({ onClose }: { onClose: () => void }) {
 
 /** Help → License (ref §1): the text of License.txt of the repository (GET /api/license) in a window that scrolls. */
 export function LicenseDialog({ onClose }: { onClose: () => void }) {
-  const [text, setText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    getLicense().then(
-      (t) => alive && setText(t),
-      (e: unknown) => alive && setError(errorText(e)),
-    );
-    return () => {
-      alive = false;
-    };
-  }, []);
-
+  const { text, error } = useFetchedText(getLicense);
   return (
     <FloatingWindow title="License" onClose={onClose} width={640}>
       <div className="dialog">
-        {error !== null ? (
-          <p className="dialog-error" role="alert">
-            {error}
-          </p>
-        ) : (
-          <pre className="license-text" tabIndex={0} aria-label="License">
-            {text ?? "กำลังอ่าน License.txt…"}
-          </pre>
-        )}
+        <TextBody text={text} error={error} label="License" loading="กำลังอ่าน License.txt…" />
         <CloseButton onClose={onClose} />
       </div>
     </FloatingWindow>

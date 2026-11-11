@@ -133,3 +133,8 @@ export const quit = () => request<void>("POST", "/api/quit");
 export async function getLicense(): Promise<string> {
   return (await send("GET", "/api/license")).text();
 }
+
+/** README of Gpredict Web (Help → Online help shows it in the page, no link to anywhere else) */
+export async function getReadme(): Promise<string> {
+  return (await send("GET", "/api/readme")).text();
+}

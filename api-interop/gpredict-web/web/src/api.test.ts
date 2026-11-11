@@ -5,6 +5,7 @@ import {
   getClock,
   getLicense,
   getModules,
+  getReadme,
   putClock,
   putTabs,
   retryModule,
@@ -81,6 +82,19 @@ describe("api", () => {
     const calls = stubFetch(() => new Response("GNU GENERAL PUBLIC LICENSE", { status: 200 }));
     await expect(getLicense()).resolves.toBe("GNU GENERAL PUBLIC LICENSE");
     expect(calls[0]!.url).toBe("/api/license");
+  });
+
+  it("reads the README as plain text (Help → Online help)", async () => {
+    const calls = stubFetch(() => new Response("# Gpredict Web\n\nคู่มือ", { status: 200 }));
+    await expect(getReadme()).resolves.toBe("# Gpredict Web\n\nคู่มือ");
+    expect(calls[0]!.url).toBe("/api/readme");
+  });
+
+  it("a README the server cannot find is an ApiError with its Thai text", async () => {
+    stubFetch(() => json({ code: "NOT_FOUND", level: "error", text: "ไม่พบหรืออ่านไฟล์ README.md ของ repo ไม่ได้", object: null }, 404));
+    const err = (await getReadme().catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect([err.code, err.status, err.text]).toEqual(["NOT_FOUND", 404, "ไม่พบหรืออ่านไฟล์ README.md ของ repo ไม่ได้"]);
   });
 
   it("throws ApiError {code, text} for status >= 400, from the server's error body", async () => {
