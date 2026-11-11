@@ -27,6 +27,8 @@ export interface QthList {
   qth: Qth[];
   /** name of the default station ("** DEFAULT **"), null if there is none */
   default: string | null;
+  /** one warning (QTH_INVALID, object = file name) for each QTH file the server skipped because it could not be read */
+  messages: ApiMessage[];
 }
 
 // ---------------------------------------------------------------- satellites and TLE
