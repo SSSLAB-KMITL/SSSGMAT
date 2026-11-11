@@ -134,8 +134,9 @@ class SatDb:
 
         - ดาวดวงเดียวกันในหลายกลุ่มใช้ OMM ที่ epoch ใหม่สุด
         - updated = ได้ epoch ใหม่กว่าเดิม (ดวงใหม่ถูกเพิ่มและนับรวม) skipped = epoch เท่าเดิมหรือเก่ากว่า (ไม่เคยถอยกลับ)
-        - missing = ดวงในดัชนีที่ไม่อยู่ในไฟล์ใดเลย เก็บ TLE และกลุ่มเดิมไว้
-        - กลุ่มของดวงที่พบ = กลุ่มที่พบดวงนั้นครั้งนี้ รวมกลุ่มเดิมที่ครั้งนี้ไม่ได้ส่งไฟล์มา (ดึงกลุ่มนั้นไม่ได้ ไม่ถือว่าออกจากกลุ่ม)
+        - missing = ดวงในดัชนีที่ไม่อยู่ในไฟล์ใดเลย เก็บ TLE เดิมไว้ (อาจเหลือกลุ่มว่าง ซึ่งไม่ปรากฏในกลุ่มใดของ combo)
+        - กลุ่มของทุกดวงในดัชนี = กลุ่มที่พบดวงนั้นครั้งนี้ รวมกลุ่มเดิมที่ครั้งนี้ไม่ได้อ่านไฟล์ (ดึงกลุ่มนั้นไม่ได้ ไม่ถือว่าออกจากกลุ่ม)
+          ดวงที่หายไปจึงหลุดจากกลุ่มที่อ่านครั้งนี้แล้วไม่มีมัน
         - ไฟล์ที่อ่านไม่ได้ข้ามทั้งกลุ่ม, ดาวที่แปลงเป็น TLE ไม่ได้ข้ามเฉพาะดวง ทั้งสองกรณีมี Message เตือน
         """
         now = now.astimezone(_UTC)
@@ -167,7 +168,11 @@ class SatDb:
                                         f"แปลง OMM กลุ่ม {group} เป็น TLE ไม่ได้ {len(bad)} ดวง (NORAD {shown}) ข้ามดวงเหล่านี้", group))
 
         with self._lock:
-            missing = sum(1 for norad in self._sats if norad not in best)
+            missing = 0
+            for norad, old in list(self._sats.items()):
+                if norad not in best:                       # ไม่อยู่ในไฟล์ใดเลย: เก็บ TLE เดิม แต่กลุ่มที่อ่านครั้งนี้ไม่มีมันแล้ว
+                    missing += 1
+                    self._sats[norad] = replace(old, groups=sorted(set(old.groups) - read_ok))
             updated = skipped = 0
             for norad, (rec, lines) in best.items():
                 old = self._sats.get(norad)

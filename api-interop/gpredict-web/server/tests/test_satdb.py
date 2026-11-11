@@ -3,6 +3,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import URLError
@@ -131,14 +132,17 @@ class TestApplyGroups(SatDbTestCase):
         # epoch ใหม่ขึ้น 1 ดวง, ไม่มี 36828 และ 100744 ในไฟล์ใดเลย
         newer = with_epoch(GROUP_A, 62339, "2026-11-11T01:00:00.000000")
         b = [r for r in GROUP_B if r["NORAD_CAT_ID"] not in (36828, 100744)]
-        before = self.db.get(36828)
+        before, before_100744 = self.db.get(36828), self.db.get(100744)
         third = self.db.apply_groups(self.files(newer, b), T0 + timedelta(hours=6))
         self.assertEqual((third.updated, third.skipped, third.missing), (1, 7, 2))
         self.assertEqual(self.db.get(62339).updated, T0 + timedelta(hours=6))
         self.assertEqual(self.db.get(62339).epoch, datetime(2026, 11, 11, 1, 0, tzinfo=UTC))
         self.assertEqual(len(self.db), 10)
-        self.assertEqual(self.db.get(36828), before)                                      # ดวงที่หายยังอยู่ ทั้ง TLE และกลุ่ม
-        self.assertEqual(self.db.get(100744).groups, ["galileo"])
+        # ดวงที่หายยังอยู่พร้อม TLE เดิม แต่ออกจาก galileo เพราะไฟล์ galileo ที่อ่านครั้งนี้ไม่มีมันแล้ว
+        self.assertEqual(self.db.get(36828), replace(before, groups=[]))
+        self.assertEqual(self.db.get(100744).groups, [])
+        self.assertEqual(self.db.search(group="galileo", q="cosmos 2620"), [])
+        self.assertEqual(self.db.get(100744).tle_lines, before_100744.tle_lines)
 
     def test_older_epoch_never_replaces(self):
         self.db.apply_groups(self.files(), T0)
@@ -158,6 +162,22 @@ class TestApplyGroups(SatDbTestCase):
         b = [r for r in GROUP_B if r["NORAD_CAT_ID"] != 43508]
         self.db.apply_groups(self.files(None, b), T0 + timedelta(hours=6))
         self.assertEqual(self.db.get(43508).groups, ["gps-ops"])
+
+    def test_missing_satellite_keeps_only_groups_not_read_this_run(self):
+        self.db.apply_groups(self.files(), T0)
+        # gps-ops อ่านได้แต่ไม่มี 26407; ไฟล์ galileo อ่านไม่ได้ จึงไม่รู้ว่าสมาชิก galileo เป็นอย่างไร
+        a = [r for r in GROUP_A if r["NORAD_CAT_ID"] != 26407]
+        files = self.files(a, None)
+        files["galileo"].write_text("GP data has not updated since your last successful download\n", encoding="utf-8")
+        before = {n: self.db.get(n) for n in NORADS}
+        res = self.db.apply_groups(files, T0 + timedelta(hours=3))
+        self.assertEqual([m.object for m in res.messages], ["galileo"])
+        self.assertEqual((res.updated, res.skipped, res.missing), (0, 5, 5))     # 26407 และดวง galileo อย่างเดียว 4 ดวง
+        self.assertEqual(len(self.db), 10)
+        self.assertEqual(self.db.get(26407), replace(before[26407], groups=[]))            # gps-ops อ่านแล้วและไม่มีมัน
+        for norad in (44542, 41434, 36828, 100744):                                         # galileo ไม่ได้อ่าน คงสมาชิกเดิม
+            self.assertEqual(self.db.get(norad), before[norad])
+            self.assertEqual(self.db.get(norad).groups, ["galileo"])
 
     def test_save_and_reload_roundtrip(self):
         self.db.apply_groups(self.files(), T0)
