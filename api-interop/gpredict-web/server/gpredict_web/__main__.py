@@ -10,13 +10,15 @@ from pathlib import Path
 
 import uvicorn
 
-from .app import create_app
+from .app import LOCAL_HOSTS, create_app, host_allow_list
 from .config import PORT, Config
 
 DEFAULT_HOST = "127.0.0.1"
-LOCAL_HOSTS = ("127.0.0.1", "localhost")
+WILDCARD_HOSTS = ("0.0.0.0", "::")
 NO_LOGIN_WARNING = ("คำเตือน: Gpredict Web ไม่มีระบบ login เมื่อฟังที่ {host} เครื่องอื่นในเครือข่ายเปิดหน้าเว็บ "
                     "แก้ module และ QTH และสั่งปิด server ได้ ถ้าไม่ตั้งใจให้ใช้ --host 127.0.0.1")
+WILDCARD_NOTE = ("หมายเหตุ: server รับเฉพาะคำขอที่ Host เป็น 127.0.0.1, localhost หรือค่าของ --host "
+                 "เครื่องอื่นที่เปิดด้วย IP ของเครื่องนี้จะถูกปฏิเสธ ถ้าต้องการให้เครื่องอื่นใช้ ให้ตั้ง --host เป็น IP นั้นแทน {host}")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -31,14 +33,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def build_server(argv: Sequence[str] | None = None, stderr=None) -> uvicorn.Server:
     """สร้าง uvicorn.Server ที่ POST /api/quit ตั้ง should_exit (ยังไม่รัน) --host ที่ไม่ใช่เครื่องตัวเองพิมพ์คำเตือนลง stderr"""
     args = parse_args(argv)
-    if args.host not in LOCAL_HOSTS:
+    if args.host.strip("[]") not in LOCAL_HOSTS:
         print(NO_LOGIN_WARNING.format(host=args.host), file=stderr or sys.stderr, flush=True)
+        if args.host in WILDCARD_HOSTS:
+            print(WILDCARD_NOTE.format(host=args.host), file=stderr or sys.stderr, flush=True)
     server: uvicorn.Server | None = None
 
     def quit_server() -> None:
         server.should_exit = True
 
-    app = create_app(Config.from_env(args.data), on_quit=quit_server)
+    app = create_app(Config.from_env(args.data), on_quit=quit_server, allowed_hosts=host_allow_list(args.host))
     server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port))
     return server
 

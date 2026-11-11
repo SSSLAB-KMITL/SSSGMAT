@@ -9,8 +9,9 @@ from unittest import mock
 from urllib.error import URLError
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
-from gpredict_web.app import create_app
+from gpredict_web.app import create_app, host_allow_list
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
 from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, POLAR_CONTENTS,
@@ -566,6 +567,86 @@ class MiscApiTest(ApiTestBase):
         r = self.client.post("/api/qth")
         self.assertEqual(r.status_code, 405)
         self.assertEqual(list(r.json()), ERROR_KEYS)
+
+
+# ---------------------------------------------------------------- Host และ Origin (ของเรา: กันเว็บอื่นสั่ง server)
+
+class HostOriginTest(ApiTestBase):
+    """Host ต้องเป็นเครื่องตัวเอง, testserver หรือ --host ที่ไม่ใช่เครื่องตัวเอง (กัน DNS rebinding)
+    คำขอที่เปลี่ยนสถานะและ WebSocket ที่มี Origin ต้องมาจากชื่อเดียวกัน (กันหน้าเว็บอื่นส่ง POST หรือเปิด socket)
+    คำขอที่ไม่มี Origin (curl, TestClient) ผ่าน"""
+
+    FOREIGN = "http://evil.example"
+
+    def test_local_hosts_allowed(self):
+        for host in ("127.0.0.1:8740", "127.0.0.1", "localhost", "LOCALHOST:8740", "[::1]:8740", "testserver"):
+            with self.subTest(host=host):
+                self.assertEqual(self.client.get("/api/meta", headers={"host": host}).status_code, 200)
+
+    def test_foreign_host_rejected(self):
+        for host in ("evil.example", "evil.example:8740", "127.0.0.1.evil.example", "localhost.evil.example:80",
+                     "192.168.1.5:8740", "[::1", "", "evil.example@localhost", "localhost/x", "localhost:abc"):
+            with self.subTest(host=host):
+                self.assert_error(self.client.get("/api/meta", headers={"host": host}), 403, "FORBIDDEN_HOST", None)
+        self.assert_error(self.client.post("/api/quit", headers={"host": "evil.example"}), 403, "FORBIDDEN_HOST", None)
+        self.assert_error(self.client.get("/", headers={"host": "evil.example"}), 403, "FORBIDDEN_HOST", None)
+        self.assertEqual(self.quits, 0)
+
+    def test_foreign_origin_rejected_for_state_changing_requests(self):
+        for origin in (self.FOREIGN, "http://evil.example:8740", "null", "http://127.0.0.1.evil.example",
+                       "http://evil.example@localhost", "file://localhost", "chrome-extension://localhost"):
+            with self.subTest(origin=origin):
+                h = {"origin": origin}
+                self.assert_error(self.client.post("/api/quit", headers=h), 403, "FORBIDDEN_ORIGIN", None)
+                self.assert_error(self.client.post("/api/tle/update", headers=h), 403, "FORBIDDEN_ORIGIN", None)
+                self.assert_error(self.client.put("/api/modules/M", json=self.module_body(), headers=h), 403,
+                                  "FORBIDDEN_ORIGIN", None)
+                self.assert_error(self.client.delete("/api/qth/OTHER", headers=h), 403, "FORBIDDEN_ORIGIN", None)
+        self.assertEqual(self.quits, 0)
+        self.assertEqual(self.opener.urls, [])
+        self.assertEqual(self.store.list_modules(), [])
+        self.assertEqual(self.store.qth_names(), ["ORIGIN", "OTHER"])
+
+    def test_local_origin_allowed(self):
+        for origin in ("http://127.0.0.1:8740", "http://localhost:5173", "http://[::1]:8740", "http://testserver"):
+            with self.subTest(origin=origin):
+                self.assertEqual(self.client.post("/api/quit", headers={"origin": origin}).status_code, 204)
+        self.assertEqual(self.quits, 4)
+
+    def test_safe_methods_with_foreign_origin_allowed(self):
+        """GET อ่านอย่างเดียว และ browser ไม่ให้หน้าเว็บอื่นอ่านคำตอบ (ไม่มี CORS header)"""
+        r = self.client.get("/api/meta", headers={"origin": self.FOREIGN})
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("access-control-allow-origin", r.headers)
+
+    def test_websocket_foreign_origin_or_host_closes_1008(self):
+        self.put_module(refresh={"data_ms": 100})
+        self.open_module()
+        for headers in ({"origin": self.FOREIGN}, {"origin": "null"}, {"host": "evil.example"}):
+            with self.subTest(headers=headers), self.assertRaises(WebSocketDisconnect) as ctx:
+                with self.client.websocket_connect("/ws/modules/M", headers=headers):
+                    pass
+            self.assertEqual(ctx.exception.code, 1008)
+        self.assertEqual(self.app.state.ticks.producers(), [])
+        with self.client.websocket_connect("/ws/modules/M", headers={"origin": "http://localhost:5173"}) as ws:
+            self.assertEqual(ws.receive_json()["status"], "ok")
+
+    def test_allow_list_is_a_create_app_parameter(self):
+        client = self.enter(self.make_app(allowed_hosts=host_allow_list("192.168.1.5")))
+        h = {"host": "192.168.1.5:8740", "origin": "http://192.168.1.5:8740"}
+        self.assertEqual(client.get("/api/meta", headers={"host": h["host"]}).status_code, 200)
+        self.assertEqual(client.post("/api/quit", headers=h).status_code, 204)
+        self.assertEqual(client.get("/api/meta", headers={"host": "localhost"}).status_code, 200)
+        self.assert_error(client.get("/api/meta", headers={"host": "evil.example"}), 403, "FORBIDDEN_HOST", None)
+        self.assert_error(self.client.get("/api/meta", headers={"host": h["host"]}), 403, "FORBIDDEN_HOST", None)
+
+    def test_host_allow_list(self):
+        base = {"127.0.0.1", "localhost", "::1", "testserver"}
+        self.assertEqual(host_allow_list(), base)
+        self.assertEqual(host_allow_list("localhost"), base)
+        self.assertEqual(host_allow_list("[::1]"), base)
+        self.assertEqual(host_allow_list("0.0.0.0"), base | {"0.0.0.0"})
+        self.assertEqual(host_allow_list("GS.Example"), base | {"gs.example"})
 
 
 # ---------------------------------------------------------------- ตอนเปิดและปิด server

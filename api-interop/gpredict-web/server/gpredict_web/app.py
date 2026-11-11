@@ -13,17 +13,19 @@ import json
 import logging
 import math
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from fastapi import Body, FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.datastructures import Headers
 
 from gnss_predict import omm
 from gnss_predict.config import REPO_ROOT
@@ -51,6 +53,9 @@ WS_MODULE_CLOSED = 1000                # close code: module ถูกปิด�
 WS_SERVER_STOP = 1001                  # close code: server กำลังปิด
 WS_INTERNAL_ERROR = 1011               # close code: producer หยุดเพราะ error ภายใน (หน้าเว็บต่อใหม่)
 WS_SEND_FAILED = 1013                  # close code: ส่ง tick ให้ socket นี้ไม่ทันหรือไม่สำเร็จ (Try Again Later)
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")     # ชื่อของเครื่องตัวเองที่ browser ใช้เปิด server
+TEST_HOST = "testserver"                            # Host ของ TestClient
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
 
@@ -132,6 +137,68 @@ def _on_http_error(web_root: Path | None):
 async def _on_internal_error(request: Request, exc: Exception) -> JSONResponse:
     _log.error("error ที่ไม่คาดไว้ใน %s %s", request.method, request.url.path, exc_info=exc)
     return _error(500, "INTERNAL", "เกิดข้อผิดพลาดภายในของ server ดูรายละเอียดใน log ของ server")
+
+
+# ---------------------------------------------------------------- Host และ Origin (ของเรา)
+
+def _norm_host(name: str) -> str:
+    return name.strip().removeprefix("[").removesuffix("]").lower()
+
+
+def host_allow_list(bind_host: str = LOCAL_HOSTS[0]) -> frozenset[str]:
+    """ชื่อเครื่องที่ยอมให้อยู่ใน Host และ Origin: เครื่องตัวเอง, testserver และ --host เมื่อไม่ใช่เครื่องตัวเอง"""
+    return frozenset(_norm_host(h) for h in (*LOCAL_HOSTS, TEST_HOST, bind_host) if h and h.strip())
+
+
+def _host_name(value: str | None, *, origin: bool) -> str | None:
+    """ชื่อเครื่องจาก Host ("127.0.0.1:8740", "[::1]:8740") หรือ Origin ("http://localhost:5173")
+    อ่านไม่ได้, "null", มี user@ หรือ path หรือ Origin ที่ไม่ใช่ http(s) คืน None (ไม่อยู่ใน allow list จึงถูกปฏิเสธ)"""
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value if origin else "//" + value)
+        parts.port                                      # port ที่ไม่ใช่ตัวเลขทำให้ ValueError
+    except ValueError:
+        return None
+    if "@" in parts.netloc or parts.path or parts.query or parts.fragment:
+        return None
+    if origin and parts.scheme not in ("http", "https"):
+        return None
+    return parts.hostname
+
+
+class _HostOriginGuard:
+    """กันหน้าเว็บอื่นที่ผู้ใช้เปิดอยู่สั่ง server นี้ (ไม่มี login)
+    - Host ต้องอยู่ใน allow list ทุกคำขอและ WebSocket (กัน DNS rebinding) ไม่งั้น 403 FORBIDDEN_HOST
+    - คำขอที่ไม่ใช่ GET/HEAD/OPTIONS และ WebSocket ที่มี Origin ต้องมาจากชื่อใน allow list (กัน POST และ socket ข้ามเว็บ)
+      ไม่งั้น 403 FORBIDDEN_ORIGIN (WebSocket ปิดด้วย 1008 ก่อน accept) คำขอที่ไม่มี Origin (curl, TestClient) ผ่าน"""
+
+    def __init__(self, app, allowed: frozenset[str]):
+        self.app = app
+        self.allowed = allowed
+
+    async def __call__(self, scope, receive, send):
+        kind = scope["type"]
+        if kind in ("http", "websocket"):
+            headers = Headers(scope=scope)
+            if _host_name(headers.get("host"), origin=False) not in self.allowed:
+                return await self._reject(scope, receive, send, "FORBIDDEN_HOST",
+                                          "ไม่รับคำขอนี้: ชื่อเครื่องใน Host ไม่ใช่ของ Gpredict Web (กันเว็บอื่นเข้าถึงผ่าน DNS "
+                                          "rebinding) ให้เปิดด้วย 127.0.0.1, localhost หรือชื่อที่ตั้งด้วย --host")
+            origin = headers.get("origin")
+            checked = kind == "websocket" or scope["method"] not in _SAFE_METHODS
+            if checked and origin is not None and _host_name(origin, origin=True) not in self.allowed:
+                return await self._reject(scope, receive, send, "FORBIDDEN_ORIGIN",
+                                          "ไม่รับคำสั่งจากหน้าเว็บอื่น (Origin ไม่ใช่ของ Gpredict Web) "
+                                          "ให้สั่งจากหน้าเว็บของ Gpredict Web เอง")
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _reject(scope, receive, send, code: str, text: str) -> None:
+        if scope["type"] == "websocket":
+            await WebSocket(scope, receive, send).close(code=WS_NOT_OPEN)       # 1008 policy violation ก่อน accept
+            return
+        await _error(403, code, text)(scope, receive, send)
 
 
 # ---------------------------------------------------------------- WebSocket tick
@@ -377,10 +444,12 @@ def _clock_args(body: dict) -> dict:
 # ---------------------------------------------------------------- app
 
 def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: Callable[[], datetime] = utcnow,
-               on_quit: Callable[[], None] | None = None, ephem: EphemManager | None = None) -> FastAPI:
+               on_quit: Callable[[], None] | None = None, ephem: EphemManager | None = None,
+               allowed_hosts: Iterable[str] | None = None) -> FastAPI:
     """- start_background=False (test): ไม่ prune/bootstrap/เปิด session ตอนเริ่ม และ EphemManager ที่สร้างเองไม่มี worker thread
     - opener: ใช้ดึง OMM (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
-    - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app"""
+    - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
+    - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองและ testserver)"""
     store = Store(cfg.data_dir)
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
@@ -453,6 +522,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.tle_lock = tle_lock
     app.state.on_quit = on_quit
     app.state.startup_messages = []
+    app.state.allowed_hosts = (host_allow_list() if allowed_hosts is None
+                               else frozenset(_norm_host(h) for h in allowed_hosts))
+    app.add_middleware(_HostOriginGuard, allowed=app.state.allowed_hosts)
     web_root = cfg.web_dist.resolve() if cfg.web_dist.is_dir() else None
     app.add_exception_handler(ApiError, _on_api_error)
     app.add_exception_handler(RequestValidationError, _on_validation_error)
