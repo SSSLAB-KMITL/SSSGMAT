@@ -57,6 +57,11 @@
   --color-beidou: #45c8ff;
   --color-facility: #ff79e6;
   --color-access: #9dff6b;
+
+  /* ข้อความที่วางบนภาพ 3D/2D (เวลาบนภาพ กรอบ Zoom In) และพื้นหลังของภาพก่อน Cesium วาด */
+  --scene-bg: #000000;
+  --scene-overlay-bg: #000000b3;
+  --scene-overlay-text: #ffffff;
 }
 
 html,
@@ -1528,4 +1533,106 @@ body {
 .daily-buttons {
   padding: 8px 12px;
   border-top: 1px solid var(--border);
+}
+
+/* ---------- หน้าต่าง 3D Graphics (src/windows/Graphics3D) ---------- */
+.g3d {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* แถบ 3D Graphics และ 3D Window Defaults บนหน้าต่าง */
+.g3d-toolbars {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 2px 4px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* แถบเหนือภาพเมื่อผลลัพธ์ไม่ตรงหรือยังไม่มี (spec §9.1) */
+.g3d-banner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.g3d-banner-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.g3d-banner-error,
+.g3d-banner-note {
+  font-weight: 400;
+}
+
+.g3d-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--scene-bg);
+}
+
+.g3d-view {
+  position: absolute;
+  inset: 0;
+}
+
+.g3d-zoom-mode canvas {
+  cursor: crosshair;
+}
+
+.g3d-zoombox {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 1px dashed var(--scene-overlay-text);
+  pointer-events: none;
+}
+
+/* ไม่มี WebGL: ข้อความแทนภาพ */
+.g3d-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: center;
+}
+
+/* Annotation → Show Time */
+.g3d-time {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  background: var(--scene-overlay-bg);
+  color: var(--scene-overlay-text);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+/* View From/To */
+.vft .form-row {
+  grid-template-columns: 120px minmax(0, 1fr);
 }

@@ -25,6 +25,18 @@ const MESSAGES = {
   "banner.stale": "ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบัน — กด Apply เพื่อคำนวณใหม่",
   "banner.missing": "ยังไม่มีผลลัพธ์ — กด Apply เพื่อคำนวณ",
   "webgl.unsupported": "เครื่องหรือ browser นี้ไม่รองรับ WebGL จึงแสดงภาพ 3D และ 2D ไม่ได้ ลองเปิดการเร่งด้วยฮาร์ดแวร์ใน browser หรือใช้ browser รุ่นใหม่ ส่วน Object Browser และ Properties ยังใช้ได้",
+  // ปุ่ม Apply บนแถบ (POST /propagate: คำนวณด้วย GMAT ในเครื่อง ไม่ดาวน์โหลดอะไร)
+  "banner.running": "กำลังคำนวณผลลัพธ์อยู่ ดูความคืบหน้าที่แถบสถานะ",
+  "banner.applyFailed": "สั่งคำนวณผลลัพธ์ใหม่ไม่สำเร็จ: {message}",
+  "scene.loadFailed": "โหลดผลลัพธ์เข้าหน้าต่าง 3D ไม่สำเร็จ ({message}) จึงแสดงเฉพาะ Facility",
+
+  // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
+  "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",
+  "g3d.nightLightsNote": "ภาพแสงไฟเมืองตอนกลางคืนต้องโหลดจากอินเทอร์เน็ต (Cesium ion) จึงไม่มีในโปรแกรมที่ทำงานออฟไลน์นี้ ค่า Night Lights Level ถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
+  "g3d.noWindow": "หน้าต่าง 3D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 3D ที่ต้องการ",
+  "viewFromTo.same": "From Position กับ To Position ต้องเป็นคนละ object",
+  "viewFromTo.notFound": "หา object ที่เลือกในหน้าต่าง 3D ไม่เจอ (ยังไม่มีผลลัพธ์ของดาวดวงนั้น หรือ object ถูกซ่อนอยู่)",
+  "viewFromTo.noObjects": "scenario นี้ยังไม่มี Facility หรือ Satellite ให้เลือก",
 
   // คำสั่งที่รอ งานย่อยที่ 4 (W4)
   "tooltip.subtask4": "อยู่ในงานย่อยที่ 4",

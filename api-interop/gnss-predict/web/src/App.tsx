@@ -8,6 +8,7 @@ import { MenuBar } from "./chrome/MenuBar";
 import { SaveAsDialog } from "./chrome/SaveAsDialog";
 import { StatusBar } from "./chrome/StatusBar";
 import { Toolbars } from "./chrome/Toolbars";
+import { installTestHooks, testModeRequested } from "./cesium/testHooks";
 import { startWorkspaceFlow } from "./scenarioFiles";
 import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
@@ -15,18 +16,24 @@ import { registerDataCommands } from "./windows/dataCommands";
 import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSettings/DailyForecastSettings";
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
 import { registerFilePanels } from "./windows/filePanels";
+import { registerGraphics3DCommands } from "./windows/Graphics3D/commands3d";
+import { registerGraphics3DPanel } from "./windows/Graphics3D/Graphics3D";
+import { registerWindowProperties3DPanel } from "./windows/Graphics3D/WindowProperties3D";
 import { registerInsertObjectsPanel } from "./windows/InsertObjects/InsertObjects";
 import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
 import { registerSatelliteCatalogPanel } from "./windows/SatelliteCatalog/SatelliteCatalog";
+import { registerViewFromToPanel } from "./windows/ViewFromTo/ViewFromTo";
 import { Workspace } from "./Workspace";
 
 export function App() {
   // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference), Object Browser
   // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), Properties Browser (object.properties เปิดมัน),
   // Insert STK Objects / Search Satellite Catalog / Fetch Orbit Data / Daily Forecast Settings (คำสั่ง insert.* และ utilities.* ลงทะเบียนระดับแอปเช่นกัน),
+  // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
+  // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
     const stopClock = startClock();
     const stopEvents = startEventWiring();
@@ -34,6 +41,7 @@ export function App() {
     const unregisterFileCommands = registerFileCommands();
     const unregisterObjectCommands = registerObjectBrowserCommands();
     const unregisterDataCommands = registerDataCommands();
+    const unregisterGraphics3DCommands = registerGraphics3DCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerPropertiesBrowserPanel();
@@ -41,11 +49,16 @@ export function App() {
     registerSatelliteCatalogPanel();
     registerFetchOrbitDataPanel();
     registerDailyForecastSettingsPanel();
+    registerGraphics3DPanel();
+    registerViewFromToPanel();
+    registerWindowProperties3DPanel();
+    if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
     return () => {
       stopFlow();
       stopShortcuts();
+      unregisterGraphics3DCommands();
       unregisterDataCommands();
       unregisterObjectCommands();
       unregisterFileCommands();

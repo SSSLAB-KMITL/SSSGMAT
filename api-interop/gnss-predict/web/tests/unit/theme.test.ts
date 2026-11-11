@@ -56,7 +56,9 @@ test("text tokens meet WCAG AA on their backgrounds", () => {
                           ["--danger-text", "--danger-bg"], ["--banner-text", "--banner-bg"], ["--tip-text", "--tip-bg"],
                           ["--danger", "--menu-bg"], ["--warning", "--menu-bg"],
                           // แท็บหน้าต่าง dockview ที่ไม่ได้เลือก (วางบนแถบชื่อ)
-                          ["--text", "--titlebar-bg"], ["--text-muted", "--titlebar-bg"]])
+                          ["--text", "--titlebar-bg"], ["--text-muted", "--titlebar-bg"],
+                          // เวลาบนภาพ 3D (Show Time) บนพื้นของภาพ
+                          ["--scene-overlay-text", "--scene-bg"]])
     expect(contrast(v[fg], v[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
 });
 
