@@ -240,7 +240,7 @@ class ScenarioStore:
             return etag(data)
 
     def delete(self, name: str) -> None:
-        """ลบโฟลเดอร์ scenario ทั้งโฟลเดอร์ (การตรวจ job ที่กำลังรันเพิ่มใน Task 6)"""
+        """ลบโฟลเดอร์ scenario ทั้งโฟลเดอร์ (route ตรวจก่อนว่าไม่มี job ของ scenario นี้ที่ยังรอหรือกำลังรัน)"""
         self.path(name)
         with self._locked(name):
             shutil.rmtree(self._existing(name))

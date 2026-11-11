@@ -94,3 +94,16 @@ def client_with_web_dist(tmp_path, data_dir):
     (dist / "index.html").write_text('<!doctype html><html><body><div id="root"></div></body></html>')
     (dist / "assets" / "app.js").write_text("console.log('studio');")
     return TestClient(create_app(Config(data_dir=data_dir, web_dist=dist), start_background=False))
+
+
+@pytest.fixture
+def client_inline(data_dir, no_web_dist):
+    """client ที่ JobManager ใช้ InlineRunner (รัน job ใน thread ของคิวเอง ไม่สร้าง process) เริ่มคิวเองตอนสร้าง หยุดตอนจบ test"""
+    from gnss_studio_server.jobs import InlineRunner, JobManager
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
+    app.state.jobs = JobManager(data_dir, app.state.bus, runner=InlineRunner(), logger=app.state.logger)
+    app.state.jobs.start()
+    try:
+        yield TestClient(app)
+    finally:
+        app.state.jobs.stop()

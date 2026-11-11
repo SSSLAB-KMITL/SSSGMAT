@@ -16,11 +16,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..config import Config
+from ..errors import ApiError
 from ..events import EventBus
+from ..jobs import JobManager
 from ..store import ScenarioStore, check_etag
 from ..templates import new_scenario
 from ..tracking import etag_header, publish_scenario, write_tracked
-from . import get_bus, get_config, get_store
+from . import get_bus, get_config, get_jobs, get_store
 
 router = APIRouter()
 
@@ -81,7 +83,11 @@ def copy_scenario(sc: str, body: CopyScenario, store: ScenarioStore = Depends(ge
 
 
 @router.delete("/scenarios/{sc}", status_code=204)
-def delete_scenario(sc: str, store: ScenarioStore = Depends(get_store), bus: EventBus = Depends(get_bus)) -> Response:
+def delete_scenario(sc: str, store: ScenarioStore = Depends(get_store), bus: EventBus = Depends(get_bus),
+                    jobs: JobManager = Depends(get_jobs)) -> Response:
+    """มี job ของ scenario นี้ที่ยังรอหรือกำลังรัน -> 409 JOB_RUNNING (ยกเลิก job ก่อนจึงลบได้)"""
+    if jobs.active_for(sc):
+        raise ApiError(409, "JOB_RUNNING", f"scenario {sc} มี job ที่รอหรือกำลังทำงานอยู่ ยกเลิก job ก่อนจึงลบได้")
     store.delete(sc)
     publish_scenario(bus, sc, None, False)
     return Response(status_code=204)
