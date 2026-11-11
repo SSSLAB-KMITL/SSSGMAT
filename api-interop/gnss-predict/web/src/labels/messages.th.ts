@@ -29,6 +29,10 @@ const MESSAGES = {
   "banner.running": "กำลังคำนวณผลลัพธ์อยู่ ดูความคืบหน้าที่แถบสถานะ",
   "banner.applyFailed": "สั่งคำนวณผลลัพธ์ใหม่ไม่สำเร็จ: {message}",
   "scene.loadFailed": "โหลดผลลัพธ์เข้าหน้าต่าง 3D ไม่สำเร็จ ({message}) จึงแสดงเฉพาะ Facility",
+  "banner.sceneFailed": "โหลดผลลัพธ์เข้าหน้าต่าง 3D ไม่สำเร็จ จึงแสดงเฉพาะ Facility จะลองโหลดใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป (เช่น หลังเชื่อมต่อ server ได้อีกครั้ง)",
+  // ส่วนแสดงผล 3D (Cesium) แยกไฟล์และโหลดเมื่อเปิดหน้าต่าง: ไฟล์นั้นโหลดไม่ได้ (เช่น server ถูกอัปเดตระหว่างที่หน้าเปิดอยู่)
+  "g3d.chunkFailed": "โหลดส่วนแสดงผล 3D ไม่สำเร็จ ลองโหลดหน้าใหม่",
+  "g3d.chunkFailedLog": "โหลดส่วนแสดงผล 3D ไม่สำเร็จ ({message}) ลองโหลดหน้าใหม่",
 
   // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
   "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",

@@ -4,7 +4,9 @@
 //   ใน `satellites[]` ของ manifest ephem (ดาวที่เปลี่ยนชื่อหรือคัดลอกจึงยังได้ entity เดิม: Review Focus 5)
 // - ลำดับสี (graphicsFor): inherit false + สีของตัวเอง → สีตัวเอง; inherit true (ไม่ระบุ = true ตาม server) + Constellation ที่มีดาวนี้และมีสี
 //   (ตัวแรกตามลำดับใน doc ที่มีสี; ตัวที่เป็นสมาชิกแต่ไม่มีสีข้ามไป) → สีนั้น; อื่น ๆ → ตัวแปร CSS ของระบบ (--color-gps/glonass/galileo/beidou,
-//   Facility = --color-facility) สีของระบบอ่านจาก theme.css ครั้งเดียวแล้วจำไว้ (themeTokens) test ส่ง tokens เข้ามาเอง
+//   ระบบที่รู้ไม่ได้ = --color-other, Facility = --color-facility) สีของระบบอ่านจาก theme.css ครั้งเดียวแล้วจำไว้ (themeTokens) test ส่ง tokens เข้ามาเอง
+//   ระบบของดาว: ctx.system ถ้าผู้เรียกบอก ไม่งั้นอักษรนำของ PRN (ctx.prnByNorad) ไม่งั้น system ของ Constellation แรกที่มีดาวนี้
+// - ขนาดตัวอักษร/ขอบของป้ายชื่อ ขอบจุด ความหนาเส้น access และสีเส้น Lat/Lon เป็นตัวแปร CSS เช่นกัน (sceneStyle: --scene-*)
 // - applyGraphics ตั้งกราฟิกของ entity ใน data source ที่โหลดแล้ว ไม่โหลด CZML ใหม่: แก้ Properties แล้วเห็นทันที
 //   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง)
 //   ดาว Inertial by Window ไม่มี path ของ Cesium (Graphics3D วาด polyline จาก toInertial แทน) เส้น access ใช้ --color-access ถ้า access ไม่ได้ตั้งสีเอง
@@ -28,33 +30,75 @@ export interface ColorTokens {
   glonass: string;
   galileo: string;
   beidou: string;
+  /** ดาวที่รู้ระบบไม่ได้ */
+  other: string;
   facility: string;
   access: string;
 }
 export type TokenName = keyof ColorTokens;
+type SystemToken = Exclude<TokenName, "other" | "facility" | "access">;
 
 const TOKEN_VARS: Record<TokenName, string> = {
-  gps: "--color-gps", glonass: "--color-glonass", galileo: "--color-galileo", beidou: "--color-beidou",
+  gps: "--color-gps", glonass: "--color-glonass", galileo: "--color-galileo", beidou: "--color-beidou", other: "--color-other",
   facility: "--color-facility", access: "--color-access",
 };
+
+/** ค่าตัวแปร CSS ของหน้า (ตัดช่องว่าง) ไม่มี = "" */
+const readCssVar = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 let cachedTokens: ColorTokens | null = null;
 
 /** สีของระบบจากตัวแปร CSS ใน theme.css (อ่านครั้งแรกที่ใช้แล้วจำไว้) ตัวแปรที่อ่านไม่ได้ = ขาว */
 export function themeTokens(): ColorTokens {
   if (cachedTokens !== null) return cachedTokens;
-  const style = getComputedStyle(document.documentElement);
-  const read = (name: TokenName): string => style.getPropertyValue(TOKEN_VARS[name]).trim() || "#ffffff";
-  const tokens: ColorTokens = {
-    gps: read("gps"), glonass: read("glonass"), galileo: read("galileo"), beidou: read("beidou"), facility: read("facility"), access: read("access"),
-  };
+  const tokens = Object.fromEntries(
+    (Object.keys(TOKEN_VARS) as TokenName[]).map((k) => [k, readCssVar(TOKEN_VARS[k]) || "#ffffff"]),
+  ) as unknown as ColorTokens;
   // jsdom และหน้าที่ยังไม่โหลด theme.css ไม่มีค่า: ไม่จำค่าว่างไว้ ให้รอบถัดไปอ่านใหม่
   if (Object.values(tokens).some((v) => v !== "#ffffff")) cachedTokens = tokens;
   return tokens;
 }
 
+/** หน้าตาของสิ่งที่วาดในภาพ 3D/2D นอกจากสีของ object (theme.css: --scene-*) */
+export interface SceneStyle {
+  /** font ของป้ายชื่อแบบ CSS shorthand (ขนาด + ตระกูลตัวอักษรของแอป) */
+  labelFont: string;
+  labelOutline: string;
+  pointOutline: string;
+  /** ความหนาเส้น access (พิกเซล) */
+  accessWidth: number;
+  /** สีเส้น Lat/Lon (#rrggbbaa) */
+  gridLine: string;
+}
+
+/**
+ * อ่าน SceneStyle จากตัวแปร CSS ผ่าน read (ชื่อตัวแปร → ค่า) ค่าที่ไม่มี (jsdom, หน้าที่ยังไม่โหลด theme.css) ใช้ค่ากลาง ๆ ที่วาดได้
+ * ค่าจริงอยู่ใน theme.css ที่เดียว
+ */
+export function sceneStyleFrom(read: (name: string) => string): SceneStyle {
+  const get = (name: string, missing: string): string => read(name).trim() || missing;
+  const width = Number.parseFloat(get("--scene-access-width", "1"));
+  return {
+    labelFont: `${get("--scene-label-font-size", "12px")} ${get("--font-ui", "sans-serif")}`,
+    labelOutline: get("--scene-label-outline", "#000000"),
+    pointOutline: get("--scene-point-outline", "#000000"),
+    accessWidth: Number.isFinite(width) && width > 0 ? width : 1,
+    gridLine: get("--scene-grid-line", "#ffffff"),
+  };
+}
+
+let cachedStyle: SceneStyle | null = null;
+
+/** SceneStyle ของหน้า (อ่านครั้งแรกที่ใช้แล้วจำไว้ เหมือน themeTokens; ยังไม่มี theme.css = ไม่จำ) */
+export function sceneStyle(): SceneStyle {
+  if (cachedStyle !== null) return cachedStyle;
+  const style = sceneStyleFrom(readCssVar);
+  if (readCssVar("--scene-access-width") !== "") cachedStyle = style;
+  return style;
+}
+
 /** ระบบของดาวจากอักษรนำของ PRN (G R E C) หรือชื่อระบบ ไม่ใช่สี่ระบบนี้ = null */
-export function systemTokenOf(system: string | null | undefined): Exclude<TokenName, "facility" | "access"> | null {
+export function systemTokenOf(system: string | null | undefined): SystemToken | null {
   switch ((system ?? "").trim().toUpperCase()) {
     case "G": case "GPS": return "gps";
     case "R": case "GLONASS": return "glonass";
@@ -90,8 +134,10 @@ export interface GraphicsCtx {
   /** ซ่อนตามธงของดาว (W9) */
   hidden: boolean;
   mode: "3d" | "2d";
-  /** ระบบของดาว (อักษรนำของ PRN หรือชื่อระบบ) ใช้เลือกสีเมื่อไม่มีสีอื่น */
+  /** ระบบของดาว (อักษรนำของ PRN หรือชื่อระบบ) ใช้เลือกสีเมื่อไม่มีสีอื่น ไม่ระบุ = หาจาก prnByNorad แล้วจาก Constellation */
   system?: string | null;
+  /** NORAD → PRN ของ manifest ephem (หาระบบของดาวเมื่อไม่ระบุ system) */
+  prnByNorad?: ReadonlyMap<number, string>;
   /** สีของระบบ (ไม่ระบุ = อ่านจาก theme.css) */
   tokens?: ColorTokens;
 }
@@ -165,6 +211,20 @@ function constellationColor(path: string, doc: ScenarioDoc): string | null {
   return null;
 }
 
+/** ระบบของดาว: อักษรนำของ PRN ตาม NORAD ไม่งั้น system ของ Constellation แรก (ตามลำดับใน doc) ที่มีดาวนี้และระบุระบบไว้ ไม่รู้ = null */
+function systemOfSatellite(obj: SceneObject, doc: ScenarioDoc, prnByNorad: ReadonlyMap<number, string> | undefined): string | null {
+  if (obj.class !== "Satellite") return null;
+  const prn = prnByNorad?.get((obj as SatelliteObj).norad);
+  if (prn !== undefined && prn !== "") return prn.slice(0, 1);
+  const path = objectPath(obj);
+  for (const o of doc.objects) {
+    if (o.class !== "Constellation") continue;
+    const c = o as ConstellationObj;
+    if (typeof c.system === "string" && (c.assigned_objects ?? []).includes(path)) return c.system;
+  }
+  return null;
+}
+
 export function graphicsFor(obj: SceneObject, doc: ScenarioDoc, ctx: GraphicsCtx): ObjectGraphics {
   const tokens = ctx.tokens ?? themeTokens();
   const g2 = graphics2dOf(obj);
@@ -174,7 +234,8 @@ export function graphicsFor(obj: SceneObject, doc: ScenarioDoc, ctx: GraphicsCtx
 
   let color: string;
   const own = typeof g2.color === "string" && g2.color !== "" ? g2.color : null;
-  const fallback = obj.class === "Facility" ? tokens.facility : tokens[systemTokenOf(ctx.system) ?? "gps"];
+  const system = ctx.system ?? systemOfSatellite(obj, doc, ctx.prnByNorad);
+  const fallback = obj.class === "Facility" ? tokens.facility : tokens[systemTokenOf(system) ?? "other"];
   if (g2.inherit === false) color = own ?? fallback;
   else color = constellationColor(objectPath(obj), doc) ?? fallback;
 
@@ -219,12 +280,13 @@ export interface ApplyCtx {
   /** ดาวที่ซ่อนตามธง (W9) */
   isHidden(norad: number): boolean;
   tokens?: ColorTokens;
+  /** หน้าตาจาก theme.css (ไม่ระบุ = sceneStyle()) */
+  style?: SceneStyle;
   /** Label Declutter ของหน้าต่าง */
   declutter?: boolean;
 }
 
 const INERTIAL_BY_WINDOW = "Inertial by Window";
-const LABEL_FONT = "12px system-ui, sans-serif";
 /** ความละเอียดของ path (วินาที) เท่าระยะห่างของตัวอย่างใน CZML: จุดยอดของเส้นอยู่ที่ตัวอย่างพอดี */
 const PATH_RESOLUTION_S = 300;
 /** จำนวนจุดที่ใช้ประมาณรัศมีเฉลี่ย (กระจายทั่วช่วงที่มีข้อมูล) */
@@ -262,14 +324,14 @@ function lineMaterial(color: Color, lineStyle: string): MaterialProperty {
     : new PolylineDashMaterialProperty({ color, dashPattern: dash.pattern, dashLength: dash.length });
 }
 
-function labelFor(text: string, show: boolean, color: Color, declutter: boolean): LabelGraphics {
+function labelFor(text: string, show: boolean, color: Color, declutter: boolean, style: SceneStyle): LabelGraphics {
   return new LabelGraphics({
     text,
     show,
-    font: LABEL_FONT,
+    font: style.labelFont,
     style: LabelStyle.FILL_AND_OUTLINE,
     fillColor: color,
-    outlineColor: Color.BLACK,
+    outlineColor: cssColor(style.labelOutline),
     outlineWidth: 2,
     horizontalOrigin: HorizontalOrigin.LEFT,
     verticalOrigin: VerticalOrigin.CENTER,
@@ -281,9 +343,9 @@ function labelFor(text: string, show: boolean, color: Color, declutter: boolean)
   });
 }
 
-function pointFor(g: ObjectGraphics, color: Color): PointGraphics {
+function pointFor(g: ObjectGraphics, color: Color, style: SceneStyle): PointGraphics {
   const marker = markerPoint(g.markerStyle);
-  return new PointGraphics({ pixelSize: marker.pixelSize, color, outlineColor: Color.BLACK, outlineWidth: marker.outlineWidth });
+  return new PointGraphics({ pixelSize: marker.pixelSize, color, outlineColor: cssColor(style.pointOutline), outlineWidth: marker.outlineWidth });
 }
 
 /** object ของ scenario ตาม id ของ entity (ตามลำดับใน doc: ดาวที่คัดลอกได้ entity เดียวกันหลายตัว) */
@@ -317,6 +379,7 @@ function accessStyle(doc: ScenarioDoc, facility: string, tokens: ColorTokens): {
 /** ตั้งกราฟิกของทุก entity ใน collection ตาม doc (ไม่มี doc = ซ่อนทั้งหมด) */
 export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioDoc | null, ctx: ApplyCtx): void {
   const tokens = ctx.tokens ?? themeTokens();
+  const style = ctx.style ?? sceneStyle();
   const byEntity = doc === null ? new Map<string, SceneObject[]>() : objectsByEntity(doc, ctx.prnByNorad);
   const entities = ds.entities;
   const shown = new Set<string>();
@@ -340,8 +403,8 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
       const color = cssColor(g.color);
       entity.show = g.show;
       entity.name = obj.name;
-      entity.point = pointFor(g, color);
-      entity.label = labelFor(obj.name, g.labelShow, color, ctx.declutter === true);
+      entity.point = pointFor(g, color, style);
+      entity.label = labelFor(obj.name, g.labelShow, color, ctx.declutter === true, style);
       if (g.show) shown.add(id);
       if (obj.class === "Satellite" && ctx.mode === "3d") {
         const period = entityPeriod(entity);
@@ -367,11 +430,11 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         continue;
       }
       const [, facility, prn] = parts;
-      const style = accessStyle(doc, facility, tokens);
-      entity.show = style.show && shown.has(`fac/${facility}`) && shown.has(`sat/${prn}`);
+      const look = accessStyle(doc, facility, tokens);
+      entity.show = look.show && shown.has(`fac/${facility}`) && shown.has(`sat/${prn}`);
       if (entity.polyline !== undefined) {
-        entity.polyline.material = new ColorMaterialProperty(cssColor(style.color));
-        entity.polyline.width = new ConstantProperty(1.5);
+        entity.polyline.material = new ColorMaterialProperty(cssColor(look.color));
+        entity.polyline.width = new ConstantProperty(style.accessWidth);
       }
     }
   } finally {

@@ -1,8 +1,11 @@
 // ภาพในหน้าต่าง 3D หนึ่งบาน (spec §9.1–§9.2): viewer + CzmlDataSource ตัวเดียว + การตามเวลา/scenario/ผลลัพธ์/ค่าตั้งของหน้าต่าง
 // โหลดแบบ dynamic import จาก Graphics3D.tsx: Cesium ทั้งก้อนอยู่ใน chunk ของตัวเอง ไม่ถ่วงการเปิดหน้าเว็บ
 //
-// - data source: โหลดใหม่เมื่อ URL ของ scene.czml / access.czml (ซึ่งมี hash อยู่ใน URL) เปลี่ยนเท่านั้น
+// - data source (sceneSource.ts): โหลดใหม่เมื่อ URL ของ scene.czml / access.czml (ซึ่งมี hash อยู่ใน URL) เปลี่ยนเท่านั้น
 //   ผลไม่ current = data source ว่างที่มีแค่ Facility จาก doc (Review Focus 1) การแก้กราฟิกเรียก applyGraphics อย่างเดียว ไม่โหลด CZML ใหม่
+//   โหลดไม่สำเร็จ = Facility อย่างเดียวพร้อมแถบแจ้ง (sceneFailed) แล้วลองใหม่ใน refresh ถัดไปแม้ hash เท่าเดิม (Review Focus 2)
+// - dataSourceDisplay ข้ามการ update ตอนอยู่เฉย ๆ (cesium/idleUpdates.ts): หน้าต่างนี้จึงห้ามใช้ CallbackProperty, path ที่ relativeTo INERTIAL
+//   หรือ visualizer เพิ่มเอง (ดูข้อจำกัดในไฟล์นั้น) Inertial by Window จึงวาดเป็น polyline ค่าคงที่ที่คำนวณใหม่เอง ไม่ใช่ path relativeTo
 // - เวลา: bindClock (useTime → clock.currentTime + requestRender) viewer ไม่เดินเอง
 // - กล้อง: Home View (ความสูง 4.5 รัศมีโลกเหนือ Facility แรก หรือ 0°,0°), Zoom To (trackedEntity + viewFrom),
 //   View From/To (lookAtTransform ทุกครั้งที่เวลาเปลี่ยน; Inertial ใช้แกน ICRF เป็นกรอบของกล้อง) สถานะกล้องถูกตั้งกลับหลังโหลด data source ใหม่
@@ -13,13 +16,16 @@
 import {
   ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, CzmlDataSource, GridImageryProvider, JulianDate, Matrix3, Matrix4,
   PolylineDashMaterialProperty, PolylineGraphics, Rectangle, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
-  TrackingReferenceFrame, Transforms, type Cartographic, type Entity, type EntityCollection, type ImageryLayer, type Viewer,
+  TrackingReferenceFrame, Transforms, type Cartographic, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import { errorText } from "../../api/client";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities, loadScene } from "../../cesium/czml";
-import { applyGraphics, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, type SceneObject } from "../../cesium/graphics";
+import {
+  applyGraphics, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, type SceneObject,
+} from "../../cesium/graphics";
+import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
 import { createViewer } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
@@ -31,7 +37,10 @@ import { useScenario } from "../../stores/scenario";
 import { useTime } from "../../stores/time";
 import { parseIsoUtc } from "../../time/parse";
 import { props3d, type Props3D } from "./props";
-import { noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest } from "./registry";
+import {
+  noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
+} from "./registry";
+import { SceneSource } from "./sceneSource";
 
 type FacilityObj = components["schemas"]["FacilityObj"];
 
@@ -62,48 +71,11 @@ function julianOf(iso: string): JulianDate | null {
 }
 
 /**
- * Cesium เรียก dataSourceDisplay.update ทุกเฟรมของ requestAnimationFrame แม้ไม่ได้วาดอะไร (requestRenderMode) และ PathVisualizer คำนวณเส้นทาง
- * ของดาวทุกดวงใหม่ทุกครั้ง: หน้าต่างที่อยู่เฉย ๆ ใช้ CPU ราว 15% ของหนึ่ง core (วัดจริง: script 0.46 วินาทีต่อ 3 วินาที)
- * ภาพของ entity ขึ้นกับเวลาและค่าของ entity เท่านั้น จึงข้ามการ update เมื่อเวลาเท่าเดิม ไม่มี entity เพิ่ม/ลบ/เปลี่ยน และรอบก่อนพร้อมแล้ว
- * คืนฟังก์ชันเลิกฟัง
+ * ปลายทั้งสองของ View From/To: ไม่มีในภาพหรือถูกซ่อน (isShowing เหมือน Zoom To) = notFound; entity เดียวกัน (ดาวกับสำเนาของมันใช้ entity เดียวกัน) = same
  */
-function skipIdleDisplayUpdates(viewer: Viewer): () => void {
-  const display = viewer.dataSourceDisplay;
-  const update = display.update.bind(display);
-  let last: JulianDate | undefined;
-  let dirty = true;
-  let ready = false;
-  const touch = (): void => {
-    dirty = true;
-  };
-  const watched = new Map<EntityCollection, () => void>();
-  const watch = (c: EntityCollection): void => {
-    if (!watched.has(c)) watched.set(c, c.collectionChanged.addEventListener(touch));
-  };
-  watch(viewer.entities);
-  for (let i = 0; i < viewer.dataSources.length; i++) watch(viewer.dataSources.get(i).entities);
-  const offAdded = viewer.dataSources.dataSourceAdded.addEventListener((_c: unknown, ds: { entities: EntityCollection }) => {
-    watch(ds.entities);
-    touch();
-  });
-  const offRemoved = viewer.dataSources.dataSourceRemoved.addEventListener((_c: unknown, ds: { entities: EntityCollection }) => {
-    watched.get(ds.entities)?.();
-    watched.delete(ds.entities);
-    touch();
-  });
-  display.update = (time: JulianDate): boolean => {
-    if (!dirty && ready && last !== undefined && JulianDate.equals(time, last)) return true;
-    dirty = false;
-    last = JulianDate.clone(time, last);
-    ready = update(time);
-    return ready;
-  };
-  return () => {
-    offAdded();
-    offRemoved();
-    for (const off of watched.values()) off();
-    watched.clear();
-  };
+export function fromToResult(from: Entity | undefined, to: Entity | undefined): ViewFromToResult {
+  if (from === undefined || to === undefined || !from.isShowing || !to.isShowing) return "notFound";
+  return from === to ? "same" : "ok";
 }
 
 /** สร้าง viewer ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน) */
@@ -119,9 +91,7 @@ export function mountScene3D(panelId: string, el: HTMLElement): Scene3DHandle {
 
 class Scene3D implements Scene3DHandle {
   private ds: CzmlDataSource | null = null;
-  private sceneKey: string | null = null;
-  private loadSeq = 0;
-  private loadCtl: AbortController | null = null;
+  private readonly source: SceneSource<CzmlDataSource>;
   private destroyed = false;
   private frames = 0;
   private view: View = { kind: "free" };
@@ -144,7 +114,22 @@ class Scene3D implements Scene3DHandle {
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
-    this.offs.push(skipIdleDisplayUpdates(viewer));
+    const idle = skipIdleDisplayUpdates(viewer);
+    this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
+    this.source = new SceneSource<CzmlDataSource>({
+      load: (url, access, signal) => loadScene(viewer, url, access, { signal }),
+      empty: async () => {
+        const ds = new CzmlDataSource(DATA_SOURCE_NAME);
+        await viewer.dataSources.add(ds);
+        return ds;
+      },
+      adopt: (ds, scene) => this.adopt(ds, scene),
+      discard: (ds) => {
+        if (!this.destroyed) viewer.dataSources.remove(ds, true);
+      },
+      failed: (e) => report("warning", "SCENE_LOAD", msg("scene.loadFailed", { message: errorText(e) })),
+      changed: notifyScenes,
+    });
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     this.props = props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
@@ -199,45 +184,23 @@ class Scene3D implements Scene3DHandle {
               const url = results.accessUrl(f, "access.czml");
               return url === null ? [] : [url];
             });
-    const key = JSON.stringify([sceneUrl, accessUrls]);
-    if (key === this.sceneKey) {
-      this.restyle(); // manifest (NORAD → PRN) มาทีหลังสถานะ: entity เดิม กราฟิกใหม่
-      return;
-    }
-    this.sceneKey = key;
-    void this.load(sceneUrl, accessUrls);
+    // URL เท่าเดิม: manifest (NORAD → PRN) มาทีหลังสถานะ หรือ doc เปลี่ยน: entity เดิม กราฟิกใหม่
+    if (!this.source.update({ sceneUrl, accessUrls })) this.restyle();
   }
 
-  private async load(sceneUrl: string | null, accessUrls: string[]): Promise<void> {
-    const seq = ++this.loadSeq;
-    this.loadCtl?.abort();
-    const ctl = new AbortController();
-    this.loadCtl = ctl;
-    let ds: CzmlDataSource;
-    try {
-      if (sceneUrl === null) {
-        ds = new CzmlDataSource(DATA_SOURCE_NAME);
-        await this.viewer.dataSources.add(ds);
-      } else {
-        ds = await loadScene(this.viewer, sceneUrl, accessUrls, { signal: ctl.signal });
-      }
-    } catch (e) {
-      if (this.destroyed || seq !== this.loadSeq || ctl.signal.aborted) return;
-      report("warning", "SCENE_LOAD", msg("scene.loadFailed", { message: errorText(e) }));
-      if (sceneUrl !== null) await this.load(null, []); // อย่างน้อยยังเห็น Facility
-      return;
-    }
+  /** ใช้ data source ใหม่แทนตัวเก่า แล้วตั้งกราฟิกและกล้องตามเดิม (entity เป็นตัวใหม่) */
+  private adopt(ds: CzmlDataSource, scene: boolean): void {
     if (this.destroyed) return;
-    if (seq !== this.loadSeq) {
-      this.viewer.dataSources.remove(ds, true); // มีการโหลดที่ใหม่กว่าแล้ว
-      return;
-    }
     const old = this.ds;
     this.ds = ds;
     if (old !== null && old !== ds) this.viewer.dataSources.remove(old, true);
     this.restyle();
     this.restoreView();
-    if (sceneUrl !== null) noteSceneLoaded();
+    if (scene) noteSceneLoaded();
+  }
+
+  sceneFailed(): boolean {
+    return this.source.failed();
   }
 
   /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) */
@@ -383,7 +346,7 @@ class Scene3D implements Scene3DHandle {
    *   ความสว่างของภาพด้านกลางคืนจึงเป็นตัวปรับที่ใกล้ที่สุด มีผลเมื่อเปิดแสง
    * - Night Lights Level → ภาพแสงไฟเมือง (Black Marble) ของ Cesium อยู่บน Cesium ion ต้องต่อเน็ต ไม่มีในโหมดออฟไลน์: ค่าเก็บไว้แต่ไม่มีผลต่อภาพ
    *   (หน้าต่าง Properties แสดงหมายเหตุไทย)
-   * - Lat/Lon Lines → ชั้นภาพ GridImageryProvider (เส้นทุก 30° ที่ระยะไกล ถี่ขึ้นเมื่อซูม)
+   * - Lat/Lon Lines → ชั้นภาพ GridImageryProvider (เส้นทุก 30° ที่ระยะไกล ถี่ขึ้นเมื่อซูม สีจาก --scene-grid-line)
    * - Label Declutter → ย่อและจางป้ายชื่อที่อยู่ไกล (applyGraphics) Cesium ไม่มีการหลบป้ายที่ทับกัน
    * - Show Time → ข้อความเวลาบนภาพ (Graphics3D.tsx)
    */
@@ -399,7 +362,13 @@ class Scene3D implements Scene3DHandle {
     }
     if (p.latLonLines && this.grid === null) {
       this.grid = imageryLayers.addImageryProvider(
-        new GridImageryProvider({ cells: 6, color: Color.WHITE.withAlpha(0.4), glowColor: Color.TRANSPARENT, glowWidth: 2, backgroundColor: Color.TRANSPARENT }),
+        new GridImageryProvider({
+          cells: 6,
+          color: Color.fromCssColorString(sceneStyle().gridLine) ?? Color.WHITE,
+          glowColor: Color.TRANSPARENT,
+          glowWidth: 2,
+          backgroundColor: Color.TRANSPARENT,
+        }),
       );
     } else if (!p.latLonLines && this.grid !== null) {
       imageryLayers.remove(this.grid, true);
@@ -444,16 +413,15 @@ class Scene3D implements Scene3DHandle {
     this.viewer.scene.requestRender();
   }
 
-  viewFromTo(req: ViewFromToRequest): boolean {
-    if (this.destroyed) return false;
-    const from = this.entityForPath(req.from);
-    const to = this.entityForPath(req.to);
-    if (from === undefined || to === undefined || from === to) return false;
+  viewFromTo(req: ViewFromToRequest): ViewFromToResult {
+    if (this.destroyed) return "notFound";
+    const result = fromToResult(this.entityForPath(req.from), this.entityForPath(req.to));
+    if (result !== "ok") return result;
     this.release();
     this.view = { kind: "fromTo", req };
     if (req.frame === "inertial") this.preloadIcrf();
     this.updateFromTo();
-    return true;
+    return "ok";
   }
 
   /** ข้อมูลแกน ICRF (Assets/IAU2006_XYS จาก /cesium ในเครื่อง) ของช่วงวิเคราะห์ ระหว่างโหลดใช้แกน TEME แทน */
@@ -583,7 +551,7 @@ class Scene3D implements Scene3DHandle {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.loadCtl?.abort();
+    this.source.dispose();
     for (const off of this.offs) off();
     if (this.inertialTimer !== null) clearTimeout(this.inertialTimer);
     this.handler.destroy();

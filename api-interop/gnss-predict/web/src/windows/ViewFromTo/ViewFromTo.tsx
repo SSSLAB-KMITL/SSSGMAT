@@ -1,23 +1,26 @@
 // View From/To (spec §9.2, STK ref §E): กล้องของหน้าต่าง 3D อยู่ที่ object หนึ่งแล้วมองไปที่อีก object (เช่น THBK มองขึ้นไปหา G01)
 // - Mode: From Position to Position (แบบเดียวของ v1), From Position / To Position = Facility หรือ Satellite ของ scenario, Reference Frame = Fixed / Inertial
-// - Apply สั่งหน้าต่าง 3D บานที่ params.target ชี้ (ไม่มี = บานที่ active) กล้องตามไปเองเมื่อเวลาเดิน:
+// - Apply สั่งหน้าต่าง 3D บานที่ params.target ชี้เท่านั้น บานนั้นถูกปิดแล้ว = ข้อความไทยและปุ่มกดไม่ได้ (ไม่ย้ายไปทำกับบานอื่น เหมือน
+//   3D Graphics Window Properties) กล้องตามไปเองเมื่อเวลาเดิน:
 //   Fixed = camera.lookAtTransform ที่ตำแหน่ง To ในแกนของโลก, Inertial = แกน ICRF (Transforms.computeIcrfToFixedMatrix) เป็นกรอบของกล้อง
 //   (โลกหมุนอยู่ใต้กล้อง) รายละเอียดใน scene3d.ts (updateFromTo)
-// - OK = Apply แล้วปิด, Cancel = ปิด object ที่หาในภาพไม่เจอ (ยังไม่มีผลลัพธ์ ถูกซ่อน) ได้ข้อความไทยที่ปุ่ม
+// - OK = Apply แล้วปิด, Cancel = ปิด object ที่หาในภาพไม่เจอ (ยังไม่มีผลลัพธ์ ถูกซ่อน) หรือ From/To เป็นตัวเดียวกัน (รวมสำเนาของดาวดวงเดียวกัน
+//   ที่ใช้ entity เดียวกัน) ได้ข้อความไทย
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FormField } from "../../chrome/FormField";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
 import { useLayout } from "../../stores/layout";
 import { useScenario } from "../../stores/scenario";
-import { activeScene, getScene, type ReferenceFrame } from "../Graphics3D/registry";
+import { getScene, subscribeScenes, type ReferenceFrame } from "../Graphics3D/registry";
 
 const MODE = "fromPositionToPosition";
 
 export function ViewFromTo({ params, panelId }: PanelProps) {
   const target = typeof params?.target === "string" ? params.target : null;
+  const scene = useSyncExternalStore(subscribeScenes, () => (target === null ? undefined : getScene(target)));
   const doc = useScenario((s) => s.doc);
   const choices = useMemo(
     () => (doc?.objects ?? []).filter((o) => o.class === "Facility" || o.class === "Satellite").map((o) => ({ path: `*/${o.class}/${o.name}`, name: o.name })),
@@ -41,9 +44,10 @@ export function ViewFromTo({ params, panelId }: PanelProps) {
       setError(msg("viewFromTo.same"));
       return false;
     }
-    const scene = (target === null ? undefined : getScene(target)) ?? activeScene();
-    if (scene === undefined || !scene.viewFromTo({ from, to, frame })) {
-      setError(msg("viewFromTo.notFound"));
+    if (scene === undefined) return false;
+    const result = scene.viewFromTo({ from, to, frame });
+    if (result !== "ok") {
+      setError(msg(result === "same" ? "viewFromTo.same" : "viewFromTo.notFound"));
       return false;
     }
     setError(null);
@@ -91,6 +95,11 @@ export function ViewFromTo({ params, panelId }: PanelProps) {
         )}
       </FormField>
       {choices.length === 0 && <p className="props-note">{msg("viewFromTo.noObjects")}</p>}
+      {scene === undefined && (
+        <p className="form-error" role="alert">
+          {msg("g3d.noWindow")}
+        </p>
+      )}
       {error !== null && (
         <p className="form-error" role="alert">
           {error}
@@ -100,7 +109,7 @@ export function ViewFromTo({ params, panelId }: PanelProps) {
         <button
           type="button"
           className="btn"
-          disabled={choices.length === 0}
+          disabled={choices.length === 0 || scene === undefined}
           onClick={() => {
             if (apply()) close();
           }}
@@ -110,7 +119,7 @@ export function ViewFromTo({ params, panelId }: PanelProps) {
         <button type="button" className="btn" onClick={close}>
           {t("dialog.cancel")}
         </button>
-        <button type="button" className="btn" disabled={choices.length === 0} onClick={() => void apply()}>
+        <button type="button" className="btn" disabled={choices.length === 0 || scene === undefined} onClick={() => void apply()}>
           {t("dialog.apply")}
         </button>
       </div>

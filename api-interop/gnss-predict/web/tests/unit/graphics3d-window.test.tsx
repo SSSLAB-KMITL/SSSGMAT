@@ -22,18 +22,24 @@ import { stubFetch } from "./helpers/fake-fetch";
 
 vi.mock("../../src/windows/Graphics3D/scene3d", () => ({ mountScene3D: vi.fn() }));
 
-type Fake = Scene3DHandle & { calls: unknown[][] };
+type Fake = Scene3DHandle & { calls: unknown[][]; setFailed(v: boolean): void };
 function fakeScene(panelId: string): Fake {
   const calls: unknown[][] = [];
   let mode: MouseMode = "grab";
+  let failed = false;
   return {
     panelId,
     calls,
+    sceneFailed: () => failed,
+    setFailed: (v) => {
+      failed = v;
+      notifyScenes(); // เหมือนของจริง (SceneSource.changed)
+    },
     homeView: () => void calls.push(["homeView"]),
     zoomTo: () => true,
     viewFromTo: (req) => {
       calls.push(["viewFromTo", req]);
-      return true;
+      return "ok";
     },
     mouseMode: () => mode,
     setMouseMode: (m) => {
@@ -161,6 +167,21 @@ describe("Graphics3D", () => {
       await waitFor(() => expect(useMessages.getState().items.at(-1)?.text).toBe(msg("banner.applyFailed", { message: "มีงานอยู่แล้ว" })));
       expect((screen.getByRole("button", { name: t("dialog.apply") }) as HTMLButtonElement).disabled).toBe(false);
     });
+  });
+
+  test("a scene that failed to load says so in Thai over the picture until a retry loads it", async () => {
+    withWebGL();
+    const scene = fakeScene("graphics3d");
+    vi.mocked(mountScene3D).mockReturnValue(scene);
+    openScenario();
+    useResults.setState({ status: "current", info: info("current") });
+    render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene()).toBe(scene));
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => scene.setFailed(true));
+    expect(screen.getByRole("status").textContent).toBe(msg("banner.sceneFailed"));
+    act(() => scene.setFailed(false));
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   describe("Shift + mouse wheel", () => {
@@ -354,7 +375,7 @@ describe("View From/To", () => {
     const user = userEvent.setup();
     openScenario(doc());
     const { registerScene } = await import("../../src/windows/Graphics3D/registry");
-    registerScene({ ...fakeScene("graphics3d"), viewFromTo: () => false });
+    registerScene({ ...fakeScene("graphics3d"), viewFromTo: () => "notFound" });
     render(<ViewFromTo panelId="viewFromTo" params={{ target: "graphics3d" }} />);
     await user.selectOptions(screen.getByLabelText("To Position"), "*/Facility/THBK");
     await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -362,5 +383,33 @@ describe("View From/To", () => {
     await user.selectOptions(screen.getByLabelText("To Position"), "*/Satellite/G01");
     await user.click(screen.getByRole("button", { name: "OK" }));
     expect(screen.getByRole("alert").textContent).toBe(msg("viewFromTo.notFound"));
+  });
+
+  test("two copies of one satellite (one shared entity) count as the same object", async () => {
+    const user = userEvent.setup();
+    openScenario(doc());
+    const { registerScene } = await import("../../src/windows/Graphics3D/registry");
+    registerScene({ ...fakeScene("graphics3d"), viewFromTo: () => "same" });
+    render(<ViewFromTo panelId="viewFromTo" params={{ target: "graphics3d" }} />);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("alert").textContent).toBe(msg("viewFromTo.same"));
+  });
+
+  test("a closed target window is refused in Thai and no other 3D window is moved", async () => {
+    const user = userEvent.setup();
+    openScenario(doc());
+    const { registerScene } = await import("../../src/windows/Graphics3D/registry");
+    const other = fakeScene("graphics3d");
+    registerScene(other);
+    const closed = fakeScene("graphics3d-2");
+    const unregister = registerScene(closed);
+    render(<ViewFromTo panelId="viewFromTo" params={{ target: "graphics3d-2" }} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => unregister());
+    expect(screen.getByRole("alert").textContent).toBe(msg("g3d.noWindow"));
+    expect((screen.getByRole("button", { name: "OK" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(other.calls).toEqual([]);
   });
 });

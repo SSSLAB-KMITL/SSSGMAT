@@ -19,14 +19,19 @@ export interface ViewFromToRequest {
   frame: ReferenceFrame;
 }
 
+/** ok = กล้องตั้งแล้ว, same = From กับ To เป็น entity เดียวกัน (เช่นดาวกับสำเนาของมัน), notFound = ไม่มีในภาพหรือถูกซ่อน */
+export type ViewFromToResult = "ok" | "same" | "notFound";
+
 export interface Scene3DHandle {
   readonly panelId: string;
   /** Home View: มองโลกจากระยะ 4.5 รัศมีโลก */
   homeView(): void;
   /** Zoom To: กล้องตามไปที่ object (path) คืน false ถ้าไม่มี entity ของ object นั้นในภาพ */
   zoomTo(path: string): boolean;
-  /** View From/To: กล้องอยู่ที่ from มองไปที่ to (ตามไปเมื่อเวลาเดิน) คืน false ถ้าหา entity ไม่เจอ */
-  viewFromTo(req: ViewFromToRequest): boolean;
+  /** View From/To: กล้องอยู่ที่ from มองไปที่ to (ตามไปเมื่อเวลาเดิน) */
+  viewFromTo(req: ViewFromToRequest): ViewFromToResult;
+  /** โหลดผลลัพธ์เข้าภาพไม่สำเร็จ แสดงเฉพาะ Facility อยู่ (จะลองใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป) */
+  sceneFailed(): boolean;
   /** Grab Globe = ลากหมุนโลก, Zoom In = ลากกรอบเพื่อซูม (คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง) */
   mouseMode(): MouseMode;
   setMouseMode(mode: MouseMode): void;

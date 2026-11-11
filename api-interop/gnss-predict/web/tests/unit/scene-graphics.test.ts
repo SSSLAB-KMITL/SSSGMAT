@@ -6,13 +6,14 @@ import {
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, periodFromRadius, type ColorTokens, type SceneObject } from "../../src/cesium/graphics";
+import { applyGraphics, periodFromRadius, sceneStyleFrom, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import type { ScenarioDoc } from "../../src/stores/scenario";
 import { makeDoc } from "./helpers/chrome";
 
 const TOKENS: ColorTokens = {
-  gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", facility: "#ff79e6", access: "#9dff6b",
+  gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", other: "#c8c8c8", facility: "#ff79e6", access: "#9dff6b",
 };
+const STYLE: SceneStyle = { labelFont: "13px Test Sans", labelOutline: "#102030", pointOutline: "#405060", accessWidth: 2.5, gridLine: "#ffffff66" };
 const T0 = "2026-11-11T00:00:00Z";
 const time = JulianDate.fromIso8601("2026-11-11T06:00:00Z");
 const R = 26_560_000;
@@ -46,7 +47,7 @@ const fac = (name: string, lat = 13.729779, lon = 100.781151, over: object = {})
   ({ class: "Facility", name, position: { type: "Geodetic", lat_deg: lat, lon_deg: lon, alt_m: 6.4 }, ...over }) as SceneObject;
 const sat = (name: string, norad: number, over: object = {}): SceneObject => ({ class: "Satellite", name, norad, ...over }) as SceneObject;
 const docOf = (objects: SceneObject[], over: Partial<ScenarioDoc> = {}): ScenarioDoc => makeDoc({ objects, ...over });
-const baseCtx = { mode: "3d" as const, prnByNorad, isHidden: () => false, tokens: TOKENS };
+const baseCtx = { mode: "3d" as const, prnByNorad, isHidden: () => false, tokens: TOKENS, style: STYLE };
 
 async function scene(withAccess = true): Promise<CzmlDataSource> {
   const ds = await CzmlDataSource.load(SCENE);
@@ -155,6 +156,16 @@ describe("applyGraphics", () => {
     expect(value(byId(ds, "sat/G01").label?.translucencyByDistance)).toBeInstanceOf(NearFarScalar);
   });
 
+  test("label font, outlines and access line width come from the theme's scene style", async () => {
+    const ds = await scene();
+    applyGraphics(ds, docOf([fac("THBK"), sat("G01", 62339)]), baseCtx);
+    const g01 = byId(ds, "sat/G01");
+    expect(value(g01.label?.font)).toBe("13px Test Sans");
+    expect(hex(value(g01.label?.outlineColor))).toBe("#102030");
+    expect(hex(value(byId(ds, "fac/THBK").point?.outlineColor))).toBe("#405060");
+    expect(value(byId(ds, "access/THBK/G01").polyline?.width)).toBe(2.5);
+  });
+
   test("no doc hides everything", async () => {
     const ds = await scene();
     applyGraphics(ds, null, baseCtx);
@@ -231,5 +242,44 @@ describe("loadScene", () => {
     ctl.abort();
     await expect(loading).rejects.toThrow();
     expect(added).toEqual([]);
+  });
+});
+
+describe("scene style from theme.css variables", () => {
+  test("reads the label font (size + UI font), outlines, access width and grid colour", () => {
+    const vars: Record<string, string> = {
+      "--scene-label-font-size": " 12px", "--font-ui": " system-ui, sans-serif", "--scene-label-outline": "#000000",
+      "--scene-point-outline": "#111111", "--scene-access-width": "1.5px", "--scene-grid-line": "#ffffff66",
+    };
+    expect(sceneStyleFrom((name) => vars[name] ?? "")).toEqual({
+      labelFont: "12px system-ui, sans-serif", labelOutline: "#000000", pointOutline: "#111111", accessWidth: 1.5, gridLine: "#ffffff66",
+    });
+  });
+
+  test("the real theme.css defines every scene style variable", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const css = readFileSync(resolve(import.meta.dirname, "../../src/theme.css"), "utf8");
+    const vars = Object.fromEntries([...css.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+    const style = sceneStyleFrom((name) => vars[name] ?? "");
+    expect(style.accessWidth).toBeGreaterThan(0);
+    expect(style.labelFont).toMatch(/^\d+px /);
+    for (const c of [style.labelOutline, style.pointOutline, style.gridLine]) expect(c).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i);
+    expect(vars["--color-other"]).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe("View From/To ends (scene3d.fromToResult)", () => {
+  test("a hidden or missing end is not found; copies of one satellite share an entity and count as the same", async () => {
+    const { fromToResult } = await import("../../src/windows/Graphics3D/scene3d");
+    const ds = await scene();
+    applyGraphics(ds, docOf([fac("THBK"), sat("G01", 62339), sat("G01_1", 62339), sat("E05", 40128)]), { ...baseCtx, isHidden: (n) => n === 40128 });
+    const thbk = byId(ds, "fac/THBK");
+    const g01 = byId(ds, "sat/G01");
+    expect(fromToResult(thbk, g01)).toBe("ok");
+    expect(fromToResult(g01, g01)).toBe("same"); // G01 กับ G01_1 → entity sat/G01 ตัวเดียวกัน
+    expect(fromToResult(thbk, byId(ds, "sat/E05"))).toBe("notFound"); // ถูกซ่อนตามธง
+    expect(fromToResult(undefined, g01)).toBe("notFound");
+    expect(fromToResult(thbk, undefined)).toBe("notFound");
   });
 });

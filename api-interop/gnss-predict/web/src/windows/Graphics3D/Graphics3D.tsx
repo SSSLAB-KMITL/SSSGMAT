@@ -6,7 +6,8 @@
 //   แตะหน้าต่างนี้ (pointerdown/focus) = หน้าต่างนี้ active ก่อนคำสั่งทำงาน
 // - แถบเหนือภาพเมื่อผล `stale` หรือ `missing` (spec §9.1) ปุ่ม Apply = POST /propagate (GMAT ในเครื่อง ไม่ดาวน์โหลด: ไม่ต้องขอความยินยอม)
 //   ใส่ job queued ใน useJobs ทันที ปิดปุ่มระหว่างที่ scenario มีงานค้าง
-// - เครื่องไม่มี WebGL (หรือสร้าง viewer ไม่ได้) = ข้อความไทยแทนภาพ หน้าต่างอื่นยังใช้ได้
+// - เครื่องไม่มี WebGL (หรือสร้าง viewer ไม่ได้) = ข้อความไทยแทนภาพ หน้าต่างอื่นยังใช้ได้; โหลดไฟล์ส่วนแสดงผล 3D ไม่ได้ = ข้อความของตัวเอง
+// - โหลดผลลัพธ์เข้าภาพไม่สำเร็จ (sceneFailed) = แถบไทยเหนือภาพจนกว่าการลองใหม่จะสำเร็จ
 // - Shift + ล้อเมาส์บนภาพ = Step Forward (หมุนขึ้น) / Step Backward (หมุนลง) ผ่านคำสั่ง anim.* ล้อเฉย ๆ ซูมตามปกติของ Cesium
 // - panel เปลี่ยนขนาด → viewer.resize() (spec §17 W3)
 
@@ -32,7 +33,7 @@ import { getScene, markActive, registerScene, scenesVersion, subscribeScenes, ty
 /** browser มี WebGL ไหม (jsdom และ browser ที่ปิด WebGL ไม่มี WebGLRenderingContext: ไม่ต้องโหลด Cesium เลย) */
 export const webglAvailable = (): boolean => typeof window !== "undefined" && typeof window.WebGLRenderingContext !== "undefined";
 
-type ViewState = "loading" | "ready" | "nowebgl";
+type ViewState = "loading" | "ready" | "nowebgl" | "chunkFailed";
 
 /** แถบเหนือภาพเมื่อผลลัพธ์ไม่ตรงกับ scenario หรือยังไม่มี พร้อมปุ่ม Apply */
 function ResultsBanner() {
@@ -64,6 +65,17 @@ function ResultsBanner() {
       <button type="button" className="btn" disabled={busy} title={job !== undefined ? msg("banner.running") : undefined} onClick={() => void apply()}>
         {t("dialog.apply")}
       </button>
+    </div>
+  );
+}
+
+/** แถบเหนือภาพเมื่อโหลดผลลัพธ์เข้าภาพไม่สำเร็จ (แสดงเฉพาะ Facility อยู่ และจะลองใหม่ใน refresh ถัดไป) */
+function SceneFailedBanner({ panelId }: { panelId: string }) {
+  useSyncExternalStore(subscribeScenes, scenesVersion);
+  if (getScene(panelId)?.sceneFailed() !== true) return null;
+  return (
+    <div className="g3d-banner" role="status">
+      <div className="g3d-banner-text">{msg("banner.sceneFailed")}</div>
     </div>
   );
 }
@@ -138,8 +150,8 @@ export function Graphics3D({ panelId }: PanelProps) {
       })
       .catch((e: unknown) => {
         if (disposed) return;
-        report("error", "SCENE_LOAD", msg("scene.loadFailed", { message: errorText(e) }));
-        setView("nowebgl");
+        report("error", "SCENE_CHUNK", msg("g3d.chunkFailedLog", { message: errorText(e) }));
+        setView("chunkFailed");
       });
     return () => {
       disposed = true;
@@ -172,11 +184,12 @@ export function Graphics3D({ panelId }: PanelProps) {
     <div className="g3d" onPointerDownCapture={() => markActive(panelId)} onFocusCapture={() => markActive(panelId)}>
       <WindowToolbars panelId={panelId} />
       <ResultsBanner />
+      <SceneFailedBanner panelId={panelId} />
       <div className="g3d-stage">
         <div className="g3d-view" ref={host} data-testid="g3d-view" />
-        {view === "nowebgl" && (
+        {(view === "nowebgl" || view === "chunkFailed") && (
           <div className="g3d-message" role="alert">
-            {msg("webgl.unsupported")}
+            {msg(view === "nowebgl" ? "webgl.unsupported" : "g3d.chunkFailed")}
           </div>
         )}
         {view === "ready" && open && showTime && <TimeAnnotation />}

@@ -9,7 +9,7 @@ import type { ScenarioDoc } from "../../src/stores/scenario";
 import { makeDoc } from "./helpers/chrome";
 
 const TOKENS: ColorTokens = {
-  gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", facility: "#ff79e6", access: "#9dff6b",
+  gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", other: "#c8c8c8", facility: "#ff79e6", access: "#9dff6b",
 };
 
 const sat = (name: string, norad: number, over: Record<string, unknown> = {}): SceneObject =>
@@ -92,9 +92,32 @@ describe("colour precedence", () => {
     expect(graphicsFor(g01, doc, ctx()).color).toBe("#222222");
   });
 
-  test("an unknown system with no colours uses the GPS token rather than nothing", () => {
+  test("without ctx.system the system comes from the satellite's PRN (NORAD → PRN), not GPS yellow", () => {
+    const e05 = sat("E05", 40128);
+    const c20 = sat("MyBeidou", 43002);
+    const doc = docWith([e05, c20]);
+    const prnByNorad = new Map([[40128, "E05"], [43002, "C20"]]);
+    const noSystem = { hidden: false, mode: "2d" as const, tokens: TOKENS, prnByNorad };
+    expect(graphicsFor(e05, doc, noSystem).color).toBe(TOKENS.galileo);
+    expect(graphicsFor(c20, doc, noSystem).color).toBe(TOKENS.beidou);
+  });
+
+  test("without a PRN the containing Constellation's system decides", () => {
+    const r07 = sat("R07", 37868);
+    const doc = docWith([con("Plain", ["*/Satellite/X"], null, "C"), con("Glonass", ["*/Satellite/R07"], null, "R"), r07]);
+    expect(graphicsFor(r07, doc, { hidden: false, mode: "2d", tokens: TOKENS }).color).toBe(TOKENS.glonass);
+  });
+
+  test("a system that cannot be known uses --color-other, not GPS yellow", () => {
     const s = sat("X", 1);
-    expect(graphicsFor(s, docWith([s]), ctx(null)).color).toBe(TOKENS.gps);
+    expect(graphicsFor(s, docWith([s]), ctx(null)).color).toBe(TOKENS.other);
+    expect(graphicsFor(s, docWith([s]), { hidden: false, mode: "3d", tokens: TOKENS, prnByNorad: new Map() }).color).toBe(TOKENS.other);
+    expect(graphicsFor(s, docWith([s]), ctx("J")).color).toBe(TOKENS.other); // QZSS ไม่ใช่สี่ระบบของ v1
+  });
+
+  test("an explicit ctx.system wins over the PRN", () => {
+    const e05 = sat("E05", 40128);
+    expect(graphicsFor(e05, docWith([e05]), { hidden: false, mode: "3d", tokens: TOKENS, system: "G", prnByNorad: new Map([[40128, "E05"]]) }).color).toBe(TOKENS.gps);
   });
 
   test("a Facility uses its own colour with inherit false, otherwise --color-facility", () => {
