@@ -5,22 +5,10 @@
 
 import { fmtCountdown, fmtFixed } from "../format";
 import type { SatState } from "../types";
+import { nextEvent } from "./canvasCommon";
 
 /** What the top-right text shows before the first tick (ref §5: initially " ... "). */
 export const NEXT_PENDING = " ... ";
-
-/** The satellite whose next AOS comes first after `nowMs`, and the seconds until it; null if none has one. Decayed satellites are left out. */
-export function nextEvent(sats: readonly SatState[], nowMs: number): { sat: SatState; seconds: number } | null {
-  let best: { sat: SatState; seconds: number } | null = null;
-  for (const sat of sats) {
-    if (sat.dir === "D" || sat.next_aos === null) continue;
-    const aosMs = Date.parse(sat.next_aos);
-    if (!(aosMs > nowMs)) continue; // also false for an unparseable time (NaN)
-    const seconds = (aosMs - nowMs) / 1000;
-    if (best === null || seconds < best.seconds) best = { sat, seconds };
-  }
-  return best;
-}
 
 /** Top right: "Next: <sat> in MM:SS" ("in HH:MM:SS" from one hour on), or "Next: N/A" when there is no upcoming event. */
 export function nextEventText(sats: readonly SatState[], nowMs: number): string {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SatState } from "../types";
-import { cursorText, nextEvent, nextEventText, NEXT_PENDING, qthInfoText, selectedEventText } from "./mapText";
+import { nextEvent } from "./canvasCommon";
+import { cursorText, nextEventText, NEXT_PENDING, qthInfoText, selectedEventText } from "./mapText";
 
 const T = "2026-11-12T07:00:00.000Z";
 const NOW = Date.parse(T);

@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getTrack } from "../api";
 import type { ViewProps } from "../components/ModuleView";
-import type { Tick } from "../types";
+import type { SatPos } from "./canvasCommon";
+import { prepareCanvas, useCanvasMouse, useElementSize, useRefreshGate } from "./canvasHooks";
 import { drawMap } from "./mapDraw";
-import type { Polyline, SatPos } from "./mapDraw";
-import { hitTest, isRefreshTick, nightPolygon, terminatorDue } from "./mapGeom";
+import type { Polyline } from "./mapDraw";
+import { nightPolygon, terminatorDue } from "./mapGeom";
 import { planTrackFetches } from "./mapTracks";
 
 const MAP_IMAGE = `${import.meta.env.BASE_URL}maps/earth_1024.jpg`;
 
 /** After a failed track request the same request may be made again, by the next redraw that comes after this long. */
 const TRACK_RETRY_MS = 10_000;
-
-interface Size {
-  w: number;
-  h: number;
-}
 
 /**
  * The Map view (ref §5, spec §8.4), drawn on a canvas that fills its cell.
@@ -33,16 +29,12 @@ interface Size {
 export function MapView({ module, config, tick, selected, onSelect, onSatContextMenu, onSatDoubleClick }: ViewProps) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState<Size>({ w: 0, h: 0 });
+  const size = useElementSize(holder);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [shown, setShown] = useState<Tick | null>(null);
   const [tracks, setTracks] = useState<ReadonlyMap<number, readonly Polyline[]>>(new Map());
-  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const hits = useRef<SatPos[]>([]);
   const night = useRef<{ ms: number; polygon: [number, number][] } | null>(null);
   const requested = useRef(new Map<number, string>()); // NORAD -> key of the last track request
-  const tickCount = useRef(0);
-  const lastTick = useRef<Tick | null>(null);
 
   const centerLon = config.map.center_lon;
   const contents = config.map.contents;
@@ -60,28 +52,9 @@ export function MapView({ module, config, tick, selected, onSelect, onSatContext
     };
   }, []);
 
-  // the size of the cell
-  useEffect(() => {
-    const el = holder.current;
-    if (el === null) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setSize({ w: Math.floor(entry.contentRect.width), h: Math.floor(entry.contentRect.height) });
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   // which ticks redraw: the first, then every refresh.map-th "ok" tick
-  useEffect(() => {
-    if (tick === null || tick === lastTick.current) return; // (StrictMode runs effects twice)
-    lastTick.current = tick;
-    if (tick.status !== "ok") {
-      tickCount.current = 0; // the next ok tick draws at once
-      return;
-    }
-    if (isRefreshTick(tickCount.current, config.refresh.map)) setShown(tick);
-    tickCount.current += 1;
-  }, [tick, config.refresh.map]);
+  const shown = useRefreshGate(tick, config.refresh.map);
+  const { cursor, handlers } = useCanvasMouse({ canvas, hits, trackCursor: cursorOn, selected, onSelect, onSatContextMenu, onSatDoubleClick });
 
   // ground tracks
   useEffect(() => {
@@ -113,14 +86,9 @@ export function MapView({ module, config, tick, selected, onSelect, onSatContext
 
   // draw
   useEffect(() => {
-    const el = canvas.current;
-    if (el === null || size.w === 0 || size.h === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    const [dw, dh] = [Math.round(size.w * dpr), Math.round(size.h * dpr)];
-    if (el.width !== dw) el.width = dw;
-    if (el.height !== dh) el.height = dh;
-    const ctx = el.getContext("2d");
-    if (ctx === null) return;
+    const target = prepareCanvas(canvas.current, size);
+    if (target === null) return;
+    const { ctx, dpr } = target;
 
     let polygon: [number, number][] | null = null;
     if (contents["Solar Terminator"] === true && shown !== null) {
@@ -143,19 +111,9 @@ export function MapView({ module, config, tick, selected, onSelect, onSatContext
       groundTrack,
       tracks,
       night: polygon,
-      cursor: cursorOn ? cursor : null,
+      cursor,
     });
-  }, [size, image, shown, tracks, selected, centerLon, contents, cursor, cursorOn, footprintOff, groundTrack]);
-
-  // mouse
-  const frame = useRef(0);
-  const pending = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-
-  const position = (e: { clientX: number; clientY: number }) => {
-    const box = canvas.current!.getBoundingClientRect();
-    return { x: e.clientX - box.left, y: e.clientY - box.top };
-  };
+  }, [size, image, shown, tracks, selected, centerLon, contents, cursor, footprintOff, groundTrack]);
 
   return (
     <div ref={holder} className="map-view">
@@ -165,39 +123,7 @@ export function MapView({ module, config, tick, selected, onSelect, onSatContext
         role="img"
         aria-label="Map"
         style={{ width: size.w, height: size.h }}
-        onMouseMove={(e) => {
-          if (!cursorOn) return;
-          pending.current = position(e);
-          if (frame.current === 0) {
-            frame.current = requestAnimationFrame(() => {
-              frame.current = 0;
-              setCursor(pending.current);
-            });
-          }
-        }}
-        onMouseLeave={() => {
-          pending.current = null;
-          cancelAnimationFrame(frame.current);
-          frame.current = 0;
-          setCursor(null);
-        }}
-        onClick={(e) => {
-          if (e.detail > 1) return; // the second click of a double click: the selection stays as the first click left it
-          const p = position(e);
-          const hit = hitTest(hits.current, p.x, p.y);
-          if (hit !== null) onSelect(hit === selected ? null : hit);
-        }}
-        onDoubleClick={(e) => {
-          const p = position(e);
-          const hit = hitTest(hits.current, p.x, p.y);
-          if (hit !== null) onSatDoubleClick?.(hit);
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          const p = position(e);
-          const hit = hitTest(hits.current, p.x, p.y);
-          if (hit !== null) onSatContextMenu?.(hit, e.clientX, e.clientY);
-        }}
+        {...handlers}
       />
     </div>
   );

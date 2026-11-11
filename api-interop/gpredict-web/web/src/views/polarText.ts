@@ -4,7 +4,7 @@
 
 import { fmtCountdown, fmtFixed } from "../format";
 import type { SatState } from "../types";
-import { nextEvent } from "./mapText";
+import { nextEvent } from "./canvasCommon";
 
 /** Top right: "Next: <sat>\nin MM:SS" ("in HH:MM:SS" from one hour on), or "Next: N/A" when no satellite has an upcoming AOS. */
 export function nextEventText(sats: readonly SatState[], nowMs: number): string {

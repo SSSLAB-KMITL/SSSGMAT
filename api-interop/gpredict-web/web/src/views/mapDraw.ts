@@ -5,6 +5,8 @@
 import { cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA } from "../colors";
 import { fmtFixed } from "../format";
 import type { Tick } from "../types";
+import { FONT, LINE_H, MARKER_HALF } from "./canvasCommon";
+import type { SatPos } from "./canvasCommon";
 import {
   footprintRings,
   fromXY,
@@ -12,16 +14,12 @@ import {
   gridLongitudes,
   labelPos,
   lonToX,
-  MARKER_HALF,
   projectLine,
   toXY,
   wrapLon,
 } from "./mapGeom";
 import { cursorText, NEXT_PENDING, nextEventText, qthInfoText, selectedEventText } from "./mapText";
 
-/** The page's font (styles.css); Gpredict uses the GTK default font and ignores its MAP_FONT setting (ref §5). */
-export const FONT = '13px system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Thai", sans-serif';
-export const LINE_H = 16;
 /** Behind the picture until it has loaded. */
 const FALLBACK_BACKGROUND = "#10243f";
 
@@ -47,13 +45,6 @@ export interface MapScene {
   night: readonly (readonly [number, number])[] | null;
   /** mouse position over the map, null when it is not there */
   cursor: { x: number; y: number } | null;
-}
-
-/** Where a satellite marker is on the map, for hit testing. */
-export interface SatPos {
-  norad: number;
-  x: number;
-  y: number;
 }
 
 /** Paint `scene` on `ctx` (whose canvas is round(w*dpr) x round(h*dpr)). Returns the position of every satellite drawn. */

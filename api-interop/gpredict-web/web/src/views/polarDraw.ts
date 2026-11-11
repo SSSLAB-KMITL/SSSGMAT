@@ -5,8 +5,8 @@
 import { cssRgba, POLAR_COLORS } from "../colors";
 import { formatTime } from "../format";
 import type { SkyPoint, Tick } from "../types";
-import { FONT, LINE_H } from "./mapDraw";
-import { MARKER_HALF } from "./mapGeom";
+import { FONT, LINE_H, MARKER_HALF } from "./canvasCommon";
+import type { SatPos } from "./canvasCommon";
 import {
   AXIS_EXTRA,
   azElToXY,
@@ -45,18 +45,11 @@ export interface PolarScene {
   cursor: { x: number; y: number } | null;
 }
 
-/** Where a satellite marker is, for hit testing. */
-export interface PolarHit {
-  norad: number;
-  x: number;
-  y: number;
-}
-
 /** Gap in px between the end of the axes and the info texts, each side: twice the extra length of the axes (`2 * POLV_LINE_EXTRA`). */
 const TEXT_GAP = 2 * AXIS_EXTRA;
 
 /** Paint `scene` on `ctx` (whose canvas is round(w*dpr) x round(h*dpr)). Returns the position of every satellite drawn. */
-export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): PolarHit[] {
+export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): SatPos[] {
   const { w, h, dpr, orientation, contents, tick, selected } = scene;
   const on = (name: string) => contents[name] === true;
   const [cx, cy] = [w / 2, h / 2];
@@ -119,7 +112,7 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Pol
   }
 
   // 5: satellites with El >= 0, the selected one last so that it is on top
-  const hits: PolarHit[] = [];
+  const hits: SatPos[] = [];
   if (tick === null) return hits;
   const ordered = [...shownSats.filter((s) => s.norad !== selected), ...shownSats.filter((s) => s.norad === selected)];
   for (const sat of ordered) {

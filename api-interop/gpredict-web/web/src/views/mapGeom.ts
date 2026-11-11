@@ -4,14 +4,10 @@
 // The map is the equirectangular picture of the Earth shown 360 degrees wide: longitude `centerLon` is in the middle,
 // so the left edge is centerLon - 180 and the right edge centerLon + 180.
 
+import { MARKER_HALF } from "./canvasCommon";
+
 /** Equatorial radius of the Earth in km, the value Gpredict (and the server's footprint formula) uses. */
 export const EARTH_RADIUS_KM = 6378.135;
-
-/** Half the size of the 6x6 px satellite and ground station squares (`MARKER_SIZE_HALF`, ref §5). */
-export const MARKER_HALF = 3;
-
-/** A left click within this many pixels of a satellite selects it (ref §5). */
-export const HIT_RADIUS_PX = 10;
 
 /** The solar terminator is recomputed when module time has moved this far (ref §5: every 15 s of module time). */
 export const TERMINATOR_INTERVAL_S = 15;
@@ -217,20 +213,6 @@ export function labelPos(x: number, y: number, tw: number, th: number, w: number
   return { x: x - tw / 2, y: y + offset };
 }
 
-/** NORAD number of the satellite nearest to (x, y) and within `px` pixels of it (10, ref §5), null if there is none. */
-export function hitTest(sats: readonly { norad: number; x: number; y: number }[], x: number, y: number, px = HIT_RADIUS_PX): number | null {
-  let best: number | null = null;
-  let bestD2 = px * px;
-  for (const s of sats) {
-    const d2 = (s.x - x) ** 2 + (s.y - y) ** 2;
-    if (d2 <= bestD2) {
-      best = s.norad;
-      bestD2 = d2;
-    }
-  }
-  return best;
-}
-
 /** Longitudes of the vertical grid lines for a map centred on `centerLon`: every 30 degrees strictly inside the window, as in the window (may be above 180). */
 export function gridLongitudes(centerLon: number): number[] {
   const lons: number[] = [];
@@ -240,13 +222,7 @@ export function gridLongitudes(centerLon: number): number[] {
   return lons;
 }
 
-// ---------------------------------------------------------------- refresh gates
-
-/** Whether tick number `index` (0 is the first) redraws the map: the first, then every `every`-th (the "refresh every N cycles" setting). */
-export function isRefreshTick(index: number, every: number): boolean {
-  const n = Number.isFinite(every) && every >= 1 ? Math.floor(every) : 1;
-  return index % n === 0;
-}
+// ---------------------------------------------------------------- terminator
 
 /** Whether the terminator must be computed again: there is none yet, or module time moved 15 s or more (either way) since it was. */
 export function terminatorDue(lastMs: number | null, nowMs: number): boolean {

@@ -5,8 +5,6 @@ import {
   fromXY,
   GRID_LATITUDES,
   gridLongitudes,
-  hitTest,
-  isRefreshTick,
   labelPos,
   lonToX,
   nightPolygon,
@@ -318,43 +316,6 @@ describe("labelPos", () => {
   });
 });
 
-describe("hitTest", () => {
-  const sats = [
-    { norad: 25544, x: 100, y: 100 },
-    { norad: 43013, x: 300, y: 300 },
-  ];
-
-  it("selects a satellite 10 px away", () => {
-    expect(hitTest(sats, 110, 100)).toBe(25544);
-    expect(hitTest(sats, 106, 108)).toBe(25544); // 6-8-10 triangle: exactly 10 px
-    expect(hitTest(sats, 100, 90)).toBe(25544);
-  });
-
-  it("does not select one 11 px away", () => {
-    expect(hitTest(sats, 111, 100)).toBeNull();
-    expect(hitTest(sats, 100, 89)).toBeNull();
-  });
-
-  it("selects the nearest of several within the radius", () => {
-    const close = [
-      { norad: 1, x: 100, y: 100 },
-      { norad: 2, x: 106, y: 100 },
-    ];
-    expect(hitTest(close, 104, 100)).toBe(2);
-    expect(hitTest(close, 101, 100)).toBe(1);
-  });
-
-  it("is null for nothing there and for no satellites", () => {
-    expect(hitTest(sats, 200, 200)).toBeNull();
-    expect(hitTest([], 0, 0)).toBeNull();
-  });
-
-  it("takes the radius as a parameter", () => {
-    expect(hitTest(sats, 115, 100, 20)).toBe(25544);
-    expect(hitTest(sats, 105, 100, 4)).toBeNull();
-  });
-});
-
 describe("grid", () => {
   it("has 5 horizontal lines every 30 degrees", () => {
     expect(GRID_LATITUDES).toEqual([-60, -30, 0, 30, 60]);
@@ -368,19 +329,6 @@ describe("grid", () => {
     expect(gridLongitudes(90)).toEqual([-60, -30, 0, 30, 60, 90, 120, 150, 180, 210, 240]);
     // a window that is not a multiple of 30 away has a line at each end
     expect(gridLongitudes(15)).toEqual([-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180]);
-  });
-});
-
-describe("isRefreshTick", () => {
-  it("redraws on the first tick and then every N ticks", () => {
-    const drawn = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].filter((i) => isRefreshTick(i, 10));
-    expect(drawn).toEqual([0, 10]);
-    expect([0, 1, 2, 3].filter((i) => isRefreshTick(i, 1))).toEqual([0, 1, 2, 3]);
-  });
-
-  it("treats a missing or bad N as every tick", () => {
-    expect(isRefreshTick(3, 0)).toBe(true);
-    expect(isRefreshTick(3, Number.NaN)).toBe(true);
   });
 });
 
