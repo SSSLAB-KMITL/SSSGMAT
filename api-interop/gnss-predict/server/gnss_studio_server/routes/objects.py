@@ -30,7 +30,7 @@ def _edit(request: Request, store: ScenarioStore, bus: EventBus, sc: str, if_mat
     if_match = if_match if if_match is not None else ""
     check_etag(current, if_match)
     result = change(doc)
-    tag, stale = write_tracked(store, bus, request.app.state.logger, sc, doc, if_match)
+    tag, stale = write_tracked(store, bus, request.app.state.plans, sc, doc, if_match)
     return result, tag, stale
 
 

@@ -1,8 +1,10 @@
 from fastapi import Request
 
 from ..config import Config
+from ..digests import FileDigests
 from ..events import EventBus
 from ..jobs import JobManager
+from ..plans import PlanCache
 from ..store import ScenarioStore
 
 
@@ -24,3 +26,13 @@ def get_bus(request: Request) -> EventBus:
 def get_jobs(request: Request) -> JobManager:
     """dependency: คิว job ของแอปที่รับ request นี้"""
     return request.app.state.jobs
+
+
+def get_plans(request: Request) -> PlanCache:
+    """dependency: แคช plan (hash ที่ scenario ต้องใช้) ของแอปที่รับ request นี้ ใช้ร่วมกับ write_tracked"""
+    return request.app.state.plans
+
+
+def get_digests(request: Request) -> FileDigests:
+    """dependency: แคช SHA-256 ของไฟล์ผลลัพธ์ของแอปที่รับ request นี้"""
+    return request.app.state.digests

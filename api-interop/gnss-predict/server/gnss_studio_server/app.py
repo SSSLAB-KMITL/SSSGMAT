@@ -6,11 +6,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import Config
+from .digests import FileDigests
 from .errors import install_error_handlers
 from .events import EventBus
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
-from .routes import events, health, jobs, objects, orbits, scenarios
+from .plans import PlanCache
+from .routes import events, health, jobs, objects, orbits, results, scenarios
 from .store import ScenarioStore
 
 
@@ -39,6 +41,8 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.start_background = start_background
     app.state.store = ScenarioStore(config.data_dir)
     app.state.logger, app.state.log_handler = make_logger(config.data_dir)
+    app.state.plans = PlanCache(app.state.store, app.state.logger)
+    app.state.digests = FileDigests()
     app.state.bus = EventBus(app.state.logger)
     app.state.jobs = JobManager(config.data_dir, app.state.bus, runner=ProcessRunner(gmat_bin=config.gmat_bin),
                                 logger=app.state.logger)
@@ -50,5 +54,6 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(objects.router, prefix="/api")
     app.include_router(orbits.router, prefix="/api")
+    app.include_router(results.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     return app

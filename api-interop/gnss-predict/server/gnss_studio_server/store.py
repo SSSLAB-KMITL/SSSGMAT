@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from gnss_predict.scenario import load_scenario
+from gnss_predict.scenario import EngineScenario, load_scenario
 
 from .errors import ApiError
 from .schema import NAME_RE, validate_scenario
@@ -185,6 +185,18 @@ class ScenarioStore:
         finally:
             tmp.unlink(missing_ok=True)
         return etag(data)
+
+    def engine_view(self, name: str, doc: Any) -> EngineScenario:
+        """ส่วนที่ engine ใช้ (ผล `load_scenario`) ของ doc ถ้าบันทึกเป็น scenario นี้ ตรวจแบบเดียวกับ `write` (schema แล้วผ่านไฟล์ชั่วคราว)
+        แต่ไม่แตะ scenario.json และไม่ตรวจ ETag ผิด -> ApiError / ScenarioError เหมือน `write`"""
+        directory = self._existing(name)
+        data = self._prepare(name, doc)
+        tmp = directory / f"{SCENARIO_FILE}.tmp-{uuid.uuid4().hex[:8]}"
+        try:
+            tmp.write_bytes(data)
+            return load_scenario(tmp)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def write(self, name: str, doc: Any, if_match: str | None) -> str:
         """บันทึก scenario ที่มีอยู่ทั้งก้อน คืน ETag ใหม่ if_match เป็น None = เขียนจากฝั่ง server เอง ไม่ตรวจ ETag"""

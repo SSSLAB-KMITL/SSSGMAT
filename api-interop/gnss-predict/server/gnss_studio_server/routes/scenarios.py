@@ -69,7 +69,7 @@ def put_scenario(sc: str, request: Request, doc: dict[str, Any], if_match: str |
     # ไม่ส่ง If-Match = ค่าว่างซึ่งไม่ตรงกับ ETag ใดเลย -> 412 (หลังตรวจว่ามี scenario นี้อยู่ ไม่งั้น 404)
     if_match = if_match if if_match is not None else ""
     check_etag(store.current_etag(sc), if_match)        # ตรวจก่อนคำนวณ plan: 404/412 ไม่เสียเวลา (store.write ตรวจซ้ำใต้ล็อก)
-    tag, stale = write_tracked(store, bus, request.app.state.logger, sc, doc, if_match)
+    tag, stale = write_tracked(store, bus, request.app.state.plans, sc, doc, if_match)
     return JSONResponse(doc, headers={**etag_header(tag), RESULTS_STALE_HEADER: "true" if stale else "false"})
 
 
