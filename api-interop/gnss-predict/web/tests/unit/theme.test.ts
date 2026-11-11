@@ -50,7 +50,9 @@ test("text tokens meet WCAG AA on their backgrounds", () => {
   const v = readCssVars("src/theme.css");
   for (const [fg, bg] of [["--text", "--bg"], ["--text", "--panel"], ["--text-muted", "--panel"],
                           ["--menu-text", "--menu-bg"], ["--selected-text", "--selected-bg"],
-                          ["--titlebar-active-text", "--titlebar-active-bg"]])
+                          ["--titlebar-active-text", "--titlebar-active-bg"],
+                          // แท็บหน้าต่าง dockview ที่ไม่ได้เลือก (วางบนแถบชื่อ)
+                          ["--text", "--titlebar-bg"], ["--text-muted", "--titlebar-bg"]])
     expect(contrast(v[fg], v[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
 });
 
@@ -60,4 +62,24 @@ test("system colour tokens exist with the spec §14 hues", () => {
   expect(v["--color-galileo"]).toBe("#4fd47e"); expect(v["--color-beidou"]).toBe("#45c8ff");
   expect(v["--color-facility"]).toBe("#ff79e6"); expect(v["--color-access"]).toBe("#9dff6b");
   expect(v["--font-size"]).toBe("12px");
+});
+
+test("the dockview theme maps every tab and surface variable onto the tokens, with no raw hex colours", () => {
+  const css = readFileSync(resolve(WEB_ROOT, "src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const block = /\.dockview-theme-gnss\s*\{([^}]*)\}/.exec(css)?.[1];
+  expect(block, ".dockview-theme-gnss block").toBeTruthy();
+  const vars = Object.fromEntries([...block!.matchAll(/(--dv-[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+  for (const name of ["--dv-group-view-background-color", "--dv-tabs-and-actions-container-background-color", "--dv-tabs-and-actions-container-height",
+                      "--dv-activegroup-visiblepanel-tab-background-color", "--dv-activegroup-visiblepanel-tab-color",
+                      "--dv-activegroup-hiddenpanel-tab-background-color", "--dv-activegroup-hiddenpanel-tab-color",
+                      "--dv-inactivegroup-visiblepanel-tab-background-color", "--dv-inactivegroup-visiblepanel-tab-color",
+                      "--dv-inactivegroup-hiddenpanel-tab-background-color", "--dv-inactivegroup-hiddenpanel-tab-color",
+                      "--dv-separator-border", "--dv-floating-border", "--dv-floating-box-shadow"])
+    expect(vars[name], name).toBeTruthy();
+  expect(block).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  // แท็บที่ active ใช้คู่เดียวกับแถบชื่อ: ตัวอักษรขาวบนน้ำเงินเข้ม และแท็บที่เห็นอยู่ของกลุ่มที่ไม่ active ใช้พื้น panel
+  expect(vars["--dv-activegroup-visiblepanel-tab-background-color"]).toBe("var(--titlebar-active-bg)");
+  expect(vars["--dv-activegroup-visiblepanel-tab-color"]).toBe("var(--titlebar-active-text)");
+  expect(vars["--dv-inactivegroup-visiblepanel-tab-background-color"]).toBe("var(--panel)");
+  expect(vars["--dv-inactivegroup-visiblepanel-tab-color"]).toBe("var(--text)");
 });

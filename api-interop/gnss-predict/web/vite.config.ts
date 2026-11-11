@@ -35,6 +35,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["tests/unit/**/*.test.{ts,tsx}"],
+    // jsdom ไม่มี ResizeObserver (dockview ต้องใช้): tests/unit/setup.ts ใส่ตัวปลอมให้
+    setupFiles: ["tests/unit/setup.ts"],
     // เวลาทั้งแอปต้องไม่ขึ้นกับ timezone ของเครื่อง จึงรัน test ใน timezone ที่ไม่ใช่ UTC และมี DST ตลอด
     // (โค้ดที่ไปเรียก getHours/getDate ฯลฯ แบบเวลาท้องถิ่นจะ fail ใน suite; time-format.test.ts มี test ยืนยันว่าตั้งผลจริง)
     env: { TZ: "America/New_York" },
