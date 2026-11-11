@@ -1,4 +1,5 @@
-"""ที่เก็บข้อมูลบนดิสก์: QTH ที่ data/qth/<name>.json และสถานีตั้งต้นที่ data/settings.json (หัวข้อ 7.1 ของ spec)
+"""ที่เก็บข้อมูลบนดิสก์: QTH ที่ data/qth/<name>.json, สถานีตั้งต้นที่ data/settings.json,
+module ที่ data/modules/<name>.json และ session (module ที่เปิดค้างตามลำดับแท็บ) ที่ data/session.json (หัวข้อ 7.1 ของ spec)
 
 ทุกไฟล์เขียนลงไฟล์ชั่วคราวในโฟลเดอร์เดียวกันแล้ว rename ทับ จึงไม่มีไฟล์ที่เขียนค้างครึ่งเดียว
 """
@@ -14,9 +15,12 @@ from pathlib import Path
 
 from .config import NAME_RE
 from .errors import ApiError
+from .module import ModuleConfig, module_from_dict, module_to_dict
 
 SETTINGS_FILE = "settings.json"
+SESSION_FILE = "session.json"
 QTH_DIR = "qth"
+MODULES_DIR = "modules"
 
 DESCRIPTION_MAX = 256
 LOCATION_MAX = 50
@@ -94,6 +98,13 @@ def _not_found(name: str) -> ApiError:
     return ApiError("NOT_FOUND", 404, f"ไม่พบ QTH ชื่อ {name}", name)
 
 
+def _module_not_found(name: str) -> ApiError:
+    return ApiError("NOT_FOUND", 404, f"ไม่พบ module ชื่อ {name}", name)
+
+
+_UNREADABLE = object()          # _module_qth_ref อ่านไฟล์ module ไม่ได้
+
+
 class Store:
     def __init__(self, data_dir: Path):
         self.data_dir = Path(data_dir)
@@ -137,7 +148,8 @@ class Store:
             write_json_atomic(self._qth_path(q.name), asdict(q))
 
     def delete_qth(self, name: str) -> None:
-        """404 ถ้าไม่มี, 409 IN_USE ถ้าเป็นสถานีสุดท้าย ถ้าลบสถานีตั้งต้นจะย้ายสถานีตั้งต้นไปที่ชื่อแรกที่เหลือ"""
+        """404 ถ้าไม่มี, 409 IN_USE ถ้าเป็นสถานีสุดท้าย หรือมี module ใช้อยู่ (รวม module ที่ใช้สถานีตั้งต้นเมื่อ name คือสถานีตั้งต้น)
+        ถ้าลบสถานีตั้งต้นที่ไม่มี module ใช้จะย้ายสถานีตั้งต้นไปที่ชื่อแรกที่เหลือ"""
         with self._lock:
             path = self._qth_path(name)
             if not path.is_file():
@@ -145,6 +157,9 @@ class Store:
             remaining = [n for n in self._qth_names() if n != name]
             if not remaining:
                 raise ApiError("IN_USE", 409, f"ลบ QTH {name} ไม่ได้ เพราะเป็นสถานีสุดท้าย", name)
+            users = self.modules_using_qth(name)
+            if users:
+                raise ApiError("IN_USE", 409, f"ลบ QTH {name} ไม่ได้ เพราะ module เหล่านี้ใช้อยู่: {', '.join(users)}", name)
             if self._stored_default() == name:
                 self._write_default(remaining[0])
             path.unlink()
@@ -181,3 +196,115 @@ class Store:
             if not self._qth_path(name).is_file():
                 raise _not_found(name)
             self._write_default(name)
+
+    # ---------- module ----------
+
+    @property
+    def _module_dir(self) -> Path:
+        return self.data_dir / MODULES_DIR
+
+    def _module_path(self, name: str) -> Path:
+        """path ของ module ชื่อที่ผ่าน NAME_RE เท่านั้น (ชื่ออื่นเป็น 404 และไม่หลุดออกนอกโฟลเดอร์)"""
+        if not (isinstance(name, str) and NAME_RE.fullmatch(name)):
+            raise _module_not_found(str(name))
+        return self._module_dir / f"{name}.json"
+
+    def _module_names(self) -> list[str]:
+        if not self._module_dir.is_dir():
+            return []
+        return sorted(p.stem for p in self._module_dir.glob("*.json") if NAME_RE.fullmatch(p.stem))
+
+    def list_modules(self) -> list[str]:
+        with self._lock:
+            return self._module_names()
+
+    def get_module(self, name: str) -> ModuleConfig:
+        """อ่านและตรวจรูปแบบ module (ไม่ตรวจว่า QTH หรือ NORAD ยังมีอยู่ เพราะ store ไม่รู้จักดัชนีดาว) 404 ถ้าไม่มี, 422 ถ้าไฟล์เสีย"""
+        path = self._module_path(name)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise _module_not_found(name) from None
+        except ValueError:                     # JSONDecodeError และ UnicodeDecodeError
+            raise ApiError("MODULE_INVALID", 422, f"ไฟล์ module ของ {name} อ่านไม่ได้ (ไม่ใช่ JSON ที่ถูกต้อง)", name) from None
+        m = module_from_dict(data, None, None)
+        if m.name != name:
+            raise ApiError("MODULE_INVALID", 422, f"ไฟล์ module {name} มีชื่อข้างในเป็น {m.name}", name)
+        return m
+
+    def put_module(self, m: ModuleConfig) -> None:
+        """สร้างหรือแทนที่ module ตรวจรูปแบบและว่า QTH มีอยู่ (ภายใต้ lock เดียวกับ delete_qth)
+        การตรวจว่า NORAD อยู่ในดัชนีดาวเป็นหน้าที่ของผู้เรียก (module_from_dict ... norads)"""
+        m = module_from_dict(module_to_dict(m), None, None)
+        with self._lock:
+            if m.qth is not None and m.qth not in self._qth_names():
+                raise ApiError("MODULE_INVALID", 422, f"ไม่พบ QTH ชื่อ {m.qth} (qth)", "qth")
+            write_json_atomic(self._module_path(m.name), module_to_dict(m))
+
+    def delete_module(self, name: str) -> None:
+        """404 ถ้าไม่มี ลบแล้วเอาออกจาก session ด้วย"""
+        with self._lock:
+            path = self._module_path(name)
+            if not path.is_file():
+                raise _module_not_found(name)
+            path.unlink()
+            stored = self._stored_session()
+            if name in stored:
+                self._write_session([n for n in stored if n != name])
+
+    def _module_qth_ref(self, name: str):
+        """ช่อง qth ดิบของ module (None = สถานีตั้งต้น) อ่านจาก JSON ตรงๆ เพื่อให้ module ที่ช่องอื่นเสียก็ยังนับว่าใช้ QTH นี้อยู่"""
+        try:
+            data = json.loads(self._module_path(name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return _UNREADABLE
+        if not isinstance(data, dict):
+            return _UNREADABLE
+        qth = data.get("qth")
+        return qth if qth is None or isinstance(qth, str) else _UNREADABLE
+
+    def modules_using_qth(self, name: str) -> list[str]:
+        """ชื่อ module (เรียงตามชื่อ) ที่ใช้ QTH นี้ module ที่ qth เป็น None ใช้สถานีตั้งต้น จึงนับเมื่อ name คือสถานีตั้งต้น"""
+        with self._lock:
+            default = self.default_qth()
+            users = []
+            for n in self._module_names():
+                ref = self._module_qth_ref(n)
+                if ref is not _UNREADABLE and (ref == name or (ref is None and default == name)):
+                    users.append(n)
+            return users
+
+    # ---------- session ----------
+
+    def _stored_session(self) -> list[str]:
+        """ชื่อใน session.json ตามลำดับ ข้ามค่าที่ไม่ใช่ชื่อที่ถูกต้องหรือซ้ำ ไฟล์หายหรืออ่านไม่ได้ถือเป็นว่าง"""
+        try:
+            data = json.loads((self.data_dir / SESSION_FILE).read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            return []
+        names = data.get("modules") if isinstance(data, dict) else None
+        if not isinstance(names, list):
+            return []
+        out = []
+        for n in names:
+            if isinstance(n, str) and NAME_RE.fullmatch(n) and n not in out:
+                out.append(n)
+        return out
+
+    def _write_session(self, names: list[str]) -> None:
+        write_json_atomic(self.data_dir / SESSION_FILE, {"modules": names})
+
+    def session(self) -> list[str]:
+        """module ที่เปิดค้างตามลำดับแท็บ (เฉพาะที่ยังมีไฟล์)"""
+        with self._lock:
+            return [n for n in self._stored_session() if self._module_path(n).is_file()]
+
+    def set_session(self, names: list[str]) -> None:
+        """422 MODULE_INVALID ถ้าไม่ใช่รายการชื่อที่ไม่ซ้ำ, 404 ถ้ามีชื่อที่ไม่ใช่ module ที่มีอยู่"""
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names) or len(set(names)) != len(names):
+            raise ApiError("MODULE_INVALID", 422, "ลำดับแท็บ (session) ต้องเป็นรายการชื่อ module ที่ไม่ซ้ำกัน", "session")
+        with self._lock:
+            for n in names:
+                if not self._module_path(n).is_file():
+                    raise _module_not_found(n)
+            self._write_session(list(names))
