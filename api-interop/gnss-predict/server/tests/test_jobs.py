@@ -541,12 +541,19 @@ class ScriptedHandle:
 
 
 class ScriptedRunner:
-    def __init__(self, items, calls):
+    """scripts: รายการ items ต่อการ start แต่ละครั้งตามลำดับ (ไม่ให้ = ใช้ items เดิมทุกครั้ง)
+    record_starts: บันทึก ("start", job id) ลง calls ด้วย"""
+
+    def __init__(self, items, calls, scripts=None, record_starts=False):
         self.items, self.calls = items, calls
+        self.scripts = list(scripts or [])
+        self.record_starts = record_starts
         self.handles: list[ScriptedHandle] = []
 
     def start(self, job, data_dir):
-        handle = ScriptedHandle(self.items, self.calls)
+        if self.record_starts:
+            self.calls.append(("start", job.id))
+        handle = ScriptedHandle(self.scripts.pop(0) if self.scripts else self.items, self.calls)
         self.handles.append(handle)
         return handle
 
@@ -619,6 +626,43 @@ def test_kill_group_guards(monkeypatch):
     for pgid in (None, 0, 1, -5, os.getpgrp(), 7, 8, 4242):
         jobs_module.kill_group(pgid)                                    # ไม่ raise
     assert calls == [7, 8, 4242]
+    assert jobs_module.kill_group is worker.kill_group                  # ตัวเดียวกับที่ SIGTERM ของ process ลูกใช้
+
+
+def test_queue_thread_error_terminates_child_before_next_job(data_dir, bus, s1, killpg_calls):
+    scripts = [[("gmat_pgid", 4242), ("progress", "gmat"), "WAIT_TERMINATE"],     # progress ขาด fraction: _apply พัง
+               [("result", {"path": "scenarios/S1/ephem/h"})]]
+    runner = ScriptedRunner(None, killpg_calls, scripts=scripts, record_starts=True)
+    mgr = JobManager(data_dir, bus, runner=runner)
+    mgr.start()
+    try:
+        a = mgr.submit("propagate", "S1", {})
+        b = mgr.submit("analyze", "S1", {"facility": "THBK"})
+        a, b = wait_done(mgr, a.id), wait_done(mgr, b.id)
+    finally:
+        mgr.stop()
+    assert a.state == "failed" and a.error["code"] == "INTERNAL" and a.gmat_pgid is None
+    assert b.state == "succeeded"
+    # GMAT และ process ลูกของ job แรกถูกฆ่าก่อน job ที่สองเริ่ม
+    assert killpg_calls == [("start", a.id), ("killpg", 4242, signal.SIGKILL), ("terminate",), ("start", b.id)]
+    assert runner.handles[0].terminated.is_set()
+
+
+def test_cancel_between_pick_and_start_never_spawns(data_dir, bus, s1, killpg_calls):
+    runner = ScriptedRunner([("result", {"path": "scenarios/S1/ephem/h"})], killpg_calls, record_starts=True)
+    mgr = JobManager(data_dir, bus, runner=runner)                      # ไม่เริ่ม thread: เดินคิวเองทีละขั้น
+    j = mgr.submit("propagate", "S1", {})
+    rec = mgr._next()                                                   # หยิบแล้ว (running) แต่ยังไม่เรียก runner.start
+    assert rec.id == j.id and mgr.get(j.id).state == "running"
+    canceller = threading.Thread(target=mgr.cancel, args=(j.id,))
+    canceller.start()
+    wait_until(lambda: mgr.get(j.id).cancel_requested, what="cancel_requested")
+    mgr._run(rec)
+    canceller.join(TIMEOUT)
+    assert not canceller.is_alive()
+    assert runner.handles == [] and killpg_calls == []                  # ไม่สร้าง process เลย
+    got = mgr.get(j.id)
+    assert got.state == "cancelled" and got.result is None and got.finished_utc is not None
 
 
 # ---------- เปิด/ปิด, กู้คืน, ลบของเก่า ----------
@@ -641,6 +685,25 @@ def test_recover_marks_interrupted(data_dir, bus):
     assert mgr.get(running["id"]).started_utc == "2026-11-10T00:00:01Z"
     assert mgr.get(done["id"]).to_dict() == done
     assert {j.id for j in mgr.list()} == {running["id"], queued["id"], done["id"]}
+
+
+def test_recover_skips_records_with_bad_types(data_dir, bus, caplog):
+    recent = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")                  # start() prune ของเก่าด้วย
+    good = write_record(data_dir, id="j-20261110T000000-aaaa", state="succeeded", created_utc=recent, finished_utc=recent)
+    write_record(data_dir, id="j-20261110T000000-bbbb", state="running", created_utc=12345)
+    write_record(data_dir, id="j-20261110T000000-cccc", state="queued", origin=7)
+    write_record(data_dir, id="j-20261110T000000-dddd", state="failed", started_utc=["x"])
+    write_record(data_dir, id="j-20261110T000000-eeee", state="failed", gmat_pgid="12")
+    write_record(data_dir, id="j-20261110T000000-ffff", state="failed", error="boom")
+    mgr = JobManager(data_dir, bus, runner=InlineRunner())
+    with caplog.at_level(logging.WARNING, logger="gnss_studio_server.jobs"):
+        mgr.start()                                                      # ต้องไม่ล้มทั้งการเปิด server
+    try:
+        assert [j.id for j in mgr.list()] == [good["id"]]
+    finally:
+        mgr.stop()
+    skipped = [r.getMessage() for r in caplog.records if "ข้ามบันทึก job" in r.getMessage()]
+    assert len(skipped) == 5
 
 
 def test_prune_30_days(data_dir, bus):
@@ -686,7 +749,7 @@ def test_stop_marks_queued_jobs_interrupted(data_dir, bus, s1, monkeypatch):
     b = mgr.submit("analyze", "S1", {"facility": "THBK"})
     stopper = threading.Thread(target=mgr.stop)
     stopper.start()
-    time.sleep(0.05)
+    wait_until(lambda: mgr._stopping, what="stop() เริ่มทำงาน")
     prop.release.set()                                                   # inline: งานที่รันอยู่ทำต่อจนเสร็จ
     stopper.join(TIMEOUT)
     assert not stopper.is_alive()

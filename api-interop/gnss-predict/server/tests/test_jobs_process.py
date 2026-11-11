@@ -92,10 +92,12 @@ def test_cancel_kills_gmat_within_2s(mgr_process, s1):
     wait_progress_stage(mgr, j.id, "gmat")
     pgid = wait_gmat_pgid(mgr, j.id)
     assert process_group_alive(pgid)
-    mgr.cancel(j.id)
-    t0 = time.monotonic()
+    t0 = time.monotonic()                                                # นับจากตอนสั่งยกเลิก
+    got = mgr.cancel(j.id)
+    assert time.monotonic() - t0 < 2, "cancel ไม่เสร็จภายใน 2 วินาที"
+    assert got.state == "cancelled"
     while process_group_alive(pgid):
-        assert time.monotonic() - t0 < 2
+        assert time.monotonic() - t0 < 2, "GMAT ยังไม่ตายภายใน 2 วินาทีหลังสั่งยกเลิก"
         time.sleep(0.05)
     assert mgr.get(j.id).state == "cancelled"
     assert mgr.get(j.id).gmat_pgid is None and mgr.get(j.id).error is None
@@ -140,6 +142,20 @@ def test_child_crash_becomes_internal(data_dir, s1):
         mgr.stop()
     assert j.state == "failed" and j.error["code"] == "INTERNAL" and j.error["text"]
     assert "exit code 3" in j.error["detail"]
+    assert multiprocessing.active_children() == [] and no_job_thread()
+
+
+def test_truncated_message_from_dying_child_is_internal_not_hang(data_dir, s1):
+    # process แม่ต้องไม่ถือปลายเขียนของท่อไว้: อ่านกรอบที่ขาดกลางแล้วได้ EOF ไม่ใช่รอส่วนที่เหลือไปตลอด
+    mgr = _manager(data_dir, None, target=job_targets.partial_message_then_exit)
+    try:
+        j = wait_state(mgr, mgr.submit("propagate", "S1", {}).id, *FINISHED)
+        assert (mgr.get(j.id).progress or {}).get("stage") == "gmat"     # ข้อความก่อนหน้ายังถึงครบ
+        nxt = wait_state(mgr, mgr.submit("propagate", "S1", {}).id, "running", *FINISHED)   # คิวยังเดินต่อได้
+        assert nxt.id != j.id
+    finally:
+        mgr.stop()
+    assert j.state == "failed" and j.error["code"] == "INTERNAL" and "exit code 5" in j.error["detail"]
     assert multiprocessing.active_children() == [] and no_job_thread()
 
 

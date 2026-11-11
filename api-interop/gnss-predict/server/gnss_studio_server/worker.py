@@ -1,7 +1,7 @@
 """ตัวทำงานของ job หนึ่งตัว (หัวข้อ 7.2 ของ spec server): เรียกฟังก์ชันของ engine แล้วส่งผลกลับทางคิว
 
 `run_job` รันใน process ลูก (ProcessRunner, multiprocessing แบบ spawn) หรือใน thread ของคิว (InlineRunner ของ test)
-ส่งเข้าคิว `out` (อะไรก็ได้ที่มี `put`) ตามลำดับ:
+ส่งเข้า `out` (อะไรก็ได้ที่มี `put`: ใน process ลูกคือ `PipeOut` ปลายเขียนของท่อ) ตามลำดับ:
 
 - `("progress", stage, fraction)` ทุกครั้งที่ engine รายงาน
 - `("gmat_pgid", pgid)` ทันทีที่ GMAT เริ่ม (process group ของ GMAT ไว้ยกเลิกงาน) และ `("gmat_pgid", None)` เมื่อ GMAT
@@ -11,7 +11,7 @@
   error ที่ไม่คาดไว้ได้รหัส `INTERNAL` และมีช่อง `traceback` เพิ่ม (คิวเอาออกแล้วเขียนลง log ของ server)
 
 ใน process ลูก SIGTERM (ยกเลิกหรือปิด server) ฆ่า GMAT ที่ยังทำงานอยู่ก่อนแล้วจึงออก: GMAT อยู่ใน session ของตัวเอง
-จะไม่ตายตาม process ลูก
+จะไม่ตายตาม process ลูก `kill_group` เป็นตัวกันการฆ่ากลุ่มผิดตัวเดียวที่ทั้ง process ลูกและ JobManager ใช้
 
 โมดูลนี้ import แค่ engine (ไม่ import fastapi/pydantic) process ลูกจึงเริ่มเร็ว
 """
@@ -32,7 +32,29 @@ SCENARIOS_DIR = "scenarios"            # เท่ากับ store.SCENARIOS_D
 DEFAULT_SYSTEMS = "GREC"
 GMAT_LOG_TAIL_LINES = 20
 INTERNAL_TEXT_MAX = 200
-TRACEBACK_MAX = 8000                   # ข้อความในคิวเล็กกว่า 16 KB: เขียนลงท่อครั้งเดียว ไม่ค้างครึ่งข้อความ
+TRACEBACK_MAX = 8000                   # ตัวอักษรท้าย traceback ที่ส่งกลับไปลง log ของ server
+
+
+def kill_group(pgid: int | None) -> None:
+    """SIGKILL ทั้ง process group ของ GMAT ไม่แตะ None, pgid <= 1 หรือกลุ่มของ process ที่เรียกเอง
+    กลุ่มที่จบไปแล้วไม่ถือเป็น error (macOS ตอบ EPERM เมื่อกลุ่มเหลือแต่ zombie)"""
+    if pgid is None or pgid <= 1 or pgid == os.getpgrp():
+        return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+class PipeOut:
+    """ปลายเขียนของท่อจาก process ลูกถึง JobManager: put() ส่งทันที (ไม่มี thread ป้อนข้อมูล ข้อความที่ put แล้วไม่ค้างในบัฟเฟอร์
+    ตอนถูกยุติ) process แม่ไม่ถือปลายเขียนไว้ กรอบข้อความที่ขาดกลางเพราะ process ลูกตายจึงอ่านได้ EOF ไม่ค้าง"""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def put(self, item) -> None:
+        self.conn.send(item)
 
 
 class NotImplementedJobError(GnssPredictError):
@@ -128,7 +150,7 @@ def _internal(exc: BaseException) -> dict:
 
 
 def _install_signal_handlers(gmat: _Gmat) -> None:
-    """เฉพาะ thread หลักของ process ลูก: SIGTERM ฆ่า GMAT ที่ยังทำงานอยู่ก่อน แล้วออกแบบปกติ (คิวส่งข้อมูลที่ค้างจนหมด)
+    """เฉพาะ thread หลักของ process ลูก: SIGTERM ฆ่า GMAT ที่ยังทำงานอยู่ก่อน แล้วออกแบบปกติ (SystemExit)
 
     ไม่สนใจ SIGINT: Ctrl-C ที่ terminal ส่งถึงทั้งกลุ่ม ให้ server เป็นผู้หยุดงานตามลำดับ (JobManager.stop)"""
     if multiprocessing.parent_process() is None or threading.current_thread() is not threading.main_thread():
@@ -136,12 +158,7 @@ def _install_signal_handlers(gmat: _Gmat) -> None:
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     def on_sigterm(signum, frame):
-        pgid = gmat.pgid
-        if pgid is not None and pgid > 1 and pgid != os.getpgrp():
-            try:
-                os.killpg(pgid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+        kill_group(gmat.pgid)
         raise SystemExit(128 + signum)
 
     signal.signal(signal.SIGTERM, on_sigterm)

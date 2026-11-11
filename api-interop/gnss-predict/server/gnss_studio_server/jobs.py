@@ -5,7 +5,8 @@
   progress ส่งไม่เกิน 4 ครั้งต่อวินาทีต่อ job ยกเว้นเปลี่ยนขั้น (stage) หรือเปลี่ยนสถานะซึ่งส่งเสมอ
 - สถานะ: queued -> running -> succeeded | failed | cancelled (queued -> cancelled ได้โดยไม่เคยเริ่ม)
 - thread ของคิวหนึ่งตัวหยิบ job ส่งให้ runner (`start(job, data_dir) -> Handle`) แล้วอ่าน `Handle.messages()` จนจบ
-  `ProcessRunner` รัน `worker.run_job` ใน process ลูกแบบ spawn ส่วน `InlineRunner` เรียกใน thread ของคิวเลย (ใช้ใน test)
+  `ProcessRunner` รัน `worker.run_job` ใน process ลูกแบบ spawn ส่งผลกลับทางท่อทางเดียว (`Pipe(duplex=False)`) ที่ process แม่
+  ไม่ถือปลายเขียน: process ลูกตายกลางข้อความ = EOF ไม่ใช่รอค้าง ส่วน `InlineRunner` เรียกใน thread ของคิวเลย (ใช้ใน test)
 - ยกเลิกขณะรัน: ตั้ง cancel_requested -> SIGKILL กลุ่ม process ของ GMAT ถ้ารู้ pgid -> `Handle.terminate()`
   (SIGTERM แล้ว SIGKILL หลัง 1 วินาที) -> pgid ที่ process ลูกส่งมาช้ากว่านั้นถูก SIGKILL ทันทีที่อ่านได้ job จบเป็น cancelled เสมอ
 - pgid ที่ล้าสมัยอันตราย (GMAT จบแล้ว pid ถูกใช้ซ้ำได้): process ลูกส่ง pgid เป็น None ทันทีที่ GMAT ไม่ได้ทำงาน
@@ -19,10 +20,7 @@ import json
 import logging
 import multiprocessing
 import os
-import pickle
-import queue
 import secrets
-import signal
 import threading
 import time
 import uuid
@@ -36,7 +34,7 @@ from .errors import ApiError
 from .events import EventBus, message as post_message
 from .schema import NAME_RE
 from .store import ScenarioStore
-from .worker import run_job
+from .worker import PipeOut, kill_group, run_job
 
 KINDS = ("fetch", "propagate", "analyze", "validate", "daily")
 SCENARIO_KINDS = ("propagate", "analyze", "validate")
@@ -91,17 +89,6 @@ def _parse_time(text) -> datetime | None:
     return t if t.tzinfo is not None else t.replace(tzinfo=timezone.utc)
 
 
-def kill_group(pgid: int | None) -> None:
-    """SIGKILL ทั้ง process group ของ GMAT ไม่แตะ pgid <= 1 หรือกลุ่มของ server เอง กลุ่มที่จบไปแล้วไม่ถือเป็น error
-    (macOS ตอบ EPERM เมื่อกลุ่มเหลือแต่ zombie)"""
-    if pgid is None or pgid <= 1 or pgid == os.getpgrp():
-        return
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-
-
 def _invalid(field_name: str, text: str) -> ApiError:
     return ApiError(422, "SCENARIO_INVALID", text, field_name)
 
@@ -136,23 +123,37 @@ class JobRecord:
 
     @classmethod
     def from_dict(cls, data) -> "JobRecord":
-        """จากไฟล์บันทึก ช่องหลักผิดรูปแบบ -> ValueError"""
+        """จากไฟล์บันทึก ช่องที่ขาด (id, kind, state, created_utc) หรือผิดชนิด -> ValueError (recover ข้ามบันทึกนั้น)"""
         if not isinstance(data, dict):
             raise ValueError("บันทึก job ต้องเป็น JSON object")
-        values = {name: data.get(name) for name in RECORD_FIELDS if name in data}
-        if not isinstance(values.get("id"), str) or values.get("kind") not in KINDS or values.get("state") not in STATES:
-            raise ValueError("บันทึก job ไม่มี id, kind หรือ state ที่ถูกต้อง")
+        for name, ok in _RECORD_TYPES.items():
+            if name not in data:
+                if name in _RECORD_REQUIRED:
+                    raise ValueError(f"บันทึก job ไม่มีช่อง {name}")
+            elif not ok(data[name]):
+                raise ValueError(f"ช่อง {name} ของบันทึก job ผิดชนิด ({type(data[name]).__name__})")
+        values = {name: data[name] for name in RECORD_FIELDS if name in data}
         values.setdefault("scenario", None)
-        if not isinstance(values.get("params", {}), dict) or not isinstance(values.get("messages", []), list):
-            raise ValueError("params หรือ messages ของบันทึก job ผิดรูปแบบ")
-        values["params"] = values.get("params") or {}
-        values["messages"] = values.get("messages") or []
-        values["created_utc"] = values.get("created_utc") or ""
-        values["origin"] = values.get("origin") or "user"
+        values.setdefault("params", {})
         return cls(**values)
 
 
 _Records = list[JobRecord]                       # ใช้แทน list[...] ในคลาสที่มี method ชื่อ list
+_RECORD_REQUIRED = ("id", "kind", "state", "created_utc")
+
+
+def _opt(kind: type):
+    return lambda v: v is None or isinstance(v, kind)
+
+
+_RECORD_TYPES = {
+    "id": lambda v: isinstance(v, str), "kind": lambda v: v in KINDS, "state": lambda v: v in STATES,
+    "created_utc": lambda v: isinstance(v, str), "origin": lambda v: v in ORIGINS,
+    "scenario": _opt(str), "started_utc": _opt(str), "finished_utc": _opt(str),
+    "params": lambda v: isinstance(v, dict), "messages": lambda v: isinstance(v, list),
+    "progress": _opt(dict), "result": _opt(dict), "error": _opt(dict),
+    "gmat_pgid": lambda v: v is None or (isinstance(v, int) and not isinstance(v, bool)),
+}
 
 
 def _event(rec: JobRecord) -> dict:
@@ -194,22 +195,32 @@ class InlineRunner:
 
 
 class ProcessHandle:
-    """process ลูกหนึ่งตัวกับคิวของมัน เรียก terminate() ได้จากทุก thread (การ join/reap อยู่ใต้ล็อกเดียว)"""
+    """process ลูกหนึ่งตัวกับปลายอ่านของท่อ เรียก terminate() ได้จากทุก thread (การ join/reap อยู่ใต้ล็อกเดียว)"""
 
-    def __init__(self, proc, out_queue):
-        self._proc, self._queue = proc, out_queue
+    def __init__(self, proc, reader):
+        self._proc, self._reader = proc, reader
         self._lock = threading.Lock()
+        self._eof = False
 
     def _exited(self) -> bool:
         return bool(wait_ready([self._proc.sentinel], 0))
 
     def _get(self, timeout: float):
-        """ข้อความถัดไป หรือ None ถ้าหมดเวลาหรือท่อเสีย (process ลูกตายระหว่างเขียน)"""
-        try:
-            return self._queue.get(timeout=timeout)
-        except queue.Empty:
+        """ข้อความถัดไป หรือ None ถ้าหมดเวลา
+
+        ท่อปิด (process ลูกจบ หรือตายกลางข้อความ: กรอบที่ขาดกลางได้ EOF เพราะ process แม่ไม่ถือปลายเขียน) = เลิกอ่าน
+        แล้วแค่รอ process จบ ข้อความที่แปลงกลับไม่ได้ถูกข้าม (กรอบถัดไปยังอ่านได้)"""
+        if self._eof:
+            wait_ready([self._proc.sentinel], timeout)
             return None
-        except (EOFError, OSError, ValueError, pickle.UnpicklingError):
+        try:
+            if not self._reader.poll(timeout):
+                return None
+            return self._reader.recv()
+        except (EOFError, OSError):
+            self._eof = True
+            return None
+        except Exception:
             return None
 
     def _reap(self, timeout: float) -> int | None:
@@ -242,7 +253,7 @@ class ProcessHandle:
                 yield ("error", _error("INTERNAL", CRASH_TEXT, f"exit code {self._reap(JOIN_S)}"))
                 return
         finally:
-            self._queue.close()
+            self._reader.close()
 
     def terminate(self) -> None:
         """SIGTERM แล้วรอ TERM_GRACE_S วินาที ยังไม่จบ SIGKILL (เรียกซ้ำหรือเรียกหลัง process จบแล้วได้)"""
@@ -267,11 +278,18 @@ class ProcessRunner:
 
     def start(self, job: JobRecord, data_dir: Path) -> ProcessHandle:
         ctx = multiprocessing.get_context("spawn")
-        out = ctx.Queue()
+        reader, writer = ctx.Pipe(duplex=False)
         proc = ctx.Process(target=self.target, name=f"gnss-studio-job-{job.id}", daemon=True,
-                           args=(job.kind, job.scenario, copy.deepcopy(job.params), str(data_dir), self.gmat_bin, out))
-        proc.start()
-        return ProcessHandle(proc, out)
+                           args=(job.kind, job.scenario, copy.deepcopy(job.params), str(data_dir), self.gmat_bin,
+                                 PipeOut(writer)))
+        try:
+            proc.start()
+        except BaseException:
+            reader.close()
+            raise
+        finally:
+            writer.close()              # process ลูกได้สำเนาของตัวเองแล้ว แม่ต้องไม่ถือไว้ (ไม่งั้นกรอบที่ขาดกลางไม่เจอ EOF)
+        return ProcessHandle(proc, reader)
 
 
 # ---------- คิว ----------
@@ -586,12 +604,23 @@ class JobManager:
                 self.logger.exception("คิว job ผิดพลาดระหว่างทำ job %s", rec.id)
                 with self._cond:
                     unfinished = rec.state == "running"
+                    handle = self._handle if self._current is rec else None
+                    pgid, rec.gmat_pgid = rec.gmat_pgid, None
+                kill_group(pgid)                                 # อย่าให้ GMAT/process ลูกทำงานคู่กับ job ถัดไป
+                if handle is not None:
+                    handle.terminate()
                 if unfinished:
                     self._finish(rec, ("error", _error("INTERNAL", CRASH_TEXT)))
 
     def _run(self, rec: JobRecord) -> None:
         with self._cond:
             job = copy.deepcopy(rec)
+            skip = rec.cancel_requested or self._stopping           # ยกเลิก/ปิดหลังหยิบ job แต่ก่อนสร้าง process
+            if self._stopping:
+                self._stop_kill = True
+        if skip:
+            self._finish(rec, None)                              # cancelled หรือ INTERRUPTED โดยไม่สร้าง process
+            return
         try:
             handle = self.runner.start(job, self.data_dir)
         except Exception as exc:
