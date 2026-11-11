@@ -11,6 +11,7 @@ import { useScenario } from "../../../src/stores/scenario";
 import { useSelection } from "../../../src/stores/selection";
 import { useSettings } from "../../../src/stores/settings";
 import { useTime } from "../../../src/stores/time";
+import { useObjectBrowser } from "../../../src/windows/ObjectBrowser/state";
 
 export type ScenarioDoc = components["schemas"]["ScenarioDoc"];
 
@@ -38,6 +39,7 @@ export function resetAll(): void {
   useMessages.setState(useMessages.getInitialState(), true);
   useResults.setState(useResults.getInitialState(), true);
   useSettings.setState(useSettings.getInitialState(), true);
+  useObjectBrowser.setState(useObjectBrowser.getInitialState(), true);
 }
 
 /** reset + คำสั่ง view.* window.* anim.* ของงานนี้ คืนฟังก์ชันถอนออก */

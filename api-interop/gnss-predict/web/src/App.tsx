@@ -13,16 +13,18 @@ import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
 import { registerFilePanels } from "./windows/filePanels";
 import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
+import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { Workspace } from "./Workspace";
 
 export function App() {
   // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference), Object Browser
-  // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนตอนหน้าต่างเปิด), คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
+  // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   useEffect(() => {
     const stopClock = startClock();
     const stopEvents = startEventWiring();
     const unregisterCommands = registerCoreCommands();
     const unregisterFileCommands = registerFileCommands();
+    const unregisterObjectCommands = registerObjectBrowserCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     const stopShortcuts = installShortcuts();
@@ -30,6 +32,7 @@ export function App() {
     return () => {
       stopFlow();
       stopShortcuts();
+      unregisterObjectCommands();
       unregisterFileCommands();
       unregisterCommands();
       stopEvents();

@@ -278,6 +278,104 @@ describe("writes", () => {
     expect(paths(f)).toContain(`GET ${BASE}/results`); // ผลไม่ตรงแล้วต้องรู้ทันที
   });
 
+  describe("writes go one after another", () => {
+    /** server ปลอมที่รับการเขียนเฉพาะเมื่อ If-Match ตรงกับ ETag ปัจจุบัน (ไม่งั้น 412 เหมือนของจริง) และออก ETag ใหม่ทุกครั้งที่รับ */
+    function strictServer(over: Record<string, Handler> = {}) {
+      const s = { n: 1, etag: E1 };
+      const accept = (call: { headers: Headers }, json: unknown = {}) => {
+        if (call.headers.get("if-match") !== s.etag) return { status: 412, json: { code: "ETAG_MISMATCH", text: "ถูกแก้จากที่อื่น" } };
+        s.n++;
+        s.etag = `"${String(s.n).repeat(16)}"`;
+        return { json, headers: { ETag: s.etag } };
+      };
+      const f = stubFetch({
+        [`GET ${BASE}`]: () => ({ json: DOC, headers: { ETag: s.etag } }),
+        [`GET ${BASE}/objects`]: () => ({ json: TREE, headers: { ETag: s.etag } }),
+        [`GET ${BASE}/results`]: { json: RESULTS_MISSING },
+        [`PATCH ${BASE}/objects/Satellite/G01`]: (call) => accept(call, { etag: "x", results_stale: false }),
+        [`PATCH ${BASE}/objects/Facility/THBK`]: (call) => accept(call, { etag: "x", results_stale: false }),
+        [`POST ${BASE}/objects`]: (call) => accept(call, { created: ["*/Satellite/G02"], etag: "x", results_stale: false }),
+        [`POST ${BASE}/objects/Satellite/G01/rename`]: (call) => accept(call, { etag: "x", results_stale: false }),
+        [`DELETE ${BASE}/objects/Satellite/G01`]: (call) => accept(call, { etag: "x", results_stale: false }),
+        [`POST ${BASE}/groups`]: (call) => accept(call, { etag: "x", results_stale: false }),
+        [`PUT ${BASE}`]: (call) => accept(call, DOC),
+        ...over,
+      });
+      return { s, f };
+    }
+    const sent = (f: { calls: { method: string; path: string }[] }) => f.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`);
+
+    test("two quick patchObject calls: the second goes out with the ETag the first returned, after the first's reload", async () => {
+      const { f } = strictServer();
+      const first = st().patchObject("Satellite", "G01", { graphics2d: { show: false } });
+      const second = st().patchObject("Facility", "THBK", { graphics2d: { show: false } });
+      await Promise.all([first, second]);
+      expect(st().conflict).toBe(false);
+      const patches = f.calls.filter((c) => c.method === "PATCH");
+      expect(patches.map((c) => c.headers.get("if-match"))).toEqual([E1, E2]);
+      // the second request is only made once the first write has finished, reload included
+      const order = paths(f);
+      const secondAt = order.lastIndexOf(`PATCH ${BASE}/objects/Facility/THBK`);
+      expect(order.slice(0, secondAt)).toEqual([`PATCH ${BASE}/objects/Satellite/G01`, expect.stringContaining("GET"), expect.stringContaining("GET")].slice(0, 3));
+      expect(st().etag).toBe(`"${"3".repeat(16)}"`);
+    });
+
+    test("the second request waits for the first response, and is not sent while the first is in flight", async () => {
+      const gate = deferred<{ json: unknown; headers: Record<string, string> }>();
+      const { f } = strictServer({ [`PATCH ${BASE}/objects/Satellite/G01`]: () => gate.promise });
+      const first = st().patchObject("Satellite", "G01", {});
+      const second = st().patchObject("Facility", "THBK", {});
+      await new Promise((r) => setTimeout(r, 10));
+      expect(sent(f)).toEqual([`PATCH ${BASE}/objects/Satellite/G01`]);
+      gate.resolve({ json: { etag: "x", results_stale: false }, headers: { ETag: E2 } });
+      await Promise.all([first, second]);
+      expect(sent(f)).toEqual([`PATCH ${BASE}/objects/Satellite/G01`, `PATCH ${BASE}/objects/Facility/THBK`]);
+    });
+
+    test("every kind of write joins the same queue, in the order they were asked", async () => {
+      const { f } = strictServer();
+      const results = await Promise.all([
+        st().patchObject("Satellite", "G01", {}),
+        st().insert({ class: "Satellite", method: "Define Properties", name: "G02", norad: 1 }),
+        st().setGroup("Mine", []),
+        st().putDoc((d) => { d.description = "z"; }),
+        st().rename("Satellite", "G01", "G09"),
+        st().remove("Satellite", "G01"),
+      ]);
+      expect(results).toHaveLength(6);
+      expect(st().conflict).toBe(false);
+      expect(sent(f)).toEqual([
+        `PATCH ${BASE}/objects/Satellite/G01`, `POST ${BASE}/objects`, `POST ${BASE}/groups`, `PUT ${BASE}`,
+        `POST ${BASE}/objects/Satellite/G01/rename`, `DELETE ${BASE}/objects/Satellite/G01`,
+      ]);
+    });
+
+    test("a write that fails does not hold up the ones behind it", async () => {
+      const { f } = strictServer({
+        [`PATCH ${BASE}/objects/Satellite/G01`]: { status: 422, json: { code: "SCENARIO_INVALID", text: "ค่าผิด" } },
+      });
+      const first = st().patchObject("Satellite", "G01", {}).catch((e: unknown) => e);
+      const second = st().patchObject("Facility", "THBK", {});
+      expect(await first).toBeInstanceOf(ApiError);
+      await second;
+      expect(st().conflict).toBe(false);
+      expect(f.calls.filter((c) => c.method === "PATCH").map((c) => c.headers.get("if-match"))).toEqual([E1, E1]); // nothing changed on the server, so the same ETag is still right
+    });
+
+    test("a write asked for before the scenario was closed is not sent to the one opened after", async () => {
+      const gate = deferred<{ json: unknown; headers: Record<string, string> }>();
+      const { f } = strictServer({ [`PATCH ${BASE}/objects/Satellite/G01`]: () => gate.promise });
+      const first = st().patchObject("Satellite", "G01", {});
+      const second = st().patchObject("Facility", "THBK", {}).catch((e: unknown) => e);
+      st().close();
+      gate.resolve({ json: { etag: "x", results_stale: false }, headers: { ETag: E2 } });
+      await first;
+      expect(await second).toBeInstanceOf(Error);
+      expect(sent(f)).toEqual([`PATCH ${BASE}/objects/Satellite/G01`]);
+      expect(st().conflict).toBe(false);
+    });
+  });
+
   test("object names are URL-encoded in the path", async () => {
     const f = stubFetch({
       [`PATCH ${BASE}/objects/Satellite/G%2001`]: { json: { etag: "2", results_stale: false }, headers: { ETag: E2 } },

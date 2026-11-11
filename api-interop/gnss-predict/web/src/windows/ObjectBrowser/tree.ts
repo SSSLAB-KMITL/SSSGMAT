@@ -37,6 +37,14 @@ export interface Row {
   members?: string[];
 }
 
+export type EditableRow = Row & { cls: Exclude<RowClass, "Scenario">; path: string };
+
+/** แถวที่มีช่องติ๊ก Show และกล่องสี: Facility, Constellation, Satellite */
+export const hasToggle = (row: Row): boolean => row.kind === "object" && row.cls !== undefined && row.cls !== "Scenario";
+/** Facility, Constellation, Satellite: เปลี่ยนชื่อ ลบ และเลือกสีได้ */
+export const isEditable = (row: Row | undefined): row is EditableRow => row !== undefined && hasToggle(row);
+export const isSatellite = (row: Row | undefined): row is Row & { path: string } => row?.kind === "object" && row.cls === "Satellite";
+
 export const ROOT_KEY = "*";
 export const groupKey = (name: string): string => `group:${name}`;
 const isGroup = (node: TreeNode): node is TreeGroup => "group" in node;

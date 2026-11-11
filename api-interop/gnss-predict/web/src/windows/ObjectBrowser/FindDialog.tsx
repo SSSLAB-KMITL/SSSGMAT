@@ -1,5 +1,5 @@
 // Find ใน Object Browser: กล่องเล็กลอยในหน้าต่าง (ไม่ใช่ modal ผู้ใช้ยังเลื่อนต้นไม้ได้) ช่องคำค้น + Find Next / Find Previous
-// - Enter = ถัดไป, Shift+Enter = ก่อนหน้า, Esc = ปิด; ตัวค้นจริงอยู่ที่ ObjectBrowser (onFind) เพราะต้องรู้แถวทั้งต้นไม้และเปิดโฟลเดอร์ที่พับอยู่
+// - Enter ในช่องคำค้น = ถัดไป, Shift+Enter = ก่อนหน้า, Esc = ปิด (Enter ที่ปุ่มเป็นการกดปุ่มนั้น); ตัวค้นจริงอยู่ที่ ObjectBrowser (onFind) เพราะต้องรู้แถวทั้งต้นไม้และเปิดโฟลเดอร์ที่พับอยู่
 // - ไม่พบ = บอกเป็นภาษาไทยใต้ช่อง ไม่เปลี่ยนการเลือก
 
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -35,7 +35,8 @@ export function FindDialog({ onFind, onClose, focusToken }: FindDialogProps) {
       e.preventDefault();
       e.stopPropagation();
       onClose();
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && e.target === box.current) {
+      // Enter ในช่องคำค้นเท่านั้น: ที่ปุ่ม Enter คือการกดปุ่มนั้น (Find Previous ย้อนกลับ, Close ปิด) ไม่ใช่ "ถัดไป"
       e.preventDefault();
       go(e.shiftKey ? -1 : 1);
     }

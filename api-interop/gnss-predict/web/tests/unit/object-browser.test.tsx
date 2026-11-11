@@ -16,6 +16,8 @@ import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useClipboard } from "../../src/windows/ObjectBrowser/clipboard";
 import { ObjectBrowser, registerObjectBrowserPanel } from "../../src/windows/ObjectBrowser/ObjectBrowser";
+import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/objectCommands";
+import { useObjectBrowser } from "../../src/windows/ObjectBrowser/state";
 import { resetAll } from "./helpers/chrome";
 import { deferred, stubFetch } from "./helpers/fake-fetch";
 import { CATALOG, entry, loadObjects, makeScenarioDoc, makeTree, satPath } from "./helpers/objects";
@@ -32,6 +34,7 @@ const openPanel = vi.fn(() => "propertiesBrowser");
 
 let user: ReturnType<typeof userEvent.setup>;
 let stopShortcuts: (() => void) | undefined;
+let disposeCommands: () => void;
 
 beforeEach(() => {
   resetAll();
@@ -40,9 +43,11 @@ beforeEach(() => {
   openPanel.mockClear();
   useScenario.setState(spies as never);
   useLayout.setState({ openPanel } as never);
+  disposeCommands = registerObjectBrowserCommands(); // registered once at app start (App.tsx), not by the window
   user = userEvent.setup();
 });
 afterEach(() => {
+  disposeCommands();
   stopShortcuts?.();
   stopShortcuts = undefined;
   cleanup();
@@ -223,11 +228,12 @@ describe("expansion", () => {
     expect(openPanel).not.toHaveBeenCalled();
   });
 
-  test("Collapse All and Expand All act on the whole tree", async () => {
+  test("Collapse All folds every folder but keeps the scenario open; Expand All opens everything", async () => {
     loadObjects();
     renderOb();
     await user.click(button(t("ob.collapseAll")));
-    expect(names()).toEqual(["S1"]);
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "Mine", "G03", "G04", "G05"]);
+    expect(row("GPS sats").getAttribute("aria-expanded")).toBe("false");
     await user.click(button(t("ob.expandAll")));
     expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G02", "Mine", "G03", "G04", "G05"]);
   });
@@ -322,6 +328,66 @@ describe("Show checkbox", () => {
     await user.click(checkbox("G01"));
     await new Promise((r) => setTimeout(r, 20));
     expect(useMessages.getState().items.some((m) => m.code === "PRECONDITION_FAILED")).toBe(false);
+  });
+
+  test("the checkbox of a row is disabled while its write runs, and a second click does not write again", async () => {
+    loadObjects();
+    renderOb();
+    const pending = deferred<{ stale: boolean }>();
+    spies.patchObject.mockImplementationOnce(() => pending.promise);
+    await user.click(checkbox("G01"));
+    await waitFor(() => expect((checkbox("G01") as HTMLInputElement).disabled).toBe(true));
+    await user.click(checkbox("G01"));
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    expect((checkbox("G02") as HTMLInputElement).disabled).toBe(false); // other rows stay usable
+    await act(async () => pending.resolve(written));
+    await waitFor(() => expect((checkbox("G01") as HTMLInputElement).disabled).toBe(false));
+  });
+
+  test("it is enabled again after a failed write", async () => {
+    loadObjects();
+    renderOb();
+    spies.patchObject.mockRejectedValueOnce(new ApiError({ status: 422, code: "SCENARIO_INVALID", text: "ค่าผิด" }));
+    await user.click(checkbox("G01"));
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "SCENARIO_INVALID")).toBe(true));
+    expect((checkbox("G01") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  test("Space held down toggles once, and Space again while the write runs does nothing", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G04"));
+    const pending = deferred<{ stale: boolean }>();
+    spies.patchObject.mockImplementationOnce(() => pending.promise);
+    fireEvent.keyDown(row("G04"), { key: " " });
+    fireEvent.keyDown(row("G04"), { key: " ", repeat: true });
+    fireEvent.keyDown(row("G04"), { key: " ", repeat: true });
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(row("G04"), { key: " " }); // a fresh press while the first write is still running
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve(written));
+    await waitFor(() => expect((checkbox("G04") as HTMLInputElement).disabled).toBe(false));
+    fireEvent.keyDown(row("G04"), { key: " ", repeat: true }); // the key is still held after the write finished
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(row("G04"), { key: " " });
+    expect(spies.patchObject).toHaveBeenCalledTimes(2);
+  });
+
+  test("a Constellation writes each member with that member's own class", async () => {
+    const doc = makeScenarioDoc();
+    const gps = (doc.objects as { class: string; name: string; assigned_objects?: string[] }[]).find((o) => o.name === "GPS")!;
+    gps.assigned_objects = [satPath("G01"), "*/Facility/THBK", "*/Constellation/Other"];
+    (doc.objects as unknown[]).push({ class: "Constellation", name: "Other", system: "R", assigned_objects: [] });
+    const tree = makeTree();
+    tree.children.splice(2, 0, { path: "*/Constellation/Other", class: "Constellation", name: "Other", color: "#ff6b6b", show: true });
+    loadObjects({ doc, tree });
+    renderOb();
+    await user.click(checkbox("GPS"));
+    await waitFor(() => expect(spies.patchObject).toHaveBeenCalledTimes(2));
+    expect(spies.patchObject.mock.calls).toEqual([
+      ["Satellite", "G01", { graphics2d: { show: false }, graphics3d: { show: false } }],
+      ["Facility", "THBK", { graphics2d: { show: false }, graphics3d: { show: false } }], // a nested Constellation has no graphics pages and is left alone
+    ]);
   });
 
   test("clicking the checkbox selects its row", async () => {
@@ -863,6 +929,44 @@ describe("Find", () => {
     expect(selected()).toEqual(["G02"]);
   });
 
+  test("Enter on Find Previous goes backwards and Enter on Close closes: only the text box turns Enter into Find Next", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g0{Enter}{Enter}{Enter}");
+    expect(selected()).toEqual(["G03"]);
+    screen.getByRole("button", { name: t("ob.findPrevious") }).focus();
+    await user.keyboard("{Enter}");
+    expect(selected()).toEqual(["G02"]);
+    screen.getByRole("button", { name: t("ob.findNext") }).focus();
+    await user.keyboard("{Enter}");
+    expect(selected()).toEqual(["G03"]);
+    screen.getByRole("button", { name: t("dialog.windows.close") }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("dialog", { name: t("ob.find") })).toBeNull();
+    expect(selected()).toEqual(["G03"]);
+  });
+
+  test("Next and Previous carry on from where the selection is now when it is not the last hit", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g0{Enter}");
+    expect(selected()).toEqual(["G01"]);
+    await user.click(row("G04"));
+    await user.click(screen.getByRole("button", { name: t("ob.findNext") }));
+    expect(selected()).toEqual(["G05"]);
+    await user.click(row("G02"));
+    await user.click(screen.getByRole("button", { name: t("ob.findPrevious") }));
+    expect(selected()).toEqual(["G01"]);
+    await user.click(row("THBK")); // not a match itself: Next goes to the first match after it
+    await user.click(screen.getByRole("button", { name: t("ob.findNext") }));
+    expect(selected()).toEqual(["G01"]);
+    await user.click(row("Mine"));
+    await user.click(screen.getByRole("button", { name: t("ob.findPrevious") }));
+    expect(selected()).toEqual(["G02"]);
+  });
+
   test("a folder can be found and selected", async () => {
     loadObjects();
     renderOb();
@@ -1051,15 +1155,18 @@ describe("flagged satellites", () => {
 });
 
 describe("commands", () => {
-  test("every Object Browser command is registered while it is open and gone when it closes", () => {
+  test("every Object Browser command is registered at app start, stays when the window closes, and goes with the disposer", () => {
     loadObjects();
     const ids = ["edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.find", "object.properties", "object.rename", "object.delete",
                  "ob.newGroup", "ob.expandAll", "ob.collapseAll", "ob.colorSelectors", "ob.onOffToggles", "ob.showFlagged"] as const;
-    for (const id of ids) expect(isRegistered(id), id).toBe(false);
+    for (const id of ids) expect(isRegistered(id), id).toBe(true); // by beforeEach, with no window open
     const { unmount } = renderOb();
     for (const id of ids) expect(isRegistered(id), id).toBe(true);
     unmount();
+    for (const id of ids) expect(isRegistered(id), id).toBe(true);
+    disposeCommands();
     for (const id of ids) expect(isRegistered(id), id).toBe(false);
+    disposeCommands = registerObjectBrowserCommands();
   });
 
   test("does not register object.zoomTo, object.access or object.reportGraphManager", () => {
@@ -1115,8 +1222,8 @@ describe("a long tree", () => {
     }
   });
 
-  const long = () => {
-    const loose = Array.from({ length: 150 }, (_, i) => `S${String(i).padStart(3, "0")}`);
+  const long = (length = 150) => {
+    const loose = Array.from({ length }, (_, i) => `S${String(i).padStart(3, "0")}`);
     return loadObjects({ tree: makeTree({ groups: [], loose }), catalog: CATALOG });
   };
 
@@ -1149,6 +1256,195 @@ describe("a long tree", () => {
     await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "S149{Enter}");
     await waitFor(() => expect(hasRow("S149")).toBe(true));
     expect(selected()).toEqual(["S149"]);
+  });
+
+  test("PageDown and PageUp move the selection by one visible page and the focus follows", async () => {
+    polyfill();
+    long(200);
+    renderOb();
+    await user.click(row("S000")); // row 3 of the list (after S1, THBK, GPS); the 400px scroll area shows 18 rows
+    for (let i = 0; i < 5; i++) await user.keyboard("{PageDown}");
+    await waitFor(() => expect(selected()).toEqual(["S090"]));
+    await waitFor(() => expect(document.activeElement).toBe(row("S090")));
+    expect(document.activeElement?.getAttribute("role")).toBe("treeitem");
+    await user.keyboard("{PageUp}{PageUp}");
+    await waitFor(() => expect(selected()).toEqual(["S054"]));
+    await waitFor(() => expect(document.activeElement).toBe(row("S054")));
+    for (let i = 0; i < 20; i++) await user.keyboard("{PageDown}");
+    await waitFor(() => expect(selected()).toEqual(["S199"])); // stops at the end
+    for (let i = 0; i < 20; i++) await user.keyboard("{PageUp}");
+    await waitFor(() => expect(selected()).toEqual(["S1"]));
+  });
+
+  test("the selected row stays in the DOM and keeps the tab stop when the list is scrolled far away, so Tab still reaches the tree", async () => {
+    polyfill();
+    long(200);
+    const { container } = renderOb();
+    await user.click(row("S000"));
+    const scroller = container.querySelector<HTMLElement>(".ob-scroll")!;
+    scroller.scrollTop = 4000;
+    fireEvent.scroll(scroller);
+    await waitFor(() => expect(hasRow("S190")).toBe(true));
+    expect(hasRow("S010")).toBe(false); // really scrolled away
+    expect(hasRow("S000")).toBe(true); // yet the selected row is still there
+    expect(treeitems().filter((r) => r.tabIndex === 0).map((r) => r.textContent)).toEqual(["S000"]);
+    expect(document.activeElement).toBe(row("S000")); // and it did not lose the focus
+    button(t("ob.collapseAll")).focus();
+    await user.tab();
+    expect(document.activeElement).toBe(row("S000"));
+  });
+
+  test("with no selection the first row is the tab stop wherever the list is scrolled", async () => {
+    polyfill();
+    long(200);
+    const { container } = renderOb();
+    const scroller = container.querySelector<HTMLElement>(".ob-scroll")!;
+    scroller.scrollTop = 4000;
+    fireEvent.scroll(scroller);
+    await waitFor(() => expect(hasRow("S190")).toBe(true));
+    expect(treeitems().filter((r) => r.tabIndex === 0).map((r) => r.textContent)).toEqual(["S1"]);
+  });
+});
+
+
+describe("writes in quick succession through the real store", () => {
+  /** server ปลอมที่รับการเขียนเฉพาะเมื่อ If-Match ตรงกับ ETag ปัจจุบัน ไม่งั้น 412 เหมือนของจริง */
+  function strictServer(gates: Record<string, Promise<unknown>> = {}) {
+    const s = { n: 1, etag: '"e1"', rejected: 0, accepted: [] as string[] };
+    const patch = (name: string) => async (call: { headers: Headers }) => {
+      await gates[name];
+      if (call.headers.get("if-match") !== s.etag) {
+        s.rejected++;
+        return { status: 412, json: { code: "ETAG_MISMATCH", text: "ถูกแก้จากที่อื่น" } };
+      }
+      s.accepted.push(`${name} with ${call.headers.get("if-match")}`);
+      s.n++;
+      s.etag = `"e${s.n}"`;
+      return { json: { etag: s.etag, results_stale: false }, headers: { ETag: s.etag } };
+    };
+    const f = stubFetch({
+      "PATCH /api/scenarios/S1/objects/Satellite/G01": patch("G01"),
+      "PATCH /api/scenarios/S1/objects/Satellite/G02": patch("G02"),
+      "PATCH /api/scenarios/S1/objects/Facility/THBK": patch("THBK"),
+      "GET /api/scenarios/S1": () => ({ json: makeScenarioDoc(), headers: { ETag: s.etag } }),
+      "GET /api/scenarios/S1/objects": () => ({ json: makeTree(), headers: { ETag: s.etag } }),
+    });
+    return { s, f };
+  }
+
+  beforeEach(() => {
+    loadObjects();
+    useScenario.setState({ patchObject: useScenario.getInitialState().patchObject } as never);
+  });
+
+  test("a click on another row in the middle of a Constellation toggle gets no 412 and no conflict dialog", async () => {
+    const first = deferred<void>();
+    const { s, f } = strictServer({ G01: first.promise });
+    renderOb();
+    await user.click(checkbox("GPS"));
+    await waitFor(() => expect(f.count("PATCH /api/scenarios/S1/objects/Satellite/G01")).toBe(1));
+    expect((checkbox("G02") as HTMLInputElement).disabled).toBe(true); // a member the toggle is about to write
+    await user.click(checkbox("G02"));
+    await user.click(checkbox("THBK")); // another object, clicked while the first member is still being written
+    expect(f.count("PATCH /api/scenarios/S1/objects/Facility/THBK")).toBe(0); // waits its turn
+    first.resolve();
+    await waitFor(() => expect(s.accepted).toHaveLength(3));
+    expect(s.accepted).toEqual(["G01 with \"e1\"", "THBK with \"e2\"", "G02 with \"e3\""]);
+    expect(s.rejected).toBe(0);
+    expect(useScenario.getState().conflict).toBe(false);
+    expect(screen.queryByText(msg("conflict.title"))).toBeNull();
+    await waitFor(() => expect((checkbox("G02") as HTMLInputElement).disabled).toBe(false));
+  });
+
+  test("two rows ticked one straight after the other are both accepted", async () => {
+    const { s } = strictServer();
+    renderOb();
+    await user.click(checkbox("G01"));
+    await user.click(checkbox("THBK"));
+    await waitFor(() => expect(s.accepted).toHaveLength(2));
+    expect(s.rejected).toBe(0);
+    expect(useScenario.getState().conflict).toBe(false);
+  });
+});
+
+describe("with the Object Browser window closed", () => {
+  test("object.delete on the selected satellite still asks and deletes", async () => {
+    loadObjects();
+    render(<Dialogs />); // no window
+    expect(screen.queryAllByRole("treeitem")).toEqual([]);
+    act(() => useSelection.getState().select(satPath("G01")));
+    expect(isEnabled("object.delete")).toBe(true);
+    expect(isEnabled("edit.delete")).toBe(true);
+    act(() => runCommand("object.delete"));
+    expect(await screen.findByText(msg("confirm.delete", { name: "G01" }))).toBeDefined();
+    expect(spies.remove).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+  });
+
+  test("ob.showFlagged still toggles the filter, and the window shows it when it opens", () => {
+    loadObjects();
+    expect(useObjectBrowser.getState().flaggedOnly).toBe(false);
+    expect(isEnabled("ob.showFlagged")).toBe(true);
+    act(() => runCommand("ob.showFlagged"));
+    expect(useObjectBrowser.getState().flaggedOnly).toBe(true);
+    renderOb();
+    expect(names()).toEqual(["S1", "G03", "G04"]);
+    act(() => runCommand("ob.showFlagged"));
+    expect(useObjectBrowser.getState().flaggedOnly).toBe(false);
+  });
+
+  test("Copy and Paste work without the window, and the tree is not needed on screen", async () => {
+    loadObjects();
+    act(() => useSelection.getState().select(satPath("G02")));
+    expect(isEnabled("edit.copy")).toBe(true);
+    expect(isEnabled("edit.paste")).toBe(false);
+    act(() => runCommand("edit.copy"));
+    expect(isEnabled("edit.paste")).toBe(true);
+    act(() => runCommand("edit.paste"));
+    await waitFor(() => expect(spies.insert).toHaveBeenCalledWith({ class: "Satellite", method: "Define Properties", name: "G02_1", norad: 40102 }));
+  });
+
+  test("Find, New Group and Rename open the window and the dialog shows once it is there", async () => {
+    loadObjects();
+    useLayout.setState({ api: {} as never, openPanel } as never);
+    act(() => useSelection.getState().select(satPath("G01")));
+    act(() => runCommand("edit.find"));
+    act(() => runCommand("ob.newGroup"));
+    expect(openPanel).toHaveBeenCalledWith("objectBrowser");
+    expect(openPanel).toHaveBeenCalledTimes(2);
+    act(() => useObjectBrowser.setState({ newGroupOpen: false }));
+    act(() => runCommand("object.rename"));
+    expect(openPanel).toHaveBeenCalledTimes(3);
+    renderOb();
+    expect(screen.getByRole("dialog", { name: t("ob.find"), hidden: true })).toBeDefined(); // (hidden from the tree of roles by the modal Rename over it)
+    expect(((await screen.findByRole("textbox", { name: t("field.name") })) as HTMLInputElement).value).toBe("G01");
+    expect(screen.getByRole("dialog", { name: t("menu.object.rename") })).toBeDefined();
+  });
+
+  test("Expand All, Collapse All and the column toggles work without the window and are still there when it opens", async () => {
+    loadObjects();
+    act(() => runCommand("ob.collapseAll"));
+    act(() => runCommand("ob.colorSelectors"));
+    const { unmount } = renderOb();
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "Mine", "G03", "G04", "G05"]);
+    expect(within(row("G03")).queryByRole("img", { name: new RegExp(t("field.color")) })).toBeNull();
+    act(() => runCommand("ob.expandAll"));
+    expect(hasRow("G01")).toBe(true);
+    unmount();
+    act(() => runCommand("ob.collapseAll"));
+    renderOb();
+    expect(hasRow("G01")).toBe(false);
+    expect(button(t("ob.graphicsColorSelectors")).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("the toolbar buttons of a window that opens later reflect the selection that was made while it was closed", async () => {
+    loadObjects();
+    act(() => useSelection.getState().select(satPath("G05")));
+    renderOb();
+    expect(button(t("ob.delete")).getAttribute("aria-disabled")).toBeNull();
+    expect(button(t("ob.properties")).getAttribute("aria-disabled")).toBeNull();
+    expect(selected()).toEqual(["G05"]);
   });
 });
 

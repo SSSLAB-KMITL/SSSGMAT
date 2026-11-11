@@ -1,6 +1,8 @@
 // scenario ที่เปิดอยู่: เอกสาร, ต้นไม้ Object Browser, รายชื่อดาวของ snapshot (W9) และ ETag สำหรับเขียนกลับ
 //
 // - load(name) ดึงเอกสาร + ต้นไม้ + catalog แล้วค่อยใส่ store ทีเดียว ไม่ทิ้งสถานะครึ่งเปิด ล้มเหลวทุกแบบจบด้วยข้อความไทยใน Message Viewer ไม่โยน
+// - การเขียนทุกแบบ (PATCH, insert, rename, DELETE, groups, PUT) เข้าคิวเดียว ทีละอย่าง: อ่าน ETag เมื่อถึงคิวของมัน หลังอย่างก่อนหน้าจบรวมทั้งโหลด doc/tree ใหม่แล้ว
+//   (ไม่งั้นการเขียนที่สองส่งต่อกันเร็ว ๆ ใช้ ETag เก่าและได้ 412 ปลอม) การเขียนที่ล้มเหลวไม่ขวางคิว; คิวว่างอยู่ = เริ่มทันที
 // - การเขียนทุกแบบส่ง If-Match = ETag ที่อ่านล่าสุดตามตัว (มีเครื่องหมายคำพูด) 412 -> conflict = true แล้วโยน ApiError ต่อ doc/ETag ไม่เปลี่ยน
 //   (การแก้ถูกบันทึกทันทีตอน Apply จึงหลังเขียนสำเร็จโหลด doc และ tree ใหม่ ไม่เก็บสำเนาในเครื่อง)
 // - doc กับ ETag ต้องไปด้วยกันเสมอ: PUT เก็บเอกสารที่ server ตอบกลับพร้อม ETag ใหม่ทันที ส่วน PATCH/insert/rename/remove/group ตอบแค่ ETag
@@ -170,8 +172,10 @@ async function loadCatalog(doc: ScenarioDoc, signal: AbortSignal | undefined): P
 export const useScenario = create<ScenarioState>()((set, get) => {
   let loadSeq = 0;
   let loadCtl: AbortController | null = null;
-  /** จำนวนการเขียนของเราที่ยังค้าง: event ของ scenario ช่วงนี้เป็นของการเขียนนั้น ไม่ต้องโหลดซ้อน */
+  /** จำนวนการเขียนของเราที่ยังค้าง (รอคิวหรือกำลังทำ): event ของ scenario ช่วงนี้เป็นของการเขียนนั้น ไม่ต้องโหลดซ้อน */
   let writing = 0;
+  /** ท้ายคิวการเขียน (null = คิวว่าง) */
+  let tail: Promise<void> | null = null;
   /** นับทุกครั้งที่ doc/ETag ถูกเปลี่ยน: การโหลดที่เริ่มก่อนหน้านั้นและตอบมาทีหลังเป็นข้อมูลเก่า ทิ้ง */
   let version = 0;
   /** scenario ที่กำลังเปิดอยู่ (load ยังไม่เสร็จ) และ event `scenario` ของมันที่มาถึงก่อนเปิดเสร็จ: เก็บไว้เล่นซ้ำหลังเปิด */
@@ -234,18 +238,37 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     report("warning", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.reloadFailed", { name, message: errorText(e) }));
   };
 
-  /** เขียนไปที่ scenario `scenario` (ต้องยังเป็นตัวที่เปิดอยู่) ด้วย ETag ล่าสุด */
+  /** ทำการเขียนทีละอย่างตามลำดับที่เรียก (คิวว่าง = เริ่มทันทีในจังหวะเดียวกับที่เรียก) ที่ล้มเหลวไม่ขวางอันถัดไป */
+  const serial = <T>(task: () => Promise<T>): Promise<T> => {
+    writing++;
+    const exec = async (): Promise<T> => {
+      try {
+        return await task();
+      } finally {
+        writing--;
+      }
+    };
+    const run = tail === null ? exec() : tail.then(exec);
+    const mine = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    tail = mine;
+    void mine.then(() => {
+      if (tail === mine) tail = null;
+    });
+    return run;
+  };
+
+  /** เขียนไปที่ scenario `scenario` (ต้องยังเป็นตัวที่เปิดอยู่) ด้วย ETag ล่าสุด เรียกจากในคิวการเขียน (serial) เท่านั้น */
   const send = async <T>(scenario: string, method: string, suffix: string, body?: unknown): Promise<ApiResult<T>> => {
     const etag = get().name === scenario ? get().etag : null;
     if (etag === null) throw new Error("no scenario is open");
-    writing++;
     try {
       return await apiSend<T>(method, `${base(scenario)}${suffix}`, body, etag);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412 && get().name === scenario) set({ conflict: true });
       throw e;
-    } finally {
-      writing--;
     }
   };
 
@@ -263,8 +286,8 @@ export const useScenario = create<ScenarioState>()((set, get) => {
   };
 
   const write = async (method: string, suffix: string, body?: unknown): Promise<WriteResult> => {
-    const name = openName();
-    return afterWrite(name, await send(name, method, suffix, body));
+    const name = openName(); // scenario ที่เปิดอยู่ตอนสั่ง: ถึงคิวแล้วถ้าสลับไปแล้วไม่เขียนทับของใหม่ (send ตรวจ)
+    return serial(async () => afterWrite(name, await send(name, method, suffix, body)));
   };
 
   /** putDoc ต้องใช้ doc ล่าสุด: ถ้า doc เก่ากว่า ETag (docStale) โหลดใหม่ก่อน โหลดไม่ได้ = ปฏิเสธ ไม่เอา doc เก่าไปทับ */
@@ -369,43 +392,47 @@ export const useScenario = create<ScenarioState>()((set, get) => {
 
     putDoc: async (mutate) => {
       const name = openName();
-      if (get().docStale) await ensureFreshDoc(name);
-      const doc = get().doc;
-      if (doc === null || get().name !== name) throw new Error("no scenario is open");
-      const draft = structuredClone(doc);
-      mutate(draft);
-      const res = await send<ScenarioDoc>(name, "PUT", "", draft);
-      const stale = res.headers.get("X-Results-Stale")?.trim().toLowerCase() === "true";
-      if (get().name !== name) return { stale }; // ปิดหรือสลับ scenario ระหว่างเขียน
-      const refreshResults = stale ? useResults.getState().refresh() : undefined;
-      let saved: ScenarioDoc | null = null;
-      try {
-        assertDoc(res.data);
-        saved = res.data;
-      } catch {
-        saved = null;
-      }
-      if (saved !== null && res.etag !== null) {
-        // เอกสารที่ server ตอบกลับคือที่บันทึกจริง (เติมค่าเริ่มต้นแล้ว) ใช้พร้อม ETag ใหม่ทันที ต่อให้โหลดต้นไม้ไม่ได้ doc กับ ETag ก็ยังไปด้วยกัน
-        const before = get().doc;
-        applyDoc(saved, res.etag);
-        await Promise.all([refreshCatalog(name, before, saved), refreshTree(name), refreshResults]);
-      } else {
-        // ตอบมาไม่ครบ (ไม่มี ETag หรือเอกสารอ่านไม่ได้): ไม่รู้ว่า doc กับ ETag ตัวไหนถูก โหลดใหม่ทั้งหมด
-        version++;
-        set({ docStale: true });
-        await Promise.all([pullQuiet(), refreshResults]);
-      }
-      return { stale };
+      return serial(async () => {
+        if (get().docStale) await ensureFreshDoc(name);
+        const doc = get().doc; // อ่านเมื่อถึงคิว: ต่อยอดจากเอกสารที่การเขียนก่อนหน้าเพิ่งบันทึก
+        if (doc === null || get().name !== name) throw new Error("no scenario is open");
+        const draft = structuredClone(doc);
+        mutate(draft);
+        const res = await send<ScenarioDoc>(name, "PUT", "", draft);
+        const stale = res.headers.get("X-Results-Stale")?.trim().toLowerCase() === "true";
+        if (get().name !== name) return { stale }; // ปิดหรือสลับ scenario ระหว่างเขียน
+        const refreshResults = stale ? useResults.getState().refresh() : undefined;
+        let saved: ScenarioDoc | null = null;
+        try {
+          assertDoc(res.data);
+          saved = res.data;
+        } catch {
+          saved = null;
+        }
+        if (saved !== null && res.etag !== null) {
+          // เอกสารที่ server ตอบกลับคือที่บันทึกจริง (เติมค่าเริ่มต้นแล้ว) ใช้พร้อม ETag ใหม่ทันที ต่อให้โหลดต้นไม้ไม่ได้ doc กับ ETag ก็ยังไปด้วยกัน
+          const before = get().doc;
+          applyDoc(saved, res.etag);
+          await Promise.all([refreshCatalog(name, before, saved), refreshTree(name), refreshResults]);
+        } else {
+          // ตอบมาไม่ครบ (ไม่มี ETag หรือเอกสารอ่านไม่ได้): ไม่รู้ว่า doc กับ ETag ตัวไหนถูก โหลดใหม่ทั้งหมด
+          version++;
+          set({ docStale: true });
+          await Promise.all([pullQuiet(), refreshResults]);
+        }
+        return { stale };
+      });
     },
 
     patchObject: (cls, name, pages) => write("PATCH", `/objects/${enc(cls)}/${enc(name)}`, pages),
 
     insert: async (body) => {
       const name = openName();
-      const res = await send<{ created?: unknown; etag?: unknown; results_stale?: unknown }>(name, "POST", "/objects", body);
-      await afterWrite(name, res);
-      return Array.isArray(res.data.created) ? res.data.created.filter((p): p is string => typeof p === "string") : [];
+      return serial(async () => {
+        const res = await send<{ created?: unknown; etag?: unknown; results_stale?: unknown }>(name, "POST", "/objects", body);
+        await afterWrite(name, res);
+        return Array.isArray(res.data.created) ? res.data.created.filter((p): p is string => typeof p === "string") : [];
+      });
     },
 
     rename: (cls, name, newName) => write("POST", `/objects/${enc(cls)}/${enc(name)}/rename`, { new_name: newName }),
