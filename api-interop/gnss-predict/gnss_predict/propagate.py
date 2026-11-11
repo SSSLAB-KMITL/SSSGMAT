@@ -11,6 +11,7 @@
 
 import csv
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -166,8 +167,12 @@ def parse_ecef_report(path: Path, prns: list[str], start: datetime, stop: dateti
 
 
 def propagate(sats: list[CatalogSatellite], start: datetime, stop: datetime, step_s: int,
-              work_dir: Path, console: Path, timeout_s: float = 900) -> tuple[Ephemeris, list[Message]]:
-    """เขียน all.tle และ ecef.script ใน work_dir, รัน GMAT แล้วอ่านรายงาน"""
+              work_dir: Path, console: Path, timeout_s: float = 900,
+              on_gmat_start: Callable[[int], None] | None = None) -> tuple[Ephemeris, list[Message]]:
+    """เขียน all.tle และ ecef.script ใน work_dir, รัน GMAT แล้วอ่านรายงาน
+
+    on_gmat_start(pgid) ส่งต่อให้ run_script เป็น on_start (process group id ของ GMAT สำหรับยกเลิกงาน)
+    """
     _grid(start, stop, step_s)                      # ตรวจก่อนเสียเวลารัน GMAT
     work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -177,7 +182,8 @@ def propagate(sats: list[CatalogSatellite], start: datetime, stop: datetime, ste
     write_tle_file(sats, tle_path)
     script_path.write_text(render_ecef_script(sats, tle_path, start, stop, step_s, report_path), encoding="utf-8")
     report_path.unlink(missing_ok=True)             # กันอ่านรายงานเก่าของรอบก่อนถ้า GMAT ไม่ได้เขียนใหม่
-    run_script(console, script_path, work_dir / LOG_NAME, timeout_s)
+    hook = {} if on_gmat_start is None else {"on_start": on_gmat_start}
+    run_script(console, script_path, work_dir / LOG_NAME, timeout_s, **hook)
     return parse_ecef_report(report_path, [s.prn for s in sats], start, stop, step_s)
 
 

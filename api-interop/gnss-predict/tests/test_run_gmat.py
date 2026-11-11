@@ -1,4 +1,7 @@
+import os
+import signal
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -81,6 +84,43 @@ class TestRun(TmpCase):
     def test_timeout(self):
         with self.assertRaises(GmatRunError):
             self.run_with("sleep 5", timeout_s=0.5)
+
+    def test_on_start_receives_process_group(self):
+        got = []
+        run_script(fake_console(self.d, "sleep 0.2"), self.script, self.log, on_start=got.append)
+        self.assertEqual(len(got), 1)
+        self.assertGreater(got[0], 1)
+
+    def test_on_start_group_can_be_killed(self):
+        # server ใช้ process group ที่ได้รับนี้ยกเลิก GMAT: ต้องฆ่าได้ทั้งกลุ่มระหว่างที่ run_script รออยู่
+        def kill(pgid: int) -> None:
+            os.killpg(pgid, signal.SIGTERM)
+
+        with self.assertRaises(GmatRunError):
+            run_script(fake_console(self.d, "sleep 30"), self.script, self.log, timeout_s=10, on_start=kill)
+
+    def test_on_start_failure_does_not_leave_gmat_running(self):
+        pids = []
+
+        def boom(pgid: int) -> None:
+            pids.append(pgid)
+            raise RuntimeError("on_start failed")
+
+        with self.assertRaises(RuntimeError):
+            run_script(fake_console(self.d, "sleep 30"), self.script, self.log, on_start=boom)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(pids[0], 0)
+
+    def test_on_start_failure_after_gmat_already_exited(self):
+        def boom(pgid: int) -> None:
+            time.sleep(0.2)                       # GMAT จบ (zombie) ก่อนที่ on_start จะ raise
+            raise RuntimeError("on_start failed")
+
+        with self.assertRaises(RuntimeError):
+            run_script(fake_console(self.d, "exit 0"), self.script, self.log, on_start=boom)
+
+    def test_on_start_optional(self):
+        self.run_with("exit 0")
 
 
 class TestVersion(TmpCase):

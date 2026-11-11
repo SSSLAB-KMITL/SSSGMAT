@@ -7,6 +7,8 @@
 
 - ทุกคำสั่งเป็นฟังก์ชันที่ server เรียกได้ตรง (`fetch_snapshot`, `run_propagate`, `run_analyze`, `run_validate`)
   CLI แค่แปลง argument
+- `plan_propagate` และ `plan_analyze` คืน hash ของโฟลเดอร์ผลลัพธ์โดยไม่รัน GMAT และไม่เขียนไฟล์ (ใช้ตรวจว่ามีผลเดิมหรือไม่)
+- `on_gmat_start(pgid)` ของ run_propagate, run_analyze และ run_validate ถูกเรียกเมื่อ GMAT เริ่มทำงาน (server ใช้ยกเลิกงาน)
 - โครงสร้างบนดิสก์ตามหัวข้อ 7.1 ของ spec ภาพรวม: `<data>/orbits/<YYYYMMDDTHHMMZ>/` (cache ดาวน์โหลดอยู่ที่
   `<data>/orbits/_cache/`), `<scenario>/ephem/<hash>/` และ `<scenario>/access/<facility>/<hash>/`
 - โฟลเดอร์ผลลัพธ์เขียนครั้งเดียวด้วย `write_bundle` ถ้ามีโฟลเดอร์ของ hash เดียวกันอยู่แล้วคืนโฟลเดอร์นั้นทันที (ผลเดิม)
@@ -306,21 +308,29 @@ def _no_satellites(sel: _Selection) -> NoSatellitesError:
     return NoSatellitesError(f"ไม่มีดาวที่จะ propagate จากดาวใน scenario {len(sel.names)} ดวง: {detail}")
 
 
-def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path | None = None,
-                  progress: Progress | None = None) -> tuple[Path, list[Message]]:
-    """propagate ดาวใน scenario ที่แสดง (is_shown) ด้วย GMAT แล้วเขียน `<scenario_dir>/ephem/<hash>/`
-    (manifest.json, predicted.sp3, scene.czml) ถ้ามีโฟลเดอร์ของ hash นี้แล้วคืนทันทีโดยไม่รัน GMAT
+@dataclass(frozen=True)
+class PropagatePlan:
+    """สิ่งที่ run_propagate จะทำ โดยไม่รัน GMAT: hash ของโฟลเดอร์ ephem, PRN ที่จะ propagate และข้อความจาก catalog/การเลือกดาว"""
+    hash: str
+    satellites: list[str]
+    messages: list[Message]
 
-    catalog สร้างจากทุกระบบที่มีไฟล์ OMM ใน snapshot, ดาวที่ไม่มีใน catalog ได้ SAT_NOT_IN_SNAPSHOT (D8)
-    ไม่มีดาวให้ propagate หรือ GMAT ไม่ได้ผลของดวงใดเลย: NoSatellitesError
-    console เป็น None: หา GmatConsole เองเมื่อต้องรันจริงเท่านั้น
-    """
-    report = _reporter(progress)
-    report("scenario", 0.0)
-    scenario_dir = Path(scenario_dir)
-    sc = _load(scenario_dir)
+
+@dataclass(frozen=True)
+class _Plan:
+    sc: EngineScenario
+    sel: _Selection
+    files_sha256: dict[str, str]
+    hash: str
+
+
+def _plan(scenario_dir: Path, data_dir: Path, report: Progress | None = None) -> _Plan:
+    """โหลด scenario, สร้าง catalog, เลือกดาว และคำนวณ hash ของ ephem (ไม่รัน GMAT ไม่เขียนไฟล์)
+    ไม่มีดาวให้ propagate: NoSatellitesError"""
+    sc = _load(Path(scenario_dir))
     snapshot_dir, systems = _snapshot(data_dir, sc)
-    report("catalog", 0.05)
+    if report is not None:
+        report("catalog", 0.05)
     catalog = build_catalog(snapshot_dir, (sc.start, sc.stop), systems)
     sel = _select(sc, catalog)
     if not sel.selected:
@@ -328,7 +338,7 @@ def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path |
 
     files_sha256 = _files_sha256(snapshot_dir, systems)
     prn_of = {s.norad: s.prn for s in catalog.satellites}
-    ephem_dir = scenario_dir / EPHEM_DIR / input_hash({
+    digest = input_hash({
         "engine_version": ENGINE_VERSION,
         "files_sha256": files_sha256,
         "start": _iso_s(sc.start),
@@ -338,6 +348,33 @@ def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path |
         "show_too_old": sc.show_too_old,
         "show_no_broadcast": sc.show_no_broadcast,
     })
+    return _Plan(sc, sel, files_sha256, digest)
+
+
+def plan_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR) -> PropagatePlan:
+    """hash ของ `<scenario_dir>/ephem/<hash>/` ที่ run_propagate จะใช้ พร้อม PRN ที่จะ propagate (ไม่รัน GMAT ไม่เขียนไฟล์)
+    ไม่มีดาวให้ propagate: NoSatellitesError เหมือน run_propagate"""
+    plan = _plan(scenario_dir, data_dir)
+    return PropagatePlan(plan.hash, [s.prn for s in plan.sel.selected], list(plan.sel.messages))
+
+
+def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path | None = None,
+                  progress: Progress | None = None,
+                  on_gmat_start: Callable[[int], None] | None = None) -> tuple[Path, list[Message]]:
+    """propagate ดาวใน scenario ที่แสดง (is_shown) ด้วย GMAT แล้วเขียน `<scenario_dir>/ephem/<hash>/`
+    (manifest.json, predicted.sp3, scene.czml) ถ้ามีโฟลเดอร์ของ hash นี้แล้วคืนทันทีโดยไม่รัน GMAT
+
+    catalog สร้างจากทุกระบบที่มีไฟล์ OMM ใน snapshot, ดาวที่ไม่มีใน catalog ได้ SAT_NOT_IN_SNAPSHOT (D8)
+    ไม่มีดาวให้ propagate หรือ GMAT ไม่ได้ผลของดวงใดเลย: NoSatellitesError
+    console เป็น None: หา GmatConsole เองเมื่อต้องรันจริงเท่านั้น
+    on_gmat_start(pgid): เรียกเมื่อ GMAT เริ่มทำงาน (process group id สำหรับยกเลิกงาน) ไม่เรียกถ้าใช้ผลเดิม
+    """
+    report = _reporter(progress)
+    report("scenario", 0.0)
+    scenario_dir = Path(scenario_dir)
+    plan = _plan(scenario_dir, data_dir, report)
+    sc, sel, files_sha256 = plan.sc, plan.sel, plan.files_sha256
+    ephem_dir = scenario_dir / EPHEM_DIR / plan.hash
     if ephem_dir.is_dir():
         messages = _read_manifest(ephem_dir).messages
         report("done", 1.0)
@@ -349,7 +386,8 @@ def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path |
     messages = list(sel.messages)
     with tempfile.TemporaryDirectory(prefix="gnss-studio-") as tmp:
         work_dir = Path(tmp)
-        eph, gmat_messages = propagate(sel.selected, sc.start, sc.stop, sc.step_s, work_dir, console)
+        hook = {} if on_gmat_start is None else {"on_gmat_start": on_gmat_start}
+        eph, gmat_messages = propagate(sel.selected, sc.start, sc.stop, sc.step_s, work_dir, console, **hook)
         messages += gmat_messages
         if not eph.positions_km:
             raise NoSatellitesError(f"GMAT ไม่ได้ตำแหน่งของดาวดวงใดเลยจาก {len(sel.selected)} ดวง: "
@@ -393,8 +431,23 @@ def _dop_gaps(dops: list[dict], fac: Facility) -> list[Message]:
                     "(ดาวที่ใช้ได้น้อยกว่า 4 ดวงหรือเรขาคณิตของดาวไม่พอ)", fac.name)]
 
 
+def _access_inputs(ephem_hash: str, fac: Facility, sc: EngineScenario) -> dict:
+    """ข้อมูลตั้งต้นของ access (ใช้ทำ hash และเก็บใน manifest)"""
+    return {"ephem_hash": ephem_hash, "facility": asdict(fac), "shell_km": sc.shell_km}
+
+
+def plan_analyze(scenario_dir: Path, facility: str, data_dir: Path = DATA_DIR) -> str:
+    """hash ของ `<scenario_dir>/access/<facility>/<hash>/` ที่ run_analyze จะใช้ (ไม่รัน GMAT ไม่เขียนไฟล์)
+    Facility ไม่มีใน scenario: ScenarioError ไม่มีดาวให้ propagate: NoSatellitesError เหมือน run_analyze"""
+    scenario_dir = Path(scenario_dir)
+    sc = _load(scenario_dir)
+    fac = _find_facility(sc, facility)
+    return input_hash(_access_inputs(plan_propagate(scenario_dir, data_dir).hash, fac, sc))
+
+
 def run_analyze(scenario_dir: Path, facility: str, data_dir: Path = DATA_DIR, console: Path | None = None,
-                progress: Progress | None = None) -> tuple[Path, list[Message]]:
+                progress: Progress | None = None,
+                on_gmat_start: Callable[[int], None] | None = None) -> tuple[Path, list[Message]]:
     """AER, ช่วง access, DOP และ CZML ของ Facility จากผล propagate เขียน `<scenario_dir>/access/<facility>/<hash>/`
 
     เรียก run_propagate ก่อนเสมอ (D10: ถ้ามีผลเดิมจะใช้ทันที) ตำแหน่งดาวมาจาก predicted.sp3 และธงจาก manifest.json ของ ephem
@@ -406,9 +459,10 @@ def run_analyze(scenario_dir: Path, facility: str, data_dir: Path = DATA_DIR, co
     sc = _load(scenario_dir)
     fac = _find_facility(sc, facility)                 # ตรวจก่อนเสียเวลา propagate
     ephem_dir, messages = run_propagate(scenario_dir, data_dir, console,
-                                        progress=lambda stage, f: report(f"propagate.{stage}", 0.5 * f))
+                                        progress=lambda stage, f: report(f"propagate.{stage}", 0.5 * f),
+                                        on_gmat_start=on_gmat_start)
     ephem = _read_manifest(ephem_dir)
-    inputs = {"ephem_hash": ephem_dir.name, "facility": asdict(fac), "shell_km": sc.shell_km}
+    inputs = _access_inputs(ephem_dir.name, fac, sc)
     access_dir = scenario_dir / ACCESS_DIR / fac.name / input_hash(inputs)
     if access_dir.is_dir():
         messages = messages + _read_manifest(access_dir).messages
@@ -493,7 +547,8 @@ def _validate_truth(day: date, data_dir: Path, sp3: Path | None) -> Path:
 
 def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: Path | None = None,
                  facility: str | None = None, console: Path | None = None,
-                 progress: Progress | None = None) -> tuple[Path, list[Message]]:
+                 progress: Progress | None = None,
+                 on_gmat_start: Callable[[int], None] | None = None) -> tuple[Path, list[Message]]:
     """เทียบ predicted.sp3 ของวัน day กับ SP3 MGEX จริง (ดึงเองถ้าไม่ระบุ sp3) แล้วเขียน
     `validation_<day>.json` และ `.md` ลงโฟลเดอร์ ephem และต่อท้าย `<data_dir>/validation/history.jsonl` หนึ่งบรรทัด
 
@@ -519,7 +574,8 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
         _check_sp3_arg(sp3)
 
     ephem_dir, messages = run_propagate(scenario_dir, data_dir, console,
-                                        progress=lambda stage, f: report(f"propagate.{stage}", 0.6 * f))
+                                        progress=lambda stage, f: report(f"propagate.{stage}", 0.6 * f),
+                                        on_gmat_start=on_gmat_start)
     report("truth", 0.6)
     truth = _validate_truth(day, data_dir, sp3)
     report("brdc", 0.7)

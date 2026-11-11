@@ -3,7 +3,7 @@
 import os
 import signal
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from .config import REPO_ROOT
@@ -37,8 +37,21 @@ def _tail(log: Path, fallback: str) -> str:
     return "\n".join(text.splitlines()[-_TAIL_LINES:])
 
 
-def run_script(console: Path, script: Path, log: Path, timeout_s: float = 600) -> None:
-    """รัน GmatConsole --run script ถ้า exit code ไม่เป็น 0, หมดเวลา หรือ log มี error ให้ raise GmatRunError"""
+def _kill_group(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):      # จบไปแล้ว: macOS ตอบ EPERM เมื่อกลุ่มเหลือแต่ zombie
+        pass
+    proc.communicate()
+
+
+def run_script(console: Path, script: Path, log: Path, timeout_s: float = 600,
+               on_start: Callable[[int], None] | None = None) -> None:
+    """รัน GmatConsole --run script ถ้า exit code ไม่เป็น 0, หมดเวลา หรือ log มี error ให้ raise GmatRunError
+
+    on_start(pgid) ถูกเรียกทันทีหลังสร้าง process ด้วย process group id ของ GMAT (ตรงกับ pid เพราะรันใน session ใหม่)
+    ผู้เรียกใช้ os.killpg(pgid, ...) ยกเลิกงานได้จาก thread อื่น ถ้า on_start raise จะฆ่ากลุ่มนั้นก่อนแล้วโยน exception ต่อ
+    """
     cmd = [str(console), "--run", str(script), "--logfile", str(log)]
     try:
         # แยก process group เพื่อ kill ได้ทั้งกลุ่มตอนหมดเวลา ไม่ให้ process ลูกถือ pipe ค้างไว้
@@ -47,6 +60,12 @@ def run_script(console: Path, script: Path, log: Path, timeout_s: float = 600) -
                                 stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as exc:
         raise GmatRunError(f"เรียก GMAT ไม่ได้: {exc}") from exc
+    if on_start is not None:
+        try:
+            on_start(os.getpgid(proc.pid))
+        except BaseException:
+            _kill_group(proc)                       # ไม่ปล่อย GMAT ที่ไม่มีใครถือ pgid ทำงานค้าง
+            raise
     try:
         out, err = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:

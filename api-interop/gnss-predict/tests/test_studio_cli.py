@@ -22,7 +22,8 @@ from gnss_predict.errors import BrdcUnavailableError, Message, NoSatellitesError
 from gnss_predict.geometry import geodetic_to_ecef
 from gnss_predict.propagate import Ephemeris
 from gnss_predict.sp3 import read_sp3_all
-from gnss_predict.studio import fetch_snapshot, main, run_analyze, run_propagate
+from gnss_predict.studio import (PropagatePlan, fetch_snapshot, main, plan_analyze, plan_propagate,
+                                 run_analyze, run_propagate, run_validate)
 
 UTC = timezone.utc
 SNAP = Path(__file__).parent / "fixtures" / "studio" / "snapshot"
@@ -508,6 +509,103 @@ class TestDopWithEmptySky(FakeGmat):
         dop_gaps = [m for m in msgs if m.code == "DOP_GAPS"]
         self.assertEqual(len(dop_gaps), 1)
         self.assertIn(f"{gaps} จาก 73 จุดเวลา", dop_gaps[0].text)
+
+
+class TestServerHooks(FakeGmat):
+    """ส่วนเพิ่มสำหรับ server: plan hash โดยไม่รัน GMAT, ส่ง on_gmat_start ต่อถึง GMAT, ยกเลิกกลางทางไม่ทิ้งผล"""
+
+    def test_plan_propagate_matches_run_propagate(self):
+        plan = plan_propagate(self.sc, self.data)
+        self.assertIsInstance(plan, PropagatePlan)
+        self.assertRegex(plan.hash, HASH_RE)
+        ephem, msgs = run_propagate(self.sc, self.data)
+        self.assertEqual(plan.hash, ephem.name)
+        self.assertEqual(sorted(plan.satellites), sorted(read_sp3_all(ephem / "predicted.sp3")))
+        self.assertEqual(sorted(plan.satellites), ["C01", "E11", "G01", "G22", "R05"])
+        self.assertEqual(plan.messages, msgs)                       # GMAT ปลอมไม่มีข้อความ จึงเหลือข้อความของ catalog/selection
+        self.assertEqual([m.object for m in plan.messages if m.code == "SAT_NOT_IN_SNAPSHOT"], ["X99", "C06"])
+        self.assertEqual(plan_propagate(self.sc, self.data), plan)                      # ผลเดิมแล้ว hash ยังเท่าเดิม
+
+    def test_plan_propagate_never_runs_gmat_or_writes(self):
+        with mock.patch.object(studio, "find_gmat_console", side_effect=AssertionError("ไม่ควรหา GMAT")):
+            plan_propagate(self.sc, self.data)
+        self.propagate.assert_not_called()
+        self.assertFalse((self.sc / "ephem").exists())
+
+    def test_plan_propagate_hash_follows_filters(self):
+        base = plan_propagate(self.sc, self.data)
+        write_scenario(self.sc, scenario_data(show_too_old=True))
+        other = plan_propagate(self.sc, self.data)
+        self.assertNotEqual(other.hash, base.hash)
+        self.assertIn("R10", other.satellites)
+
+    def test_plan_propagate_without_satellites_raises(self):
+        sc = write_scenario(self.root / "hidden", scenario_data([("R10", 100744)], show_no_broadcast=False))
+        with self.assertRaises(NoSatellitesError):
+            plan_propagate(sc, self.data)
+
+    def test_plan_analyze_matches_run_analyze(self):
+        plan = plan_analyze(self.sc, "THBK", self.data)
+        self.assertRegex(plan, HASH_RE)
+        self.propagate.assert_not_called()
+        self.assertEqual(plan, run_analyze(self.sc, "THBK", self.data)[0].name)
+        self.assertEqual(plan_analyze(self.sc, "thbk", self.data), plan)                # ชื่อ Facility ไม่แยกตัวพิมพ์
+
+    def test_plan_analyze_changes_with_shell_km(self):
+        base = plan_analyze(self.sc, "THBK", self.data)
+        data = scenario_data()
+        data["ionosphere"]["shell_km"] = 350.0
+        write_scenario(self.sc, data)
+        self.assertNotEqual(plan_analyze(self.sc, "THBK", self.data), base)
+
+    def test_plan_analyze_unknown_facility(self):
+        with self.assertRaises(ScenarioError):
+            plan_analyze(self.sc, "NOPE", self.data)
+
+    def test_progress_exception_leaves_no_bundle(self):
+        def boom(stage, f):
+            if stage == "gmat":
+                raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            run_propagate(self.sc, self.data, progress=boom)
+        self.assertFalse((self.sc / "ephem").exists() and any((self.sc / "ephem").iterdir()))
+
+    def use_hooked_gmat(self) -> list[int]:
+        """propagate ปลอมที่รับ on_gmat_start และเรียกมันเหมือน run_script จริง; คืนรายการ pgid ที่ hook ได้รับ"""
+        def hooked(sats, start, stop, step_s, work_dir, console, timeout_s=900, on_gmat_start=None):
+            if on_gmat_start is not None:
+                on_gmat_start(4242)
+            return fake_propagate(sats, start, stop, step_s, work_dir, console)
+
+        self.propagate.side_effect = hooked
+        return []
+
+    def test_on_gmat_start_passed_through(self):
+        got = self.use_hooked_gmat()
+        run_propagate(self.sc, self.data, on_gmat_start=got.append)
+        self.assertEqual(got, [4242])
+
+    def test_on_gmat_start_not_called_for_existing_result(self):
+        got = self.use_hooked_gmat()
+        run_propagate(self.sc, self.data)
+        run_propagate(self.sc, self.data, on_gmat_start=got.append)
+        self.assertEqual(got, [])
+
+    def test_on_gmat_start_passed_through_analyze(self):
+        got = self.use_hooked_gmat()
+        run_analyze(self.sc, "THBK", self.data, on_gmat_start=got.append)
+        self.assertEqual(got, [4242])
+
+    def test_on_gmat_start_passed_through_validate(self):
+        class Stop(Exception):
+            pass
+
+        hook = lambda pgid: None
+        with mock.patch.object(studio, "run_propagate", side_effect=Stop) as rp:
+            with self.assertRaises(Stop):
+                run_validate(self.sc, date(2026, 11, 10), self.data, on_gmat_start=hook)
+        self.assertIs(rp.call_args.kwargs["on_gmat_start"], hook)
 
 
 if __name__ == "__main__":

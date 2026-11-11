@@ -263,6 +263,15 @@ class TestPropagate(TempDirCase):
             propagate([G01], START, START + timedelta(seconds=30), 30, self.dir, Path("/c"), timeout_s=12.5)
         self.assertEqual(self.calls[0][3], 12.5)
 
+    def test_on_gmat_start_is_passed_to_run_script(self):
+        text = report_text(HEADER_G01, [ROW0, ROW1])
+        hook = mock.Mock()
+        with mock.patch("gnss_predict.propagate.run_script") as run:
+            run.side_effect = lambda console, script, log, timeout_s, on_start: self.fake_run(lambda: text)(
+                console, script, log, timeout_s)
+            propagate([G01], START, START + timedelta(seconds=30), 30, self.dir, Path("/c"), on_gmat_start=hook)
+        self.assertIs(run.call_args.kwargs["on_start"], hook)
+
     def test_gmat_failure_propagates(self):
         with mock.patch("gnss_predict.propagate.run_script", side_effect=GmatRunError("boom")):
             with self.assertRaises(GmatRunError):
