@@ -15,13 +15,13 @@ import type { Dialog } from "./dialogs";
 import { shortcutAction } from "./menus";
 import type { BarAction } from "./menus";
 import type { ModuleAction } from "./moduleMenu";
-import { pruneDismissed, startupNotices, tickNotices, visibleNotices } from "./notices";
-import type { Notice } from "./notices";
+import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
+import type { Notice, SatNameMap } from "./notices";
 import { overlayFor } from "./overlay";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
 import { activeTab, windowTitle } from "./tabs";
-import type { ApiMessage } from "./types";
+import type { ApiMessage, Tick } from "./types";
 import { useModuleConfig } from "./useModuleConfig";
 import { useModuleSocket } from "./useModuleSocket";
 
@@ -42,6 +42,19 @@ function Stopped() {
       <div className="stopped-detail">ถ้าจะใช้งานอีก ให้เริ่ม server ใหม่ แล้วเปิดหน้านี้อีกครั้ง</div>
     </div>
   );
+}
+
+const NO_NAMES: SatNameMap = new Map();
+
+/**
+ * The names of the satellites a module's ticks have shown, so that a notice can name a satellite that has dropped out of the
+ * ticks (GMAT returned nothing for it, say). Forgotten when another module is shown.
+ */
+function useSeenNames(module: string | null, tick: Tick | null): SatNameMap {
+  const [seen, setSeen] = useState<{ module: string | null; names: SatNameMap }>({ module: null, names: NO_NAMES });
+  const names = rememberNames(seen.module === module ? seen.names : NO_NAMES, tick);
+  if (seen.module !== module || seen.names !== names) setSeen({ module, names }); // derived from the previous render, not an effect
+  return names;
 }
 
 function Main({ onStopped }: { onStopped: () => void }) {
@@ -99,6 +112,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
 
   // only the active tab's module holds a WebSocket (it is closed when the tab changes)
   const { tick, connected, closeCode } = useModuleSocket(current);
+  const satNames = useSeenNames(current, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current);
 
   // the selection and Autotrack of a module that is not open any more are forgotten
@@ -315,9 +329,9 @@ function Main({ onStopped }: { onStopped: () => void }) {
       ...local,
       ...startupNotices(startup),
       ...(configError === null ? [] : [{ id: `config:${current}`, level: "error" as const, text: configError }]),
-      ...(current === null ? [] : tickNotices(current, tick)),
+      ...(current === null ? [] : tickNotices(current, tick, satNames)),
     ],
-    [local, startup, configError, current, tick],
+    [local, startup, configError, current, tick, satNames],
   );
   useEffect(() => setDismissed((d) => pruneDismissed(d, notices)), [notices]);
   const dismiss = useCallback((id: string) => {

@@ -7,14 +7,16 @@ interface Props {
   onRetry: (module: string) => void;
 }
 
-/** Dismissible notices under the tabs (ของเรา): messages of GET /api/modules and GMAT_FAILED on an ok tick. */
+/** Dismissible notices under the tabs (ของเรา): messages of GET /api/modules, errors of the page's own requests and what the ticks warn about. */
 export function NoticeStrip({ notices, onDismiss, onRetry }: Props) {
   if (notices.length === 0) return null;
   return (
     <div className="notices">
       {notices.map((n) => (
         <div key={n.id} className={`notice notice-${n.level}`} role={n.level === "error" ? "alert" : "status"}>
-          <span className="notice-text">{n.text}</span>
+          <span className="notice-text" title={n.detail}>
+            {n.text}
+          </span>
           {n.retryModule !== undefined && (
             <button type="button" className="button" onClick={() => onRetry(n.retryModule!)}>
               Retry

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SatState } from "../types";
-import { nextSort, sortSats } from "./listSort";
+import { ApiError } from "../api";
+import { nextSort, sortSaveFailureText, sortSats } from "./listSort";
 
 function sat(norad: number, name: string, over: Partial<SatState> = {}): SatState {
   return {
@@ -118,5 +119,17 @@ describe("nextSort", () => {
 
   it("sorts another column ascending", () => {
     expect(nextSort({ column: "Satellite", ascending: false }, "El")).toEqual({ column: "El", ascending: true });
+  });
+});
+
+describe("sortSaveFailureText (a refused list_sort goes to the notice strip, not the console)", () => {
+  it("gives the Thai text of the server's error", () => {
+    const e = new ApiError("MODULE_INVALID", "ค่า list_sort ไม่ถูกต้อง", 422);
+    expect(sortSaveFailureText(e)).toBe("บันทึกการเรียงลำดับของ List ไม่สำเร็จ: ค่า list_sort ไม่ถูกต้อง");
+  });
+
+  it("gives the message of any other error", () => {
+    expect(sortSaveFailureText(new Error("boom"))).toContain("boom");
+    expect(sortSaveFailureText("plain")).toContain("plain");
   });
 });

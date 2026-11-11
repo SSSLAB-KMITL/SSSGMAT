@@ -1,12 +1,11 @@
 import { useMemo } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { errorText } from "../api";
 import type { ViewProps } from "../components/ModuleView";
 import { useMeta } from "../useMeta";
 import { clickSelection } from "./canvasCommon";
 import { useRefreshGate } from "./canvasHooks";
 import { inCanonicalOrder, isDecayed, LIST_ALIGN, listCell } from "./cells";
-import { nextSort, sortSats } from "./listSort";
+import { nextSort, sortSaveFailureText, sortSats } from "./listSort";
 
 /**
  * The List view (ref §4, spec §8.6): one row per satellite, one column per visible field of the module in the canonical order
@@ -17,9 +16,10 @@ import { nextSort, sortSats } from "./listSort";
  *   A click on a row selects its satellite or, on the selected one, unselects it; double click calls `onSatDoubleClick`;
  *   right click calls `onSatContextMenu` (and the browser's own menu is never shown).
  * - A click on a column header sorts by it, or reverses the order if it is the sorted column; the module remembers both
- *   (`list_sort`, saved with PUT /api/modules/{name}). Next AOS, Next LOS and Next Event sort by time, empty ones last.
+ *   (`list_sort`, saved with PUT /api/modules/{name}; if the server refuses, the Thai text goes to `onError`, the notice strip).
+ *   Next AOS, Next LOS and Next Event sort by time, empty ones last.
  */
-export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSatContextMenu, onSatDoubleClick }: ViewProps) {
+export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSatContextMenu, onSatDoubleClick, onError }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.list);
   const { column: sortColumn, ascending } = config.list_sort;
@@ -32,9 +32,7 @@ export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSat
   const time = useMemo(() => new Date(shown?.t ?? Number.NaN), [shown]);
 
   const sortBy = (column: string) => {
-    onSaveConfig((c) => ({ ...c, list_sort: nextSort(c.list_sort, column) })).catch((e: unknown) => {
-      console.error(`list_sort was not saved: ${errorText(e)}`);
-    });
+    onSaveConfig((c) => ({ ...c, list_sort: nextSort(c.list_sort, column) })).catch((e: unknown) => onError?.(sortSaveFailureText(e)));
   };
   const sortKey = (column: string) => (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key === "Enter" || e.key === " ") {

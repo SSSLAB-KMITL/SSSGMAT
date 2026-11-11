@@ -1,6 +1,7 @@
 // Sorting of the List view (ref §4): by the column the module remembers, the AOS / LOS / Next Event columns numerically by
 // time. Pure functions, no DOM and no React.
 
+import { errorText } from "../api";
 import type { SatState } from "../types";
 import { compareNames, nextEventOf } from "./cells";
 
@@ -112,4 +113,9 @@ export function sortSats(sats: readonly SatState[], column: string, ascending: b
 /** What a click on the header of `clicked` does to the sort: the sorted column changes direction, another column sorts ascending. */
 export function nextSort(current: ListSort, clicked: string): ListSort {
   return current.column === clicked ? { column: clicked, ascending: !current.ascending } : { column: clicked, ascending: true };
+}
+
+/** The Thai text for the notice strip when the module's new sort order could not be saved (the list is sorted again as before). */
+export function sortSaveFailureText(error: unknown): string {
+  return `บันทึกการเรียงลำดับของ List ไม่สำเร็จ: ${errorText(error)}`;
 }
