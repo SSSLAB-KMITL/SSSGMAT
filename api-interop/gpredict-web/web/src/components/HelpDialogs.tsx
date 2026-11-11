@@ -4,7 +4,6 @@ import { FloatingWindow } from "./FloatingWindow";
 
 /** (ของเรา) The user manual of Gpredict Web is the README of this program, not Gpredict's PDF manual (Task 19 writes it). */
 const README_PATH = "api-interop/gpredict-web/README.md";
-const README_URL = `https://github.com/SSSLAB-KMITL/SSSGMAT/blob/main/${README_PATH}`;
 
 function CloseButton({ onClose }: { onClose: () => void }) {
   return (
@@ -17,8 +16,8 @@ function CloseButton({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Help → Online help (ref §1; ของเรา for the text): Gpredict shows an info box with a link to its website; this one has a link
- * to the README of Gpredict Web, and the path of the file in the repository, which is also there without a network.
+ * Help → Online help (ref §1; ของเรา for the text): Gpredict shows an info box with a link to its website; this one names the
+ * README of Gpredict Web by its path in the repository, as plain text (no link: the program points nowhere outside itself).
  */
 export function OnlineHelpDialog({ onClose }: { onClose: () => void }) {
   return (
@@ -27,9 +26,7 @@ export function OnlineHelpDialog({ onClose }: { onClose: () => void }) {
         <p className="dialog-text">
           คู่มือการใช้งาน Gpredict Web อยู่ในไฟล์ README ของโปรแกรม:
           {"\n"}
-          <a href={README_URL} target="_blank" rel="noopener noreferrer">
-            {README_PATH}
-          </a>
+          <code className="dialog-path">{README_PATH}</code>
         </p>
         <CloseButton onClose={onClose} />
       </div>

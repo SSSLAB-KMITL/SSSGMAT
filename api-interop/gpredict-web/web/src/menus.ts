@@ -59,16 +59,21 @@ const CTRL_LETTER: Readonly<Record<string, { key: string; code: string; action: 
   q: { key: "q", code: "KeyQ", action: "quit" },
 };
 
+const LATIN_LETTER = /^[a-z]$/i;
+
 /**
- * The action a key press stands for, or null. Ctrl+N, Ctrl+O, Ctrl+Q and F1, with no other modifier. The letter is found by its
- * key or, when the keyboard layout gives another letter (Thai), by its place on the keyboard.
+ * The action a key press stands for, or null. Ctrl+N, Ctrl+O, Ctrl+Q and F1, with no other modifier. The letter is the key
+ * itself. Only when the layout gives something that is not a Latin letter (Thai, Cyrillic, a dead key) is the key found by its
+ * place on the keyboard: on AZERTY or Dvorak the place of N, O or Q holds another Latin letter, and Ctrl+that letter must not
+ * be taken for them (Ctrl+A on AZERTY sits where Ctrl+Q does on QWERTY).
  */
 export function shortcutAction(e: KeyInfo): BarAction | null {
   if (e.shiftKey || e.altKey || e.metaKey) return null;
   if (!e.ctrlKey) return e.key === "F1" ? "onlineHelp" : null;
+  const latin = LATIN_LETTER.test(e.key);
   const key = e.key.toLowerCase();
   for (const s of Object.values(CTRL_LETTER)) {
-    if (key === s.key || e.code === s.code) return s.action;
+    if (latin ? key === s.key : e.code === s.code) return s.action;
   }
   return null;
 }

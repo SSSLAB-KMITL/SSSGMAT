@@ -5,6 +5,7 @@ import { toEntries } from "../components/menuEntries";
 import { PopupMenu } from "../components/PopupMenu";
 import type { MenuEntry } from "../components/PopupMenu";
 import { satPopup } from "../satPopup";
+import { singleSatChange } from "../selection";
 import type { Tick } from "../types";
 import { useMeta } from "../useMeta";
 import { useRefreshGate } from "./canvasHooks";
@@ -47,9 +48,10 @@ function useSatNames(satellites: readonly number[], shown: Tick | null): Readonl
  * - It redraws from the tick only every `refresh.single` ticks (the first at once).
  * - The header button (tooltip "Satellite options / shortcuts") opens the popup: the satellite's name in bold (Satellite
  *   info, a later sub-project), the pass items (a later sub-project), and one radio item per satellite sorted by name.
- *   Choosing one shows that satellite and saves it as `single.selected` with PUT /api/modules/{name}.
+ *   Choosing one shows that satellite and saves it as `single.selected` with PUT /api/modules/{name}; if the server refuses,
+ *   the Thai text goes to `onError` (the notice strip).
  */
-export function SingleSatView({ config, tick, onSaveConfig }: ViewProps) {
+export function SingleSatView({ config, tick, onSaveConfig, onError }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.single);
   const names = useSatNames(config.satellites, shown);
@@ -68,9 +70,7 @@ export function SingleSatView({ config, tick, onSaveConfig }: ViewProps) {
   }, []);
 
   const choose = (selected: number) => {
-    onSaveConfig((c) => ({ ...c, single: { ...c.single, selected } })).catch((e: unknown) => {
-      console.error(`single.selected was not saved: ${errorText(e)}`);
-    });
+    onSaveConfig(singleSatChange(selected)).catch((e: unknown) => onError?.(errorText(e)));
   };
 
   // the satellite's name in bold (Satellite info) and the pass items, as in every satellite popup (satPopup.ts); then one radio item per satellite

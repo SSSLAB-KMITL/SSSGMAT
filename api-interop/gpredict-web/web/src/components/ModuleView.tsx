@@ -32,16 +32,15 @@ export interface ViewProps {
    * through this, never a PUT of a view's own copy of `config`: it would undo what another view saved (see configStore.ts).
    */
   onSaveConfig: (change: (config: ModuleConfig) => ModuleConfig) => Promise<void>;
+  /** a change of a view or of a satellite popup was refused by the server: the Thai text for the notice strip */
+  onError?: (text: string) => void;
 }
 
 /**
  * What the page gives ModuleView. The selected satellite is held by the page (App), not here: the Module menu's "Select
  * satellite" and Autotrack change it too.
  */
-export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu"> & {
-  /** a change from a satellite popup was refused: the Thai text for the notice strip */
-  onError?: (text: string) => void;
-};
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu">;
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -76,9 +75,10 @@ export function ModuleView(props: ModuleViewProps) {
   return <ModuleViews key={props.module} {...props} />;
 }
 
-function ModuleViews({ onError, ...props }: ModuleViewProps) {
+function ModuleViews(props: ModuleViewProps) {
   const [popup, setPopup] = useState<OpenPopup | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
+  const { onError } = props;
   const reportError = useCallback((text: string) => onError?.(text), [onError]);
 
   const openPopup = (view: PopupView, norad: number, x: number, y: number) => {

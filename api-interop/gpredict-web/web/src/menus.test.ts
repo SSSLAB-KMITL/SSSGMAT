@@ -69,6 +69,27 @@ describe("shortcutAction", () => {
     expect(shortcutAction(key("ๆ", { ctrlKey: true, code: "KeyQ" }))).toBe("quit");
   });
 
+  it("does not use the place of the key when the layout gives a Latin letter: on AZERTY, Ctrl+A (physical KeyQ) is not Quit", () => {
+    expect(shortcutAction(key("a", { ctrlKey: true, code: "KeyQ" }))).toBeNull();
+  });
+
+  it("does not use the place of the key on Dvorak either: Ctrl+R (physical KeyO) is not Open module, Ctrl+B (physical KeyN) is not New module", () => {
+    expect(shortcutAction(key("r", { ctrlKey: true, code: "KeyO" }))).toBeNull();
+    expect(shortcutAction(key("b", { ctrlKey: true, code: "KeyN" }))).toBeNull();
+    expect(shortcutAction(key("R", { ctrlKey: true, code: "KeyO" }))).toBeNull();
+  });
+
+  it("still finds the key by its letter on those layouts: AZERTY and Dvorak have N, O and Q elsewhere on the keyboard", () => {
+    expect(shortcutAction(key("q", { ctrlKey: true, code: "KeyA" }))).toBe("quit");
+    expect(shortcutAction(key("n", { ctrlKey: true, code: "KeyB" }))).toBe("newModule");
+    expect(shortcutAction(key("o", { ctrlKey: true, code: "KeyR" }))).toBe("openModule");
+  });
+
+  it("uses the place of the key when the layout gives something that is not a Latin letter (Thai, Cyrillic, a dead key)", () => {
+    expect(shortcutAction(key("щ", { ctrlKey: true, code: "KeyO" }))).toBe("openModule");
+    expect(shortcutAction(key("Dead", { ctrlKey: true, code: "KeyN" }))).toBe("newModule");
+  });
+
   it("is not triggered without Ctrl, or with Shift, Alt or Meta as well", () => {
     expect(shortcutAction(key("n"))).toBeNull();
     expect(shortcutAction(key("n", { ctrlKey: true, shiftKey: true }))).toBeNull();
