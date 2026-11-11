@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 
 from gnss_predict.config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S
 from gnss_predict.errors import OrbitUnavailableError
-from gnss_predict.omm import catalog_field, fetch_group, read_omm, to_tle_lines
+from gnss_predict.omm import catalog_field, fetch_group, parse_state_time, read_omm, read_state, to_tle_lines
 from gnss_predict.tle_fetch import tle_checksum
 
 FX = Path(__file__).parent / "fixtures"
@@ -146,6 +146,30 @@ class TestRead(unittest.TestCase):
                 p.write_text(text, encoding="utf-8")
                 with self.subTest(label), self.assertRaises(ValueError):
                     read_omm(p)
+
+
+class TestStateHelpers(unittest.TestCase):
+    """read_state / parse_state_time: ตัวอ่าน celestrak_state.json แบบสาธารณะ (Gpredict Web แสดงเวลาดึงล่าสุดของแต่ละกลุ่ม)"""
+
+    def test_parse_state_time(self):
+        self.assertEqual(parse_state_time("2026-11-11T06:00:00Z"), datetime(2026, 11, 11, 6, 0, tzinfo=UTC))
+        for bad in (None, 12, "", "2026-11-11T06:00:00", "2026-11-11T06:00:00.000Z", "yesterday"):
+            with self.subTest(bad=bad):
+                self.assertIsNone(parse_state_time(bad))
+
+    def test_read_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "celestrak_state.json"
+            self.assertEqual(read_state(path), {})                                  # ไม่มีไฟล์
+            for text in ("{", "[1, 2]", "\"x\""):
+                path.write_text(text, encoding="utf-8")
+                with self.subTest(text=text):
+                    self.assertEqual(read_state(path), {})                          # เสียหรือไม่ใช่ object
+            path.write_bytes(b"\xff\xfe")
+            self.assertEqual(read_state(path), {})                                  # ไม่ใช่ UTF-8
+            state = {"amateur": {"last_request": "2026-11-11T06:00:00Z"}}
+            path.write_text(json.dumps(state), encoding="utf-8")
+            self.assertEqual(read_state(str(path)), state)                          # รับ str ได้
 
 
 class TestFetch(unittest.TestCase):
