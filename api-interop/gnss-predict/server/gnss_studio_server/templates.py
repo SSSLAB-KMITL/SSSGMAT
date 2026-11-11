@@ -18,7 +18,7 @@ from .errors import ApiError
 from .schema import FORMAT, NAME_RE
 
 ORBITS_DIR = "orbits"
-SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z")
+SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z", re.ASCII)
 
 FACILITY_COLOR = "#ff79e6"
 THBK = {"name": "THBK", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4, "elevation_angle_min_deg": 10.0}
@@ -59,17 +59,35 @@ def parse_utc(value: str | datetime, field: str) -> datetime:
     return parsed
 
 
-def _iso(t: datetime) -> str:
+def iso_utc(t: datetime) -> str:
+    """เวลา UTC ISO 8601 เป็นวินาทีเต็ม ลงท้าย Z"""
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def snapshot_time(name: str) -> datetime | None:
+    """เวลา UTC ที่อยู่ในชื่อ snapshot `YYYYMMDDTHHMMZ` หรือ None ถ้าชื่อไม่ตรงรูปแบบหรือเป็นวันเวลาที่ไม่มีจริง"""
+    if not SNAPSHOT_RE.fullmatch(name):
+        return None
+    try:
+        return datetime(int(name[0:4]), int(name[4:6]), int(name[6:8]), int(name[9:11]), int(name[11:13]), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def snapshot_names(data_dir: Path) -> list[str]:
+    """ชื่อ snapshot ใต้ `<data>/orbits/` เรียงใหม่สุดก่อน นับเฉพาะโฟลเดอร์ที่ชื่อเป็น `YYYYMMDDTHHMMZ` ของวันเวลาที่มีจริง
+    (`_cache` และชื่ออื่นไม่นับ) ไม่มีโฟลเดอร์ orbits หรืออ่านไม่ได้ = รายการว่าง"""
+    try:
+        names = [p.name for p in (Path(data_dir) / ORBITS_DIR).iterdir() if snapshot_time(p.name) is not None and p.is_dir()]
+    except OSError:
+        return []
+    return sorted(names, reverse=True)
 
 
 def latest_snapshot(data_dir: Path) -> str | None:
     """ชื่อ snapshot ที่ใหม่ที่สุดใต้ `<data>/orbits/` หรือ None ถ้ายังไม่มี"""
-    try:
-        names = [p.name for p in (Path(data_dir) / ORBITS_DIR).iterdir() if p.is_dir() and SNAPSHOT_RE.fullmatch(p.name)]
-    except OSError:
-        return None
-    return max(names) if names else None
+    names = snapshot_names(data_dir)
+    return names[0] if names else None
 
 
 def resolve_snapshot(data_dir: Path, snapshot: str | None) -> str:
@@ -161,12 +179,12 @@ def new_scenario(name: str, start: str | datetime, stop: str | datetime, templat
         "format": FORMAT,
         "name": name,
         "description": "",
-        "analysis_period": {"start": _iso(start_t), "stop": _iso(stop_t)},
+        "analysis_period": {"start": iso_utc(start_t), "stop": iso_utc(stop_t)},
         "step_s": STEP_S,
         "orbit_snapshot": snapshot,
         "ionosphere": {"shell_km": SHELL_KM},
         "satellite_filter": {"show_too_old": False, "show_no_broadcast": False},
-        "animation": {"start": _iso(start_t), "time_step_s": ANIMATION_TIME_STEP_S, "update_mode": "time_step",
+        "animation": {"start": iso_utc(start_t), "time_step_s": ANIMATION_TIME_STEP_S, "update_mode": "time_step",
                       "x_real_time_multiplier": ANIMATION_X_REAL_TIME, "cycle": "loop"},
         "units": {"date_format": "UTCG", "ltz_offset": "+07:00", "distance": "km", "angle": "deg"},
         "graphics2d_global": {"show_labels": True},

@@ -1,0 +1,98 @@
+"""ข้อมูลวงโคจรและรายชื่อดาว (หัวข้อ 6.2 ของ spec server)
+
+- `GET /orbits`: snapshot ใต้ `data/orbits/` ใหม่สุดก่อน นับจำนวนดาวต่อกลุ่มจากไฟล์ JSON ตรง ๆ (ไม่สร้าง catalog) ไฟล์กลุ่มที่ไม่มีหรืออ่านไม่ได้
+  ไม่อยู่ใน `groups` และ snapshot เสียอันเดียวไม่ทำให้รายการทั้งหมดล้ม
+- `POST /orbits/fetch`: ส่ง job `fetch` เข้าคิว ตอบ 202 `{"job": id}` (job เดิมที่ยังรอ/รันอยู่ได้ id เดิม)
+- `GET /catalog`: ดาวใน snapshot เรียงตาม PRN ณ ช่วงเวลาที่ส่งมา
+"""
+
+import json
+from datetime import timedelta
+from pathlib import Path
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from gnss_predict.catalog import broadcast_file
+from gnss_predict.config import GNSS_GROUPS
+
+from ..config import Config
+from ..errors import ApiError
+from ..jobs import JobManager, iso_ms
+from ..templates import ORBITS_DIR, iso_utc, load_catalog, parse_utc, resolve_snapshot, snapshot_names, snapshot_time
+from . import get_config, get_jobs
+
+router = APIRouter()
+
+DEFAULT_PERIOD = timedelta(days=1)
+DEFAULT_FETCH_SYSTEMS = "".join(GNSS_GROUPS)
+
+
+class FetchRequest(BaseModel):
+    systems: str = DEFAULT_FETCH_SYSTEMS
+
+
+def _group_count(path: Path) -> int | None:
+    """จำนวนดาว (จำนวน object ใน array) ของไฟล์ OMM ของกลุ่ม ไม่มีไฟล์ อ่านไม่ได้ ไม่ใช่ JSON หรือไม่ใช่ array ของ object = None"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):            # ValueError รวม JSONDecodeError และ UnicodeDecodeError
+        return None
+    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+        return None
+    return len(data)
+
+
+def _snapshot_entry(folder: Path) -> dict:
+    groups = {}
+    for system, group in GNSS_GROUPS.items():
+        count = _group_count(folder / f"{group}.json")
+        if count is not None:
+            groups[system] = count
+    return {"name": folder.name, "time_utc": iso_utc(snapshot_time(folder.name)), "groups": groups,
+            "has_brdc": broadcast_file(folder) is not None}
+
+
+@router.get("/orbits")
+def list_orbits(config: Config = Depends(get_config)) -> list[dict]:
+    return [_snapshot_entry(config.data_dir / ORBITS_DIR / name) for name in snapshot_names(config.data_dir)]
+
+
+@router.post("/orbits/fetch", status_code=202)
+def fetch_orbits(body: FetchRequest | None = None, jobs: JobManager = Depends(get_jobs)) -> dict:
+    """ตัวอักษรระบบผิด -> 422 ที่ field systems (ตรวจโดยคิว job)"""
+    systems = body.systems if body is not None else DEFAULT_FETCH_SYSTEMS
+    return {"job": jobs.submit("fetch", None, {"systems": systems}).id}
+
+
+@router.get("/catalog")
+def get_catalog(snapshot: str | None = None, start: str | None = None, stop: str | None = None, system: str | None = None,
+                q: str | None = None, config: Config = Depends(get_config)) -> list[dict]:
+    """snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)
+    system ต้องเป็น G R E C (ไม่ระบุ = ทั้งสี่) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD และชื่อ CelesTrak"""
+    if system is not None and system not in GNSS_GROUPS:
+        raise ApiError(422, "SCENARIO_INVALID", f"ระบบดาวเทียมต้องเป็นหนึ่งใน {', '.join(GNSS_GROUPS)} ไม่ใช่ '{system}'", "system")
+    name = resolve_snapshot(config.data_dir, snapshot)
+    if start is not None:
+        start_t = parse_utc(start, "start")
+    else:
+        start_t = snapshot_time(name)
+        if start_t is None:
+            raise ApiError(422, "SCENARIO_INVALID", f"ชื่อ snapshot {name} ไม่บอกเวลา ต้องระบุ start", "start")
+    if stop is not None:
+        stop_t = parse_utc(stop, "stop")
+    else:
+        try:
+            stop_t = start_t + DEFAULT_PERIOD
+        except OverflowError:
+            raise ApiError(422, "SCENARIO_INVALID", "start อยู่ใกล้ปลายช่วงเวลาที่รองรับจนบวก 1 วันไม่ได้ ต้องระบุ stop", "stop") from None
+    if stop_t <= start_t:
+        raise ApiError(422, "SCENARIO_INVALID", "stop ต้องหลัง start", "stop")
+
+    needle = q.casefold() if q else None
+    return [{"prn": sat.prn, "system": sat.system, "svn": sat.svn, "norad": sat.norad, "block": sat.block,
+             "celestrak_name": sat.celestrak_name, "omm_epoch": iso_ms(sat.omm_epoch), "age_days": round(sat.age_days, 3),
+             "flags": sorted(sat.flags)}
+            for sat in load_catalog(config.data_dir, name, start_t, stop_t).satellites
+            if (system is None or sat.system == system)
+            and (needle is None or needle in sat.prn.casefold() or needle in str(sat.norad) or needle in sat.celestrak_name.casefold())]

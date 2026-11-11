@@ -10,7 +10,7 @@ from .errors import install_error_handlers
 from .events import EventBus
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
-from .routes import events, health, jobs, objects, scenarios
+from .routes import events, health, jobs, objects, orbits, scenarios
 from .store import ScenarioStore
 
 
@@ -49,5 +49,6 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(events.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(objects.router, prefix="/api")
+    app.include_router(orbits.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     return app
