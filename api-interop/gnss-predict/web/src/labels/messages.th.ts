@@ -35,6 +35,14 @@ const MESSAGES = {
   "disk.low": "พื้นที่ดิสก์ของ server เหลือน้อย (ประมาณ {free_mb} MB) การบันทึกหรือการดึงข้อมูลอาจล้มเหลว",
   "disk.notWritable": "server เขียนไฟล์ลงดิสก์ไม่ได้ การบันทึกทั้งหมดจะล้มเหลวจนกว่าจะแก้สิทธิ์การเขียนหรือพื้นที่ว่างของดิสก์",
 
+  // การเปิดและโหลดข้อมูล scenario จาก server ({message} คือข้อความของ server ตามที่ส่งมา)
+  "scenario.openFailed": "เปิด scenario \"{name}\" ไม่ได้: {message}",
+  "scenario.reloadFailed": "โหลด scenario \"{name}\" จาก server ใหม่ไม่สำเร็จ ข้อมูลบนหน้านี้อาจไม่เป็นปัจจุบัน: {message}",
+  "scenario.deleted": "scenario \"{name}\" ถูกลบจากที่อื่น จึงปิดให้แล้ว",
+  "catalog.failed": "โหลดรายชื่อดาวของ snapshot ไม่สำเร็จ ({message}) จึงไม่มีป้ายธงและการซ่อนดาวตามตัวกรอง แต่ scenario ยังเปิดใช้ได้",
+  "results.failed": "โหลดสถานะผลลัพธ์ไม่สำเร็จ: {message}",
+  "results.fileFailed": "อ่านไฟล์ผลลัพธ์ {file} ไม่สำเร็จ: {message}",
+
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
   "fetch.confirm": "ดึงข้อมูลวงโคจรจาก CelesTrak ตอนนี้หรือไม่? โปรแกรมจะเชื่อมต่ออินเทอร์เน็ตไปที่ celestrak.org และ CelesTrak จำกัดความถี่ในการดึง จึงดึงซ้ำก่อนถึงเวลาถัดไปไม่ได้",
   "fetch.nextAvailable": "ดึงจาก CelesTrak ได้อีกครั้งเวลา {time}",

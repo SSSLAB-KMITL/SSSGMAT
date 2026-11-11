@@ -2,3 +2,5 @@ node_modules/
 dist/
 test-results/
 playwright-report/
+# ../.gitignore ignores every data/ folder (the server data dir); src/data/ here is source code
+!/src/data/
