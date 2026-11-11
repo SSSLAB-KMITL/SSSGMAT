@@ -14,11 +14,12 @@ import { startClock } from "./time/clock";
 import { registerFilePanels } from "./windows/filePanels";
 import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
+import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
 import { Workspace } from "./Workspace";
 
 export function App() {
   // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference), Object Browser
-  // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
+  // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), Properties Browser (object.properties เปิดมัน), คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   useEffect(() => {
     const stopClock = startClock();
     const stopEvents = startEventWiring();
@@ -27,6 +28,7 @@ export function App() {
     const unregisterObjectCommands = registerObjectBrowserCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
+    registerPropertiesBrowserPanel();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
     return () => {

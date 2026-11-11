@@ -1,9 +1,10 @@
-// การเขียนจาก Object Browser: ข้อผิดพลาดของ store (PATCH, insert, rename, DELETE, groups) โยนต่อมาที่ผู้เรียก ที่นี่แปลงเป็นข้อความใน Message Viewer
-// - 412 ไม่แจ้งซ้ำ: store ตั้ง conflict แล้วกล่อง Reload / Cancel ขึ้นเอง
+// การเขียนจากหน้าต่างที่แก้ scenario (Object Browser, Properties Browser): ข้อผิดพลาดของ store (PATCH, PUT, insert, rename, DELETE, groups)
+// โยนต่อมาที่ผู้เรียก ที่นี่แปลงเป็นข้อความใน Message Viewer
+// - 412 ไม่แจ้งซ้ำ: มีกล่อง Reload / Cancel ขึ้นเอง (store ตั้ง conflict หรือหน้าต่างที่เขียนเป็นเจ้าของกล่อง)
 // - 409 (ชื่อซ้ำ) และ 422 (ค่าไม่ผ่าน) ของกล่องที่มีช่องกรอก แสดงที่ช่องนั้น (isFieldError) ไม่ลง Message Viewer
 
-import { ApiError, errorText } from "../../api/client";
-import { report } from "../../stores/messages";
+import { ApiError, errorText } from "./client";
+import { report } from "../stores/messages";
 
 export const isConflict = (e: unknown): boolean => e instanceof ApiError && e.status === 412;
 

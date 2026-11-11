@@ -11,19 +11,27 @@ import { useScenario } from "../stores/scenario";
 
 // ---------- 412: scenario ถูกแก้จากที่อื่น ----------
 
-function ConflictDialog() {
-  const open = useScenario((s) => s.conflict);
+export interface ConflictBoxProps {
+  open: boolean;
+  /** Reload: คืนเมื่อโหลดเสร็จ; กล่องปิดเมื่อ ผู้เรียกเปลี่ยน open เป็น false (โหลดไม่สำเร็จ = กล่องคงอยู่ให้ลองใหม่) */
+  onReload(): Promise<void>;
+  /** Cancel / Esc */
+  onCancel(): void;
+}
+
+/** กล่องข้อความเดียวกันสำหรับ 412 ของ store และหน้าต่างที่ถือค่าแก้ค้างอยู่ (Properties Browser): ข้อความไทยและปุ่ม Reload / Cancel ชุดเดียว */
+export function ConflictBox({ open, onReload, onCancel }: ConflictBoxProps) {
   const [busy, setBusy] = useState(false);
   const reload = async (): Promise<void> => {
     setBusy(true);
     try {
-      await useScenario.getState().reload(); // สำเร็จ = reload() ล้างธง conflict แล้วกล่องปิดเอง; ล้มเหลว = กล่องคงอยู่ให้ลองใหม่
+      await onReload();
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => !next && useScenario.getState().clearConflict()}>
+    <Dialog.Root open={open} onOpenChange={(next) => !next && onCancel()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
         {/* คลิกนอกกล่องไม่ปิด: ต้องเลือก Reload หรือ Cancel (Esc = Cancel) */}
@@ -34,7 +42,7 @@ function ConflictDialog() {
             <button type="button" className="btn" disabled={busy} onClick={() => void reload()}>
               {t("dialog.reload")}
             </button>
-            <button type="button" className="btn" onClick={() => useScenario.getState().clearConflict()}>
+            <button type="button" className="btn" onClick={onCancel}>
               {t("dialog.cancel")}
             </button>
           </div>
@@ -42,6 +50,12 @@ function ConflictDialog() {
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+function ConflictDialog() {
+  const open = useScenario((s) => s.conflict);
+  // Reload สำเร็จ = reload() ล้างธง conflict แล้วกล่องปิดเอง; ล้มเหลว = กล่องคงอยู่ให้ลองใหม่
+  return <ConflictBox open={open} onReload={() => useScenario.getState().reload()} onCancel={() => useScenario.getState().clearConflict()} />;
 }
 
 // ---------- job ที่ผู้ใช้สั่งล้มเหลว ----------

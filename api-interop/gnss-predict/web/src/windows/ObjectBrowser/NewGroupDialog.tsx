@@ -6,7 +6,7 @@ import { NamePromptDialog } from "../../chrome/NamePromptDialog";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { useScenario } from "../../stores/scenario";
-import { isConflict, isFieldError, reportWriteError } from "./writes";
+import { isConflict, isFieldError, reportWriteError } from "../../api/writes";
 
 export interface NewGroupDialogProps {
   open: boolean;

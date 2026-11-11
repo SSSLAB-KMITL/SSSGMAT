@@ -10,7 +10,7 @@ import { useSelection } from "../../stores/selection";
 import { copyName, useClipboard } from "./clipboard";
 import { useObjectBrowser } from "./state";
 import { expandableKeys, findMatches, flattenTree, isEditable, isSatellite, ROOT_KEY, type Row } from "./tree";
-import { attempt } from "./writes";
+import { attempt } from "../../api/writes";
 
 // ---------- แถวทั้งต้นไม้ ----------
 

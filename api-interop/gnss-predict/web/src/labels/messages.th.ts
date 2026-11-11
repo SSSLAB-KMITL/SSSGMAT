@@ -112,6 +112,24 @@ const MESSAGES = {
   // หน้าต่างที่ยังไม่ได้ทำ (ตัวแทนชั่วคราวใน src/layout/panels.ts จนกว่างานของหน้าต่างนั้นจะลงทะเบียนของจริง)
   "panel.placeholder": "ยังไม่ทำ (งานถัดไป)",
 
+  // Properties Browser (spec §8): โหลด/อ่านค่า ตรวจก่อน Apply และสถานะขัดแย้ง
+  "props.loading": "กำลังอ่านค่าตั้งจาก server...",
+  "props.loadFailed": "อ่านค่าตั้งของ \"{name}\" จาก server ไม่สำเร็จ: {message}",
+  "props.unknownObject": "ไม่รู้จัก object \"{path}\" จึงเปิดหน้า Properties ไม่ได้",
+  "props.conflicted": "ค่าของ object นี้ถูกแก้จากที่อื่นระหว่างที่คุณแก้ไขอยู่ กด Apply เพื่อเลือก Reload (ทิ้งค่าที่แก้ แล้วใช้ค่าของ server) หรือ Cancel (เก็บค่าที่แก้ไว้) จะไม่ส่งค่าไปทับของอีกที่",
+  "props.notNumber": "ต้องเป็นตัวเลข",
+  "props.notFinite": "ตัวเลขนี้ใหญ่เกินไป",
+  "props.rangeBetween": "ต้องอยู่ระหว่าง {min} ถึง {max}",
+  "props.rangeGreater": "ต้องมากกว่า {min}",
+  "props.rangeAtLeast": "ต้องไม่น้อยกว่า {min}",
+  "props.notOption": "ค่านี้ไม่อยู่ในตัวเลือกที่กำหนด",
+  "props.offsetInvalid": "offset ต้องอยู่ในรูป ±hh:mm เช่น +07:00 (ชั่วโมง 00 ถึง 23 นาที 00 ถึง 59)",
+  "props.noConstraints": "ยังไม่มี constraint ที่ใช้งานอยู่ กด Add... เพื่อเพิ่ม",
+  "props.noAvailable": "ไม่มีดาวที่ยังไม่ได้อยู่ใน Constellation นี้",
+  "props.noFlags": "ไม่มีธงเตือน",
+  "props.noCatalog": "ไม่พบดาวดวงนี้ใน catalog ของ snapshot ที่ scenario ใช้ จึงไม่มีข้อมูล PRN, SVN และธง",
+  "props.generalError": "Apply ไม่สำเร็จ: {message}",
+
   // หมายเหตุในหน้า (spec §8, §11, W20)
   "note.readOnly": "หน้านี้อ่านอย่างเดียวใน v1",
   "note.visibleSidesBoth": "v1 วาดเส้นทางแบบ Both เสมอ ค่า Visible Sides ที่ตั้งจะถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",

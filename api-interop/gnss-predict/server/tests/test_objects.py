@@ -207,20 +207,20 @@ def test_get_pages(client, s1):
     p = client.get("/api/scenarios/S1/objects/Satellite/G01").json()
     assert p["graphics2d"]["pass"]["lead_type"] == "Time" and p["basic"]["norad"] == 62339
     assert set(p) == {"basic", "graphics2d", "graphics3d", "constraints"}
-    assert p["basic"] == {"description": "", "norad": 62339}
+    assert p["basic"] == {"description": "", "long_description": "", "norad": 62339}
     assert p["graphics3d"] == {"show": True, "orbit_system": "Fixed by Window"} and p["constraints"] == {}
     assert p["graphics2d"]["color"] == "#ffd23f" and p["graphics2d"]["swath"]["elevation_deg"] == 10.0
 
 
 def test_get_pages_facility_and_constellation(client, s1):
     fac = pages(client, "Facility/THBK")
-    assert fac["basic"] == {"description": "", "position": {"type": "Geodetic", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4}}
+    assert fac["basic"] == {"description": "", "long_description": "", "position": {"type": "Geodetic", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4}}
     assert fac["constraints"] == {"elevation_angle_min_deg": 10.0}
     assert fac["graphics2d"] == {"show": True, "color": "#ff79e6", "marker_style": "Triangle", "inherit": True}
     assert fac["graphics3d"] == {"show": True}
     con = pages(client, "Constellation/GPS")
     members = obj_in(doc_of(client), "Constellation", "GPS")["assigned_objects"]
-    assert con["basic"] == {"description": "", "system": "G", "color": "#ffd23f", "assigned_objects": members} and members
+    assert con["basic"] == {"description": "", "long_description": "", "system": "G", "color": "#ffd23f", "assigned_objects": members} and members
     assert con["graphics2d"] == {} and con["graphics3d"] == {} and con["constraints"] == {}
 
 
@@ -362,7 +362,24 @@ def test_patch_satellite_norad_is_read_only(client, s1, data_dir):
     assert file_bytes(data_dir) == before
     r = patch(client, "Satellite/G01", {"basic": {"norad": 62339, "description": "same norad"}})         # ส่งค่าเดิมกลับมาได้
     assert_saved(r, client); assert r.json()["results_stale"] is False
-    assert pages(client, "Satellite/G01")["basic"] == {"description": "same norad", "norad": 62339}
+    assert pages(client, "Satellite/G01")["basic"] == {"description": "same norad", "long_description": "", "norad": 62339}
+
+
+@pytest.mark.parametrize("obj", ["Satellite/G01", "Facility/THBK", "Constellation/GPS"])
+def test_patch_long_description_is_a_basic_page_field(client, s1, obj):
+    assert pages(client, obj)["basic"]["long_description"] == ""                    # ค่าตั้งต้นของทุก class
+    r = patch(client, obj, {"basic": {"long_description": "คำอธิบายยาว\nบรรทัดสอง"}})
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+    assert pages(client, obj)["basic"]["long_description"] == "คำอธิบายยาว\nบรรทัดสอง"
+    cls, name = obj.split("/")
+    assert obj_in(doc_of(client), cls, name)["long_description"] == "คำอธิบายยาว\nบรรทัดสอง"
+
+
+def test_insert_define_properties_accepts_long_description(client, s1):
+    r = insert(client, {"class": "Facility", "method": "Define Properties", "name": "LONGD", "long_description": "ยาว",
+                        "position": {"lat_deg": 1.0, "lon_deg": 2.0, "alt_m": 3.0}})
+    assert_saved(r, client, 201)
+    assert pages(client, "Facility/LONGD")["basic"]["long_description"] == "ยาว"
 
 
 def test_patch_basic_rejects_keys_outside_the_page(client, s1, data_dir):

@@ -10,6 +10,7 @@ import { useLayout } from "../../src/stores/layout";
 import { App } from "../../src/App";
 import { useSaveAs } from "../../src/chrome/SaveAsDialog";
 import { useScenario } from "../../src/stores/scenario";
+import { useSelection } from "../../src/stores/selection";
 import { useSettings } from "../../src/stores/settings";
 import { openScenario } from "./helpers/chrome";
 import { loadObjects } from "./helpers/objects";
@@ -114,6 +115,31 @@ test("App fills the Object Browser window with the scenario tree, and the status
   expect(flagged.getAttribute("aria-disabled")).toBeNull();
   act(() => flagged.click());
   await waitFor(() => expect(screen.getAllByRole("treeitem").map((r) => r.textContent)).toEqual(["S1", "G03", "G04"]));
+});
+
+test("Object → Properties opens the real Properties Browser as a floating window for the selected object, and Cancel closes it", async () => {
+  const pages = {
+    basic: { description: "", long_description: "", norad: 40101 },
+    graphics2d: { show: true, color: "#ffd23f", inherit: true },
+    graphics3d: { show: true, orbit_system: "Fixed by Window" },
+    constraints: {},
+  };
+  stubFetch({
+    "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
+    "GET /api/scenarios": { json: SCENARIOS },
+    "GET /api/scenarios/S1/objects/Satellite/G01": { json: pages, headers: { ETag: '"e1"' } },
+  });
+  render(<App />);
+  await waitFor(() => expect(panelIds()).toContain("objectBrowser"));
+  act(() => void loadObjects());
+  act(() => useSelection.getState().select("*/Satellite/G01"));
+  expect(isEnabled("object.properties")).toBe(true);
+  act(() => runCommand("object.properties"));
+  expect(await screen.findByRole("tab", { name: t("page.satellite.basicOrbit") })).toBeDefined();
+  expect(useLayout.getState().listWindows().find((w) => w.title === "G01 Properties")?.type).toBe("floating");
+  expect((await screen.findByLabelText(t("field.sscNumber")) as HTMLInputElement).value).toBe("40101");
+  act(() => screen.getByRole("button", { name: t("dialog.cancel") }).click());
+  await waitFor(() => expect(useLayout.getState().listWindows().some((w) => w.title === "G01 Properties")).toBe(false));
 });
 
 test("App installs the shortcuts once: Ctrl+S is kept from the browser while mounted, and not after unmount", async () => {

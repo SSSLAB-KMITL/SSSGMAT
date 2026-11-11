@@ -172,6 +172,9 @@ const LABELS = {
   "dialog.remove": ours("Remove"),
   "dialog.assign": ours("Assign"),
   "dialog.unassign": ours("Unassign"),
+  "dialog.assignAll": ours("Assign All"),
+  "dialog.unassignAll": ours("Unassign All"),
+  "dialog.clear": ours("Clear"),
   "dialog.selectColor": stk("Select color", "B"),
   "dialog.fetchNow": ours("Fetch Now"),
   "dialog.runNow": ours("Run Now"),
@@ -261,6 +264,7 @@ const LABELS = {
   // Facility: Constraints - Active
   "field.selectConstraintsToAdd": stk("Select Constraints to Add", "C"),
   "field.elevationAngle": stk("Elevation Angle", "C"),
+  "field.active": ours("Active"),
   "field.min": ours("Min"),
   "field.max": ours("Max"),
   // 2D Graphics - Attributes
@@ -288,6 +292,10 @@ const LABELS = {
   // Satellite: 2D Graphics - Pass
   "field.leadType": stk("Lead Type", "C"),
   "field.trailType": stk("Trail Type", "C"),
+  "field.leadTime": ours("Lead Time"),
+  "field.leadPercent": ours("Lead Percent"),
+  "field.trailTime": ours("Trail Time"),
+  "field.trailPercent": ours("Trail Percent"),
   "field.visibleSides": stk("Visible Sides", "C"),
   "field.showPassLabels": stk("Show Pass Labels", "C"),
   "field.showPathLabels": stk("Show Path Labels", "C"),
@@ -295,6 +303,7 @@ const LABELS = {
   "field.swathType": ours("Swath Type"),
   "field.groundElevation": stk("Ground Elevation", "C"),
   "field.swathOptions": ours("Options"),
+  "field.orbitSystem": ours("Orbit System"),
   // Constellation: Basic - Definition
   "field.availableObjects": stk("Available Objects", "B"),
   "field.assignedObjects": stk("Assigned Objects", "B"),
@@ -331,6 +340,8 @@ const LABELS = {
   "field.unit.m": ours("m"),
   "field.unit.km": ours("km"),
   "field.unit.sec": ours("sec"),
+  "field.unit.days": ours("days"),
+  "field.unit.offset": ours("±hh:mm"),
   "field.unit.percent": ours("%"),
 
   // ---------- คำที่แสดงของตัวเลือก (ค่าที่เก็บกับคำที่แสดงต่างกันได้ ดู optionLabel) ----------

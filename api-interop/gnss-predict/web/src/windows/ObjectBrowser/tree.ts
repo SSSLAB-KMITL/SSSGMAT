@@ -88,7 +88,8 @@ const FLAG_LABELS: Record<string, LabelKey> = {
   name_mismatch: "option.flag.nameMismatch",
 };
 
-function flagLine(flag: string): string {
+/** ชื่อธงตามด้วยคำอธิบายไทย ("Too Old: ข้อมูลวงโคจรเก่ากว่า 7 วัน ...") ธงที่ไม่รู้จักแสดงรหัสตามที่ได้ */
+export function flagLine(flag: string): string {
   const text = `flag.${flag}`;
   const explanation = (MSG_KEYS as string[]).includes(text) ? msg(text as MsgKey) : "";
   const name = Object.hasOwn(FLAG_LABELS, flag) ? t(FLAG_LABELS[flag]) : flag;

@@ -25,11 +25,12 @@ from .templates import DEFAULT_COLOR, FACILITY_COLOR, SYSTEM_COLORS
 PAGE_GROUPS = ("basic", "graphics2d", "graphics3d", "constraints")
 # ช่องระดับบนของ object ที่หน้า Basic ของแต่ละ class เห็น (ชื่อ, class และ graphics อยู่นอกหน้านี้)
 BASIC_KEYS = {
-    "Facility": ("description", "position"),
-    "Satellite": ("description", "norad"),                     # NORAD อ่านอย่างเดียวใน v1
-    "Constellation": ("description", "system", "color", "assigned_objects"),
+    "Facility": ("description", "long_description", "position"),
+    "Satellite": ("description", "long_description", "norad"),                     # NORAD อ่านอย่างเดียวใน v1
+    "Constellation": ("description", "long_description", "system", "color", "assigned_objects"),
 }
-BASIC_DEFAULTS = {"description": "", "system": None, "color": None, "assigned_objects": []}
+# description = Short Description, long_description = Long Description ของหน้า Basic - Description
+BASIC_DEFAULTS = {"description": "", "long_description": "", "system": None, "color": None, "assigned_objects": []}
 PAGE_SECTIONS = {
     "Facility": ("graphics2d", "graphics3d", "constraints"),
     "Satellite": ("graphics2d", "graphics3d"),
@@ -42,9 +43,9 @@ METHOD_CATALOG = "From Satellite Catalog"
 INSERT_METHODS = (METHOD_DEFINE, METHOD_DEFAULT, METHOD_CATALOG)
 _CONTROL_KEYS = frozenset({"class", "method"})
 _OBJECT_KEYS = {
-    "Facility": frozenset({"name", "description", "position", "constraints", "graphics2d", "graphics3d"}),
-    "Satellite": frozenset({"name", "norad", "description", "graphics2d", "graphics3d"}),
-    "Constellation": frozenset({"name", "system", "description", "color", "assigned_objects"}),
+    "Facility": frozenset({"name", "description", "long_description", "position", "constraints", "graphics2d", "graphics3d"}),
+    "Satellite": frozenset({"name", "norad", "description", "long_description", "graphics2d", "graphics3d"}),
+    "Constellation": frozenset({"name", "system", "description", "long_description", "color", "assigned_objects"}),
 }
 _CATALOG_KEYS = frozenset({"norads", "create_constellation"})
 _SATELLITE_PATH_RE = re.compile(r"^\*/Satellite/[A-Za-z0-9_-]{1,32}$")

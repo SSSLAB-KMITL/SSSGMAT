@@ -1030,3 +1030,207 @@ body {
   padding: 3px 2px 0;
   color: var(--danger);
 }
+
+/* ---------- Properties Browser ---------- */
+/* ซ้ายเป็นรายการหน้า "กลุ่ม - หน้า" ขวาเป็นเนื้อหา ล่างเป็นปุ่ม OK / Cancel / Apply / Help */
+.props {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.props-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.props-tabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 200px;
+  overflow: auto;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+
+.props-tab {
+  padding: 3px 8px;
+  background: none;
+  color: var(--text);
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.props-tab[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.props-tab:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.props-page {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.props-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* ป้ายของ Properties ยาวกว่าของกล่องเล็ก ("X Real Time Multiplier", "Inherit from Scenario") */
+.props-fields .form-row {
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+.props-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.props-group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.props-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.props-conflict {
+  padding: 4px 12px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-top: 1px solid var(--border);
+}
+
+.props-general {
+  margin: 0;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.props-buttons {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.props-flags {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.form-textarea {
+  height: auto;
+  font-family: var(--font-ui);
+  resize: vertical;
+}
+
+.form-check {
+  align-self: flex-start;
+  margin: 3px 0 0;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-input {
+  width: 48px;
+  height: 22px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.color-text {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* รายการเลือก: Active constraints, Select Constraints to Add, Available / Assigned Objects */
+.pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pick-list {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-height: 66px;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+}
+
+.pick-item {
+  padding: 1px 4px;
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.pick-buttons {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.definition {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.definition-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.definition-lists {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.definition-list {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
