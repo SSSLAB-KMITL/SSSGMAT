@@ -55,8 +55,36 @@ const EMPTY = {
 };
 
 let inflight: AbortController | null = null;
-const aerCache = new Map<string, AerRow[]>();
 const enc = encodeURIComponent;
+
+/**
+ * aer.csv ที่โหลดแล้ว จำไว้ไม่เกิน AER_CACHE_MAX ไฟล์ (ไฟล์ใหญ่ ผลของ Facility หลายตัวไม่ควรค้างในหน่วยความจำ) ไล่ตัวที่ไม่ได้ใช้นานสุดออก
+ * (Map เรียงตามลำดับที่ใส่ จึงใช้ delete แล้ว set ย้ายตัวที่เพิ่งใช้ไปท้าย)
+ * aerLoading: การโหลดที่ยังไม่เสร็จต่อกุญแจ ผู้เรียกพร้อมกันรอคำขอเดียวกัน ล้างทั้งสองเมื่อ reset
+ */
+export const AER_CACHE_MAX = 4;
+const aerCache = new Map<string, AerRow[]>();
+const aerLoading = new Map<string, Promise<AerRow[]>>();
+
+function clearAerCache(): void {
+  aerCache.clear();
+  aerLoading.clear();
+}
+
+function aerCacheGet(key: string): AerRow[] | undefined {
+  const rows = aerCache.get(key);
+  if (rows !== undefined) {
+    aerCache.delete(key);
+    aerCache.set(key, rows);
+  }
+  return rows;
+}
+
+function aerCachePut(key: string, rows: AerRow[]): void {
+  aerCache.delete(key);
+  aerCache.set(key, rows);
+  while (aerCache.size > AER_CACHE_MAX) aerCache.delete(aerCache.keys().next().value as string);
+}
 
 /** ไฟล์เสริมโหลดไม่ได้: แจ้งเตือนใน Message Viewer (ยกเว้นยกเลิกหรือสายหลุด ซึ่งแถบสถานะแจ้งอยู่แล้ว) แล้วคืน null */
 async function optional<T>(file: string, load: () => Promise<T>): Promise<T | null> {
@@ -77,6 +105,7 @@ export const useResults = create<ResultsState>()((set, get) => ({
     const name = useScenario.getState().name;
     if (name === null) {
       inflight = null;
+      clearAerCache();
       set({ ...EMPTY });
       return;
     }
@@ -113,6 +142,7 @@ export const useResults = create<ResultsState>()((set, get) => ({
   reset: () => {
     inflight?.abort();
     inflight = null;
+    clearAerCache();
     set({ ...EMPTY });
   },
 
@@ -150,10 +180,21 @@ export const useResults = create<ResultsState>()((set, get) => ({
     const hash = get().info?.access[facility]?.hash;
     if (name === null || url === null || !hash) return [];
     const key = `${name}/${facility}/${hash}`;
-    const cached = aerCache.get(key);
+    const cached = aerCacheGet(key);
     if (cached !== undefined) return cached;
-    const rows = parseAerCsv(await apiGetText(url));
-    aerCache.set(key, rows);
-    return rows;
+    const loading = aerLoading.get(key);
+    if (loading !== undefined) return loading;
+    let load: Promise<AerRow[]> | undefined;
+    load = (async () => {
+      try {
+        const rows = parseAerCsv(await apiGetText(url));
+        if (aerLoading.get(key) === load) aerCachePut(key, rows); // reset ระหว่างโหลด = ผลของ scenario ที่ปิดไปแล้ว ไม่เก็บ
+        return rows;
+      } finally {
+        if (aerLoading.get(key) === load) aerLoading.delete(key);
+      }
+    })();
+    aerLoading.set(key, load);
+    return load;
   },
 }));

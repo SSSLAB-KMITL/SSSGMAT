@@ -45,6 +45,28 @@ describe("add", () => {
     expect(st().lastTime).toBe(msgAt(3).time);
   });
 
+  test("lastServerTime follows only the messages that came from the server", () => {
+    expect(st().lastServerTime).toBeNull();
+    st().add(msgAt(5, "info", "S1"), { fromServer: true });
+    st().add(msgAt(100, "warning", "LOCAL")); // นาฬิกาของเครื่องนี้ เดินเร็วกว่า server
+    expect(st().lastTime).toBe(msgAt(100).time);
+    expect(st().lastServerTime).toBe(msgAt(5).time);
+    st().addMany([msgAt(3, "info", "S0"), msgAt(8, "info", "S2")], { fromServer: true });
+    expect(st().lastServerTime).toBe(msgAt(8).time);
+    st().add(msgAt(2, "info", "S-old"), { fromServer: true }); // มาทีหลังแต่เก่ากว่า: ไม่ถอย
+    expect(st().lastServerTime).toBe(msgAt(8).time);
+    st().clearAll();
+    expect(st().lastServerTime).toBe(msgAt(8).time);
+  });
+
+  test("a server message that is already held still counts for lastServerTime", () => {
+    st().add(msgAt(5, "info", "S1"));
+    expect(st().lastServerTime).toBeNull();
+    st().addMany([msgAt(5, "info", "S1")], { fromServer: true });
+    expect(st().items).toHaveLength(1);
+    expect(st().lastServerTime).toBe(msgAt(5).time);
+  });
+
   test("keeps at most 5000 messages and drops the oldest", () => {
     expect(MESSAGE_CAP).toBe(5000);
     st().addMany(Array.from({ length: 5003 }, (_, i) => msgAt(i, "info", `C${i}`)));

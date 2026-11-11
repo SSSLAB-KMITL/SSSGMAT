@@ -31,6 +31,7 @@ let stop: (() => void) | undefined;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-12-01T00:00:00Z")); // หลังเวลาของข้อความ server ใน test ทั้งหมด (ข้อความที่หน้าเว็บสร้างเองจึงใหม่กว่าเสมอ)
   vi.stubGlobal("EventSource", FakeES);
   FakeEventSource.reset();
   useJobs.setState(useJobs.getInitialState(), true);
@@ -94,6 +95,90 @@ describe("startEventWiring", () => {
     expect(useSettings.getState().connected).toBe(true);
   });
 
+  describe("a failed backfill", () => {
+    const serverCodes = () => codes().filter((c) => c !== "BACKFILL");
+    const warnings = () => useMessages.getState().items.filter((x) => x.level === "warning");
+    let answer: Message[] | "fail" = [];
+    const reply = () => (answer === "fail" ? { status: 500, json: { code: "INTERNAL", text: "ขัดข้อง" } } : { json: answer });
+
+    test("warns once in Thai, retries from the last good point and recovers the missed messages with no gap and no duplicates", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      answer = [m(1, "A"), m(5, "B")];
+      const f = server({ "GET /api/messages": reply });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      expect(serverCodes()).toEqual(["A", "B"]);
+
+      FakeEventSource.last.fail();
+      await vi.advanceTimersByTimeAsync(1000);
+      answer = "fail";
+      FakeEventSource.last.open();
+      await flush();
+      expect(warnings()).toHaveLength(1);
+      expect(warnings()[0].text).toMatch(/[\u0E00-\u0E7F]/);
+
+      // ข้อความสดมาถึงระหว่างที่ backfill ยังล้ม: แสดงทันที แต่ไม่ทำให้จุดเริ่มของ backfill ขยับ
+      FakeEventSource.last.emit("message", m(10, "C"));
+      await flush();
+      expect(serverCodes()).toEqual(["A", "B", "C"]);
+      await vi.advanceTimersByTimeAsync(1000); // ลองใหม่ครั้งที่ 1 ล้มอีก
+      expect(warnings()).toHaveLength(1); // เตือนครั้งเดียวต่อช่วงที่ล้ม ไม่ซ้ำทุกรอบ
+
+      answer = [m(5, "B"), m(7, "MISSED"), m(10, "C")];
+      await vi.advanceTimersByTimeAsync(2000); // ลองใหม่ครั้งที่ 2 สำเร็จ
+      expect(serverCodes()).toEqual(["A", "B", "MISSED", "C"]);
+      const sinces = f.calls.filter((c) => c.path === "/api/messages").map((c) => c.query.get("since"));
+      expect(sinces).toEqual([null, "2026-11-12T01:00:05.249Z", "2026-11-12T01:00:05.249Z", "2026-11-12T01:00:05.249Z"]);
+      expect(warnings()).toHaveLength(1);
+      spy.mockRestore();
+    });
+
+    test("after it recovers, the next backfill starts from the newest server message, not from a locally generated one", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      answer = [m(1, "A")];
+      const f = server({ "GET /api/messages": reply });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.fail();
+      await vi.advanceTimersByTimeAsync(1000);
+      answer = "fail";
+      FakeEventSource.last.open();
+      await flush();
+      answer = [m(1, "A"), m(3, "D")];
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(serverCodes()).toEqual(["A", "D"]);
+      // คำเตือนที่หน้าเว็บสร้างเองใช้นาฬิกาของเครื่องนี้ (ใหม่กว่าข้อความของ server มาก) ต้องไม่ถูกใช้เป็นจุดเริ่ม
+      expect(Date.parse(useMessages.getState().lastTime ?? "")).toBeGreaterThan(Date.parse(useMessages.getState().lastServerTime ?? ""));
+      FakeEventSource.last.fail();
+      await vi.advanceTimersByTimeAsync(1000);
+      FakeEventSource.last.open();
+      await flush();
+      expect(f.calls.filter((c) => c.path === "/api/messages").at(-1)?.query.get("since")).toBe("2026-11-12T01:00:02.999Z");
+      spy.mockRestore();
+    });
+
+    test("a hung request times out after 10 s, the held live events arrive and the backfill is retried", async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      let hang = true;
+      const f = server({ "GET /api/messages": () => (hang ? new Promise(() => undefined) : { json: [m(2, "LATE")] }) });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      FakeEventSource.last.emit("message", m(3, "LIVE"));
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(serverCodes()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(serverCodes()).toEqual(["LIVE"]);
+      expect(warnings()).toHaveLength(1);
+      hang = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(serverCodes()).toEqual(["LATE", "LIVE"]);
+      expect(f.calls.filter((c) => c.path === "/api/messages")).toHaveLength(2);
+      spy.mockRestore();
+    });
+  });
+
   test("live messages wait for the backfill, so the list is never out of order", async () => {
     const gate = deferred<{ json: Message[] }>();
     server({ "GET /api/messages": () => gate.promise });
@@ -108,6 +193,19 @@ describe("startEventWiring", () => {
     FakeEventSource.last.emit("message", m(4, "LIVE2"));
     await flush();
     expect(codes()).toEqual(["OLD", "LIVE", "LIVE2"]);
+  });
+
+  test("a live message counts as a server message, a warning made by the page does not", async () => {
+    server();
+    stop = startEventWiring();
+    FakeEventSource.last.open();
+    await flush();
+    FakeEventSource.last.emit("message", m(2, "LIVE"));
+    await flush();
+    expect(useMessages.getState().lastServerTime).toBe(m(2).time);
+    useMessages.getState().add({ time: "2026-12-01T00:00:00.000Z", level: "warning", code: "LOCAL", text: "x", object: null });
+    expect(useMessages.getState().lastServerTime).toBe(m(2).time);
+    expect(useMessages.getState().lastTime).toBe("2026-12-01T00:00:00.000Z");
   });
 
   test("a message event that is not a message is ignored", async () => {

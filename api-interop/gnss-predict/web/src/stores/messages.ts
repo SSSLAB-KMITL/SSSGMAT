@@ -75,14 +75,24 @@ function isInOrder(head: Message | undefined, fresh: Message[]): boolean {
   return true;
 }
 
+export interface AddOptions {
+  /** ข้อความนี้มาจาก server (SSE หรือ GET /api/messages) ไม่ใช่ที่หน้าเว็บสร้างเอง: ใช้นับ lastServerTime */
+  fromServer?: boolean;
+}
+
 interface MessagesState {
   items: Message[];
   /** กุญแจของข้อความที่ซ่อนอยู่ในแต่ละแท็บ */
   hidden: Record<MessageTab, ReadonlySet<string>>;
-  /** เวลาของข้อความใหม่สุดที่เคยเห็น (ไว้ backfill ด้วย `since`) ไม่ถอยหลังเมื่อกด Clear */
+  /** เวลาของข้อความใหม่สุดในรายการ (รวมข้อความที่หน้าเว็บสร้างเอง) ไม่ถอยหลังเมื่อกด Clear */
   lastTime: string | null;
-  add(m: Message): void;
-  addMany(ms: readonly Message[]): void;
+  /**
+   * เวลา (ตามนาฬิกาของ server) ของข้อความใหม่สุดที่มาจาก server: จุดที่ใช้ backfill ด้วย `since`
+   * แยกจาก lastTime เพราะข้อความที่หน้าเว็บสร้างเองใช้นาฬิกาของเครื่องนี้ ถ้านาฬิกาเดินเร็วกว่า server จะข้ามข้อความของ server ไปเงียบ ๆ
+   */
+  lastServerTime: string | null;
+  add(m: Message, opts?: AddOptions): void;
+  addMany(ms: readonly Message[], opts?: AddOptions): void;
   clearTab(tab: MessageTab): void;
   clearAll(): void;
   /** ข้อความที่แท็บนี้แสดง (อาร์เรย์ใหม่ทุกครั้ง: ใน React ใช้ useVisibleMessages) */
@@ -95,11 +105,23 @@ export const useMessages = create<MessagesState>()((set, get) => ({
   items: [],
   hidden: emptyHidden(),
   lastTime: null,
+  lastServerTime: null,
 
-  add: (m) => get().addMany([m]),
+  add: (m, opts) => get().addMany([m], opts),
 
-  addMany: (ms) =>
+  addMany: (ms, opts) =>
     set((s) => {
+      let lastServerTime = s.lastServerTime;
+      if (opts?.fromServer) {
+        let best = lastServerTime === null ? Number.NEGATIVE_INFINITY : (parseIsoUtc(lastServerTime)?.getTime() ?? Number.NEGATIVE_INFINITY);
+        for (const m of ms) {
+          const t = timeMs(m);
+          if (t > best) {
+            best = t;
+            lastServerTime = m.time;
+          }
+        }
+      }
       const known = new Set(s.items.map(messageKey));
       const fresh: Message[] = [];
       for (const raw of ms) {
@@ -109,11 +131,11 @@ export const useMessages = create<MessagesState>()((set, get) => ({
         known.add(key);
         fresh.push(m);
       }
-      if (fresh.length === 0) return s;
+      if (fresh.length === 0) return lastServerTime === s.lastServerTime ? s : { lastServerTime };
       let items = [...s.items, ...fresh];
       if (!isInOrder(s.items.at(-1), fresh)) items = sortOldestFirst(items);
       if (items.length > MESSAGE_CAP) items = items.slice(items.length - MESSAGE_CAP);
-      return { items, lastTime: items.at(-1)?.time ?? s.lastTime };
+      return { items, lastTime: items.at(-1)?.time ?? s.lastTime, lastServerTime };
     }),
 
   clearTab: (tab) =>

@@ -51,6 +51,7 @@ function routes(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  useResults.getState().reset(); // also empties the module-level aer.csv cache
   useResults.setState(useResults.getInitialState(), true);
   useMessages.setState(useMessages.getInitialState(), true);
   useScenario.setState({ name: "E2E" });
@@ -272,6 +273,103 @@ describe("file URLs and AER", () => {
     stubFetch(routes());
     await useResults.getState().refresh();
     expect(await useResults.getState().loadAer("OLD")).toEqual([]);
+  });
+});
+
+describe("the aer.csv cache", () => {
+  const FACS = ["F1", "F2", "F3", "F4", "F5"];
+  const hashOf = (f: string) => `${f.slice(1)}`.repeat(12);
+  const aerFor = (f: string) => `time_utc,prn,az_deg,el_deg,range_km,ipp_lat_deg,ipp_lon_deg,mf\n2026-11-11T00:00:30Z,${f},10.000,20.000,22000.000,5.0000,100.0000,1.50000\n`;
+  function manyFacilities(over: Record<string, unknown> = {}) {
+    const access = Object.fromEntries(FACS.map((f) => [f, { hash: hashOf(f), status: "current", available: [hashOf(f)] }]));
+    return routes({
+      "GET /api/scenarios/E2E/results": { json: { ...RESULTS_OK, access } },
+      [`GET /api/scenarios/E2E/access/F1/${hashOf("F1")}/dop.csv`]: { text: DOP_CSV },
+      ...Object.fromEntries(FACS.map((f) => [`GET /api/scenarios/E2E/access/${f}/${hashOf(f)}/aer.csv`, { text: aerFor(f) }])),
+      ...over,
+    });
+  }
+  const aerCalls = (f: { calls: { path: string }[] }) => f.calls.filter((c) => c.path.endsWith("aer.csv")).map((c) => c.path.split("/")[5]);
+
+  test("keeps at most 4 files and evicts the one used least recently", async () => {
+    const f = stubFetch(manyFacilities());
+    await useResults.getState().refresh();
+    const { loadAer } = useResults.getState();
+    for (const fac of ["F1", "F2", "F3", "F4"]) await loadAer(fac);
+    expect(aerCalls(f)).toEqual(["F1", "F2", "F3", "F4"]);
+    await loadAer("F1"); // ใช้ F1 อีกครั้ง: F2 กลายเป็นตัวที่ไม่ได้ใช้นานสุด
+    expect(aerCalls(f)).toHaveLength(4);
+    await loadAer("F5"); // เต็มแล้ว: F2 ถูกไล่ออก
+    expect(aerCalls(f)).toEqual(["F1", "F2", "F3", "F4", "F5"]);
+    await loadAer("F1");
+    await loadAer("F3");
+    await loadAer("F4");
+    await loadAer("F5");
+    expect(aerCalls(f)).toHaveLength(5); // ที่เหลือยังอยู่ในแคช
+    await loadAer("F2"); // ถูกไล่ไปแล้ว ต้องโหลดใหม่
+    expect(aerCalls(f)).toHaveLength(6);
+    expect(aerCalls(f).at(-1)).toBe("F2");
+  });
+
+  test("two concurrent loads of the same file share one request", async () => {
+    const gate = deferred<{ text: string }>();
+    const f = stubFetch(manyFacilities({ [`GET /api/scenarios/E2E/access/F1/${hashOf("F1")}/aer.csv`]: () => gate.promise }));
+    await useResults.getState().refresh();
+    const a = useResults.getState().loadAer("F1");
+    const b = useResults.getState().loadAer("F1");
+    gate.resolve({ text: aerFor("F1") });
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(aerCalls(f)).toEqual(["F1"]);
+    expect(ra).toBe(rb);
+    expect(ra).toHaveLength(1);
+    await useResults.getState().loadAer("F1");
+    expect(aerCalls(f)).toHaveLength(1);
+  });
+
+  test("a failed load is shared by the callers waiting for it, is not cached, and can be retried", async () => {
+    let ok = false;
+    const f = stubFetch(manyFacilities({
+      [`GET /api/scenarios/E2E/access/F1/${hashOf("F1")}/aer.csv`]: () => (ok ? { text: aerFor("F1") } : { status: 500, json: { code: "INTERNAL", text: "ขัดข้อง" } }),
+    }));
+    await useResults.getState().refresh();
+    const results = await Promise.allSettled([useResults.getState().loadAer("F1"), useResults.getState().loadAer("F1")]);
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+    expect(aerCalls(f)).toHaveLength(1);
+    ok = true;
+    expect(await useResults.getState().loadAer("F1")).toHaveLength(1);
+    expect(aerCalls(f)).toHaveLength(2);
+  });
+
+  test("reset clears the cache and a load that finishes after the reset is not stored", async () => {
+    const f = stubFetch(manyFacilities());
+    await useResults.getState().refresh();
+    await useResults.getState().loadAer("F1");
+    useResults.getState().reset();
+    await useResults.getState().refresh();
+    await useResults.getState().loadAer("F1");
+    expect(aerCalls(f)).toHaveLength(2);
+
+    const gate = deferred<{ text: string }>();
+    f.routes[`GET /api/scenarios/E2E/access/F2/${hashOf("F2")}/aer.csv`] = () => gate.promise;
+    const slow = useResults.getState().loadAer("F2");
+    useResults.getState().reset();
+    await useResults.getState().refresh();
+    gate.resolve({ text: aerFor("F2") });
+    await slow;
+    f.routes[`GET /api/scenarios/E2E/access/F2/${hashOf("F2")}/aer.csv`] = { text: aerFor("F2") };
+    await useResults.getState().loadAer("F2");
+    expect(aerCalls(f).filter((x) => x === "F2")).toHaveLength(2);
+  });
+
+  test("closing the scenario clears the cache too", async () => {
+    const f = stubFetch(manyFacilities());
+    await useResults.getState().refresh();
+    await useResults.getState().loadAer("F1");
+    useScenario.getState().close();
+    useScenario.setState({ name: "E2E" });
+    await useResults.getState().refresh();
+    await useResults.getState().loadAer("F1");
+    expect(aerCalls(f)).toHaveLength(2);
   });
 });
 

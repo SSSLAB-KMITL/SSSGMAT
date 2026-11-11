@@ -2,11 +2,14 @@
 //
 // connectEvents: EventSource ที่ต่อใหม่เองเมื่อหลุด หน่วง 1, 2, 4, 8, 16, 30, 30, ... วินาที (ต่อสำเร็จแล้วกลับเป็น 1 วินาที)
 // ปิด EventSource ที่หลุดเองแล้วสร้างใหม่ (ไม่ใช้ auto-reconnect ของเบราว์เซอร์ จึงคุมหน่วงเวลาได้)
-// ทุกครั้งที่ต่อได้ เรียก backfill(เวลาของข้อความสดล่าสุด | null) และ **รอให้เสร็จก่อน** ส่ง event สดต่อ (event ที่มาระหว่างนั้นรอคิว)
-// ลำดับจึงเก่า -> ใหม่เสมอ ไม่ขึ้นกับว่า backfill ใช้เวลานานเท่าไร
+// ทุกครั้งที่ต่อได้ เรียก backfill(เวลาของข้อความสดล่าสุด | null, signal) และ **รอให้เสร็จก่อน** ส่ง event สดต่อ (event ที่มาระหว่างนั้นรอคิว)
+// ลำดับจึงเก่า -> ใหม่เสมอ backfill ที่ค้างเกิน backfillTimeoutMs (ตั้งต้น 10 วินาที) ถูกยกเลิกด้วย signal และนับเป็นล้มเหลว
+// backfill ที่ล้ม: จุดเริ่มของ backfill (เวลาของข้อความสดล่าสุด) หยุดอยู่ที่เดิมจนกว่าจะสำเร็จ ไม่ขยับตามข้อความสดที่มาทีหลัง
+// และลองใหม่ด้วย backoff ชุดเดียวกัน (1, 2, 4, ... วินาที) ข้อความสดไม่ถูกบล็อกนานเกินเวลา timeout ต่อรอบ
 
 import { apiGet } from "./client";
-import { isMessage, useMessages } from "../stores/messages";
+import { msg } from "../labels/messages.th";
+import { isMessage, report, useMessages } from "../stores/messages";
 import { useJobs, type DailyStatus, type JobEvent } from "../stores/jobs";
 import { useResults } from "../stores/results";
 import { useScenario, type ScenarioEvent } from "../stores/scenario";
@@ -19,6 +22,8 @@ export const EVENT_NAMES: readonly EventName[] = ["job", "message", "scenario", 
 /** วินาทีที่หน่วงก่อนต่อใหม่ครั้งที่ 1, 2, 3, ... ค้างที่ค่าสุดท้าย */
 export const DEFAULT_BACKOFF_S: readonly number[] = [1, 2, 4, 8, 16, 30];
 
+export const DEFAULT_BACKFILL_TIMEOUT_MS = 10_000;
+
 const EVENTS_PATH = "/api/events";
 
 export interface EventHandlers {
@@ -30,8 +35,12 @@ export interface EventHandlers {
 export interface ConnectOptions {
   EventSourceImpl?: typeof EventSource;
   backoffS?: number[];
-  /** เรียกทุกครั้งที่ต่อได้ ด้วยเวลา (`time` ตามที่ server ส่ง) ของข้อความสดล่าสุดที่เห็น; ยังไม่เคยเห็น = null */
-  backfill?(sinceIso: string | null): Promise<void>;
+  /**
+   * เรียกทุกครั้งที่ต่อได้ ด้วยเวลา (`time` ตามที่ server ส่ง) ของข้อความสดล่าสุดที่เห็น; ยังไม่เคยเห็น = null
+   * signal ถูก abort เมื่อเกิน backfillTimeoutMs; reject = ล้มเหลว (จะลองใหม่จากจุดเดิม)
+   */
+  backfill?(sinceIso: string | null, signal?: AbortSignal): Promise<void>;
+  backfillTimeoutMs?: number;
 }
 
 export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => void {
@@ -43,6 +52,10 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
   let status: boolean | null = null;
   let lastMessageTime: string | null = null;
   let lastMessageMs = Number.NEGATIVE_INFINITY;
+  let backfillFailing = false;
+  let backfillAttempt = 0;
+  let backfillTimer: ReturnType<typeof setTimeout> | null = null;
+  const backfillTimeoutMs = o.backfillTimeoutMs ?? DEFAULT_BACKFILL_TIMEOUT_MS;
   // งานทุกอย่างที่ส่งออกไปให้ผู้ใช้ (backfill และ event สด) เรียงต่อกันในโซ่เดียว
   let chain: Promise<void> = Promise.resolve();
 
@@ -64,6 +77,7 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
   };
 
   const noteMessage = (data: unknown): void => {
+    if (backfillFailing) return; // จุดเริ่มของ backfill ไม่ข้ามช่องว่างที่ยังไม่ได้เติม
     const time = typeof data === "object" && data !== null ? (data as { time?: unknown }).time : undefined;
     const ms = typeof time === "string" ? parseIsoUtc(time)?.getTime() : undefined;
     if (typeof time === "string" && ms !== undefined && ms >= lastMessageMs) {
@@ -71,6 +85,42 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
       lastMessageTime = time;
     }
   };
+
+  const cancelBackfillRetry = (): void => {
+    if (backfillTimer !== null) clearTimeout(backfillTimer);
+    backfillTimer = null;
+  };
+
+  const runBackfill = (): void => {
+    const backfill = o.backfill;
+    if (backfill === undefined) return;
+    enqueue(async () => {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), backfillTimeoutMs);
+      const timedOut = new Promise<never>((_, reject) => ctl.signal.addEventListener("abort", () => reject(new Error("backfill timed out"))));
+      try {
+        await Promise.race([backfill(lastMessageTime, ctl.signal), timedOut]);
+        backfillFailing = false;
+        backfillAttempt = 0;
+      } catch (e) {
+        console.error("event backfill failed", e);
+        backfillFailing = true;
+        scheduleBackfillRetry();
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+  };
+
+  function scheduleBackfillRetry(): void {
+    if (closed || backfillTimer !== null || status !== true) return; // สายหลุดอยู่: ครั้งหน้าที่ open จะ backfill เอง
+    const seconds = backoff[Math.min(backfillAttempt, backoff.length - 1)];
+    backfillAttempt++;
+    backfillTimer = setTimeout(() => {
+      backfillTimer = null;
+      if (!closed && status === true) runBackfill();
+    }, seconds * 1000);
+  }
 
   const retryLater = (): void => {
     setStatus(false);
@@ -95,8 +145,8 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
       if (closed || src !== source) return;
       attempt = 0;
       setStatus(true);
-      const backfill = o.backfill;
-      if (backfill !== undefined) enqueue(() => backfill(lastMessageTime));
+      cancelBackfillRetry();
+      runBackfill();
     });
     src.addEventListener("error", () => {
       if (closed || src !== source) return;
@@ -127,6 +177,7 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
     closed = true;
     if (timer !== null) clearTimeout(timer);
     timer = null;
+    cancelBackfillRetry();
     source?.close();
     source = null;
   };
@@ -149,7 +200,7 @@ function toScenarioEvent(x: unknown): ScenarioEvent | null {
 function dispatch(name: EventName, data: unknown): void {
   switch (name) {
     case "message":
-      if (isMessage(data)) useMessages.getState().add(data);
+      if (isMessage(data)) useMessages.getState().add(data, { fromServer: true });
       break;
     case "job":
       if (isJobEvent(data)) {
@@ -178,13 +229,12 @@ const later = (a: string | null, b: string | null): string | null => {
   return tb.getTime() > ta.getTime() ? b : a;
 };
 
-/** ดึงข้อความที่พลาด: ตั้งแต่ก่อนข้อความใหม่สุดที่ถืออยู่ 1 ms (server ส่งเฉพาะที่ **หลัง** since และข้อความหลายข้อความอาจมีมิลลิวินาทีเดียวกัน) ซ้ำถูกตัดด้วยกุญแจของ store */
-async function backfillMessages(since: string | null): Promise<void> {
-  const from = later(since, useMessages.getState().lastTime);
+/** ข้อความที่ server ส่งมาหลังเวลา `from`; ถอย 1 ms เพราะ server ส่งเฉพาะที่ **หลัง** since และข้อความหลายข้อความอาจมีมิลลิวินาทีเดียวกัน (ซ้ำถูกตัดด้วยกุญแจของ store) */
+async function fetchMessagesSince(from: string | null, signal: AbortSignal | undefined): Promise<void> {
   const t = from === null ? null : parseIsoUtc(from);
   const query = t === null ? "" : `?since=${encodeURIComponent(new Date(t.getTime() - 1).toISOString())}`;
-  const { data } = await apiGet<unknown>(`/messages${query}`);
-  if (Array.isArray(data)) useMessages.getState().addMany(data.filter(isMessage));
+  const { data } = await apiGet<unknown>(`/messages${query}`, { signal });
+  if (Array.isArray(data)) useMessages.getState().addMany(data.filter(isMessage), { fromServer: true });
 }
 
 /** ปิดช่องว่างของสถานะอื่นที่ event อาจหลุดไปตอนไม่ได้ต่อ */
@@ -206,6 +256,27 @@ async function resync(reconnected: boolean): Promise<void> {
 /** ต่อ /api/events เข้ากับทุก store: connected, ข้อความ (backfill ด้วย GET /api/messages?since=), job, scenario, daily; คืนฟังก์ชันหยุด */
 export function startEventWiring(o: ConnectOptions = {}): () => void {
   let connectedBefore = false;
+  /**
+   * backfill ที่ล้มอยู่: จุดเริ่มที่ใช้ตอนล้มครั้งแรก (null = ตั้งแต่ต้น) ใช้ซ้ำทุกครั้งที่ลองใหม่จนสำเร็จ
+   * ข้อความสดที่มาระหว่างนั้นจึงไม่ดันจุดเริ่มข้ามช่องว่าง; เตือนในหน้าครั้งเดียวต่อช่วงที่ล้ม
+   */
+  let failedFrom: { from: string | null } | null = null;
+
+  const backfillMessages = async (since: string | null, signal?: AbortSignal): Promise<void> => {
+    // จุดเริ่มปกติ: ใหม่กว่าของสองอย่าง คือที่การเชื่อมต่อเห็นสดล่าสุด กับข้อความของ server ล่าสุดใน store (ไม่นับข้อความที่หน้าเว็บสร้างเอง)
+    const from = failedFrom !== null ? failedFrom.from : later(since, useMessages.getState().lastServerTime);
+    try {
+      await fetchMessagesSince(from, signal);
+      failedFrom = null;
+    } catch (e) {
+      if (failedFrom === null) {
+        failedFrom = { from };
+        report("warning", "BACKFILL", msg("messages.backfillFailed"));
+      }
+      throw e;
+    }
+  };
+
   const stop = connectEvents(
     {
       onEvent: dispatch,

@@ -3,6 +3,10 @@
 // - load(name) ดึงเอกสาร + ต้นไม้ + catalog แล้วค่อยใส่ store ทีเดียว ไม่ทิ้งสถานะครึ่งเปิด ล้มเหลวทุกแบบจบด้วยข้อความไทยใน Message Viewer ไม่โยน
 // - การเขียนทุกแบบส่ง If-Match = ETag ที่อ่านล่าสุดตามตัว (มีเครื่องหมายคำพูด) 412 -> conflict = true แล้วโยน ApiError ต่อ doc/ETag ไม่เปลี่ยน
 //   (การแก้ถูกบันทึกทันทีตอน Apply จึงหลังเขียนสำเร็จโหลด doc และ tree ใหม่ ไม่เก็บสำเนาในเครื่อง)
+// - doc กับ ETag ต้องไปด้วยกันเสมอ: PUT เก็บเอกสารที่ server ตอบกลับพร้อม ETag ใหม่ทันที ส่วน PATCH/insert/rename/remove/group ตอบแค่ ETag
+//   ถ้าโหลด doc ใหม่ไม่สำเร็จ ETag ใหม่ก็ใช้ต่อได้ (การเขียนเรื่อง object ไม่ต้องใช้ doc) แต่ตั้ง docStale = true และ putDoc (ที่ส่ง doc ทั้งก้อน)
+//   จะโหลดใหม่ก่อน ถ้าโหลดไม่ได้ก็ปฏิเสธ (DOC_STALE) ไม่เอา doc เก่าไปทับการแก้ครั้งก่อน
+// - การเขียนที่จบหลังจากปิดหรือสลับ scenario แล้ว ไม่แตะ store (ไม่ใช่ scenario เดียวกันแล้ว)
 // - event `scenario` ของ scenario ที่เปิดอยู่: ETag ต่างจากที่ถืออยู่ = โหลด doc และ tree ใหม่เงียบ ๆ; etag null = ถูกลบ -> ปิดแล้วเตือน;
 //   results_stale = ดึงสถานะผลลัพธ์ใหม่
 // หมายเหตุ: stores/results.ts อ่านชื่อ scenario จาก store นี้ และ store นี้เรียก results.refresh() จึง import กันเป็นวง
@@ -71,6 +75,8 @@ interface ScenarioState {
   catalog: Map<number, CatalogEntry>;
   /** เขียนด้วย ETag เก่า (412) ค้างอยู่: รอผู้ใช้กด Reload (reload() ล้าง) */
   conflict: boolean;
+  /** doc เก่ากว่า etag: การเขียนครั้งล่าสุดสำเร็จแต่โหลด doc ใหม่ไม่ได้ (การโหลดที่สำเร็จครั้งถัดไปล้าง) putDoc จะโหลดใหม่ก่อน */
+  docStale: boolean;
   /** เปิด scenario; true = เปิดได้ false = เปิดไม่ได้ (มีข้อความใน Message Viewer; scenario ที่เปิดอยู่ก่อนไม่เปลี่ยน) */
   load(name: string): Promise<boolean>;
   /** โหลด doc + tree ใหม่จาก server แล้วล้าง conflict (ล้มเหลว = ข้อความใน Message Viewer และ conflict ค้างอยู่) */
@@ -98,18 +104,27 @@ const EMPTY = {
   tree: null,
   catalog: new Map<number, CatalogEntry>(),
   conflict: false,
+  docStale: false,
 };
 
 const enc = encodeURIComponent;
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
-/** เอกสารและต้นไม้ที่ server ส่งมาใช้งานได้ไหม; ไม่ได้ = RangeError (เวลาใน analysis_period/animation อ่านไม่ได้ก็เช่นกัน) */
-function assertUsable(doc: unknown, tree: unknown): asserts doc is ScenarioDoc {
+/** เอกสารที่ server ส่งมาใช้งานได้ไหม; ไม่ได้ = RangeError (เวลาใน analysis_period/animation อ่านไม่ได้ก็เช่นกัน) */
+function assertDoc(doc: unknown): asserts doc is ScenarioDoc {
   if (!isRecord(doc) || typeof doc.name !== "string" || !isRecord(doc.analysis_period) || !Array.isArray(doc.objects)) {
     throw new RangeError("the scenario document is incomplete");
   }
   timeFromScenario(doc as ScenarioDoc);
+}
+
+function assertTree(tree: unknown): asserts tree is ObjectTree {
   if (!isRecord(tree) || !Array.isArray(tree.children)) throw new RangeError("the object tree is incomplete");
+}
+
+function assertUsable(doc: unknown, tree: unknown): asserts doc is ScenarioDoc {
+  assertDoc(doc);
+  assertTree(tree);
 }
 
 /** ตัวแปรที่กำหนดว่าต้องโหลด catalog ใหม่ไหม */
@@ -150,17 +165,24 @@ export const useScenario = create<ScenarioState>()((set, get) => {
   let writing = 0;
   /** นับทุกครั้งที่ doc/ETag ถูกเปลี่ยน: การโหลดที่เริ่มก่อนหน้านั้นและตอบมาทีหลังเป็นข้อมูลเก่า ทิ้ง */
   let version = 0;
+  /** scenario ที่กำลังเปิดอยู่ (load ยังไม่เสร็จ) และ event `scenario` ของมันที่มาถึงก่อนเปิดเสร็จ: เก็บไว้เล่นซ้ำหลังเปิด */
+  let opening: { name: string; token: number; events: ScenarioEvent[] } | null = null;
 
   const base = (name: string) => `/scenarios/${enc(name)}`;
 
-  /** ใส่ doc/tree/ETag ที่ได้มา (ถ้า guard ยังจริง) โหลด catalog ใหม่ถ้า snapshot หรือช่วงวิเคราะห์เปลี่ยน และตั้งเวลาใหม่ถ้าช่วงหรือ animation เปลี่ยน */
-  const commit = async (doc: ScenarioDoc, etag: string | null, tree: ObjectTree, guard: () => boolean): Promise<void> => {
+  /** doc + ETag (+ tree, catalog ถ้ามี) เข้า store พร้อมกันทีเดียว ล้าง docStale และตั้งเวลาใหม่ถ้าช่วงวิเคราะห์หรือ animation เปลี่ยน */
+  const applyDoc = (doc: ScenarioDoc, etag: string | null, extra: { tree?: ObjectTree; catalog?: Map<number, CatalogEntry> } = {}): void => {
     const prev = get().doc;
-    const catalog = catalogInputs(prev) === catalogInputs(doc) ? get().catalog : await loadCatalog(doc, undefined);
-    if (!guard()) return;
     version++;
-    set({ doc, etag: etag ?? get().etag, tree, catalog });
+    set({ doc, etag: etag ?? get().etag, docStale: false, ...extra });
     if (timeInputs(prev) !== timeInputs(doc)) useTime.getState().init(doc);
+  };
+
+  /** ใส่ doc/tree/ETag ที่ได้มา (ถ้า guard ยังจริง) โหลด catalog ก่อนถ้า snapshot หรือช่วงวิเคราะห์เปลี่ยน จะได้เปลี่ยนพร้อมกัน */
+  const commit = async (doc: ScenarioDoc, etag: string | null, tree: ObjectTree, guard: () => boolean): Promise<void> => {
+    const catalog = catalogInputs(get().doc) === catalogInputs(doc) ? get().catalog : await loadCatalog(doc, undefined);
+    if (!guard()) return;
+    applyDoc(doc, etag, { tree, catalog });
   };
 
   /** โหลด doc + tree ของ scenario ที่เปิดอยู่ ผิดพลาดโยน; onlyIfChanged = ดึง doc ก่อน ETag เท่าเดิมก็จบ */
@@ -188,37 +210,83 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     try {
       await pull(onlyIfChanged);
     } catch (e) {
-      if (isAbortError(e)) return;
-      report("warning", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.reloadFailed", { name: name ?? "", message: errorText(e) }));
+      warnReload(name ?? "", e);
     }
   };
 
-  const send = async <T>(method: string, suffix: string, body?: unknown): Promise<ApiResult<T>> => {
-    const { name, etag } = get();
-    if (name === null || etag === null) throw new Error("no scenario is open");
+  const openName = (): string => {
+    const name = get().name;
+    if (name === null) throw new Error("no scenario is open");
+    return name;
+  };
+
+  const warnReload = (name: string, e: unknown): void => {
+    if (isAbortError(e)) return;
+    report("warning", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.reloadFailed", { name, message: errorText(e) }));
+  };
+
+  /** เขียนไปที่ scenario `scenario` (ต้องยังเป็นตัวที่เปิดอยู่) ด้วย ETag ล่าสุด */
+  const send = async <T>(scenario: string, method: string, suffix: string, body?: unknown): Promise<ApiResult<T>> => {
+    const etag = get().name === scenario ? get().etag : null;
+    if (etag === null) throw new Error("no scenario is open");
     writing++;
     try {
-      return await apiSend<T>(method, `${base(name)}${suffix}`, body, etag);
+      return await apiSend<T>(method, `${base(scenario)}${suffix}`, body, etag);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 412) set({ conflict: true });
+      if (e instanceof ApiError && e.status === 412 && get().name === scenario) set({ conflict: true });
       throw e;
     } finally {
       writing--;
     }
   };
 
-  /** หลังเขียนสำเร็จ: เก็บ ETag ใหม่ แล้วโหลด doc + tree ใหม่ (และผลลัพธ์ถ้าตอนนี้ไม่ตรงแล้ว) */
-  const afterWrite = async (res: ApiResult<{ etag?: unknown; results_stale?: unknown }>): Promise<WriteResult> => {
+  /** หลังเขียนสำเร็จ (ตอบแค่ ETag): เก็บ ETag ใหม่ แล้วโหลด doc + tree ใหม่ (และผลลัพธ์ถ้าตอนนี้ไม่ตรงแล้ว) */
+  const afterWrite = async (name: string, res: ApiResult<{ etag?: unknown; results_stale?: unknown }>): Promise<WriteResult> => {
+    const stale = isRecord(res.data) && res.data.results_stale === true;
+    if (get().name !== name) return { stale }; // ปิดหรือสลับ scenario ระหว่างเขียน: ไม่ใช่เรื่องของ store นี้แล้ว
     const bodyTag = isRecord(res.data) && typeof res.data.etag === "string" ? res.data.etag : null;
     const tag = res.etag ?? bodyTag;
     version++;
-    if (tag !== null) set({ etag: tag });
-    const stale = isRecord(res.data) && res.data.results_stale === true;
+    // doc ที่ถืออยู่เก่ากว่า ETag ใหม่จนกว่าจะโหลดใหม่สำเร็จ (applyDoc ล้างเครื่องหมายนี้)
+    set({ ...(tag !== null ? { etag: tag } : {}), docStale: true });
     await Promise.all([pullQuiet(), stale ? useResults.getState().refresh() : undefined]);
     return { stale };
   };
 
-  const write = async (method: string, suffix: string, body?: unknown): Promise<WriteResult> => afterWrite(await send(method, suffix, body));
+  const write = async (method: string, suffix: string, body?: unknown): Promise<WriteResult> => {
+    const name = openName();
+    return afterWrite(name, await send(name, method, suffix, body));
+  };
+
+  /** putDoc ต้องใช้ doc ล่าสุด: ถ้า doc เก่ากว่า ETag (docStale) โหลดใหม่ก่อน โหลดไม่ได้ = ปฏิเสธ ไม่เอา doc เก่าไปทับ */
+  const ensureFreshDoc = async (name: string): Promise<void> => {
+    try {
+      await pull();
+    } catch {
+      // ตกไปตรวจ docStale ด้านล่าง (ข้อความ server ไม่ใช่เรื่องของผู้ใช้ตรงนี้: เรื่องคือยังบันทึกไม่ได้)
+    }
+    if (get().name !== name) throw new Error("the open scenario changed");
+    if (get().docStale) throw new ApiError({ status: 0, code: "DOC_STALE", text: msg("scenario.docStale") });
+  };
+
+  /** ต้นไม้ใหม่หลัง PUT (doc มาแล้วกับตัว PUT) ล้มเหลวแค่เตือน ต้นไม้เก่ากว่าไม่กระทบการเขียนครั้งถัดไป */
+  const refreshTree = async (name: string): Promise<void> => {
+    const v0 = version;
+    try {
+      const { data } = await apiGet<unknown>(`${base(name)}/objects`);
+      assertTree(data);
+      if (get().name === name && version === v0) set({ tree: data });
+    } catch (e) {
+      warnReload(name, e);
+    }
+  };
+
+  /** catalog ใหม่หลัง PUT ถ้า snapshot หรือช่วงวิเคราะห์เปลี่ยน (doc เข้า store ไปแล้ว catalog ตามมา) */
+  const refreshCatalog = async (name: string, before: ScenarioDoc | null, saved: ScenarioDoc): Promise<void> => {
+    if (catalogInputs(before) === catalogInputs(saved)) return;
+    const catalog = await loadCatalog(saved, undefined);
+    if (get().name === name && catalogInputs(get().doc) === catalogInputs(saved)) set({ catalog });
+  };
 
   return {
     ...EMPTY,
@@ -228,6 +296,7 @@ export const useScenario = create<ScenarioState>()((set, get) => {
       const ctl = new AbortController();
       loadCtl = ctl;
       const token = ++loadSeq;
+      opening = { name, token, events: [] };
       const { signal } = ctl;
       try {
         const [docRes, treeRes] = await Promise.all([
@@ -238,15 +307,19 @@ export const useScenario = create<ScenarioState>()((set, get) => {
         const doc = docRes.data;
         const catalog = await loadCatalog(doc, signal);
         if (token !== loadSeq) return false;
+        const held = opening?.token === token ? opening.events : [];
+        opening = null;
         version++;
-        set({ name, doc, etag: docRes.etag, tree: treeRes.data as ObjectTree, catalog, conflict: false });
+        set({ name, doc, etag: docRes.etag, tree: treeRes.data as ObjectTree, catalog, conflict: false, docStale: false });
         useSelection.getState().select(null);
         useResults.getState().reset();
         useTime.getState().init(doc);
-        await useResults.getState().refresh();
+        // event ที่มาถึงระหว่างเปิด (ก่อนมี doc ให้เทียบ ETag) เล่นซ้ำตอนนี้: ETag ต่างจากที่โหลดมา = โหลดใหม่, ถูกลบ = ปิด, results_stale = ดึงผลลัพธ์
+        await Promise.all([useResults.getState().refresh(), ...held.map((e) => get().onScenarioEvent(e))]);
         return true;
       } catch (e) {
         if (token !== loadSeq) return false; // มี load ใหม่กว่า (หรือ close) แล้ว ผลของรอบนี้ไม่ใช่เรื่องของใครอีก
+        opening = null;
         ctl.abort();
         if (isAbortError(e)) return false;
         report("error", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.openFailed", { name, message: errorText(e) }));
@@ -273,6 +346,7 @@ export const useScenario = create<ScenarioState>()((set, get) => {
       loadSeq++;
       loadCtl?.abort();
       loadCtl = null;
+      opening = null;
       version++;
       set({ ...EMPTY, catalog: new Map() });
       useResults.getState().reset();
@@ -280,32 +354,43 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     },
 
     putDoc: async (mutate) => {
-      const { doc, name } = get();
-      if (doc === null || name === null) throw new Error("no scenario is open");
+      const name = openName();
+      if (get().docStale) await ensureFreshDoc(name);
+      const doc = get().doc;
+      if (doc === null || get().name !== name) throw new Error("no scenario is open");
       const draft = structuredClone(doc);
       mutate(draft);
-      const res = await send<ScenarioDoc>("PUT", "", draft);
+      const res = await send<ScenarioDoc>(name, "PUT", "", draft);
       const stale = res.headers.get("X-Results-Stale")?.trim().toLowerCase() === "true";
-      version++;
-      const etag = res.etag ?? get().etag;
-      set({ etag });
-      // เอกสารที่ server ตอบกลับคือที่บันทึกจริง (เติมค่าเริ่มต้นแล้ว) ใช้เลย ต้นไม้ดึงใหม่
+      if (get().name !== name) return { stale }; // ปิดหรือสลับ scenario ระหว่างเขียน
+      const refreshResults = stale ? useResults.getState().refresh() : undefined;
+      let saved: ScenarioDoc | null = null;
       try {
-        const treeRes = await apiGet<unknown>(`${base(name)}/objects`);
-        assertUsable(res.data, treeRes.data);
-        await commit(res.data, etag, treeRes.data as ObjectTree, () => get().name === name);
-      } catch (e) {
-        if (!isAbortError(e)) report("warning", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.reloadFailed", { name, message: errorText(e) }));
+        assertDoc(res.data);
+        saved = res.data;
+      } catch {
+        saved = null;
       }
-      if (stale) await useResults.getState().refresh();
+      if (saved !== null && res.etag !== null) {
+        // เอกสารที่ server ตอบกลับคือที่บันทึกจริง (เติมค่าเริ่มต้นแล้ว) ใช้พร้อม ETag ใหม่ทันที ต่อให้โหลดต้นไม้ไม่ได้ doc กับ ETag ก็ยังไปด้วยกัน
+        const before = get().doc;
+        applyDoc(saved, res.etag);
+        await Promise.all([refreshCatalog(name, before, saved), refreshTree(name), refreshResults]);
+      } else {
+        // ตอบมาไม่ครบ (ไม่มี ETag หรือเอกสารอ่านไม่ได้): ไม่รู้ว่า doc กับ ETag ตัวไหนถูก โหลดใหม่ทั้งหมด
+        version++;
+        set({ docStale: true });
+        await Promise.all([pullQuiet(), refreshResults]);
+      }
       return { stale };
     },
 
     patchObject: (cls, name, pages) => write("PATCH", `/objects/${enc(cls)}/${enc(name)}`, pages),
 
     insert: async (body) => {
-      const res = await send<{ created?: unknown; etag?: unknown; results_stale?: unknown }>("POST", "/objects", body);
-      await afterWrite(res);
+      const name = openName();
+      const res = await send<{ created?: unknown; etag?: unknown; results_stale?: unknown }>(name, "POST", "/objects", body);
+      await afterWrite(name, res);
       return Array.isArray(res.data.created) ? res.data.created.filter((p): p is string => typeof p === "string") : [];
     },
 
@@ -316,6 +401,10 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     setGroup: (name, members) => write("POST", "/groups", { name, members }),
 
     onScenarioEvent: async (e) => {
+      if (opening !== null && e.name === opening.name) {
+        opening.events.push(e); // ยังเปิดอยู่ ยังไม่มี ETag ให้เทียบ: เก็บไว้เล่นซ้ำหลังเปิดเสร็จ
+        return;
+      }
       const s = get();
       if (s.name === null || e.name !== s.name) return;
       if (e.etag === null) {

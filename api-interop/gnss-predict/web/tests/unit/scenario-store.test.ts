@@ -370,6 +370,215 @@ describe("writes", () => {
   });
 });
 
+describe("a write whose reload fails", () => {
+  /** server ปลอมที่จำค่าที่เขียนไว้จริง: PATCH เปลี่ยน description เป็น "patched", PUT เก็บ body ทั้งก้อน */
+  function stateful() {
+    const s = { cur: E1, doc: structuredClone(DOC) as Record<string, unknown>, docFails: false, treeFails: false };
+    const f = stubFetch({
+      [`PATCH ${BASE}/objects/Satellite/G01`]: () => { s.doc = { ...s.doc, description: "patched" }; s.cur = E2; return { json: { etag: "2222222222222222", results_stale: false }, headers: { ETag: E2 } }; },
+      [`GET ${BASE}`]: () => (s.docFails ? { status: 500, json: { code: "INTERNAL", text: "ขัดข้อง" } } : { json: s.doc, headers: { ETag: s.cur } }),
+      [`GET ${BASE}/objects`]: () => (s.treeFails ? { status: 500, json: { code: "INTERNAL", text: "ขัดข้อง" } } : { json: TREE, headers: { ETag: s.cur } }),
+      [`PUT ${BASE}`]: (c) => { s.doc = c.body as Record<string, unknown>; s.cur = s.cur === E1 ? E2 : E3; return { json: s.doc, headers: { ETag: s.cur, "X-Results-Stale": "false" } }; },
+      [`GET ${BASE}/results`]: { json: RESULTS_MISSING },
+    });
+    return { s, f };
+  }
+
+  beforeEach(async () => {
+    server();
+    await st().load("E2E");
+    useMessages.setState(useMessages.getInitialState(), true);
+  });
+
+  test("the write still succeeds, the ETag moves on, and the doc is marked stale with a warning", async () => {
+    const { s } = stateful();
+    s.docFails = true;
+    expect(await st().patchObject("Satellite", "G01", { basic: { description: "x" } })).toEqual({ stale: false });
+    expect(st().etag).toBe(E2);
+    expect(st().docStale).toBe(true);
+    expect(st().doc?.description).toBeUndefined();
+    expect(useMessages.getState().items.some((m) => m.level === "warning")).toBe(true);
+  });
+
+  test("the next putDoc reloads first, so the earlier change is not reverted by an old copy of the doc", async () => {
+    const { s, f } = stateful();
+    s.docFails = true;
+    await st().patchObject("Satellite", "G01", { basic: { description: "x" } });
+    s.docFails = false;
+    await st().putDoc((d) => { d.units = { date_format: "LTZG" }; });
+    const put = f.calls.find((c) => c.method === "PUT");
+    expect(put?.headers.get("if-match")).toBe(E2);
+    expect((put?.body as { description?: string }).description).toBe("patched");
+    expect((put?.body as { units?: unknown }).units).toEqual({ date_format: "LTZG" });
+    expect(st().docStale).toBe(false);
+    expect(st().doc?.description).toBe("patched");
+    expect(st().etag).toBe(E3);
+  });
+
+  test("a putDoc that cannot get a fresh doc is refused with a Thai message and sends nothing", async () => {
+    const { s, f } = stateful();
+    s.docFails = true;
+    await st().patchObject("Satellite", "G01", { basic: { description: "x" } });
+    const err = await st().putDoc((d) => { d.description = "mine"; }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe("DOC_STALE");
+    expect((err as ApiError).text).toMatch(THAI);
+    expect(f.calls.some((c) => c.method === "PUT")).toBe(false);
+    expect(st().etag).toBe(E2);
+    expect(st().docStale).toBe(true);
+    expect(st().conflict).toBe(false);
+  });
+
+  test("another object write does not need the doc, so it goes ahead with the new ETag", async () => {
+    const { s, f } = stateful();
+    s.docFails = true;
+    await st().patchObject("Satellite", "G01", {});
+    await st().patchObject("Satellite", "G01", {});
+    const patches = f.calls.filter((c) => c.method === "PATCH");
+    expect(patches[1].headers.get("if-match")).toBe(E2);
+  });
+
+  test("a later successful reload clears the stale mark", async () => {
+    const { s } = stateful();
+    s.docFails = true;
+    await st().patchObject("Satellite", "G01", {});
+    s.docFails = false;
+    await st().reload();
+    expect(st().docStale).toBe(false);
+    expect(st().doc?.description).toBe("patched");
+  });
+
+  test("putDoc keeps the saved doc and its ETag together even when the tree cannot be reloaded", async () => {
+    const { s, f } = stateful();
+    s.treeFails = true;
+    await st().putDoc((d) => { d.description = "first"; });
+    expect(st().doc?.description).toBe("first");
+    expect(st().etag).toBe(E2);
+    expect(st().docStale).toBe(false);
+    expect(useMessages.getState().items.some((m) => m.level === "warning")).toBe(true);
+    // ครั้งต่อไปต่อยอดจากเอกสารที่เพิ่งบันทึก ไม่ย้อนค่าแรก
+    await st().putDoc((d) => { d.units = { date_format: "LTZG" }; });
+    const puts = f.calls.filter((c) => c.method === "PUT");
+    expect(puts[1].headers.get("if-match")).toBe(E2);
+    expect((puts[1].body as { description?: string }).description).toBe("first");
+  });
+
+  test("a write that finishes after the scenario was closed leaves the store alone", async () => {
+    const gate = deferred<{ json: unknown; headers: Record<string, string> }>();
+    const f = stubFetch({
+      [`PATCH ${BASE}/objects/Satellite/G01`]: () => gate.promise,
+      [`GET ${BASE}`]: { json: DOC, headers: { ETag: E2 } },
+      [`GET ${BASE}/objects`]: { json: TREE, headers: { ETag: E2 } },
+      [`GET ${BASE}/results`]: { json: RESULTS_MISSING },
+    });
+    const write = st().patchObject("Satellite", "G01", {});
+    st().close();
+    gate.resolve({ json: { etag: "2222222222222222", results_stale: true }, headers: { ETag: E2 } });
+    expect(await write).toEqual({ stale: true });
+    expect(st().name).toBeNull();
+    expect(st().etag).toBeNull();
+    expect(st().docStale).toBe(false);
+    expect(f.calls.map((c) => c.method)).toEqual(["PATCH"]); // ไม่โหลดอะไรต่อ ไม่แตะผลลัพธ์ของ scenario อื่น
+  });
+
+  test("the same holds for putDoc, and a 412 that comes back after a switch does not mark the new scenario as conflicting", async () => {
+    const gate = deferred<{ status: number; json: unknown }>();
+    stubFetch({ [`PUT ${BASE}`]: () => gate.promise });
+    const write = st().putDoc((d) => { d.description = "x"; }).catch((e: unknown) => e);
+    st().close();
+    gate.resolve({ status: 412, json: { code: "ETAG_MISMATCH", text: "x" } });
+    expect(await write).toBeInstanceOf(ApiError);
+    expect(st().conflict).toBe(false);
+
+    await (async () => {
+      server();
+      await st().load("E2E");
+    })();
+    const gate2 = deferred<{ json: unknown; headers: Record<string, string> }>();
+    stubFetch({ [`PUT ${BASE}`]: () => gate2.promise });
+    const w2 = st().putDoc((d) => { d.description = "y"; });
+    st().close();
+    gate2.resolve({ json: { ...DOC, description: "y" }, headers: { ETag: E3, "X-Results-Stale": "false" } });
+    expect(await w2).toEqual({ stale: false });
+    expect(st().doc).toBeNull();
+    expect(st().etag).toBeNull();
+  });
+});
+
+describe("a scenario event that arrives while the scenario is still opening", () => {
+  function opening(onSecond: Handler = { json: { ...DOC, description: "newer" }, headers: { ETag: E2 } }) {
+    const gate = deferred<{ json: unknown; headers: Record<string, string> }>();
+    let docCalls = 0;
+    const f = stubFetch({
+      [`GET ${BASE}`]: () => (++docCalls === 1 ? gate.promise : typeof onSecond === "function" ? onSecond({} as never) : onSecond),
+      [`GET ${BASE}/objects`]: () => ({ json: TREE, headers: { ETag: E1 } }),
+      "GET /api/catalog": { json: [] },
+      [`GET ${BASE}/results`]: { json: RESULTS_MISSING },
+    });
+    return { gate, f, docCalls: () => docCalls };
+  }
+
+  test("is not dropped: once opened, a different ETag reloads the doc", async () => {
+    const { gate, f } = opening();
+    const load = st().load("E2E");
+    await st().onScenarioEvent({ name: "E2E", etag: "2222222222222222", results_stale: false });
+    gate.resolve({ json: DOC, headers: { ETag: E1 } });
+    expect(await load).toBe(true);
+    expect(st().etag).toBe(E2);
+    expect(st().doc?.description).toBe("newer");
+    expect(f.calls.filter((c) => c.path === BASE)).toHaveLength(2);
+  });
+
+  test("an event with the ETag we already loaded changes nothing", async () => {
+    const { gate, f } = opening();
+    const load = st().load("E2E");
+    await st().onScenarioEvent({ name: "E2E", etag: "1111111111111111", results_stale: false });
+    gate.resolve({ json: DOC, headers: { ETag: E1 } });
+    await load;
+    expect(f.calls.filter((c) => c.path === BASE)).toHaveLength(1);
+    expect(st().etag).toBe(E1);
+  });
+
+  test("a results_stale flag is honoured after the open", async () => {
+    const { gate, f } = opening();
+    const load = st().load("E2E");
+    await st().onScenarioEvent({ name: "E2E", etag: "1111111111111111", results_stale: true });
+    gate.resolve({ json: DOC, headers: { ETag: E1 } });
+    await load;
+    expect(f.calls.filter((c) => c.path === `${BASE}/results`).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("a deletion that arrives meanwhile closes the scenario right after it opened, with the Thai warning", async () => {
+    const { gate } = opening();
+    const load = st().load("E2E");
+    await st().onScenarioEvent({ name: "E2E", etag: null, results_stale: false });
+    gate.resolve({ json: DOC, headers: { ETag: E1 } });
+    await load;
+    expect(st().name).toBeNull();
+    const m = useMessages.getState().items.filter((x) => x.level === "warning");
+    expect(m).toHaveLength(1);
+    expect(m[0].text).toMatch(THAI);
+  });
+
+  test("events for another scenario are not held back, and a failed open drops what was held", async () => {
+    server();
+    await st().load("E2E");
+    const slow = deferred<{ status: number; json: unknown }>();
+    stubFetch({
+      "GET /api/scenarios/BAD": () => slow.promise,
+      "GET /api/scenarios/BAD/objects": { status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ" } },
+    });
+    const bad = st().load("BAD");
+    stubFetch({ [`GET ${BASE}`]: { json: DOC, headers: { ETag: E2 } }, [`GET ${BASE}/objects`]: { json: TREE, headers: { ETag: E2 } } });
+    await st().onScenarioEvent({ name: "E2E", etag: "2222222222222222", results_stale: false });
+    expect(st().etag).toBe(E2); // E2E ที่เปิดอยู่ ประมวลผลตามปกติ
+    await st().onScenarioEvent({ name: "BAD", etag: "3333333333333333", results_stale: false });
+    slow.resolve({ status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ" } });
+    expect(await bad).toBe(false);
+    expect(st().name).toBe("E2E");
+  });
+});
+
 describe("onScenarioEvent", () => {
   beforeEach(async () => {
     server();
