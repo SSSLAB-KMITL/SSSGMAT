@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { ENUMS } from "../../src/api/enums.gen";
-import { labels, optionLabel, oursLabels, t } from "../../src/labels/labels";
+import { labels, optionLabel, oursLabels, t, type LabelKey } from "../../src/labels/labels";
 import { MSG_KEYS, msg, type MsgKey } from "../../src/labels/messages.th";
 
 const ref = readFileSync(resolve(__dirname, "../../../docs/2026-11-11-gnss-studio-stk-reference.md"), "utf8");
@@ -37,25 +37,170 @@ test("Thai flag explanations exist for every engine flag", () => {
 
 // ---- ตรวจเข้มกว่าบรีฟ: กันการอ้าง STK ลอยๆ ----
 
-const sections = new Map<string, string>();
-// ส่วนของหัวข้อ = บรรทัดหัวข้อ ("## C. Properties Browser") รวมเนื้อหาจนถึงหัวข้อถัดไป
-for (const m of ref.matchAll(/^## ([A-F])\. [^\n]*\n[\s\S]*?(?=^## [A-F]\. |(?![\s\S]))/gm)) sections.set(m[1], m[0]);
+type RefSection = { heading: string; sources: string[] };
+
+/**
+ * แยก reference ตามหัวข้อ "## X. ชื่อ" แล้วเก็บเฉพาะที่ใช้เป็นหลักฐานได้:
+ *  - sources = เซลล์ Item (คอลัมน์ 1) และ "STK term / behavior" (คอลัมน์ 3) ของทุกแถวตาราง
+ *    คอลัมน์ Verdict (2), Page (4) และข้อความนอกตารางไม่นับ
+ *  - heading = ชื่อหลัง "X. " ใช้ได้เฉพาะชื่อหน้าต่าง/ส่วน (เช่น "Properties Browser") ดู hasTerm
+ */
+function parseSections(doc: string): Map<string, RefSection> {
+  const out = new Map<string, RefSection>();
+  let cur: RefSection | undefined;
+  for (const line of doc.split("\n")) {
+    const h = /^## ([A-F])\. (.+)$/.exec(line);
+    if (h) { cur = { heading: h[2].trim(), sources: [] }; out.set(h[1], cur); continue; }
+    if (!cur || !line.startsWith("|")) continue;
+    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+    if (cells.length !== 4) throw new Error(`table row must have 4 cells: ${line}`);
+    if (cells.every((c) => /^-+$/.test(c)) || (cells[0] === "Item" && cells[1] === "Verdict")) continue;
+    cur.sources.push(cells[0], cells[2]);
+  }
+  return out;
+}
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-/** พบเป็นคำเต็ม ไม่ใช่เศษกลางคำอื่น (กัน "Save" ที่โผล่ใน GetStart_SaveLoadTable.htm) */
-const hasTerm = (haystack: string, text: string) => new RegExp(`(?<![A-Za-z0-9])${escapeRe(text)}(?![A-Za-z0-9])`).test(haystack);
+/** ตัวคั่นที่ยอมรับรอบคำ: , / ; ( ) = * + และเครื่องหมายคำพูด (เว้นวรรคข้างตัวคั่นได้) ไม่ใช่แค่อักขระใดๆ ที่ไม่ใช่ตัวอักษรหรือตัวเลข */
+const DELIMS = `,/;()=*+"'\u201C\u201D`;
+/** ต้นหรือท้ายเซลล์ หรือตัวคั่นอยู่ติดคำ (ผ่านช่องว่างได้) ทั้งสองข้าง: "Start" ใน "Interval Start/Stop Time" ไม่ผ่านเพราะซ้ายเป็นคำ "Interval" */
+const termRegExp = (text: string) =>
+  new RegExp(`(?<=(?:^|[${DELIMS}])\\s*)${escapeRe(text)}(?=\\s*(?:$|[${DELIMS}]))`);
+
+/** หัวข้อ "## X. ชื่อ" นับเฉพาะเมื่อ allowHeading (ป้ายชื่อหน้าต่าง) และตรงทั้งบรรทัด ไม่ใช่เป็นส่วนของข้อความ */
+function hasTerm(section: RefSection, text: string, allowHeading = false): boolean {
+  if (allowHeading && section.heading === text) return true;
+  const re = termRegExp(text);
+  return section.sources.some((cell) => re.test(cell));
+}
+
+const sections = parseSections(ref);
+
+describe("the reference matcher", () => {
+  const demo = parseSections([
+    "## A. Demo window", "",
+    "| Item | Verdict | STK term / behavior | Page |", "|---|---|---|---|",
+    "| Alpha tool | Zulu | Reset, Step Forward, Interval Start/Stop Time, Time Step table, Mode (Open / Close) | pages/Hotel.htm |",
+    "| Beta | OK | Kilo = Real Time; \"Quoted Name\", **Pause** | pages/Beta.htm |",
+  ].join("\n")).get("A")!;
+
+  test("accepts a term that is a whole Item cell or sits between delimiters", () => {
+    for (const x of ["Alpha tool", "Beta", "Reset", "Step Forward", "Open", "Close", "Real Time", "Quoted Name", "Pause"])
+      expect(hasTerm(demo, x), x).toBe(true);
+  });
+
+  test("rejects a term that appears only in a Verdict or a Page cell", () => {
+    for (const x of ["Zulu", "OK", "pages/Hotel.htm", "Hotel.htm", "Hotel", "Beta.htm", "pages/Beta.htm"]) expect(hasTerm(demo, x), x).toBe(false);
+  });
+
+  test("rejects a term that is only a substring of a longer term", () => {
+    // "Start" อยู่ใน "Interval Start/Stop Time"; "Step"/"Time Step" ใน "Time Step table"; "Real" ใน "Real Time"
+    for (const x of ["Start", "Stop", "Step", "Time Step", "Time", "Real", "Tool", "Alph", "Interval", "Mod"]) expect(hasTerm(demo, x), x).toBe(false);
+  });
+
+  test("**Start** is accepted, and without it \"Start\" is not found in \"Interval Start/Stop Time\"", () => {
+    const withBold = parseSections("## A. D\n| Item | Verdict | STK term / behavior | Page |\n|---|---|---|---|\n| X | OK | Reset, **Start**, Step Forward, Interval Start/Stop Time | p.htm |").get("A")!;
+    const withoutBold = parseSections("## A. D\n| Item | Verdict | STK term / behavior | Page |\n|---|---|---|---|\n| X | OK | Reset, Step Forward, Interval Start/Stop Time | p.htm |").get("A")!;
+    expect(hasTerm(withBold, "Start")).toBe(true);
+    expect(hasTerm(withoutBold, "Start")).toBe(false);
+  });
+
+  test("a heading counts only as the whole heading and only when allowed", () => {
+    const withHeading = parseSections("## C. Properties Browser\n| Item | Verdict | STK term / behavior | Page |\n|---|---|---|---|\n| X | OK | Apply | p.htm |").get("C")!;
+    expect(hasTerm(withHeading, "Properties Browser")).toBe(false);
+    expect(hasTerm(withHeading, "Properties Browser", true)).toBe(true);
+    expect(hasTerm(withHeading, "Properties", true)).toBe(false);
+    expect(hasTerm(withHeading, "Browser", true)).toBe(false);
+  });
+
+  test("the real reference parses into sections A to F, every row with 4 cells", () => {
+    expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F"]);
+    for (const [k, sec] of sections) expect(sec.sources.length, k).toBeGreaterThan(0);
+    expect(sections.get("C")!.heading).toBe("Properties Browser");
+  });
+});
+
+/**
+ * stk label ที่ตัวคั่นข้างบนยืนยันไม่ได้ เพราะ reference เขียนชื่อนั้นกลางประโยค ("Object Browser on the left"),
+ * ต่อท้ายชื่อชนิด object ("Satellite Basic - Orbit"), ตามด้วยรายการค่า ("DateFormat UTCG, LCLG") หรือคั่นด้วย : . → ซึ่งไม่อยู่ในตัวคั่น
+ * ทุกรายการอ้างข้อความจาก reference ตรงตัว (ต้องอยู่ในเซลล์ Item หรือ "STK term / behavior" ของหัวข้อที่อ้าง ยาวไม่เกิน 60 ตัวอักษร
+ * และมีข้อความของ label อยู่ในนั้น) test ตรวจทั้งหมดนี้ และตรวจว่าแต่ละรายการยังจำเป็น (ถ้าตัวคั่นยืนยันได้เองให้ลบรายการ)
+ * ห้ามใส่รายการเพื่อให้คำที่เป็นแค่ส่วนหนึ่งของชื่อที่ยาวกว่า (เช่น "Start" ใน "Interval Start/Stop Time") ผ่าน
+ */
+const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
+  "menu.help": "Window, Help.",
+  "menu.view.objectBrowser": "Object Browser on the left",
+  "menu.view.timelineView": "Timeline View at the bottom",
+  "toolbar.window3dDefaults": "carry 2D Window Defaults / 3D Window Defaults.",
+  "toolbar.window2dDefaults": "carry 2D Window Defaults / 3D Window Defaults.",
+  "anim.currentTime": "fields Current Scenario Time, Time Step",
+  "window.objectBrowser": "Object Browser on the left",
+  "window.timelineView": "Timeline View at the bottom",
+  "window.insertObjects": "Insert STK Objects opens after a new scenario",
+  "dialog.selectColor": "\u2192 Select color;",
+  "dialog.welcome.createScenario": ": Create a Scenario / Open a Scenario;",
+  "dialog.insert.defineProperties": "\"Select A Method\": Define Properties, Insert Default",
+  "dialog.catalog.searchStandardObjectData": "(\u2192 Search Standard Object Data;",
+  "dialog.catalog.dataSources": "; Data Sources Online/Local;",
+  // หน้า Properties: Item ของ reference เขียน "<ชนิด object> <ชื่อหน้า>" (หน้าของ Facility ใช้ชื่อเดียวกับของ Satellite ตามกติกา "Group - Page" ของ §C)
+  "page.scenario.basicTime": "Scenario Basic - Time",
+  "page.scenario.graphics2dGlobalAttributes": "Scenario 2D Graphics - Global Attributes",
+  "page.facility.graphics2dAttributes": "Satellite 2D Graphics - Attributes",
+  "page.satellite.basicOrbit": "Satellite Basic - Orbit",
+  "page.satellite.graphics2dAttributes": "Satellite 2D Graphics - Attributes",
+  "page.satellite.graphics2dPass": "Satellite 2D Graphics - Pass",
+  "page.satellite.graphics2dSwath": "Satellite 2D Graphics - Swath",
+  "page.satellite.graphics3dOrbitSystem": "Satellite 3D Graphics - Orbit System",
+  "field.analysisPeriod": "holds the Analysis Period and the Animation section",
+  "field.animation": "the Animation section: Start Time",
+  "field.animationStartTime": "Animation section: Start Time;",
+  "field.animationCycle": "Animation Cycle Off / Stop at Time",
+  "field.dateFormat": "DateFormat UTCG, LCLG",
+  "field.positionType": "(Position Type Geodetic",
+  "field.elevationAngle": "(add Elevation Angle from",
+  "field.propagator": "Propagator SGP4;",
+  "field.availableObjects": "(Available Objects \u2192 Assigned Objects)",
+  "field.assignedObjects": "(Available Objects \u2192 Assigned Objects)",
+  "option.cycle.off": "Animation Cycle Off / Stop at Time",
+  "option.dateFormat.utcg": "DateFormat UTCG, LCLG",
+  "option.positionType.geodetic": "Position Type Geodetic",
+  "option.propagator.sgp4": "Propagator SGP4;",
+  "ob.class.scenario": "Scenario is the root",
+  "ob.class.facility": "Facility groups",
+  "ob.class.satellite": "Satellite extras:",
+  "mv.tab.all": "Tabs All Messages / Errors",
+  "status.stop": "progress bar with Stop",
+};
 
 describe("stk labels are real STK terms", () => {
-  test("the reference has sections A to F", () => expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F"]));
-
-  test("each stk label cites a section that contains it as a whole term", () => {
+  test("each stk label cites a section whose Item or STK term cell contains it between delimiters, or quotes the reference (PROSE_EVIDENCE)", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
       if (l.source !== "stk") continue;
       const m = /^STK ref §([A-F])$/.exec(l.ref ?? "");
       if (!m) { bad.push(`${k}: ref ${JSON.stringify(l.ref)}`); continue; }
-      if (!hasTerm(sections.get(m[1])!, l.text)) bad.push(`${k}: "${l.text}" not in §${m[1]}`);
+      const sec = sections.get(m[1])!;
+      // ชื่อหัวข้อนับได้เฉพาะป้ายชื่อหน้าต่าง (window.*) เช่น "Properties Browser" ที่ reference เขียนไว้ที่หัวข้อ C เท่านั้น
+      const strict = hasTerm(sec, l.text, k.startsWith("window."));
+      const quote = PROSE_EVIDENCE[k as LabelKey];
+      if (strict) { if (quote !== undefined) bad.push(`${k}: PROSE_EVIDENCE not needed, the delimiter rule confirms it`); continue; }
+      if (quote === undefined) bad.push(`${k}: "${l.text}" not in §${m[1]}`);
+      else if (!sec.sources.some((c) => c.includes(quote))) bad.push(`${k}: quote ${JSON.stringify(quote)} not in an Item/STK term cell of §${m[1]}`);
+      else if (!quote.includes(l.text)) bad.push(`${k}: quote ${JSON.stringify(quote)} does not contain "${l.text}"`);
+      else if (quote.length > 60) bad.push(`${k}: quote longer than 60 characters`);
     }
+    for (const k of Object.keys(PROSE_EVIDENCE)) if (labels[k as LabelKey]?.source !== "stk") bad.push(`${k}: PROSE_EVIDENCE entry for a label that is not stk`);
     expect(bad).toEqual([]);
+  });
+
+  test("terms the reference writes only inside a longer phrase are not claimed as stk", () => {
+    expect(hasTerm(sections.get("E")!, "Ambient Level")).toBe(false);            // มีแต่ใน "Sun Lighting Ambient Level"
+    expect(hasTerm(sections.get("E")!, "Sun Lighting Ambient Level")).toBe(true);
+    expect(hasTerm(sections.get("F")!, "Access")).toBe(false);                   // มีแต่ "Access tool buttons", "Access For", ...
+    expect(hasTerm(sections.get("B")!, "Group")).toBe(false);                    // มีแต่ "New Group", "Groups"
+    expect(hasTerm(sections.get("A")!, "Windows")).toBe(false);                  // มีแต่ "Windows..."
+    for (const k of ["toolbar.access", "ob.class.group", "window.windows"] as const) expect(labels[k].source, k).toBe("ours");
+    expect(labels["field.ambientLevel"]).toEqual({ text: "Sun Lighting Ambient Level", source: "stk", ref: "STK ref §E" });
   });
 
   test("ours labels carry no STK reference", () => {
@@ -67,8 +212,12 @@ describe("stk labels are real STK terms", () => {
     for (const text of ["Welcome to GNSS Studio", "3D Graphics {n} - Earth", "Basic - Ionosphere", "Basic - Description", "Fetch Orbit Data...",
                         "Daily Forecast Settings...", "Validation...", "STK UI Reference", "Search Satellite Catalog", "New Scenario Wizard",
                         "Save", "Save As...", "Open...", "Exit", "Full Screen", "Expand All", "Collapse All", "Zoom Out",
-                        "Set Animation Time to Interval Start Time", "Set Animation Time to Interval Stop Time"])
-      for (const [k, l] of Object.entries(labels)) if (l.text === text) expect([k, l.source]).toEqual([k, "ours"]);
+                        "Set Animation Time to Interval Start Time", "Set Animation Time to Interval Stop Time",
+                        "Access", "Group", "Windows"]) {
+      const hits = Object.entries(labels).filter(([, l]) => l.text === text);
+      expect(hits.length, `a label with text "${text}" must exist`).toBeGreaterThan(0);
+      for (const [k, l] of hits) expect([k, l.source]).toEqual([k, "ours"]);
+    }
   });
 
   test("matching is case-sensitive: the reference says \"SSC number\", so \"SSC Number\" would not be stk", () => {
@@ -121,7 +270,7 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§8/§6.1 option words", ["option."], ["Time Step", "Real Time", "X Real-Time", "Off", "Stop at Time", "Loop at Time", "UTCG", "LTZG",
                                           "Time", "Percent", "Quarter", "Half", "Full", "All", "None", "One Pass", "Current Interval", "Same As Lead",
                                           "No Graphics", "Edge Limits", "Filled Limits", "Kilometers", "Degrees"]],
-  ["§9 window properties", ["field.", "option.", "page."], ["Enable Lighting", "Ambient Level", "Sun Level", "Night Lights Level", "Lat/Lon Lines", "Label Declutter",
+  ["§9 window properties", ["field.", "option.", "page."], ["Enable Lighting", "Sun Lighting Ambient Level", "Sun Level", "Night Lights Level", "Lat/Lon Lines", "Label Declutter",
                                                              "Show Time", "Lighting", "Details", "Annotation", "Projection", "Display Coordinate Frame",
                                                              "Equidistant Cylindrical", "Mercator", "ECF", "ECI", "Show Outline", "Shading", "Show IPP"]],
   ["§9.2 View From/To", ["field.", "option."], ["Mode", "From Position to Position", "From Position", "To Position", "Reference Frame", "Fixed", "Inertial"]],
@@ -242,6 +391,24 @@ describe("Thai messages", () => {
     expect(msg("flag.unhealthy")).toMatch(/unhealthy|ไม่ปกติ/);
     expect(msg("flag.prn_changed")).toMatch(/IGS/);
     expect(msg("flag.name_mismatch")).toMatch(/CelesTrak/); expect(msg("flag.name_mismatch")).toMatch(/IGS/);
+  });
+
+  test("flag texts that exclude a satellite from DOP are exactly the engine's DOP_EXCLUDED_FLAGS", () => {
+    const py = readFileSync(resolve(__dirname, "../../../gnss_predict/catalog.py"), "utf8");
+    const set = /^DOP_EXCLUDED_FLAGS = frozenset\(\{([^}]*)\}\)/m.exec(py);
+    expect(set, "DOP_EXCLUDED_FLAGS not found in gnss_predict/catalog.py").not.toBeNull();
+    const excluded = [...set![1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+    expect(excluded).toEqual(["no_broadcast", "too_old", "unhealthy"]);
+    const saying = ["stale", "too_old", "no_broadcast", "unhealthy", "prn_changed", "name_mismatch"].filter((f) => /DOP/.test(msg(`flag.${f}` as MsgKey))).sort();
+    expect(saying).toEqual(excluded);
+  });
+
+  test("too_old and no_broadcast say the scenario's satellite_filter hides them by default, without promising a UI control", () => {
+    for (const f of ["too_old", "no_broadcast"] as const) {
+      expect(msg(`flag.${f}`), f).toMatch(/satellite_filter/);
+      expect(msg(`flag.${f}`), f).toMatch(/scenario\.json/);
+      expect(msg(`flag.${f}`), f).not.toMatch(/เปิดแสดงได้|จากตัวกรอง/);
+    }
   });
 
   test("the messages later tasks need exist and are Thai", () => {

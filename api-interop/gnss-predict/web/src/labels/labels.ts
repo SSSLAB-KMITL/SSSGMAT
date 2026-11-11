@@ -2,8 +2,10 @@
 // ทุกที่ในแอปเรียก t("<key>") ไม่เขียนข้อความตรงๆ
 //
 // กติกาของ source
-//   stk  = ข้อความนี้พบตรงตัว (ตัวพิมพ์เป็นตัวตัดสิน) ใน docs/2026-11-11-gnss-studio-stk-reference.md และ reference
-//          ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู) `ref` ระบุหัวข้อที่พบ
+//   stk  = ข้อความนี้พบตรงตัว (ตัวพิมพ์เป็นตัวตัดสิน) เป็นชื่อเต็มในเซลล์ Item หรือ "STK term / behavior" ของหัวข้อที่ `ref` อ้าง
+//          ใน docs/2026-11-11-gnss-studio-stk-reference.md (คั่นด้วย , / ; ( ) = * + หรือเครื่องหมายคำพูด ไม่นับคอลัมน์ Verdict/Page
+//          ไม่นับเศษของชื่อที่ยาวกว่า) และ reference ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู)
+//          ชื่อที่ reference เขียนกลางประโยคมีข้อความอ้างตรงตัวใน test (PROSE_EVIDENCE)
 //   ours = ที่เหลือทั้งหมด แม้ฟังดูเหมือน STK (เช่น "Save", "Basic - Description") เพราะ reference ไม่ได้ยืนยัน
 //          UI "Help → STK UI Reference" แสดงทั้งสองกลุ่ม และ About ติดป้าย "Added by GNSS Studio" ที่รายการ ours
 // test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
@@ -64,7 +66,7 @@ const LABELS = {
   "menu.insert.satellite": ours("Satellite..."),
   "menu.insert.constellation": ours("Constellation..."),
 
-  "menu.analysis.access": stk("Access...", "F"),
+  "menu.analysis.access": stk("Access...", "B"),
   "menu.analysis.reportGraphManager": stk("Report & Graph Manager...", "F"),
   "menu.analysis.validation": ours("Validation..."),
 
@@ -112,7 +114,7 @@ const LABELS = {
   "toolbar.save": ours("Save"),
   "toolbar.insertObject": stk("Insert Object", "A"),
   "toolbar.properties": stk("Properties", "E"),
-  "toolbar.access": stk("Access", "F"),
+  "toolbar.access": ours("Access"),
   "toolbar.reportGraphManager": stk("Report & Graph Manager", "F"),
   "toolbar.homeView": stk("Home View", "E"),
   "toolbar.viewFromTo": stk("View From/To", "E"),
@@ -150,7 +152,7 @@ const LABELS = {
   "window.viewFromTo": stk("View From/To", "E"),
   "window.properties3d": stk("3D Graphics Window Properties", "E"),
   "window.properties2d": stk("2D Graphics Window Properties", "E"),
-  "window.windows": stk("Windows", "A"),
+  "window.windows": ours("Windows"),
   "window.fetchOrbitData": ours("Fetch Orbit Data"),
   "window.dailyForecastSettings": ours("Daily Forecast Settings"),
 
@@ -302,7 +304,7 @@ const LABELS = {
   "field.referenceFrame": ours("Reference Frame"),
   // 3D Graphics Window Properties
   "field.enableLighting": stk("Enable Lighting", "E"),
-  "field.ambientLevel": ours("Ambient Level"),
+  "field.ambientLevel": stk("Sun Lighting Ambient Level", "E"),
   "field.sunLevel": stk("Sun Level", "E"),
   "field.nightLightsLevel": stk("Night Lights Level", "E"),
   "field.latLonLines": stk("Lat/Lon Lines", "E"),
@@ -422,7 +424,7 @@ const LABELS = {
   "ob.class.facility": stk("Facility", "C"),
   "ob.class.satellite": stk("Satellite", "B"),
   "ob.class.constellation": stk("Constellation", "B"),
-  "ob.class.group": stk("Group", "B"),
+  "ob.class.group": ours("Group"),
 
   // ---------- Timeline View (spec §10, STK ref §D) ----------
   "timeline.globalTimeBar": stk("Global Time Bar", "D"),
@@ -486,6 +488,10 @@ export function oursLabels(): { key: LabelKey; text: string }[] {
 
 // ---------- ค่าที่เก็บ → คำที่แสดง ----------
 // ตารางผูกกับ ENUMS ที่สร้างจาก OpenAPI: ถ้า server เพิ่มหรือลบค่า typecheck จะแจ้งที่นี่
+// ชื่อกลุ่มตัวเลือก (field ของ optionLabel) = snake_case ของ property ที่เก็บค่านั้นใน schema (ดู tools/enum-sources.mjs):
+//   update_mode = Animation.update_mode, cycle = Animation.cycle, date_format = Units.date_format,
+//   lead_type / trail_type / visible_sides = PassSettings.*, marker_style / line_style = Graphics2DSat.*, orbit_system = Graphics3DSat.orbit_system
+//   ข้อยกเว้นเดียวคือ swath_options = SwathSettings.options (property ชื่อ `options` เฉยๆ กำกวมเมื่อแยกจาก model จึงเติม swath_)
 type Code<K extends keyof typeof ENUMS> = (typeof ENUMS)[K][number];
 
 const PASS_KEYS = {
@@ -521,7 +527,7 @@ const OPTION_KEYS = {
   } satisfies Record<Code<"OrbitSystem">, LabelKey>,
 };
 
-/** ชื่อช่องของ API ที่มีคำที่แสดงเป็นของตัวเอง; สามตัวแรก (ค่าที่เก็บเป็นโค้ด) คือที่ต้องแปลง ที่เหลือค่าที่เก็บก็คือคำ STK อยู่แล้ว */
+/** กลุ่มตัวเลือกที่มีคำที่แสดง (ชื่อกลุ่มตามคอมเมนต์เหนือ OPTION_KEYS ไม่ใช่ path ของ API); สามตัวแรก (ค่าที่เก็บเป็นโค้ด) คือที่ต้องแปลง ที่เหลือค่าที่เก็บก็คือคำที่แสดงอยู่แล้ว */
 export type OptionField = keyof typeof OPTION_KEYS;
 
 /** คำที่แสดงของค่าที่เก็บ เช่น optionLabel("cycle", "stop") = "Stop at Time"; ค่าที่ไม่รู้จักแสดงตามที่ได้มา */
