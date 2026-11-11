@@ -500,6 +500,48 @@ def test_compute_stores_what_the_request_gives(client, s1_computed):
                                               "timeline": False, "computed": True}
 
 
+DEFAULT_GRAPHICS = {"show": True, "static_highlight": False, "animate_highlight": False, "animate_line": True,
+                    "color_mode": "object", "custom_color": "#9dff6b", "inherit": True}
+
+
+def test_compute_partial_graphics_changes_only_the_sent_fields(client, s1_computed):
+    base = {**GRAPHICS, "show": True}                                              # custom_color และธงที่ไม่ใช่ค่าตั้งต้น
+    assert compute(client, {"from": FAC, "to": [GPS], "graphics": base, "time_period": SPECIFY, "timeline": False}).status_code == 200
+    stored = doc_of(client)["accesses"][-1]
+    assert stored["graphics"] == base
+    for sent in ({"show": False}, {"custom_color": "#445566"}, {"color_mode": "object", "animate_line": True}):
+        before = doc_of(client)["accesses"][-1]
+        r = compute(client, {"from": FAC, "to": [GPS], "graphics": sent})
+        assert r.status_code == 200, r.text
+        after = doc_of(client)["accesses"][-1]
+        assert after["graphics"] == {**before["graphics"], **sent}                  # เปลี่ยนเฉพาะช่องที่ส่ง
+        assert {k: v for k, v in after.items() if k != "graphics"} == {k: v for k, v in before.items() if k != "graphics"}
+    final = doc_of(client)["accesses"][-1]["graphics"]
+    assert final == {**base, "show": False, "custom_color": "#445566", "color_mode": "object", "animate_line": True}
+    assert final["static_highlight"] is True and final["inherit"] is False         # ธงที่ไม่ใช่ค่าตั้งต้นยังอยู่
+
+
+def test_compute_partial_graphics_keeps_unknown_fields_of_the_stored_graphics(client, s1_computed):
+    put_doc(client, lambda d: d["accesses"][0]["graphics"].update(x_style="keep"))
+    assert compute(client, {"from": FAC, "to": ALL_FOUR, "graphics": {"show": False}}).status_code == 200
+    graphics = doc_of(client)["accesses"][0]["graphics"]
+    assert graphics == {**DEFAULT_GRAPHICS, "show": False, "x_style": "keep"}
+
+
+def test_compute_partial_graphics_fills_defaults_for_a_new_access_or_one_without_graphics(client, s1_computed):
+    assert compute(client, {"from": FAC, "to": [GPS], "graphics": {"show": False}}).status_code == 200
+    assert doc_of(client)["accesses"][-1]["graphics"] == {**DEFAULT_GRAPHICS, "show": False}
+    put_doc(client, lambda d: d["accesses"][-1].pop("graphics"))                      # schema ให้ไม่มี graphics ได้
+    assert compute(client, {"from": FAC, "to": [GPS], "graphics": {"inherit": False}}).status_code == 200
+    assert doc_of(client)["accesses"][-1]["graphics"] == {**DEFAULT_GRAPHICS, "inherit": False}
+
+
+def test_compute_without_graphics_leaves_the_stored_graphics_alone(client, s1_computed):
+    compute(client, {"from": FAC, "to": [GPS], "graphics": GRAPHICS})
+    compute(client, {"from": FAC, "to": [GPS], "time_period": SPECIFY})
+    assert doc_of(client)["accesses"][-1]["graphics"] == GRAPHICS
+
+
 def test_compute_upserts_by_from_and_to(client, s1_computed):
     compute(client, {"from": FAC, "to": [GPS, GALILEO], "graphics": GRAPHICS, "timeline": False})
     assert len(doc_of(client)["accesses"]) == 2
@@ -585,6 +627,14 @@ def test_compute_bad_body_is_422_and_changes_nothing(client, s1_computed, data_d
     before = file_bytes(data_dir)
     assert_error(compute(client, body), 422, "SCENARIO_INVALID", field)
     assert file_bytes(data_dir) == before and client.get("/api/jobs").json() == []
+
+
+def test_bad_body_is_422_before_the_scenario_and_if_match_checks(client, s1_computed):
+    bad = {"from": FAC, "to": [GPS], "time_period": {"mode": "specify", "start": "2026-11-10T02:00:00Z", "stop": "2026-11-10T01:00:00Z"}}
+    assert_error(compute(client, bad, etag="stale"), 422, "SCENARIO_INVALID", "time_period.stop")        # ไม่ใช่ 412
+    r = client.post("/api/scenarios/nope/access/compute", json=bad, headers={"If-Match": '"x"'})
+    assert_error(r, 422, "SCENARIO_INVALID", "time_period.stop")                                           # ไม่ใช่ 404
+    assert_error(compute(client, {"from": FAC, "to": ["*/Satellite/NOPE"]}, etag="stale"), 412, "ETAG_MISMATCH")   # body ถูก: 412 ก่อน 422 ของ to
 
 
 def test_compute_body_must_be_an_object(client, s1_computed):

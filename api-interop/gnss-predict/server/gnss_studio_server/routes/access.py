@@ -10,8 +10,14 @@
   ไม่มี access ตรง n เป็น 0 และไม่เขียนอะไร (ตอบ ETag ปัจจุบัน)
 - `GET .../access/intervals?from=&to=` (`to` ซ้ำได้): `{ชื่อดาว: [ช่วง]}` ต่อดาวที่ขยายแล้ว จาก bundle ของ Facility ที่ current ตัดตาม `time_period`
   ของ access ที่เก็บไว้ซึ่งตรงกัน (mode `specify`) ผลไม่ current หรืออ่านไม่ได้ -> 409 `RESULTS_NOT_CURRENT`
-- การแก้ทุกแบบต้องส่ง `If-Match` (ไม่ส่งหรือไม่ตรง = 412 ตรวจก่อนแก้เอกสาร) และส่ง event `scenario` เมื่อเขียนจริง
-- ผิดรูปแบบ -> 422 `SCENARIO_INVALID` ที่ `from`, `to` หรือ `time_period.start` / `time_period.stop`
+- Compute ผสม `graphics` ที่ส่งมาลงในของเดิมทีละช่อง (ไม่ส่ง = คงเดิม) ส่วน `time_period` แทนที่ทั้งก้อน
+- การแก้ทุกแบบ (compute, clear, remove) ต้องส่ง `If-Match` และส่ง event `scenario` เมื่อเขียนจริง ลำดับที่ตรวจ:
+  1. body (pydantic ของ FastAPI ตรวจก่อนเข้า handler) ผิดรูปแบบ -> 422 ก่อนทุกอย่าง รวมถึงก่อน 404 และ 412
+     (`from`, `to` ชนิดผิด, `time_period.start` / `time_period.stop` / `time_period.mode`, `graphics.*`, `timeline`)
+  2. ชื่อ scenario ผิดรูปแบบ -> 422, ไม่มี scenario -> 404
+  3. `If-Match` ไม่ส่งหรือไม่ตรง -> 412 (ตรวจก่อนแก้เอกสารและก่อนคำนวณอะไร)
+  4. `from` / `to` ที่ไม่พบหรือใช้ไม่ได้ใน scenario -> 422 ที่ `from` หรือ `to`
+  ทุกข้อก่อนเขียนจริง ผิดแล้วไฟล์ไม่เปลี่ยนและไม่ส่ง job
 """
 
 import json
@@ -113,7 +119,7 @@ def compute(sc: str, body: ComputeBody, if_match: str | None = Header(None), sto
     hidden = access.hidden_satellites(doc, _ephem_manifest(directory, plans.get(sc), config.data_dir))
     computed = access.expand_targets(doc, to, hidden)
     time_period = body.time_period.model_dump(exclude_none=True) if body.time_period is not None else None
-    graphics = body.graphics.model_dump(exclude_none=True) if body.graphics is not None else None
+    graphics = body.graphics.model_dump(exclude_unset=True) if body.graphics is not None else None     # เฉพาะช่องที่ client ส่ง
     access.upsert(doc, from_path, to, time_period, graphics, body.timeline)
     tag, _ = write_tracked(store, bus, plans, sc, doc, if_match)
     facility = _facility_of(from_path)

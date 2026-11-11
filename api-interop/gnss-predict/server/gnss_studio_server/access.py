@@ -124,8 +124,11 @@ def stored_time_period(doc: dict, from_path: str, to: list[str]) -> dict:
 
 
 def upsert(doc: dict, from_path: str, to: list[str], time_period: dict | None, graphics: dict | None, timeline: bool | None) -> dict:
-    """ตั้ง access (from, to) ให้ computed: true สร้างใหม่ถ้ายังไม่มี (ค่าตั้งต้น: object, กราฟิกตั้งต้น, timeline) ถ้ามีแล้วแก้เฉพาะช่องที่ส่งมา
-    (ช่องที่เหลือ รวมช่องที่ไม่รู้จัก คงเดิม) คืน access นั้น (`from_path` และ `to` ต้องผ่าน `normalize` แล้ว)"""
+    """ตั้ง access (from, to) ให้ computed: true สร้างใหม่ถ้ายังไม่มี (ค่าตั้งต้น: object, กราฟิกตั้งต้น, timeline) ถ้ามีแล้วแก้เฉพาะที่ส่งมา
+    - `graphics` คือเฉพาะช่องที่ client ส่ง (`exclude_unset`) ผสมลงในกราฟิกที่เก็บไว้ทีละช่อง ช่องที่ไม่ได้ส่งและช่องที่ไม่รู้จักคงเดิม
+      access ที่ไม่มี graphics ใช้กราฟิกตั้งต้นเป็นฐาน
+    - `time_period` เป็นหน่วยเดียว (mode กับ start/stop ไปด้วยกัน) จึงแทนที่ทั้งก้อน ส่วน `timeline` แทนที่ค่าเดียว
+    - ช่องอื่นของ access (รวมช่องที่ไม่รู้จัก) คงเดิม คืน access นั้น (`from_path` และ `to` ต้องผ่าน `normalize` แล้ว)"""
     accesses = doc.setdefault("accesses", [])
     entry = next((e for e in accesses if e.get("from") == from_path and _same_targets(e, to)), None)
     if entry is None:
@@ -135,7 +138,8 @@ def upsert(doc: dict, from_path: str, to: list[str], time_period: dict | None, g
     if time_period is not None:
         entry["time_period"] = time_period
     if graphics is not None:
-        entry["graphics"] = graphics
+        base = entry.get("graphics")
+        entry["graphics"] = {**(base if isinstance(base, dict) else access_graphics()), **graphics}
     if timeline is not None:
         entry["timeline"] = timeline
     entry["computed"] = True
