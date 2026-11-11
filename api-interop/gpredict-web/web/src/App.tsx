@@ -65,7 +65,7 @@ export function App() {
 
   // only the active tab's module holds a WebSocket (it is closed when the tab changes)
   const { tick, connected, closeCode } = useModuleSocket(current);
-  const { config, error: configError } = useModuleConfig(current);
+  const { config, error: configError, save: saveConfig } = useModuleConfig(current);
 
   // the module was closed or deleted (1000) or is not open (1008): from another browser tab, say. Drop its tab.
   useEffect(() => {
@@ -130,7 +130,7 @@ export function App() {
         <div className="module">
           <ModuleHeader key={current} time={tick?.t ?? null} />
           <div className="module-body">
-            {config !== null && <ModuleView module={current} config={config} tick={tick} />}
+            {config !== null && <ModuleView module={current} config={config} tick={tick} onSaveConfig={saveConfig} />}
             <Overlay state={overlayFor(tick, connected, closeCode)} onRetry={() => retry(current)} />
           </div>
         </div>

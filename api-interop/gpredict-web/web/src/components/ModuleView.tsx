@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ComponentType } from "react";
-import { putModule } from "../api";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
 import type { ModuleConfig, Tick } from "../types";
 import { EventListView } from "../views/EventListView";
@@ -25,16 +24,16 @@ export interface ViewProps {
   /** double click on a satellite: Satellite info (sub-project 4, nothing yet) */
   onSatDoubleClick?: (norad: number) => void;
   /**
-   * Save a change to the module's configuration (PUT /api/modules/{name}, the whole configuration): `change` gets the newest
-   * configuration and returns the new one. Every view gets the new `config` at once; if the server refuses, `config` goes back
-   * to what it was and the promise rejects with the error. Views save through this, not with their own copy of `config`, so
-   * that two views saving one after the other do not undo each other.
+   * Save a change to the module's configuration (the `save` of useModuleConfig, the one owner of the configuration): `change`
+   * gets the newest configuration and returns the new one. Every view gets the new `config` at once; if the server refuses,
+   * `config` goes back to what the server holds and the promise rejects with the error. Every write of the configuration goes
+   * through this, never a PUT of a view's own copy of `config`: it would undo what another view saved (see configStore.ts).
    */
   onSaveConfig: (change: (config: ModuleConfig) => ModuleConfig) => Promise<void>;
 }
 
-/** What the page gives ModuleView: the selection and the saving of the configuration are held here, not above. */
-export type ModuleViewProps = Omit<ViewProps, "selected" | "onSelect" | "onSaveConfig">;
+/** What the page gives ModuleView: the selection is held here, not above. */
+export type ModuleViewProps = Omit<ViewProps, "selected" | "onSelect">;
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -48,8 +47,6 @@ const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
 /**
  * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3).
  * It holds the module's selected satellite (ref §5: one at a time, in every view); a new module starts with none.
- * It also holds the module's configuration for the views: the one the page gives it (read again when the page gives a new
- * one) with the changes the views have saved since.
  */
 export function ModuleView(props: ModuleViewProps) {
   return <ModuleViews key={props.module} {...props} />;
@@ -57,37 +54,9 @@ export function ModuleView(props: ModuleViewProps) {
 
 function ModuleViews(props: ModuleViewProps) {
   const [selected, setSelected] = useState<number | null>(null);
-  const [config, setConfig] = useState(props.config);
-  const [given, setGiven] = useState(props.config);
-  if (props.config !== given) {
-    // the page read the configuration again (Configure): it replaces what the views have saved
-    setGiven(props.config);
-    setConfig(props.config);
-  }
-  const newest = useRef(config);
-  useEffect(() => {
-    newest.current = config;
-  }, [config]);
-
-  const saveConfig = useCallback(async (change: (c: ModuleConfig) => ModuleConfig) => {
-    const before = newest.current;
-    const next = change(before);
-    newest.current = next;
-    setConfig(next);
-    try {
-      await putModule(next);
-    } catch (e) {
-      if (newest.current === next) {
-        newest.current = before;
-        setConfig(before);
-      }
-      throw e;
-    }
-  }, []);
-
   let grid;
   try {
-    grid = gridFor(parseLayout(config.layout_code));
+    grid = gridFor(parseLayout(props.config.layout_code));
   } catch (e) {
     return (
       <div className="view-error" role="alert">
@@ -114,7 +83,7 @@ function ModuleViews(props: ModuleViewProps) {
             style={{ gridColumn: area.gridColumn, gridRow: area.gridRow }}
           >
             {View ? (
-              <View {...props} config={config} selected={selected} onSelect={setSelected} onSaveConfig={saveConfig} />
+              <View {...props} selected={selected} onSelect={setSelected} />
             ) : (
               <div className="view-placeholder">{label}</div>
             )}
