@@ -117,6 +117,10 @@ class QthTests(StoreTestCase):
             ("lat inf", replace(thbk(), lat_deg=float("inf")), "lat_deg"),
             ("lat string", replace(thbk(), lat_deg="13.7"), "lat_deg"),
             ("lat bool", replace(thbk(), lat_deg=True), "lat_deg"),
+            ("lat huge int", replace(thbk(), lat_deg=10**400), "lat_deg"),
+            ("lon huge int", replace(thbk(), lon_deg=10**400), "lon_deg"),
+            ("alt huge int", replace(thbk(), alt_m=10**400), "alt_m"),
+            ("lat huge negative int", replace(thbk(), lat_deg=-(10**400)), "lat_deg"),
             ("location not a string", replace(thbk(), location=5), "location"),
         ]
         for label, qth, field in cases:
@@ -138,7 +142,8 @@ class QthTests(StoreTestCase):
     def test_qth_from_dict_rejects(self):
         for label, d in (("not a dict", ["THBK"]), ("no name", {"lat_deg": 1}),
                          ("name not a string", {"name": 7}), ("lat out of range", {"name": "A", "lat_deg": 91}),
-                         ("lon string", {"name": "A", "lon_deg": "x"}), ("long description", {"name": "A", "description": "d" * 257})):
+                         ("lon string", {"name": "A", "lon_deg": "x"}),
+                         ("huge int from JSON", json.loads('{"name": "A", "lat_deg": 1' + "0" * 400 + '}')), ("long description", {"name": "A", "description": "d" * 257})):
             with self.subTest(label):
                 with self.assertRaises(ApiError) as cm:
                     qth_from_dict(d)

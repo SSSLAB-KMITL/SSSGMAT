@@ -58,7 +58,10 @@ def _invalid(field: str, text: str) -> ApiError:
 
 
 def _is_number(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    """int หรือ float ที่จำกัดค่า (ไม่นับ bool) isfinite เรียกเฉพาะ float เพราะ int ใหญ่เกินจะ OverflowError (int ที่เกินช่วงตกที่การเทียบ lo <= v <= hi)"""
+    if isinstance(v, bool):
+        return False
+    return math.isfinite(v) if isinstance(v, float) else isinstance(v, int)
 
 
 def validate_qth(q: Qth) -> Qth:
