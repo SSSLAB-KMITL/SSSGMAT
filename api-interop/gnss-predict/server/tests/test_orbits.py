@@ -1,11 +1,13 @@
-"""ข้อมูลวงโคจรและรายชื่อดาว (หัวข้อ 6.2 ของ spec server): GET /api/orbits, POST /api/orbits/fetch, GET /api/catalog
+"""ข้อมูลวงโคจรและรายชื่อดาว (หัวข้อ 6.2 ของ spec server): GET /api/orbits, POST /api/orbits/fetch, GET /api/orbits/fetch-status, GET /api/catalog
 
 fixture `snapshot` (conftest.py) คือ snapshot ของ engine ที่ copy ไป data/orbits/20261110T0000Z (4 กลุ่ม, IGS metadata, brdc/)
 `client` ไม่เริ่มคิว job: job fetch ที่ส่งเข้าไปค้าง queued ไม่แตะเน็ต
 """
 
+import json
 import re
 import shutil
+import urllib.request
 from datetime import datetime
 
 import pytest
@@ -175,6 +177,101 @@ def test_fetch_not_a_json_object_is_422(client):
     r = client.post("/api/orbits/fetch", content=b"[1]", headers={"Content-Type": "application/json"})
     assert r.status_code == 422 and set(r.json()) == ERROR_KEYS
     assert client.get("/api/jobs").json() == []
+
+
+# ---------- GET /api/orbits/fetch-status ----------
+
+STATUS_GROUPS = ["gps-ops", "glo-ops", "galileo", "beidou"]
+NULL_STATUS = {"last_request_utc": None, "next_allowed_utc": None}
+
+
+def write_state(data_dir, content):
+    """เขียน data/orbits/_cache/celestrak_state.json แบบที่ engine เขียน (dict -> JSON, bytes/str -> ตามตัว)"""
+    path = data_dir / "orbits" / "_cache" / "celestrak_state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, dict):
+        content = json.dumps(content)
+    path.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+    return path
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    """endpoint อ่านอย่างเดียว: ถ้าไปแตะเน็ตให้ test ล้ม"""
+    def refuse(*args, **kwargs):
+        raise AssertionError("fetch-status must not touch the network")
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+
+def test_fetch_status_without_state_file(client, data_dir, no_network):
+    r = client.get("/api/orbits/fetch-status")
+    assert r.status_code == 200
+    assert r.json() == {"groups": {g: NULL_STATUS for g in STATUS_GROUPS}}
+    assert not (data_dir / "orbits").exists()                       # อ่านอย่างเดียว: ไม่สร้างโฟลเดอร์
+
+
+def test_fetch_status_adds_two_hours(client, data_dir, no_network):
+    write_state(data_dir, {"gps-ops": {"last_request": "2026-11-11T10:00:00Z", "last_success": "2026-11-11T10:00:00Z"}})
+    groups = client.get("/api/orbits/fetch-status").json()["groups"]
+    assert groups["gps-ops"] == {"last_request_utc": "2026-11-11T10:00:00Z", "next_allowed_utc": "2026-11-11T12:00:00Z"}
+    assert [g for g in STATUS_GROUPS if groups[g] != NULL_STATUS] == ["gps-ops"]
+
+
+def test_fetch_status_uses_last_request_not_last_success(client, data_dir):
+    write_state(data_dir, {"galileo": {"last_request": "2026-11-11T23:30:00Z", "last_success": "2026-11-10T08:00:00Z"}})
+    assert client.get("/api/orbits/fetch-status").json()["groups"]["galileo"] == {
+        "last_request_utc": "2026-11-11T23:30:00Z", "next_allowed_utc": "2026-11-12T01:30:00Z"}      # ข้ามวัน
+
+
+def test_fetch_status_reports_each_group_separately(client, data_dir):
+    write_state(data_dir, {"gps-ops": {"last_request": "2026-11-11T10:00:00Z"}, "glo-ops": {"last_request": "2026-11-11T09:15:30Z"},
+                           "beidou": {"last_request": "2026-11-11T11:59:59Z"}, "not-a-gnss-group": {"last_request": "2026-11-11T11:00:00Z"}})
+    groups = client.get("/api/orbits/fetch-status").json()["groups"]
+    assert list(groups) == STATUS_GROUPS                                   # เฉพาะสี่กลุ่ม GNSS ตามลำดับของ engine
+    assert groups["glo-ops"]["next_allowed_utc"] == "2026-11-11T11:15:30Z"
+    assert groups["beidou"]["next_allowed_utc"] == "2026-11-11T13:59:59Z"
+    assert groups["galileo"] == NULL_STATUS
+
+
+@pytest.mark.parametrize("content", [b"", b"{not json", b"\xff\xfe\x00", b"[]", b"null", b'"text"', b"42", b"[" * 100000])
+def test_fetch_status_corrupt_state_is_null(client, data_dir, content):
+    write_state(data_dir, content)
+    r = client.get("/api/orbits/fetch-status")
+    assert r.status_code == 200
+    assert r.json() == {"groups": {g: NULL_STATUS for g in STATUS_GROUPS}}
+
+
+def test_fetch_status_state_file_that_is_a_folder_is_null(client, data_dir):
+    (data_dir / "orbits" / "_cache" / "celestrak_state.json").mkdir(parents=True)
+    r = client.get("/api/orbits/fetch-status")
+    assert r.status_code == 200 and r.json() == {"groups": {g: NULL_STATUS for g in STATUS_GROUPS}}
+
+
+@pytest.mark.parametrize("entry", [
+    {"last_request": "yesterday"}, {"last_request": "2026-11-11 10:00:00"}, {"last_request": "2026-11-11T10:00:00"},
+    {"last_request": "2026-11-11T10:00:00+07:00"}, {"last_request": "2026-13-45T10:00:00Z"}, {"last_request": ""}, {"last_request": None},
+    {"last_request": 1762855200}, {"last_request": ["2026-11-11T10:00:00Z"]}, {"last_success": "2026-11-11T10:00:00Z"}, {},
+    "2026-11-11T10:00:00Z", None, 7, ["2026-11-11T10:00:00Z"],
+    {"last_request": "9999-12-31T23:59:59Z"},                              # บวก 2 ชม. แล้วเกินช่วงเวลาที่รองรับ
+])
+def test_fetch_status_bad_entry_is_null_for_that_group_only(client, data_dir, entry):
+    write_state(data_dir, {"gps-ops": entry, "glo-ops": {"last_request": "2026-11-11T10:00:00Z"}})
+    r = client.get("/api/orbits/fetch-status")
+    assert r.status_code == 200
+    groups = r.json()["groups"]
+    assert groups["gps-ops"] == NULL_STATUS
+    assert groups["glo-ops"] == {"last_request_utc": "2026-11-11T10:00:00Z", "next_allowed_utc": "2026-11-11T12:00:00Z"}
+
+
+def test_fetch_status_does_not_submit_a_job(client, data_dir, no_network):
+    write_state(data_dir, {"gps-ops": {"last_request": "2026-11-11T10:00:00Z"}})
+    assert client.get("/api/orbits/fetch-status").status_code == 200
+    assert client.get("/api/jobs").json() == []
+
+
+def test_fetch_status_is_get_only(client):
+    assert client.post("/api/orbits/fetch-status").status_code == 405
+    assert client.put("/api/orbits/fetch-status", json={}).status_code == 405
 
 
 # ---------- GET /api/catalog ----------

@@ -202,6 +202,7 @@ const LABELS = {
   "dialog.catalog.sourceOnline": ours("Online CelesTrak"),
   "dialog.catalog.search": ours("Search"),
   "dialog.catalog.createConstellation": stk("Create Constellation from Selected", "B"),
+  "dialog.catalog.insert": ours("Insert"),
 
   // ---------- หน้า Properties (spec §8, STK ref §C) "กลุ่ม - หน้า" ----------
   "page.scenario.basicTime": stk("Basic - Time", "C"),
@@ -289,6 +290,7 @@ const LABELS = {
   "field.name": ours("Name"),
   "field.system": ours("System"),
   "field.status": ours("Status"),
+  "field.age": ours("Age"),
   // Satellite: 2D Graphics - Pass
   "field.leadType": stk("Lead Type", "C"),
   "field.trailType": stk("Trail Type", "C"),
@@ -335,12 +337,27 @@ const LABELS = {
   "field.nextFetch": ours("Next Fetch Available"),
   "field.lastRun": ours("Last Run"),
   "field.tecCsv": ours("CSV for TEC"),
+  // Fetch Orbit Data
+  "field.snapshotTime": ours("Snapshot Time"),
+  "field.broadcast": ours("Broadcast Ephemeris"),
+  "field.satellites": ours("Satellites"),
+  "field.lastRequest": ours("Last Request"),
+  // Daily Forecast Settings (ช่องตาม server §9.1 และสถานะงานประจำวัน; reference ไม่มีคำเหล่านี้)
+  "field.dailyEnabled": ours("Enabled"),
+  "field.runAt": ours("Run At (UTC)"),
+  "field.retention": ours("Retention"),
+  "field.validationRetry": ours("Validation Retry Every"),
+  "field.validationGiveUp": ours("Validation Give Up After"),
+  "field.cesiumToken": ours("Cesium Ion Token"),
+  "field.nextRun": ours("Next Run"),
+  "field.forDate": ours("For Date"),
   // หน่วยที่ต่อท้ายช่อง
   "field.unit.deg": ours("deg"),
   "field.unit.m": ours("m"),
   "field.unit.km": ours("km"),
   "field.unit.sec": ours("sec"),
   "field.unit.days": ours("days"),
+  "field.unit.hours": ours("hours"),
   "field.unit.offset": ours("±hh:mm"),
   "field.unit.percent": ours("%"),
 

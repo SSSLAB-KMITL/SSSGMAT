@@ -172,6 +172,7 @@ server ไม่มี login จึงกันหน้าเว็บอื่
 |---|---|---|
 | GET | `/orbits` | รายการ snapshot: ชื่อ, เวลา, กลุ่มที่มี, จำนวนดาวต่อกลุ่ม, มี broadcast ไหม |
 | POST | `/orbits/fetch` | สั่ง job `fetch` (Utilities → Fetch Orbit Data) |
+| GET | `/orbits/fetch-status` | เวลาที่ส่งคำขอไป CelesTrak ล่าสุดและเวลาที่ส่งได้อีกครั้ง ต่อกลุ่ม: `{"groups": {"gps-ops": {"last_request_utc", "next_allowed_utc"}, "glo-ops": ..., "galileo": ..., "beidou": ...}}` อ่านอย่างเดียวจาก `data/orbits/_cache/celestrak_state.json` ที่ engine เขียน (`last_request`) `next_allowed_utc` = `last_request_utc` + `CELESTRAK_MIN_INTERVAL_S` (7,200 วินาที) เวลาเป็น ISO 8601 UTC ลงท้าย `Z` ไฟล์หาย เสีย หรือกลุ่มที่เวลาอ่านไม่ได้ = ทั้งสองค่าเป็น `null` ของกลุ่มนั้น (ตอบ 200 เสมอ) ไม่ดึงเน็ต ไม่ส่ง job ไม่สร้างไฟล์ |
 | GET | `/catalog?snapshot=&start=&stop=&system=&q=` | ดาวใน snapshot พร้อม PRN, SVN, NORAD, Block, ชื่อ CelesTrak, epoch, อายุ ณ กลางช่วงที่ส่งมา, ธง (ใช้ `build_catalog`) |
 
 ### 6.3 Scenario (File menu และ New Scenario Wizard)

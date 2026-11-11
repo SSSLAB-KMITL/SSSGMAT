@@ -6,6 +6,7 @@
 // - คำสั่งที่ลงทะเบียนอยู่ใน chrome/fileCommands.ts; ไฟล์นี้ไม่รู้จักทะเบียนคำสั่งและไม่มี UI
 
 import { apiSend } from "./api/client";
+import { isObjectName } from "./api/names";
 import { msg } from "./labels/messages.th";
 import { getPanelDef } from "./layout/panels";
 import { push as pushRecent, remove as removeRecent } from "./recent";
@@ -16,9 +17,8 @@ import { useScenario } from "./stores/scenario";
 const SC_PARAM = "sc";
 const enc = encodeURIComponent;
 
-/** กติกาชื่อ scenario ของ server (schema.NAME_PATTERN): A-Z a-z 0-9 _ - ยาว 1-32 ตัว ใช้ตรวจก่อนส่งในหน้าต่างสร้างและ Save As */
-const NAME_RE = /^[A-Za-z0-9_-]{1,32}$/;
-export const isScenarioName = (name: string): boolean => NAME_RE.test(name);
+/** กติกาชื่อ scenario ของ server (api/names.ts): ใช้ตรวจก่อนส่งในหน้าต่างสร้างและ Save As */
+export const isScenarioName = isObjectName;
 
 /**
  * query string ที่มี `sc=<name>` (name = null ถอดออก) พารามิเตอร์อื่นอยู่ตามเดิมทีละไบต์ (`?test` ไม่กลายเป็น `?test=`)

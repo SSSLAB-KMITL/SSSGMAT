@@ -1234,3 +1234,298 @@ body {
   gap: 2px;
   min-width: 0;
 }
+
+/* ---------- Insert STK Objects, Search Satellite Catalog, Fetch Orbit Data, Daily Forecast Settings (src/windows) ---------- */
+.insert,
+.catalog,
+.fetch,
+.daily {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.insert-choices {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+}
+
+.insert-group,
+.catalog-sources {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.insert-group legend,
+.catalog-sources legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.insert-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.insert-note,
+.catalog-note,
+.catalog-hint,
+.fetch-note,
+.daily-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.form-error.insert-note,
+.form-error.catalog-note,
+.form-error.fetch-note,
+.form-error.daily-note {
+  color: var(--danger);
+}
+
+.insert-buttons,
+.fetch-buttons,
+.daily-buttons {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ชื่อ-ค่า (snapshot ล่าสุด, สถานะงานประจำวัน) */
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.kv dt {
+  font-weight: 600;
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kv-mono {
+  font-family: var(--font-mono);
+}
+
+/* Search Satellite Catalog */
+.catalog-bar {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+.catalog-sources {
+  flex: 0 0 auto;
+}
+
+.catalog-filters {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.catalog-scroll {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  border: 1px solid var(--border);
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.catalog-table th {
+  position: sticky;
+  top: 0;
+  padding: 2px 6px;
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 600;
+}
+
+.catalog-table td {
+  padding: 1px 6px;
+}
+
+.catalog-row {
+  cursor: default;
+  user-select: none;
+}
+
+.catalog-row:hover {
+  background: var(--hover-bg);
+}
+
+.catalog-row[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.catalog-row:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.catalog-row[aria-selected="true"]:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+/* ดาวที่อยู่ใน scenario แล้ว: เอียงและจาง เลือกไม่ได้ */
+.catalog-present {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.catalog-num {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.catalog-footer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-constellation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.catalog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.catalog-count {
+  margin-right: auto;
+  color: var(--text-muted);
+}
+
+/* Fetch Orbit Data */
+.fetch-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fetch-table th,
+.fetch-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.fetch-table th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fetch-num {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.fetch-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.fetch-buttons {
+  margin-top: auto;
+}
+
+/* Daily Forecast Settings */
+.daily {
+  padding: 0;
+  gap: 0;
+}
+
+.daily-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.daily-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ป้ายของหน้านี้ยาวกว่าของกล่องเล็ก ("Validation Give Up After") */
+.daily-form .form-row {
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.daily-warning {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--border);
+}
+
+.daily-status {
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.daily-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.daily-hint {
+  color: var(--text-muted);
+}
+
+.daily-buttons {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}

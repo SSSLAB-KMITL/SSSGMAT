@@ -3,6 +3,8 @@
 - `GET /orbits`: snapshot ใต้ `data/orbits/` ใหม่สุดก่อน นับจำนวนดาวต่อกลุ่มจากไฟล์ JSON ตรง ๆ (ไม่สร้าง catalog) ไฟล์กลุ่มที่ไม่มีหรืออ่านไม่ได้
   ไม่อยู่ใน `groups` และ snapshot เสียอันเดียวไม่ทำให้รายการทั้งหมดล้ม
 - `POST /orbits/fetch`: ส่ง job `fetch` เข้าคิว ตอบ 202 `{"job": id}` (job เดิมที่ยังรอ/รันอยู่ได้ id เดิม)
+- `GET /orbits/fetch-status`: เวลาที่ส่งคำขอไป CelesTrak ล่าสุดของแต่ละกลุ่มและเวลาที่ส่งได้อีกครั้ง อ่านอย่างเดียวจากไฟล์ที่ engine เขียน
+  (`<data>/orbits/_cache/celestrak_state.json`) ไม่ดึงเน็ต ไม่ส่ง job ไม่สร้างไฟล์หรือโฟลเดอร์
 - `GET /catalog`: ดาวใน snapshot เรียงตาม PRN ณ ช่วงเวลาที่ส่งมา
 """
 
@@ -14,7 +16,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from gnss_predict.catalog import broadcast_file
-from gnss_predict.config import GNSS_GROUPS
+from gnss_predict.config import CELESTRAK_MIN_INTERVAL_S, CELESTRAK_STATE_FILE, GNSS_GROUPS
+# ฟังก์ชันอ่านไฟล์สถานะของ engine (ขึ้นต้นด้วย _ แต่คงที่): ใช้ตัวเดียวกับที่ engine เขียนและอ่าน เวลารูปแบบเดียวกันเสมอ
+from gnss_predict.omm import _parse_time, _read_state
+from gnss_predict.studio import CACHE_DIR
 
 from ..config import Config
 from ..errors import ApiError
@@ -25,6 +30,7 @@ from . import get_config, get_jobs
 router = APIRouter()
 
 DEFAULT_PERIOD = timedelta(days=1)
+MIN_FETCH_INTERVAL = timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
 DEFAULT_FETCH_SYSTEMS = "".join(GNSS_GROUPS)
 
 
@@ -63,6 +69,33 @@ def fetch_orbits(body: FetchRequest | None = None, jobs: JobManager = Depends(ge
     """ตัวอักษรระบบผิด -> 422 ที่ field systems (ตรวจโดยคิว job)"""
     systems = body.systems if body is not None else DEFAULT_FETCH_SYSTEMS
     return {"job": jobs.submit("fetch", None, {"systems": systems}).id}
+
+
+def _read_fetch_state(path: Path) -> dict:
+    """เนื้อไฟล์สถานะ CelesTrak ของ engine ไม่มีไฟล์ อ่านไม่ได้ หรือเสีย = {} (RecursionError: JSON ซ้อนลึกเกินที่ json อ่านได้ ถือว่าเสีย)"""
+    try:
+        return _read_state(path)
+    except RecursionError:
+        return {}
+
+
+def _group_fetch_status(entry: object) -> dict:
+    """{last_request_utc, next_allowed_utc} ของกลุ่มหนึ่ง: entry ไม่ใช่ dict หรือ last_request อ่านไม่ได้ (รูปแบบเวลาของ engine เท่านั้น) = null ทั้งคู่"""
+    last = _parse_time(entry.get("last_request")) if isinstance(entry, dict) else None
+    if last is not None:
+        try:
+            return {"last_request_utc": iso_utc(last), "next_allowed_utc": iso_utc(last + MIN_FETCH_INTERVAL)}
+        except OverflowError:                       # ปลายช่วงเวลาที่รองรับ: บวกไม่ได้
+            pass
+    return {"last_request_utc": None, "next_allowed_utc": None}
+
+
+@router.get("/orbits/fetch-status")
+def fetch_status(config: Config = Depends(get_config)) -> dict:
+    """ต่อกลุ่ม CelesTrak: เวลาคำขอล่าสุด และเวลาที่ส่งได้อีกครั้ง (= คำขอล่าสุด + CELESTRAK_MIN_INTERVAL_S) null = ไม่เคยส่งหรืออ่านไม่ได้
+    ไฟล์หายหรือเสียก็ตอบ 200 (ทุกกลุ่ม null) หน้า Fetch Orbit Data ใช้บอกเวลาที่กด Fetch Now ได้ ตัว server ไม่ดึงเอง"""
+    state = _read_fetch_state(config.data_dir / ORBITS_DIR / CACHE_DIR / CELESTRAK_STATE_FILE)
+    return {"groups": {group: _group_fetch_status(state.get(group)) for group in GNSS_GROUPS.values()}}
 
 
 @router.get("/catalog")

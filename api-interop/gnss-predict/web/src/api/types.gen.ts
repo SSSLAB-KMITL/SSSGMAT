@@ -190,6 +190,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/orbits/fetch-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fetch Status
+         * @description ต่อกลุ่ม CelesTrak: เวลาคำขอล่าสุด และเวลาที่ส่งได้อีกครั้ง (= คำขอล่าสุด + CELESTRAK_MIN_INTERVAL_S) null = ไม่เคยส่งหรืออ่านไม่ได้
+         *     ไฟล์หายหรือเสียก็ตอบ 200 (ทุกกลุ่ม null) หน้า Fetch Orbit Data ใช้บอกเวลาที่กด Fetch Now ได้ ตัว server ไม่ดึงเอง
+         */
+        get: operations["fetch_status_api_orbits_fetch_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scenarios": {
         parameters: {
             query?: never;
@@ -1561,6 +1582,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_status_api_orbits_fetch_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

@@ -1892,6 +1892,27 @@
         "summary": "Fetch Orbits"
       }
     },
+    "/api/orbits/fetch-status": {
+      "get": {
+        "description": "ต่อกลุ่ม CelesTrak: เวลาคำขอล่าสุด และเวลาที่ส่งได้อีกครั้ง (= คำขอล่าสุด + CELESTRAK_MIN_INTERVAL_S) null = ไม่เคยส่งหรืออ่านไม่ได้\nไฟล์หายหรือเสียก็ตอบ 200 (ทุกกลุ่ม null) หน้า Fetch Orbit Data ใช้บอกเวลาที่กด Fetch Now ได้ ตัว server ไม่ดึงเอง",
+        "operationId": "fetch_status_api_orbits_fetch_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fetch Status Api Orbits Fetch Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fetch Status"
+      }
+    },
     "/api/scenarios": {
       "get": {
         "operationId": "list_scenarios_api_scenarios_get",

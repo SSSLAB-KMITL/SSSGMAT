@@ -72,6 +72,45 @@ const MESSAGES = {
   "results.failed": "โหลดสถานะผลลัพธ์ไม่สำเร็จ: {message}",
   "results.fileFailed": "อ่านไฟล์ผลลัพธ์ {file} ไม่สำเร็จ: {message}",
 
+  // กติกาของช่องกรอกตัวเลข (Insert STK Objects, Daily Forecast Settings)
+  "form.notInteger": "ต้องเป็นจำนวนเต็ม",
+
+  // Insert STK Objects (spec §11)
+  "insert.noradInvalid": "NORAD ต้องเป็นจำนวนเต็มบวก",
+
+  // Search Satellite Catalog (spec §11)
+  "catalog.loading": "กำลังอ่านรายชื่อดาวจาก server...",
+  "catalog.windowFailed": "โหลดรายชื่อดาวของ snapshot ไม่สำเร็จ: {message}",
+  "catalog.inScenario": "มีแล้ว",
+  "catalog.noMatch": "ไม่พบดาวที่ตรงกับตัวกรอง",
+  "catalog.selected": "เลือกแล้ว {n} ดวง",
+  "catalog.nameTaken": "มี object ชื่อ \"{name}\" อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่)",
+  "catalog.onlineHint": "Online CelesTrak เปิดหน้า Fetch Orbit Data ให้ หน้านี้ไม่ดาวน์โหลดเอง",
+
+  // Fetch Orbit Data (spec §11)
+  "fetch.loading": "กำลังอ่านข้อมูลวงโคจรจาก server...",
+  "fetch.loadFailed": "อ่านรายการ snapshot ข้อมูลวงโคจรไม่สำเร็จ: {message}",
+  "fetch.statusFailed": "อ่านเวลาที่ดึงจาก CelesTrak ได้ครั้งถัดไปไม่สำเร็จ: {message}",
+  "fetch.noSnapshot": "ยังไม่มี snapshot ข้อมูลวงโคจร กด Fetch Now เพื่อดึงจาก CelesTrak",
+  "fetch.limitNote": "CelesTrak จำกัดความถี่ในการดึงข้อมูล server เป็นผู้บังคับข้อจำกัดนี้ ถ้ากด Fetch Now ก่อนถึงเวลาถัดไป server จะใช้ข้อมูลเดิมแทนการดาวน์โหลดใหม่",
+  "fetch.availableNow": "ดึงได้ตอนนี้",
+  "fetch.running": "กำลังดึงข้อมูลวงโคจรอยู่ ดูความคืบหน้าที่แถบสถานะ",
+  "fetch.queued": "สั่งดึงข้อมูลวงโคจรจาก CelesTrak แล้ว (งาน {job}) ดูความคืบหน้าที่แถบสถานะ",
+  "fetch.failed": "สั่งดึงข้อมูลวงโคจรไม่สำเร็จ: {message}",
+  "fetch.yes": "มี",
+  "fetch.no": "ไม่มี",
+
+  // Daily Forecast Settings (spec §11, server §9)
+  "daily.timeInvalid": "ต้องเป็นเวลา UTC รูปแบบ HH:MM เช่น 21:00 (00:00 ถึง 23:59)",
+  "daily.warnEnabled": "เปิดงานประจำวันอยู่: server จะดึงข้อมูลวงโคจรผ่านอินเทอร์เน็ตทุกวันตอน {time} UTC และถ้าเริ่ม server หลัง {time} UTC (ก่อน 24:00 UTC) ในวันที่ยังไม่มีผลของวันถัดไป จะดาวน์โหลดทันที",
+  "daily.loadFailed": "อ่านค่าตั้งงานประจำวันจาก server ไม่สำเร็จ: {message}",
+  "daily.saved": "บันทึกค่าตั้งงานประจำวันแล้ว",
+  "daily.applyFailed": "บันทึกค่าตั้งงานประจำวันไม่สำเร็จ: {message}",
+  "daily.queued": "สั่งรันงานประจำวันแล้ว (งาน {job}) ดูความคืบหน้าที่แถบสถานะ",
+  "daily.runConflict": "มีงานประจำวันของวันนั้นรออยู่หรือกำลังรันอยู่แล้ว รอให้เสร็จก่อนแล้วสั่งใหม่",
+  "daily.runFailed": "สั่งรันงานประจำวันไม่สำเร็จ: {message}",
+  "daily.runNowHint": "Run Now ใช้ค่าตั้งที่บันทึกไว้แล้ว ถ้าเพิ่งแก้ค่าให้กด Apply ก่อน",
+
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
   "fetch.confirm": "ดึงข้อมูลวงโคจรจาก CelesTrak ตอนนี้หรือไม่? โปรแกรมจะเชื่อมต่ออินเทอร์เน็ตไปที่ celestrak.org และ CelesTrak จำกัดความถี่ในการดึง จึงดึงซ้ำก่อนถึงเวลาถัดไปไม่ได้",
   "fetch.nextAvailable": "ดึงจาก CelesTrak ได้อีกครั้งเวลา {time}",

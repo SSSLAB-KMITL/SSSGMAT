@@ -142,6 +142,40 @@ test("Object → Properties opens the real Properties Browser as a floating wind
   await waitFor(() => expect(useLayout.getState().listWindows().some((w) => w.title === "G01 Properties")).toBe(false));
 });
 
+test("Utilities opens the real Fetch Orbit Data and Daily Forecast Settings windows with no scenario open, and Insert needs a scenario", async () => {
+  const f = stubFetch({
+    "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
+    "GET /api/scenarios": { json: SCENARIOS },
+    "GET /api/orbits": { json: [{ name: "20261112T0000Z", time_utc: "2026-11-12T00:00:00Z", groups: { G: 31 }, has_brdc: true }] },
+    "GET /api/orbits/fetch-status": { json: { groups: { "gps-ops": { last_request_utc: null, next_allowed_utc: null }, "glo-ops": { last_request_utc: null, next_allowed_utc: null }, galileo: { last_request_utc: null, next_allowed_utc: null }, beidou: { last_request_utc: null, next_allowed_utc: null } } } },
+    "GET /api/settings": { json: { daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 }, cesium_ion_token: "" } },
+  });
+  render(<App />);
+  await waitFor(() => expect(isEnabled("utilities.fetchOrbitData")).toBe(true));
+  expect(isEnabled("utilities.dailyForecastSettings")).toBe(true);
+  expect(isEnabled("insert.new")).toBe(false);
+  act(() => runCommand("utilities.fetchOrbitData"));
+  expect(await screen.findByRole("button", { name: t("dialog.fetchNow") })).toBeDefined();
+  expect(await screen.findByText("20261112T0000Z")).toBeDefined();
+  act(() => runCommand("utilities.dailyForecastSettings"));
+  expect(await screen.findByLabelText(t("field.runAt"))).toBeDefined();
+  expect(f.calls.some((c) => c.method === "POST")).toBe(false); // opening the windows downloads nothing
+});
+
+test("Insert → Satellite opens the real Insert STK Objects window on Satellite, once a scenario is open", async () => {
+  render(<App />);
+  await waitFor(() => expect(isEnabled("file.new")).toBe(true));
+  expect(isEnabled("insert.satellite")).toBe(false);
+  act(() => void loadObjects());
+  expect(isEnabled("insert.satellite")).toBe(true);
+  act(() => runCommand("insert.satellite"));
+  const satellite = await screen.findByRole("radio", { name: t("ob.class.satellite") });
+  expect((satellite as HTMLInputElement).checked).toBe(true);
+  act(() => runCommand("insert.constellation")); // an open window moves to the object asked for
+  await waitFor(() => expect((screen.getByRole("radio", { name: t("ob.class.constellation") }) as HTMLInputElement).checked).toBe(true));
+  expect(useLayout.getState().listWindows().filter((w) => w.title === t("window.insertObjects"))).toHaveLength(1);
+});
+
 test("App installs the shortcuts once: Ctrl+S is kept from the browser while mounted, and not after unmount", async () => {
   const { unmount } = render(<App />);
   await waitFor(() => expect(useLayout.getState().api).not.toBeNull());
