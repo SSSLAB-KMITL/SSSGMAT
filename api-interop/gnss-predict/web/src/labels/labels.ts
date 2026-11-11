@@ -304,7 +304,7 @@ const LABELS = {
   "field.referenceFrame": ours("Reference Frame"),
   // 3D Graphics Window Properties
   "field.enableLighting": stk("Enable Lighting", "E"),
-  "field.ambientLevel": stk("Sun Lighting Ambient Level", "E"),
+  "field.ambientLevel": stk("Ambient Level", "E"), // reference: "Sun Lighting Ambient Level" (อ้างตรงตัวใน PROSE_EVIDENCE ของ test)
   "field.sunLevel": stk("Sun Level", "E"),
   "field.nightLightsLevel": stk("Night Lights Level", "E"),
   "field.latLonLines": stk("Lat/Lon Lines", "E"),

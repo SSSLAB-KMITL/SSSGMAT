@@ -168,6 +168,8 @@ const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "ob.class.scenario": "Scenario is the root",
   "ob.class.facility": "Facility groups",
   "ob.class.satellite": "Satellite extras:",
+  // spec §9.2 แสดง "Ambient Level"; reference เขียน "Sun Lighting Ambient Level" (ยืนยันไม่ได้ด้วยตัวคั่นเพราะเป็นส่วนท้ายของชื่อที่ยาวกว่า) จึงอ้างข้อความตรงตัว
+  "field.ambientLevel": "Sun Lighting Ambient Level",
   "mv.tab.all": "Tabs All Messages / Errors",
   "status.stop": "progress bar with Stop",
 };
@@ -194,13 +196,18 @@ describe("stk labels are real STK terms", () => {
   });
 
   test("terms the reference writes only inside a longer phrase are not claimed as stk", () => {
-    expect(hasTerm(sections.get("E")!, "Ambient Level")).toBe(false);            // มีแต่ใน "Sun Lighting Ambient Level"
-    expect(hasTerm(sections.get("E")!, "Sun Lighting Ambient Level")).toBe(true);
     expect(hasTerm(sections.get("F")!, "Access")).toBe(false);                   // มีแต่ "Access tool buttons", "Access For", ...
     expect(hasTerm(sections.get("B")!, "Group")).toBe(false);                    // มีแต่ "New Group", "Groups"
     expect(hasTerm(sections.get("A")!, "Windows")).toBe(false);                  // มีแต่ "Windows..."
     for (const k of ["toolbar.access", "ob.class.group", "window.windows"] as const) expect(labels[k].source, k).toBe("ours");
-    expect(labels["field.ambientLevel"]).toEqual({ text: "Sun Lighting Ambient Level", source: "stk", ref: "STK ref §E" });
+  });
+
+  test("Ambient Level is stk only through a quoted snippet of the longer reference term", () => {
+    // spec §9.2 แสดง "Ambient Level" แต่ใน reference มีแค่ "Sun Lighting Ambient Level" ตัวคั่นยืนยัน "Ambient Level" เดี่ยวๆ ไม่ได้
+    expect(hasTerm(sections.get("E")!, "Ambient Level")).toBe(false);
+    expect(hasTerm(sections.get("E")!, "Sun Lighting Ambient Level")).toBe(true);
+    expect(PROSE_EVIDENCE["field.ambientLevel"]).toBe("Sun Lighting Ambient Level");
+    expect(labels["field.ambientLevel"]).toEqual({ text: "Ambient Level", source: "stk", ref: "STK ref §E" });
   });
 
   test("ours labels carry no STK reference", () => {
@@ -270,7 +277,7 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§8/§6.1 option words", ["option."], ["Time Step", "Real Time", "X Real-Time", "Off", "Stop at Time", "Loop at Time", "UTCG", "LTZG",
                                           "Time", "Percent", "Quarter", "Half", "Full", "All", "None", "One Pass", "Current Interval", "Same As Lead",
                                           "No Graphics", "Edge Limits", "Filled Limits", "Kilometers", "Degrees"]],
-  ["§9 window properties", ["field.", "option.", "page."], ["Enable Lighting", "Sun Lighting Ambient Level", "Sun Level", "Night Lights Level", "Lat/Lon Lines", "Label Declutter",
+  ["§9 window properties", ["field.", "option.", "page."], ["Enable Lighting", "Ambient Level", "Sun Level", "Night Lights Level", "Lat/Lon Lines", "Label Declutter",
                                                              "Show Time", "Lighting", "Details", "Annotation", "Projection", "Display Coordinate Frame",
                                                              "Equidistant Cylindrical", "Mercator", "ECF", "ECI", "Show Outline", "Shading", "Show IPP"]],
   ["§9.2 View From/To", ["field.", "option."], ["Mode", "From Position to Position", "From Position", "To Position", "Reference Frame", "Fixed", "Inertial"]],
