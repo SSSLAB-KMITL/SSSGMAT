@@ -131,6 +131,12 @@ def constellation(name: str, system: str | None, color: str, assigned_objects: l
             "assigned_objects": assigned_objects}
 
 
+def access_graphics() -> dict:
+    """กราฟิกตั้งต้นของ access (ใช้ทั้งแม่แบบและ Compute ของ Access tool)"""
+    return {"show": True, "static_highlight": False, "animate_highlight": False, "animate_line": True,
+            "color_mode": "object", "custom_color": ACCESS_CUSTOM_COLOR, "inherit": True}
+
+
 def load_catalog(data_dir: Path, snapshot: str, start: datetime, stop: datetime, field: str = "snapshot") -> Catalog:
     """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) ไม่มี snapshot หรือไม่มีไฟล์ OMM เลย
     -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
@@ -157,10 +163,7 @@ def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,
         objects.append(constellation(name, system, color, members[system]))
     groups = [{"name": f"{name} sats", "members": list(members[system])} for system, name, _ in CONSTELLATIONS]
     accesses = [{"from": f"*/Facility/{THBK['name']}", "to": [f"*/Constellation/{name}" for _, name, _ in CONSTELLATIONS],
-                 "time_period": {"mode": "object"},
-                 "graphics": {"show": True, "static_highlight": False, "animate_highlight": False, "animate_line": True,
-                              "color_mode": "object", "custom_color": ACCESS_CUSTOM_COLOR, "inherit": True},
-                 "timeline": True, "computed": False}]
+                 "time_period": {"mode": "object"}, "graphics": access_graphics(), "timeline": True, "computed": False}]
     return objects, accesses, groups
 
 

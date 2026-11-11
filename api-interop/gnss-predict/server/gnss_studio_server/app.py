@@ -12,7 +12,7 @@ from .events import EventBus
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
-from .routes import events, health, jobs, objects, orbits, results, scenarios
+from .routes import access, events, health, jobs, objects, orbits, results, scenarios
 from .store import ScenarioStore
 
 
@@ -55,5 +55,6 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(objects.router, prefix="/api")
     app.include_router(orbits.router, prefix="/api")
     app.include_router(results.router, prefix="/api")
+    app.include_router(access.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     return app

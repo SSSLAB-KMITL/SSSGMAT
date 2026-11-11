@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, ValidationInfo, field_validator
 
 from .errors import ApiError
 
@@ -31,14 +31,19 @@ TrailType = Literal["Time", "Percent", "Quarter", "Half", "Full", "All", "None",
                     "Same As Lead"]
 
 
-def _utc_z(value: str) -> str:
-    """เวลา UTC แบบ ISO 8601 ลงท้าย Z (ข้อกำหนดของ API: เวลาทุกค่าลงท้าย Z)"""
+def parse_utc_z(value: str) -> datetime:
+    """เวลา UTC แบบ ISO 8601 ลงท้าย Z (ข้อกำหนดของ API: เวลาทุกค่าลงท้าย Z) เป็น datetime ที่มีเขตเวลา UTC รับเศษวินาทีได้
+    รูปแบบผิดหรือไม่มีจริง -> ValueError"""
     if not _UTC_Z_RE.fullmatch(value):
         raise ValueError("ต้องเป็นเวลา UTC แบบ ISO 8601 ลงท้าย Z เช่น 2026-11-12T00:00:00Z")
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise ValueError("อ่านเวลานี้ไม่ได้") from None
+
+
+def _utc_z(value: str) -> str:
+    parse_utc_z(value)
     return value
 
 
@@ -194,9 +199,30 @@ class Group(_Model):
 # ---------- access ----------
 
 class AccessTimePeriod(_Model):
+    """mode `specify` ต้องมีทั้ง start และ stop และ start ต้องมาก่อน stop (ผิดที่ช่อง start ที่ขาด หรือช่อง stop ที่ขาดหรือไม่เลย start)
+    mode `object` ไม่ใช้ start/stop จึงไม่ตรวจ"""
     mode: Literal["object", "specify"] = "object"      # Use Object Time Period / Specify Time Period
-    start: UtcZ | None = None
-    stop: UtcZ | None = None
+    start: UtcZ | None = Field(None, validate_default=True)
+    stop: UtcZ | None = Field(None, validate_default=True)
+
+    @field_validator("start", mode="after")
+    @classmethod
+    def _start_given_when_specify(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None and info.data.get("mode") == "specify":
+            raise ValueError("ต้องมีค่าเมื่อ mode เป็น specify")
+        return value
+
+    @field_validator("stop", mode="after")
+    @classmethod
+    def _stop_after_start_when_specify(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if info.data.get("mode") != "specify":
+            return value
+        if value is None:
+            raise ValueError("ต้องมีค่าเมื่อ mode เป็น specify")
+        start = info.data.get("start")                 # ไม่มี = start ผิดเอง รายงานที่ช่อง start แล้ว
+        if start is not None and parse_utc_z(start) >= parse_utc_z(value):
+            raise ValueError("stop ต้องอยู่หลัง start")
+        return value
 
 
 class AccessGraphics(_Model):

@@ -24,7 +24,7 @@ from ..config import Config
 from ..digests import FileDigests
 from ..errors import ApiError
 from ..jobs import JobManager
-from ..plans import PlanCache
+from ..plans import PlanCache, Plans
 from ..schema import NAME_RE
 from ..store import ScenarioStore
 from . import get_config, get_digests, get_jobs, get_plans, get_store
@@ -58,13 +58,21 @@ def _entry(hash_: str | None, available: list[str]) -> dict:
     return {"hash": hash_, "status": status, "available": available}
 
 
+def ephem_entry(directory: Path, plan: Plans) -> dict:
+    """`{hash, status, available}` ของ ephem ใต้ `directory` (โฟลเดอร์ของ scenario) เทียบกับ plan"""
+    return _entry(plan.propagate, _available(directory / EPHEM_DIR))
+
+
+def access_entries(directory: Path, plan: Plans) -> dict[str, dict]:
+    """`{hash, status, available}` ของผล access แต่ละ Facility ของ plan (ชื่อ Facility -> รายการ) ใช้ร่วมกับ Access tool"""
+    return {name: _entry(plan.analyze.get(name), _available(directory / ACCESS_DIR / name)) for name in plan.facilities}
+
+
 @router.get("/scenarios/{sc}/results")
 def get_results(sc: str, store: ScenarioStore = Depends(get_store), plans: PlanCache = Depends(get_plans)) -> dict:
     directory = store.path(sc)
     plan = plans.get(sc)                                    # ไม่มี scenario -> 404
-    return {"ephem": _entry(plan.propagate, _available(directory / EPHEM_DIR)),
-            "access": {name: _entry(plan.analyze.get(name), _available(directory / ACCESS_DIR / name)) for name in plan.facilities},
-            "error": plan.error}
+    return {"ephem": ephem_entry(directory, plan), "access": access_entries(directory, plan), "error": plan.error}
 
 
 @router.post("/scenarios/{sc}/propagate", status_code=202)

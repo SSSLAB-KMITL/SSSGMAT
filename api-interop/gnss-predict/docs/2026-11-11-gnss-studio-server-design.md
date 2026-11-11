@@ -320,6 +320,7 @@ api-interop/gnss-predict/server/
 | `SCENARIO_INVALID` | 422 | ค่าผิด (มี `field`) |
 | `NO_SATELLITES` | 422 | คำนวณแล้วไม่เหลือดาว |
 | `JOB_RUNNING` | 409 | ลบ scenario ที่มี job กำลังรัน |
+| `RESULTS_NOT_CURRENT` | 409 | ขอช่วง access (`GET /access/intervals`) ของ Facility ที่ผล analyze ไม่ตรงกับ scenario ปัจจุบันหรือยังไม่มี |
 | รหัสอื่นของ engine (`ORBIT_SOURCE_UNAVAILABLE`, `GMAT_FAILED`, `TRUTH_UNAVAILABLE` ฯลฯ) | — | อยู่ใน `error` ของ job |
 | `INTERRUPTED` | — | job ค้างตอน server ปิด |
 | `INTERNAL` | 500 | error ที่ไม่คาดไว้ พร้อมเลขอ้างอิงที่อยู่ใน `data/logs/server.log` |
