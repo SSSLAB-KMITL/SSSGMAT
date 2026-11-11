@@ -727,34 +727,59 @@ def test_workbook_write_publishes_nothing(client, s1, published):
     assert published == []
 
 
+def stale_header(response):
+    """ค่า X-Results-Stale ของ PUT เป็นบูลีน (ต้องเป็น "true" หรือ "false" เท่านั้น)"""
+    value = response.headers["X-Results-Stale"]
+    assert value in ("true", "false"), value
+    return value == "true"
+
+
 def test_put_publishes_etag_and_results_stale(client, s1, published):
     published.clear()
     doc = client.get("/api/scenarios/S1").json()
 
     same = client.put("/api/scenarios/S1", json=doc, headers=headers(client))                 # บันทึกเนื้อเดิม
-    assert same.status_code == 200 and same.json()["results_stale"] is False
+    assert same.status_code == 200 and stale_header(same) is False
     doc["description"] = "เปลี่ยนแค่คำอธิบาย"
     desc = client.put("/api/scenarios/S1", json=doc, headers=headers(client))
-    assert desc.status_code == 200 and desc.json()["results_stale"] is False
+    assert desc.status_code == 200 and stale_header(desc) is False
     doc["analysis_period"]["stop"] = "2026-11-10T05:00:00Z"                                    # ช่วงเวลาเปลี่ยน = hash ของ propagate เปลี่ยน
     period = client.put("/api/scenarios/S1", json=doc, headers=headers(client))
-    assert period.status_code == 200 and period.json()["results_stale"] is True
+    assert period.status_code == 200 and stale_header(period) is True
 
     assert scenario_events(published) == [
-        {"name": "S1", "etag": r.headers["ETag"].strip('"'), "results_stale": r.json()["results_stale"]}
+        {"name": "S1", "etag": r.headers["ETag"].strip('"'), "results_stale": stale_header(r)}
         for r in (same, desc, period)]
     assert [e for e, _ in published] == ["scenario"] * 3
 
 
-def test_put_response_is_the_saved_document_plus_results_stale(client, s1):
+def test_put_response_body_is_exactly_the_saved_document(client, s1):
+    """results_stale อยู่ใน header X-Results-Stale ไม่ใช่ในตัวเอกสาร (client เอาตัวตอบไป PUT ต่อได้โดยไม่ต้องตัดช่อง)"""
     doc = client.get("/api/scenarios/S1").json()
     doc["description"] = "x"
     r = client.put("/api/scenarios/S1", json=doc, headers=headers(client))
-    body = r.json()
-    assert body.pop("results_stale") is False                          # เอกสารที่บันทึกคงเดิมทุกช่อง เพิ่มเฉพาะ results_stale
-    assert body == doc == client.get("/api/scenarios/S1").json()
-    assert "results_stale" not in client.get("/api/scenarios/S1").json()   # ไม่ถูกเขียนลงไฟล์
+    assert r.status_code == 200 and r.json() == doc == client.get("/api/scenarios/S1").json()
+    assert "results_stale" not in r.json()
+    assert stale_header(r) is False
     assert r.headers["ETag"].strip('"') == etag_of(client)
+
+    doc["analysis_period"]["stop"] = "2026-11-10T05:00:00Z"
+    r = client.put("/api/scenarios/S1", json=doc, headers=headers(client))
+    assert r.json() == doc and "results_stale" not in r.json() and stale_header(r) is True
+
+
+def test_put_round_trip_never_stores_results_stale(client, s1, data_dir):
+    """GET -> PUT -> PUT ตัวตอบกลับไปอีกครั้งด้วย ETag ใหม่: scenario.json ต้องไม่มีช่อง results_stale"""
+    doc = client.get("/api/scenarios/S1").json()
+    doc["description"] = "รอบแรก"
+    first = client.put("/api/scenarios/S1", json=doc, headers=headers(client))
+    assert first.status_code == 200, first.text
+    second = client.put("/api/scenarios/S1", json=first.json(), headers={"If-Match": first.headers["ETag"]})
+    assert second.status_code == 200, second.text
+    saved = (data_dir / "scenarios" / "S1" / "scenario.json").read_bytes()
+    assert b"results_stale" not in saved
+    assert json.loads(saved) == doc and stale_header(second) is False
+    assert second.headers["ETag"] == first.headers["ETag"]                    # เนื้อเดิมทุกไบต์: ETag เดิม
 
 
 def test_put_can_repair_a_corrupted_scenario_file(client, s1, data_dir, published):
@@ -766,5 +791,5 @@ def test_put_can_repair_a_corrupted_scenario_file(client, s1, data_dir, publishe
     published.clear()
     r = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": f'"{tag}"'})
     assert r.status_code == 200, r.text
-    assert r.json()["results_stale"] is True                           # คำนวณ plan ของไฟล์เดิมไม่ได้ = ถือว่าผลไม่ตรง
+    assert stale_header(r) is True                                     # คำนวณ plan ของไฟล์เดิมไม่ได้ = ถือว่าผลไม่ตรง
     assert json.loads(file.read_text()) == doc and len(scenario_events(published)) == 1

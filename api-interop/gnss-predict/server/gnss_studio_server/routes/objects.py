@@ -15,10 +15,9 @@ from fastapi.responses import JSONResponse
 
 from .. import objects
 from ..events import EventBus
-from ..plans import fingerprint, is_stale
 from ..store import ScenarioStore, check_etag
+from ..tracking import etag_header, write_tracked
 from . import get_bus, get_store
-from .scenarios import _etag_header, publish_scenario
 
 router = APIRouter()
 
@@ -30,23 +29,19 @@ def _edit(request: Request, store: ScenarioStore, bus: EventBus, sc: str, if_mat
     # ไม่ส่ง If-Match = ค่าว่างซึ่งไม่ตรงกับ ETag ใดเลย -> 412 (หลังตรวจว่ามี scenario นี้อยู่ ไม่งั้น 404)
     if_match = if_match if if_match is not None else ""
     check_etag(current, if_match)
-    directory, logger = store.path(sc), request.app.state.logger
-    before = fingerprint(directory, store.data_dir, logger)
     result = change(doc)
-    tag = store.write(sc, doc, if_match)
-    stale = is_stale(before, fingerprint(directory, store.data_dir, logger))
-    publish_scenario(bus, sc, tag, stale)
+    tag, stale = write_tracked(store, bus, request.app.state.logger, sc, doc, if_match)
     return result, tag, stale
 
 
 def _saved(tag: str, stale: bool, status: int = 200, **extra: Any) -> JSONResponse:
-    return JSONResponse({**extra, "etag": tag, "results_stale": stale}, status_code=status, headers=_etag_header(tag))
+    return JSONResponse({**extra, "etag": tag, "results_stale": stale}, status_code=status, headers=etag_header(tag))
 
 
 @router.get("/scenarios/{sc}/objects")
 def get_tree(sc: str, store: ScenarioStore = Depends(get_store)) -> JSONResponse:
     doc, tag = store.read(sc)
-    return JSONResponse(objects.tree(doc), headers=_etag_header(tag))
+    return JSONResponse(objects.tree(doc), headers=etag_header(tag))
 
 
 @router.post("/scenarios/{sc}/objects")
@@ -62,7 +57,7 @@ def insert_object(sc: str, request: Request, body: dict[str, Any], if_match: str
 def get_object(sc: str, cls: str, name: str, store: ScenarioStore = Depends(get_store)) -> JSONResponse:
     doc, tag = store.read(sc)
     _, obj = objects.find(doc, cls, name)
-    return JSONResponse(objects.pages(obj), headers=_etag_header(tag))
+    return JSONResponse(objects.pages(obj), headers=etag_header(tag))
 
 
 @router.patch("/scenarios/{sc}/objects/{cls}/{name}")
