@@ -127,6 +127,11 @@ class Store:
             return []
         return sorted(p.stem for p in self._qth_dir.glob("*.json") if NAME_RE.fullmatch(p.stem))
 
+    def qth_names(self) -> list[str]:
+        """ชื่อ QTH ทุกตัวที่มีไฟล์ เรียงตามชื่อ (ไม่อ่านเนื้อไฟล์ ไฟล์ที่เสียจึงไม่ทำให้รายชื่อทั้งหมดใช้ไม่ได้)"""
+        with self._lock:
+            return self._qth_names()
+
     def get_qth(self, name: str) -> Qth:
         path = self._qth_path(name)
         try:

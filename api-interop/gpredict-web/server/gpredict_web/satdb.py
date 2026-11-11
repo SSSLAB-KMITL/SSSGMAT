@@ -113,6 +113,11 @@ class SatDb:
         with self._lock:
             return self._sats.get(norad)
 
+    def norads(self) -> set[int]:
+        """NORAD ทุกดวงในดัชนี (สำเนา) ใช้ตรวจว่าดาวของ module อยู่ในดัชนี"""
+        with self._lock:
+            return set(self._sats)
+
     def groups(self) -> list[str]:
         """ทุกกลุ่มที่มีดาวอยู่ เรียงตามชื่อ"""
         with self._lock:

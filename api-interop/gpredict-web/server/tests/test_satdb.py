@@ -241,6 +241,12 @@ class TestSearch(SatDbTestCase):
         self.assertEqual(self.db.search(q="zzz"), [])
         self.assertEqual(self.db.search(group="nonexistent"), [])
 
+    def test_norads_is_a_copy_of_every_norad(self):
+        norads = self.db.norads()
+        self.assertEqual(norads, set(NORADS))
+        norads.clear()
+        self.assertEqual(self.db.norads(), set(NORADS))
+
     def test_search_sorted_by_name_and_limit(self):
         all_names = self.names()
         self.assertEqual(len(all_names), 10)

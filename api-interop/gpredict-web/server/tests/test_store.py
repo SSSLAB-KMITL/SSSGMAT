@@ -166,6 +166,13 @@ class QthTests(StoreTestCase):
         self.assertEqual([q.name for q in self.store.list_qth()], ["THBK"])
         self.assertFalse((self.cfg.data_dir / "qth" / "Other.json").exists())
 
+    def test_qth_names_lists_files_without_reading_them(self):
+        self.assertEqual(self.store.qth_names(), [])
+        self.store.put_qth(thbk())
+        self.store.put_qth(Qth(name="Alpha"))
+        (self.cfg.data_dir / "qth" / "Broken.json").write_text("{", encoding="utf-8")   # ไฟล์เสียก็ยังนับชื่อ
+        self.assertEqual(self.store.qth_names(), ["Alpha", "Broken", "THBK"])
+
     def test_delete_last_qth_is_in_use(self):
         self.store.put_qth(thbk())
         with self.assertRaises(ApiError) as cm:
