@@ -47,8 +47,10 @@ CLOCK_MIN = datetime(1957, 10, 4, tzinfo=timezone.utc)      # นาฬิกา
 CLOCK_END = datetime(2101, 1, 1, tzinfo=timezone.utc)       # ถึงสิ้นปี 2100 (ไม่รวมค่านี้)
 SEND_TIMEOUT_S = 10.0                  # socket ที่รับ tick ไม่ทันนานกว่านี้ถูกตัด (ไม่ให้ขวาง tab อื่นของ module เดียวกัน)
 WS_NOT_OPEN = 1008                     # close code: module ไม่ได้เปิดอยู่ (policy violation)
-WS_MODULE_CLOSED = 1000                # close code: module ถูกปิดหรือลบ
+WS_MODULE_CLOSED = 1000                # close code: module ถูกปิดหรือลบ (ใช้กับกรณีนี้เท่านั้น หน้าเว็บไม่ต่อใหม่)
 WS_SERVER_STOP = 1001                  # close code: server กำลังปิด
+WS_INTERNAL_ERROR = 1011               # close code: producer หยุดเพราะ error ภายใน (หน้าเว็บต่อใหม่)
+WS_SEND_FAILED = 1013                  # close code: ส่ง tick ให้ socket นี้ไม่ทันหรือไม่สำเร็จ (Try Again Later)
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
 
@@ -135,34 +137,29 @@ async def _on_internal_error(request: Request, exc: Exception) -> JSONResponse:
 # ---------------------------------------------------------------- WebSocket tick
 
 def _finite(obj):
-    """แทน NaN/Infinity ด้วย null (JSON ไม่มีค่าเหล่านี้ และ JSON.parse ของ browser ไม่รับ)"""
+    """แทน NaN/Infinity ด้วย null (JSON ไม่มีค่าเหล่านี้ และ JSON.parse ของ browser ไม่รับ) tuple กลายเป็น list แบบเดียวกับ json"""
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, dict):
         return {k: _finite(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple)):
         return [_finite(v) for v in obj]
     return obj
 
 
-def _tick_json(tick: dict) -> str:
+def _tick_json(tick: dict) -> tuple[str, bool]:
+    """(JSON ของ tick, มีค่า NaN/Infinity ที่ถูกแทนด้วย null หรือไม่)"""
     try:
-        return json.dumps(tick, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        return json.dumps(tick, ensure_ascii=False, allow_nan=False, separators=(",", ":")), False
     except ValueError:
-        _log.warning("tick มีค่า NaN/Infinity ส่งเป็น null แทน")
-        return json.dumps(_finite(tick), ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        return json.dumps(_finite(tick), ensure_ascii=False, allow_nan=False, separators=(",", ":")), True
 
 
-def _tick_once(rt: ModuleRuntime) -> tuple[dict | None, int]:
-    """(tick หรือ None ถ้ารอบนี้พัง, refresh.data_ms ล่าสุด) เรียกใน thread ModuleClosedError ส่งต่อให้ producer จบ"""
-    try:
-        tick = rt.tick()
-    except ModuleClosedError:
-        raise
-    except Exception:
-        _log.exception("tick ของ module %s ล้มเหลว ข้ามรอบนี้", rt.name)
-        tick = None
-    return tick, rt.module.refresh["data_ms"]
+def _compute_round(rt: ModuleRuntime) -> tuple[str, bool, int]:
+    """งานใน thread ของหนึ่งรอบ: tick, แปลงเป็น JSON และ refresh.data_ms ล่าสุด (อ่านใหม่ทุกรอบ)
+    ModuleClosedError และ error อื่นส่งต่อให้ producer ตัดสิน"""
+    text, nonfinite = _tick_json(rt.tick())
+    return text, nonfinite, rt.module.refresh["data_ms"]
 
 
 async def _close_all(sockets, code: int) -> None:
@@ -173,11 +170,33 @@ async def _close_all(sockets, code: int) -> None:
             pass
 
 
+class _StateLog:
+    """log ของ producer เฉพาะตอนสถานะเปลี่ยน (เริ่มพัง / กลับมาปกติ) ไม่ใช่ทุกรอบ (ทุก 300 ms)"""
+
+    def __init__(self, name: str):
+        self._name = name
+        self._active: set[str] = set()
+
+    def enter(self, kind: str, level: int, text: str, exc_info: bool = False) -> None:
+        if kind not in self._active:
+            self._active.add(kind)
+            _log.log(level, "module %s: %s (log ครั้งเดียวจนกว่าจะกลับมาปกติ)", self._name, text, exc_info=exc_info)
+
+    def leave(self, kind: str, text: str) -> None:
+        if kind in self._active:
+            self._active.discard(kind)
+            _log.info("module %s: %s", self._name, text)
+
+
 class Ticks:
     """ส่ง tick ทาง WebSocket (หัวข้อ 6.4): producer หนึ่ง task ต่อ module ที่เปิดอยู่ขณะที่มี socket อย่างน้อยหนึ่งตัว
     tick() มีสถานะ (range rate ของ tick ก่อน, ช่วงถัดไป, การหา pass) จึงเรียกครั้งเดียวต่อรอบแล้วส่งก้อนเดียวกันให้ทุก socket
-    ของ module นั้น ทุกรอบห่าง refresh.data_ms (อ่านใหม่ทุกรอบ) งานคำนวณทำใน thread ด้วย asyncio.to_thread
-    ทุกเมธอดถูกเรียกใน event loop เดียวกัน จึงไม่ต้องมี lock"""
+    ของ module นั้น ทุกรอบห่าง refresh.data_ms (อ่านใหม่ทุกรอบ) งาน tick และแปลง JSON ทำใน thread ด้วย asyncio.to_thread
+    ทุกเมธอดถูกเรียกใน event loop เดียวกัน จึงไม่ต้องมี lock
+
+    close code ที่หน้าเว็บใช้ตัดสินว่าจะต่อใหม่หรือไม่: 1000 เฉพาะ module ถูกปิดหรือลบ (ไม่ต่อใหม่), 1008 module ไม่ได้เปิด,
+    1001 server ปิด, 1011 producer หยุดเพราะ error ภายใน, 1013 ส่ง tick ให้ socket นั้นไม่ทันหรือไม่สำเร็จ
+    รอบที่พัง (tick, แปลง JSON, ส่ง) ถูกข้ามและ log ครั้งเดียว socket ไม่ถูกปิด"""
 
     def __init__(self, hub: Hub):
         self._hub = hub
@@ -187,6 +206,10 @@ class Ticks:
     def producers(self) -> list[str]:
         """ชื่อ module ที่มี producer ทำงานอยู่"""
         return list(self._tasks)
+
+    def sockets(self, name: str) -> list[WebSocket]:
+        """socket ที่รับ tick ของ module นี้อยู่ (สำเนา)"""
+        return list(self._sockets.get(name, ()))
 
     def attach(self, name: str, ws: WebSocket) -> None:
         self._sockets.setdefault(name, set()).add(ws)
@@ -219,6 +242,9 @@ class Ticks:
     async def _produce(self, name: str) -> None:
         me = asyncio.current_task()
         loop = asyncio.get_running_loop()
+        logs = _StateLog(name)
+        data_ms = M.REFRESH_DEFAULT["data_ms"]          # ใช้ค่าล่าสุดที่อ่านได้ ถ้ารอบนี้พังก่อนอ่าน
+        code = WS_MODULE_CLOSED
         try:
             while self._sockets.get(name):
                 rt = self._hub.get(name)
@@ -226,26 +252,34 @@ class Ticks:
                     break
                 started = loop.time()
                 try:
-                    tick, data_ms = await asyncio.to_thread(_tick_once, rt)
+                    text, nonfinite, data_ms = await asyncio.to_thread(_compute_round, rt)
+                    await self._broadcast(name, text)
                 except ModuleClosedError:
                     break
-                if tick is not None:
-                    await self._broadcast(name, tick)
+                except Exception:
+                    logs.enter("round", logging.ERROR, "รอบ tick ล้มเหลว ข้ามรอบนี้", exc_info=True)
+                else:
+                    logs.leave("round", "ส่ง tick ได้อีกครั้ง")
+                    if nonfinite:
+                        logs.enter("nonfinite", logging.WARNING, "tick มีค่า NaN/Infinity ส่งเป็น null แทน")
+                    else:
+                        logs.leave("nonfinite", "tick ไม่มีค่า NaN/Infinity แล้ว")
                 await asyncio.sleep(max(0.0, data_ms / 1000.0 - (loop.time() - started)))
         except asyncio.CancelledError:
             raise
         except Exception:
             _log.exception("producer ของ module %s หยุดเพราะ error ที่ไม่คาดไว้", name)
+            code = WS_INTERNAL_ERROR
         finally:
-            if self._tasks.get(name) is me:      # จบเอง (module ปิดหรือไม่มี socket แล้ว) ไม่ใช่ถูก end/detach ยกเลิก
+            if self._tasks.get(name) is me:      # จบเอง (module ปิด, error, ไม่มี socket แล้ว) ไม่ใช่ถูก end/detach ยกเลิก
                 del self._tasks[name]
-                await _close_all(self._sockets.pop(name, set()), WS_MODULE_CLOSED)
+                await _close_all(self._sockets.pop(name, set()), code)
 
-    async def _broadcast(self, name: str, tick: dict) -> None:
+    async def _broadcast(self, name: str, text: str) -> None:
+        """ส่งข้อความเดียวกันให้ทุก socket socket ที่ส่งไม่ทัน SEND_TIMEOUT_S หรือส่งไม่สำเร็จถูกปิดด้วย 1013 (ตัวอื่นไม่กระทบ)"""
         sockets = list(self._sockets.get(name, ()))
         if not sockets:
             return
-        text = _tick_json(tick)
         results = await asyncio.gather(*(asyncio.wait_for(ws.send_text(text), SEND_TIMEOUT_S) for ws in sockets),
                                        return_exceptions=True)
         dead = [ws for ws, r in zip(sockets, results) if isinstance(r, BaseException)]
@@ -253,7 +287,7 @@ class Ticks:
             live = self._sockets.get(name)
             if live is not None:
                 live.difference_update(dead)
-            await _close_all(dead, WS_MODULE_CLOSED)
+            await _close_all(dead, WS_SEND_FAILED)
 
 
 # ---------------------------------------------------------------- แปลงเป็น JSON
