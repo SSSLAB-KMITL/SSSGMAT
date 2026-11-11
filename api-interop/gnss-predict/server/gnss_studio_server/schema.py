@@ -177,8 +177,16 @@ class ConstellationObj(_Model):
 SceneObject = Annotated[FacilityObj | SatelliteObj | ConstellationObj, Field(discriminator="class_")]
 
 
+def _not_blank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("ชื่อกลุ่มต้องไม่ว่าง")
+    return value
+
+
 class Group(_Model):
-    name: Annotated[str, StringConstraints(min_length=1)]
+    """โฟลเดอร์ใน Object Browser: ชื่อเป็นข้อความอิสระ (มีช่องว่างได้ เช่น "GPS sats") ไม่ใช่ชื่อ object จึงไม่ใช้ NAME_PATTERN
+    ต้องไม่ว่างและไม่ซ้ำกันแบบไม่สนตัวพิมพ์เล็กใหญ่ (ตรวจความไม่ซ้ำใน `validate_scenario`)"""
+    name: Annotated[str, StringConstraints(min_length=1), AfterValidator(_not_blank)]
     members: list[ObjectPath] = []
 
 
@@ -292,6 +300,13 @@ def validate_scenario(doc: Any) -> None:
     if not isinstance(doc, dict):
         raise ApiError(422, "SCENARIO_INVALID", "scenario.json ราก JSON ต้องเป็น object", "<file>")
     try:
-        ScenarioDoc.model_validate(doc)
+        parsed = ScenarioDoc.model_validate(doc)
     except ValidationError as exc:
         raise to_api_error(exc) from None
+    seen: set[str] = set()
+    for i, group in enumerate(parsed.groups):
+        key = group.name.casefold()
+        if key in seen:
+            raise ApiError(422, "SCENARIO_INVALID", f"scenario.json ช่อง groups[{i}].name: ชื่อกลุ่ม '{group.name}' ซ้ำกับกลุ่มก่อนหน้า "
+                           "(ไม่แยกตัวพิมพ์เล็กใหญ่)", f"groups[{i}].name", "duplicate group name")
+        seen.add(key)

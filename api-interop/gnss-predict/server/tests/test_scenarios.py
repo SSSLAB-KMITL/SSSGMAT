@@ -81,7 +81,7 @@ def test_new_template_content(client, snapshot, data_dir):
     doc = make(client).json()
     assert doc["format"] == "gnss-studio-scenario/1" and doc["name"] == "S1" and doc["orbit_snapshot"] == "20261110T0000Z"
     assert doc["analysis_period"] == {"start": "2026-11-10T00:00:00Z", "stop": "2026-11-10T06:00:00Z"}
-    assert doc["groups"] == [] and doc["styles"] == [] and "daily" not in doc
+    assert doc["styles"] == [] and "daily" not in doc
     assert doc["animation"] == {"start": "2026-11-10T00:00:00Z", "time_step_s": 60, "update_mode": "time_step",
                                 "x_real_time_multiplier": 60, "cycle": "loop"}
     assert doc["units"] == {"date_format": "UTCG", "ltz_offset": "+07:00", "distance": "km", "angle": "deg"}
@@ -117,6 +117,13 @@ def test_new_template_content(client, snapshot, data_dir):
     assert sat["graphics2d"]["swath"] == {"type": "Ground Elevation", "elevation_deg": 10.0, "options": "No Graphics"}
     assert sat["graphics2d"]["line_style"] == "Solid" and sat["graphics2d"]["marker_style"] == "Square"
     assert sat["graphics3d"] == {"show": True, "orbit_system": "Fixed by Window"}
+
+    # โฟลเดอร์ใน Object Browser ละระบบ: "GPS sats" ฯลฯ สมาชิกเรียงเหมือน assigned_objects ของ Constellation
+    assert [g["name"] for g in doc["groups"]] == ["GPS sats", "GLONASS sats", "Galileo sats", "BeiDou sats"]
+    assert [g["members"] for g in doc["groups"]] == [cons[s]["assigned_objects"] for s in ("G", "R", "E", "C")]
+    gps_sats = next(g for g in doc["groups"] if g["name"] == "GPS sats")
+    assert gps_sats["members"] == cons["G"]["assigned_objects"] and "*/Satellite/G01" in gps_sats["members"]
+    assert all(g["members"] for g in doc["groups"]) and all(set(g) == {"name", "members"} for g in doc["groups"])
 
     acc, = doc["accesses"]
     assert acc["from"] == "*/Facility/THBK" and acc["time_period"] == {"mode": "object"}
@@ -324,6 +331,9 @@ def _invalid_cases(doc):
         (lambda d: d["objects"][sat].pop("class"), f"objects[{sat}].class"),
         (lambda d: d["objects"][sat].update({"class_": d["objects"][sat].pop("class")}), f"objects[{sat}].class"),   # ต้องใช้ชื่อ `class`
         (lambda d: d.__setitem__("groups", [{"name": "", "members": []}]), "groups[0].name"),
+        (lambda d: d.__setitem__("groups", [{"name": "   ", "members": []}]), "groups[0].name"),
+        (lambda d: d["groups"].__setitem__(2, {**d["groups"][2], "name": "gps SATS"}), "groups[2].name"),     # ซ้ำแบบไม่สนตัวพิมพ์
+        (lambda d: d["groups"].__setitem__(1, {**d["groups"][1], "name": "GPS sats"}), "groups[1].name"),
         (lambda d: d.__setitem__("groups", [{"name": "g", "members": ["G01"]}]), "groups[0].members[0]"),
         (lambda d: d["objects"][sat].__setitem__("norad", 0), f"objects[{sat}].norad"),
         (lambda d: d["objects"][sat].__setitem__("norad", "62339"), f"objects[{sat}].norad"),
@@ -401,6 +411,14 @@ def test_unknown_fields_kept(client, snapshot, data_dir):
     on_disk = json.loads(file_bytes(data_dir))
     assert on_disk == doc and on_disk["x_custom"] == {"a": [1, 2, {"b": None}]} and on_disk["objects"][0]["x_note"] == "ทดสอบ"
     assert "ทดสอบ" in file_bytes(data_dir).decode("utf-8")                       # เก็บเป็น UTF-8 ตรงตัว ไม่ escape
+
+
+def test_group_names_are_free_text_not_object_names(client, snapshot):
+    r = make(client); doc = r.json()
+    doc["groups"] = [{"name": "GPS sats", "members": ["*/Satellite/G01"]}, {"name": "ดาวทดสอบ & more", "members": []},
+                     {"name": "x" * 100, "members": []}]
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(r)})
+    assert ok.status_code == 200 and client.get("/api/scenarios/S1").json()["groups"] == doc["groups"]
 
 
 def test_put_saved_document_is_the_clients_not_a_dump(client, snapshot):

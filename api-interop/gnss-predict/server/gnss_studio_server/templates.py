@@ -1,6 +1,7 @@
 """แม่แบบของ New Scenario Wizard (หัวข้อ 6.3 ของ spec server, ข้อตัดสินใจ P5)
 
 - `thbk-gnss`: Facility THBK + ดาวทุกดวงใน catalog ที่มี PRN (ชื่อดาว = PRN) + Constellation 4 ระบบ + access จาก THBK ไปทั้ง 4 ระบบ
+  + โฟลเดอร์ใน Object Browser ละระบบ (`GPS sats`, `GLONASS sats`, `Galileo sats`, `BeiDou sats`)
 - `empty`: ไม่มี object, access และกลุ่ม
 - `snapshot` ที่ไม่ระบุใช้โฟลเดอร์ใต้ `<data>/orbits/` ที่ใหม่ที่สุด (ชื่อ `YYYYMMDDTHHMMZ`; `_cache` ไม่นับ)
 """
@@ -21,7 +22,7 @@ SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z")
 
 FACILITY_COLOR = "#ff79e6"
 THBK = {"name": "THBK", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4, "elevation_angle_min_deg": 10.0}
-# (ตัวอักษรระบบ, ชื่อ Constellation, สีตั้งต้น) ตามลำดับที่ใช้ใน access
+# (ตัวอักษรระบบ, ชื่อ Constellation, สีตั้งต้น) ตามลำดับที่ใช้ใน access และใน groups (โฟลเดอร์ "<ชื่อ> sats" ละระบบ)
 CONSTELLATIONS = (
     ("G", "GPS", "#ffd23f"),
     ("R", "GLONASS", "#ff6b6b"),
@@ -102,8 +103,9 @@ def _satellite(prn: str, norad: int, color: str) -> dict:
             "graphics3d": {"show": True, "orbit_system": "Fixed by Window"}}
 
 
-def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime, stop: datetime) -> tuple[list[dict], list[dict]]:
-    """(objects, accesses) ของแม่แบบ thbk-gnss"""
+def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,
+                       stop: datetime) -> tuple[list[dict], list[dict], list[dict]]:
+    """(objects, accesses, groups) ของแม่แบบ thbk-gnss groups = โฟลเดอร์ใน Object Browser ละระบบ สมาชิกเรียงเหมือน assigned_objects"""
     snapshot_dir = Path(data_dir) / ORBITS_DIR / snapshot
     systems = {system for system, group in GNSS_GROUPS.items() if (snapshot_dir / f"{group}.json").is_file()}
     if not systems:
@@ -121,12 +123,13 @@ def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime, stop: dat
     for system, name, color in CONSTELLATIONS:
         objects.append({"class": "Constellation", "name": name, "system": system, "description": "", "color": color,
                         "assigned_objects": members[system]})
+    groups = [{"name": f"{name} sats", "members": list(members[system])} for system, name, _ in CONSTELLATIONS]
     accesses = [{"from": f"*/Facility/{THBK['name']}", "to": [f"*/Constellation/{name}" for _, name, _ in CONSTELLATIONS],
                  "time_period": {"mode": "object"},
                  "graphics": {"show": True, "static_highlight": False, "animate_highlight": False, "animate_line": True,
                               "color_mode": "object", "custom_color": ACCESS_CUSTOM_COLOR, "inherit": True},
                  "timeline": True, "computed": False}]
-    return objects, accesses
+    return objects, accesses, groups
 
 
 def new_scenario(name: str, start: str | datetime, stop: str | datetime, template: Literal["thbk-gnss", "empty"],
@@ -135,9 +138,9 @@ def new_scenario(name: str, start: str | datetime, stop: str | datetime, templat
     start_t, stop_t = parse_utc(start, "start"), parse_utc(stop, "stop")
     snapshot = resolve_snapshot(data_dir, snapshot)
     if template == "thbk-gnss":
-        objects, accesses = _thbk_gnss_content(data_dir, snapshot, start_t, stop_t)
+        objects, accesses, groups = _thbk_gnss_content(data_dir, snapshot, start_t, stop_t)
     elif template == "empty":
-        objects, accesses = [], []
+        objects, accesses, groups = [], [], []
     else:
         raise ApiError(422, "SCENARIO_INVALID", f"ไม่รู้จักแม่แบบ {template} (ใช้ thbk-gnss หรือ empty)", "template")
     return {
@@ -154,7 +157,7 @@ def new_scenario(name: str, start: str | datetime, stop: str | datetime, templat
         "units": {"date_format": "UTCG", "ltz_offset": "+07:00", "distance": "km", "angle": "deg"},
         "graphics2d_global": {"show_labels": True},
         "objects": objects,
-        "groups": [],
+        "groups": groups,
         "accesses": accesses,
         "styles": [],
     }
