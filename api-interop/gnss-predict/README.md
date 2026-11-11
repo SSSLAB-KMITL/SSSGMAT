@@ -346,3 +346,304 @@ exit 0 ใน 14.3 วินาที ไม่มีคำเตือน ไ�
 | 5 | 130 ดวง 24 ชม. ทุก 30 วินาที ไม่เกิน 60 วินาที | ผ่าน: 131 ดวง 39.0 วินาที (ข้อ 2) |
 | 6 | CLI เดิมได้ CSV รูปแบบเดิม และ test เดิมยังผ่าน | ผ่าน: ข้อ 3 และ test ทั้งชุด 443 ข้อผ่าน (test ดาวน์โหลดของ CLI เดิม 5 ข้อใน `tests/test_tle_fetch.py` เขียนใหม่ให้ใช้ OMM: แก้ 3 เพิ่ม 2) |
 | 7 | Python standard library ล้วน ไม่แก้ไฟล์ของ GMAT | ผ่าน |
+
+## 8. GNSS Studio server
+
+server ของ GNSS Studio เป็น FastAPI ที่ให้หน้าเว็บ (งานย่อยที่ 3–4) สร้าง เปิด แก้ และคำนวณ scenario ผ่าน API ที่ใช้แนวคิดของ STK
+และรันงานพยากรณ์ของ THBK เองทุกวัน โค้ดอยู่ใต้ `server/` เรียก engine ในหัวข้อ 7 ผ่าน process ลูกต่อ job (ส่วน engine ยังใช้ standard library เท่านั้น)
+
+- Spec: [docs/2026-11-11-gnss-studio-server-design.md](docs/2026-11-11-gnss-studio-server-design.md) (อ้างว่า "server §n")
+
+### 8.1 ติดตั้ง
+
+สร้าง virtualenv ใน `server/` ครั้งเดียว (ทดสอบกับ Python 3.14) `server/.venv/` อยู่ใน `.gitignore`
+
+```bash
+cd api-interop/gnss-predict/server
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt      # ใช้รันอย่างเดียวพอแค่ requirements.txt (fastapi, uvicorn)
+```
+
+ต้องมี GMAT ตามหัวข้อ 1 ด้วย (server หา `GmatConsole` แบบเดียวกับ engine)
+
+### 8.2 เปิด server
+
+```bash
+cd api-interop/gnss-predict/server
+.venv/bin/python -m gnss_studio_server
+# GNSS Studio: http://127.0.0.1:8000/
+```
+
+หยุดด้วย Ctrl-C หรือ `kill <pid>` (ถ้ามี job รันอยู่ server ฆ่า GMAT และ process ลูก แล้วบันทึก job นั้นและ job ที่รออยู่เป็น `failed` รหัส `INTERRUPTED`)
+server ฟังที่ `127.0.0.1` เท่านั้นโดยตั้งต้น ไม่มี login และไม่มี HTTPS (v1 สำหรับผู้ใช้คนเดียวบนเครื่องเดียว) จึงไม่ควรเปลี่ยน `GNSS_STUDIO_HOST`
+API ทั้งหมดอยู่ใต้ `/api` มี OpenAPI ที่ `/api/openapi.json` และหน้าลองเรียกที่ `/api/docs` ถ้ามีหน้าเว็บที่ build แล้วที่ `web/dist/`
+server ส่งหน้าเว็บจาก port เดียวกัน (ยังไม่มี: หน้าเว็บเป็นงานย่อยที่ 3–4)
+
+| ตัวแปร | ค่าเริ่มต้น | ความหมาย |
+|---|---|---|
+| `GNSS_STUDIO_DATA` | `data/` ในโฟลเดอร์ `gnss-predict` | โฟลเดอร์ `data/` ตามหัวข้อ 7.2 server เพิ่ม `jobs/`, `logs/server.log`, `daily/`, `validation/<scenario>/` และ `settings.json` |
+| `GMAT_BIN` | `application/bin/GmatConsole` ของ repo | path ของไฟล์ `GmatConsole` |
+| `GNSS_STUDIO_HOST` | `127.0.0.1` | ที่อยู่ที่ฟัง |
+| `GNSS_STUDIO_PORT` | `8000` | port ที่ฟัง (1–65535) |
+| `CESIUM_ION_TOKEN` | ว่าง | token ของ Cesium ion สำหรับหน้าเว็บ server อ่านเก็บไว้ในค่าตั้ง ยังไม่มี endpoint ใดใช้ในรุ่นนี้ |
+
+ทุกอย่างที่ server เขียนอยู่ใต้ `GNSS_STUDIO_DATA` และ log หมุนไฟล์ที่ 10 MB เก็บ 5 ไฟล์ ข้อผิดพลาดตอบเป็น JSON `{"code", "text", "field", "detail"}`
+(รหัสตาม server §10, `text` เป็นภาษาไทย)
+
+### 8.3 งานประจำวัน (ดาวน์โหลดจากเน็ต)
+
+ตั้งต้น server รันงานพยากรณ์ของ THBK เองทุกวัน โดยตัวตั้งเวลาเริ่มพร้อม server และตรวจทุก 60 วินาที ให้ D = วันถัดไปตาม UTC
+
+1. ในเวลา `run_at_utc` (ตั้งต้น 21:00 UTC) job `daily` ดึงข้อมูลใหม่ด้วย `fetch_snapshot` (CelesTrak, IGS metadata และ broadcast จาก CDDIS)
+2. สร้างหรือเขียนทับ scenario `daily_<YYYYMMDD ของ D>` จากแม่แบบ `thbk-gnss`: THBK มุมเงยขั้นต่ำ 10°, ดาวทุกดวงที่มี PRN,
+   00:00–24:00 UTC ของ D, ทุก 30 วินาที, access จาก THBK ไปทุก Constellation
+3. propagate แล้ว analyze THBK
+4. คัดลอก `legacy_gps.csv` (รูปแบบเดียวกับ CLI เดิมในหัวข้อ 3) ไปที่ `data/daily/thbk_gnss_pred_<YYYYMMDD>_24h.csv`
+   และ `data/daily/latest.csv` (เขียนแบบ atomic: ผู้อ่านเห็นไฟล์เก่าทั้งไฟล์หรือไฟล์ใหม่ทั้งไฟล์เสมอ)
+
+หลังจากนั้นทุก `validation_retry_hours` server ตรวจย้อนหลังด้วย job `validate` ของ scenario รายวันที่ผ่านไปอย่างน้อย 1 วัน
+(ดึง SP3 ของ MGEX จาก CDDIS ถ้ายังไม่ออกจะลองใหม่รอบหน้า เลิกลองหลัง `validation_give_up_days` พร้อมข้อความ `VALIDATION_GAVE_UP`)
+ผลอยู่ใน `data/validation/history.jsonl` ลบเฉพาะ `ephem/` และ `access/` ของ scenario รายวันที่เก่ากว่า `retention_days`
+ส่วน `scenario.json`, ไฟล์ validation และ `data/daily/` เก็บไว้ ถ้าขั้นใดล้มเหลว job เป็น `failed` พร้อมรหัสของ engine แล้วรอรอบวันถัดไป
+
+> **คำเตือน: เปิดงานประจำวันอยู่ = server ดาวน์โหลดจากเน็ตเองได้ทันทีที่เปิด**
+> กติกางานที่พลาด (server §9.3): ถ้าเปิด server หลังเวลา `run_at_utc` ของวันนั้น (เช่น เปิดตอน 22:00 UTC) และยังไม่มีผลพยากรณ์ของ D
+> ตัวตั้งเวลาจะสั่ง job `daily` **ทันที** ในรอบตรวจแรก ซึ่งดึงข้อมูลจาก CelesTrak (และ CDDIS) โดยไม่มีใครกดสั่ง
+> ถ้าไม่มี `data/settings.json` ใช้ค่าตั้งต้นซึ่ง **เปิด** งานประจำวัน (ไฟล์ที่เสียหรือไม่ระบุ `daily.enabled` เป็น true/false ถือว่า **ปิด**)
+>
+> ถ้าไม่ต้องการให้ดาวน์โหลด ให้ปิดก่อนเปิด server ครั้งแรก โดยเขียน `$GNSS_STUDIO_DATA/settings.json` ก่อน:
+>
+> ```json
+> {"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
+>            "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}
+> ```
+>
+> หรือปิดตอน server รันอยู่ด้วย `PUT /api/settings` (ต้องส่งทั้งเอกสาร ช่องที่หายได้ 422) ตัวตั้งเวลาอ่านค่าใหม่ทันที และทุกรอบ
+> (การปิดหลังเปิดอาจช้ากว่ารอบตรวจแรกซึ่งเกิดตอนเปิด server จึงควรเขียนไฟล์ก่อน):
+>
+> ```bash
+> curl -s -X PUT http://127.0.0.1:8000/api/settings -H 'Content-Type: application/json' \
+>   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}'
+> ```
+>
+> งานที่ดึงข้อมูลจากเน็ตอีกสองทางมีแต่ที่ผู้ใช้สั่งเอง: `POST /api/orbits/fetch` และ `POST /api/scenarios/{sc}/validate`
+
+ค่าตั้งใน `settings.json` (ตัวอย่างข้างบนคือค่าตั้งต้นของ server §9.1 ยกเว้น `enabled`):
+
+| ช่อง | ตั้งต้น | ช่วงที่รับ | ความหมาย |
+|---|---|---|---|
+| `daily.enabled` | `true` | true/false | เปิดงานพยากรณ์ ตรวจย้อนหลัง และเก็บรักษา |
+| `daily.run_at_utc` | `"21:00"` | `HH:MM` | เวลา UTC ที่เริ่มพยากรณ์ของวันถัดไป |
+| `daily.facility` | `"THBK"` | ชื่อ object | Facility ที่ analyze และคัดลอก CSV |
+| `daily.retention_days` | `30` | 1–3650 | อายุของ `ephem/` และ `access/` ของ scenario รายวัน |
+| `daily.validation_retry_hours` | `3` | 1–168 | ระยะห่างของการลองตรวจย้อนหลังซ้ำ |
+| `daily.validation_give_up_days` | `14` | 1–365 | เลิกตรวจหลังจากวัน D ผ่านไปกี่วัน |
+| `cesium_ion_token` | `""` | ข้อความ | token ของ Cesium ion ที่หน้าเว็บอ่าน |
+
+### 8.4 สรุป endpoint
+
+ทุก endpoint อยู่ใต้ `/api` เวลาเป็น ISO 8601 UTC ลงท้าย `Z` รายละเอียดของ request/response อยู่ใน spec ตามหัวข้อในตาราง
+(หรือดูที่ `/api/docs`) หลายการแก้ scenario ใช้ ETag: อ่านจาก header `ETag` แล้วส่งกลับใน `If-Match` ไม่ตรงได้ 412 `ETAG_MISMATCH`
+
+| กลุ่ม | Endpoint | Spec |
+|---|---|---|
+| ทั่วไป | `GET /health`, `GET/PUT /settings`, `GET /events` (SSE), `GET /messages` | §6.1, §8 |
+| วงโคจร | `GET /orbits`, `POST /orbits/fetch` (ดึงจากเน็ต), `GET /catalog` | §6.2 |
+| Scenario | `GET/POST /scenarios`, `GET/PUT/DELETE /scenarios/{sc}`, `POST /scenarios/{sc}/copy`, `GET/PUT /scenarios/{sc}/workbook` | §6.3 |
+| Object | `GET/POST /scenarios/{sc}/objects`, `GET/PATCH/DELETE /scenarios/{sc}/objects/{class}/{name}`, `POST .../rename`, `POST /scenarios/{sc}/groups` | §6.4 |
+| ผลลัพธ์ | `GET /scenarios/{sc}/results`, `POST /scenarios/{sc}/propagate`, `GET /scenarios/{sc}/ephem/{hash}/{file}`, `GET /scenarios/{sc}/access/{facility}/{hash}/{file}` | §6.5 |
+| Access | `GET /scenarios/{sc}/access`, `POST .../access/compute`, `.../clear`, `.../remove`, `GET .../access/intervals?from=&to=` | §6.6 |
+| Job | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` | §6.8, §7 |
+| ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/{sc}/{day}` | §6.8 |
+
+ยังไม่มีในรุ่นนี้: data provider, style และรายงาน (server §6.7) ซึ่งอยู่ในแผนของงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine
+
+### 8.5 ตรวจเกณฑ์ข้อ 5 ของ spec (งานประจำวัน 3 วันติด)
+
+เกณฑ์ข้อ 5 ของ server §1 ("งานประจำวันรันครบ 3 วันติดโดยไม่มีคนสั่ง และมีผลตรวจแบบพยากรณ์จริงอย่างน้อย 1 วัน") ต้องปล่อย server รันจริงหลายวัน
+จึงไม่ได้ตรวจในแผนพัฒนา ให้ตรวจตามนี้หลัง merge:
+
+1. เปิด server ด้วยค่าตั้งต้น (งานประจำวันเปิด ไม่ต้องมี `settings.json`) ใน `data/` ที่จะเก็บผลจริง และเช็กว่า GMAT พบ:
+   `curl -s http://127.0.0.1:8000/api/health` ต้องได้ `"gmat_found": true`
+2. ปล่อยให้ server รันต่อเนื่องอย่างน้อย 3 วัน UTC ติดกัน เครื่องต้องไม่หลับ (เช่น `caffeinate -i .venv/bin/python -m gnss_studio_server`)
+   ถ้าเปิดหลัง 21:00 UTC รอบของวันนั้นรันทันที (คำเตือนในหัวข้อ 8.3) รอบถัดไปรันเองเวลา `run_at_utc` ของแต่ละวัน
+3. หลังรอบที่ 3 จบ ตรวจว่ามีผลพยากรณ์ 3 วันติดกันที่ตัวตั้งเวลาสั่งเอง:
+
+   ```bash
+   ls data/daily/                      # thbk_gnss_pred_<D1>_24h.csv, <D2>, <D3> ที่เป็นวันติดกัน และ latest.csv
+   curl -s 'http://127.0.0.1:8000/api/jobs?state=succeeded' | python3 -c '
+   import json, sys
+   for j in json.load(sys.stdin):
+       if j["kind"] == "daily":
+           print(j["params"]["for_date"], j["origin"], j["finished_utc"])'
+   ```
+
+   ต้องได้ 3 บรรทัดที่ `for_date` ติดกันและ `origin` เป็น `scheduler` ทุกบรรทัด
+4. ดูผลตรวจย้อนหลังแบบพยากรณ์จริง:
+
+   ```bash
+   curl -s http://127.0.0.1:8000/api/validation/history | python3 -m json.tool
+   ```
+
+   ต้องมีอย่างน้อย 1 รายการที่ `scenario` ขึ้นต้นด้วย `daily_` (scenario ที่สร้างไว้ล่วงหน้าก่อนวันนั้นถึง จึงเป็นการตรวจแบบพยากรณ์จริง ไม่ใช่ hindcast
+   ภาพรวม §10.3) พร้อมช่อง `pass` เกณฑ์ผ่านของแต่ละระบบ (G, R, E, C) อยู่ในภาพรวม §10.1 ผลตรวจรอ SP3 แบบ rapid ของวันนั้นซึ่งออกหลังวัน D ราว 1–2 วัน
+   ถ้ายังไม่มีรายการ ให้รอต่อ (server ลองใหม่ทุก 3 ชม. จนถึง 14 วัน) และดู `GET /api/jobs?state=failed` ว่าเป็น `TRUTH_UNAVAILABLE` หรือรหัสอื่น
+
+### 8.6 ทดสอบ
+
+```bash
+cd api-interop/gnss-predict/server && .venv/bin/python -m pytest -q       # test ของ server
+cd api-interop/gnss-predict && python3 -m unittest discover -s tests       # test ของ engine
+```
+
+test ใช้ `data/` ชั่วคราวและไม่ใช้เน็ตทั้งหมด `server/tests/test_integration_gmat.py` รันทั้งสายผ่าน HTTP API ด้วย GMAT จริงและ process ลูกจริง
+(New จากแม่แบบ → propagate → Access THBK→GPS → intervals มี G01 → `scene.czml` เปิดเป็น JSON) และข้ามอัตโนมัติถ้าหา GmatConsole ไม่เจอ
+ผลเมื่อ 2026-11-11: server 859 ข้อผ่านใน 38 วินาที (รวม integration test ที่ใช้ GMAT จริงราว 1 วินาที), engine 461 ข้อผ่านใน 7 วินาที
+
+### 8.7 บันทึกการทดลองจริงบนเครื่อง
+
+รันเมื่อ 2026-11-11 เวลา 14:46–14:47 UTC บน Apple M5 Pro, macOS 26.4.1, GmatConsole R2026a ด้วย `data/` ชั่วคราว (ในคำสั่งแทนด้วย `$DEMO`)
+**ไม่ได้ดึงข้อมูลจากเน็ต**: คัดลอก snapshot จริงที่ fetch ไว้แล้ว (หัวข้อ 7.4) และปิดงานประจำวันก่อนเปิด server
+
+**1. เตรียม `data/` และเปิด server**
+
+```bash
+DEMO=$(mktemp -d); mkdir -p $DEMO/orbits
+cp -R data/orbits/20261110T2147Z $DEMO/orbits/
+cat > $DEMO/settings.json <<'JSON'
+{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}
+JSON
+
+cd server
+GNSS_STUDIO_DATA=$DEMO GNSS_STUDIO_PORT=8765 .venv/bin/python -m gnss_studio_server
+# GNSS Studio: http://127.0.0.1:8765/
+# INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
+```
+
+**2. ตรวจ health และว่างานประจำวันปิดอยู่** (`curl -s http://127.0.0.1:8765/api/settings` และ `/api/health`)
+
+```
+{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}
+{"engine_version": "0.2.0", "gmat_found": true, "data_dir": "$DEMO", "writable": true,
+ "daily": {"state": "idle", "last_run_utc": null, "next_run_utc": null, "for_date": null}}
+```
+
+`GET /api/jobs` ตอบ `[]` (ไม่มีงานที่ตัวตั้งเวลาสั่งเอง)
+
+**3. สร้าง scenario 6 ชม. ของ 2026-11-11 จากแม่แบบ `thbk-gnss`**
+
+```bash
+curl -s -i -X POST http://127.0.0.1:8765/api/scenarios -H 'Content-Type: application/json' \
+  -d '{"name":"run6h","start":"2026-11-11T00:00:00Z","stop":"2026-11-11T06:00:00Z","template":"thbk-gnss","snapshot":"20261110T2147Z"}'
+```
+
+```
+HTTP/1.1 201 Created
+etag: "9a91a4a0ad971b76"
+location: /api/scenarios/run6h
+...   (scenario.json ทั้งก้อน: Satellite 131, Constellation 4, Facility 1,
+       accesses = [{"from": "*/Facility/THBK", "to": ["*/Constellation/GPS", "*/Constellation/GLONASS",
+                    "*/Constellation/Galileo", "*/Constellation/BeiDou"], "computed": false}])
+```
+
+**4. Propagate และรอ** (เปิด `curl -N` ของข้อ 6 ไว้ก่อนสั่ง)
+
+```bash
+curl -s -X POST http://127.0.0.1:8765/api/scenarios/run6h/propagate
+curl -s http://127.0.0.1:8765/api/jobs/j-20261111T144639-9dcd        # วนทุก 1 วินาที
+```
+
+```
+{"job":"j-20261111T144639-9dcd"}            (HTTP 202)
+14:46:39 running None
+14:46:40 running {'stage': 'gmat', 'fraction': 0.1}
+   ... (ขั้น gmat 9 วินาที)
+14:46:49 succeeded {'stage': 'done', 'fraction': 1.0}
+```
+
+บันทึก job: `kind: propagate`, `state: succeeded`, `error: null`, `origin: user`, `started_utc 14:46:39.694Z`, `finished_utc 14:46:48.801Z`
+(9.1 วินาที สำหรับ 6 ชม. ทุก 30 วินาที: propagate 120 จาก 131 ดวง ที่เหลือถูกซ่อนตามตัวกรองตั้งต้นในหัวข้อ 7.3) มี 53 ข้อความ `SAT_FLAGGED`
+
+**5. ดูผลลัพธ์ แล้ว Compute Access THBK → GPS**
+
+```bash
+curl -s http://127.0.0.1:8765/api/scenarios/run6h/results
+curl -s -i -X POST http://127.0.0.1:8765/api/scenarios/run6h/access/compute \
+  -H 'Content-Type: application/json' -H 'If-Match: "9a91a4a0ad971b76"' \
+  -d '{"from":"*/Facility/THBK","to":["*/Constellation/GPS"]}'
+```
+
+```
+{"ephem": {"hash": "481b504e5a74", "status": "current", "available": ["481b504e5a74"]},
+ "access": {"THBK": {"hash": "39d9e066542c", "status": "missing", "available": []}}, "error": null}
+
+HTTP/1.1 202 Accepted
+etag: "033a12d95ddf6070"
+{"job":"j-20261111T144657-e958","etag":"033a12d95ddf6070"}
+```
+
+ผล propagate ใช้ได้ (`current`) แต่ยังไม่มีผล access ของ THBK (`missing`) จึงได้ job `analyze` (202) ที่จบใน 1.0 วินาที เพราะใช้ผล propagate เดิมไม่รัน GMAT ซ้ำ
+(`/results` หลังจบ: `"access": {"THBK": {"hash": "39d9e066542c", "status": "current", ...}}`)
+
+**6. ช่วง access ของ GPS**
+
+```bash
+curl -s -G http://127.0.0.1:8765/api/scenarios/run6h/access/intervals \
+  --data-urlencode 'from=*/Facility/THBK' --data-urlencode 'to=*/Constellation/GPS'
+```
+
+```
+{"G01": [{"start": "2026-11-11T02:43:10.753Z", "stop": "2026-11-11T04:21:19.428Z", "duration_s": 5888.675, "max_el_deg": 12.813}],
+ "G02": [{"start": "2026-11-11T01:33:34.912Z", "stop": "2026-11-11T03:57:42.541Z", "duration_s": 8647.629, "max_el_deg": 15.942}],
+ "G03": [{"start": "2026-11-11T03:33:23.561Z", "stop": "2026-11-11T06:00:00.000Z", "duration_s": 8796.439, "max_el_deg": 42.033}],
+ ...}                                    (คีย์เป็นชื่อดาว 32 ดวง, 18 ดวงมีช่วง access ใน 6 ชม.)
+```
+
+**7. SSE: `curl -N http://127.0.0.1:8765/api/events`** (เปิดค้างไว้ 40 วินาทีตั้งแต่ก่อนสั่ง propagate ตัดมาเฉพาะเฟรมที่เกี่ยวกับ job)
+
+```
+event: ping
+data: {}
+
+event: job
+data: {"id":"j-20261111T144639-9dcd","kind":"propagate","scenario":"run6h","state":"queued","progress":null}
+
+event: job
+data: {"id":"j-20261111T144639-9dcd","kind":"propagate","scenario":"run6h","state":"running","progress":{"stage":"gmat","fraction":0.1}}
+
+event: job
+data: {"id":"j-20261111T144639-9dcd","kind":"propagate","scenario":"run6h","state":"succeeded","progress":{"stage":"done","fraction":1.0}}
+
+event: message
+data: {"time":"2026-11-11T14:46:48.787Z","level":"info","code":"SAT_FLAGGED","text":"ดาว C01 (NORAD 56564): ชื่อใน CelesTrak (BEIDOU-3 G4 (C62)) มี PRN ไม่ตรงกับ IGS","object":"C01"}
+
+event: scenario
+data: {"name":"run6h","etag":"033a12d95ddf6070","results_stale":false}
+
+event: job
+data: {"id":"j-20261111T144657-e958","kind":"analyze","scenario":"run6h","state":"running","progress":{"stage":"aer","fraction":0.5}}
+```
+
+ทั้ง 40 วินาทีได้ `ping` 2 เฟรม (ทันทีที่เชื่อมต่อ และอีกเฟรมหลังเงียบไป 15 วินาที), `job` 19 เฟรม (ทั้ง propagate และ analyze ตั้งแต่ `queued` ถึง `succeeded`),
+`message` 106 เฟรม และ `scenario` 1 เฟรม (ETag ใหม่หลัง Compute)
+
+**8. ดาวน์โหลด `scene.czml` และเทียบ SHA-256 กับไฟล์บนดิสก์** (server §1 เกณฑ์ข้อ 6)
+
+```bash
+curl -s -D- -o scene.czml http://127.0.0.1:8765/api/scenarios/run6h/ephem/481b504e5a74/scene.czml
+shasum -a 256 scene.czml $DEMO/scenarios/run6h/ephem/481b504e5a74/scene.czml
+```
+
+```
+HTTP/1.1 200 OK
+etag: "5505652f86448e183ed2891db934e6212fb944c756693d25250bd32f7881424c"
+cache-control: public, max-age=31536000, immutable
+content-type: application/json
+5505652f86448e183ed2891db934e6212fb944c756693d25250bd32f7881424c  scene.czml
+5505652f86448e183ed2891db934e6212fb944c756693d25250bd32f7881424c  .../ephem/481b504e5a74/scene.czml
+```
+
+ไฟล์เป็น JSON list 121 packet โดย packet แรกมี `id` เป็น `"document"` (ตรงกับ ETag และ SHA-256 ของไฟล์ที่ engine เขียน)
+
+**9. หยุด server**: `kill <pid>` (SIGTERM) ได้ `Shutting down` / `Application shutdown complete` / `Finished server process` ภายในไม่ถึง 5 วินาที
+ตรวจแล้วไม่มี process ของ server หรือ `GmatConsole` ค้าง และ port 8765 ปิด

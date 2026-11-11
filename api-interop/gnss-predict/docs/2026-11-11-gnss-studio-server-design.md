@@ -187,7 +187,7 @@ api-interop/gnss-predict/server/
 | DELETE | `/scenarios/{sc}/objects/{class}/{name}` | ลบ และลบการอ้างถึงทั้งหมด |
 | POST | `/scenarios/{sc}/groups` | New Group / ย้ายสมาชิก |
 
-ทุกการแก้ที่ทำให้ hash ของ propagate หรือ analyze เปลี่ยน ตอบช่อง `results_stale: true`
+ทุกการแก้ที่ทำให้ hash ของ propagate หรือ analyze เปลี่ยน ตอบช่อง `results_stale: true` ยกเว้น `PUT /scenarios/{sc}` (6.3) ซึ่ง body คือเอกสาร scenario ทั้งก้อน จึงตอบค่านี้ใน header `X-Results-Stale: true|false`
 
 ### 6.5 ผลลัพธ์และการคำนวณ
 
