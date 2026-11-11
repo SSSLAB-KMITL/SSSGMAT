@@ -45,9 +45,28 @@ describe("Ctrl+S", () => {
     expect(run.save).toHaveBeenCalledTimes(1);
   });
 
-  test("is found by the physical key, so it also works on the Thai keyboard layout", () => {
+  test("on a layout whose letters are not Latin (Thai) the physical key decides, so Ctrl+S still saves", () => {
     expect(press(document.body, { key: "ห", code: "KeyS", ctrlKey: true })).toBe(true);
     expect(run.save).toHaveBeenCalledTimes(1);
+  });
+
+  test("on a Latin layout the letter wins over the physical key: Dvorak's Ctrl+O (physical S) is not Save, and stays the browser's", () => {
+    expect(press(document.body, { key: "o", code: "KeyS", ctrlKey: true })).toBe(false);
+    expect(press(document.body, { key: "r", code: "KeyS", ctrlKey: true })).toBe(false); // Colemak's Ctrl+R (reload) sits on physical S
+    expect(run.save).not.toHaveBeenCalled();
+    // and the layout's own Ctrl+S, wherever its key is, saves
+    expect(press(document.body, { key: "s", code: "KeyO", ctrlKey: true })).toBe(true);
+    expect(run.save).toHaveBeenCalledTimes(1);
+  });
+
+  test("a key that is no letter at all (Unidentified, Dead) falls back to the physical key", () => {
+    expect(press(document.body, { key: "Unidentified", code: "KeyS", ctrlKey: true })).toBe(true);
+    expect(run.save).toHaveBeenCalledTimes(1);
+  });
+
+  test("keys pressed while an input method is composing are ignored", () => {
+    expect(press(document.body, { key: "s", ctrlKey: true, isComposing: true })).toBe(false);
+    expect(run.save).not.toHaveBeenCalled();
   });
 
   test("blocks the browser's save even when file.save is not registered", () => {
@@ -127,6 +146,14 @@ describe("Delete and Ctrl+F", () => {
     expect(run.find).toHaveBeenCalledTimes(1);
     expect(press(document.getElementById("elsewhere")!, { key: "f", ctrlKey: true })).toBe(false);
     expect(press(document.body, { key: "F", metaKey: true })).toBe(false);
+    expect(run.find).toHaveBeenCalledTimes(1);
+  });
+
+  test("Delete and Ctrl+F follow the layout's letter too (Colemak's physical F is T)", () => {
+    const { tree } = scope();
+    expect(press(tree, { key: "t", code: "KeyF", ctrlKey: true })).toBe(false); // Ctrl+T is the browser's new tab
+    expect(run.find).not.toHaveBeenCalled();
+    expect(press(tree, { key: "f", code: "KeyE", ctrlKey: true })).toBe(true);
     expect(run.find).toHaveBeenCalledTimes(1);
   });
 

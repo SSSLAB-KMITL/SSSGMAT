@@ -53,6 +53,31 @@ describe("command registry", () => {
     expect(second).toHaveBeenCalledTimes(1);
   });
 
+  test("registerCommand returns a disposer that removes the registration only while it is still the current one", () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const disposeA = registerCommand("file.save", { label: "menu.file.save", run: a });
+    const disposeB = registerCommand("file.save", { label: "menu.file.save", run: b }); // B replaces A
+    disposeA(); // A's disposer must leave B in place
+    expect(isRegistered("file.save")).toBe(true);
+    runCommand("file.save");
+    expect(b).toHaveBeenCalledTimes(1);
+    expect(a).not.toHaveBeenCalled();
+    disposeB();
+    expect(isRegistered("file.save")).toBe(false);
+    expect(isEnabled("file.save")).toBe(false);
+  });
+
+  test("a disposer notifies subscribers when it removes something, and is harmless to call twice", () => {
+    const dispose = registerCommand("file.save", { label: "menu.file.save", run: vi.fn() });
+    const listener = vi.fn();
+    subscribeCommands(listener);
+    dispose();
+    expect(listener).toHaveBeenCalledTimes(1);
+    dispose();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   test("a command that throws, or rejects, does not break the caller", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     registerCommand("file.save", { label: "menu.file.save", run: () => { throw new Error("sync"); } });

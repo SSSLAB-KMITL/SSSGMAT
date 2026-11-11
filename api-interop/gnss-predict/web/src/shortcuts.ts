@@ -4,7 +4,7 @@
 // - Delete = object.delete และ Ctrl/Cmd+F = edit.find เฉพาะเมื่อโฟกัสอยู่ใน element ที่มี data-focus-scope="objectBrowser" (Object Browser ใส่ให้)
 //   และไม่ได้พิมพ์อยู่ในช่องข้อความ; Ctrl+F จับ (preventDefault) เมื่อคำสั่งใช้ได้เท่านั้น ไม่งั้นปล่อยให้ browser ค้นหาตามปกติ
 // - Ctrl+N, Ctrl+O, Ctrl+Q ไม่แตะ: browser จองไว้
-// - ดูปุ่มจริงจาก event.code ก่อน (KeyS, KeyF) เพราะแป้นพิมพ์ไทยให้ event.key เป็นอักษรไทย
+// - ตัวอักษรดูจาก event.key ถ้าเป็นตัวละติน ไม่งั้น (แป้นพิมพ์ไทยให้อักษรไทย) ดูจากตำแหน่งปุ่ม event.code; ข้ามเหตุการณ์ที่กำลังประกอบคำ (isComposing)
 
 import { isEnabled, runCommand } from "./commands";
 
@@ -22,8 +22,14 @@ function isTextEntry(el: Element | null): boolean {
 
 const inObjectBrowser = (el: Element | null): boolean => el?.closest(`[data-focus-scope="${OBJECT_BROWSER_SCOPE}"]`) != null;
 
+/**
+ * ปุ่มตัวอักษรของคีย์ลัด: ดูตัวอักษรที่แป้นพิมพ์ให้ (event.key) ก่อนถ้าเป็นตัวละติน เพราะผังแป้นอย่าง Dvorak หรือ Colemak วางตัวอักษรต่างจากตำแหน่งจริง
+ * (Ctrl+S ที่ตำแหน่ง KeyS ของ Colemak คือ Ctrl+R และของ Dvorak คือ Ctrl+O ต้องไม่ถูกแย่งไป)
+ * ใช้ตำแหน่งจริง (event.code) เฉพาะเมื่อ event.key ไม่ใช่ตัวละติน เช่นผังแป้นไทยที่ให้อักษรไทย
+ */
 function isKey(e: KeyboardEvent, letter: string): boolean {
-  return e.code === `Key${letter.toUpperCase()}` || e.key.toLowerCase() === letter;
+  if (/^[a-z]$/i.test(e.key)) return e.key.toLowerCase() === letter;
+  return e.code === `Key${letter.toUpperCase()}`;
 }
 
 export interface ShortcutTarget {

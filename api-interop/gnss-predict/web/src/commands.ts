@@ -141,13 +141,21 @@ function notify(): void {
   for (const listener of [...listeners]) listener();
 }
 
-/** ลงทะเบียน (หรือแทนที่) คำสั่ง */
-export function registerCommand(id: CommandId, def: CommandDef): void {
+/**
+ * ลงทะเบียน (หรือแทนที่) คำสั่ง คืนฟังก์ชันถอนซึ่งถอนเฉพาะเมื่อทะเบียนของ id นั้นยังเป็นตัวที่ลงไว้นี้เอง
+ * (ถูกลงทะเบียนทับโดยผู้อื่นแล้ว = ไม่แตะ) ใช้ตอนลงทะเบียนใน effect ของ React: คืนค่านี้เป็น cleanup ได้เลย
+ */
+export function registerCommand(id: CommandId, def: CommandDef): () => void {
   registry.set(id, def);
   notify();
+  return () => {
+    if (registry.get(id) !== def) return;
+    registry.delete(id);
+    notify();
+  };
 }
 
-/** ถอนคำสั่ง (กลับเป็นปิดใช้) */
+/** ถอนคำสั่งไม่ว่าใครลงไว้ (กลับเป็นปิดใช้) ปกติใช้ตัวถอนที่ registerCommand คืนให้ */
 export function unregisterCommand(id: CommandId): void {
   if (registry.delete(id)) notify();
 }

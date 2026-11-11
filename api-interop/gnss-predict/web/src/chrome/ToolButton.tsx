@@ -21,10 +21,14 @@ export interface ToolButtonProps {
 export function ToolButton({ command, label, icon: Icon, pressed, mirror = false }: ToolButtonProps) {
   useCommands();
   const enabled = isEnabled(command);
-  const note = commandTooltip(command);
   const name = t(label);
+  // ข้อสังเกตของคำสั่ง (เช่น เล่นถึงปลายช่วงแล้ว) ขึ้นกับเวลาที่ปุ่มไม่ได้ติดตาม จึงถามตอน tooltip เปิด ไม่ใช่ตอนวาดปุ่ม
+  const describe = (): string => {
+    const note = commandTooltip(command);
+    return note === undefined ? name : `${name} — ${note}`;
+  };
   return (
-    <Tip content={note === undefined ? name : `${name} — ${note}`}>
+    <Tip content={describe}>
       <button
         type="button"
         className="tool-btn"

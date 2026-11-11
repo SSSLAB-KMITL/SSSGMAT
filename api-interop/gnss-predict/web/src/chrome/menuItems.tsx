@@ -66,7 +66,7 @@ function CommandItem({ id, kit }: { id: CommandId; kit: MenuKit }) {
 
   if (isCheckable(id)) {
     return (
-      <Tip content={commandTooltip(id)} side="right">
+      <Tip content={() => commandTooltip(id)} side="right">
         <kit.CheckboxItem className="menu-item" checked={isChecked(id)} onSelect={onSelect} {...disabledProps}>
           <kit.ItemIndicator className="menu-indicator">
             <Check size={12} aria-hidden="true" />
@@ -77,7 +77,7 @@ function CommandItem({ id, kit }: { id: CommandId; kit: MenuKit }) {
     );
   }
   return (
-    <Tip content={commandTooltip(id)} side="right">
+    <Tip content={() => commandTooltip(id)} side="right">
       <kit.Item className="menu-item" onSelect={onSelect} {...disabledProps}>
         {body}
       </kit.Item>

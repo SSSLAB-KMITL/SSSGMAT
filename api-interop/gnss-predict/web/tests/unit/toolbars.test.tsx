@@ -189,6 +189,25 @@ describe("Animation toolbar buttons", () => {
     expect(tip.textContent).toContain(msg("anim.reachedStart"));
   });
 
+  test("the note is worked out when the tip opens: after Reset at the end of a Stop cycle, Start no longer carries it", async () => {
+    const user = userEvent.setup();
+    act(() => useTime.setState({ cycle: "stop", current: new Date(useTime.getState().periodStop) }));
+    render(<Toolbars />); // drawn while the time is at the end
+    await user.click(btn(animation(), "anim.reset")); // nothing in the toolbar re-renders for a plain time change
+    expect(useTime.getState().current.getTime()).toBe(useTime.getState().animStart.getTime());
+    await user.hover(btn(animation(), "anim.start"));
+    expect((await screen.findByRole("tooltip")).textContent).toBe(t("anim.start"));
+  });
+
+  test("and the other way round: a note that applies by the time the tip opens is shown", async () => {
+    const user = userEvent.setup();
+    act(() => useTime.setState({ cycle: "stop" }));
+    render(<Toolbars />);
+    act(() => useTime.setState({ current: new Date(useTime.getState().periodStop) }));
+    await user.hover(btn(animation(), "anim.start"));
+    expect((await screen.findByRole("tooltip")).textContent).toContain(msg("anim.reachedEnd"));
+  });
+
   test("Start has no such note in the middle of the period", async () => {
     const user = userEvent.setup();
     act(() => useTime.setState({ cycle: "stop" }));
@@ -281,6 +300,41 @@ describe("Current Scenario Time field", () => {
     expect(useTime.getState().current.toISOString()).toBe("2026-11-12T00:00:00.000Z");
   });
 
+  test("Enter without editing leaves the clock alone: it does not jump back to the time the field was entered at", async () => {
+    const user = userEvent.setup();
+    render(<Toolbars />);
+    act(() => timeField().focus()); // snapshot of 12 Nov 00:00:00
+    act(() => useTime.getState().setCurrent(new Date(Date.UTC(2026, 10, 12, 5))));
+    await user.keyboard("{Enter}");
+    expect(useTime.getState().current.toISOString()).toBe("2026-11-12T05:00:00.000Z");
+    expect(timeField().getAttribute("aria-invalid")).toBeNull();
+    expect(document.activeElement).not.toBe(timeField()); // Enter leaves the field, which follows the clock again
+  });
+
+  test("Enter after typing the same text back is not a change either", async () => {
+    const user = userEvent.setup();
+    render(<Toolbars />);
+    await user.clear(timeField());
+    await user.type(timeField(), "13 Nov 2026 00:00:00.000 UTCG");
+    await user.clear(timeField());
+    await user.type(timeField(), "12 Nov 2026 00:00:00.000 UTCG");
+    act(() => useTime.getState().setCurrent(new Date(Date.UTC(2026, 10, 12, 5))));
+    await user.keyboard("{Enter}");
+    expect(useTime.getState().current.toISOString()).toBe("2026-11-12T05:00:00.000Z");
+  });
+
+  test("with no scenario open the time field is disabled, and an edit in progress is dropped when the scenario closes", async () => {
+    const user = userEvent.setup();
+    render(<Toolbars />);
+    expect(timeField().disabled).toBe(false);
+    await user.clear(timeField());
+    await user.type(timeField(), "garbage");
+    act(() => useScenario.setState(useScenario.getInitialState(), true));
+    expect(timeField().disabled).toBe(true);
+    expect(timeField().value).not.toBe("garbage");
+    expect(timeField().getAttribute("aria-invalid")).toBeNull();
+  });
+
   describe("while the clock runs", () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance", "Date"] });
@@ -357,6 +411,23 @@ describe("X Real Time Multiplier field", () => {
     expect(multiplierField()!.getAttribute("aria-invalid")).toBe("true");
     expect(multiplierField()!.className).toContain("field-invalid");
     expect(useTime.getState().multiplier).toBe(60);
+  });
+
+  test("Enter without editing keeps the multiplier as it is now, not as it was when the field was entered", async () => {
+    const user = userEvent.setup();
+    render(<Toolbars />);
+    await user.click(btn(animation(), "anim.xRealTimeMode"));
+    act(() => multiplierField()!.focus());
+    act(() => useTime.setState({ multiplier: 90 }));
+    await user.keyboard("{Enter}");
+    expect(useTime.getState().multiplier).toBe(90);
+  });
+
+  test("is disabled with no scenario open", () => {
+    act(() => useTime.setState({ mode: "xrealtime" }));
+    act(() => useScenario.setState(useScenario.getInitialState(), true));
+    render(<Toolbars />);
+    expect(multiplierField()!.disabled).toBe(true);
   });
 
   test("Escape reverts to the stored multiplier", async () => {

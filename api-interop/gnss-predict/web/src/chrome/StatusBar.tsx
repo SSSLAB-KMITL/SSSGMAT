@@ -184,8 +184,14 @@ function DailyField() {
 
 // ---------- ตำแหน่ง เวลา ----------
 
-function formatLatLon(latLon: [number, number] | null): string {
-  return latLon === null ? "" : `${latLon[0].toFixed(2)}°, ${latLon[1].toFixed(2)}°`;
+/** ตำแหน่งเมาส์เปลี่ยนทุกการขยับบนแผนที่ 2D: ช่องนี้ฟังเอง ทั้งแถบจะได้ไม่ถูกวาดใหม่ตามเมาส์ */
+function LatLonField() {
+  const latLon = useSelection((s) => s.cursorLatLon);
+  return (
+    <Field name="latLon" label={t("status.latLon")} className="status-mono">
+      {latLon === null ? "" : `${latLon[0].toFixed(2)}°, ${latLon[1].toFixed(2)}°`}
+    </Field>
+  );
 }
 
 function TimeFields() {
@@ -206,7 +212,6 @@ function TimeFields() {
 
 export function StatusBar() {
   const activePath = useSelection((s) => s.activePath);
-  const cursor = useSelection((s) => s.cursorLatLon);
   const connected = useSettings((s) => s.connected);
   return (
     <TipProvider>
@@ -215,9 +220,7 @@ export function StatusBar() {
         <Field name="activeObject" label={t("status.activeObject")} className="status-grow">
           {activePath ?? ""}
         </Field>
-        <Field name="latLon" label={t("status.latLon")} className="status-mono">
-          {formatLatLon(cursor)}
-        </Field>
+        <LatLonField />
         <PdopField />
         <MaxAgeField />
         <FlaggedField />

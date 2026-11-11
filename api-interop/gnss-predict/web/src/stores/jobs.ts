@@ -55,6 +55,8 @@ interface JobsState {
   cancel(id: string): Promise<void>;
   /** ดึงรายการทั้งหมดจาก server (ตอนต่อ SSE ได้ เพื่อปิดช่องว่างที่ event หลุด) ผิดพลาดเงียบ: สถานะการเชื่อมต่อแจ้งอยู่แล้ว */
   refresh(): Promise<void>;
+  /** เหมือน refresh() แต่บอกว่าโหลดได้ไหม (true = รายการใน store มาจาก server แล้ว, false = ผิดพลาดและคงรายการเดิม) */
+  fetchAll(): Promise<boolean>;
 }
 
 export const useJobs = create<JobsState>()((set, get) => ({
@@ -79,12 +81,18 @@ export const useJobs = create<JobsState>()((set, get) => ({
     if (data) set((s) => ({ jobs: { ...s.jobs, [id]: { ...s.jobs[id], ...data } } }));
   },
 
-  refresh: async () => {
+  fetchAll: async () => {
     try {
       const { data } = await apiGet<Job[]>("/jobs");
-      if (Array.isArray(data)) set({ jobs: Object.fromEntries(data.map((j) => [j.id, j])) });
+      if (!Array.isArray(data)) return false;
+      set({ jobs: Object.fromEntries(data.map((j) => [j.id, j])) });
+      return true;
     } catch {
-      // ดึงไม่ได้: คงรายการเดิม (การเชื่อมต่อที่หลุดแสดงที่แถบสถานะอยู่แล้ว)
+      return false; // ดึงไม่ได้: คงรายการเดิม (การเชื่อมต่อที่หลุดแสดงที่แถบสถานะอยู่แล้ว)
     }
+  },
+
+  refresh: async () => {
+    await get().fetchAll();
   },
 }));

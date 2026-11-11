@@ -1,9 +1,9 @@
 // คำสั่งที่งานเมนู/แถบเครื่องมือลงทะเบียน (W3): view.*, window.*, anim.*
 // คำสั่งอื่นของ CommandId ลงทะเบียนในงานที่ทำหน้าต่างนั้น (ดูหัวไฟล์ commands.ts)
-// registerCoreCommands() เรียกครั้งเดียวตอนแอปเริ่ม คืนฟังก์ชันถอน (ถอนคำสั่งและเลิกฟัง store)
+// registerCoreCommands() เรียกครั้งเดียวตอนแอปเริ่ม คืนฟังก์ชันถอน (ถอนคำสั่งที่ยังเป็นของเรา และเลิกฟัง store)
 
 import { errorText } from "../api/client";
-import { COMMAND_LABELS, invalidateCommands, registerCommand, unregisterCommand, type CommandDef, type CommandId } from "../commands";
+import { COMMAND_LABELS, invalidateCommands, registerCommand, type CommandDef, type CommandId } from "../commands";
 import { msg } from "../labels/messages.th";
 import { TOOLBAR_NAMES } from "../layout/workbook";
 import { useLayout } from "../stores/layout";
@@ -34,10 +34,9 @@ function fullScreen(): void {
 }
 
 export function registerCoreCommands(): () => void {
-  const ids: CommandId[] = [];
+  const disposers: (() => void)[] = [];
   const add = (id: CommandId, def: Omit<CommandDef, "label">): void => {
-    ids.push(id);
-    registerCommand(id, { label: COMMAND_LABELS[id], ...def });
+    disposers.push(registerCommand(id, { label: COMMAND_LABELS[id], ...def }));
   };
   const openWindow = (id: CommandId, kind: "objectBrowser" | "timelineView" | "messageViewer"): void =>
     add(id, { run: () => void layout().openPanel(kind), enabled: workspaceMounted });
@@ -89,6 +88,6 @@ export function registerCoreCommands(): () => void {
 
   return () => {
     for (const off of unsubscribe) off();
-    for (const id of ids) unregisterCommand(id);
+    for (const dispose of disposers) dispose(); // ถอนเฉพาะที่ยังเป็นของเรา: งานอื่นลงทะเบียนทับ id เดียวกันไปแล้วก็ไม่ถูกถอน
   };
 }

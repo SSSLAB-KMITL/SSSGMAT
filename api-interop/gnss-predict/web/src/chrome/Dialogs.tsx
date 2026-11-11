@@ -8,7 +8,6 @@ import { t } from "../labels/labels";
 import { msg } from "../labels/messages.th";
 import { useJobs, type Job } from "../stores/jobs";
 import { useScenario } from "../stores/scenario";
-import { parseIsoUtc } from "../time/parse";
 
 // ---------- 412: scenario ถูกแก้จากที่อื่น ----------
 
@@ -48,39 +47,70 @@ function ConflictDialog() {
 // ---------- job ที่ผู้ใช้สั่งล้มเหลว ----------
 
 /**
- * ขึ้นกล่องครั้งเดียวต่อ job ที่ origin == "user" และ state == "failed" ของ scenario ที่เปิดอยู่
- * - job ที่ล้มเหลวก่อนหน้าเปิดหน้านี้ (มากับ GET /api/jobs ตอนต่อ SSE) ไม่ขึ้น: ดู finished_utc เทียบเวลาที่กล่องนี้เริ่ม
- * - event `job` ของ SSE ไม่มี origin: ถ้า job ล้มเหลวและยังไม่รู้ origin จะดึงรายการเต็มจาก server หนึ่งครั้งเพื่อดูว่าใครสั่ง
+ * ขึ้นกล่องครั้งเดียวต่อ job ที่ origin == "user" และ state == "failed" ของ scenario ที่เปิดอยู่ โดยไม่ดูนาฬิกาเลย (นาฬิกา browser กับ server อาจเหลื่อมกัน):
+ * ขึ้นเฉพาะ job ที่หน้านี้เคย "เห็น" ว่า queued หรือ running แล้วเห็นต่อมาว่า failed (ผ่าน SSE หรือการดึงรายการใหม่ก็ได้)
+ * job ที่ failed อยู่แล้วตั้งแต่หน้านี้ดึงรายการครั้งแรกคือประวัติ ไม่ขึ้น
+ * event `job` ของ SSE ไม่มี origin: job ที่ล้มเหลวและยังไม่รู้ origin ทำให้ดึงรายการเต็มจาก server เพื่อดูว่าใครสั่ง
+ * (นับว่าถามแล้วต่อเมื่อดึงสำเร็จ ดึงไม่ได้ก็ถามใหม่เมื่อรายการ job เปลี่ยนครั้งถัดไป) เปลี่ยน scenario ที่เปิด = ล้างคิว
  */
 function JobFailedDialog() {
-  const jobs = useJobs((s) => s.jobs);
-  const scenario = useScenario((s) => s.name);
   const [queue, setQueue] = useState<Job[]>([]);
   const [details, setDetails] = useState(false);
-  const handled = useRef(new Set<string>());
-  const asked = useRef(new Set<string>());
-  const openedAt = useRef(Date.now());
 
   useEffect(() => {
-    if (scenario === null) return;
-    const fresh: Job[] = [];
-    for (const job of Object.values(jobs).sort((a, b) => a.id.localeCompare(b.id))) {
-      if (job.state !== "failed" || job.scenario !== scenario || handled.current.has(job.id)) continue;
-      if (job.origin === undefined) {
-        if (!asked.current.has(job.id)) {
-          asked.current.add(job.id);
-          void useJobs.getState().refresh();
+    const seenActive = new Set<string>();
+    const handled = new Set<string>();
+    const asked = new Set<string>();
+    const asking = new Set<string>();
+
+    const ask = (id: string): void => {
+      if (asking.has(id)) return;
+      asking.add(id);
+      void useJobs.getState().fetchAll().then((ok) => {
+        asking.delete(id);
+        if (ok) asked.add(id); // ผลมาเข้า store แล้ว (ถ้า job ยังอยู่ จะมี origin) ถามซ้ำไม่มีประโยชน์
+      });
+    };
+
+    const scan = (jobs: Record<string, Job>): void => {
+      const scenario = useScenario.getState().name;
+      const fresh: Job[] = [];
+      for (const job of Object.values(jobs).sort((a, b) => a.id.localeCompare(b.id))) {
+        if (job.state === "queued" || job.state === "running") {
+          seenActive.add(job.id);
+          continue;
         }
-        continue;
+        if (job.state !== "failed" || handled.has(job.id) || !seenActive.has(job.id)) continue;
+        if (scenario === null || job.scenario !== scenario) {
+          handled.add(job.id); // ล้มเหลวตอนที่ scenario นี้ไม่ได้เปิดอยู่: เปิดทีหลังก็ไม่ขึ้น
+          continue;
+        }
+        if (job.origin === undefined) {
+          if (asked.has(job.id)) handled.add(job.id); // ถามแล้วก็ยังไม่รู้ว่าใครสั่ง: ไม่ขึ้น
+          else ask(job.id);
+          continue;
+        }
+        handled.add(job.id);
+        if (job.origin === "user") fresh.push(job);
       }
-      handled.current.add(job.id);
-      if (job.origin !== "user") continue;
-      const finished = job.finished_utc ? parseIsoUtc(job.finished_utc) : null;
-      if (finished !== null && finished.getTime() < openedAt.current) continue;
-      fresh.push(job);
-    }
-    if (fresh.length > 0) setQueue((q) => [...q, ...fresh]);
-  }, [jobs, scenario]);
+      if (fresh.length > 0) setQueue((q) => [...q, ...fresh]);
+    };
+
+    scan(useJobs.getState().jobs); // รายการที่มีอยู่แล้วตอนเริ่ม: ที่กำลังรันถือว่าเห็นแล้ว ที่ failed ไปแล้วเป็นประวัติ
+    const offJobs = useJobs.subscribe((state, prev) => {
+      if (state.jobs !== prev.jobs) scan(state.jobs);
+    });
+    const offScenario = useScenario.subscribe((state, prev) => {
+      if (state.name !== prev.name) {
+        setQueue([]);
+        setDetails(false);
+      }
+    });
+    return () => {
+      offJobs();
+      offScenario();
+    };
+  }, []);
 
   const job = queue[0];
   const close = (): void => {
@@ -116,6 +146,7 @@ function JobFailedDialog() {
 // ---------- confirm(text) ----------
 
 interface ConfirmRequest {
+  id: number;
   text: string;
   okLabel: string | undefined;
   resolve(answer: boolean): void;
@@ -124,6 +155,7 @@ interface ConfirmRequest {
 /** คำขอที่รอคำตอบ ถามทีละข้อตามลำดับ */
 const useConfirmQueue = create<{ queue: ConfirmRequest[] }>()(() => ({ queue: [] }));
 let hosts = 0;
+let nextRequestId = 1;
 
 function answerAll(answer: boolean): void {
   const { queue } = useConfirmQueue.getState();
@@ -138,13 +170,19 @@ function answerAll(answer: boolean): void {
 export function confirm(text: string, opts: { okLabel?: string } = {}): Promise<boolean> {
   if (hosts === 0) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
-    useConfirmQueue.setState((s) => ({ queue: [...s.queue, { text, okLabel: opts.okLabel, resolve }] }));
+    useConfirmQueue.setState((s) => ({ queue: [...s.queue, { id: nextRequestId++, text, okLabel: opts.okLabel, resolve }] }));
   });
 }
 
 function ConfirmHost() {
   const request = useConfirmQueue((s) => s.queue[0]);
   const cancel = useRef<HTMLButtonElement>(null);
+
+  // กล่องเดียวใช้ต่อทุกคำขอ onOpenAutoFocus จึงทำงานแค่ตอนเปิดครั้งแรก: คำขอถัดไปในคิวต้องคืนโฟกัสให้ Cancel เองทุกครั้งที่เปลี่ยนคำขอ
+  const requestId = request?.id;
+  useEffect(() => {
+    if (requestId !== undefined) cancel.current?.focus();
+  }, [requestId]);
 
   useEffect(() => {
     hosts++;

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../../src/api/client";
 import { StatusBar } from "../../src/chrome/StatusBar";
+import * as commands from "../../src/commands";
 import { registerCommand } from "../../src/commands";
 import type { CatalogEntry } from "../../src/data/catalog";
 import type { DopRow, EphemManifest } from "../../src/data/files";
@@ -53,6 +54,16 @@ describe("fields", () => {
     expect(fieldText("latLon")).toBe("-33.87°, -70.50°");
     act(() => useSelection.getState().setCursor(null));
     expect(fieldText("latLon")).toBe("");
+  });
+
+  test("moving the mouse over the map re-renders only the Lat/Lon field, not the whole bar", () => {
+    render(<StatusBar />);
+    const isEnabled = vi.spyOn(commands, "isEnabled"); // the message and flagged buttons ask this each time they render
+    isEnabled.mockClear();
+    act(() => useSelection.getState().setCursor([13.7563, 100.5018]));
+    expect(fieldText("latLon")).toBe("13.76°, 100.50°");
+    expect(isEnabled).not.toHaveBeenCalled();
+    isEnabled.mockRestore();
   });
 
   test("Animation Time is in the scenario's DateFormat (UTCG)", () => {

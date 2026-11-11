@@ -6,10 +6,11 @@ import {
   ChartBar, ChevronsDown, ChevronsUp, Clock, FastForward, FilePlus, FolderOpen, Gauge, Link, PackagePlus, Pause, Play, RotateCcw, Save,
   SlidersHorizontal, StepBack, StepForward,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { t } from "../labels/labels";
 import { msg } from "../labels/messages.th";
 import { useLayout } from "../stores/layout";
+import { useScenario } from "../stores/scenario";
 import { useTime } from "../stores/time";
 import { formatStep } from "../time/steps";
 import { parseTime } from "../time/parse";
@@ -32,23 +33,41 @@ function DefaultToolbar() {
   );
 }
 
-/** ช่องที่พิมพ์แก้แล้วกด Enter รับค่า: ข้อความที่พิมพ์ค้างไว้ (draft) แสดงแทนค่าจริงตั้งแต่โฟกัสจนออกจากช่อง */
-function useDraft(initial: () => string) {
+/**
+ * ช่องที่พิมพ์แก้แล้วกด Enter รับค่า: ข้อความที่พิมพ์ค้างไว้ (draft) แสดงแทนค่าจริงตั้งแต่โฟกัสจนออกจากช่อง
+ * snapshot = ข้อความตอนเข้าช่อง (หรือตอนกด Escape) Enter โดยไม่ได้แก้อะไร (draft เท่า snapshot) ไม่ใช่การรับค่า:
+ * ไม่งั้นนาฬิกาที่เดินอยู่ระหว่างที่ช่องถูกโฟกัสจะถูกดึงกลับไปเวลาตอนเข้าช่อง
+ * enabled = false (ไม่มี scenario) ล้างสิ่งที่พิมพ์ค้างทิ้ง เพราะช่องที่ถูกปิดขณะโฟกัสอยู่ไม่ส่ง blur
+ */
+function useDraft(initial: () => string, enabled: boolean) {
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
+  const snapshot = useRef("");
+  useEffect(() => {
+    if (!enabled) {
+      setDraft(null);
+      setInvalid(false);
+    }
+  }, [enabled]);
+  const capture = (): string => {
+    snapshot.current = initial();
+    return snapshot.current;
+  };
   return {
     draft,
     invalid,
     /** เข้าช่อง: จับค่าปัจจุบันไว้ ไม่ให้นาฬิกาที่เดินอยู่เขียนทับระหว่างพิมพ์ */
-    begin: () => setDraft(initial()),
+    begin: () => setDraft(capture()),
     edit: (text: string) => {
       setDraft(text);
       setInvalid(false);
     },
+    /** ข้อความที่พิมพ์ต่างจากตอนเข้าช่อง */
+    changed: () => draft !== null && draft !== snapshot.current,
     reject: () => setInvalid(true),
     /** Escape: กลับเป็นค่าปัจจุบัน (ยังอยู่ในช่อง) */
     revert: () => {
-      setDraft(initial());
+      setDraft(capture());
       setInvalid(false);
     },
     /** ออกจากช่องหรือรับค่าแล้ว: แสดงค่าจริงตามนาฬิกาอีกครั้ง */
@@ -62,12 +81,18 @@ function useDraft(initial: () => string) {
 function TimeField() {
   const { fmt, ltz, format } = useTimeFormatter();
   const current = useThrottledTime();
-  const field = useDraft(() => format(useTime.getState().current));
+  const open = useScenario((s) => s.name !== null);
+  const field = useDraft(() => format(useTime.getState().current), open);
   const errorId = useId();
   const name = t("anim.currentTime");
   const error = msg("time.invalid", { example: format(useTime.getState().current) });
 
   const commit = (input: HTMLInputElement): void => {
+    if (!field.changed()) {
+      field.end(); // ไม่ได้แก้อะไร: แค่ออกจากช่อง ไม่แตะนาฬิกา
+      input.blur();
+      return;
+    }
     const d = parseTime(field.draft ?? "", fmt, ltz);
     if (d === null) {
       field.reject();
@@ -84,6 +109,7 @@ function TimeField() {
         type="text"
         className={`field field-time${field.invalid ? " field-invalid" : ""}`}
         aria-label={name}
+        disabled={!open}
         aria-invalid={field.invalid || undefined}
         aria-describedby={field.invalid ? errorId : undefined}
         title={field.invalid ? error : name}
@@ -121,10 +147,16 @@ function StepField() {
 
 function MultiplierField() {
   const multiplier = useTime((s) => s.multiplier);
-  const field = useDraft(() => String(useTime.getState().multiplier));
+  const open = useScenario((s) => s.name !== null);
+  const field = useDraft(() => String(useTime.getState().multiplier), open);
   const name = t("anim.xRealTimeMultiplier");
 
   const commit = (input: HTMLInputElement): void => {
+    if (!field.changed()) {
+      field.end();
+      input.blur();
+      return;
+    }
     const text = (field.draft ?? "").trim();
     const x = Number(text);
     if (text === "" || !Number.isFinite(x) || x <= 0) {
@@ -144,6 +176,7 @@ function MultiplierField() {
       inputMode="decimal"
       className={`field field-multiplier${field.invalid ? " field-invalid" : ""}`}
       aria-label={name}
+      disabled={!open}
       aria-invalid={field.invalid || undefined}
       title={name}
       value={field.draft ?? String(multiplier)}
