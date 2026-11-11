@@ -13,7 +13,6 @@
 import json
 import logging
 import math
-from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -25,6 +24,7 @@ from ..config import Config
 from ..errors import ApiError
 from ..jobs import JobManager
 from ..plans import PlanCache
+from ..schema import check_day
 from ..store import ScenarioStore
 from . import get_config, get_jobs, get_logger, get_plans, get_store
 from .results import EPHEM_DIR, ephem_entry
@@ -32,7 +32,6 @@ from .results import EPHEM_DIR, ephem_entry
 router = APIRouter()
 
 NOT_FOUND_TEXT = "ไม่พบผลการตรวจสอบของ scenario และวันที่นี้"
-DAY_TEXT = "วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD"
 
 
 class ValidateBody(BaseModel):
@@ -132,14 +131,6 @@ def history(config: Config = Depends(get_config), logger: logging.Logger = Depen
 
 # ---------- ผลรายวัน ----------
 
-def _check_day(day: str) -> None:
-    try:
-        if date.fromisoformat(day).isoformat() != day:      # Python 3.11+ รับ YYYYMMDD ด้วย
-            raise ValueError(day)
-    except ValueError:
-        raise ApiError(422, "SCENARIO_INVALID", DAY_TEXT, "day") from None
-
-
 def _current_bundle(directory: Path, sc: str, plans: PlanCache) -> Path | None:
     """โฟลเดอร์ ephem ที่ current ของ scenario หรือ None (ไม่มี scenario, ยังไม่ได้คำนวณ, หรือผลที่มีเป็นของ scenario รุ่นก่อน)"""
     try:
@@ -153,7 +144,7 @@ def _current_bundle(directory: Path, sc: str, plans: PlanCache) -> Path | None:
 def get_day(sc: str, day: str, store: ScenarioStore = Depends(get_store), plans: PlanCache = Depends(get_plans),
             config: Config = Depends(get_config), logger: logging.Logger = Depends(get_logger)) -> dict:
     directory = store.path(sc)
-    _check_day(day)
+    check_day(day, "day")
     name = f"validation_{day}.json"
     bundle = _current_bundle(directory, sc, plans)
     for path in ([bundle / name] if bundle is not None else []) + [config.data_dir / VALIDATION_DIR / sc / name]:

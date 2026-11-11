@@ -6,9 +6,12 @@
 - ประวัติและไฟล์ผลรายวัน: อ่านแบบไม่ล้ม (บรรทัดเสียข้ามพร้อม log) ไฟล์ทุกไฟล์ต้องอยู่ใต้ `data/` หลังตาม symlink
 """
 
+import copy
 import json
 import logging
+import os
 import re
+import threading
 import time
 
 import pytest
@@ -22,6 +25,7 @@ THAI = re.compile("[฀-๿]")
 DEFAULT_DAILY = {"enabled": True, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
                  "validation_retry_hours": 3, "validation_give_up_days": 14}
 DEFAULTS = {"daily": DEFAULT_DAILY, "cesium_ion_token": ""}
+FAIL_SAFE = {**DEFAULTS, "daily": {**DEFAULT_DAILY, "enabled": False}}       # ไฟล์ค่าตั้งเสีย: ไม่เปิดงานดึงข้อมูลเอง
 CUSTOM = {"daily": {"enabled": False, "run_at_utc": "06:05", "facility": "BKK_2", "retention_days": 7,
                     "validation_retry_hours": 12, "validation_give_up_days": 3},
           "cesium_ion_token": "tok-123"}
@@ -46,6 +50,13 @@ def settings_with(**daily):
 def server_log(data_dir):
     path = data_dir / "logs" / "server.log"
     return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def capture_logger(name="capture"):
+    """(logger, รายการ record ที่ถูก log) สำหรับตรวจว่า settings.load เตือนกี่ครั้ง"""
+    logger, seen = logging.Logger(name), []
+    logger.addHandler(type("H", (logging.Handler,), {"emit": lambda self, rec: seen.append(rec)})())
+    return logger, seen
 
 
 def wait_job(client, job_id, timeout=10):
@@ -172,10 +183,37 @@ def test_settings_rejects_unknown_fields(client, data_dir):                     
     assert not (data_dir / "settings.json").exists()
 
 
-def test_settings_put_replaces_the_whole_document(client):
+def test_settings_put_requires_the_whole_document(client, data_dir):
     client.put("/api/settings", json=CUSTOM)
-    r = client.put("/api/settings", json={"daily": CUSTOM["daily"]})                # ไม่ส่ง token: ค่าตั้งต้น ไม่ใช่ค่าเก่า
-    assert r.status_code == 200 and r.json() == {**CUSTOM, "cesium_ion_token": ""}
+    before = (data_dir / "settings.json").read_bytes()
+    r = client.put("/api/settings", json={"daily": CUSTOM["daily"]})                  # ไม่ส่ง token: ไม่เติมค่าตั้งต้นให้
+    assert_error(r, 422, "SCENARIO_INVALID", "cesium_ion_token")
+    assert (data_dir / "settings.json").read_bytes() == before
+    assert client.get("/api/settings").json() == CUSTOM
+
+
+MISSING_PATHS = ["daily", "cesium_ion_token", *(f"daily.{name}" for name in DEFAULT_DAILY)]
+
+
+@pytest.mark.parametrize("path", MISSING_PATHS)
+def test_settings_put_missing_field_is_422_and_saves_nothing(client, data_dir, path):
+    calls = []
+    client.app.state.settings_on_change = calls.append
+    body = copy.deepcopy(CUSTOM)
+    parent = body
+    *parents, leaf = path.split(".")
+    for key in parents:
+        parent = parent[key]
+    del parent[leaf]
+    assert_error(client.put("/api/settings", json=body), 422, "SCENARIO_INVALID", path)
+    assert not (data_dir / "settings.json").exists() and calls == []                  # ไม่บันทึก ไม่แจ้งตัวตั้งเวลา
+
+
+def test_settings_put_empty_documents_never_enable_the_daily_job(client, data_dir):
+    for body, field in [({}, "daily"), ({"daily": {}}, "daily.enabled"), ({"cesium_ion_token": ""}, "daily")]:
+        assert_error(client.put("/api/settings", json=body), 422, "SCENARIO_INVALID", field)
+    assert not (data_dir / "settings.json").exists()
+    assert client.put("/api/settings", json=FAIL_SAFE).json() == FAIL_SAFE            # ครบทั้งก้อนแล้ว enabled=false ต้องคงอยู่
 
 
 def test_settings_keeps_non_ascii_token_intact(client, data_dir):
@@ -226,6 +264,35 @@ def test_settings_callback_failure_is_logged_and_the_save_stands(client, data_di
     assert "scheduler down" in log and "Traceback" in log
 
 
+def test_overlapping_puts_are_serialised(client, data_dir):
+    first, second = settings_with(run_at_utc="01:00"), settings_with(run_at_utc="02:00")
+    entered, release, order = threading.Event(), threading.Event(), []
+
+    def on_change(new):
+        order.append(("start", new.daily.run_at_utc))
+        if new.daily.run_at_utc == "01:00":
+            entered.set()
+            assert release.wait(10)
+        order.append(("end", new.daily.run_at_utc))
+
+    client.app.state.settings_on_change = on_change
+    results = {}
+    thread_a = threading.Thread(target=lambda: results.update(a=client.put("/api/settings", json=first)))
+    thread_b = threading.Thread(target=lambda: results.update(b=client.put("/api/settings", json=second)))
+    thread_a.start()
+    assert entered.wait(10)                                                           # A บันทึกแล้วและค้างใน callback
+    thread_b.start()
+    time.sleep(0.3)                                                                   # ให้ B ถึงล็อก
+    assert order == [("start", "01:00")]                                              # B ยังไม่บันทึกและไม่เรียก callback
+    assert json.loads((data_dir / "settings.json").read_text(encoding="utf-8")) == first
+    release.set()
+    thread_a.join(10)
+    thread_b.join(10)
+    assert results["a"].status_code == results["b"].status_code == 200
+    assert order == [("start", "01:00"), ("end", "01:00"), ("start", "02:00"), ("end", "02:00")]
+    assert client.get("/api/settings").json() == second                              # ไฟล์กับ callback ครั้งสุดท้ายตรงกัน
+
+
 # ---------- settings: load/save และไฟล์เสีย ----------
 
 def test_settings_load_missing_file_gives_defaults(data_dir):
@@ -248,31 +315,100 @@ def test_settings_save_then_load_roundtrip_is_atomic(data_dir):
 @pytest.mark.parametrize("content", [
     b"{not json", b"", b"[]", b'"x"', b"null", b"\xff\xfe\x00bad", b'{"daily": {"run_at_utc": "25:00"}}',
     b'{"daily": {"retention_days": 0}}', b'{"daily": {"retention_days": "30"}}', b'{"daily": 5}', b'{"cesium_ion_token": 7}',
-    b'{"daily": {"enabled": NaN}}', b'{"daily": {"nope": 1}}',
+    b'{"daily": {"enabled": NaN}}', b'{"daily": {"enabled": "false"}}', b'{"daily": {"enabled": 0}}',
+    b'\xef\xbb\xbf{not json', b'{"daily": {"enabled": false, "retention_days": "30"}}',
+    b'{"daily": {"enabled": true, "retention_days": "30"}}', b'{"daily": {"enabled": false, "facility": "a b"}}',
 ])
-def test_settings_corrupt_or_invalid_file_gives_defaults_and_logs(client, data_dir, content):
+def test_settings_corrupt_or_invalid_file_fails_safe_and_logs(client, data_dir, content):
     (data_dir / "settings.json").write_bytes(content)
     r = client.get("/api/settings")
-    assert r.status_code == 200 and r.json() == DEFAULTS
+    assert r.status_code == 200 and r.json() == FAIL_SAFE                            # ค่าตั้งต้นแต่ปิดงานประจำวัน (ไม่ดึง CelesTrak เอง)
     assert "settings.json" in server_log(data_dir)                                    # เตือนใน server.log ของแอป
+
+
+def test_settings_missing_file_keeps_the_approved_defaults_enabled(client, data_dir):
+    from gnss_studio_server import settings
+    assert not (data_dir / "settings.json").exists()
+    assert client.get("/api/settings").json()["daily"]["enabled"] is True
+    assert settings.load(data_dir).daily.enabled is True
+    assert "settings.json" not in server_log(data_dir)
+
+
+@pytest.mark.parametrize("content", [
+    b'{"daily": {"enabled": false}}',                                                  # ไฟล์ไม่ครบ: ช่องที่หายได้ค่าตั้งต้น
+    b'\xef\xbb\xbf{"daily": {"enabled": false}}',                                      # BOM ที่ Notepad ใส่ให้
+    b'{"daily": {"enabled": false, "future_field": 1}}',                              # ช่องที่ไม่รู้จัก (รุ่นใหม่กว่าหรือพิมพ์ผิด) ถูกเมิน
+    b'{"daily": {"enabled": false}, "future_top": {"a": 1}}',
+    b'\xef\xbb\xbf{"daily": {"enabled": false, "oops": 1}, "oops2": 2}',
+    b'{"daily": {"enabled": false}, "cesium_ion_token": ""}',
+])
+def test_settings_harmless_noise_never_flips_enabled_false(client, data_dir, content):
+    (data_dir / "settings.json").write_bytes(content)
+    assert client.get("/api/settings").json() == FAIL_SAFE
+    assert "settings.json" not in server_log(data_dir)                                # ไม่ใช่ไฟล์เสีย: ไม่เตือน
+
+
+def test_settings_partial_file_fills_missing_fields_with_defaults(client, data_dir):
+    (data_dir / "settings.json").write_text(json.dumps({"daily": {"run_at_utc": "06:00", "retention_days": 7}}))
+    assert client.get("/api/settings").json() == {**DEFAULTS, "daily": {**DEFAULT_DAILY, "run_at_utc": "06:00", "retention_days": 7}}
+    (data_dir / "settings.json").write_text("{}")
+    assert client.get("/api/settings").json() == DEFAULTS
+    (data_dir / "settings.json").write_text(json.dumps({"cesium_ion_token": "t"}))
+    assert client.get("/api/settings").json() == {**DEFAULTS, "cesium_ion_token": "t"}
+
+
+def test_settings_lenient_load_still_checks_types_and_ranges(client, data_dir):
+    (data_dir / "settings.json").write_text(json.dumps({"daily": {"enabled": True, "retention_days": 99999, "x": 1}}))
+    assert client.get("/api/settings").json() == FAIL_SAFE
 
 
 def test_settings_load_logs_a_warning_with_the_given_logger(data_dir, caplog):
     from gnss_studio_server import settings
     (data_dir / "settings.json").write_text("{nope", encoding="utf-8")
     with caplog.at_level(logging.WARNING):
-        assert settings.load(data_dir) == settings.Settings()
+        assert settings.load(data_dir) == settings.Settings(daily=settings.Daily(enabled=False))
     assert [r.levelno for r in caplog.records] == [logging.WARNING] and "settings.json" in caplog.records[0].getMessage()
-    own = logging.Logger("own")
-    seen = []
-    own.addHandler(type("H", (logging.Handler,), {"emit": lambda self, rec: seen.append(rec)})())
+    own, seen = capture_logger()
+    (data_dir / "settings.json").write_text("{nope, different size}", encoding="utf-8")       # ไฟล์เปลี่ยนแล้ว: เตือนใหม่ได้
     settings.load(data_dir, own)
     assert len(seen) == 1 and seen[0].levelno == logging.WARNING
 
 
-def test_settings_file_is_a_directory_gives_defaults(client, data_dir):
+def test_settings_fail_safe_warns_once_per_file_state(data_dir):
+    from gnss_studio_server import settings
+    logger, seen = capture_logger()
+    path = data_dir / "settings.json"
+    path.write_text("{nope", encoding="utf-8")
+    for _ in range(5):                                                                # ตัวตั้งเวลาเรียก load ทุก 60 วินาที
+        assert settings.load(data_dir, logger).daily.enabled is False
+    assert len(seen) == 1
+    path.write_text("{still bad}", encoding="utf-8")                                  # ไฟล์เปลี่ยน (ขนาดต่าง): เตือนอีกครั้ง
+    settings.load(data_dir, logger)
+    settings.load(data_dir, logger)
+    assert len(seen) == 2
+    bad_state = path.stat()
+    path.write_text(json.dumps(CUSTOM), encoding="utf-8")                             # แก้แล้ว: ไม่เตือน และใช้ค่าในไฟล์
+    assert settings.load(data_dir, logger) == settings.Settings.model_validate(CUSTOM)
+    assert len(seen) == 2
+    path.write_text("{still bad}", encoding="utf-8")                                  # เสียอีกครั้งด้วย mtime และขนาดเท่ารอบก่อนทุกประการ
+    os.utime(path, ns=(bad_state.st_atime_ns, bad_state.st_mtime_ns))
+    assert (path.stat().st_mtime_ns, path.stat().st_size) == (bad_state.st_mtime_ns, bad_state.st_size)
+    settings.load(data_dir, logger)
+    assert len(seen) == 3                                                             # เคยกลับมาใช้ได้แล้ว: เสียใหม่ต้องเตือนใหม่
+
+
+def test_settings_fail_safe_warns_once_through_the_route(client, data_dir):
+    (data_dir / "settings.json").write_text("{nope", encoding="utf-8")
+    for _ in range(4):
+        assert client.get("/api/settings").json() == FAIL_SAFE
+    assert sum("settings.json" in line for line in server_log(data_dir).splitlines()) == 1
+
+
+def test_settings_file_is_a_directory_fails_safe_once(client, data_dir):
     (data_dir / "settings.json").mkdir()
-    assert client.get("/api/settings").json() == DEFAULTS
+    for _ in range(3):
+        assert client.get("/api/settings").json() == FAIL_SAFE
+    assert sum("settings.json" in line for line in server_log(data_dir).splitlines()) == 1
 
 
 def test_put_after_corrupt_file_replaces_it(client, data_dir):
@@ -322,6 +458,23 @@ def test_validate_sp3_symlink_out_of_data_rejected(client, s1, data_dir, tmp_pat
 def test_validate_bad_day_rejected(client, s1, bad):
     assert_error(validate(client, {"day": bad}), 422, "SCENARIO_INVALID", "day")
     assert client.get("/api/jobs").json() == []
+
+
+def test_day_check_is_shared_by_the_job_and_the_day_route(client, s1):
+    from gnss_studio_server.errors import ApiError
+    from gnss_studio_server.schema import check_day
+    assert check_day("2026-11-10", "day") == "2026-11-10"
+    texts = set()
+    for bad in ["2026-13-01", "20261110", "", "2026-02-30", 20261110, None]:
+        with pytest.raises(ApiError) as caught:
+            check_day(bad, "when")
+        err = caught.value
+        assert (err.status, err.code, err.field) == (422, "SCENARIO_INVALID", "when") and THAI.search(err.text)
+        texts.add(err.text)
+    assert len(texts) == 1
+    text = texts.pop()
+    assert validate(client, {"day": "20261110"}).json()["text"] == text               # job: field day
+    assert client.get(day_url(day="20261110")).json()["text"] == text                  # route: field day
 
 
 def test_validate_missing_or_wrong_body(client, s1):

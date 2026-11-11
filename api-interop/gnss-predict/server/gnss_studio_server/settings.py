@@ -2,16 +2,23 @@
 
 - `Settings` (pydantic) รูปแบบตรง 9.1: `{"daily": {enabled, run_at_utc, facility, retention_days, validation_retry_hours,
   validation_give_up_days}, "cesium_ion_token": ""}` ทุกช่องมีค่าตั้งต้นของ 9.1 ตรวจแบบ strict (ชนิดต้องตรง ไม่แปลง "30" เป็น 30)
-  และไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422 ไม่ใช่ถูกเมินเงียบ ๆ)
   - `run_at_utc`: `HH:MM` ชั่วโมง 00-23 นาที 00-59, `facility`: ตรงกติกาชื่อ object, `retention_days` 1-3650,
     `validation_retry_hours` 1-168, `validation_give_up_days` 1-365
-- `load(data_dir)`: ไม่มีไฟล์ = ค่าตั้งต้น ไฟล์เสียหรือค่าผิด = ค่าตั้งต้นพร้อม log เตือน (ไม่ทำให้ server หรือตัวตั้งเวลาล้ม)
+- `SettingsIn` / `DailyIn` คือรูปแบบของ body ที่ PUT: ไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422) และ `missing_field` บอกช่องแรกที่
+  ไม่ได้ส่ง (PUT ต้องส่งทั้งเอกสาร: ช่องที่หายจะไม่ถูกเติมเป็นค่าตั้งต้น เพราะค่าตั้งต้นของ `daily.enabled` คือเปิด)
+- `load(data_dir)` ไม่มีการดึงข้อมูลจากเน็ตโดยที่ผู้ใช้ไม่ยินยอม:
+  - ไม่มีไฟล์ = ค่าตั้งต้นของ 9.1 (เปิดงานประจำวัน เป็นการตั้งที่ผู้ใช้อนุมัติแล้ว)
+  - ไฟล์เสียหรือค่าผิด (ไม่ใช่ JSON, ชนิดหรือช่วงผิด ฯลฯ) = ค่าตั้งต้นแต่ `daily.enabled = False` (fail safe) พร้อม log เตือน
+    ครั้งเดียวต่อสถานะของไฟล์ (path, mtime_ns, size): ตัวตั้งเวลาเรียก load ทุก 60 วินาที ไม่ควรท่วม log
+  - ผ่อนปรนเฉพาะสิ่งที่ไม่เสียหาย: อ่านแบบ utf-8-sig (BOM ที่โปรแกรมแก้ไขบางตัวใส่ให้), ข้ามช่องที่ไม่รู้จัก, ช่องที่หายได้ค่าตั้งต้น
+    (`{"daily": {"enabled": false}}` จึงโหลดเป็นปิดเสมอ)
 - `save(data_dir, settings)`: เขียนแบบ atomic
 - `ignore_change`: ค่าตั้งต้นของ `app.state.settings_on_change` ที่ PUT /api/settings เรียกหลังบันทึกแล้ว (ตัวตั้งเวลาแทนที่ใน Task 11)
 """
 
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Annotated
 
@@ -24,10 +31,12 @@ SETTINGS_FILE = "settings.json"
 TIME_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"               # ระบุ [0-9] ตรง ๆ: \d ของ regex รับเลขอื่นนอก ASCII ด้วย
 
 _logger = logging.getLogger(__name__)
+_warned: dict[Path, tuple] = {}                                 # path -> (mtime_ns, size) ของไฟล์เสียที่เตือนไปแล้ว
+_warned_lock = threading.Lock()
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
+    model_config = ConfigDict(strict=True, extra="ignore")
 
 
 class Daily(_Model):
@@ -44,6 +53,33 @@ class Settings(_Model):
     cesium_ion_token: str = ""
 
 
+class DailyIn(Daily):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SettingsIn(Settings):
+    """body ของ PUT /api/settings (ใช้ `Settings.model_validate(body.model_dump())` ก่อนบันทึก)"""
+    model_config = ConfigDict(extra="forbid")
+    daily: DailyIn = Field(default_factory=DailyIn)
+
+
+def missing_field(model: BaseModel) -> str | None:
+    """ช่องแรก (path แบบ `daily.run_at_utc`) ที่ผู้เรียกไม่ได้ส่งมาในเอกสาร ทุกระดับ หรือ None ถ้าส่งครบ"""
+    return _missing(model, "")
+
+
+def _missing(model: BaseModel, prefix: str) -> str | None:
+    for name in type(model).model_fields:
+        if name not in model.model_fields_set:
+            return prefix + name
+        value = getattr(model, name)
+        if isinstance(value, BaseModel):
+            inner = _missing(value, f"{prefix}{name}.")
+            if inner is not None:
+                return inner
+    return None
+
+
 def _reason(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
         first = exc.errors()[0]
@@ -51,17 +87,42 @@ def _reason(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+def _fail_safe() -> Settings:
+    """ค่าตั้งต้นที่ปิดงานประจำวัน: ใช้เมื่ออ่านไฟล์ค่าตั้งไม่ได้ ผู้ใช้ยังไม่ได้ยืนยันว่าจะให้ดึงข้อมูลเอง"""
+    return Settings(daily=Daily(enabled=False))
+
+
+def _signature(path: Path) -> tuple:
+    try:
+        st = path.stat()
+        return st.st_mtime_ns, st.st_size
+    except OSError:
+        return None, None
+
+
+def _warn_once(path: Path, reason: str, logger: logging.Logger) -> None:
+    """เตือนเรื่องไฟล์เสียหนึ่งครั้งต่อสถานะของไฟล์ (mtime_ns, size) ไฟล์ที่ยังไม่เปลี่ยนไม่เตือนซ้ำ"""
+    signature = _signature(path)
+    with _warned_lock:
+        if _warned.get(path) == signature:
+            return
+        _warned[path] = signature
+    logger.warning("อ่าน %s ไม่ได้ ใช้ค่าตั้งต้นแต่ปิดงานประจำวันไว้ก่อน แก้ไฟล์หรือบันทึกค่าตั้งใหม่เพื่อเปิด (%s)", path, reason)
+
+
 def load(data_dir: Path, logger: logging.Logger | None = None) -> Settings:
-    """ค่าตั้งใน `<data_dir>/settings.json` ไม่มีไฟล์ = ค่าตั้งต้น ไฟล์อ่านไม่ได้ ไม่ใช่ JSON หรือค่าไม่ผ่านการตรวจ = ค่าตั้งต้น
-    พร้อม log เตือนที่ `logger` (ค่าตั้งต้น: logger ของโมดูล) ไฟล์ไม่ถูกแก้ ผู้ใช้แก้เองหรือ PUT ทับได้"""
+    """ค่าตั้งใน `<data_dir>/settings.json` (กติกาที่หัวไฟล์) ไฟล์ไม่ถูกแก้ ผู้ใช้แก้เองหรือ PUT ทับได้ ไม่ raise"""
     path = Path(data_dir) / SETTINGS_FILE
     try:
-        return Settings.model_validate(json.loads(path.read_bytes().decode("utf-8")))
+        loaded = Settings.model_validate(json.loads(path.read_bytes().decode("utf-8-sig")))
     except FileNotFoundError:
         return Settings()
     except (OSError, ValueError, RecursionError) as exc:       # รวม UnicodeDecodeError, JSONDecodeError และ ValidationError
-        (logger or _logger).warning("อ่าน %s ไม่ได้ ใช้ค่าตั้งต้นแทน (%s)", path, _reason(exc))
-        return Settings()
+        _warn_once(path, _reason(exc), logger or _logger)
+        return _fail_safe()
+    with _warned_lock:
+        _warned.pop(path, None)                                 # ไฟล์กลับมาใช้ได้: ถ้าเสียอีกต้องเตือนใหม่
+    return loaded
 
 
 def save(data_dir: Path, settings: Settings) -> None:

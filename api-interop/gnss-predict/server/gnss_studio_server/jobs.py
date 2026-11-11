@@ -26,13 +26,13 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from multiprocessing.connection import wait as wait_ready
 from pathlib import Path
 
 from .errors import ApiError
 from .events import EventBus, message as post_message
-from .schema import NAME_RE
+from .schema import NAME_RE, check_day
 from .store import ScenarioStore
 from .worker import PipeOut, kill_group, run_job
 
@@ -363,12 +363,7 @@ class JobManager:
                 raise _invalid(name, "ชื่อ Facility ต้องเป็นตัวอักษร A-Z a-z ตัวเลข _ หรือ - ยาว 1 ถึง 32 ตัว")
             return value
         if name == "day":
-            try:
-                if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
-                    raise ValueError(value)
-            except ValueError:
-                raise _invalid(name, "วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD") from None
-            return value
+            return check_day(value, name)
         if name == "sp3":
             root = self.data_dir.resolve()
             try:

@@ -10,7 +10,7 @@
 
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, ValidationInfo, field_validator
@@ -44,6 +44,20 @@ def parse_utc_z(value: str) -> datetime:
 
 def _utc_z(value: str) -> str:
     parse_utc_z(value)
+    return value
+
+
+DAY_TEXT = "วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD"
+
+
+def check_day(value: Any, field: str) -> str:
+    """วันที่แบบ YYYY-MM-DD ที่มีอยู่จริง (ไม่รับ YYYYMMDD ที่ Python 3.11+ รับ) ผิด -> ApiError 422 SCENARIO_INVALID ที่ `field`
+    ใช้ร่วมกันระหว่างค่า `day` ของ job validate กับ path `/validation/{sc}/{day}`"""
+    try:
+        if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
+            raise ValueError(value)
+    except ValueError:
+        raise ApiError(422, "SCENARIO_INVALID", DAY_TEXT, field) from None
     return value
 
 
