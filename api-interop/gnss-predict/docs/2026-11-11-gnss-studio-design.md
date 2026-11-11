@@ -7,6 +7,10 @@
   - [2026-11-10-gnss-predict-design.md](2026-11-10-gnss-predict-design.md): CLI พยากรณ์ GPS เดิม
   - [2026-11-11-gnss-studio-engine-design.md](2026-11-11-gnss-studio-engine-design.md): spec งานย่อยที่ 1
   - [2026-11-11-gnss-studio-stk-reference.md](2026-11-11-gnss-studio-stk-reference.md): ชื่อเมนู ปุ่ม และหน้าต่างของ STK ที่ตรวจกับคู่มือแล้ว
+  - [2026-11-11-gnss-studio-server-design.md](2026-11-11-gnss-studio-server-design.md): spec งานย่อยที่ 2
+  - [2026-11-11-gnss-studio-workspace-design.md](2026-11-11-gnss-studio-workspace-design.md): spec งานย่อยที่ 3
+  - [2026-11-11-gnss-studio-access-reports-design.md](2026-11-11-gnss-studio-access-reports-design.md): spec งานย่อยที่ 4
+  - ภาพจำลองหน้าจอที่ผู้ใช้อนุมัติ: https://claude.ai/artifact/CJa3i5scMvCTqDcHD5bHDw
 
 เอกสารนี้กำหนดเป้าหมาย การแบ่งงาน และข้อตกลงกลางที่ทุกงานย่อยต้องใช้ร่วมกัน รายละเอียดของแต่ละงานย่อยอยู่ใน spec ของงานนั้น
 
@@ -26,6 +30,8 @@
 7. DOP เมื่อรวมหลายระบบใช้นาฬิกาเดียวแบบ STK และ RTKLIB พร้อม DOP แยกรายระบบ
 8. ข้อตกลงจากการตรวจความแม่นยำ 5 ข้อ (หัวข้อ 8.2)
 9. ยังไม่ merge เข้า `main` จนกว่าผู้ใช้สั่ง
+10. (รอบออกแบบหน้าจอ) มีงานพยากรณ์ประจำวันอัตโนมัติ: ดึงข้อมูล, คำนวณ 24 ชม. ข้างหน้าของ THBK และตรวจความแม่นยำย้อนหลังเอง (แบบ B)
+11. (รอบออกแบบหน้าจอ) ทุกส่วน รวมทั้ง API ใช้แนวคิดของ STK ให้มากที่สุด: path ของ object แบบ `*/Facility/THBK`, Data Provider, Report style 3 ชั้น
 
 ### สมมติฐาน (ผู้ใช้ยังไม่ได้ยืนยันโดยตรง แต่ไม่ได้แย้ง)
 
@@ -43,6 +49,7 @@
 3. ชื่อเมนู ปุ่ม หน้าต่าง และหน้าตั้งค่าตรงกับ [รายการอ้างอิง STK](2026-11-11-gnss-studio-stk-reference.md) ทุกคำ ยกเว้นส่วนที่ติดป้ายว่าเราเพิ่มเอง
 4. ความแม่นยำผ่านเกณฑ์ในหัวข้อ 10 ทั้ง 4 ระบบ
 5. ระบบทั้งชุดรันได้ด้วย `docker compose up` ด้วย
+6. งานประจำวันรันครบ 3 วันติดโดยไม่มีคนสั่ง ได้ไฟล์ CSV สำหรับงาน TEC ทุกวัน และมีผลตรวจความแม่นยำแบบพยากรณ์จริงอย่างน้อย 1 วัน
 
 ## 2. ขอบเขต
 
@@ -64,9 +71,9 @@
 | ลำดับ | งานย่อย | Branch | ผลที่ได้ |
 |---|---|---|---|
 | 1 | Engine หลายระบบ | `feature/gnss-studio-engine` | คำสั่ง `fetch`, `propagate`, `analyze`, `validate` และไฟล์ผลลัพธ์ตามหัวข้อ 7 |
-| 2 | FastAPI server + API | `feature/gnss-studio-server` | API ตามหัวข้อ 7.6, คิว job, ตั้งค่าด้วย environment variable |
-| 3 | พื้นที่ทำงานหลัก | `feature/gnss-studio-workspace` | Object Browser, Properties Browser, Animation toolbar, Timeline View, หน้าต่าง 3D/2D |
-| 4 | Access + Report & Graph Manager | `feature/gnss-studio-access` | Access tool, รายงาน, กราฟ, DOP, หน้า Validation |
+| 2 | FastAPI server + API | `feature/gnss-studio-server` | API แบบ STK, คิว job แยก process, SSE, งานประจำวัน, ส่วนเพิ่มของ engine สำหรับยกเลิก job และ hash |
+| 3 | พื้นที่ทำงานหลัก | `feature/gnss-studio-workspace` | เมนู, แถบเครื่องมือ, Object Browser, Properties Browser, Animation, Timeline View, หน้าต่าง 3D/2D, Message Viewer, แถบสถานะ |
+| 4 | Access + Report & Graph Manager | `feature/gnss-studio-access` | Data Provider ใน engine, Access tool, Report & Graph Manager, รายงาน, กราฟ, หน้า Validation |
 | 5 | Docker | `feature/gnss-studio-docker` | build GMAT บน Linux ใน image, compose |
 
 ## 4. สถาปัตยกรรม
@@ -75,8 +82,8 @@
 Browser (React + TypeScript + CesiumJS + dockview)
    │  HTTP/JSON  (dev: Vite 5173 proxy /api → 8000)
    ▼
-FastAPI (127.0.0.1:8000)  ── คิว job เดียว (ทำทีละ job)
-   │  เรียกฟังก์ชัน Python ของ engine โดยตรง
+FastAPI (127.0.0.1:8000)  ── คิว job เดียว (ทำทีละ job) + ตัวตั้งเวลางานประจำวัน + SSE
+   │  แต่ละ job รันใน process ลูก ซึ่งเรียกฟังก์ชัน Python ของ engine
    ▼
 gnss_predict (Python standard library ล้วน + CLI)
    │  subprocess
@@ -203,7 +210,7 @@ data/  (scenario, ข้อมูลวงโคจร, ผลลัพธ์ �
 | ฟีเจอร์ | งานย่อย |
 |---|---|
 | ดึง OMM, IGS metadata, broadcast; สถานะดาว; propagate; SP3/CZML; AER/IPP/MF; access; DOP; validate | 1 |
-| API, คิว job, Stop, ตรวจ scenario, บันทึกและเปิด scenario/workbook, ตรวจย้อนหลังอัตโนมัติ | 2 |
+| API, คิว job, Stop, ตรวจ scenario, บันทึกและเปิด scenario/workbook, งานพยากรณ์ประจำวันและตรวจย้อนหลังอัตโนมัติ | 2 |
 | หัวข้อ 5.1–5.5 และ Message Viewer | 3 |
 | หัวข้อ 5.6 และหน้า Validation | 4 |
 | image ที่ build GMAT บน Linux, compose, ตรวจผลใน container | 5 |
@@ -227,6 +234,11 @@ data/
     access/<facility>/<hash>/       ผลของ analyze
       manifest.json  aer.csv  intervals.json  dop.csv  access.czml  legacy_gps.csv
   validation/history.jsonl          ประวัติการตรวจย้อนหลัง
+  daily/                            CSV สำหรับงาน TEC: thbk_gnss_pred_<YYYYMMDD>_24h.csv, latest.csv
+  jobs/<id>.json                    บันทึก job (server)
+  styles/                           My Styles ของ Report & Graph Manager
+  settings.json                     ค่าตั้งงานประจำวัน (server)
+  logs/server.log                   log ของ server
 ```
 
 - ดาวน์โหลดเก็บไว้ที่ `data/orbits/` ที่เดียว เพราะกติกาของ CelesTrak นับต่อ IP ไม่ใช่ต่อ scenario
@@ -300,17 +312,13 @@ engine อ่านเฉพาะช่องที่ใช้คำนวณ 
 | `access.czml` | ตำแหน่ง Facility และเส้น access ที่แสดงเฉพาะช่วง access |
 | `legacy_gps.csv` | `DAY,Time,PRN,Az,El,IPP_Lat,IPP_Lon,MF` รูปแบบเดียวกับ CLI เดิม เฉพาะ GPS |
 
-### 7.6 API (ระดับหลัก รายละเอียดอยู่ใน spec งานย่อยที่ 2)
+### 7.6 API
 
-| กลุ่ม | ทำอะไร |
-|---|---|
-| `scenarios` | สร้าง, รายชื่อ, เปิด, บันทึก `scenario.json` และ `workbook.json` |
-| `orbits` | สั่งดึงข้อมูลวงโคจรชุดใหม่, รายชื่อชุดที่มี |
-| `catalog` | ค้นหาดาวจากชุดข้อมูลวงโคจร ใช้กับหน้าต่างเพิ่มดาวเทียม |
-| `jobs` | สั่ง propagate / analyze / validate, ดูสถานะ (v1 ใช้ polling), ยกเลิก |
-| `results` | manifest, czml, intervals, aer (กรองตามดาวและช่วงเวลา), dop, รายงาน .txt/.csv |
-| `messages` | ข้อความสำหรับ Message Viewer |
-| `validation` | ประวัติความแม่นยำ |
+รายละเอียดอยู่ใน spec server §6 หลักการ:
+- object อ้างด้วย path แบบ STK (`*/Facility/THBK`, `*/Satellite/G01`, `*/Constellation/GPS`) และค่าตั้งแบ่งตามกลุ่มหน้า `basic` / `graphics2d` / `graphics3d` / `constraints`
+- รายงานและกราฟสร้างจาก Data Provider (Access Data, AER Data, LLA State, Dilution of Precision, N Asset Coverage, IPP Data) ผ่าน Report style 3 ชั้น (Installed / My / Scenario Styles)
+- ความคืบหน้าของ job และข้อความส่งแบบสดด้วย Server-Sent Events (เปลี่ยนจาก polling ในฉบับก่อน)
+- การแก้ scenario ใช้ ETag ป้องกันการเขียนทับ
 
 ## 8. ข้อตกลงด้านการคำนวณ
 
@@ -373,7 +381,9 @@ engine อ่านเฉพาะช่องที่ใช้คำนวณ 
 
 ### 10.3 ตรวจย้อนหลังต่อเนื่อง
 
+งานประจำวัน (spec server §9) สร้าง scenario `daily_<วันที่>` ล่วงหน้าทุกวันเวลา 21:00 UTC
 เมื่อวันที่พยากรณ์ผ่านไปแล้วและมี SP3 แบบ rapid (ราว 1–2 วัน) server รัน `validate` เทียบ `predicted.sp3` ที่สร้างไว้ล่วงหน้ากับค่าจริง
+จึงเป็นการตรวจแบบพยากรณ์จริง ไม่ใช่ hindcast
 ต่อท้ายผลใน `data/validation/history.jsonl` และแสดงในหน้า Validation ประวัตินี้ใช้ปรับเกณฑ์อายุข้อมูล 7 วันในภายหลัง
 
 ### 10.4 ตรวจกับ STK จริง (ทำเมื่อมีเครื่องที่ติดตั้ง STK)
