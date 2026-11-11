@@ -1,0 +1,1166 @@
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { ApiError } from "../../src/api/client";
+import { Dialogs } from "../../src/chrome/Dialogs";
+import { invalidateCommands, isEnabled, isRegistered, registerCommand, runCommand } from "../../src/commands";
+import { t } from "../../src/labels/labels";
+import { msg } from "../../src/labels/messages.th";
+import { getPanelDef } from "../../src/layout/panels";
+import { installShortcuts } from "../../src/shortcuts";
+import { useLayout } from "../../src/stores/layout";
+import { useMessages } from "../../src/stores/messages";
+import { useScenario } from "../../src/stores/scenario";
+import { useSelection } from "../../src/stores/selection";
+import { useClipboard } from "../../src/windows/ObjectBrowser/clipboard";
+import { ObjectBrowser, registerObjectBrowserPanel } from "../../src/windows/ObjectBrowser/ObjectBrowser";
+import { resetAll } from "./helpers/chrome";
+import { deferred, stubFetch } from "./helpers/fake-fetch";
+import { CATALOG, entry, loadObjects, makeScenarioDoc, makeTree, satPath } from "./helpers/objects";
+
+const written = { stale: false };
+const spies = {
+  patchObject: vi.fn(async () => written),
+  insert: vi.fn(async () => [] as string[]),
+  rename: vi.fn(async () => written),
+  remove: vi.fn(async () => written),
+  setGroup: vi.fn(async () => written),
+};
+const openPanel = vi.fn(() => "propertiesBrowser");
+
+let user: ReturnType<typeof userEvent.setup>;
+let stopShortcuts: (() => void) | undefined;
+
+beforeEach(() => {
+  resetAll();
+  useClipboard.setState(useClipboard.getInitialState(), true);
+  for (const spy of Object.values(spies)) spy.mockClear();
+  openPanel.mockClear();
+  useScenario.setState(spies as never);
+  useLayout.setState({ openPanel } as never);
+  user = userEvent.setup();
+});
+afterEach(() => {
+  stopShortcuts?.();
+  stopShortcuts = undefined;
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function renderOb() {
+  return render(
+    <>
+      <ObjectBrowser params={{}} panelId="objectBrowser" />
+      <Dialogs />
+    </>,
+  );
+}
+// aria-hidden while a modal (context menu, dialog) is open: the rows are still there
+const treeitems = () => screen.getAllByRole("treeitem", { hidden: true });
+const names = () => treeitems().map((r) => r.textContent);
+const row = (name: string): HTMLElement => {
+  const el = screen.queryAllByRole("treeitem", { hidden: true }).find((r) => r.textContent === name);
+  if (el === undefined) throw new Error(`no row named ${name}; rows: ${names().join(", ")}`);
+  return el;
+};
+const hasRow = (name: string) => screen.queryAllByRole("treeitem", { hidden: true }).some((r) => r.textContent === name);
+const checkbox = (name: string) => within(row(name)).getByRole("checkbox");
+const swatch = (name: string) => within(row(name)).getByRole("img", { name: new RegExp(t("field.color")) });
+const colorInput = (name: string) => row(name).querySelector<HTMLInputElement>('input[type="color"]')!;
+const button = (name: string) => screen.getByRole("button", { name });
+const selected = () => screen.queryAllByRole("treeitem", { hidden: true }).filter((r) => r.getAttribute("aria-selected") === "true").map((r) => r.textContent);
+const item = (menu: HTMLElement, name: string) => within(menu).getByRole("menuitem", { name });
+
+describe("rows", () => {
+  test("shows the scenario, the Facility, the Constellation, the folders with their members and the ungrouped satellites", () => {
+    loadObjects();
+    renderOb();
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G02", "Mine", "G03", "G04", "G05"]);
+    expect(screen.getByRole("tree", { name: t("window.objectBrowser") })).toBeDefined();
+    expect(row("G01").getAttribute("aria-level")).toBe("3");
+    expect(row("S1").getAttribute("aria-expanded")).toBe("true");
+    expect(row("G01").getAttribute("aria-expanded")).toBeNull();
+  });
+
+  test("the root element is the Object Browser focus scope that the shortcuts look for", () => {
+    loadObjects();
+    const { container } = renderOb();
+    expect(container.querySelector('[data-focus-scope="objectBrowser"]')).not.toBeNull();
+    expect(container.querySelector('[data-focus-scope="objectBrowser"]')!.contains(row("G01"))).toBe(true);
+  });
+
+  test("an object row has an arrow slot, a checkbox, a colour box, an icon and the name; a folder has only the arrow, the icon and the name", () => {
+    loadObjects();
+    renderOb();
+    expect(checkbox("G01").hasAttribute("checked") || (checkbox("G01") as HTMLInputElement).checked).toBe(true);
+    expect(swatch("G01").style.background).toMatch(/rgb\(255, 210, 63\)|#ffd23f/i);
+    expect(row("G01").querySelector("svg")).not.toBeNull();
+    expect(within(row("GPS sats")).queryByRole("checkbox")).toBeNull();
+    expect(row("GPS sats").querySelector('input[type="color"]')).toBeNull();
+    expect(within(row("GPS sats")).queryByRole("img", { name: new RegExp(t("field.color")) })).toBeNull();
+    expect(row("GPS sats").querySelector("svg")).not.toBeNull();
+  });
+
+  test("the root row has no checkbox or colour box either", () => {
+    loadObjects();
+    renderOb();
+    expect(within(row("S1")).queryByRole("checkbox")).toBeNull();
+    expect(row("S1").querySelector('input[type="color"]')).toBeNull();
+  });
+
+  test("a satellite hidden by a flag is italic and dim, and its checkbox is disabled", () => {
+    loadObjects();
+    renderOb();
+    expect(row("G03").classList.contains("ob-hidden")).toBe(true);
+    expect((checkbox("G03") as HTMLInputElement).disabled).toBe(true);
+    expect(row("G04").classList.contains("ob-hidden")).toBe(false);
+    expect((checkbox("G04") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  test("the theme makes a hidden row italic, and its Object Browser rules use tokens only", () => {
+    const css = readFileSync(resolve(__dirname, "../../src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ selector: m[1].trim(), body: m[2] }));
+    const ob = rules.filter((r) => /(^|[\s,>])\.ob[\s.:[,{-]|\.ob$|\.ob-/.test(r.selector));
+    expect(ob.length).toBeGreaterThan(5);
+    expect(ob.find((r) => r.selector === ".ob-hidden")?.body).toContain("font-style: italic");
+    for (const r of ob) expect(r.body, r.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
+
+  test("a warning sign shows for a stale satellite but not for one with only name_mismatch", () => {
+    loadObjects();
+    renderOb();
+    const warn = (name: string) => within(row(name)).queryByRole("img", { name: t("status.flaggedSatellites") });
+    expect(warn("G04")).not.toBeNull();
+    expect(warn("G05")).toBeNull();
+    expect(warn("G01")).toBeNull();
+  });
+
+  test("hovering a satellite shows its tooltip: PRN, SVN, NORAD, Block, CelesTrak name, age and the flags in Thai", async () => {
+    loadObjects();
+    renderOb();
+    await user.hover(row("G04"));
+    const tip = (await screen.findByRole("tooltip")).textContent ?? "";
+    for (const part of [`${t("field.prn")}: G04`, `${t("field.svn")}: G64`, `${t("field.norad")}: 40104`, `${t("field.block")}: IIF`,
+                        `${t("field.celestrakName")}: GPS BIIF-4  (PRN 4)`, `${t("field.dataAge")}: 3.0 d`, msg("flag.stale")]) {
+      expect(tip, part).toContain(part);
+    }
+  });
+
+  test("a Facility gets a simple tooltip", async () => {
+    loadObjects();
+    renderOb();
+    await user.hover(row("THBK"));
+    expect((await screen.findByRole("tooltip")).textContent).toBe(`${t("ob.class.facility")}: THBK`);
+  });
+
+  test("shows a Thai note instead of a tree while no scenario is open", () => {
+    renderOb();
+    expect(screen.getByText(msg("tooltip.noScenario"))).toBeDefined();
+    expect(screen.queryAllByRole("treeitem")).toEqual([]);
+  });
+});
+
+describe("selection", () => {
+  test("clicking a row selects it and sets the active object", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    expect(useSelection.getState().activePath).toBe(satPath("G01"));
+    expect(selected()).toEqual(["G01"]);
+    expect(document.activeElement).toBe(row("G01"));
+  });
+
+  test("a selection made elsewhere highlights the row", () => {
+    loadObjects();
+    renderOb();
+    act(() => useSelection.getState().select(satPath("G02")));
+    expect(selected()).toEqual(["G02"]);
+    act(() => useSelection.getState().select("*/Facility/THBK"));
+    expect(selected()).toEqual(["THBK"]);
+  });
+
+  test("a folder can be selected, and it leaves no active object", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(row("Mine"));
+    expect(selected()).toEqual(["Mine"]);
+    expect(useSelection.getState().activePath).toBeNull();
+    await user.click(row("G02"));
+    expect(selected()).toEqual(["G02"]);
+  });
+
+  test("a selection inside a collapsed folder opens the folder", () => {
+    loadObjects();
+    renderOb();
+    fireEvent.doubleClick(row("GPS sats"));
+    expect(hasRow("G01")).toBe(false);
+    act(() => useSelection.getState().select(satPath("G01")));
+    expect(hasRow("G01")).toBe(true);
+    expect(selected()).toEqual(["G01"]);
+  });
+});
+
+describe("expansion", () => {
+  test("everything starts expanded; the arrow collapses and expands a folder", async () => {
+    loadObjects();
+    renderOb();
+    expect(hasRow("G01")).toBe(true);
+    await user.click(row("GPS sats").querySelector(".ob-arrow")!);
+    expect(hasRow("G01")).toBe(false);
+    expect(row("GPS sats").getAttribute("aria-expanded")).toBe("false");
+    await user.click(row("GPS sats").querySelector(".ob-arrow")!);
+    expect(hasRow("G01")).toBe(true);
+  });
+
+  test("double-clicking a folder toggles it and does not open Properties", async () => {
+    loadObjects();
+    renderOb();
+    await user.dblClick(row("GPS sats"));
+    expect(hasRow("G01")).toBe(false);
+    expect(openPanel).not.toHaveBeenCalled();
+  });
+
+  test("Collapse All and Expand All act on the whole tree", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.collapseAll")));
+    expect(names()).toEqual(["S1"]);
+    await user.click(button(t("ob.expandAll")));
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G02", "Mine", "G03", "G04", "G05"]);
+  });
+});
+
+describe("another scenario", () => {
+  test("starts expanded again with no filter and no folder selected, but keeps the column choices", async () => {
+    loadObjects();
+    renderOb();
+    await user.dblClick(row("GPS sats"));
+    await user.click(row("Mine"));
+    act(() => runCommand("ob.showFlagged"));
+    act(() => runCommand("ob.onOffToggles"));
+    expect(names()).toEqual(["S1", "G03", "G04"]);
+    act(() => useScenario.setState({ name: "S2" }));
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G02", "Mine", "G03", "G04", "G05"]);
+    expect(selected()).toEqual([]);
+    expect(within(row("G01")).queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("Show checkbox", () => {
+  test("a satellite: PATCHes graphics2d.show and graphics3d.show", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(checkbox("G01"));
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    expect(spies.patchObject).toHaveBeenCalledWith("Satellite", "G01", { graphics2d: { show: false }, graphics3d: { show: false } });
+  });
+
+  test("a Facility: the same two pages", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(checkbox("THBK"));
+    expect(spies.patchObject).toHaveBeenCalledWith("Facility", "THBK", { graphics2d: { show: false }, graphics3d: { show: false } });
+  });
+
+  test("turning an unchecked box on sends show true", async () => {
+    const tree = makeTree();
+    (tree.children[4] as { children: { show: boolean }[] }).children = [];
+    (tree.children[2] as { children: { show: boolean }[] }).children[0].show = false;
+    loadObjects({ tree });
+    renderOb();
+    expect((checkbox("G01") as HTMLInputElement).checked).toBe(false);
+    await user.click(checkbox("G01"));
+    expect(spies.patchObject).toHaveBeenCalledWith("Satellite", "G01", { graphics2d: { show: true }, graphics3d: { show: true } });
+  });
+
+  test("a Constellation: one PATCH per member satellite, one after the other", async () => {
+    loadObjects();
+    renderOb();
+    const first = deferred<{ stale: boolean }>();
+    spies.patchObject.mockImplementationOnce(() => first.promise);
+    await user.click(checkbox("GPS"));
+    expect(spies.patchObject.mock.calls.map((c) => c.slice(0, 2))).toEqual([["Satellite", "G01"]]);
+    await act(async () => first.resolve(written));
+    await waitFor(() => expect(spies.patchObject).toHaveBeenCalledTimes(2));
+    expect(spies.patchObject.mock.calls).toEqual([
+      ["Satellite", "G01", { graphics2d: { show: false }, graphics3d: { show: false } }],
+      ["Satellite", "G02", { graphics2d: { show: false }, graphics3d: { show: false } }],
+    ]);
+  });
+
+  test("a Constellation stops at the first member that fails", async () => {
+    loadObjects();
+    renderOb();
+    spies.patchObject.mockRejectedValueOnce(new ApiError({ status: 422, code: "SCENARIO_INVALID", text: "ไม่ได้" }));
+    await user.click(checkbox("GPS"));
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "SCENARIO_INVALID")).toBe(true));
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+  });
+
+  test("a hidden satellite cannot be toggled", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(checkbox("G03"));
+    expect(spies.patchObject).not.toHaveBeenCalled();
+  });
+
+  test("a failed write is reported in the Message Viewer with the server text", async () => {
+    loadObjects();
+    renderOb();
+    spies.patchObject.mockRejectedValueOnce(new ApiError({ status: 422, code: "SCENARIO_INVALID", text: "ค่าผิด" }));
+    await user.click(checkbox("G01"));
+    await waitFor(() => expect(useMessages.getState().items.map((m) => m.text)).toContain("ค่าผิด"));
+  });
+
+  test("a 412 is left to the conflict dialog and is not reported twice", async () => {
+    loadObjects();
+    renderOb();
+    spies.patchObject.mockRejectedValueOnce(new ApiError({ status: 412, code: "PRECONDITION_FAILED", text: "stale" }));
+    await user.click(checkbox("G01"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(useMessages.getState().items.some((m) => m.code === "PRECONDITION_FAILED")).toBe(false);
+  });
+
+  test("clicking the checkbox selects its row", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(checkbox("G02"));
+    expect(selected()).toEqual(["G02"]);
+  });
+});
+
+describe("colour box", () => {
+  test("double-click opens the native colour input, and choosing a colour PATCHes graphics2d.color with inherit false", () => {
+    loadObjects();
+    renderOb();
+    const input = colorInput("G01");
+    expect(input.type).toBe("color");
+    const click = vi.spyOn(input, "click");
+    fireEvent.doubleClick(swatch("G01"));
+    expect(click).toHaveBeenCalled();
+    expect(openPanel).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "#00ff00" } });
+    expect(spies.patchObject).toHaveBeenCalledWith("Satellite", "G01", { graphics2d: { color: "#00ff00", inherit: false } });
+  });
+
+  test("a Facility PATCHes its graphics2d the same way", () => {
+    loadObjects();
+    renderOb();
+    fireEvent.change(colorInput("THBK"), { target: { value: "#123456" } });
+    expect(spies.patchObject).toHaveBeenCalledWith("Facility", "THBK", { graphics2d: { color: "#123456", inherit: false } });
+  });
+
+  test("a Constellation PATCHes its own basic.color", () => {
+    loadObjects();
+    renderOb();
+    fireEvent.change(colorInput("GPS"), { target: { value: "#abcdef" } });
+    expect(spies.patchObject).toHaveBeenCalledWith("Constellation", "GPS", { basic: { color: "#abcdef" } });
+  });
+
+  test("the box shows the colour of the tree, and the input starts from it", () => {
+    loadObjects();
+    renderOb();
+    expect(colorInput("THBK").value).toBe("#ff79e6");
+  });
+
+  test("picking the colour it already has does nothing", () => {
+    loadObjects();
+    renderOb();
+    fireEvent.change(colorInput("G01"), { target: { value: "#ffd23f" } });
+    expect(spies.patchObject).not.toHaveBeenCalled();
+  });
+});
+
+describe("Properties", () => {
+  test("double-click opens the Properties Browser of that object", async () => {
+    loadObjects();
+    renderOb();
+    await user.dblClick(row("G01"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: satPath("G01"), name: "G01" });
+  });
+
+  test("the scenario row opens the Scenario's Properties", async () => {
+    loadObjects();
+    renderOb();
+    await user.dblClick(row("S1"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: "*", name: "S1" });
+  });
+
+  test("the toolbar button and Enter open the selected object; a folder cannot be opened", async () => {
+    loadObjects();
+    renderOb();
+    expect(button(t("ob.properties")).getAttribute("aria-disabled")).toBe("true");
+    await user.click(row("THBK"));
+    expect(button(t("ob.properties")).getAttribute("aria-disabled")).toBeNull();
+    await user.click(button(t("ob.properties")));
+    expect(openPanel).toHaveBeenLastCalledWith("propertiesBrowser", { path: "*/Facility/THBK", name: "THBK" });
+    await user.click(row("Mine"));
+    expect(button(t("ob.properties")).getAttribute("aria-disabled")).toBe("true");
+    openPanel.mockClear();
+    await user.keyboard("{Enter}");
+    expect(openPanel).not.toHaveBeenCalled();
+  });
+});
+
+describe("context menu", () => {
+  test("right-click selects the row and lists Properties, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
+    loadObjects();
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("G01") });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
+      "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+    ]);
+    expect(selected()).toEqual(["G01"]);
+    expect(item(menu, "Properties").getAttribute("aria-disabled")).toBeNull();
+    expect(item(menu, "Rename").getAttribute("aria-disabled")).toBeNull();
+    expect(item(menu, "Delete").getAttribute("aria-disabled")).toBeNull();
+    expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  test("Zoom To follows whoever registers object.zoomTo", async () => {
+    loadObjects();
+    renderOb();
+    const run = vi.fn();
+    await user.pointer({ keys: "[MouseRight]", target: row("G01") });
+    expect(item(await screen.findByRole("menu"), "Zoom To").getAttribute("aria-disabled")).toBe("true");
+    await user.keyboard("{Escape}");
+    act(() => void registerCommand("object.zoomTo", { label: "menu.object.zoomTo", run }));
+    await user.pointer({ keys: "[MouseRight]", target: row("G01") });
+    await user.click(item(await screen.findByRole("menu"), "Zoom To"));
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  test("Properties from the menu opens the right-clicked object, not the previously selected one", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("THBK"));
+    await user.pointer({ keys: "[MouseRight]", target: row("G02") });
+    await user.click(item(await screen.findByRole("menu"), "Properties"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: satPath("G02"), name: "G02" });
+  });
+
+  test("on a folder, Properties, Rename and Delete are disabled", async () => {
+    loadObjects();
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("Mine") });
+    const menu = await screen.findByRole("menu");
+    for (const name of ["Properties", "Rename", "Delete"]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
+  });
+});
+
+describe("Delete", () => {
+  test("asks first, then deletes the object", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(msg("confirm.delete", { name: "G01" }))).toBeDefined();
+    expect(spies.remove).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBeNull());
+  });
+
+  test("Cancel deletes nothing", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(spies.remove).not.toHaveBeenCalled();
+    expect(useSelection.getState().activePath).toBe(satPath("G01"));
+  });
+
+  test("goes through the real DELETE request with the ETag", async () => {
+    loadObjects();
+    useScenario.setState({ remove: useScenario.getInitialState().remove } as never);
+    const f = stubFetch({
+      "DELETE /api/scenarios/S1/objects/Satellite/G01": { json: { etag: "e2" }, headers: { ETag: '"e2"' } },
+      "GET /api/scenarios/S1": { json: makeScenarioDoc(), headers: { ETag: '"e2"' } },
+      "GET /api/scenarios/S1/objects": { json: makeTree() },
+    });
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(f.count("DELETE /api/scenarios/S1/objects/Satellite/G01")).toBe(1));
+    expect(f.calls.find((c) => c.method === "DELETE")!.headers.get("If-Match")).toBe('"e1"');
+  });
+
+  test("edit.delete and object.delete do the same, and neither works on a folder or the scenario", async () => {
+    loadObjects();
+    renderOb();
+    expect(isEnabled("edit.delete")).toBe(false);
+    expect(isEnabled("object.delete")).toBe(false);
+    await user.click(row("G02"));
+    expect(isEnabled("edit.delete")).toBe(true);
+    expect(isEnabled("object.delete")).toBe(true);
+    await user.click(row("Mine"));
+    expect(isEnabled("edit.delete")).toBe(false);
+    expect(isEnabled("object.delete")).toBe(false);
+    await user.click(row("S1"));
+    expect(isEnabled("object.delete")).toBe(false);
+    await user.click(row("G02"));
+    act(() => runCommand("edit.delete"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G02"));
+  });
+
+  test("the Delete key inside the Object Browser asks to delete the selected object", async () => {
+    loadObjects();
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G05"));
+    await user.keyboard("{Delete}");
+    expect(await screen.findByText(msg("confirm.delete", { name: "G05" }))).toBeDefined();
+  });
+
+  test("a failed delete is reported", async () => {
+    loadObjects();
+    renderOb();
+    spies.remove.mockRejectedValueOnce(new ApiError({ status: 404, code: "NOT_FOUND", text: "ไม่พบ" }));
+    await user.click(row("G01"));
+    act(() => runCommand("object.delete"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "NOT_FOUND")).toBe(true));
+  });
+});
+
+describe("Copy, Cut and Paste", () => {
+  test("Copy then Paste inserts <name>_1 with Define Properties and the same NORAD", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.copy")));
+    await user.click(button(t("ob.paste")));
+    expect(spies.insert).toHaveBeenCalledWith({ class: "Satellite", method: "Define Properties", name: "G01_1", norad: 40101 });
+  });
+
+  test("uses _2 when G01_1 is taken, ignoring case, and _3 after that", async () => {
+    const doc = makeScenarioDoc();
+    (doc.objects as { class: string; name: string; norad?: number }[]).push({ class: "Satellite", name: "g01_1", norad: 40101 }, { class: "Constellation", name: "G01_2" });
+    loadObjects({ doc });
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.copy")));
+    await user.click(button(t("ob.paste")));
+    expect(spies.insert).toHaveBeenCalledWith({ class: "Satellite", method: "Define Properties", name: "G01_3", norad: 40101 });
+  });
+
+  test("a copy can be pasted again, and the pasted satellite is selected", async () => {
+    loadObjects();
+    spies.insert.mockResolvedValueOnce([satPath("G01_1")]);
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.copy")));
+    await user.click(button(t("ob.paste")));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("G01_1")));
+    await user.click(button(t("ob.paste")));
+    expect(spies.insert).toHaveBeenCalledTimes(2);
+    expect(useClipboard.getState().content).toEqual({ mode: "copy", paths: [satPath("G01")] });
+  });
+
+  test("Cut then Paste on a folder moves the satellite into the group through POST /groups", async () => {
+    loadObjects();
+    useScenario.setState({ setGroup: useScenario.getInitialState().setGroup } as never);
+    const f = stubFetch({
+      "POST /api/scenarios/S1/groups": { json: { name: "Mine", etag: "e2" }, headers: { ETag: '"e2"' } },
+      "GET /api/scenarios/S1": { json: makeScenarioDoc(), headers: { ETag: '"e2"' } },
+      "GET /api/scenarios/S1/objects": { json: makeTree() },
+    });
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.cut")));
+    await user.click(row("Mine"));
+    await user.click(button(t("ob.paste")));
+    await waitFor(() => expect(f.count("POST /api/scenarios/S1/groups")).toBe(1));
+    const call = f.calls.find((c) => c.method === "POST")!;
+    expect(call.body).toEqual({ name: "Mine", members: [satPath("G01")] });
+    expect(call.headers.get("If-Match")).toBe('"e1"');
+    await waitFor(() => expect(useClipboard.getState().content).toBeNull());
+  });
+
+  test("Cut + Paste keeps the folder's members and adds the cut ones once", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G03"));
+    await user.click(button(t("ob.cut")));
+    await user.click(row("GPS sats"));
+    await user.click(button(t("ob.paste")));
+    expect(spies.setGroup).toHaveBeenCalledWith("GPS sats", [satPath("G01"), satPath("G02"), satPath("G03")]);
+    spies.setGroup.mockClear();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.cut")));
+    await user.click(row("GPS sats"));
+    await user.click(button(t("ob.paste")));
+    expect(spies.setGroup).toHaveBeenCalledWith("GPS sats", [satPath("G01"), satPath("G02")]);
+  });
+
+  test("Paste of a cut is disabled unless a folder is selected", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.cut")));
+    await user.click(row("G02"));
+    expect(button(t("ob.paste")).getAttribute("aria-disabled")).toBe("true");
+    expect(isEnabled("edit.paste")).toBe(false);
+    await user.click(button(t("ob.paste")));
+    expect(spies.setGroup).not.toHaveBeenCalled();
+    await user.click(row("Mine"));
+    expect(button(t("ob.paste")).getAttribute("aria-disabled")).toBeNull();
+  });
+
+  test("Paste is disabled while the clipboard is empty", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("Mine"));
+    expect(isEnabled("edit.paste")).toBe(false);
+  });
+
+  test("Cut and Copy work on satellites only", async () => {
+    loadObjects();
+    renderOb();
+    for (const name of ["THBK", "GPS", "S1", "Mine"]) {
+      await user.click(row(name));
+      expect(isEnabled("edit.cut"), name).toBe(false);
+      expect(isEnabled("edit.copy"), name).toBe(false);
+    }
+    await user.click(row("G04"));
+    expect(isEnabled("edit.cut")).toBe(true);
+    expect(isEnabled("edit.copy")).toBe(true);
+  });
+
+  test("opening another scenario empties the clipboard", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.copy")));
+    expect(useClipboard.getState().content).not.toBeNull();
+    act(() => useScenario.setState({ name: "S2" }));
+    expect(useClipboard.getState().content).toBeNull();
+    expect(isEnabled("edit.paste")).toBe(false);
+  });
+
+  test("a satellite removed after it was cut is not moved", async () => {
+    loadObjects();
+    renderOb();
+    useClipboard.getState().set("cut", [satPath("Gone")]);
+    await user.click(row("Mine"));
+    await user.click(button(t("ob.paste")));
+    expect(spies.setGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe("New Group", () => {
+  test("asks for a name and creates an empty group", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.newGroup")));
+    const dialog = await screen.findByRole("dialog", { name: t("ob.newGroup") });
+    await user.type(within(dialog).getByRole("textbox", { name: t("field.name") }), "Test sats");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.setGroup).toHaveBeenCalledWith("Test sats", []));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  test("an empty name and a name already used by a group (any case) are refused in the field", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.newGroup")));
+    const dialog = await screen.findByRole("dialog");
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") });
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    expect(within(dialog).getByRole("alert").textContent).toBe(msg("ob.groupNameEmpty"));
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    await user.type(field, "mine");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    expect(within(dialog).getByRole("alert").textContent).toBe(msg("ob.groupNameTaken", { name: "mine" }));
+    expect(spies.setGroup).not.toHaveBeenCalled();
+  });
+
+  test("a server 422 or 409 lands on the field and keeps the dialog open", async () => {
+    loadObjects();
+    renderOb();
+    spies.setGroup.mockRejectedValueOnce(new ApiError({ status: 422, code: "SCENARIO_INVALID", text: "ชื่อกลุ่มต้องไม่ว่าง", field: "name" }));
+    await user.click(button(t("ob.newGroup")));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: t("field.name") }), "X");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    expect((await within(dialog).findByRole("alert")).textContent).toBe("ชื่อกลุ่มต้องไม่ว่าง");
+    expect(screen.getByRole("dialog")).toBeDefined();
+  });
+
+  test("Cancel closes it without a request", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.newGroup")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(spies.setGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe("Rename", () => {
+  test("opens with the current name; a valid new name renames and keeps the object selected under its new path", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    act(() => runCommand("object.rename"));
+    const dialog = await screen.findByRole("dialog", { name: t("menu.object.rename") });
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") }) as HTMLInputElement;
+    expect(field.value).toBe("G01");
+    await user.clear(field);
+    await user.type(field, "GPS01");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.rename).toHaveBeenCalledWith("Satellite", "G01", "GPS01"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("GPS01")));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  test("a name with a space, a dot or more than 32 characters is refused before any request", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    act(() => runCommand("object.rename"));
+    const dialog = await screen.findByRole("dialog");
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") });
+    for (const bad of ["bad name", "a.b", "", "x".repeat(33)]) {
+      await user.clear(field);
+      if (bad !== "") await user.type(field, bad);
+      await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+      expect(within(dialog).getByRole("alert").textContent, JSON.stringify(bad)).toBe(msg("ob.nameInvalid"));
+    }
+    expect(spies.rename).not.toHaveBeenCalled();
+  });
+
+  test("a 409 from the server lands on the field and the dialog stays open", async () => {
+    loadObjects();
+    renderOb();
+    spies.rename.mockRejectedValueOnce(new ApiError({ status: 409, code: "NAME_EXISTS", text: "มี object ชื่อ G02 อยู่แล้ว", field: "new_name" }));
+    await user.click(row("G01"));
+    act(() => runCommand("object.rename"));
+    const dialog = await screen.findByRole("dialog");
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") });
+    await user.clear(field);
+    await user.type(field, "G02");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    expect((await within(dialog).findByRole("alert")).textContent).toBe("มี object ชื่อ G02 อยู่แล้ว");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  test("the same name just closes the dialog", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    act(() => runCommand("object.rename"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(spies.rename).not.toHaveBeenCalled();
+  });
+
+  test("is disabled for a folder and for the scenario, with a Thai reason for the folder", async () => {
+    loadObjects();
+    renderOb();
+    expect(isEnabled("object.rename")).toBe(false);
+    await user.click(row("S1"));
+    expect(isEnabled("object.rename")).toBe(false);
+    await user.click(row("Mine"));
+    expect(isEnabled("object.rename")).toBe(false);
+    await user.click(row("THBK"));
+    expect(isEnabled("object.rename")).toBe(true);
+  });
+});
+
+describe("Find", () => {
+  test("opens from the toolbar and from edit.find, and Escape closes it", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    expect(screen.getByRole("dialog", { name: t("ob.find") })).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: t("ob.findWhat") }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: t("ob.find") })).toBeNull();
+    act(() => runCommand("edit.find"));
+    expect(screen.getByRole("dialog", { name: t("ob.find") })).toBeDefined();
+  });
+
+  test("Ctrl+F inside the Object Browser opens it", async () => {
+    loadObjects();
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G01"));
+    await user.keyboard("{Control>}f{/Control}");
+    expect(screen.getByRole("dialog", { name: t("ob.find") })).toBeDefined();
+  });
+
+  test("g0 selects the first match and Next walks through them and wraps; Previous goes back", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g0");
+    await user.click(screen.getByRole("button", { name: t("ob.findNext") }));
+    expect(selected()).toEqual(["G01"]);
+    expect(useSelection.getState().activePath).toBe(satPath("G01"));
+    const seen: (string | null)[] = [];
+    for (let i = 0; i < 5; i++) {
+      await user.click(screen.getByRole("button", { name: t("ob.findNext") }));
+      seen.push(selected()[0]);
+    }
+    expect(seen).toEqual(["G02", "G03", "G04", "G05", "G01"]);
+    await user.click(screen.getByRole("button", { name: t("ob.findPrevious") }));
+    expect(selected()).toEqual(["G05"]);
+  });
+
+  test("Enter in the box finds the next match and Shift+Enter the previous", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g0{Enter}");
+    expect(selected()).toEqual(["G01"]);
+    await user.keyboard("{Enter}");
+    expect(selected()).toEqual(["G02"]);
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(selected()).toEqual(["G01"]);
+  });
+
+  test("changing the text starts again from the first match", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    const box = screen.getByRole("textbox", { name: t("ob.findWhat") });
+    await user.type(box, "g0{Enter}{Enter}{Enter}");
+    expect(selected()).toEqual(["G03"]);
+    await user.clear(box);
+    await user.type(box, "G0{Enter}");
+    expect(selected()).toEqual(["G01"]);
+  });
+
+  test("finds by PRN when the satellite was renamed", async () => {
+    const tree = makeTree({ groups: [], loose: ["Alpha"] });
+    const doc = makeScenarioDoc();
+    (doc.objects as { class: string; name: string; norad?: number }[]).push({ class: "Satellite", name: "Alpha", norad: 40103 });
+    loadObjects({ tree, doc });
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g03{Enter}");
+    expect(selected()).toEqual(["Alpha"]);
+  });
+
+  test("a match inside a collapsed folder opens the folder", async () => {
+    loadObjects();
+    renderOb();
+    await user.dblClick(row("GPS sats"));
+    expect(hasRow("G02")).toBe(false);
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "g02{Enter}");
+    expect(hasRow("G02")).toBe(true);
+    expect(selected()).toEqual(["G02"]);
+  });
+
+  test("a folder can be found and selected", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "mine{Enter}");
+    expect(selected()).toEqual(["Mine"]);
+  });
+
+  test("no match says so in Thai and changes nothing", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G05"));
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "zzz{Enter}");
+    expect(screen.getByText(msg("ob.findNoMatch", { query: "zzz" }))).toBeDefined();
+    expect(selected()).toEqual(["G05"]);
+  });
+
+  test("focus stays in the box so Enter can keep going", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    const box = screen.getByRole("textbox", { name: t("ob.findWhat") });
+    await user.type(box, "g0{Enter}");
+    expect(document.activeElement).toBe(box);
+  });
+
+  test("Find is unavailable without a scenario", () => {
+    renderOb();
+    expect(isEnabled("edit.find")).toBe(false);
+  });
+});
+
+describe("keyboard", () => {
+  test("ArrowDown and ArrowUp move the selection and the focus; Home and End jump", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    await user.keyboard("{ArrowDown}");
+    expect(selected()).toEqual(["G02"]);
+    expect(document.activeElement).toBe(row("G02"));
+    expect(useSelection.getState().activePath).toBe(satPath("G02"));
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(selected()).toEqual(["GPS sats"]);
+    await user.keyboard("{End}");
+    expect(selected()).toEqual(["G05"]);
+    await user.keyboard("{Home}");
+    expect(selected()).toEqual(["S1"]);
+    await user.keyboard("{ArrowUp}");
+    expect(selected()).toEqual(["S1"]);
+  });
+
+  test("only the selected row is a tab stop; with no selection it is the first row", async () => {
+    loadObjects();
+    renderOb();
+    expect(treeitems().map((r) => r.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1, -1, -1, -1]);
+    await user.click(row("G02"));
+    expect(treeitems().filter((r) => r.tabIndex === 0).map((r) => r.textContent)).toEqual(["G02"]);
+  });
+
+  test("ArrowLeft collapses an open folder, then climbs to the parent; ArrowRight opens, then goes to the first child", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("GPS sats"));
+    await user.keyboard("{ArrowLeft}");
+    expect(hasRow("G01")).toBe(false);
+    expect(selected()).toEqual(["GPS sats"]);
+    await user.keyboard("{ArrowRight}");
+    expect(hasRow("G01")).toBe(true);
+    expect(selected()).toEqual(["GPS sats"]);
+    await user.keyboard("{ArrowRight}");
+    expect(selected()).toEqual(["G01"]);
+    await user.keyboard("{ArrowRight}");
+    expect(selected()).toEqual(["G01"]);
+    await user.keyboard("{ArrowLeft}");
+    expect(selected()).toEqual(["GPS sats"]);
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(selected()).toEqual(["S1"]);
+    await user.keyboard("{ArrowLeft}");
+    expect(names()).toEqual(["S1"]);
+  });
+
+  test("Enter opens Properties of the focused object", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G04"));
+    await user.keyboard("{Enter}");
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: satPath("G04"), name: "G04" });
+  });
+
+  test("Space toggles Show of the focused object, once", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G04"));
+    await user.keyboard(" ");
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    expect(spies.patchObject).toHaveBeenCalledWith("Satellite", "G04", { graphics2d: { show: false }, graphics3d: { show: false } });
+  });
+
+  test("Space does nothing on a folder, a hidden satellite or while the checkbox column is off", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("Mine"));
+    await user.keyboard(" ");
+    await user.click(row("G03"));
+    await user.keyboard(" ");
+    expect(spies.patchObject).not.toHaveBeenCalled();
+    act(() => runCommand("ob.onOffToggles"));
+    await user.click(row("G04"));
+    await user.keyboard(" ");
+    expect(spies.patchObject).not.toHaveBeenCalled();
+  });
+});
+
+describe("toolbar and columns", () => {
+  test("has Properties, Graphics Color Selectors, Graphics On/Off Toggles, New Group, Cut, Copy, Paste, Delete, Find, Expand All, Collapse All in that order", () => {
+    loadObjects();
+    renderOb();
+    const bar = screen.getByRole("toolbar", { name: t("window.objectBrowser") });
+    expect(within(bar).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Properties", "Graphics Color Selectors", "Graphics On/Off Toggles", "New Group", "Cut", "Copy", "Paste", "Delete", "Find", "Expand All", "Collapse All",
+    ]);
+  });
+
+  test("Graphics Color Selectors hides and shows the colour boxes", async () => {
+    loadObjects();
+    renderOb();
+    const toggle = button(t("ob.graphicsColorSelectors"));
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(within(row("G01")).queryByRole("img", { name: new RegExp(t("field.color")) })).toBeNull();
+    expect(within(row("G01")).queryByRole("checkbox")).not.toBeNull();
+    await user.click(toggle);
+    expect(swatch("G01")).toBeDefined();
+  });
+
+  test("Graphics On/Off Toggles hides and shows the checkboxes", async () => {
+    loadObjects();
+    renderOb();
+    const toggle = button(t("ob.graphicsOnOffToggles"));
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(within(row("G01")).queryByRole("checkbox")).toBeNull();
+    expect(swatch("G01")).toBeDefined();
+    await user.click(toggle);
+    expect(checkbox("G01")).toBeDefined();
+  });
+
+  test("every toolbar button is aria-disabled until its command is usable", () => {
+    renderOb();
+    for (const key of ["ob.properties", "ob.newGroup", "ob.cut", "ob.copy", "ob.paste", "ob.delete", "ob.find", "ob.expandAll", "ob.collapseAll"] as const) {
+      expect(button(t(key)).getAttribute("aria-disabled"), key).toBe("true");
+    }
+  });
+});
+
+describe("flagged satellites", () => {
+  test("ob.showFlagged keeps only the flagged satellites and the folders that hold one; running it again undoes it", () => {
+    loadObjects({ tree: makeTree({ groups: [{ group: "GPS sats", children: ["G01", "G04"] }, { group: "Mine", children: ["G02"] }], loose: ["G03", "G05"] }) });
+    renderOb();
+    act(() => runCommand("ob.showFlagged"));
+    expect(names()).toEqual(["S1", "GPS sats", "G04", "G03"]);
+    act(() => runCommand("ob.showFlagged"));
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G04", "Mine", "G02", "G03", "G05"]);
+  });
+
+  test("while it is on, a strip says so and clears it", async () => {
+    loadObjects();
+    renderOb();
+    act(() => runCommand("ob.showFlagged"));
+    const strip = screen.getByRole("status");
+    expect(strip.textContent).toContain(t("status.flaggedSatellites"));
+    await user.click(within(strip).getByRole("button"));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(hasRow("THBK")).toBe(true);
+  });
+
+  test("when nothing is flagged it says so", () => {
+    loadObjects({ catalog: [entry(1), entry(2), entry(3), entry(4), entry(5)] });
+    renderOb();
+    act(() => runCommand("ob.showFlagged"));
+    expect(screen.getByText(msg("ob.noFlagged"))).toBeDefined();
+  });
+});
+
+describe("commands", () => {
+  test("every Object Browser command is registered while it is open and gone when it closes", () => {
+    loadObjects();
+    const ids = ["edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.find", "object.properties", "object.rename", "object.delete",
+                 "ob.newGroup", "ob.expandAll", "ob.collapseAll", "ob.colorSelectors", "ob.onOffToggles", "ob.showFlagged"] as const;
+    for (const id of ids) expect(isRegistered(id), id).toBe(false);
+    const { unmount } = renderOb();
+    for (const id of ids) expect(isRegistered(id), id).toBe(true);
+    unmount();
+    for (const id of ids) expect(isRegistered(id), id).toBe(false);
+  });
+
+  test("does not register object.zoomTo, object.access or object.reportGraphManager", () => {
+    loadObjects();
+    renderOb();
+    for (const id of ["object.zoomTo", "object.access", "object.reportGraphManager"] as const) expect(isRegistered(id), id).toBe(false);
+  });
+
+  test("disabled commands explain why in Thai", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("THBK"));
+    const { commandTooltip } = await import("../../src/commands");
+    expect(commandTooltip("edit.copy")).toBe(msg("ob.satelliteOnly"));
+    await user.click(row("Mine"));
+    expect(commandTooltip("object.rename")).toBe(msg("ob.groupUnsupported"));
+  });
+
+  test("the menu bar's Edit commands see the selection", async () => {
+    loadObjects();
+    renderOb();
+    await user.click(row("G01"));
+    act(() => invalidateCommands());
+    expect(isEnabled("edit.copy")).toBe(true);
+    act(() => runCommand("edit.copy"));
+    expect(useClipboard.getState().content).toEqual({ mode: "copy", paths: [satPath("G01")] });
+  });
+});
+
+describe("a long tree", () => {
+  // jsdom has no layout: give the scroll area a height, let it know how tall the list is, and let it scroll the way a browser does
+  // (the scroll event comes later, not inside the call)
+  const saved: [string, PropertyDescriptor | undefined][] = [];
+  const polyfill = () => {
+    const define = (name: string, descriptor: PropertyDescriptor) => {
+      saved.push([name, Object.getOwnPropertyDescriptor(Element.prototype, name)]);
+      Object.defineProperty(Element.prototype, name, { configurable: true, ...descriptor });
+    };
+    const isScroller = (el: Element) => el.classList.contains("ob-scroll");
+    define("clientHeight", { get(this: Element) { return isScroller(this) ? 400 : 0; } });
+    define("scrollHeight", { get(this: Element) { return isScroller(this) ? parseFloat((this.firstElementChild as HTMLElement | null)?.style.height || "0") : 0; } });
+    define("scrollTo", {
+      value(this: Element, arg: { top?: number }) {
+        this.scrollTop = arg.top ?? 0;
+        setTimeout(() => this.dispatchEvent(new Event("scroll")), 0);
+      },
+    });
+  };
+  afterEach(() => {
+    for (const [name, descriptor] of saved.splice(0).reverse()) {
+      if (descriptor === undefined) delete (Element.prototype as unknown as Record<string, unknown>)[name];
+      else Object.defineProperty(Element.prototype, name, descriptor);
+    }
+  });
+
+  const long = () => {
+    const loose = Array.from({ length: 150 }, (_, i) => `S${String(i).padStart(3, "0")}`);
+    return loadObjects({ tree: makeTree({ groups: [], loose }), catalog: CATALOG });
+  };
+
+  test("only the rows near the viewport are in the DOM", () => {
+    polyfill();
+    long();
+    renderOb();
+    expect(treeitems().length).toBeGreaterThan(5);
+    expect(treeitems().length).toBeLessThan(80);
+    expect(hasRow("S149")).toBe(false);
+  });
+
+  test("End reaches the last row and scrolls it into view", async () => {
+    polyfill();
+    long();
+    renderOb();
+    await user.click(row("S000"));
+    await user.keyboard("{End}");
+    await waitFor(() => expect(hasRow("S149")).toBe(true));
+    expect(selected()).toEqual(["S149"]);
+    expect(useSelection.getState().activePath).toBe(satPath("S149"));
+    await waitFor(() => expect(document.activeElement).toBe(row("S149")));
+  });
+
+  test("Find brings a far-away match into view", async () => {
+    polyfill();
+    long();
+    renderOb();
+    await user.click(button(t("ob.find")));
+    await user.type(screen.getByRole("textbox", { name: t("ob.findWhat") }), "S149{Enter}");
+    await waitFor(() => expect(hasRow("S149")).toBe(true));
+    expect(selected()).toEqual(["S149"]);
+  });
+});
+
+describe("panel registration", () => {
+  test("registerObjectBrowserPanel puts the component on the objectBrowser kind and keeps its window settings", () => {
+    const before = getPanelDef("objectBrowser")!;
+    registerObjectBrowserPanel();
+    const def = getPanelDef("objectBrowser")!;
+    expect(def.component).toBe(ObjectBrowser);
+    expect(def).toMatchObject({ type: before.type, edge: before.edge, size: before.size, persist: true, scenarioBound: false, singleton: true });
+    expect(def.title({})).toBe(t("window.objectBrowser"));
+    registerObjectBrowserPanel();
+    expect(getPanelDef("objectBrowser")!.component).toBe(ObjectBrowser);
+  });
+});

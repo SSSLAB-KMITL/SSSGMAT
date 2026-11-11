@@ -42,6 +42,19 @@ const MESSAGES = {
   "job.failed": "งานล้มเหลว: {message}",
   "time.invalid": "รูปแบบเวลาไม่ถูกต้อง ตัวอย่าง: {example}",
 
+  // Object Browser (spec §7): ชื่อ object ใช้กติกาเดียวกับ server (NAME_PATTERN); ชื่อกลุ่มเป็นข้อความอิสระ แต่ไม่ว่างและไม่ซ้ำ (ไม่สนตัวพิมพ์)
+  "ob.nameInvalid": "ชื่อ object ใช้ได้เฉพาะตัวอักษร A-Z a-z ตัวเลข _ และ - ยาว 1 ถึง 32 ตัว",
+  "ob.groupNameEmpty": "ชื่อกลุ่มต้องไม่ว่าง",
+  "ob.groupNameTaken": "มีกลุ่มชื่อ \"{name}\" อยู่แล้ว (ชื่อกลุ่มไม่แยกตัวพิมพ์เล็กใหญ่)",
+  "ob.findNoMatch": "ไม่พบรายการที่ตรงกับ \"{query}\"",
+  "ob.noFlagged": "ไม่มีดาวที่ติดธงเตือน",
+  "ob.satelliteOnly": "v1 ตัด คัดลอก และวางได้เฉพาะดาว (Satellite)",
+  "ob.groupUnsupported": "v1 ยังไม่รองรับการเปลี่ยนชื่อหรือลบกลุ่ม",
+  "ob.rootUnsupported": "ทำกับ Scenario ไม่ได้ ใช้ได้กับ Facility, Constellation และ Satellite",
+  "ob.pasteNeedsFolder": "เลือกโฟลเดอร์กลุ่มที่จะวางดาวที่ตัดไว้",
+  "ob.nothingToPaste": "ยังไม่ได้คัดลอกหรือตัดดาว",
+  "ob.selectObject": "เลือก object ก่อน",
+
   // การเชื่อมต่อ server และดิสก์ (spec §12, §15)
   "server.disconnected": "ขาดการติดต่อกับ server ข้อมูลบนหน้านี้อาจไม่เป็นปัจจุบัน",
   "server.reconnecting": "กำลังเชื่อมต่อใหม่ในอีก {seconds} วินาที",

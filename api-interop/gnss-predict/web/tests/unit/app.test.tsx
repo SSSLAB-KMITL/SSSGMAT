@@ -12,6 +12,7 @@ import { useSaveAs } from "../../src/chrome/SaveAsDialog";
 import { useScenario } from "../../src/stores/scenario";
 import { useSettings } from "../../src/stores/settings";
 import { openScenario } from "./helpers/chrome";
+import { loadObjects } from "./helpers/objects";
 import { stubFetch } from "./helpers/fake-fetch";
 import { setUrl } from "./helpers/files";
 
@@ -98,6 +99,21 @@ test("App registers the view, window, animation, file and help commands, and the
   expect(isEnabled("analysis.access")).toBe(false);
   // และเมนูตามทัน: รายการ View ที่ลงทะเบียนแล้วไม่ aria-disabled
   expect(screen.getByRole("menubar")).toBeDefined();
+});
+
+test("App fills the Object Browser window with the scenario tree, and the status bar's flagged count filters it", async () => {
+  render(<App />);
+  await waitFor(() => expect(panelIds()).toContain("objectBrowser"));
+  expect(screen.queryAllByRole("treeitem")).toEqual([]);
+  expect(isEnabled("edit.find")).toBe(false);
+  act(() => void loadObjects());
+  await waitFor(() => expect(screen.getAllByRole("treeitem").map((r) => r.textContent)).toContain("G01"));
+  expect(isEnabled("edit.find")).toBe(true);
+  expect(document.querySelector('[data-focus-scope="objectBrowser"]')).not.toBeNull();
+  const flagged = screen.getByRole("button", { name: `${t("status.flaggedSatellites")}: 2` });
+  expect(flagged.getAttribute("aria-disabled")).toBeNull();
+  act(() => flagged.click());
+  await waitFor(() => expect(screen.getAllByRole("treeitem").map((r) => r.textContent)).toEqual(["S1", "G03", "G04"]));
 });
 
 test("App installs the shortcuts once: Ctrl+S is kept from the browser while mounted, and not after unmount", async () => {

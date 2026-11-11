@@ -427,6 +427,10 @@ const LABELS = {
   "ob.class.satellite": stk("Satellite", "B"),
   "ob.class.constellation": stk("Constellation", "B"),
   "ob.class.group": ours("Group"),
+  "ob.show": ours("Show"),
+  "ob.findWhat": ours("Find what"),
+  "ob.findNext": ours("Find Next"),
+  "ob.findPrevious": ours("Find Previous"),
 
   // ---------- Timeline View (spec §10, STK ref §D) ----------
   "timeline.globalTimeBar": stk("Global Time Bar", "D"),

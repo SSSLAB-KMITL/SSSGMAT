@@ -12,17 +12,19 @@ import { startWorkspaceFlow } from "./scenarioFiles";
 import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
 import { registerFilePanels } from "./windows/filePanels";
+import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
 import { Workspace } from "./Workspace";
 
 export function App() {
-  // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference),
-  // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
+  // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference), Object Browser
+  // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนตอนหน้าต่างเปิด), คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   useEffect(() => {
     const stopClock = startClock();
     const stopEvents = startEventWiring();
     const unregisterCommands = registerCoreCommands();
     const unregisterFileCommands = registerFileCommands();
     registerFilePanels();
+    registerObjectBrowserPanel();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
     return () => {
