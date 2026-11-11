@@ -458,6 +458,46 @@ def test_results_after_an_edit_hits_the_cache(client, s1, calls):
     assert calls.total == used
 
 
+def test_results_after_graphics_only_edit_hits_the_cache(client, s1_computed, calls):
+    """แก้สี/Show เปลี่ยน ETag แต่ไม่กระทบ engine: plan ที่แคชไว้ย้ายไปอยู่ใต้ ETag ใหม่ /results ครั้งถัดไป (ที่หน้าเว็บเรียกทุก event scenario) ไม่คำนวณใหม่"""
+    first = results(client)
+    used = calls.total
+    assert used == 2                                                               # propagate 1 + analyze 1 ของ /results ครั้งแรก
+    for obj, body in (("Satellite/G01", {"graphics2d": {"color": "#00ff00"}}), ("Satellite/G01", {"graphics3d": {"show": False}}),
+                      ("Facility/THBK", {"graphics2d": {"color": "#123456"}})):
+        before = etag_of(client)
+        r = patch(client, obj, body)
+        assert r.status_code == 200 and r.json()["results_stale"] is False
+        assert etag_of(client) != before                                           # ไฟล์เปลี่ยนจริง
+        assert results(client) == first                                            # ยัง current ทุกอย่างเหมือนเดิม
+        assert calls.total == used
+
+
+def test_graphics_edit_does_not_seed_the_cache_when_the_snapshot_changed(client, s1_computed, data_dir, calls):
+    """ย้ายแคชเฉพาะเมื่อ snapshot ยังเป็นตัวเดิม: snapshot หายไปแล้วต้องไม่ได้ plan เก่าไปใช้"""
+    assert results(client)["ephem"]["status"] == "current"
+    shutil.rmtree(data_dir / "orbits" / SNAPSHOT_ID)
+    assert patch(client, "Satellite/G01", {"graphics2d": {"color": "#00ff00"}}).json()["results_stale"] is True
+    j = results(client)
+    assert j["ephem"]["status"] == "missing" and j["error"]["code"] == "ORBIT_SOURCE_UNAVAILABLE"
+
+
+def test_carry_over_needs_same_etag_and_same_snapshot(client, s1_computed, data_dir):
+    cache = client.app.state.plans
+    cache.get(SC)
+    old_key = cache.key(SC)
+    tag = etag_of(client)
+    assert len(cache) == 1
+    cache.carry_over(old_key, "feedfacefeedface")                                  # ไม่ใช่ ETag ของไฟล์ตอนนี้
+    assert len(cache) == 1
+    gps = data_dir / "orbits" / SNAPSHOT_ID / "gps-ops.json"
+    gps.write_text(gps.read_text() + "\n")                                         # snapshot ไม่ใช่ตัวเดิมแล้ว
+    cache.carry_over(old_key, tag)
+    assert len(cache) == 1
+    cache.carry_over(("nope", "x", None), tag)                                     # ไม่มีของเดิมในแคช / ไม่มี scenario: ไม่ raise
+    assert len(cache) == 1
+
+
 def test_second_results_call_hits_cache(client, s1_computed, calls):
     first = results(client)
     assert calls.propagate == 1 and calls.analyze == 1

@@ -5,7 +5,8 @@
 
 การแก้ส่วนใหญ่ (สี, Show, คำอธิบาย, ช่องของหน้าเว็บ) ไม่กระทบสิ่งที่ engine อ่าน: เทียบผล `load_scenario` ของไฟล์เดิมกับเอกสารใหม่ ถ้าเท่ากัน
 fingerprint ย่อมเท่ากัน จึงตอบ `results_stale = False` โดยไม่คำนวณ plan หรือ catalog ใดเลย (ยกเว้นไม่มีโฟลเดอร์ snapshot: คำนวณ plan ไม่ได้
-ตามเดิมจึงนับว่า stale) ที่เหลือเทียบ fingerprint จาก `PlanCache` ซึ่งผลหลังเขียนครั้งหนึ่งเป็นผลก่อนเขียนของครั้งถัดไป
+ตามเดิมจึงนับว่า stale) และย้าย plan ที่แคชไว้ไปไว้ใต้ ETag ใหม่ (`carry_over`) เพื่อให้ `/results` ครั้งถัดไป ซึ่งหน้าเว็บเรียกทุก event `scenario`
+ไม่ต้องคำนวณใหม่ ที่เหลือเทียบ fingerprint จาก `PlanCache` ซึ่งผลหลังเขียนครั้งหนึ่งเป็นผลก่อนเขียนของครั้งถัดไป
 """
 
 from gnss_predict.errors import GnssPredictError
@@ -45,7 +46,9 @@ def write_tracked(store: ScenarioStore, bus: EventBus, plans: PlanCache, name: s
     fingerprint ก่อนเขียนอ่านจากไฟล์เดิมบนดิสก์ จึงต้องคำนวณก่อน `store.write` ผู้เรียกตรวจ If-Match กับเอกสารที่ตนใช้ก่อนเรียก
     (ให้ ETag เก่าได้ 412 ก่อนคำนวณอะไร) `store.write` ตรวจซ้ำใต้ล็อก ล้มเหลวทุกแบบ (404/412/422) raise ก่อนส่ง event"""
     if _engine_unchanged(store, name, doc):
+        old_key = plans.key(name)
         tag = store.write(name, doc, if_match)
+        plans.carry_over(old_key, tag)
         stale = False
     else:
         before = plans.fingerprint(name)

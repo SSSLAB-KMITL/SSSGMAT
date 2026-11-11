@@ -109,7 +109,7 @@ class PlanCache:
         with self._lock:
             return len(self._entries)
 
-    def _key(self, name: str) -> tuple:
+    def key(self, name: str) -> tuple:
         """(ชื่อ, ETag, ตัวตน snapshot) ของ scenario ตอนนี้ ไม่มี scenario -> ApiError 404"""
         directory = self._store.path(name)
         tag = self._store.current_etag(name)
@@ -120,20 +120,37 @@ class PlanCache:
     def get(self, name: str) -> Plans:
         """plan ของ scenario ตอนนี้ (จากแคชถ้า scenario.json และ snapshot ไม่เปลี่ยน) ไม่มี scenario -> ApiError 404
         ความล้มเหลวที่ engine ไม่ได้คาดไว้ raise ออกไป"""
-        key = self._key(name)
+        key = self.key(name)
         with self._lock:
             hit = self._entries.get(key)
             if hit is not None:
                 self._entries.move_to_end(key)
                 return hit
         plans = compute_plans(self._store.path(name), self._store.data_dir)
-        if self._key(name) == key:                          # scenario และ snapshot ไม่เปลี่ยนระหว่างคำนวณ
-            with self._lock:
-                self._entries[key] = plans
-                self._entries.move_to_end(key)
-                while len(self._entries) > self.size:
-                    self._entries.popitem(last=False)
+        if self.key(name) == key:                          # scenario และ snapshot ไม่เปลี่ยนระหว่างคำนวณ
+            self._put(key, plans)
         return plans
+
+    def _put(self, key: tuple, plans: Plans) -> None:
+        with self._lock:
+            self._entries[key] = plans
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.size:
+                self._entries.popitem(last=False)
+
+    def carry_over(self, old_key: tuple, new_etag: str) -> None:
+        """scenario.json เปลี่ยนแต่ engine เห็นเหมือนเดิม: ย้าย plan ที่แคชไว้ใต้ `old_key` (จาก `key` ก่อนเขียน) ไปไว้ใต้ ETag ใหม่
+        เพื่อให้ `/results` หลังแก้สีหรือ Show ไม่ต้องคำนวณใหม่ ไม่มีของเดิมในแคช = ไม่ทำอะไร ย้ายเฉพาะเมื่อตอนนี้ scenario มี ETag นี้
+        และ snapshot ยังเป็นตัวเดิม (ไม่งั้น plan เดิมใช้ไม่ได้)"""
+        name, _, identity = old_key
+        with self._lock:
+            plans = self._entries.get(old_key)
+        new_key = (name, new_etag, identity)
+        try:
+            if plans is not None and self.key(name) == new_key:
+                self._put(new_key, plans)
+        except Exception:                                   # เป็นแค่การเร่งความเร็ว เรียกหลังเขียนสำเร็จแล้ว ห้ามทำให้การแก้ตอบ error
+            pass
 
     def fingerprint(self, name: str) -> dict | None:
         """`Plans.fingerprint` ของ scenario ตอนนี้ ล้มเหลวทุกชนิดให้ None (รวมที่ engine ไม่ได้คาดไว้)
