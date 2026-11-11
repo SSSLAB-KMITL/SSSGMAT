@@ -599,3 +599,245 @@ body {
   gap: 6px;
   padding: 8px 12px;
 }
+
+/* ---------- ฟอร์ม (New Scenario Wizard, Save As) ---------- */
+.form {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.dlg-form {
+  min-width: 380px;
+  max-width: 520px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.form-label {
+  padding-top: 3px;
+}
+
+.form-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.form-input {
+  width: 100%;
+}
+
+.form-input[readonly] {
+  background: var(--menu-bg);
+  color: var(--text-muted);
+}
+
+.form-input:disabled {
+  background: var(--menu-bg);
+  color: var(--text-muted);
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.form-general {
+  padding: 2px 0;
+}
+
+.form-hint {
+  color: var(--text-muted);
+}
+
+.form .dlg-buttons {
+  margin-top: auto;
+  padding: 8px 0 0;
+}
+
+/* ---------- Welcome ---------- */
+.welcome {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.welcome-heading {
+  margin: 0 0 4px;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.welcome-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.welcome-recent {
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+}
+
+.link-btn {
+  padding: 1px 2px;
+  background: none;
+  color: var(--selected-bg);
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: 1px;
+}
+
+.welcome-table,
+.stkref-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.welcome-table th,
+.welcome-table td,
+.stkref-table th,
+.stkref-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.welcome-table th,
+.stkref-table th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+}
+
+.welcome-table th {
+  white-space: nowrap;
+}
+
+.welcome-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.welcome-daily {
+  text-align: center;
+}
+
+/* ---------- About ---------- */
+.about {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.about-versions {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.about-versions dt {
+  font-weight: 600;
+}
+
+.about-versions dd {
+  margin: 0;
+}
+
+.about-value {
+  font-family: var(--font-mono);
+}
+
+.about-note {
+  margin: 10px 0;
+}
+
+.about-heading {
+  margin: 0 0 4px;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.about-ours {
+  columns: 3 160px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+/* ---------- Help → STK UI Reference ---------- */
+.stkref {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.stkref-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stkref-filter {
+  flex: 0 1 260px;
+  font-family: var(--font-ui);
+}
+
+.stkref-count {
+  color: var(--text-muted);
+}
+
+.stkref-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.stkref-table thead th {
+  position: sticky;
+  top: 0;
+}
+
+.stkref-none {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-muted);
+}

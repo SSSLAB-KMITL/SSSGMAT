@@ -74,6 +74,27 @@ const MESSAGES = {
   "workbook.noWorkspace": "พื้นที่ทำงานยังไม่พร้อม จึงบันทึกการจัดวางหน้าต่างไม่ได้",
   "workbook.unknownKind": "ข้ามหน้าต่างชนิด \"{kind}\" ใน workbook เพราะโปรแกรมรุ่นนี้ไม่รู้จักหน้าต่างชนิดนี้",
 
+  // File → Save (บันทึกสำเร็จ; ที่ล้มเหลว saveWorkbook แจ้งเองแล้ว) และ File → Save As
+  "workbook.saved": "บันทึก workbook แล้ว",
+  "saveAs.workbookFailed": "บันทึก workbook ไม่สำเร็จ จึงยังไม่ได้ Save As (ดูรายละเอียดใน Message Viewer) แก้ปัญหาแล้วกด OK ใหม่ หรือกด Cancel",
+
+  // ชื่อ scenario และเวลาในหน้าต่างสร้างและ Save As (กติกาเดียวกับ server: ตัวอักษร A-Z a-z ตัวเลข _ - ยาว 1-32 ตัว)
+  "scenario.nameInvalid": "ชื่อ scenario ใช้ได้เฉพาะตัวอักษร A-Z a-z ตัวเลข _ และ - ยาว 1 ถึง 32 ตัว",
+
+  // New Scenario Wizard
+  "wizard.stopBeforeStart": "เวลา Stop ต้องอยู่หลังเวลา Start",
+  "wizard.noSnapshot": "ยังไม่มี snapshot ข้อมูลวงโคจร ใช้ Utilities → Fetch Orbit Data เพื่อดึงข้อมูลก่อนสร้าง scenario",
+  "wizard.orbitsFailed": "อ่านรายการ snapshot ข้อมูลวงโคจรไม่สำเร็จ: {message}",
+
+  // Welcome
+  "welcome.loading": "กำลังอ่านรายชื่อ scenario...",
+  "welcome.empty": "ยังไม่มี scenario ในโฟลเดอร์ data/scenarios/ กด Create a Scenario เพื่อสร้างอันแรก",
+  "welcome.listFailed": "อ่านรายชื่อ scenario ไม่สำเร็จ: {message}",
+
+  // Help → STK UI Reference
+  "stkRef.count": "แสดง {shown} จาก {total} รายการ",
+  "stkRef.noMatch": "ไม่พบรายการที่ตรงกับคำค้น",
+
   // หน้าต่างที่ยังไม่ได้ทำ (ตัวแทนชั่วคราวใน src/layout/panels.ts จนกว่างานของหน้าต่างนั้นจะลงทะเบียนของจริง)
   "panel.placeholder": "ยังไม่ทำ (งานถัดไป)",
 
