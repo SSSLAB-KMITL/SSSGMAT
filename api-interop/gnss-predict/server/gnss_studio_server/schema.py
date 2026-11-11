@@ -9,6 +9,7 @@
 """
 
 import re
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -293,6 +294,20 @@ def to_api_error(exc: ValidationError) -> ApiError:
         loc += ("class",)
     field = field_path(loc)
     return ApiError(422, "SCENARIO_INVALID", f"scenario.json ช่อง {field}: {_reason(first)}", field, first["msg"])
+
+
+OBJECT_MODELS = {"Facility": FacilityObj, "Satellite": SatelliteObj, "Constellation": ConstellationObj}
+
+
+def validate_object(cls: str, obj: Any, field_of: Callable[[str], str] = lambda field: field) -> None:
+    """ตรวจ object เดี่ยวด้วย model ของ class นั้น (ใช้กับ Insert และ Apply ของ Properties Browser) ผิด -> ApiError 422
+    `field` เป็น path ภายใน object (เช่น `position.lat_deg`) ส่งผ่าน `field_of` ก่อน เมื่อหน้าจอเรียกช่องต่างจากชื่อใน scenario.json"""
+    try:
+        OBJECT_MODELS[cls].model_validate(obj)
+    except ValidationError as exc:
+        first = exc.errors(include_url=False, include_input=False, include_context=True)[0]
+        field = field_of(field_path(tuple(first["loc"])))
+        raise ApiError(422, "SCENARIO_INVALID", f"ช่อง {field}: {_reason(first)}", field, first["msg"]) from None
 
 
 def validate_scenario(doc: Any) -> None:

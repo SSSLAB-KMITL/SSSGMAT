@@ -46,6 +46,27 @@ def snapshot(data_dir):
     return dest
 
 
+NEW_SCENARIO = {"name": "S1", "start": "2026-11-10T00:00:00Z", "stop": "2026-11-10T06:00:00Z", "snapshot": SNAPSHOT_ID}
+
+
+def _new_scenario(client, template):
+    r = client.post("/api/scenarios", json={**NEW_SCENARIO, "template": template})
+    assert r.status_code == 201, r.text
+    return r.json(), r.headers["ETag"].strip('"')
+
+
+@pytest.fixture
+def s1(client, snapshot):
+    """scenario "S1" จากแม่แบบ thbk-gnss (2026-11-10 00:00Z ถึง 06:00Z, snapshot 20261110T0000Z): (เอกสาร, ETag เปล่า)"""
+    return _new_scenario(client, "thbk-gnss")
+
+
+@pytest.fixture
+def s_empty(client, snapshot):
+    """scenario ชื่อ "S1" เหมือน s1 แต่จากแม่แบบ empty (ไม่มี object): (เอกสาร, ETag เปล่า) อย่าใช้คู่กับ s1 ในเทสต์เดียว"""
+    return _new_scenario(client, "empty")
+
+
 @pytest.fixture
 def boom_client_factory(no_web_dist):
     """สร้าง client ที่มี GET /api/_boom ซึ่ง raise exception ธรรมดา (ไว้ตรวจ handler 500) ต่อ data_dir ที่ส่งให้"""

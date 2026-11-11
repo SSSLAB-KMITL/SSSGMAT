@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from gnss_predict.catalog import build_catalog
+from gnss_predict.catalog import Catalog, build_catalog
 from gnss_predict.config import GNSS_GROUPS, SHELL_KM, STEP_S
 
 from .errors import ApiError
@@ -29,6 +29,8 @@ CONSTELLATIONS = (
     ("E", "Galileo", "#4fd47e"),
     ("C", "BeiDou", "#45c8ff"),
 )
+SYSTEM_COLORS = {system: color for system, _, color in CONSTELLATIONS}
+DEFAULT_COLOR = "#cccccc"                    # สีตั้งต้นของ object ที่ไม่มีสีของระบบ (Constellation ผสมหลายระบบ, ดาวที่กำหนดเอง)
 ANIMATION_TIME_STEP_S = 60
 ANIMATION_X_REAL_TIME = 60
 DEFAULT_PASS_S = 1800
@@ -83,16 +85,18 @@ def resolve_snapshot(data_dir: Path, snapshot: str | None) -> str:
     return snapshot
 
 
-def _facility() -> dict:
-    return {"class": "Facility", "name": THBK["name"], "description": "",
-            "position": {"type": "Geodetic", "lat_deg": THBK["lat_deg"], "lon_deg": THBK["lon_deg"], "alt_m": THBK["alt_m"]},
-            "constraints": {"elevation_angle_min_deg": THBK["elevation_angle_min_deg"]},
+def facility(name: str, lat_deg: float, lon_deg: float, alt_m: float, elevation_angle_min_deg: float) -> dict:
+    """Facility พร้อมกราฟิกตั้งต้น (ใช้ทั้งแม่แบบและ Insert ของ Object Browser)"""
+    return {"class": "Facility", "name": name, "description": "",
+            "position": {"type": "Geodetic", "lat_deg": lat_deg, "lon_deg": lon_deg, "alt_m": alt_m},
+            "constraints": {"elevation_angle_min_deg": elevation_angle_min_deg},
             "graphics2d": {"show": True, "color": FACILITY_COLOR, "marker_style": "Triangle", "inherit": True},
             "graphics3d": {"show": True}}
 
 
-def _satellite(prn: str, norad: int, color: str) -> dict:
-    return {"class": "Satellite", "name": prn, "norad": norad, "description": "",
+def satellite(name: str, norad: int, color: str) -> dict:
+    """ดาวพร้อมกราฟิกตั้งต้น (ชื่อดาวจาก catalog คือ PRN)"""
+    return {"class": "Satellite", "name": name, "norad": norad, "description": "",
             "graphics2d": {"show": True, "color": color, "line_style": "Solid", "line_width": 1, "marker_style": "Square",
                            "inherit": True,
                            "pass": {"lead_type": "Time", "lead_time_s": DEFAULT_PASS_S, "trail_type": "Time",
@@ -103,26 +107,36 @@ def _satellite(prn: str, norad: int, color: str) -> dict:
             "graphics3d": {"show": True, "orbit_system": "Fixed by Window"}}
 
 
-def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,
-                       stop: datetime) -> tuple[list[dict], list[dict], list[dict]]:
-    """(objects, accesses, groups) ของแม่แบบ thbk-gnss groups = โฟลเดอร์ใน Object Browser ละระบบ สมาชิกเรียงเหมือน assigned_objects"""
+def constellation(name: str, system: str | None, color: str, assigned_objects: list[str]) -> dict:
+    """Constellation ของเรา system เป็น None เมื่อสมาชิกมาจากหลายระบบหรือยังไม่มีสมาชิก"""
+    return {"class": "Constellation", "name": name, "system": system, "description": "", "color": color,
+            "assigned_objects": assigned_objects}
+
+
+def load_catalog(data_dir: Path, snapshot: str, start: datetime, stop: datetime, field: str = "snapshot") -> Catalog:
+    """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) ไม่มี snapshot หรือไม่มีไฟล์ OMM เลย
+    -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
     snapshot_dir = Path(data_dir) / ORBITS_DIR / snapshot
     systems = {system for system, group in GNSS_GROUPS.items() if (snapshot_dir / f"{group}.json").is_file()}
     if not systems:
-        raise ApiError(422, "ORBIT_SOURCE_UNAVAILABLE", f"snapshot {snapshot} ไม่มีไฟล์ข้อมูลวงโคจร (OMM) ของระบบใดเลย", "snapshot")
-    catalog = build_catalog(snapshot_dir, (start, stop), systems)
+        raise ApiError(422, "ORBIT_SOURCE_UNAVAILABLE", f"snapshot {snapshot} ไม่มีอยู่หรือไม่มีไฟล์ข้อมูลวงโคจร (OMM) ของระบบใดเลย", field)
+    return build_catalog(snapshot_dir, (start, stop), systems)
 
-    colors = {system: color for system, _, color in CONSTELLATIONS}
-    objects: list[dict] = [_facility()]
+
+def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,
+                       stop: datetime) -> tuple[list[dict], list[dict], list[dict]]:
+    """(objects, accesses, groups) ของแม่แบบ thbk-gnss groups = โฟลเดอร์ใน Object Browser ละระบบ สมาชิกเรียงเหมือน assigned_objects"""
+    catalog = load_catalog(data_dir, snapshot, start, stop)
+
+    objects: list[dict] = [facility(**THBK)]
     members: dict[str, list[str]] = {system: [] for system, _, _ in CONSTELLATIONS}
     for sat in catalog.satellites:
-        if sat.system not in colors:
+        if sat.system not in SYSTEM_COLORS:
             continue
-        objects.append(_satellite(sat.prn, sat.norad, colors[sat.system]))
+        objects.append(satellite(sat.prn, sat.norad, SYSTEM_COLORS[sat.system]))
         members[sat.system].append(f"*/Satellite/{sat.prn}")
     for system, name, color in CONSTELLATIONS:
-        objects.append({"class": "Constellation", "name": name, "system": system, "description": "", "color": color,
-                        "assigned_objects": members[system]})
+        objects.append(constellation(name, system, color, members[system]))
     groups = [{"name": f"{name} sats", "members": list(members[system])} for system, name, _ in CONSTELLATIONS]
     accesses = [{"from": f"*/Facility/{THBK['name']}", "to": [f"*/Constellation/{name}" for _, name, _ in CONSTELLATIONS],
                  "time_period": {"mode": "object"},

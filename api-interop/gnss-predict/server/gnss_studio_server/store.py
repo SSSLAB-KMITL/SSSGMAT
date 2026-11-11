@@ -47,6 +47,12 @@ def normalize_etag(value: str) -> str:
     return value.strip().strip('"')
 
 
+def check_etag(current: str, if_match: str | None) -> None:
+    """If-Match ไม่ตรงกับ ETag ปัจจุบัน -> ApiError 412 (detail คือ ETag ปัจจุบัน) None = ไม่ตรวจ"""
+    if if_match is not None and normalize_etag(if_match) != current:
+        raise ApiError(412, "ETAG_MISMATCH", "scenario ถูกแก้จากที่อื่นแล้ว โหลดใหม่ก่อนบันทึก", detail=current)
+
+
 def _write_atomic(path: Path, data: bytes) -> None:
     tmp = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex[:8]}")
     try:
@@ -181,8 +187,7 @@ class ScenarioStore:
                 current = etag((directory / SCENARIO_FILE).read_bytes())
             except FileNotFoundError:
                 raise ApiError(404, "NOT_FOUND", f"ไม่พบ scenario {name}") from None
-            if if_match is not None and normalize_etag(if_match) != current:
-                raise ApiError(412, "ETAG_MISMATCH", "scenario ถูกแก้จากที่อื่นแล้ว โหลดใหม่ก่อนบันทึก", detail=current)
+            check_etag(current, if_match)
             return self._commit(directory, self._prepare(name, doc))
 
     def create(self, name: str, doc: Any) -> str:

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from .config import Config
 from .errors import install_error_handlers
 from .log import make_logger
-from .routes import health, scenarios
+from .routes import health, objects, scenarios
 from .store import ScenarioStore
 
 
@@ -21,4 +21,5 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     install_error_handlers(app, web_root if web_root.is_dir() else None)
     app.include_router(health.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
+    app.include_router(objects.router, prefix="/api")
     return app

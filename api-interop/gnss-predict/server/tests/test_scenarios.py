@@ -45,14 +45,6 @@ def assert_error(r, status, code, field=None):
     return j
 
 
-@pytest.fixture
-def s1(client, snapshot, data_dir):
-    """scenario S1 จากแม่แบบ thbk-gnss: (doc, etag)"""
-    r = make(client)
-    assert r.status_code == 201, r.text
-    return r.json(), tag_of(r)
-
-
 # ---------- New: แม่แบบ ----------
 
 def test_new_from_template(client, snapshot):
