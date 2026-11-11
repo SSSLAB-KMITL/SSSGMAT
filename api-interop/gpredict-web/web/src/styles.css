@@ -786,6 +786,325 @@ body {
   border-left: 4px solid;
 }
 
+/* ---------------------------------------------------------------- module, properties and ground station dialogs */
+
+.spin-input.wide {
+  width: 7em;
+}
+.button.later,
+.button[aria-disabled="true"] {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+.right {
+  text-align: right;
+}
+.dialog-buttons.split {
+  justify-content: flex-start;
+}
+.grow {
+  flex: 1;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.check.later {
+  color: var(--text-dim);
+}
+.check-grid {
+  display: grid;
+  gap: 6px 14px;
+}
+.check-grid.three {
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+}
+.check-grid.four {
+  grid-template-columns: repeat(4, auto);
+  justify-content: start;
+}
+.props-header {
+  display: block;
+  margin-top: 2px;
+}
+.props-separator {
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Edit ground station data */
+.qth-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 6px 6px;
+  align-items: center;
+}
+.qth-wide {
+  grid-column: 2 / 5;
+}
+.qth-span2 {
+  grid-column: 2 / 4;
+}
+.qth-locator {
+  width: 7em;
+}
+
+/* Create new module / Edit module */
+.module-dialog {
+  gap: 4px;
+}
+.module-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.module-top {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.module-qth {
+  display: flex;
+  gap: 6px;
+}
+.module-qth select {
+  flex: 1;
+}
+
+.selector {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto 250px auto;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.selector > .search-box {
+  grid-area: 1 / 1;
+}
+.selector-group {
+  grid-area: 2 / 1;
+}
+.selector-hint {
+  grid-area: 1 / 3 / 3 / 4;
+  align-self: start;
+  margin: 0;
+}
+.sat-list.sel-available {
+  grid-area: 3 / 1;
+}
+.selector-buttons {
+  grid-area: 3 / 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+.sat-list.sel-chosen {
+  grid-area: 3 / 3;
+}
+.selector-notes {
+  grid-area: 4 / 1 / 5 / 4;
+  min-width: 0;
+}
+.selector-note {
+  margin: 0;
+  color: var(--text-dim);
+}
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-input {
+  flex: 1;
+  padding: 3px 24px;
+}
+.search-icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.search-clear {
+  position: absolute;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+}
+.search-clear[hidden] {
+  display: none;
+}
+.search-clear:hover {
+  background: var(--hover);
+}
+.sat-list {
+  height: 100%;
+  min-height: 0;
+}
+.sat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+.sat-row .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sat-empty {
+  padding: 8px 10px;
+  color: var(--text-dim);
+}
+
+/* Module properties */
+.dtabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.dtab {
+  position: relative;
+  top: 1px;
+  padding: 4px 14px;
+  font: inherit;
+  color: var(--text-dim);
+  background: var(--tab);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  cursor: default;
+}
+.dtab.active {
+  color: var(--text);
+  background: var(--window);
+  border-top: 2px solid var(--accent);
+}
+.props-page {
+  height: 440px;
+  overflow-y: auto;
+}
+.props-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  padding: 12px 14px 6px;
+}
+.props-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.layout-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.layout-thumb {
+  display: grid;
+  gap: 2px;
+  width: 200px;
+  height: 120px;
+  padding: 2px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.layout-thumb.empty {
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-dim);
+  background: var(--view);
+}
+.refresh-grid {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.props-separator.wide {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.map-pick {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.map-thumb {
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.colour-grid {
+  display: grid;
+  grid-template-columns: repeat(3, max-content max-content);
+  gap: 4px 10px;
+  align-items: center;
+  justify-content: start;
+}
+.button.colour {
+  padding: 3px 8px;
+}
+.swatch {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 14px;
+  border: 1px solid var(--border);
+  /* a chequerboard under the colour, so that a transparent colour can be seen to be one */
+  background-color: #ffffff;
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+}
+.swatch > span {
+  position: absolute;
+  inset: 0;
+}
+.shadow-row {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr max-content;
+  gap: 8px;
+  align-items: center;
+}
+.shadow-slider {
+  display: flex;
+}
+.shadow-slider input {
+  flex: 1;
+}
+.inline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.radio-row {
+  display: flex;
+  gap: 24px;
+}
+
 /* ---------------------------------------------------------------- after File → Quit (ของเรา) */
 
 .stopped {

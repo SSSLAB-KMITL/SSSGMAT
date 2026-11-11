@@ -1,6 +1,8 @@
 // The dialogs that are open (floating windows: several can be open, each once). Pure.
 
 export type Dialog =
+  | { kind: "newModule" } // File → New module: "Create new module"
+  | { kind: "editModule"; module: string } // Module menu → Configure: "Edit module"
   | { kind: "open" } // File → Open module: "Select a module"
   | { kind: "tle" } // Edit → Update TLE data from network: "TLE Update"
   | { kind: "help" } // Help → Online help

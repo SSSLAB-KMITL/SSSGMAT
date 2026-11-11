@@ -65,7 +65,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
     setLocal((l) => [...l, { id: `local:${nextLocalId.current++}`, level: "error", text }]);
   }, []);
 
-  /** (Re)read the modules, the open ones and the startup messages. Called after Open, Clone, Delete, Close and the TLE update (and by Task 18b after New and Configure). */
+  /** (Re)read the modules, the open ones and the startup messages. Called after Open, Clone, Delete, Close and the TLE update (and after New module). */
   const reloadModules = useCallback(async () => {
     try {
       const r = await getModules();
@@ -131,6 +131,11 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [select, config, saveConfig, addLocalError],
   );
 
+  // Edit module took the selected satellite out of the module
+  useEffect(() => {
+    if (config !== null && selected !== null && !config.satellites.includes(selected)) select(null);
+  }, [config, selected, select]);
+
   // Autotrack (ref §2): every tick, the target is the satellite above the horizon or else the one with the earliest AOS
   const autotracking = current !== null && autotrack.has(current);
   useEffect(() => {
@@ -195,10 +200,18 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const show = useCallback((d: Dialog) => setDialogs((l) => showDialog(l, d)), []);
   const hide = useCallback((d: Dialog) => setDialogs((l) => closeDialog(l, d)), []);
 
-  /** File → New module (Ctrl+N): the Create new module dialog (Task 18b) */
-  const newModule = useCallback(() => undefined, []);
-  /** Module menu → Configure: the Edit module dialog of `name` (Task 18b) */
-  const configureModule = useCallback((_name: string) => undefined, []);
+  /** File → New module (Ctrl+N): the Create new module dialog */
+  const newModule = useCallback(() => show({ kind: "newModule" }), [show]);
+  /** Module menu → Configure: the Edit module dialog of `name` (an open module: it is changed through `saveConfig`) */
+  const configureModule = useCallback((name: string) => show({ kind: "editModule", module: name }), [show]);
+
+  // the Edit module dialog changes the configuration of the tab that is shown: it goes when another tab is shown or its module closes
+  useEffect(() => {
+    setDialogs((l) => {
+      const kept = l.filter((d) => d.kind !== "editModule" || d.module === current);
+      return kept.length === l.length ? l : kept;
+    });
+  }, [current]);
 
   /** File → Quit (Ctrl+Q): stop the server; the page then says so */
   const quit = useCallback(async () => {
@@ -291,6 +304,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [reloadModules],
   );
   const deleted = useCallback(() => void reloadModules(), [reloadModules]);
+  const moduleSaved = useCallback(() => void reloadModules(), [reloadModules]);
   const tleUpdated = useCallback(() => {
     void reloadModules(); // the server reloaded the open modules with the new TLEs and dropped its start-up hint to update them
     reloadConfig();
@@ -360,7 +374,12 @@ function Main({ onStopped }: { onStopped: () => void }) {
         dialogs={dialogs}
         open={open}
         modules={modules}
+        current={current}
+        config={config}
+        saveConfig={saveConfig}
         hide={hide}
+        onCreated={opened}
+        onModuleSaved={moduleSaved}
         onOpened={opened}
         onCloned={cloned}
         onDeleted={deleted}
