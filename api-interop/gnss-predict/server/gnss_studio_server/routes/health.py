@@ -1,9 +1,10 @@
+import logging
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from gnss_predict.config import ENGINE_VERSION
@@ -11,7 +12,10 @@ from gnss_predict.errors import GmatNotFoundError
 from gnss_predict.run_gmat import find_gmat_console
 
 from ..config import Config
-from . import get_config
+from ..jobs import utcnow
+from ..scheduler import daily_status
+from ..settings import load as load_settings
+from . import get_config, get_logger
 
 router = APIRouter()
 
@@ -22,7 +26,7 @@ class Health(BaseModel):
     data_dir: str
     free_bytes: int | None
     writable: bool
-    daily: dict | None = None            # สถานะงานประจำวัน: ตัวตั้งเวลาเริ่มมีใน Task 11
+    daily: dict                          # สถานะงานประจำวัน: รูปแบบเดียวกับ event `daily` (scheduler.daily_status)
 
 
 def _gmat_found(config: Config) -> bool:
@@ -51,6 +55,7 @@ def _writable(data_dir: Path) -> bool:
 
 
 @router.get("/health", response_model=Health)
-def health(config: Config = Depends(get_config)) -> Health:
+def health(request: Request, config: Config = Depends(get_config), logger: logging.Logger = Depends(get_logger)) -> Health:
+    daily = daily_status(request.app.state.jobs, load_settings(config.data_dir, logger).daily, utcnow())
     return Health(engine_version=ENGINE_VERSION, gmat_found=_gmat_found(config), data_dir=str(config.data_dir),
-                  free_bytes=_free_bytes(config.data_dir), writable=_writable(config.data_dir))
+                  free_bytes=_free_bytes(config.data_dir), writable=_writable(config.data_dir), daily=daily)

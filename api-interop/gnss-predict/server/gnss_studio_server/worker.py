@@ -13,7 +13,8 @@
 ใน process ลูก SIGTERM (ยกเลิกหรือปิด server) ฆ่า GMAT ที่ยังทำงานอยู่ก่อนแล้วจึงออก: GMAT อยู่ใน session ของตัวเอง
 จะไม่ตายตาม process ลูก `kill_group` เป็นตัวกันการฆ่ากลุ่มผิดตัวเดียวที่ทั้ง process ลูกและ JobManager ใช้
 
-โมดูลนี้ import แค่ engine (ไม่ import fastapi/pydantic) process ลูกจึงเริ่มเร็ว
+โมดูลนี้ import แค่ engine (ไม่ import fastapi/pydantic) process ลูกจึงเริ่มเร็ว ยกเว้นงาน `daily` ที่นำเข้า `daily.py` ตอนรัน
+(ค่าตั้งของงานประจำวันอ่านใหม่ใน process ลูกด้วย `settings.load`)
 """
 
 import multiprocessing
@@ -55,11 +56,6 @@ class PipeOut:
 
     def put(self, item) -> None:
         self.conn.send(item)
-
-
-class NotImplementedJobError(GnssPredictError):
-    """kind ที่ลงทะเบียนแล้วแต่ยังไม่มีตัวงาน"""
-    code = "NOT_IMPLEMENTED"
 
 
 class _Gmat:
@@ -119,7 +115,11 @@ def _fetch(scenario_dir, data_dir, params, console, gmat):
 
 
 def _daily(scenario_dir, data_dir, params, console, gmat):
-    raise NotImplementedJobError("งานประจำวันยังไม่พร้อมใช้งานใน server รุ่นนี้")
+    # นำเข้าตอนใช้: daily ใช้แม่แบบและ store (pydantic/fastapi) ซึ่ง process ลูกของงานชนิดอื่นไม่ต้องโหลด
+    from . import daily, settings
+    out = daily.run_daily(data_dir, date.fromisoformat(params["for_date"]), settings.load(data_dir),
+                          datetime.now(timezone.utc), gmat.progress, console=console, on_gmat_start=gmat.started)
+    return out["path"], out["messages"], {"scenario": out["scenario"]}
 
 
 JOB_BODIES = {"fetch": _fetch, "propagate": _propagate, "analyze": _analyze, "validate": _validate, "daily": _daily}

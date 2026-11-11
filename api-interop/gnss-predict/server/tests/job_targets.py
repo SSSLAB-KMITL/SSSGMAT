@@ -16,3 +16,22 @@ def partial_message_then_exit(kind, scenario, params, data_dir, gmat_bin, out) -
     out.put(("progress", "gmat", 0.1))
     os.write(out.conn.fileno(), struct.pack("!i", 4096) + b"truncated")
     os._exit(5)
+
+
+def daily_offline(kind, scenario, params, data_dir, gmat_bin, out) -> None:
+    """worker.run_job ใน process ลูกจริง แต่ studio.fetch_snapshot ถูกแทนด้วยการคัดลอก snapshot ของ test (ห้ามใช้เน็ต)"""
+    import shutil
+    from pathlib import Path
+
+    from gnss_predict import studio
+    from gnss_studio_server import worker
+
+    source = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "studio" / "snapshot"
+
+    def fetch(data_dir, now, systems="GREC", progress=None, **kw):
+        dest = Path(data_dir) / "orbits" / now.strftime("%Y%m%dT%H%MZ")
+        shutil.copytree(source, dest, dirs_exist_ok=True)
+        return dest, []
+
+    studio.fetch_snapshot = fetch
+    worker.run_job(kind, scenario, params, data_dir, gmat_bin, out)

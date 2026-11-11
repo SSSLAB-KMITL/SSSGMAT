@@ -15,7 +15,6 @@
   - ผ่อนปรนเฉพาะสิ่งที่ไม่เสียหาย: อ่านแบบ utf-8-sig (BOM ที่โปรแกรมแก้ไขบางตัวใส่ให้), ข้ามช่องที่ไม่รู้จัก, ช่องอื่นที่หายได้ค่าตั้งต้น
     (`{"daily": {"enabled": false}}` จึงโหลดเป็นปิดเสมอ)
 - `save(data_dir, settings)`: เขียนแบบ atomic
-- `ignore_change`: ค่าตั้งต้นของ `app.state.settings_on_change` ที่ PUT /api/settings เรียกหลังบันทึกแล้ว (ตัวตั้งเวลาแทนที่ใน Task 11)
 """
 
 import json
@@ -134,7 +133,3 @@ def save(data_dir: Path, settings: Settings) -> None:
     root = Path(data_dir)
     root.mkdir(parents=True, exist_ok=True)
     write_atomic(root / SETTINGS_FILE, (json.dumps(settings.model_dump(), ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
-
-
-def ignore_change(new: Settings) -> None:
-    """ตัวตั้งต้นของ `app.state.settings_on_change`: ไม่ทำอะไร"""

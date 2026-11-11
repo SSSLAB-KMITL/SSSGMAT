@@ -12,6 +12,7 @@
 - pgid ที่ล้าสมัยอันตราย (GMAT จบแล้ว pid ถูกใช้ซ้ำได้): process ลูกส่ง pgid เป็น None ทันทีที่ GMAT ไม่ได้ทำงาน
   และ `kill_group` ไม่แตะ pgid <= 1 หรือกลุ่มของ server เอง
 - เปิด server (`start`): `recover` เปลี่ยน queued/running ที่ค้างบนดิสก์เป็น failed `INTERRUPTED` แล้ว `prune` ลบบันทึกที่จบเกิน 30 วัน
+  (ตัวตั้งเวลาของงานประจำวันเรียก `prune` ซ้ำวันละครั้ง server ที่เปิดค้างไว้นานจึงไม่สะสมบันทึกเก่า)
   ปิด server (`stop`): ฆ่างานที่รันอยู่ งานนั้นและงานที่ยังรอเป็น failed `INTERRUPTED`
 """
 
@@ -44,13 +45,13 @@ ACTIVE = ("queued", "running")
 FINISHED = ("succeeded", "failed", "cancelled")
 TERMINAL = ("result", "error")
 SYSTEM_LETTERS = "GREC"
-# params ของแต่ละ kind: ชื่อ -> บังคับหรือไม่ (daily จะมีค่าของตัวเองใน Task 11)
+# params ของแต่ละ kind: ชื่อ -> บังคับหรือไม่ (daily: for_date คือวัน D ที่พยากรณ์ YYYY-MM-DD)
 PARAMS = {
     "propagate": {},
     "analyze": {"facility": True},
     "validate": {"day": True, "sp3": False, "facility": False},
     "fetch": {"systems": False},
-    "daily": {},
+    "daily": {"for_date": True},
 }
 RECORD_FIELDS = ("id", "kind", "scenario", "params", "state", "progress", "messages", "result", "error",
                  "created_utc", "started_utc", "finished_utc", "origin", "gmat_pgid")
@@ -362,7 +363,7 @@ class JobManager:
             if not isinstance(value, str) or not NAME_RE.fullmatch(value):
                 raise _invalid(name, "ชื่อ Facility ต้องเป็นตัวอักษร A-Z a-z ตัวเลข _ หรือ - ยาว 1 ถึง 32 ตัว")
             return value
-        if name == "day":
+        if name in ("day", "for_date"):
             return check_day(value, name)
         if name == "sp3":
             root = self.data_dir.resolve()

@@ -213,7 +213,12 @@ def test_get_unknown_is_404(mgr_idle):
     ("fetch", None, {"systems": "GX"}, "systems"),
     ("fetch", None, {"systems": ""}, "systems"),
     ("fetch", None, {"systems": ["G"]}, "systems"),
-    ("daily", "S1", {}, "scenario"),
+    ("daily", "S1", {"for_date": "2026-11-12"}, "scenario"),
+    ("daily", None, {}, "for_date"),
+    ("daily", None, {"for_date": "20261112"}, "for_date"),
+    ("daily", None, {"for_date": "2026-02-30"}, "for_date"),
+    ("daily", None, {"for_date": 20261112}, "for_date"),
+    ("daily", None, {"for_date": "2026-11-12", "facility": "THBK"}, "facility"),
 ])
 def test_submit_rejects_bad_kind_and_params(mgr_idle, data_dir, s1, kind, scenario, params, field):
     with pytest.raises(ApiError) as e:
@@ -239,7 +244,7 @@ def test_submit_accepts_valid_params(mgr_idle, s1):
     assert mgr_idle.submit("validate", "S1", {"day": "2026-11-10", "sp3": "truth/x.sp3", "facility": "THBK"}).state == "queued"
     assert mgr_idle.submit("fetch", None, {"systems": "ge"}).params == {"systems": "GE"}
     assert mgr_idle.submit("fetch", None, {}).scenario is None
-    assert mgr_idle.submit("daily", None, {}).kind == "daily"
+    assert mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}).params == {"for_date": "2026-11-12"}
 
 
 # ---------- คิวเดียว ----------
@@ -458,10 +463,26 @@ def test_analyze_and_validate_arguments(data_dir, bus, s1, monkeypatch):
     assert kw["console"] == Path("/opt/gmat/GmatConsole") and callable(kw["on_gmat_start"])
 
 
-def test_daily_is_registered_but_not_implemented_yet(mgr_inline):
+def test_daily_runs_daily_run_daily(mgr_inline, data_dir, monkeypatch):
+    """งาน daily เรียก daily.run_daily (รายละเอียดอยู่ใน test_scheduler.py) ส่ง path ผลลัพธ์เทียบกับ data_dir และชื่อ scenario"""
+    from gnss_studio_server import daily
+    from gnss_studio_server.settings import Settings
+    calls = []
+
+    def fake(data_dir_arg, for_date, settings, now, progress, *, console=None, on_gmat_start=None):
+        calls.append((Path(data_dir_arg), for_date, settings, now.tzinfo is not None, console))
+        progress("fetch.omm", 0.1)
+        return {"path": Path(data_dir_arg) / "daily" / "thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112",
+                "messages": [Message("DAILY_PUBLISHED", "info", "เสร็จ (test)")]}
+
+    monkeypatch.setattr(daily, "run_daily", fake)
     assert "daily" in worker.JOB_BODIES
-    j = wait_done(mgr_inline, mgr_inline.submit("daily", None, {}).id)
-    assert j.state == "failed" and j.error["code"] == "NOT_IMPLEMENTED" and j.error["text"]
+    j = wait_done(mgr_inline, mgr_inline.submit("daily", None, {"for_date": "2026-11-12"}).id)
+    assert j.state == "succeeded", j.error
+    assert j.result == {"path": "daily/thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112"}
+    assert [m["code"] for m in j.messages] == ["DAILY_PUBLISHED"]
+    (got,) = calls
+    assert got[0] == data_dir and got[1] == date(2026, 11, 12) and isinstance(got[2], Settings) and got[3]
 
 
 def test_worker_scenarios_dir_matches_store():
@@ -825,10 +846,19 @@ def test_app_wires_process_runner_with_gmat_bin(data_dir, no_web_dist):
 
 
 def test_app_starts_and_stops_jobs_with_lifespan(data_dir, no_web_dist):
+    """คิว job เริ่มก่อนและหยุดหลังตัวตั้งเวลา thread ของตัวตั้งเวลาจริงไม่ถูกเริ่ม (start/stop ถูกแทนด้วยตัวจด) และปิดงานประจำวันไว้
+    อีกชั้น: แอปที่เริ่ม background ต้องไม่สั่งงานประจำวันซึ่งดึงข้อมูลจริงใน process ลูกได้"""
+    from gnss_studio_server.settings import Daily, Settings, save
+    save(data_dir, Settings(daily=Daily(enabled=False)))
     write_record(data_dir, id="j-20261110T000000-aaaa", state="running")
     app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist))
+    job_thread = lambda: any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())      # noqa: E731
+    calls = []
+    app.state.scheduler.start = lambda: calls.append(("start", job_thread()))
+    app.state.scheduler.stop = lambda: calls.append(("stop", job_thread()))
     with TestClient(app) as c:
-        assert any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())
+        assert job_thread() and calls == [("start", True)]
         got = c.get("/api/jobs/j-20261110T000000-aaaa").json()
         assert got["state"] == "failed" and got["error"]["code"] == "INTERRUPTED"
-    assert not any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())
+    assert calls == [("start", True), ("stop", True)]
+    assert not job_thread()

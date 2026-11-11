@@ -13,7 +13,7 @@ from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
 from .routes import access, events, health, jobs, objects, orbits, results, scenarios, settings, validation
-from .settings import ignore_change
+from .scheduler import Scheduler
 from .store import ScenarioStore
 
 
@@ -22,19 +22,25 @@ SSE_PING_S = 15.0
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """เริ่มคิว job (recover, prune, thread) ตอนเปิด และหยุดตอนปิด เฉพาะเมื่อ start_background"""
+    """เริ่มคิว job (recover, prune, thread) แล้วตัวตั้งเวลา ตอนเปิด และหยุดกลับลำดับตอนปิด เฉพาะเมื่อ start_background
+
+    คิวต้องเริ่มก่อน: recover เปลี่ยนงานประจำวันที่ค้างเป็น INTERRUPTED ก่อน tick แรก ซึ่งจึงสั่งรอบที่ถูกขัดจังหวะใหม่ได้ทันที"""
     if not app.state.start_background:
         yield
         return
     app.state.jobs.start()
     try:
-        yield
+        app.state.scheduler.start()
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(app.state.scheduler.stop)
     finally:
         await asyncio.to_thread(app.state.jobs.stop)       # รอ GMAT/process ลูกจบได้ถึงไม่กี่วินาที ไม่บล็อก loop
 
 
 def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
-    """start_background=False ใน test: ไม่เริ่ม thread ของคิว job (job ที่ส่งเข้าไปค้าง queued) และตัวตั้งเวลา (Task 11)"""
+    """start_background=False ใน test: ไม่เริ่ม thread ของคิว job (job ที่ส่งเข้าไปค้าง queued) และของตัวตั้งเวลา"""
     config.data_dir.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="GNSS Studio", openapi_url="/api/openapi.json", docs_url="/api/docs", redoc_url=None,
                   lifespan=_lifespan)
@@ -47,7 +53,8 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.bus = EventBus(app.state.logger)
     app.state.jobs = JobManager(config.data_dir, app.state.bus, runner=ProcessRunner(gmat_bin=config.gmat_bin),
                                 logger=app.state.logger)
-    app.state.settings_on_change = ignore_change      # PUT /api/settings เรียกหลังบันทึก (ตัวตั้งเวลาแทนที่ใน Task 11)
+    app.state.scheduler = Scheduler(config.data_dir, app.state.jobs, bus=app.state.bus, logger=app.state.logger)
+    app.state.settings_on_change = app.state.scheduler.wake   # PUT /api/settings เรียกหลังบันทึก: tick ใหม่ทันที (อ่านค่าตั้งใหม่เอง)
     app.state.sse_ping_s = SSE_PING_S               # test ตั้งให้สั้นลงได้ (ต้องตั้งก่อนเปิด /api/events)
     web_root = config.web_dist.resolve()
     install_error_handlers(app, web_root if web_root.is_dir() else None)

@@ -34,7 +34,8 @@ def test_health_values(client):
     j = client.get("/api/health").json()
     assert isinstance(j["gmat_found"], bool)
     assert isinstance(j["free_bytes"], int) and j["free_bytes"] > 0
-    assert j["daily"] is None                                  # ตัวตั้งเวลาเริ่มมีใน Task 11
+    assert set(j["daily"]) == {"state", "last_run_utc", "next_run_utc", "for_date"}       # สถานะงานประจำวัน (หัวข้อ 8)
+    assert j["daily"]["state"] == "idle"
 
 
 def test_health_gmat_found_follows_config(data_dir, tmp_path, no_web_dist):

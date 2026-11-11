@@ -4,6 +4,7 @@ GMAT ปลอมตอบ `--version` ทันที (engine เรียก g
 ทุกการรอมีขอบเวลา ทั้งไฟล์ควรใช้เวลาไม่เกินราว 20 วินาที
 """
 
+import json
 import multiprocessing
 import os
 import threading
@@ -118,6 +119,24 @@ def test_cancelled_running_job_leaves_no_child_process(mgr_process, s1):
     with pytest.raises(ProcessLookupError):
         os.kill(child.pid, 0)                                            # ถูกเก็บกวาดแล้ว ไม่เหลือ zombie
     wait_until(lambda: not process_group_alive(pgid), timeout=2, what="GMAT ตาย")
+
+
+def test_daily_job_in_child_tracks_gmat_and_cancels(data_dir, fake_gmat_sleep):
+    """งาน daily ใน process ลูกจริง (fetch แทนด้วยการคัดลอก snapshot ของ test): นำเข้า daily ได้ใน process แบบ spawn,
+    pgid ของ GMAT ถึงคิวระหว่างขั้น propagate.gmat และ Stop ฆ่า GMAT ได้เหมือน job ชนิดอื่น"""
+    mgr = _manager(data_dir, fake_gmat_sleep, target=job_targets.daily_offline)
+    try:
+        j = mgr.submit("daily", None, {"for_date": "2026-11-12"}, origin="scheduler")
+        pgid = wait_gmat_pgid(mgr, j.id)
+        assert mgr.get(j.id).progress["stage"] == "propagate.gmat"
+        doc = json.loads((data_dir / "scenarios" / "daily_20261112" / "scenario.json").read_text())
+        assert doc["daily"]["for_date"] == "2026-11-12"
+        assert mgr.cancel(j.id).state == "cancelled"
+        wait_until(lambda: not process_group_alive(pgid), timeout=2, what="GMAT ตาย")
+        assert not (data_dir / "daily").exists()
+    finally:
+        mgr.stop()
+    assert multiprocessing.active_children() == [] and no_job_thread()
 
 
 def test_gmat_failure_in_child_reports_code_and_detail(data_dir, s1, tmp_path):
