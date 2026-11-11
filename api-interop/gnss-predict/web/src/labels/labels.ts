@@ -1,0 +1,531 @@
+// ตารางชื่อเดียวของทุกข้อความที่เห็นบนจอ (spec §13): เมนู ปุ่ม หน้าต่าง หน้า Properties ช่อง ตัวเลือก ฯลฯ
+// ทุกที่ในแอปเรียก t("<key>") ไม่เขียนข้อความตรงๆ
+//
+// กติกาของ source
+//   stk  = ข้อความนี้พบตรงตัว (ตัวพิมพ์เป็นตัวตัดสิน) ใน docs/2026-11-11-gnss-studio-stk-reference.md และ reference
+//          ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู) `ref` ระบุหัวข้อที่พบ
+//   ours = ที่เหลือทั้งหมด แม้ฟังดูเหมือน STK (เช่น "Save", "Basic - Description") เพราะ reference ไม่ได้ยืนยัน
+//          UI "Help → STK UI Reference" แสดงทั้งสองกลุ่ม และ About ติดป้าย "Added by GNSS Studio" ที่รายการ ours
+// test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
+//
+// การตั้งชื่อคีย์: `<กลุ่ม>.<ที่ใช้>.<ชื่อ>` แบบ camelCase กลุ่มที่ใช้: menu anim toolbar window page field option ob
+// timeline mv status dialog help คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
+//   - เมนูย่อย View → Toolbars ใช้ toolbar.* เป็นชื่อแถบ
+//   - เมนูคลิกขวาของ Object Browser ใช้ menu.object.* ชุดเดียวกับเมนูที่ตั้งชื่อตามชนิด object
+//   - ช่อง Time Step และ X Real Time Multiplier ในหน้า Basic - Time ใช้ anim.timeStep / anim.xRealTimeMultiplier
+//   - ช่อง Start / Stop ในหน้า Wizard ใช้ field.analysisStart / field.analysisStop
+//   - ชื่อแถบ Message Viewer ที่ไอคอนแถบสถานะใช้ window.messageViewer
+//   - ชื่อหน้าต่าง About ใช้ help.about
+// ข้อความที่มี {n} หรือ {name} ต้องเรียก t(key, { n: 2 })
+
+import { ENUMS } from "../api/enums.gen";
+
+export type Label = { text: string; source: "stk" | "ours"; ref?: string };
+type Section = "A" | "B" | "C" | "D" | "E" | "F";
+
+const stk = (text: string, section: Section): Label => ({ text, source: "stk", ref: `STK ref §${section}` });
+const ours = (text: string): Label => ({ text, source: "ours" });
+
+const LABELS = {
+  // ---------- เมนูบนสุด (spec §5.1, STK ref §A) ----------
+  "menu.file": stk("File", "A"),
+  "menu.edit": stk("Edit", "A"),
+  "menu.view": stk("View", "A"),
+  "menu.insert": stk("Insert", "A"),
+  "menu.analysis": stk("Analysis", "A"),
+  "menu.utilities": stk("Utilities", "A"),
+  "menu.window": stk("Window", "A"),
+  "menu.help": stk("Help", "A"),
+
+  "menu.file.new": ours("New..."),
+  "menu.file.open": ours("Open..."),
+  "menu.file.save": ours("Save"),
+  "menu.file.saveAs": ours("Save As..."),
+  "menu.file.close": ours("Close"),
+  "menu.file.recent": ours("Recent Scenarios"),
+  "menu.file.exit": ours("Exit"),
+
+  "menu.edit.cut": stk("Cut", "B"),
+  "menu.edit.copy": stk("Copy", "B"),
+  "menu.edit.paste": stk("Paste", "B"),
+  "menu.edit.delete": stk("Delete", "B"),
+  "menu.edit.find": ours("Find..."),
+
+  "menu.view.objectBrowser": stk("Object Browser", "A"),
+  "menu.view.timelineView": stk("Timeline View", "A"),
+  "menu.view.messageViewer": stk("Message Viewer", "A"),
+  "menu.view.new3dWindow": ours("New 3D Graphics Window"),
+  "menu.view.new2dWindow": ours("New 2D Graphics Window"),
+  "menu.view.toolbars": stk("Toolbars", "A"),
+  "menu.view.fullScreen": ours("Full Screen"),
+
+  "menu.insert.new": ours("New..."),
+  "menu.insert.facility": ours("Facility..."),
+  "menu.insert.satellite": ours("Satellite..."),
+  "menu.insert.constellation": ours("Constellation..."),
+
+  "menu.analysis.access": stk("Access...", "F"),
+  "menu.analysis.reportGraphManager": stk("Report & Graph Manager...", "F"),
+  "menu.analysis.validation": ours("Validation..."),
+
+  // เมนูที่ตั้งชื่อตามชนิด object ที่เลือก และเมนูคลิกขวาของ Object Browser
+  "menu.object.properties": stk("Properties", "B"),
+  "menu.object.access": stk("Access...", "B"),
+  "menu.object.reportGraphManager": stk("Report & Graph Manager...", "B"),
+  "menu.object.zoomTo": stk("Zoom To", "B"),
+  "menu.object.rename": stk("Rename", "B"),
+  "menu.object.delete": stk("Delete", "B"),
+
+  "menu.utilities.fetchOrbitData": ours("Fetch Orbit Data..."),
+  "menu.utilities.dailyForecastSettings": ours("Daily Forecast Settings..."),
+
+  "menu.window.windows": stk("Windows...", "A"),
+  "menu.window.cascade": stk("Cascade", "A"),
+  "menu.window.tileHorizontally": stk("Tile Horizontally", "A"),
+  "menu.window.tileVertically": stk("Tile Vertically", "A"),
+
+  "menu.shortcut.save": stk("Ctrl+S", "A"),
+  "menu.shortcut.delete": stk("Delete", "A"),
+  "menu.shortcut.find": ours("Ctrl+F"),
+
+  // ---------- เมนู Help และหน้าต่าง Help/About (spec §5.1, §11, W21) ----------
+  "help.welcome": ours("Welcome..."),
+  "help.stkReference": ours("STK UI Reference"),
+  "help.about": ours("About GNSS Studio"),
+  "help.engineVersion": ours("Engine Version"),
+  "help.gmatVersion": ours("GMAT Version"),
+  "help.colText": ours("Text"),
+  "help.colSource": ours("Source"),
+  "help.colRef": ours("STK ref"),
+  "help.sourceStk": ours("STK"),
+  "help.sourceOurs": ours("Added by GNSS Studio"),
+
+  // ---------- แถบเครื่องมือ (spec §5.2, STK ref §A §E §F) ----------
+  "toolbar.default": stk("Default", "A"),
+  "toolbar.animation": stk("Animation", "A"),
+  "toolbar.graphics3d": stk("3D Graphics", "A"),
+  "toolbar.window3dDefaults": stk("3D Window Defaults", "A"),
+  "toolbar.window2dDefaults": stk("2D Window Defaults", "A"),
+
+  "toolbar.new": ours("New"),
+  "toolbar.open": ours("Open"),
+  "toolbar.save": ours("Save"),
+  "toolbar.insertObject": stk("Insert Object", "A"),
+  "toolbar.properties": stk("Properties", "E"),
+  "toolbar.access": stk("Access", "F"),
+  "toolbar.reportGraphManager": stk("Report & Graph Manager", "F"),
+  "toolbar.homeView": stk("Home View", "E"),
+  "toolbar.viewFromTo": stk("View From/To", "E"),
+  "toolbar.grabGlobe": stk("Grab Globe", "E"),
+  "toolbar.zoomIn": stk("Zoom In", "E"),
+  "toolbar.zoomOut": ours("Zoom Out"),
+
+  // ---------- แถบ Animation (spec §6.1, STK ref §D) ----------
+  "anim.reset": stk("Reset", "D"),
+  "anim.stepBackward": stk("Step Backward", "D"),
+  "anim.reverse": stk("Reverse", "D"),
+  "anim.pause": stk("Pause", "D"),
+  "anim.start": stk("Start", "D"),
+  "anim.stepForward": stk("Step Forward", "D"),
+  "anim.decreaseStep": stk("Decrease Time Step", "D"),
+  "anim.increaseStep": stk("Increase Time Step", "D"),
+  "anim.normalMode": stk("Normal Animation Mode", "D"),
+  "anim.realTimeMode": stk("Real-Time Animation Mode", "D"),
+  "anim.xRealTimeMode": stk("X Real-Time Animation Mode", "D"),
+  "anim.currentTime": stk("Current Scenario Time", "D"),
+  "anim.timeStep": stk("Time Step", "D"),
+  "anim.xRealTimeMultiplier": stk("X Real Time Multiplier", "D"),
+
+  // ---------- หน้าต่าง (spec §4.1, §11) ----------
+  "window.objectBrowser": stk("Object Browser", "A"),
+  "window.graphics3d": ours("3D Graphics {n} - Earth"),
+  "window.graphics2d": ours("2D Graphics {n} - Earth"),
+  "window.timelineView": stk("Timeline View", "A"),
+  "window.messageViewer": stk("Message Viewer", "A"),
+  "window.propertiesBrowser": stk("Properties Browser", "C"),
+  "window.insertObjects": stk("Insert STK Objects", "A"),
+  "window.satelliteCatalog": ours("Search Satellite Catalog"),
+  "window.newScenarioWizard": ours("New Scenario Wizard"),
+  "window.welcome": ours("Welcome to GNSS Studio"),
+  "window.viewFromTo": stk("View From/To", "E"),
+  "window.properties3d": stk("3D Graphics Window Properties", "E"),
+  "window.properties2d": stk("2D Graphics Window Properties", "E"),
+  "window.windows": stk("Windows", "A"),
+  "window.fetchOrbitData": ours("Fetch Orbit Data"),
+  "window.dailyForecastSettings": ours("Daily Forecast Settings"),
+
+  "window.mode.dockable": stk("Dockable", "A"),
+  "window.mode.floating": stk("Floating", "A"),
+  "window.mode.integrated": stk("Integrated", "A"),
+
+  // ---------- ปุ่มและกล่องโต้ตอบ ----------
+  "dialog.ok": stk("OK", "C"),
+  "dialog.cancel": stk("Cancel", "C"),
+  "dialog.apply": stk("Apply", "C"),
+  "dialog.help": stk("Help", "C"),
+  "dialog.reload": ours("Reload"),
+  "dialog.add": ours("Add..."),
+  "dialog.remove": ours("Remove"),
+  "dialog.assign": ours("Assign"),
+  "dialog.unassign": ours("Unassign"),
+  "dialog.selectColor": stk("Select color", "B"),
+  "dialog.fetchNow": ours("Fetch Now"),
+  "dialog.runNow": ours("Run Now"),
+
+  "dialog.windows.window": ours("Window"),
+  "dialog.windows.type": ours("Type"),
+  "dialog.windows.activate": stk("Activate", "A"),
+  "dialog.windows.integrate": stk("Integrate", "A"),
+  "dialog.windows.center": stk("Center", "A"),
+  "dialog.windows.close": stk("Close", "A"),
+
+  "dialog.welcome.createScenario": stk("Create a Scenario", "A"),
+  "dialog.welcome.openScenario": stk("Open a Scenario", "A"),
+
+  "dialog.insert.selectObject": stk("Select An Object To Be Inserted", "B"),
+  "dialog.insert.selectMethod": stk("Select A Method", "B"),
+  "dialog.insert.defineProperties": stk("Define Properties", "B"),
+  "dialog.insert.insertDefault": stk("Insert Default", "B"),
+  "dialog.insert.fromSatelliteCatalog": ours("From Satellite Catalog"),
+  "dialog.insert.insert": ours("Insert..."),
+
+  "dialog.catalog.searchStandardObjectData": stk("Search Standard Object Data", "B"),
+  "dialog.catalog.dataSources": stk("Data Sources", "B"),
+  "dialog.catalog.sourceLocal": ours("Local snapshot"),
+  "dialog.catalog.sourceOnline": ours("Online CelesTrak"),
+  "dialog.catalog.search": ours("Search"),
+  "dialog.catalog.createConstellation": stk("Create Constellation from Selected", "B"),
+
+  // ---------- หน้า Properties (spec §8, STK ref §C) "กลุ่ม - หน้า" ----------
+  "page.scenario.basicTime": stk("Basic - Time", "C"),
+  "page.scenario.basicUnits": stk("Basic - Units", "C"),
+  "page.scenario.basicDescription": ours("Basic - Description"),
+  "page.scenario.basicIonosphere": ours("Basic - Ionosphere"),
+  "page.scenario.graphics2dGlobalAttributes": stk("2D Graphics - Global Attributes", "C"),
+
+  "page.facility.basicPosition": stk("Basic - Position", "C"),
+  "page.facility.basicDescription": ours("Basic - Description"),
+  "page.facility.constraintsActive": stk("Constraints - Active", "C"),
+  "page.facility.graphics2dAttributes": stk("2D Graphics - Attributes", "C"),
+
+  "page.satellite.basicOrbit": stk("Basic - Orbit", "C"),
+  "page.satellite.basicDescription": ours("Basic - Description"),
+  "page.satellite.graphics2dAttributes": stk("2D Graphics - Attributes", "C"),
+  "page.satellite.graphics2dPass": stk("2D Graphics - Pass", "C"),
+  "page.satellite.graphics2dSwath": stk("2D Graphics - Swath", "C"),
+  "page.satellite.graphics3dOrbitSystem": stk("3D Graphics - Orbit System", "C"),
+
+  "page.constellation.basicDefinition": stk("Basic - Definition", "B"),
+  "page.constellation.basicDescription": ours("Basic - Description"),
+
+  // หน้าของหน้าต่าง 3D/2D Graphics Window Properties (spec §9.2, §9.3, STK ref §E)
+  "page.window3d.lighting": stk("Lighting", "E"),
+  "page.window3d.details": stk("Details", "E"),
+  "page.window3d.annotation": stk("Annotation", "E"),
+  "page.window2d.projection": stk("Projection", "E"),
+  "page.window2d.details": stk("Details", "E"),
+  "page.window2d.lighting": stk("Lighting", "E"),
+
+  // ---------- ช่องในหน้า Properties และกล่องโต้ตอบ ----------
+  // Scenario: Basic - Time ("Start"/"Stop" ของ Analysis Period ไม่มีใน reference จึงเป็น ours; "Start Time" ของ Animation มี)
+  "field.analysisPeriod": stk("Analysis Period", "C"),
+  "field.analysisStart": ours("Start"),
+  "field.analysisStop": ours("Stop"),
+  "field.duration": ours("Duration"),
+  "field.animation": stk("Animation", "C"),
+  "field.animationStartTime": stk("Start Time", "C"),
+  "field.timeUpdateMode": stk("Time Update Mode", "C"),
+  "field.animationCycle": stk("Animation Cycle", "C"),
+  // Scenario: Basic - Units
+  "field.dateFormat": stk("DateFormat", "C"),
+  "field.ltzOffset": ours("LTZG Offset"),
+  "field.distance": ours("Distance"),
+  "field.angle": ours("Angle"),
+  // Basic - Description (ทุกชนิด object)
+  "field.shortDescription": ours("Short Description"),
+  "field.longDescription": ours("Long Description"),
+  "field.memberColors": ours("Member Colors"),
+  // Basic - Ionosphere
+  "field.shellHeight": ours("Shell Height (km)"),
+  // 2D Graphics - Global Attributes
+  "field.showLabels": stk("Show Labels", "C"),
+  // Facility: Basic - Position
+  "field.positionType": stk("Position Type", "C"),
+  "field.latitude": stk("Latitude", "C"),
+  "field.longitude": stk("Longitude", "C"),
+  "field.altitude": stk("Altitude", "C"),
+  // Facility: Constraints - Active
+  "field.selectConstraintsToAdd": stk("Select Constraints to Add", "C"),
+  "field.elevationAngle": stk("Elevation Angle", "C"),
+  "field.min": ours("Min"),
+  "field.max": ours("Max"),
+  // 2D Graphics - Attributes
+  "field.color": stk("Color", "C"),
+  "field.markerStyle": stk("Marker Style", "C"),
+  "field.lineStyle": stk("Line Style", "C"),
+  "field.lineWidth": stk("Line Width", "C"),
+  "field.inheritFromScenario": stk("Inherit from Scenario", "C"),
+  // Satellite: Basic - Orbit
+  "field.propagator": stk("Propagator", "C"),
+  "field.tleSource": stk("TLE Source", "C"),
+  "field.sscNumber": stk("SSC number", "C"),
+  "field.epoch": ours("Epoch"),
+  "field.dataAge": ours("Data Age"),
+  // Satellite: Basic - Description, tooltip ใน Object Browser และคอลัมน์ของ Search Satellite Catalog
+  "field.prn": ours("PRN"),
+  "field.svn": ours("SVN"),
+  "field.norad": ours("NORAD"),
+  "field.block": ours("Block"),
+  "field.celestrakName": ours("CelesTrak Name"),
+  "field.flags": ours("Flags"),
+  "field.name": ours("Name"),
+  "field.system": ours("System"),
+  "field.status": ours("Status"),
+  // Satellite: 2D Graphics - Pass
+  "field.leadType": stk("Lead Type", "C"),
+  "field.trailType": stk("Trail Type", "C"),
+  "field.visibleSides": stk("Visible Sides", "C"),
+  "field.showPassLabels": stk("Show Pass Labels", "C"),
+  "field.showPathLabels": stk("Show Path Labels", "C"),
+  // Satellite: 2D Graphics - Swath
+  "field.swathType": ours("Swath Type"),
+  "field.groundElevation": stk("Ground Elevation", "C"),
+  "field.swathOptions": ours("Options"),
+  // Constellation: Basic - Definition
+  "field.availableObjects": stk("Available Objects", "B"),
+  "field.assignedObjects": stk("Assigned Objects", "B"),
+  "field.selectionFilter": ours("Selection Filter"),
+  // View From/To (spec §9.2)
+  "field.mode": ours("Mode"),
+  "field.fromPosition": stk("From Position", "E"),
+  "field.toPosition": ours("To Position"),
+  "field.referenceFrame": ours("Reference Frame"),
+  // 3D Graphics Window Properties
+  "field.enableLighting": stk("Enable Lighting", "E"),
+  "field.ambientLevel": ours("Ambient Level"),
+  "field.sunLevel": stk("Sun Level", "E"),
+  "field.nightLightsLevel": stk("Night Lights Level", "E"),
+  "field.latLonLines": stk("Lat/Lon Lines", "E"),
+  "field.labelDeclutter": stk("Label Declutter", "E"),
+  "field.showTime": stk("Show Time", "E"),
+  // 2D Graphics Window Properties
+  "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),
+  "field.showOutline": stk("Show Outline", "E"),
+  "field.shading": stk("Shading", "E"),
+  "field.showIpp": ours("Show IPP"),
+  // New Scenario Wizard, Fetch Orbit Data, Daily Forecast Settings
+  "field.location": ours("Location"),
+  "field.template": ours("Template"),
+  "field.orbitData": ours("Orbit Data"),
+  "field.latestSnapshot": ours("Latest Snapshot"),
+  "field.groups": ours("Groups"),
+  "field.nextFetch": ours("Next Fetch Available"),
+  "field.lastRun": ours("Last Run"),
+  "field.tecCsv": ours("CSV for TEC"),
+  // หน่วยที่ต่อท้ายช่อง
+  "field.unit.deg": ours("deg"),
+  "field.unit.m": ours("m"),
+  "field.unit.km": ours("km"),
+  "field.unit.sec": ours("sec"),
+  "field.unit.percent": ours("%"),
+
+  // ---------- คำที่แสดงของตัวเลือก (ค่าที่เก็บกับคำที่แสดงต่างกันได้ ดู optionLabel) ----------
+  // Time Update Mode (STK ref §C) ค่าที่เก็บ time_step / real_time / x_real_time
+  "option.updateMode.timeStep": stk("Time Step", "C"),
+  "option.updateMode.realTime": stk("Real Time", "C"),
+  "option.updateMode.xRealTime": stk("X Real-Time", "C"),
+  // Animation Cycle (STK ref §C) ค่าที่เก็บ off / stop / loop
+  "option.cycle.off": stk("Off", "C"),
+  "option.cycle.stop": stk("Stop at Time", "C"),
+  "option.cycle.loop": stk("Loop at Time", "C"),
+  // DateFormat (STK ref §C)
+  "option.dateFormat.utcg": stk("UTCG", "C"),
+  "option.dateFormat.ltzg": stk("LTZG", "C"),
+  "option.unit.kilometers": ours("Kilometers"),
+  "option.unit.degrees": ours("Degrees"),
+  "option.positionType.geodetic": stk("Geodetic", "C"),
+  "option.propagator.sgp4": stk("SGP4", "C"),
+  // Lead Type / Trail Type (STK ref §C)
+  "option.pass.time": stk("Time", "C"),
+  "option.pass.percent": stk("Percent", "C"),
+  "option.pass.quarter": stk("Quarter", "C"),
+  "option.pass.half": stk("Half", "C"),
+  "option.pass.full": stk("Full", "C"),
+  "option.pass.all": stk("All", "C"),
+  "option.pass.none": stk("None", "C"),
+  "option.pass.onePass": stk("One Pass", "C"),
+  "option.pass.currentInterval": stk("Current Interval", "C"),
+  "option.pass.sameAsLead": stk("Same As Lead", "C"),
+  "option.visibleSides.both": ours("Both"),
+  "option.visibleSides.ascending": ours("Ascending"),
+  "option.visibleSides.descending": ours("Descending"),
+  "option.swathType.groundElevation": stk("Ground Elevation", "C"),
+  "option.swath.noGraphics": ours("No Graphics"),
+  "option.swath.edgeLimits": stk("Edge Limits", "C"),
+  "option.swath.filledLimits": stk("Filled Limits", "C"),
+  "option.orbitSystem.fixedByWindow": stk("Fixed by Window", "C"),
+  "option.orbitSystem.inertialByWindow": stk("Inertial by Window", "C"),
+  "option.markerStyle.point": ours("Point"),
+  "option.markerStyle.plus": ours("Plus"),
+  "option.markerStyle.star": ours("Star"),
+  "option.markerStyle.square": ours("Square"),
+  "option.markerStyle.circle": ours("Circle"),
+  "option.markerStyle.diamond": ours("Diamond"),
+  "option.markerStyle.triangle": ours("Triangle"),
+  "option.markerStyle.cross": ours("Cross"),
+  "option.lineStyle.solid": ours("Solid"),
+  "option.lineStyle.dashed": ours("Dashed"),
+  "option.lineStyle.dotted": ours("Dotted"),
+  "option.lineStyle.dotDashed": ours("Dot Dashed"),
+  "option.lineStyle.longDashed": ours("Long Dashed"),
+  "option.lineStyle.dashDotDot": ours("Dash Dot Dot"),
+  "option.lineStyle.mediumDashed": ours("Medium Dashed"),
+  "option.lineStyle.shortDashed": ours("Short Dashed"),
+  // View From/To
+  "option.viewMode.fromPositionToPosition": ours("From Position to Position"),
+  "option.referenceFrame.fixed": ours("Fixed"),
+  "option.referenceFrame.inertial": ours("Inertial"),
+  // 2D Graphics Window Properties (STK ref §E)
+  "option.projection.equidistantCylindrical": stk("Equidistant Cylindrical", "E"),
+  "option.projection.mercator": stk("Mercator", "E"),
+  "option.coordFrame.ecf": stk("ECF", "E"),
+  "option.coordFrame.eci": stk("ECI", "E"),
+  // New Scenario Wizard, Search Satellite Catalog
+  "option.template.thbkAll": ours("THBK + All Satellites (4 Systems)"),
+  "option.template.empty": ours("Empty"),
+  "option.system.all": ours("All Systems"),
+  "option.system.gps": ours("GPS"),
+  "option.system.glonass": ours("GLONASS"),
+  "option.system.galileo": ours("Galileo"),
+  "option.system.beidou": ours("BeiDou"),
+  // ธงของดาว (ชื่อที่แสดง; คำอธิบายไทยอยู่ใน messages.th.ts เป็น flag.*)
+  "option.flag.stale": ours("Stale"),
+  "option.flag.tooOld": ours("Too Old"),
+  "option.flag.noBroadcast": ours("No Broadcast"),
+  "option.flag.unhealthy": ours("Unhealthy"),
+  "option.flag.prnChanged": ours("PRN Changed"),
+  "option.flag.nameMismatch": ours("Name Mismatch"),
+
+  // ---------- Object Browser (spec §7, STK ref §B) ----------
+  "ob.properties": stk("Properties", "B"),
+  "ob.graphicsColorSelectors": stk("Graphics Color Selectors", "B"),
+  "ob.graphicsOnOffToggles": stk("Graphics On/Off Toggles", "B"),
+  "ob.newGroup": stk("New Group", "B"),
+  "ob.cut": stk("Cut", "B"),
+  "ob.copy": stk("Copy", "B"),
+  "ob.paste": stk("Paste", "B"),
+  "ob.delete": stk("Delete", "B"),
+  "ob.find": stk("Find", "B"),
+  "ob.expandAll": ours("Expand All"),
+  "ob.collapseAll": ours("Collapse All"),
+  "ob.class.scenario": stk("Scenario", "B"),
+  "ob.class.facility": stk("Facility", "C"),
+  "ob.class.satellite": stk("Satellite", "B"),
+  "ob.class.constellation": stk("Constellation", "B"),
+  "ob.class.group": stk("Group", "B"),
+
+  // ---------- Timeline View (spec §10, STK ref §D) ----------
+  "timeline.globalTimeBar": stk("Global Time Bar", "D"),
+  "timeline.globalTimeScale": stk("Global Time Scale", "D"),
+  "timeline.timeDisplay": stk("Time Display", "D"),
+  "timeline.viewPort": stk("View Port", "D"),
+  "timeline.setAnimationTimeToHere": stk("Set Animation Time to Here", "D"),
+  "timeline.setAnimationTimeToIntervalStart": ours("Set Animation Time to Interval Start Time"),
+  "timeline.setAnimationTimeToIntervalStop": ours("Set Animation Time to Interval Stop Time"),
+  "timeline.center": ours("Center"),
+  "timeline.removeFromTimeline": ours("Remove from Timeline"),
+
+  // ---------- Message Viewer (spec §11, STK ref §A) ----------
+  "mv.tab.all": stk("All Messages", "A"),
+  "mv.tab.errors": stk("Errors", "A"),
+  "mv.tab.infos": stk("Infos", "A"),
+  "mv.tab.warnings": stk("Warnings", "A"),
+  "mv.col.time": ours("Time"),
+  "mv.col.level": ours("Level"),
+  "mv.col.code": ours("Code"),
+  "mv.col.object": ours("Object"),
+  "mv.col.message": ours("Message"),
+  "mv.level.info": ours("Info"),
+  "mv.level.warning": ours("Warning"),
+  "mv.level.error": ours("Error"),
+  "mv.details": stk("Details", "A"),
+  "mv.clearTab": stk("Clear this Tab", "A"),
+  "mv.clearAll": stk("Clear all Tabs", "A"),
+
+  // ---------- แถบสถานะ (spec §12, STK ref §A) ----------
+  "status.activeObject": stk("Active Object", "A"),
+  "status.latLon": stk("Lat/Lon", "A"),
+  "status.animationTime": stk("Animation Time", "A"),
+  "status.timeStep": stk("Time Step", "A"),
+  "status.stop": stk("Stop", "A"),
+  "status.usableSatellites": ours("Usable Satellites"),
+  "status.pdop": stk("PDOP", "F"),
+  "status.maxDataAge": ours("Max Data Age"),
+  "status.flaggedSatellites": ours("Flagged Satellites"),
+  "status.dailyForecast": ours("Daily Forecast"),
+  "status.disconnected": ours("Server Disconnected"),
+} satisfies Record<string, Label>;
+
+export type LabelKey = keyof typeof LABELS;
+export const labels: Record<LabelKey, Label> = LABELS;
+
+/** แทน {name} ด้วยค่าใน params; ช่องที่ไม่มีค่าปล่อยไว้ตามเดิมเพื่อให้เห็นว่าลืมส่ง (ใช้ร่วมกับ msg ใน messages.th.ts) */
+export function fillPlaceholders(template: string, params?: Record<string, string | number>): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => (Object.hasOwn(params, name) ? String(params[name]) : whole));
+}
+
+export function t(key: LabelKey, params?: Record<string, string | number>): string {
+  return fillPlaceholders(labels[key].text, params);
+}
+
+/** รายการที่เพิ่มเอง (ใช้แสดงป้าย "Added by GNSS Studio" และตารางใน Help → STK UI Reference) */
+export function oursLabels(): { key: LabelKey; text: string }[] {
+  return (Object.keys(labels) as LabelKey[]).filter((key) => labels[key].source === "ours").map((key) => ({ key, text: labels[key].text }));
+}
+
+// ---------- ค่าที่เก็บ → คำที่แสดง ----------
+// ตารางผูกกับ ENUMS ที่สร้างจาก OpenAPI: ถ้า server เพิ่มหรือลบค่า typecheck จะแจ้งที่นี่
+type Code<K extends keyof typeof ENUMS> = (typeof ENUMS)[K][number];
+
+const PASS_KEYS = {
+  Time: "option.pass.time", Percent: "option.pass.percent", Quarter: "option.pass.quarter", Half: "option.pass.half", Full: "option.pass.full",
+  All: "option.pass.all", None: "option.pass.none", "One Pass": "option.pass.onePass", "Current Interval": "option.pass.currentInterval",
+} as const satisfies Record<Code<"LeadType">, LabelKey>;
+
+const OPTION_KEYS = {
+  update_mode: {
+    time_step: "option.updateMode.timeStep", real_time: "option.updateMode.realTime", x_real_time: "option.updateMode.xRealTime",
+  } satisfies Record<Code<"UpdateMode">, LabelKey>,
+  cycle: { off: "option.cycle.off", stop: "option.cycle.stop", loop: "option.cycle.loop" } satisfies Record<Code<"Cycle">, LabelKey>,
+  date_format: { UTCG: "option.dateFormat.utcg", LTZG: "option.dateFormat.ltzg" } satisfies Record<Code<"DateFormat">, LabelKey>,
+  lead_type: PASS_KEYS,
+  trail_type: { ...PASS_KEYS, "Same As Lead": "option.pass.sameAsLead" } satisfies Record<Code<"TrailType">, LabelKey>,
+  marker_style: {
+    Point: "option.markerStyle.point", Plus: "option.markerStyle.plus", Star: "option.markerStyle.star", Square: "option.markerStyle.square",
+    Circle: "option.markerStyle.circle", Diamond: "option.markerStyle.diamond", Triangle: "option.markerStyle.triangle", Cross: "option.markerStyle.cross",
+  } satisfies Record<Code<"MarkerStyle">, LabelKey>,
+  line_style: {
+    Solid: "option.lineStyle.solid", Dashed: "option.lineStyle.dashed", Dotted: "option.lineStyle.dotted", "Dot Dashed": "option.lineStyle.dotDashed",
+    "Long Dashed": "option.lineStyle.longDashed", "Dash Dot Dot": "option.lineStyle.dashDotDot", "Medium Dashed": "option.lineStyle.mediumDashed",
+    "Short Dashed": "option.lineStyle.shortDashed",
+  } satisfies Record<Code<"LineStyle">, LabelKey>,
+  visible_sides: {
+    Both: "option.visibleSides.both", Ascending: "option.visibleSides.ascending", Descending: "option.visibleSides.descending",
+  } satisfies Record<Code<"VisibleSides">, LabelKey>,
+  swath_options: {
+    "No Graphics": "option.swath.noGraphics", "Edge Limits": "option.swath.edgeLimits", "Filled Limits": "option.swath.filledLimits",
+  } satisfies Record<Code<"SwathOptions">, LabelKey>,
+  orbit_system: {
+    "Fixed by Window": "option.orbitSystem.fixedByWindow", "Inertial by Window": "option.orbitSystem.inertialByWindow",
+  } satisfies Record<Code<"OrbitSystem">, LabelKey>,
+};
+
+/** ชื่อช่องของ API ที่มีคำที่แสดงเป็นของตัวเอง; สามตัวแรก (ค่าที่เก็บเป็นโค้ด) คือที่ต้องแปลง ที่เหลือค่าที่เก็บก็คือคำ STK อยู่แล้ว */
+export type OptionField = keyof typeof OPTION_KEYS;
+
+/** คำที่แสดงของค่าที่เก็บ เช่น optionLabel("cycle", "stop") = "Stop at Time"; ค่าที่ไม่รู้จักแสดงตามที่ได้มา */
+export function optionLabel(field: OptionField, code: string): string {
+  const keys: Record<string, LabelKey> = OPTION_KEYS[field];
+  return Object.hasOwn(keys, code) ? labels[keys[code]].text : code;
+}
