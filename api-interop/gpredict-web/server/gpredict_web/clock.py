@@ -101,13 +101,15 @@ class ModuleClock:
     def label(self) -> str:
         """ป้ายสถานะล่างซ้ายของหน้าต่าง Time Controller"""
         with self._lock:
-            if self._state == STOP:
-                return LABEL_MANUAL
             wall = self._now()
-            if self._state == FORWARD and self._throttle == THROTTLE_MIN \
-                    and abs(self._time_at(wall) - wall) < REAL_TIME_TOLERANCE:
-                return LABEL_REAL_TIME
-            return LABEL_SIMULATED
+            return self._label_at(wall, self._time_at(wall))
+
+    def snapshot(self) -> tuple[datetime, str, int, str]:
+        """(T, state, throttle, label) จากเวลาเครื่องครั้งเดียวใต้ lock เดียว ค่าทั้งสี่จึงเข้ากันเสมอ (ใช้สร้าง tick)"""
+        with self._lock:
+            wall = self._now()
+            t = self._time_at(wall)
+            return t, self._state, self._throttle, self._label_at(wall, t)
 
     def direction(self) -> int:
         """+1 forward, -1 backward, 0 stop (ใช้เลือกทิศของหน้าต่าง ephemeris)"""
@@ -117,6 +119,13 @@ class ModuleClock:
     def _reset_to(self, wall: datetime) -> None:
         self._state, self._throttle = FORWARD, THROTTLE_MIN
         self._t_ref = self._wall_ref = wall
+
+    def _label_at(self, wall: datetime, t: datetime) -> str:
+        if self._state == STOP:
+            return LABEL_MANUAL
+        if self._state == FORWARD and self._throttle == THROTTLE_MIN and abs(t - wall) < REAL_TIME_TOLERANCE:
+            return LABEL_REAL_TIME
+        return LABEL_SIMULATED
 
     def _time_at(self, wall: datetime) -> datetime:
         if self._state == STOP:

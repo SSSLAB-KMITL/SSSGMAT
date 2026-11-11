@@ -5,27 +5,15 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from gpredict_web.clock import ModuleClock
+from tests.helpers import FakeNow
 
 UTC = timezone.utc
 T0 = datetime(2026, 11, 12, 5, 0, 0, tzinfo=UTC)
 
 
-class FakeNow:
-    """นาฬิกาเครื่องปลอมที่เลื่อนได้ (ส่งเป็น now ของ ModuleClock)"""
-
-    def __init__(self, start: datetime = T0):
-        self.t = start
-
-    def __call__(self) -> datetime:
-        return self.t
-
-    def advance(self, seconds: float) -> None:
-        self.t += timedelta(seconds=seconds)
-
-
 class ModuleClockTest(unittest.TestCase):
     def setUp(self):
-        self.wall = FakeNow()
+        self.wall = FakeNow(T0)
         self.clock = ModuleClock(self.wall)
 
     def test_starts_real_time(self):
@@ -223,6 +211,30 @@ class ModuleClockTest(unittest.TestCase):
         c.set()
         self.assertEqual((c.state, c.throttle), ("forward", 4))
         self.assertEqual(c.time(), T0 + timedelta(seconds=8))
+
+    def test_snapshot_reads_everything_from_one_wall_reading(self):
+        """snapshot() = (time, state, throttle, label) จากเวลาเครื่องครั้งเดียวใต้ lock เดียว (tick ต้องได้ค่าที่เข้ากัน)"""
+        c = self.clock
+        self.assertEqual(c.snapshot(), (T0, "forward", 1, "Real-Time"))
+        c.set(throttle=5)
+        self.wall.advance(2)
+        self.assertEqual(c.snapshot(), (T0 + timedelta(seconds=10), "forward", 5, "Simulated Real-Time"))
+        c.set(state="backward")
+        self.wall.advance(1)
+        self.assertEqual(c.snapshot(), (T0 + timedelta(seconds=5), "backward", 5, "Simulated Real-Time"))
+        c.set(state="stop")
+        self.wall.advance(100)
+        self.assertEqual(c.snapshot(), (T0 + timedelta(seconds=5), "stop", 5, "Manual Control"))
+
+        reads = []
+
+        def counting_now():
+            reads.append(self.wall())
+            return self.wall()
+        clock = ModuleClock(counting_now)
+        reads.clear()
+        clock.snapshot()
+        self.assertEqual(len(reads), 1)
 
     def test_exact_arithmetic_with_microseconds(self):
         c = self.clock

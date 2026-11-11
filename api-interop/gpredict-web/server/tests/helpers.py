@@ -37,6 +37,19 @@ WINDOW_HOURS = 16
 STEP_S = 30
 
 
+class FakeNow:
+    """นาฬิกาเครื่องปลอมที่เลื่อนได้ (ส่งเป็น now ของ ModuleClock หรือ Hub)"""
+
+    def __init__(self, start: datetime | None = None):
+        self.t = WINDOW_START if start is None else start
+
+    def __call__(self) -> datetime:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += timedelta(seconds=seconds)
+
+
 def window_times(start: datetime = WINDOW_START, hours: int = WINDOW_HOURS, step: int = STEP_S) -> list[datetime]:
     return [start + timedelta(seconds=k * step) for k in range(hours * 3600 // step + 1)]
 
