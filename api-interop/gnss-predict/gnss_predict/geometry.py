@@ -68,3 +68,34 @@ def ecef_to_aer(sat_km: tuple[float, float, float], sta_km: tuple[float, float, 
     """ตำแหน่ง ECEF ของดาวเทียมและสถานี → (Az, El, ระยะ กม.)"""
     az, el = ecef_to_az_el(sat_km, sta_km, lat_deg, lon_deg)
     return az, el, math.dist(sat_km, sta_km)
+
+
+def ecef_to_geodetic(x_km: float, y_km: float, z_km: float) -> tuple[float, float, float]:
+    """ECEF (กม.) → (ละติจูด°, ลองจิจูด° ในช่วง (−180, 180], ความสูงเหนือ ellipsoid WGS84 กม.)
+
+    วนซ้ำจนละติจูดเปลี่ยนไม่เกิน 1e-12 rad (สูงสุด 10 รอบ) ที่ขั้วโลก (hypot(x, y) < 1e-9) คืนละติจูด ±90 และลองจิจูด 0
+    หมายเหตุหน่วย: ที่นี่ความสูงเป็นกม. ส่วน geodetic_to_ecef รับความสูงเป็นเมตร
+    """
+    e2 = WGS84_F * (2.0 - WGS84_F)
+    p = math.hypot(x_km, y_km)
+    if p < 1e-9:
+        b_km = WGS84_A_KM * (1.0 - WGS84_F)
+        return math.copysign(90.0, z_km), 0.0, abs(z_km) - b_km
+    lon = math.degrees(math.atan2(y_km, x_km))
+    if lon <= -180.0:
+        lon += 360.0
+    lat = math.atan2(z_km, p * (1.0 - e2))
+    for _ in range(10):
+        n = WGS84_A_KM / math.sqrt(1.0 - e2 * math.sin(lat) ** 2)
+        new = math.atan2(z_km + e2 * n * math.sin(lat), p)
+        done = abs(new - lat) <= 1e-12
+        lat = new
+        if done:
+            break
+    n = WGS84_A_KM / math.sqrt(1.0 - e2 * math.sin(lat) ** 2)
+    # ใช้สูตรที่ไม่หารด้วยค่าที่เข้าใกล้ศูนย์: cos(lat) เล็กใกล้ขั้ว, sin(lat) เล็กใกล้เส้นศูนย์สูตร
+    if abs(lat) < math.pi / 4:
+        h = p / math.cos(lat) - n
+    else:
+        h = z_km / math.sin(lat) - n * (1.0 - e2)
+    return math.degrees(lat), lon, h
