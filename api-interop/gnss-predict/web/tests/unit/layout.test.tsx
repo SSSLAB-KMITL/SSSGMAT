@@ -693,11 +693,28 @@ describe("saveWorkbook (W5)", () => {
     expect(m.text).toBe(msg("workbook.saveFailed", { message: "workbook ใหญ่เกินไป" }));
   });
 
-  test("rejects without sending when no scenario is open", async () => {
+  test("with no scenario open it rejects with a Thai message, shows it in the Message Viewer and sends nothing", async () => {
     await mount();
     const fetch = stubFetch({});
-    await expect(st().saveWorkbook()).rejects.toThrow();
+    const failure = await st().saveWorkbook().then(() => null, (e: unknown) => e);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(msg("workbook.noScenario"));
+    expect((failure as Error).message).toMatch(/[\u0E00-\u0E7F]/);
     expect(fetch.calls).toEqual([]);
+    expect(useMessages.getState().items).toHaveLength(1);
+    expect(useMessages.getState().items[0]).toMatchObject({ level: "error", code: "WORKBOOK_NO_SCENARIO", text: msg("workbook.noScenario") });
+  });
+
+  test("before the workspace is mounted it rejects with a Thai message, shows it and sends nothing", async () => {
+    useScenario.setState({ name: "E2E" });
+    const fetch = stubFetch({ "PUT /api/scenarios/E2E/workbook": { status: 204 } });
+    const failure = await st().saveWorkbook().then(() => null, (e: unknown) => e);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(msg("workbook.noWorkspace"));
+    expect((failure as Error).message).toMatch(/[\u0E00-\u0E7F]/);
+    expect(fetch.calls).toEqual([]);
+    expect(useMessages.getState().items).toHaveLength(1);
+    expect(useMessages.getState().items[0]).toMatchObject({ level: "error", code: "WORKBOOK_NO_WORKSPACE", text: msg("workbook.noWorkspace") });
   });
 });
 
@@ -777,5 +794,214 @@ describe("restoreFor (spec §4.2)", () => {
     const fetch = stubFetch({ [url]: { text: "null" } });
     await expect(st().restoreFor("E2E")).resolves.toBeUndefined();
     expect(fetch.calls).toEqual([]);
+  });
+});
+
+describe("windows that depend on params", () => {
+  const G01 = "*/Satellite/G01";
+  const THBK = "*/Facility/thbk";
+  const pbs = (api: DockviewApi) => api.panels.filter((p) => p.api.component === "propertiesBrowser");
+
+  describe("Properties Browser is one window per object", () => {
+    test("two different paths give two floating windows that coexist, each titled with its object", async () => {
+      const { api } = await mount();
+      const a = st().openPanel("propertiesBrowser", { path: G01 });
+      const b = st().openPanel("propertiesBrowser", { path: THBK });
+      expect(a).not.toBe(b);
+      expect(pbs(api).map((p) => p.id).sort()).toEqual([a, b].sort());
+      expect(api.getPanel(a)?.params).toEqual({ path: G01 });
+      expect(api.getPanel(b)?.params).toEqual({ path: THBK });
+      expect(api.getPanel(a)?.title).toBe("G01 Properties");
+      expect(api.getPanel(b)?.title).toBe("thbk Properties");
+      expect(loc(a)).toEqual({ type: "floating" });
+      expect(loc(b)).toEqual({ type: "floating" });
+      expect(api.activePanel?.id).toBe(b);
+    });
+
+    test("the same path twice gives one window, focused", async () => {
+      const { api } = await mount();
+      const first = st().openPanel("propertiesBrowser", { path: G01 });
+      const other = st().openPanel("propertiesBrowser", { path: THBK });
+      api.getPanel("graphics3d")!.api.setActive();
+      const again = st().openPanel("propertiesBrowser", { path: G01 });
+      expect(again).toBe(first);
+      expect(pbs(api)).toHaveLength(2);
+      expect(api.activePanel?.id).toBe(first);
+      expect(st().openPanel("propertiesBrowser", { path: THBK })).toBe(other);
+      expect(api.activePanel?.id).toBe(other);
+    });
+
+    test("closing one leaves the other, and the freed id is reused", async () => {
+      const { api } = await mount();
+      const a = st().openPanel("propertiesBrowser", { path: G01 });
+      const b = st().openPanel("propertiesBrowser", { path: THBK });
+      st().closePanel(a);
+      expect(pbs(api).map((p) => p.id)).toEqual([b]);
+      expect(st().openPanel("propertiesBrowser", { path: "*/Satellite/G02" })).toBe(a);
+    });
+
+    test("an explicit name wins over the last segment of the path; no object gives the plain title", async () => {
+      const { api } = await mount();
+      expect(api.getPanel(st().openPanel("propertiesBrowser", { path: G01, name: "GPS01" }))?.title).toBe("GPS01 Properties");
+      expect(api.getPanel(st().openPanel("propertiesBrowser"))?.title).toBe("Properties Browser");
+      expect(getPanelDef("propertiesBrowser")?.title({ path: "*" })).toBe("Properties Browser");
+    });
+
+    test("other params of a reopened window are updated", async () => {
+      const { api } = await mount();
+      const id = st().openPanel("propertiesBrowser", { path: G01, page: "basic" });
+      expect(st().openPanel("propertiesBrowser", { path: G01, page: "graphics3d" })).toBe(id);
+      expect(api.getPanel(id)?.params).toEqual({ path: G01, page: "graphics3d" });
+    });
+  });
+
+  describe("every other singleton takes new params when it is reopened", () => {
+    test("satelliteCatalog gets the new params and is focused", async () => {
+      const { api } = await mount();
+      const id = st().openPanel("satelliteCatalog", { query: "G01" });
+      expect(api.getPanel(id)?.params).toEqual({ query: "G01" });
+      api.getPanel("graphics3d")!.api.setActive();
+      expect(st().openPanel("satelliteCatalog", { query: "R05", filter: "glonass" })).toBe(id);
+      expect(api.panels.filter((p) => p.api.component === "satelliteCatalog")).toHaveLength(1);
+      expect(api.getPanel(id)?.params).toEqual({ query: "R05", filter: "glonass" });
+      expect(api.activePanel?.id).toBe(id);
+    });
+
+    test("the open window component receives the new params", async () => {
+      const original = getPanelDef("satelliteCatalog")!;
+      try {
+        await mount();
+        act(() => registerPanel("satelliteCatalog", { ...original, component: ({ params }) => <div>catalog query={params.query ?? "none"}</div> }));
+        st().openPanel("satelliteCatalog", { query: "G01" });
+        expect(await screen.findByText("catalog query=G01")).toBeDefined();
+        act(() => void st().openPanel("satelliteCatalog", { query: "E11" }));
+        expect(await screen.findByText("catalog query=E11")).toBeDefined();
+      } finally {
+        registerPanel("satelliteCatalog", original);
+      }
+    });
+
+    test("reopening without params keeps the params it has", async () => {
+      const { api } = await mount();
+      const id = st().openPanel("satelliteCatalog", { query: "G01" });
+      expect(st().openPanel("satelliteCatalog")).toBe(id);
+      expect(api.getPanel(id)?.params).toEqual({ query: "G01" });
+    });
+
+    test("a docked singleton takes new params too", async () => {
+      const { api } = await mount();
+      expect(st().openPanel("timelineView", { focus: "G05" })).toBe("timelineView");
+      expect(api.getPanel("timelineView")?.params).toEqual({ focus: "G05" });
+    });
+  });
+});
+
+describe("titles follow the registry and the params", () => {
+  const tabText = (container: HTMLElement, id: string) => container.querySelector(`[data-tab-panel-id="${id}"] .dv-default-tab-content`)?.textContent;
+
+  test("re-registering a kind retitles the windows of that kind that are already open", async () => {
+    const original = getPanelDef("graphics3d")!;
+    try {
+      const { api, container } = await mount();
+      st().newGraphicsWindow("graphics3d");
+      act(() => registerPanel("graphics3d", { ...original, title: (p) => `Globe ${p?.n}` }));
+      expect(api.getPanel("graphics3d")?.title).toBe("Globe 1");
+      expect(api.getPanel("graphics3d-2")?.title).toBe("Globe 2");
+      expect(tabText(container, "graphics3d-2")).toBe("Globe 2");
+      expect(api.getPanel("graphics2d")?.title).toBe("2D Graphics 1 - Earth"); // other kinds are left alone
+      expect(st().listWindows().find((w) => w.id === "graphics3d")?.title).toBe("Globe 1");
+    } finally {
+      registerPanel("graphics3d", original);
+    }
+    expect(apiOf().getPanel("graphics3d")?.title).toBe("3D Graphics 1 - Earth");
+  });
+
+  test("reopening a window with new params retitles it when the title depends on them", async () => {
+    const { api, container } = await mount();
+    const id = st().openPanel("propertiesBrowser", { path: "*/Satellite/G01", name: "G01" });
+    expect(tabText(container, id)).toBe("G01 Properties");
+    expect(st().openPanel("propertiesBrowser", { path: "*/Satellite/G01", name: "GPS01" })).toBe(id);
+    expect(api.getPanel(id)?.title).toBe("GPS01 Properties");
+    expect(tabText(container, id)).toBe("GPS01 Properties");
+  });
+
+  test("updating a window's params directly retitles it too, also after the window was moved", async () => {
+    const { api } = await mount();
+    const id = st().openPanel("propertiesBrowser", { path: "*/Satellite/G01" });
+    api.getPanel(id)!.api.updateParameters({ name: "GPS01" });
+    expect(api.getPanel(id)?.title).toBe("GPS01 Properties");
+    st().setType(id, "integrated");
+    st().setType(id, "dockable");
+    api.getPanel(id)!.api.updateParameters({ name: "GPS02" });
+    expect(api.getPanel(id)?.title).toBe("GPS02 Properties");
+  });
+
+  test("a title nobody changed is not set again (no needless layout events)", async () => {
+    const { api } = await mount();
+    const id = st().openPanel("propertiesBrowser", { path: "*/Satellite/G01" });
+    const titleChanged = vi.fn();
+    api.getPanel(id)!.api.onDidTitleChange(titleChanged);
+    api.getPanel(id)!.api.updateParameters({ page: "basic" });
+    act(() => registerPanel("propertiesBrowser", getPanelDef("propertiesBrowser")!));
+    expect(titleChanged).not.toHaveBeenCalled();
+  });
+
+  test("after unmount the registry no longer reaches the old workspace", async () => {
+    const { unmount } = await mount();
+    unmount();
+    expect(() => registerPanel("graphics3d", getPanelDef("graphics3d")!)).not.toThrow();
+  });
+});
+
+describe("tile equalises the integrated groups", () => {
+  const IDS = ["graphics3d", "graphics2d", "graphics3d-2", "graphics2d-2"];
+  const size = (api: DockviewApi, id: string, axis: "width" | "height") => api.getPanel(id)!.group.api[axis];
+  const sizes = (api: DockviewApi, axis: "width" | "height") => IDS.map((id) => size(api, id, axis));
+  const expectEqual = (api: DockviewApi, axis: "width" | "height") => {
+    const all = sizes(api, axis);
+    const total = axis === "width" ? api.width : api.height;
+    expect(Math.min(...all)).toBeGreaterThan(0);
+    expect(Math.max(...all) - Math.min(...all)).toBeLessThanOrEqual(1);
+    expect(all[0]).toBeGreaterThan(total / IDS.length - 2);
+    expect(all[0]).toBeLessThan(total / IDS.length + 2);
+  };
+
+  async function fourWindows() {
+    const { api } = await mount();
+    act(() => api.layout(1600, 1200, true));
+    st().newGraphicsWindow("graphics3d");
+    st().newGraphicsWindow("graphics2d");
+    return api;
+  }
+
+  test("tile(vertical) gives every group the same width", async () => {
+    const api = await fourWindows();
+    st().tile("horizontal"); // อยู่แบบซ้อนกันอยู่ก่อน
+    st().tile("vertical");
+    expectEqual(api, "width");
+    for (const id of IDS) expect(size(api, id, "height")).toBe(api.height);
+  });
+
+  test("tile(horizontal) gives every group the same height", async () => {
+    const api = await fourWindows();
+    st().tile("horizontal");
+    expectEqual(api, "height");
+    for (const id of IDS) expect(size(api, id, "width")).toBe(api.width);
+  });
+
+  test("groups the user had dragged to different sizes are evened out", async () => {
+    const api = await fourWindows();
+    st().tile("horizontal");
+    api.getPanel("graphics3d")!.group.api.setSize({ height: 100 });
+    expect(Math.max(...sizes(api, "height")) - Math.min(...sizes(api, "height"))).toBeGreaterThan(50);
+    st().tile("horizontal");
+    expectEqual(api, "height");
+  });
+
+  test("windows that were tabbed together end up equal as well", async () => {
+    const api = await fourWindows();
+    st().cascade();
+    st().tile("vertical");
+    expectEqual(api, "width");
   });
 });

@@ -145,6 +145,7 @@ const LABELS = {
   "window.timelineView": stk("Timeline View", "A"),
   "window.messageViewer": stk("Message Viewer", "A"),
   "window.propertiesBrowser": stk("Properties Browser", "C"),
+  "window.propertiesBrowserFor": ours("{name} Properties"),
   "window.insertObjects": stk("Insert STK Objects", "A"),
   "window.satelliteCatalog": ours("Search Satellite Catalog"),
   "window.newScenarioWizard": ours("New Scenario Wizard"),

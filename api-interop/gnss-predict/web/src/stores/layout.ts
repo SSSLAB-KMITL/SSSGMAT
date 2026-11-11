@@ -6,14 +6,14 @@
 // - workbook (W6): toWorkbook / fromWorkbook / applyDefault / restoreFor(name) (เรียกหลัง useScenario.load สำเร็จ) / saveWorkbook (File → Save)
 // - หน้าต่างที่มี Cesium ต้องแจ้ง viewer.resize() เมื่อ panel เปลี่ยนขนาด: ใช้ onPanelResize(id, cb) หรือ hook usePanelResize(panelId, cb)
 
-import type { DockviewApi, DockviewIDisposable } from "dockview-react";
+import type { DockviewApi, DockviewIDisposable, IDockviewPanel } from "dockview-react";
 import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { ApiError, apiGet, apiSend, errorText } from "../api/client";
 import { msg } from "../labels/messages.th";
 import { addNewPanel, applyDefaultLayout } from "../layout/defaultLayout";
 import {
-  DEFAULT_FLOAT_SIZE, getPanelDef, isPanelKind, nextGraphicsNumber, UNKNOWN_PANEL,
+  DEFAULT_FLOAT_SIZE, getPanelDef, isPanelKind, nextGraphicsNumber, subscribePanels, UNKNOWN_PANEL,
   type GraphicsKind, type PanelKind, type PanelSize, type WindowType,
 } from "../layout/panels";
 import { cascadeIntegrated, centrePanel, moveToType, revealPanel, tileIntegrated, windowTypeOf, type MoveHints } from "../layout/placement";
@@ -79,7 +79,11 @@ interface LayoutState {
   applyDefault(): void;
   /** เปิด scenario: อ่าน workbook ของมันแล้ว fromWorkbook, ไม่มีหรืออ่านไม่ได้ = applyDefault */
   restoreFor(name: string): Promise<void>;
-  /** File → Save: PUT workbook (ไม่เกิน 1,048,576 ไบต์) ล้มเหลวทุกแบบ = ข้อความใน Message Viewer แล้ว reject */
+  /**
+   * File → Save: PUT workbook (ไม่เกิน 1,048,576 ไบต์) ไปที่ scenario ที่เปิดอยู่
+   * ล้มเหลวทุกแบบ (ไม่มี scenario ที่เปิด, พื้นที่ทำงานยังไม่ mount, ใหญ่เกิน, server ปฏิเสธ หรือต่อไม่ได้) = เพิ่มข้อความไทยใน Message Viewer แล้ว reject
+   * ผู้เรียกจึงไม่ต้องแสดงข้อความซ้ำ
+   */
   saveWorkbook(): Promise<void>;
 }
 
@@ -93,6 +97,9 @@ const isGraphics = (kind: string): kind is GraphicsKind => kind === "graphics3d"
 
 export const useLayout = create<LayoutState>()((set, get) => {
   let subscriptions: DockviewIDisposable[] = [];
+  /** ผู้ฟัง params ของแต่ละหน้าต่าง (ชื่อหน้าต่างบางชนิดขึ้นกับ params) และผู้ฟังการลงทะเบียนซ้ำ */
+  const watched = new Map<IDockviewPanel, DockviewIDisposable>();
+  let unsubscribeRegistry: (() => void) | null = null;
   /** นับทุก restoreFor: คำตอบของครั้งที่ถูกครั้งใหม่กว่าแซง ทิ้ง */
   let restoreSeq = 0;
 
@@ -102,11 +109,34 @@ export const useLayout = create<LayoutState>()((set, get) => {
     return api;
   };
   const bump = (): void => set((s) => ({ revision: s.revision + 1 }));
+  /** File → Save ที่ทำไม่ได้: ข้อความไทยใน Message Viewer แล้ว reject ด้วยข้อความเดียวกัน (ผู้เรียกไม่ต้องแสดงซ้ำ) */
+  const failSave = (code: string, text: string, ErrorType: new (message: string) => Error = Error): Promise<never> => {
+    report("error", code, text);
+    return Promise.reject(new ErrorType(text));
+  };
   const forgetProps = (id: string): void => {
     if (Object.hasOwn(get().windowProps, id)) {
       const { [id]: _gone, ...rest } = get().windowProps;
       set({ windowProps: rest });
     }
+  };
+  /** ชื่อของหน้าต่างมาจากทะเบียนเสมอ (def.title(params)); ตั้งใหม่เฉพาะเมื่อต่างจากเดิม */
+  const syncTitle = (panel: IDockviewPanel): void => {
+    const title = getPanelDef(panel.api.component)?.title(panel.params);
+    if (title !== undefined && panel.title !== title) panel.api.setTitle(title);
+  };
+  const syncAllTitles = (api: DockviewApi): void => {
+    for (const panel of api.panels) syncTitle(panel);
+  };
+  /** params ของหน้าต่างเปลี่ยนไม่ว่าใครสั่ง (openPanel หรือ panel.api.updateParameters ตรง ๆ) ให้ชื่อตามทัน */
+  const watch = (panel: IDockviewPanel): void => {
+    if (!watched.has(panel)) watched.set(panel, panel.api.onDidParametersChange(() => syncTitle(panel)));
+  };
+  /** ย้ายหน้าต่างทำให้ dockview ส่ง add/remove ซ้ำ ๆ: เลิกฟังเมื่อหน้าต่างหายจาก api จริงเท่านั้น */
+  const unwatch = (api: DockviewApi, panel: IDockviewPanel): void => {
+    if (api.getPanel(panel.id) === panel) return;
+    watched.get(panel)?.dispose();
+    watched.delete(panel);
   };
   const moveHints = (kind: string): MoveHints => {
     const def = getPanelDef(kind);
@@ -123,7 +153,19 @@ export const useLayout = create<LayoutState>()((set, get) => {
 
     attach: (api) => {
       get().detach();
-      subscriptions = [api.onDidLayoutChange(bump), api.onDidAddPanel(bump), api.onDidRemovePanel(bump)];
+      subscriptions = [
+        api.onDidLayoutChange(bump),
+        api.onDidAddPanel((panel) => {
+          watch(panel);
+          bump();
+        }),
+        api.onDidRemovePanel((panel) => {
+          unwatch(api, panel);
+          bump();
+        }),
+      ];
+      api.panels.forEach(watch);
+      unsubscribeRegistry = subscribePanels(() => syncAllTitles(api)); // registerPanel ซ้ำ = ชื่อของหน้าต่างที่เปิดอยู่เปลี่ยนตาม
       set({ api });
       bump();
     },
@@ -132,6 +174,10 @@ export const useLayout = create<LayoutState>()((set, get) => {
       if (api !== undefined && get().api !== api) return;
       for (const s of subscriptions) s.dispose();
       subscriptions = [];
+      for (const w of watched.values()) w.dispose();
+      watched.clear();
+      unsubscribeRegistry?.();
+      unsubscribeRegistry = null;
       set({ api: null });
     },
 
@@ -140,8 +186,14 @@ export const useLayout = create<LayoutState>()((set, get) => {
       const def = getPanelDef(kind);
       if (def === undefined) throw new Error(`unknown panel kind "${kind}"`);
       if (def.singleton) {
-        const existing = api.panels.find((p) => p.api.component === kind);
+        // บานเดียวต่อชนิด หรือบานเดียวต่อกุญแจถ้าชนิดนั้นมี instanceKey (Properties Browser: หนึ่งบานต่อ object)
+        const key = def.instanceKey?.(params);
+        const existing = api.panels.find((p) => p.api.component === kind && (key === undefined || def.instanceKey?.(p.params) === key));
         if (existing !== undefined) {
+          if (Object.keys(params).length > 0) {
+            existing.api.updateParameters(params); // params ใหม่ไปถึงหน้าต่างเดิม (รวมกับของเดิม) แล้วชื่อตามถ้าขึ้นกับ params
+            syncTitle(existing);
+          }
           revealPanel(api, existing);
           return existing.id;
         }
@@ -279,10 +331,7 @@ export const useLayout = create<LayoutState>()((set, get) => {
       }
       for (const kind of unknownKinds) report("warning", "WORKBOOK_UNKNOWN_KIND", msg("workbook.unknownKind", { kind }));
       // ชื่อหน้าต่างมาจากตารางชื่อเสมอ (ไม่ใช้ชื่อที่เก็บไว้ในไฟล์ ซึ่งอาจเป็นชื่อของรุ่นเก่า)
-      for (const panel of api.panels) {
-        const title = getPanelDef(panel.api.component)?.title(panel.params);
-        if (title !== undefined && panel.title !== title) panel.api.setTitle(title);
-      }
+      syncAllTitles(api);
       set({ toolbars: w.toolbars, timelineHidden: w.timelineHidden, windowProps: w.windowProps });
       bump();
     },
@@ -306,11 +355,11 @@ export const useLayout = create<LayoutState>()((set, get) => {
 
     saveWorkbook: async () => {
       const name = useScenario.getState().name;
-      if (name === null) throw new Error("no scenario is open");
+      if (name === null) return failSave("WORKBOOK_NO_SCENARIO", msg("workbook.noScenario"));
+      if (get().api === null) return failSave("WORKBOOK_NO_WORKSPACE", msg("workbook.noWorkspace"));
       const workbook = get().toWorkbook();
       if (workbookBytes(workbook) > WORKBOOK_MAX_BYTES) {
-        report("error", "WORKBOOK_TOO_LARGE", msg("workbook.tooLarge"));
-        throw new RangeError(msg("workbook.tooLarge"));
+        return failSave("WORKBOOK_TOO_LARGE", msg("workbook.tooLarge"), RangeError);
       }
       try {
         await apiSend("PUT", `/scenarios/${enc(name)}/workbook`, workbook); // ไม่ต้องใช้ If-Match (ไม่ใช่ตัว scenario)

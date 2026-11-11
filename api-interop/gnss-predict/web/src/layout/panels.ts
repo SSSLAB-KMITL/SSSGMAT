@@ -39,8 +39,13 @@ export interface PanelDef {
   title(params: any): string;
   /** ชนิดตอนเปิดครั้งแรก */
   type: WindowType;
-  /** true = เปิดซ้ำแล้วโฟกัสหน้าต่างเดิม (3D/2D Graphics ไม่เป็น singleton ตลอด) */
+  /** true = เปิดซ้ำแล้วโฟกัสหน้าต่างเดิม และ params ใหม่ (ถ้ามี) ไปอัปเดตหน้าต่างเดิม (3D/2D Graphics ไม่เป็น singleton ตลอด) */
   singleton: boolean;
+  /**
+   * สำหรับ singleton ที่มีได้หนึ่งบานต่อกุญแจ (Properties Browser: หนึ่งบานต่อ object): กุญแจคำนวณจาก params
+   * เปิดซ้ำด้วยกุญแจเดียวกัน = หน้าต่างเดิม, กุญแจต่าง = หน้าต่างใหม่อีกบาน ไม่ระบุ = ทั้งชนิดมีบานเดียว
+   */
+  instanceKey?(params: any): string;
   /** ด้านที่เกาะเมื่อเป็น Dockable (ไม่ระบุ = ล่าง) */
   edge?: EdgePosition;
   /** ขนาดเมื่อเป็น Floating (ไม่ระบุ = DEFAULT_FLOAT_SIZE) */
@@ -111,6 +116,8 @@ interface Base {
   type: WindowType;
   /** ไม่ระบุ = singleton */
   multiple?: boolean;
+  title?: PanelDef["title"];
+  instanceKey?: PanelDef["instanceKey"];
   edge?: EdgePosition;
   size?: PanelSize;
 }
@@ -122,7 +129,15 @@ const BASE: Record<PanelKind, Base> = {
   graphics2d: { label: "window.graphics2d", type: "integrated", multiple: true, size: { width: 640, height: 400 } },
   timelineView: { label: "window.timelineView", type: "dockable", edge: "bottom", size: { width: 720, height: 280 } },
   messageViewer: { label: "window.messageViewer", type: "dockable", edge: "bottom", size: { width: 720, height: 280 } },
-  propertiesBrowser: { label: "window.propertiesBrowser", type: "floating", size: { width: 640, height: 480 } },
+  // หนึ่งบานต่อหนึ่ง object (กุญแจ = params.path) ชื่อมีชื่อ object ("G01 Properties"); ไม่มี path = "Properties Browser" เฉยๆ
+  propertiesBrowser: {
+    label: "window.propertiesBrowser", type: "floating", size: { width: 640, height: 480 },
+    title: (params) => {
+      const name = objectName(params);
+      return name === null ? t("window.propertiesBrowser") : t("window.propertiesBrowserFor", { name });
+    },
+    instanceKey: (params) => (typeof params?.path === "string" ? params.path : ""),
+  },
   insertObjects: { label: "window.insertObjects", type: "floating", size: { width: 560, height: 420 } },
   satelliteCatalog: { label: "window.satelliteCatalog", type: "floating", size: { width: 760, height: 480 } },
   newScenarioWizard: { label: "window.newScenarioWizard", type: "floating", size: { width: 560, height: 420 } },
@@ -135,6 +150,15 @@ const BASE: Record<PanelKind, Base> = {
   about: { label: "help.about", type: "floating", size: { width: 480, height: 320 } },
   stkReference: { label: "help.stkReference", type: "floating", size: { width: 760, height: 520 } },
 };
+
+// ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")
+// ไม่มี path หรือเป็น Scenario ("*") = null
+function objectName(params: { name?: unknown; path?: unknown } | undefined): string | null {
+  if (typeof params?.name === "string" && params.name !== "") return params.name;
+  if (typeof params?.path !== "string") return null;
+  const last = params.path.split("/").at(-1) ?? "";
+  return last === "" || last === "*" ? null : last;
+}
 
 function titleFor(label: LabelKey): PanelDef["title"] {
   // หน้าต่าง 3D/2D มี {n} ในชื่อ (params.n; ไม่มี = 1) ชื่ออื่นไม่มีช่องแทนค่า
@@ -157,5 +181,8 @@ function placeholder(title: PanelDef["title"]): FC<PanelProps> {
 for (const kind of PANEL_KINDS) {
   const b = BASE[kind];
   const title = titleFor(b.label);
-  registerPanel(kind, { component: placeholder(title), title, type: b.type, singleton: b.multiple !== true, edge: b.edge, size: b.size });
+  registerPanel(kind, {
+    component: placeholder(b.title ?? title), title: b.title ?? title, type: b.type, singleton: b.multiple !== true, instanceKey: b.instanceKey,
+    edge: b.edge, size: b.size,
+  });
 }
