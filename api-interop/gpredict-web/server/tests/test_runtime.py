@@ -3,6 +3,7 @@
 
 import json
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -59,6 +60,12 @@ def tle(norad: int, epoch: datetime, ndot2: float = 0.0) -> tuple[str, str]:
 
 def record(norad: int, epoch: datetime = T0 - timedelta(days=1), ndot2: float = 0.0) -> SatRecord:
     return SatRecord(norad, f"SAT-{norad}", ["amateur"], tle(norad, epoch, ndot2), epoch, epoch)
+
+
+def started(fn, *args) -> threading.Thread:
+    th = threading.Thread(target=fn, args=args, daemon=True)
+    th.start()
+    return th
 
 
 def peak(norad: int) -> datetime:
@@ -632,8 +639,103 @@ class HubTest(unittest.TestCase):
             t.join()
         self.assertEqual(errors, [])
         self.assertEqual(hub.open_names(), [])
+        self.assertEqual(hub._name_locks, {})                           # lock ประจำชื่อไม่ค้าง (ไม่โตไม่จำกัด)
         self.ephem.drain()
         self.assertEqual(self.fake.calls, [])                           # ทุก runtime ปิดแล้ว ไม่เหลืองานในคิว
+        rt = hub.open("M")                                              # เปิดใหม่หลังวุ่นวาย: ช่วงคำนวณไม่ถูกตัวเก่าลบ
+        self.ephem.drain()
+        self.assertEqual(rt.tick()["status"], "ok")
+
+    def test_slow_module_does_not_block_other_modules(self):
+        """tick แรกของ A หา pass นาน (ถือ lock ของ A ราว 3 วินาทีที่ 200 ดวง) close/reload ของ A รอได้
+        แต่ get/open/open_names/reload/close ของ module อื่นต้องไม่รอ"""
+        for name in ("A", "B", "C"):
+            self.put_module(name)
+        hub = self.hub()
+        a = hub.open("A")
+        hub.open("B")
+        self.ephem.drain()
+        entered, gate = threading.Event(), threading.Event()
+        real = runtime.find_passes
+
+        def slow_find_passes(eph, q):
+            entered.set()
+            gate.wait(10)
+            return real(eph, q)
+
+        blocked: list[threading.Thread] = []
+        with mock.patch.object(runtime, "find_passes", slow_find_passes):
+            ticker = started(a.tick)
+            try:
+                self.assertTrue(entered.wait(5))
+                blocked += [started(hub.close, "A"), started(hub.reload, "A")]
+                time.sleep(0.2)                                         # ให้ close/reload ของ A ไปรอ tick ของ A ก่อน
+                for label, fn, args in (("get", hub.get, ("B",)), ("open_names", hub.open_names, ()),
+                                        ("open", hub.open, ("C",)), ("reload", hub.reload, ("B",)),
+                                        ("close", hub.close, ("B",))):
+                    th = started(fn, *args)
+                    th.join(2.0)
+                    self.assertFalse(th.is_alive(), f"hub.{label} ของ module อื่นรอ tick ของ A")
+                self.assertTrue(blocked[0].is_alive())                  # close ของ A ยังรอ tick ของ A อยู่จริง
+            finally:
+                gate.set()
+                ticker.join(10)
+        for th in blocked:
+            th.join(10)
+        self.assertTrue(a.closed)
+        self.assertEqual(hub.open_names(), ["C"])
+
+    def test_reopen_while_closing_gets_a_working_runtime(self):
+        """open ระหว่างที่ close ของชื่อเดียวกันยังรอ tick: owner ใน EphemManager คือชื่อ module
+        runtime ใหม่ต้องเริ่มหลังตัวเก่าปล่อยช่วงแล้ว ไม่งั้น release ของตัวเก่าลบช่วง (และงาน GMAT) ของตัวใหม่ทิ้ง"""
+        self.put_module()
+        hub = self.hub()
+        old = hub.open("M")                                             # ยังไม่ drain: งาน GMAT ของช่วงรออยู่ในคิว
+        opened: list[ModuleRuntime] = []
+        old._lock.acquire()                                             # จำลอง tick ที่ยาว (ถือ lock ของ runtime)
+        try:
+            closer = started(hub.close, "M")
+            time.sleep(0.1)
+            opener = started(lambda: opened.append(hub.open("M")))
+            time.sleep(0.1)
+        finally:
+            old._lock.release()
+        closer.join(10)
+        opener.join(10)
+        self.assertEqual(len(opened), 1)
+        new = opened[0]
+        self.assertIsNot(new, old)
+        self.assertTrue(old.closed)
+        self.assertIs(hub.get("M"), new)
+        self.ephem.drain()
+        self.assertEqual(new.tick()["status"], "ok")
+
+    def test_reload_during_open_is_not_lost(self):
+        """PUT module + reload ระหว่างที่อีก thread กำลังเปิด module เดียวกัน: reload ต้องรอแล้วใช้ค่าใหม่ ไม่ใช่หลุดไปเพราะยังไม่เปิด"""
+        self.put_module()
+        hub = self.hub()
+        real_load = hub._load
+        entered, gate = threading.Event(), threading.Event()
+
+        def slow_load(name):
+            result = real_load(name)
+            if not entered.is_set():                                    # ครั้งแรก (ของ open) อ่านค่าเก่าแล้วรอ
+                entered.set()
+                gate.wait(10)
+            return result
+
+        with mock.patch.object(hub, "_load", slow_load):
+            opener = started(hub.open, "M")
+            try:
+                self.assertTrue(entered.wait(5))
+                self.put_module(qth="OTHER")
+                reloader = started(hub.reload, "M")
+                time.sleep(0.1)
+            finally:
+                gate.set()
+            opener.join(10)
+            reloader.join(10)
+        self.assertEqual(hub.get("M").module.qth, "OTHER")
 
 
 if __name__ == "__main__":

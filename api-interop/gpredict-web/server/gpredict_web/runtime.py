@@ -14,7 +14,8 @@ pass หาครั้งเดียวต่อ (tle_key, ช่วง, ต�
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -386,7 +387,18 @@ def _tle_old(r: SatRecord, t: datetime) -> Message:
 
 
 class Hub:
-    """module ที่เปิดอยู่ทั้งหมด (ชื่อ -> ModuleRuntime) ทุกเมธอดใช้ lock เดียว ทุก browser tab ของ module เดียวกันใช้ runtime เดียวกัน"""
+    """module ที่เปิดอยู่ทั้งหมด (ชื่อ -> ModuleRuntime) ทุก browser tab ของ module เดียวกันใช้ runtime เดียวกัน
+
+    lock สองชั้น งานช้าของ module หนึ่งจึงไม่ขวาง module อื่น
+    - _lock ถือสั้นๆ เฉพาะตอนอ่านหรือแก้ dict ไม่เคยถือขณะอ่านไฟล์ สร้าง runtime หรือรอ lock ของ runtime
+      (tick แรกของ module 200 ดวงถือ lock ของ runtime ราว 3 วินาทีระหว่างหา pass)
+    - lock ประจำชื่อ (_serial) เรียงงานช้าของชื่อเดียวกัน: สร้าง runtime ตอน open, _load + update ตอน reload และ close
+      reload ที่ตามหลัง PUT จึงไม่หลุด (รอ open ที่กำลังสร้างอยู่) และไม่ทับกันผิดลำดับ
+      และ runtime สองตัวของชื่อเดียวกันไม่มีชีวิตซ้อนกัน: owner ใน EphemManager คือชื่อ module
+      ถ้าตัวใหม่เริ่มก่อนตัวเก่าปิดเสร็จ release ของตัวเก่าจะลบช่วงและงาน GMAT ของตัวใหม่ทิ้ง
+    lock ประจำชื่อมีอยู่เฉพาะระหว่างที่มีคนใช้ (นับจำนวน) dict จึงไม่โตตามชื่อที่เคยถูกเรียก
+    ลำดับการถือ lock: ประจำชื่อ -> _lock (สั้นๆ) และ ประจำชื่อ -> lock ของ runtime -> lock ของ EphemManager
+    """
 
     def __init__(self, store: Store, satdb: SatDb, ephem: EphemManager, now: Callable[[], datetime]):
         self._store = store
@@ -395,21 +407,28 @@ class Hub:
         self._now = now
         self._lock = threading.Lock()
         self._open: dict[str, ModuleRuntime] = {}
+        self._name_locks: dict[str, list] = {}                  # ชื่อ -> [Lock, จำนวนผู้ถือหรือรอ]
 
     def open(self, name: str) -> ModuleRuntime:
         """เปิด module (นาฬิกาเริ่มที่ Reset) หรือคืนตัวที่เปิดอยู่แล้ว ApiError จาก store (NOT_FOUND, MODULE_INVALID)
         หรือ QTH_INVALID เมื่อ module ใช้สถานีตั้งต้นแต่ไม่มีสถานีตั้งต้น"""
-        with self._lock:
-            rt = self._open.get(name)
+        rt = self.get(name)
+        if rt is not None:
+            return rt
+        with self._serial(name):
+            rt = self.get(name)                                  # อีก thread อาจเปิดเสร็จระหว่างรอ
             if rt is None:
                 rt = ModuleRuntime(*self._load(name), self._ephem, ModuleClock(self._now))
-                self._open[name] = rt
+                with self._lock:
+                    self._open[name] = rt
             return rt
 
     def close(self, name: str) -> None:
-        """ปิด module และปล่อยทุกช่วงคำนวณของมัน (ไม่ได้เปิดอยู่: ไม่ทำอะไร)"""
-        with self._lock:
-            rt = self._open.pop(name, None)
+        """ปิด module และปล่อยทุกช่วงคำนวณของมัน (ไม่ได้เปิดอยู่: ไม่ทำอะไร)
+        เอาออกจาก dict ทันที แล้วรอ tick ที่กำลังทำของ module นี้ก่อนปล่อยช่วง (โดยไม่ถือ _lock)"""
+        with self._serial(name):
+            with self._lock:
+                rt = self._open.pop(name, None)
             if rt is not None:
                 rt.close()
 
@@ -419,9 +438,9 @@ class Hub:
 
     def reload(self, name: str) -> None:
         """อ่าน module, QTH และ TLE ใหม่หลัง PUT module หรือ Update TLE (นาฬิกาและ TLE เดิมระหว่างรอค่าใหม่คงอยู่)
-        ไม่ได้เปิดอยู่: ไม่ทำอะไร"""
-        with self._lock:
-            rt = self._open.get(name)
+        ไม่ได้เปิดอยู่: ไม่ทำอะไร ApiError จาก store ไม่เปลี่ยน runtime (close ถือ lock ประจำชื่อเดียวกัน จึงไม่ปิดแทรกระหว่างนี้)"""
+        with self._serial(name):
+            rt = self.get(name)
             if rt is not None:
                 rt.update(*self._load(name))
 
@@ -429,6 +448,22 @@ class Hub:
         """ชื่อ module ที่เปิดอยู่ตามลำดับที่เปิด"""
         with self._lock:
             return list(self._open)
+
+    @contextmanager
+    def _serial(self, name: str) -> Iterator[None]:
+        """ถือ lock ประจำชื่อ module สร้างเมื่อมีคนแรกขอ และลบเมื่อคนสุดท้ายเลิกใช้ (ทั้งสองอย่างใต้ _lock
+        ผู้ที่ขอชื่อเดียวกันพร้อมกันจึงได้ lock ตัวเดียวกันเสมอ)"""
+        with self._lock:
+            entry = self._name_locks.setdefault(name, [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._lock:
+                entry[1] -= 1
+                if entry[1] == 0:
+                    del self._name_locks[name]
 
     def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord]]:
         """module, QTH ของมัน และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
