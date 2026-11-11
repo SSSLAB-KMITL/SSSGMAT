@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from gnss_predict import omm
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import Message
 
@@ -48,7 +49,6 @@ SEND_TIMEOUT_S = 10.0                  # socket ที่รับ tick ไม�
 WS_NOT_OPEN = 1008                     # close code: module ไม่ได้เปิดอยู่ (policy violation)
 WS_MODULE_CLOSED = 1000                # close code: module ถูกปิดหรือลบ
 WS_SERVER_STOP = 1001                  # close code: server กำลังปิด
-_STATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"  # เวลาใน celestrak_state.json ของ engine
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
 
@@ -271,22 +271,6 @@ def _clock_dict(clock: ModuleClock) -> dict:
     return {"state": state, "throttle": throttle, "time": iso_ms(t), "label": label}
 
 
-def _state_time(text) -> str | None:
-    try:
-        return iso_ms(datetime.strptime(text, _STATE_TIME_FMT).replace(tzinfo=_UTC))
-    except (TypeError, ValueError):
-        return None
-
-
-def _read_state(path: Path) -> dict:
-    """celestrak_state.json ที่ใช้ร่วมกับ GNSS Studio: {"<group>": {"last_request", "last_success"}} ไม่มีหรือเสียถือเป็นว่าง"""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def _meta() -> dict:
     """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)"""
     defaults = M.module_to_dict(M.ModuleConfig(name=""))
@@ -491,12 +475,12 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/tle/groups")
     def tle_groups():
-        state = _read_state(cfg.state_file)
+        state = omm.read_state(cfg.state_file)            # celestrak_state.json ที่ใช้ร่วมกับ GNSS Studio
         out = []
         for g in TLE_GROUPS:
             entry = state.get(g) if isinstance(state.get(g), dict) else {}
-            out.append({"name": g, "last_request": _state_time(entry.get("last_request")),
-                        "last_success": _state_time(entry.get("last_success"))})
+            out.append({"name": g, "last_request": iso_ms(omm.parse_state_time(entry.get("last_request"))),
+                        "last_success": iso_ms(omm.parse_state_time(entry.get("last_success")))})
         return {"groups": out}
 
     def update_tle() -> dict:
