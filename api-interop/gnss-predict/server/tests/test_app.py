@@ -1,16 +1,18 @@
+import json
 import os
 import re
 import stat
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from gnss_predict.errors import GmatNotFoundError, ScenarioError, TleUnavailableError
 from gnss_studio_server.app import create_app
 from gnss_studio_server.config import Config
-from gnss_studio_server.errors import ApiError
+from gnss_studio_server.errors import HTTP_ERROR_TEXT, ApiError
 
 ERROR_KEYS = {"code", "text", "field", "detail"}
 
@@ -35,13 +37,13 @@ def test_health_values(client):
     assert j["daily"] is None                                  # ตัวตั้งเวลาเริ่มมีใน Task 11
 
 
-def test_health_gmat_found_follows_config(data_dir, tmp_path):
+def test_health_gmat_found_follows_config(data_dir, tmp_path, no_web_dist):
     fake = tmp_path / "GmatConsole"
     fake.write_text("#!/bin/sh\n")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-    found = TestClient(create_app(Config(data_dir=data_dir, gmat_bin=str(fake)), start_background=False))
+    found = TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(fake)), start_background=False))
     assert found.get("/api/health").json()["gmat_found"] is True
-    missing = TestClient(create_app(Config(data_dir=data_dir, gmat_bin=str(tmp_path / "nope")), start_background=False))
+    missing = TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(tmp_path / "nope")), start_background=False))
     assert missing.get("/api/health").json()["gmat_found"] is False
 
 
@@ -84,6 +86,7 @@ def test_wrong_method_is_json_405(client):
 
 
 def test_unknown_path_without_web_dist_is_json_404(client):
+    assert not client.app.state.config.web_dist.exists()        # fixture ไม่ชี้ไปที่ web/dist จริงของเครื่อง
     r = client.get("/scenarios/x"); assert r.status_code == 404 and r.json()["code"] == "NOT_FOUND"
 
 
@@ -124,8 +127,8 @@ class _Body(BaseModel):
 
 
 @pytest.fixture
-def client_with_error_routes(data_dir):
-    app = create_app(Config(data_dir=data_dir), start_background=False)
+def client_with_error_routes(data_dir, no_web_dist):
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
 
     @app.get("/api/_api_error")
     def api_error():
@@ -146,6 +149,14 @@ def client_with_error_routes(data_dir):
     @app.post("/api/_body")
     def body(b: _Body):
         return b
+
+    @app.get("/api/_teapot")
+    def teapot():
+        raise HTTPException(418, detail="teapot")
+
+    @app.get("/api/_dict_detail")
+    def dict_detail():
+        raise HTTPException(400, detail={"reason": "ผิด", "n": 1})
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -177,6 +188,20 @@ def test_request_validation_error_is_scenario_invalid(client_with_error_routes):
     assert set(j) == ERROR_KEYS
     assert j["code"] == "SCENARIO_INVALID" and j["field"] == "count" and j["detail"]
     assert client_with_error_routes.post("/api/_body", json={"name": "x"}).json()["field"] == "count"
+
+
+def test_other_http_errors_have_thai_text_and_original_detail(client_with_error_routes):
+    r = client_with_error_routes.get("/api/_teapot")
+    assert r.status_code == 418
+    assert r.json() == {"code": "HTTP_ERROR", "text": HTTP_ERROR_TEXT, "field": None, "detail": "teapot"}
+    assert re.search("[\u0e00-\u0e7f]", HTTP_ERROR_TEXT) and "teapot" not in r.json()["text"]
+
+
+def test_non_string_http_error_detail_is_stringified(client_with_error_routes):
+    r = client_with_error_routes.get("/api/_dict_detail")
+    j = r.json()
+    assert r.status_code == 400 and j["code"] == "HTTP_ERROR" and j["text"] == HTTP_ERROR_TEXT
+    assert isinstance(j["detail"], str) and json.loads(j["detail"]) == {"reason": "ผิด", "n": 1}
 
 
 # ---------- ไฟล์เว็บ ----------

@@ -1,5 +1,6 @@
 """แปลง error ทุกชนิดเป็นรูปแบบเดียว {"code", "text", "field", "detail"} (หัวข้อ 10 ของ spec)"""
 
+import json
 import uuid
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from gnss_predict.errors import GnssPredictError, ScenarioError
 NOT_FOUND_TEXT = "ไม่พบรายการที่ร้องขอ"
 METHOD_NOT_ALLOWED_TEXT = "path นี้ไม่รองรับวิธีเรียกแบบนี้"
 VALIDATION_TEXT = "ข้อมูลที่ส่งมาไม่ถูกต้อง"
+HTTP_ERROR_TEXT = "คำขอไม่สำเร็จ"
 INTERNAL_TEXT = "เกิดข้อผิดพลาดภายในของ server (เลขอ้างอิง {ref}) ดูรายละเอียดใน data/logs/server.log"
 
 
@@ -66,6 +68,13 @@ def _spa_response(web_root: Path, url_path: str) -> Response | None:
     return FileResponse(target) if target else None
 
 
+def _detail_text(detail) -> str | None:
+    """detail ของ HTTPException เป็นอะไรก็ได้ (มักเป็นอังกฤษ) เก็บไว้ในช่อง detail เป็นสตริงเสมอ ไม่ใช้เป็น text ถึงผู้ใช้"""
+    if detail is None or isinstance(detail, str):
+        return detail
+    return json.dumps(detail, ensure_ascii=False, default=str)
+
+
 def _http_error(web_root: Path | None):
     def handler(request: Request, exc: StarletteHTTPException) -> Response:
         path = request.url.path
@@ -78,7 +87,8 @@ def _http_error(web_root: Path | None):
             return error_response(404, "NOT_FOUND", NOT_FOUND_TEXT, headers=exc.headers)
         if exc.status_code == 405:
             return error_response(405, "METHOD_NOT_ALLOWED", METHOD_NOT_ALLOWED_TEXT, headers=exc.headers)
-        return error_response(exc.status_code, "HTTP_ERROR", str(exc.detail), headers=exc.headers)
+        return error_response(exc.status_code, "HTTP_ERROR", HTTP_ERROR_TEXT, detail=_detail_text(exc.detail),
+                              headers=exc.headers)
     return handler
 
 

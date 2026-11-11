@@ -26,8 +26,16 @@ def data_dir(tmp_path):
 
 
 @pytest.fixture
-def client(data_dir):
-    return TestClient(create_app(Config(data_dir=data_dir), start_background=False))
+def no_web_dist(tmp_path):
+    """web_dist ที่ไม่มีอยู่จริง: test ที่ไม่เกี่ยวกับหน้าเว็บต้องไม่ขึ้นกับ <gnss-predict>/web/dist ที่ build ไว้ในเครื่อง"""
+    path = tmp_path / "no-web-dist"
+    assert not path.exists()
+    return path
+
+
+@pytest.fixture
+def client(data_dir, no_web_dist):
+    return TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False))
 
 
 @pytest.fixture
@@ -39,10 +47,10 @@ def snapshot(data_dir):
 
 
 @pytest.fixture
-def boom_client_factory():
+def boom_client_factory(no_web_dist):
     """สร้าง client ที่มี GET /api/_boom ซึ่ง raise exception ธรรมดา (ไว้ตรวจ handler 500) ต่อ data_dir ที่ส่งให้"""
     def make(data_dir):
-        app = create_app(Config(data_dir=data_dir), start_background=False)
+        app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
 
         @app.get("/api/_boom")
         def boom():
