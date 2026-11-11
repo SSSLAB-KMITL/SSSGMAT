@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
 import type { ModuleConfig, Tick } from "../types";
 import { MapView } from "../views/MapView";
+import { PolarView } from "../views/PolarView";
 
 /** What every view receives. */
 export interface ViewProps {
@@ -26,12 +27,13 @@ export type ModuleViewProps = Omit<ViewProps, "selected" | "onSelect">;
 
 /**
  * The component of each view type. Tasks 15-16 add their entry here, one line each:
- *   [VIEW.Polar]: PolarView and [VIEW.SingleSat]: SingleSatView (Task 15),
+ *   [VIEW.SingleSat]: SingleSatView (Task 15),
  *   [VIEW.List]: ListView and [VIEW.EventList]: EventListView (Task 16).
  * A cell whose type has no entry yet is a labelled placeholder.
  */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
   [VIEW.Map]: MapView,
+  [VIEW.Polar]: PolarView,
 };
 
 /**

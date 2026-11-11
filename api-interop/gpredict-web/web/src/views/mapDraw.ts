@@ -20,8 +20,8 @@ import {
 import { cursorText, NEXT_PENDING, nextEventText, qthInfoText, selectedEventText } from "./mapText";
 
 /** The page's font (styles.css); Gpredict uses the GTK default font and ignores its MAP_FONT setting (ref §5). */
-const FONT = '13px system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Thai", sans-serif';
-const LINE_H = 16;
+export const FONT = '13px system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Thai", sans-serif';
+export const LINE_H = 16;
 /** Behind the picture until it has loaded. */
 const FALLBACK_BACKGROUND = "#10243f";
 

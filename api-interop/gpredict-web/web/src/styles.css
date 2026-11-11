@@ -232,12 +232,14 @@ body {
   color: var(--text-dim);
   font-size: 15px;
 }
-.map-view {
+.map-view,
+.polar-view {
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
-.map-canvas {
+.map-canvas,
+.polar-canvas {
   display: block;
 }
 .view-error,
