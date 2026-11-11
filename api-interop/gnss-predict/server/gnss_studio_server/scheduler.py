@@ -7,14 +7,19 @@
    job daily ที่ succeeded, queued หรือ running; ที่ cancelled (ผู้ใช้กด Stop); ที่ failed ด้วยรหัสอื่นนอกจาก `INTERRUPTED`
    (รอรอบวันถัดไป ไม่สั่งซ้ำทุกนาที); หรือไฟล์ `data/daily/thbk_gnss_pred_<YYYYMMDD>_24h.csv` มีอยู่แล้ว
    ครอบคลุมงานที่พลาด: เปิด server หลังเวลารัน หรือรอบก่อนถูกขัดจังหวะ (`INTERRUPTED` จาก `JobManager.recover`) ก็สั่งทันที
-2. ตรวจย้อนหลัง (9.4): ไม่บ่อยกว่าทุก `validation_retry_hours` นับจากครั้งล่าสุดที่สั่ง validate (รอบที่ไม่ได้สั่งอะไรไม่นับ)
+2. ตรวจย้อนหลัง (9.4): ไม่บ่อยกว่าทุก `validation_retry_hours` นับจากรอบล่าสุดที่สั่งหรือพยายามสั่ง validate
+   (รอบที่ไม่มีอะไรให้สั่งไม่นับ; สั่งไม่สำเร็จ เช่น ดิสก์เต็ม ก็นับ จึงไม่ลองซ้ำทุกนาที)
    ไล่ scenario รายวัน (scenario.json มี `daily.for_date`) ที่ for_date <= วันนี้ − 1 ยังไม่มี `validation_<for_date>.json`
-   (ใน ephem bundle ที่ current หรือ `data/validation/<scenario>/`) ไม่อยู่ในชุดที่เลิกแล้ว และไม่มี job validate ของวันนั้นที่ยังรอ/รัน
-   แล้วสั่ง `validate` `{"day": for_date}` ถ้า job validate ล่าสุดของวันนั้นล้มเหลวด้วย `TRUTH_UNAVAILABLE` และเลย
-   for_date + `validation_give_up_days` แล้ว: ข้อความ warning `VALIDATION_GAVE_UP` บันทึกว่าเลิก และไม่สั่งอีกเลย
-3. เก็บรักษา (9.5): scenario รายวันที่ for_date < วันนี้ − `retention_days` ย้ายไฟล์ `validation_*.json/.md` จาก
-   `ephem/<hash>/` ไป `data/validation/<scenario>/` (ไม่ทับไฟล์ชื่อเดียวกันที่มีอยู่: ไฟล์ที่ชนไปอยู่ใต้ `<hash>/` แทน)
-   แล้วลบ `ephem/` และ `access/` เก็บ `scenario.json` และไฟล์ใน `data/daily/` scenario ที่มี job ยังรอ/รันอยู่ข้ามไปก่อน (มี log)
+   (ใน `data/validation/<scenario>/` หรือ ephem bundle ใดก็ได้ของ scenario: ตรวจด้วยไฟล์ ไม่สร้าง catalog)
+   ไม่อยู่ในชุดที่เลิกแล้ว และไม่มี job validate ของวันนั้นที่ยังรอ/รัน แล้วสั่ง `validate` `{"day": for_date}`
+   เลยเส้นตาย (`give_up_deadline`: D+1 00:00Z + `validation_give_up_days`) และมี job validate ของวันนั้นที่จบโดยไม่สำเร็จ
+   อย่างน้อยหนึ่งตัว (failed รหัสใดก็ได้ หรือ cancelled): ข้อความ warning `VALIDATION_GAVE_UP` บันทึกว่าเลิก และไม่สั่งอีกเลย
+   (เลยเส้นตายแต่ยังไม่เคยลอง: ลองหนึ่งครั้งก่อน) ก่อนเส้นตายลองใหม่ตามรอบเสมอ
+3. เก็บรักษา (9.5): scenario รายวันที่ for_date < วันนี้ − `retention_days` ลบเฉพาะ bundle `ephem/<hash>` และ
+   `access/<facility>/<hash>` ที่ mtime ของโฟลเดอร์เก่ากว่า now − `retention_days` (ผลที่เพิ่งคำนวณบน scenario เก่าอยู่ต่อ)
+   ก่อนลบ ย้ายไฟล์ `validation_<วัน>.json/.md` ของ bundle ไป `data/validation/<scenario>/` โดยไม่ทับไฟล์ใด (ชื่อชน:
+   `<hash>/<ชื่อ>` แล้ว `<hash>/<stem>.<n>.<ext>`) bundle ที่ย้ายไฟล์ validation ไม่ได้ไม่ถูกลบ (มี log) โฟลเดอร์ที่ว่างแล้วถูกลบ
+   เก็บ `scenario.json` และไฟล์ใน `data/daily/` ไม่ตาม symlink ใด ๆ scenario ที่มี job ยังรอ/รันอยู่ข้ามไปก่อน (มี log)
    scenario ที่ไม่ใช่รายวันไม่ถูกแตะ
 4. `jobs.prune(now)` วันละครั้ง (UTC)
 5. ส่ง SSE `daily` `{state, last_run_utc, next_run_utc, for_date}` เมื่อสถานะต่างจากที่ส่งครั้งก่อน (`daily_status`)
@@ -25,7 +30,8 @@
   เขียนแบบ atomic อ่านครั้งแรกที่ใช้ ไฟล์เสียถือเป็นว่าง (มี log) ไม่ทำให้ tick ล้ม
 - แต่ละข้อแยก try: ข้อหนึ่งผิดพลาด (log พร้อม traceback) ข้อถัดไปยังทำ
 - `start()` เริ่ม thread ที่เรียก `tick(clock())` ทันทีแล้วทุก `interval_s` (60) วินาที exception ใน tick ลง log แล้ววนต่อ
-  `wake()` ปลุกก่อนครบคาบ (ใช้เป็น `settings_on_change`) `stop()` จบทันทีผ่าน Event ไม่รอครบคาบ
+  `wake()` ปลุกก่อนครบคาบ (ใช้เป็น `settings_on_change`) `stop()` จบทันทีผ่าน Event ไม่รอครบคาบ ถ้า join หมดเวลา
+  thread เดิมยังถูกเก็บไว้ และ `start()` จะไม่เริ่ม loop ที่สองจนกว่าตัวเดิมจะจบ
 """
 
 import json
@@ -40,13 +46,12 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from gnss_predict import studio
-from gnss_predict.errors import GnssPredictError, Sp3UnavailableError
 
 from . import settings as settings_module
 from .daily import DAILY_DIR, csv_path
 from .errors import ApiError
 from .events import EventBus, message as post_message
-from .jobs import ACTIVE, JobManager, JobRecord, utcnow
+from .jobs import ACTIVE, FINISHED, JobManager, JobRecord, utcnow
 from .schema import NAME_RE, parse_utc_z
 from .settings import Daily, Settings
 from .store import SCENARIO_FILE, SCENARIOS_DIR, write_atomic
@@ -57,7 +62,7 @@ TICK_S = 60.0
 STOP_JOIN_S = 10.0
 THREAD_NAME = "gnss-studio-scheduler"
 INTERRUPTED = "INTERRUPTED"
-TRUTH_UNAVAILABLE = Sp3UnavailableError.code
+ARCHIVE_COPIES_MAX = 1000             # ชื่อสำรอง validation_<วัน>.<n>.json ใต้ <hash>/ ของที่เก็บ (n = 2..)
 VALIDATION_FILE_RE = re.compile(r"^validation_\d{4}-\d{2}-\d{2}\.(json|md)$", re.ASCII)
 EPHEM_DIR, ACCESS_DIR, VALIDATION_DIR = studio.EPHEM_DIR, studio.ACCESS_DIR, studio.VALIDATION_DIR
 STATUS_OF_JOB = {"queued": "running", "running": "running", "succeeded": "ok", "failed": "failed", "cancelled": "failed"}
@@ -76,6 +81,12 @@ def next_run(now: datetime, daily: Daily) -> datetime | None:
         return None
     today = _at(now.date(), daily.run_at_utc)
     return today if now < today else today + timedelta(days=1)
+
+
+def give_up_deadline(for_date: date, daily: Daily) -> datetime:
+    """เลิกตรวจย้อนหลังของวันนั้นได้เมื่อเลยเวลานี้: `validation_give_up_days` วันหลังวันนั้นจบ (D+1 00:00Z) ตาม 9.4"""
+    end_of_day = datetime.combine(for_date + timedelta(days=1), time(0), tzinfo=timezone.utc)
+    return end_of_day + timedelta(days=daily.validation_give_up_days)
 
 
 def _latest(records: list[JobRecord]) -> JobRecord | None:
@@ -124,6 +135,37 @@ def daily_scenarios(data_dir: Path) -> list[tuple[str, date]]:
         if day is not None:
             out.append((name, day))
     return out
+
+
+# ---------- โฟลเดอร์ผลลัพธ์ (เก็บรักษา) ----------
+
+def _subdirs(folder: Path) -> list[Path]:
+    """โฟลเดอร์ย่อยจริง (ไม่ใช่ symlink) ของ folder ที่เป็นโฟลเดอร์จริง folder ที่เป็น symlink หรือไม่มี = ว่าง (ไม่ตามออกนอก data/)"""
+    if folder.is_symlink() or not folder.is_dir():
+        return []
+    with os.scandir(folder) as entries:
+        return sorted(Path(e.path) for e in entries if e.is_dir(follow_symlinks=False))
+
+
+def old_bundles(scenario_dir: Path, cutoff: float) -> list[Path]:
+    """bundle `ephem/<hash>` และ `access/<facility>/<hash>` ที่แก้ล่าสุด (mtime ของโฟลเดอร์ ไม่ตาม symlink) ก่อน cutoff (timestamp)
+    ผลที่ผู้ใช้เพิ่งคำนวณบน scenario เก่าจึงไม่ถูกลบจนกว่าจะเก่าพอเอง"""
+    parents = [scenario_dir / EPHEM_DIR, *_subdirs(scenario_dir / ACCESS_DIR)]
+    return [b for parent in parents for b in _subdirs(parent) if b.lstat().st_mtime < cutoff]
+
+
+def _validation_files(bundle: Path) -> list[Path]:
+    """ไฟล์ validation_<วัน>.json/.md ที่เป็นไฟล์จริงใน bundle (symlink ไม่นับ: ไม่ใช่ผลของ engine ลบได้แค่ตัว link)"""
+    return [p for p in bundle.iterdir() if VALIDATION_FILE_RE.fullmatch(p.name) and not p.is_symlink() and p.is_file()]
+
+
+def _archive_targets(dest: Path, src: Path):
+    """ชื่อที่ลองตามลำดับ: <dest>/<ชื่อ>, <dest>/<hash>/<ชื่อ>, <dest>/<hash>/<stem>.<n>.<ext> (n = 2..)"""
+    yield dest / src.name
+    yield dest / src.parent.name / src.name
+    stem, ext = src.name.rsplit(".", 1)
+    for n in range(2, ARCHIVE_COPIES_MAX):
+        yield dest / src.parent.name / f"{stem}.{n}.{ext}"
 
 
 # ---------- สถานะที่เก็บไว้ (data/daily/state.json) ----------
@@ -186,8 +228,9 @@ class Scheduler:
             submitted: list[str] = []
             if daily.enabled:
                 submitted += self._guarded("พยากรณ์", self._forecast, now, daily)
-                submitted += self._guarded("ตรวจย้อนหลัง", self._validation, now, daily)
-                self._guarded("เก็บรักษา", self._retention, now, daily)
+                scenarios = daily_scenarios(self.data_dir)          # อ่าน scenario.json ครั้งเดียวต่อ tick ใช้ร่วมสองขั้น
+                submitted += self._guarded("ตรวจย้อนหลัง", self._validation, now, daily, scenarios)
+                self._guarded("เก็บรักษา", self._retention, now, daily, scenarios)
             if self._pruned_on != now.date():
                 self._guarded("ลบบันทึก job เก่า", self._prune, now)
             self._guarded("ส่งสถานะ", self._publish_status, now, daily)
@@ -216,53 +259,54 @@ class Scheduler:
     # ---------- ตรวจย้อนหลัง ----------
 
     def _validated(self, name: str, day: str) -> bool:
-        """มี validation_<day>.json แล้ว: ที่ย้ายไปเก็บแล้วดูก่อน (ถูก) แล้วจึง ephem bundle ที่ current (ต้องสร้าง catalog)"""
+        """มี validation_<day>.json แล้ว: ที่ย้ายไปเก็บแล้ว หรือใน ephem bundle ใดก็ได้ของ scenario ตรวจด้วยไฟล์อย่างเดียว
+        (ไม่สร้าง catalog: รอบที่ทุกวันตรวจแล้วเกิดทุก tick ต้องถูก) ผลตรวจของ bundle ที่ไม่ current แล้วก็นับ เพราะเป็นหลักฐาน
+        ความแม่นยำของพยากรณ์ที่ส่งออกไปแล้ว เหมือนไฟล์ที่การเก็บรักษาย้ายไป data/validation/"""
         file = f"validation_{day}.json"
         if (self.data_dir / VALIDATION_DIR / name / file).is_file():
             return True
-        scenario_dir = self.data_dir / SCENARIOS_DIR / name
-        try:
-            current = studio.plan_propagate(scenario_dir, self.data_dir).hash
-        except GnssPredictError:                         # หา bundle ที่ current ไม่ได้ (เช่น snapshot หาย): ให้ validate บอกเอง
-            return False
-        return (scenario_dir / EPHEM_DIR / current / file).is_file()
+        return any(p.is_file() for p in (self.data_dir / SCENARIOS_DIR / name / EPHEM_DIR).glob(f"*/{file}"))
 
-    def _validation(self, now: datetime, daily: Daily) -> list[str]:
+    def _validation(self, now: datetime, daily: Daily, scenarios: list[tuple[str, date]]) -> list[str]:
         state = self._load_state()
         if state.last_attempt is not None and now - state.last_attempt < timedelta(hours=daily.validation_retry_hours):
             return []
         records = [r for r in self.jobs.list() if r.kind == "validate"]
         latest_day = now.date() - timedelta(days=1)
-        submitted = []
-        for name, for_date in daily_scenarios(self.data_dir):
-            day = for_date.isoformat()
-            if for_date > latest_day or (name, day) in state.given_up:
-                continue
-            mine = [r for r in records if r.scenario == name and r.params.get("day") == day]
-            if any(r.state in ACTIVE for r in mine) or self._validated(name, day):
-                continue
-            latest = _latest(mine)
-            deadline = datetime.combine(for_date, time(0), tzinfo=timezone.utc) + timedelta(days=daily.validation_give_up_days)
-            if (latest is not None and latest.state == "failed" and (latest.error or {}).get("code") == TRUTH_UNAVAILABLE
-                    and now > deadline):
-                self._give_up(state, name, day, daily)
-                continue
-            try:
-                rec = self.jobs.submit("validate", name, {"day": day}, origin="scheduler")
-            except ApiError as exc:                      # เช่น scenario ถูกลบระหว่างรอบ
-                self.logger.warning("ตัวตั้งเวลา: สั่งตรวจย้อนหลัง %s วันที่ %s ไม่ได้: %s %s", name, day, exc.code, exc.text)
-                continue
-            submitted.append(rec.id)
-        if submitted:
-            state.last_attempt = now
-            self._save_state(state)
+        submitted: list[str] = []
+        attempted = False
+        try:
+            for name, for_date in scenarios:
+                day = for_date.isoformat()
+                if for_date > latest_day or (name, day) in state.given_up:
+                    continue
+                try:
+                    mine = [r for r in records if r.scenario == name and r.params.get("day") == day]
+                    if any(r.state in ACTIVE for r in mine) or self._validated(name, day):
+                        continue
+                    failed = [r for r in mine if r.state in FINISHED and r.state != "succeeded"]
+                    if failed and now > give_up_deadline(for_date, daily):
+                        self._give_up(state, name, day, daily, _latest(failed))
+                        continue
+                    attempted = True
+                    submitted.append(self.jobs.submit("validate", name, {"day": day}, origin="scheduler").id)
+                except ApiError as exc:                  # เช่น scenario ถูกลบระหว่างรอบ
+                    self.logger.warning("ตัวตั้งเวลา: สั่งตรวจย้อนหลัง %s วันที่ %s ไม่ได้: %s %s", name, day, exc.code,
+                                        exc.text)
+                except Exception:                        # เช่น ดิสก์เต็ม: scenario อื่นในรอบยังทำต่อ
+                    self.logger.exception("ตัวตั้งเวลา: ตรวจย้อนหลัง %s วันที่ %s ไม่สำเร็จ", name, day)
+        finally:
+            if attempted:                                # สั่งหรือพยายามสั่งแล้ว: รอบหน้าต้องรอครบช่วง (ไม่ลองซ้ำทุกนาที)
+                state.last_attempt = now
+                self._save_state(state)
         return submitted
 
-    def _give_up(self, state: _State, name: str, day: str, daily: Daily) -> None:
+    def _give_up(self, state: _State, name: str, day: str, daily: Daily, last: JobRecord) -> None:
         state.given_up.add((name, day))
         self._save_state(state)
-        text = (f"เลิกตรวจย้อนหลังผลพยากรณ์ของวันที่ {day} ({name}): ยังไม่มีข้อมูลวงโคจรจริง (SP3 ของ MGEX) "
-                f"หลังผ่านไป {daily.validation_give_up_days} วัน จะไม่ลองอีก")
+        reason = ((last.error or {}).get("code") or "ไม่ทราบสาเหตุ") if last.state == "failed" else "ถูกยกเลิก"
+        text = (f"เลิกตรวจย้อนหลังผลพยากรณ์ของวันที่ {day} ({name}): ตรวจไม่สำเร็จจนเลย {daily.validation_give_up_days} วัน"
+                f"หลังวันนั้น (ครั้งล่าสุด: {reason}) จะไม่ลองอีก")
         post_message(self.bus, "warning", "VALIDATION_GAVE_UP", text, f"{SCENARIOS_DIR}/{name}")
         self.logger.warning("ตัวตั้งเวลา: %s", text)
 
@@ -289,46 +333,63 @@ class Scheduler:
 
     # ---------- เก็บรักษา ----------
 
-    def _retention(self, now: datetime, daily: Daily) -> list[str]:
-        cutoff = now.date() - timedelta(days=daily.retention_days)
-        for name, for_date in daily_scenarios(self.data_dir):
+    def _retention(self, now: datetime, daily: Daily, scenarios: list[tuple[str, date]]) -> list[str]:
+        cutoff_day = now.date() - timedelta(days=daily.retention_days)
+        cutoff = (now - timedelta(days=daily.retention_days)).timestamp()
+        for name, for_date in scenarios:
+            if for_date >= cutoff_day:
+                continue
             scenario_dir = self.data_dir / SCENARIOS_DIR / name
-            if for_date >= cutoff or not ((scenario_dir / EPHEM_DIR).exists() or (scenario_dir / ACCESS_DIR).exists()):
-                continue
-            if self.jobs.active_for(name):
-                self.logger.info("ตัวตั้งเวลา: ข้ามการลบผลเก่าของ %s ไว้รอบหน้า เพราะมี job ที่ยังรอหรือกำลังรัน", name)
-                continue
-            if any((scenario_dir / sub).is_symlink() for sub in (EPHEM_DIR, ACCESS_DIR)):
-                self.logger.warning("ตัวตั้งเวลา: ไม่ลบผลเก่าของ %s เพราะ ephem/ หรือ access/ เป็น symlink", name)
-                continue
             try:
-                self._archive_validation(name, scenario_dir)
-                for sub in (EPHEM_DIR, ACCESS_DIR):
-                    if (scenario_dir / sub).exists():
-                        shutil.rmtree(scenario_dir / sub)
+                bundles = old_bundles(scenario_dir, cutoff)
+                if not bundles:
+                    continue
+                if self.jobs.active_for(name):
+                    self.logger.info("ตัวตั้งเวลา: ข้ามการลบผลเก่าของ %s ไว้รอบหน้า เพราะมี job ที่ยังรอหรือกำลังรัน", name)
+                    continue
+                self._expire(name, scenario_dir, bundles, daily)
             except OSError as exc:
                 self.logger.error("ตัวตั้งเวลา: ลบผลเก่าของ %s ไม่สำเร็จ: %s", name, exc)
-                continue
-            self.logger.info("ตัวตั้งเวลา: ลบ ephem/ และ access/ ของ %s (for_date %s เก่ากว่า %d วัน)", name,
-                             for_date.isoformat(), daily.retention_days)
         return []
 
-    def _archive_validation(self, name: str, scenario_dir: Path) -> None:
-        """ย้าย validation_<วัน>.json/.md ทุกไฟล์ใน ephem/<hash>/ ไป data/validation/<scenario>/ ใหม่สุดก่อน
-        ชื่อชนกับไฟล์ที่มีอยู่ ไปอยู่ใต้ data/validation/<scenario>/<hash>/ แทน ไม่ทับไฟล์ใด OSError ส่งต่อ (ยังไม่ลบอะไร)"""
-        sources = [p for p in (scenario_dir / EPHEM_DIR).glob("*/validation_*")    # ไม่ตามโฟลเดอร์ bundle ที่เป็น symlink
-                   if VALIDATION_FILE_RE.fullmatch(p.name) and not p.parent.is_symlink() and p.is_file()]
-        sources.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        dest = self.data_dir / VALIDATION_DIR / name
+    def _expire(self, name: str, scenario_dir: Path, bundles: list[Path], daily: Daily) -> None:
+        """ย้ายไฟล์ validation ของ bundle ที่จะลบไป data/validation/<scenario>/ (ใหม่สุดก่อน) แล้วลบ bundle
+        bundle ที่ยังเหลือไฟล์ validation (ย้ายไม่ได้) ไม่ถูกลบ: ไฟล์เหล่านี้คือหลักฐานความแม่นยำ ห้ามหาย
+        จบแล้วลบโฟลเดอร์ ephem/, access/<facility>/ และ access/ ที่ว่าง"""
+        sources = sorted((f for b in bundles if b.parent == scenario_dir / EPHEM_DIR for f in _validation_files(b)),
+                         key=lambda f: f.stat().st_mtime, reverse=True)
         for src in sources:
-            target = dest / src.name
-            if target.exists():
-                target = dest / src.parent.name / src.name
-            if target.exists():
-                self.logger.warning("ตัวตั้งเวลา: มี %s อยู่แล้ว ไม่ย้าย %s ทับ", target, src)
+            try:
+                self._archive(name, src)
+            except OSError as exc:
+                self.logger.error("ตัวตั้งเวลา: ย้าย %s ไปเก็บไม่ได้ จะไม่ลบ bundle นั้น: %s", src, exc)
+        removed = 0
+        for bundle in bundles:
+            if _validation_files(bundle):
                 continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(src, target)
+            try:
+                shutil.rmtree(bundle)
+                removed += 1
+            except OSError as exc:
+                self.logger.error("ตัวตั้งเวลา: ลบ %s ไม่สำเร็จ: %s", bundle, exc)
+        for folder in [*_subdirs(scenario_dir / ACCESS_DIR), scenario_dir / ACCESS_DIR, scenario_dir / EPHEM_DIR]:
+            if folder.is_dir() and not folder.is_symlink():
+                try:
+                    folder.rmdir()                       # ลบเฉพาะโฟลเดอร์ว่าง
+                except OSError:
+                    pass
+        if removed:
+            self.logger.info("ตัวตั้งเวลา: ลบผลเก่า %d โฟลเดอร์ของ %s (เก่ากว่า %d วัน)", removed, name, daily.retention_days)
+
+    def _archive(self, name: str, src: Path) -> Path:
+        """ย้ายไฟล์ไปชื่อแรกที่ยังว่างตาม `_archive_targets` ไม่ทับไฟล์ใด ไม่มีชื่อว่างหรือย้ายไม่ได้ -> OSError"""
+        dest = self.data_dir / VALIDATION_DIR / name
+        for target in _archive_targets(dest, src):
+            if not os.path.lexists(target):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(src, target)
+                return target
+        raise OSError(f"ไม่มีชื่อว่างสำหรับเก็บ {src.name} ใต้ {dest}")
 
     # ---------- prune และสถานะ ----------
 
@@ -351,9 +412,13 @@ class Scheduler:
     # ---------- thread ----------
 
     def start(self) -> None:
-        """เริ่ม thread (เรียกซ้ำไม่มีผล) tick แรกทันที"""
+        """เริ่ม thread (เรียกซ้ำไม่มีผล) tick แรกทันที thread เดิมที่ stop แล้วแต่ยังไม่จบ (join หมดเวลา): ไม่เริ่ม loop ที่สองซ้อน"""
         if self._thread is not None:
-            return
+            if self._thread.is_alive():
+                if self._stop.is_set():
+                    self.logger.warning("thread เดิมของตัวตั้งเวลายังไม่จบ ยังเริ่มใหม่ไม่ได้")
+                return
+            self._thread = None
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name=THREAD_NAME, daemon=True)
         self._thread.start()
@@ -368,8 +433,9 @@ class Scheduler:
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout)
-            if self._thread.is_alive():
+            if self._thread.is_alive():                  # เก็บไว้: start() จะไม่เริ่ม loop ที่สองจนกว่าตัวนี้จะจบ
                 self.logger.warning("thread ของตัวตั้งเวลาไม่จบภายใน %.0f วินาที", timeout)
+                return
             self._thread = None
 
     def _loop(self) -> None:

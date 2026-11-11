@@ -20,7 +20,8 @@ import pytest
 
 from conftest import SNAPSHOT_ID, SNAPSHOT_SRC
 from gnss_predict import studio
-from gnss_predict.errors import GmatRunError, GnssPredictError, Message, Sp3UnavailableError, TleUnavailableError
+from gnss_predict.errors import (GmatRunError, GnssPredictError, Message, OrbitUnavailableError, Sp3UnavailableError,
+                                 TleUnavailableError)
 
 from gnss_studio_server import daily as daily_module
 from gnss_studio_server import scheduler as scheduler_module
@@ -98,7 +99,7 @@ class FakeFetch:
 
 class FakeValidate:
     """แทน studio.run_validate: mode "truth" = ยังไม่มี SP3 จริง (TRUTH_UNAVAILABLE) mode "ok" = เขียน validation_<day>.json
-    ลง ephem bundle ที่ current (hash จาก plan_propagate)"""
+    ลง ephem bundle ที่ current (hash จาก plan_propagate) mode เป็น exception = raise ตัวนั้น"""
 
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
@@ -109,6 +110,8 @@ class FakeValidate:
         self.calls.append((Path(scenario_dir).name, day.isoformat()))
         if self.mode == "truth":
             raise Sp3UnavailableError(f"ยังไม่มี SP3 ของ MGEX สำหรับวันที่ {day.isoformat()} (test)")
+        if isinstance(self.mode, BaseException):
+            raise self.mode
         bundle = Path(scenario_dir) / "ephem" / studio.plan_propagate(scenario_dir, data_dir).hash
         bundle.mkdir(parents=True, exist_ok=True)
         (bundle / f"validation_{day.isoformat()}.json").write_text("{}")
@@ -369,8 +372,7 @@ def test_disabled_does_nothing(sched, at, data_dir, jobs, quick_daily, validate,
     else:                                                          # ไฟล์ค่าตั้งเสียหรือไม่ยืนยัน enabled = fail safe ปิด
         (data_dir / "settings.json").write_bytes(settings_bytes)
     sc = make_daily(data_dir, "2026-11-12")                       # ทั้งรอตรวจย้อนหลังและเก่าพอให้ลบผลได้
-    (sc / "ephem" / "abc123").mkdir(parents=True)
-    (sc / "ephem" / "abc123" / "predicted.sp3").write_text("x")
+    _bundle(sc, "ephem/abc123", {"predicted.sp3": "x"})
     for when in ("2026-11-11T21:00Z", "2026-11-13T06:00Z", "2026-11-30T21:00Z", "2027-01-30T21:00Z"):
         assert at(when) == []
     assert jobs.list() == [] and quick_daily.calls == [] and validate.calls == []
@@ -497,22 +499,59 @@ def test_validation_retry_then_give_up(at, data_dir, jobs, bus, clock, validate,
     assert at("2026-11-13T07:00Z") == []
     assert at("2026-11-13T08:59Z") == []                           # ยังไม่ครบ 3 ชม. จากครั้งก่อน
     assert len(at("2026-11-13T09:00Z")) == 1
-    assert len(at("2026-11-25T20:00Z")) == 1                       # ยังไม่เกิน 14 วันหลัง for_date
+    # เส้นตาย: 14 วันหลังวันนั้นจบ = 2026-11-13T00:00Z + 14 วัน = 2026-11-27T00:00Z
+    assert len(at("2026-11-26T20:00Z")) == 1
+    assert len(at("2026-11-27T00:00Z")) == 1                       # ตรงเส้นตายพอดี: ยังไม่เลย ลองต่อ
     assert bus.messages("VALIDATION_GAVE_UP") == []
 
-    assert at("2026-11-26T02:00Z") == []                           # เกิน 14 วันแล้ว และครั้งล่าสุดได้ TRUTH_UNAVAILABLE
+    assert at("2026-11-27T03:00Z") == []                           # เลยเส้นตายแล้ว และมีครั้งที่ไม่สำเร็จ
     (gave_up,) = bus.messages("VALIDATION_GAVE_UP")
     assert gave_up["level"] == "warning" and gave_up["object"] == "scenarios/daily_20261112"
-    assert "2026-11-12" in gave_up["text"]
+    assert "2026-11-12" in gave_up["text"] and "TRUTH_UNAVAILABLE" in gave_up["text"]
     state = json.loads(state_file(data_dir).read_text())
     assert {"scenario": "daily_20261112", "day": "2026-11-12"} in state["given_up"]
     calls = len(validate.calls)
-    assert at("2026-11-26T06:00Z") == [] and at("2026-12-01T06:00Z") == []
+    assert at("2026-11-27T06:00Z") == [] and at("2026-12-01T06:00Z") == []
     assert len(validate.calls) == calls and len(bus.messages("VALIDATION_GAVE_UP")) == 1
 
     restarted = Scheduler(data_dir, jobs, bus=bus, clock=clock)    # เปิด server ใหม่: การเลิกยังอยู่ใน state.json
     assert restarted.tick(T("2026-12-02T06:00Z")) == []
     assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and len(validate.calls) == calls
+
+
+@pytest.mark.parametrize("exc, code", [
+    (GmatRunError("GMAT ล้มเหลว (test)"), "GMAT_FAILED"),
+    (OrbitUnavailableError("snapshot ถูกลบ (test)"), "ORBIT_SOURCE_UNAVAILABLE"),
+    (RuntimeError("bug (test)"), "INTERNAL"),
+])
+def test_validation_gives_up_on_any_failure_after_deadline(at, data_dir, jobs, bus, validate, snapshot, exc, code):
+    make_daily(data_dir, "2026-11-12")
+    validate.mode = exc
+    (first,) = at("2026-11-13T06:00Z")
+    assert jobs.get(first).error["code"] == code
+    assert len(at("2026-11-26T20:00Z")) == 1                       # ก่อนเส้นตาย: ลองใหม่ตามรอบ
+    assert at("2026-11-27T03:00Z") == []                           # เลยเส้นตาย: เลิกไม่ว่ารหัสอะไร
+    (gave_up,) = bus.messages("VALIDATION_GAVE_UP")
+    assert gave_up["level"] == "warning" and code in gave_up["text"]
+    assert at("2026-11-28T06:00Z") == [] and at("2026-12-05T06:00Z") == []
+    assert len(validate.calls) == 2 and len(bus.messages("VALIDATION_GAVE_UP")) == 1
+
+
+def test_validation_gives_up_after_interrupted_attempt(at, data_dir, jobs, bus, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    write_job(data_dir, id="j-20261126T060000-0001", kind="validate", scenario="daily_20261112",
+              params={"day": "2026-11-12"}, state="running", created_utc="2026-11-26T06:00:00.000Z")
+    jobs.recover()                                                 # server ปิดระหว่างตรวจ: failed INTERRUPTED
+    assert at("2026-11-28T06:00Z") == []
+    assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and validate.calls == []
+
+
+def test_validation_past_deadline_tries_once_before_giving_up(at, data_dir, bus, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert len(at("2026-12-10T06:00Z")) == 1                       # เลยเส้นตายแต่ยังไม่เคยลอง: ลองหนึ่งครั้งก่อน
+    assert bus.messages("VALIDATION_GAVE_UP") == []
+    assert at("2026-12-10T09:00Z") == []
+    assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and len(validate.calls) == 1
 
 
 def test_validation_starts_when_a_day_becomes_eligible(at, data_dir, jobs, validate, snapshot, quick_daily):
@@ -552,6 +591,24 @@ def test_validation_counts_archived_file_and_skips_other_scenarios(at, data_dir,
     assert validate.calls == []
 
 
+def test_validation_steady_state_builds_no_catalogs(at, data_dir, validate, snapshot, monkeypatch):
+    for i, day in enumerate(["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]):
+        sc = make_daily(data_dir, day)
+        if i % 2:                                                  # บางวันย้ายไปเก็บแล้ว บางวันยังอยู่ใน ephem bundle
+            archived = data_dir / "validation" / sc.name / f"validation_{day}.json"
+            archived.parent.mkdir(parents=True)
+            archived.write_text("{}")
+        else:
+            _bundle(sc, "ephem/abc123", {f"validation_{day}.json": "{}"}, when="2026-11-09T00:00Z")
+    plans = []
+    real_plan = studio.plan_propagate
+    monkeypatch.setattr(studio, "plan_propagate", lambda *a, **kw: plans.append(a) or real_plan(*a, **kw))
+    for minute in range(5):                                        # ทุกวันตรวจแล้ว: tick ทุกนาทีต้องถูก
+        assert at(f"2026-11-10T06:0{minute}Z") == []
+    assert at("2026-11-10T12:00Z") == []
+    assert plans == [] and validate.calls == []
+
+
 def test_validation_waits_for_active_job(data_dir, bus, clock, snapshot):
     idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
     sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
@@ -560,6 +617,37 @@ def test_validation_waits_for_active_job(data_dir, bus, clock, snapshot):
     assert idle.get(job_id).state == "queued"
     assert sched.tick(T("2026-11-13T09:30Z")) == []                # ครบรอบแล้วแต่ job ของวันนั้นยังรออยู่
     assert len(idle.list()) == 1
+
+
+def test_validation_submit_error_still_counts_as_attempt(at, data_dir, jobs, validate, snapshot, monkeypatch, caplog):
+    make_daily(data_dir, "2026-11-12")
+    make_daily(data_dir, "2026-11-13")
+    real_submit = jobs.submit
+    seen = []
+
+    def flaky(kind, scenario, params, origin="user"):
+        seen.append(scenario)
+        if len(seen) == 2:                                         # scenario ที่สองของรอบ: ดิสก์เต็ม
+            raise OSError("No space left on device (test)")
+        return real_submit(kind, scenario, params, origin=origin)
+
+    monkeypatch.setattr(jobs, "submit", flaky)
+    with caplog.at_level(logging.ERROR):
+        ids = at("2026-11-14T06:00Z")
+    assert [jobs.get(i).scenario for i in ids] == ["daily_20261112"]
+    assert seen == ["daily_20261112", "daily_20261113"] and "No space left on device" in caplog.text
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-14T06:00:00Z"
+    assert at("2026-11-14T06:01Z") == [] and at("2026-11-14T08:59Z") == []     # ไม่ลองซ้ำทุกนาทีระหว่างดิสก์เต็ม
+    assert len(seen) == 2
+    assert len(at("2026-11-14T09:00Z")) == 2
+
+
+def test_validation_records_attempt_even_if_every_submit_fails(at, data_dir, jobs, validate, snapshot, monkeypatch):
+    make_daily(data_dir, "2026-11-12")
+    monkeypatch.setattr(jobs, "submit", _raise(OSError("disk full (test)")))
+    assert at("2026-11-13T06:00Z") == []
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-13T06:00:00Z"
+    assert at("2026-11-13T06:01Z") == []
 
 
 def test_corrupt_state_file_is_treated_as_empty(at, data_dir, validate, snapshot, caplog):
@@ -574,13 +662,18 @@ def test_corrupt_state_file_is_treated_as_empty(at, data_dir, validate, snapshot
 
 # ---------- เก็บรักษา ----------
 
-def _bundle(sc: Path, rel: str, files: dict[str, str], mtime: float | None = None) -> Path:
+OLD = "2026-11-13T00:00Z"            # mtime ตั้งต้นของ bundle: เก่ากว่าเกณฑ์เมื่อ now = 2026-12-20 และเก็บ 30 วัน
+
+
+def _bundle(sc: Path, rel: str, files: dict[str, str], when: str = OLD) -> Path:
+    """โฟลเดอร์ผลลัพธ์พร้อมไฟล์ mtime ของไฟล์และโฟลเดอร์ตั้งเป็นเวลา when ของนาฬิกาจำลอง (ไม่ขึ้นกับวันที่จริงของเครื่อง)"""
     folder = sc / rel
     folder.mkdir(parents=True, exist_ok=True)
+    stamp = T(when).timestamp()
     for name, text in files.items():
         (folder / name).write_text(text)
-        if mtime is not None:
-            os.utime(folder / name, (mtime, mtime))
+        os.utime(folder / name, (stamp, stamp))
+    os.utime(folder, (stamp, stamp))
     return folder
 
 
@@ -588,11 +681,10 @@ def test_retention_keeps_validation(at, data_dir, snapshot):
     old = make_daily(data_dir, "2026-11-12")
     recent = make_daily(data_dir, "2026-11-25")
     plain = make_scenario(data_dir, "S1", "2026-11-12", daily=False)
-    now = time.time()
     _bundle(old, "ephem/aaa111", {"predicted.sp3": "sp3", "manifest.json": "{}",
                                   "validation_2026-11-12.json": '{"v": "new"}', "validation_2026-11-12.md": "# new",
-                                  "validation_2026-11-12.json.tmp-99": "partial"}, mtime=now)
-    _bundle(old, "ephem/bbb222", {"validation_2026-11-12.json": '{"v": "older"}'}, mtime=now - 3600)
+                                  "validation_2026-11-12.json.tmp-99": "partial"}, when="2026-11-14T00:00Z")
+    _bundle(old, "ephem/bbb222", {"validation_2026-11-12.json": '{"v": "older"}'}, when="2026-11-13T00:00Z")
     _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "x"})
     for sc in (recent, plain):
         _bundle(sc, "ephem/ddd444", {"predicted.sp3": "sp3"})
@@ -629,6 +721,57 @@ def test_retention_does_not_overwrite_archived_file(at, data_dir, snapshot):
     assert not (old / "ephem").exists()
 
 
+def test_retention_never_loses_a_validation_file(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"validation_2026-11-12.json": '{"v": "bundle"}'})
+    kept = data_dir / "validation" / "daily_20261112"
+    (kept / "aaa111").mkdir(parents=True)
+    (kept / "validation_2026-11-12.json").write_text('{"v": "top"}')
+    (kept / "aaa111" / "validation_2026-11-12.json").write_text('{"v": "same-hash"}')   # เคยเก็บจาก bundle hash เดียวกันแล้ว
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert json.loads((kept / "validation_2026-11-12.json").read_text()) == {"v": "top"}
+    assert json.loads((kept / "aaa111" / "validation_2026-11-12.json").read_text()) == {"v": "same-hash"}
+    assert json.loads((kept / "aaa111" / "validation_2026-11-12.2.json").read_text()) == {"v": "bundle"}
+    assert not (old / "ephem").exists()
+
+
+def test_retention_keeps_bundle_when_archiving_fails(at, data_dir, snapshot, caplog):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"validation_2026-11-12.json": '{"v": "bundle"}', "predicted.sp3": "sp3"})
+    _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "x"})
+    blocker = data_dir / "validation" / "daily_20261112"
+    blocker.parent.mkdir(parents=True)
+    blocker.write_text("ไม่ใช่โฟลเดอร์")                             # ที่เก็บใช้ไม่ได้: ย้ายไฟล์ validation ไม่ได้
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    with caplog.at_level(logging.ERROR):
+        assert at("2026-12-20T06:00Z") == []
+    assert json.loads((old / "ephem" / "aaa111" / "validation_2026-11-12.json").read_text()) == {"v": "bundle"}
+    assert (old / "ephem" / "aaa111" / "predicted.sp3").is_file()
+    assert not (old / "access").exists()                           # bundle ที่ไม่มีไฟล์ validation ลบได้ตามปกติ
+    assert "aaa111" in caplog.text
+
+
+def test_retention_keeps_fresh_bundles_on_old_daily_scenario(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"predicted.sp3": "old"})
+    _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "old"})
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert not (old / "ephem").exists() and not (old / "access").exists()
+    # ผู้ใช้เปิด scenario รายวันที่เก่าแล้วคำนวณใหม่: ผลที่เพิ่งสร้างต้องอยู่รอด tick ถัดไป
+    fresh = "2026-12-20T06:00Z"
+    _bundle(old, "ephem/fff666", {"predicted.sp3": "fresh", "validation_2026-11-12.json": "{}"}, when=fresh)
+    _bundle(old, "access/THBK/ggg777", {"legacy_gps.csv": "fresh"}, when=fresh)
+    assert at("2026-12-20T06:01Z") == [] and at("2026-12-21T06:00Z") == []
+    assert (old / "ephem" / "fff666" / "predicted.sp3").read_text() == "fresh"
+    assert (old / "ephem" / "fff666" / "validation_2026-11-12.json").is_file()   # ไม่ย้ายออกจาก bundle ที่ยังเก็บไว้
+    assert (old / "access" / "THBK" / "ggg777" / "legacy_gps.csv").read_text() == "fresh"
+    assert at("2027-01-20T06:01Z") == []                           # เก่าเกิน 30 วันแล้วจึงลบ (ย้ายไฟล์ validation ไปเก็บก่อน)
+    assert not (old / "ephem").exists() and not (old / "access").exists()
+    assert (data_dir / "validation" / "daily_20261112" / "validation_2026-11-12.json").is_file()
+
+
 def test_retention_skips_scenario_with_active_job(data_dir, bus, clock, snapshot, caplog):
     idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
     sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
@@ -651,14 +794,17 @@ def test_retention_never_follows_symlinks(at, data_dir, tmp_path, snapshot):
     linked = make_daily(data_dir, "2026-11-12")
     (linked / "ephem").symlink_to(outside, target_is_directory=True)            # ephem/ ทั้งโฟลเดอร์ชี้ออกนอก data/
     inner = make_daily(data_dir, "2026-11-13")
-    _bundle(inner, "ephem/aaa111", {"predicted.sp3": "sp3"})
-    (inner / "ephem" / "bbb222").symlink_to(outside / "bundle", target_is_directory=True)   # bundle เดียวที่ชี้ออกนอก
+    bundle = _bundle(inner, "ephem/aaa111", {"predicted.sp3": "sp3"})
+    (bundle / "validation_2026-11-13.json").symlink_to(outside / "bundle" / "validation_2026-11-12.json")  # ไฟล์ชี้ออกนอก
+    os.utime(bundle, (T(OLD).timestamp(), T(OLD).timestamp()))
+    (inner / "ephem" / "bbb222").symlink_to(outside / "bundle", target_is_directory=True)   # bundle ที่ชี้ออกนอก
     write_state(data_dir, "2026-12-20T05:00:00Z")
     assert at("2026-12-20T06:00Z") == []
     assert (outside / "bundle" / "validation_2026-11-12.json").is_file() and (outside / "bundle" / "keep.txt").is_file()
     assert (linked / "ephem").is_symlink()                         # ไม่ลบผ่าน symlink
-    assert not (inner / "ephem").exists()                          # ลบได้ แต่ไม่ย้ายไฟล์จาก bundle ที่ชี้ออกนอก
-    assert not (data_dir / "validation" / "daily_20261113").exists()
+    assert not (inner / "ephem" / "aaa111").exists()               # bundle จริงลบได้ (symlink ข้างในหายแค่ตัว link)
+    assert (inner / "ephem" / "bbb222").is_symlink()               # bundle ที่เป็น symlink ไม่แตะ
+    assert not (data_dir / "validation").exists()                  # ไม่ย้ายไฟล์ผ่าน symlink
 
 
 # ---------- prune, สถานะ และ health ----------
@@ -764,3 +910,36 @@ def test_thread_ticks_survives_exceptions_and_stops_promptly(data_dir, jobs, bus
         slow.stop()
         assert time.monotonic() - t0 < 1.0, "stop ต้องไม่รอครบคาบ 60 วินาที"
     assert not any(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+
+def test_stop_timeout_keeps_thread_and_refuses_a_second_loop(data_dir, jobs, bus, clock, caplog):
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_tick(now):
+        entered.set()
+        assert release.wait(TIMEOUT), "test ไม่ปล่อย tick"
+        return []
+
+    def loops() -> int:
+        return sum(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+    sched = Scheduler(data_dir, jobs, bus=bus, clock=clock, interval_s=60)
+    sched.tick = slow_tick
+    sched.start()
+    try:
+        assert entered.wait(TIMEOUT)
+        with caplog.at_level(logging.WARNING):
+            sched.stop(timeout=0.05)                               # tick ยังไม่จบ: join หมดเวลา thread ยังอยู่
+        sched.start()                                              # ห้ามเริ่ม loop ที่สองซ้อนกับตัวที่ยังไม่จบ
+        assert loops() == 1
+    finally:
+        release.set()
+        sched.stop()
+    assert loops() == 0
+    entered.clear()
+    sched.start()                                                  # thread เก่าจบแล้ว: เริ่มใหม่ได้
+    try:
+        assert entered.wait(TIMEOUT) and loops() == 1
+    finally:
+        sched.stop()
+    assert loops() == 0
