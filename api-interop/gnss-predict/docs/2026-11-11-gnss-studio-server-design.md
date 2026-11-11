@@ -25,6 +25,7 @@ FastAPI server ที่ให้หน้าเว็บ (งานย่อย
 
 1. `python3 -m gnss_studio_server` เปิด server ที่ `127.0.0.1:8000` ส่งหน้าเว็บที่ build แล้วและ API ใต้ `/api` จาก port เดียวกัน
 2. ทุก endpoint ในหัวข้อ 6 ทำงานตามที่ระบุ มี OpenAPI ที่ `/api/openapi.json`
+   (ยกเว้น endpoint ของหัวข้อ 6.7 ซึ่งย้ายไปงานย่อยที่ 4 ตามการตัดสินใจ P1 ของแผน เกณฑ์ข้อนี้สำหรับ 6.7 จึงตรวจในงานย่อยที่ 4)
 3. ยกเลิก job ระหว่าง GMAT รันแล้ว process ของ GMAT หายภายใน 2 วินาที
 4. ปิด server กลางคันแล้วเปิดใหม่ job ที่ค้างมีสถานะ failed รหัส `INTERRUPTED`
 5. งานประจำวันรันครบ 3 วันติดโดยไม่มีคนสั่ง และมีผลตรวจแบบพยากรณ์จริงอย่างน้อย 1 วัน (ภาพรวม §10.2)
@@ -67,13 +68,15 @@ api-interop/gnss-predict/server/
     jobs.py            คิว, บันทึก job, ตัวรัน process ลูก, การยกเลิก
     events.py          ช่องกระจายข่าว SSE (job, message, scenario, daily)
     scheduler.py       งานประจำวันและการตรวจย้อนหลัง
-    routes/            health, scenarios, objects, catalog, results, access, dataproviders, styles, reports, jobs, events, orbits, validation, settings
+    guard.py           กันคำขอข้ามเว็บไซต์และ DNS rebinding (หัวข้อ 6 ย่อหน้าแรก)
+    routes/            health, scenarios, objects, catalog, results, access, dataproviders, styles, reports, jobs, daily, events, orbits, validation, settings
   tests/
   requirements.txt     fastapi, uvicorn (รุ่นตรึงในแผน)
   requirements-dev.txt pytest, httpx
 ```
 
-- Python ≥ 3.10 เหมือน engine
+- server ต้องใช้ Python ≥ 3.11 (Starlette 1.10 ที่ FastAPI รุ่นที่ตรึงไว้ใช้ต้องการ 3.11 และ server ใช้ `asyncio.timeout` ซึ่งมีตั้งแต่ 3.11)
+  engine ยังใช้แค่ standard library
 - server import `gnss_predict` จากโฟลเดอร์ข้างกัน (`api-interop/gnss-predict`) ผ่าน `sys.path` ใน `__main__.py` และ `conftest.py`
 - route ไม่คำนวณเรขาคณิตเอง ทุกการคำนวณเรียก engine
 
@@ -146,6 +149,14 @@ api-interop/gnss-predict/server/
 
 ทุก endpoint อยู่ใต้ `/api` ตอบ JSON ยกเว้นที่ระบุ ชื่อ scenario อยู่ใน path ส่วน object path ส่งเป็นช่อง `class` + `name`
 
+server ไม่มี login จึงกันหน้าเว็บอื่นที่เปิดในเบราว์เซอร์เครื่องเดียวกันไม่ให้สั่งงาน (CSRF และ DNS rebinding):
+- header `Host` ต้องเป็น `127.0.0.1`, `localhost`, `[::1]` หรือค่า `GNSS_STUDIO_HOST` (ไม่เทียบ port) ไม่ใช่ -> 400 ข้อความธรรมดา
+  `Invalid host header` (`TrustedHostMiddleware` ของ Starlette) ทุก method ทุก path
+- คำขอที่ไม่ใช่ GET, HEAD, OPTIONS ที่มี header `Origin` ต้องมาจาก origin ของ server เอง `http://<ชื่อที่รับ>:<port>`
+  ไม่ใช่ (รวม `null`) -> 403 `FORBIDDEN_ORIGIN` คำขอที่ไม่มี `Origin` (curl, script) ผ่าน
+- ไม่ส่ง header CORS: หน้าเว็บอื่นส่ง GET ได้แต่เบราว์เซอร์ไม่ให้อ่านผล
+- `GNSS_STUDIO_HOST` ที่ไม่ใช่ loopback: server เตือนตอนเปิด (terminal และ `data/logs/server.log`)
+
 ### 6.1 ทั่วไป
 
 | Method | Path | ทำอะไร |
@@ -185,7 +196,7 @@ api-interop/gnss-predict/server/
 | PATCH | `/scenarios/{sc}/objects/{class}/{name}` | Apply ของ Properties Browser: ส่งเฉพาะกลุ่มหน้าที่แก้ |
 | POST | `/scenarios/{sc}/objects/{class}/{name}/rename` | `{new_name}` แก้การอ้างถึงใน accesses, groups และ assigned_objects ด้วย |
 | DELETE | `/scenarios/{sc}/objects/{class}/{name}` | ลบ และลบการอ้างถึงทั้งหมด |
-| POST | `/scenarios/{sc}/groups` | New Group / ย้ายสมาชิก |
+| POST | `/scenarios/{sc}/groups` | New Group / ย้ายสมาชิก: `{name, members[]}` ต้องส่ง `members` เสมอ (กลุ่มว่างส่ง `[]` ไม่ส่ง -> 422 ที่ `members`) |
 
 ทุกการแก้ที่ทำให้ hash ของ propagate หรือ analyze เปลี่ยน ตอบช่อง `results_stale: true` ยกเว้น `PUT /scenarios/{sc}` (6.3) ซึ่ง body คือเอกสาร scenario ทั้งก้อน จึงตอบค่านี้ใน header `X-Results-Stale: true|false`
 
@@ -215,6 +226,9 @@ api-interop/gnss-predict/server/
 
 ### 6.7 Data provider, style และรายงาน
 
+> endpoint ในหัวข้อนี้ย้ายไปทำในงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine (การตัดสินใจ P1 ของแผน: route เหล่านี้แค่เรียกโมดูลนั้น)
+> เกณฑ์ข้อ 2 ของหัวข้อ 1 ส่วนที่เป็นหัวข้อนี้จึงตรวจในงานย่อยที่ 4 server ของงานย่อยที่ 2 ยังไม่มี path เหล่านี้
+
 | Method | Path | ทำอะไร |
 |---|---|---|
 | GET | `/scenarios/{sc}/dataproviders?class=&name=` | provider, group, element ที่ object นั้นมี (ตาม spec Access + Report & Graph §3) |
@@ -233,8 +247,9 @@ api-interop/gnss-predict/server/
 | GET | `/jobs/{id}` | รายละเอียด (หัวข้อ 7) |
 | POST | `/jobs/{id}/cancel` | Stop บนแถบสถานะ |
 | POST | `/scenarios/{sc}/validate` | `{day, sp3?}` สั่ง job validate |
+| POST | `/daily/run` | สั่งงานพยากรณ์ประจำวันเอง (หัวข้อ 9.3): `{for_date?}` ตั้งต้นวันถัดไปตาม UTC ต้องอยู่ในช่วงเมื่อวาน ถึง พรุ่งนี้ (UTC) ไม่งั้น 422 ที่ `for_date` ส่ง job `daily` origin `user` ตอบ 202 `{job}` มี job daily ของวันนั้นที่รอหรือรันอยู่ -> 409 `JOB_RUNNING` สั่งซ้ำวันที่ล้มเหลว ถูกยกเลิก ถูกขัดจังหวะ หรือเสร็จแล้วได้ (สำเร็จแล้วเขียนทับ CSV ของวันนั้น) |
 | GET | `/validation/history` | อ่าน `data/validation/history.jsonl` |
-| GET | `/validation/{sc}/{day}` | `validation_<day>.json` ของ scenario นั้น |
+| GET | `/validation/{sc}/{day}` | `validation_<day>.json` ของ scenario นั้น หาใน ephem bundle ที่ current, `data/validation/<sc>/` แล้ว bundle อื่นใดก็ได้ของ scenario (ใหม่สุดก่อน ไม่ตาม symlink) ตรงกับที่ตัวตั้งเวลานับว่าตรวจแล้ว |
 
 ## 7. Job
 
@@ -282,13 +297,18 @@ api-interop/gnss-predict/server/
  "cesium_ion_token": ""}
 ```
 
+`daily.facility` ต้องเป็น `THBK` เพราะแม่แบบ `thbk-gnss` ที่งานประจำวันใช้สร้าง Facility เพียง THBK ชื่ออื่นทำให้ขั้น analyze ล้มเหลว
+(`SCENARIO_INVALID`) ช่องนี้มีไว้สำหรับแม่แบบที่มีหลาย Facility ในรุ่นหลัง
+
 ### 9.2 งานพยากรณ์ (ทุกวันตาม `run_at_utc`)
 
 ให้ D = วันถัดไปตาม UTC
 
 1. `fetch_snapshot` (ทำตามกติกา CelesTrak ของ engine อยู่แล้ว)
 2. สร้างหรือเขียนทับ scenario `daily_<YYYYMMDD ของ D>` จากแม่แบบ `thbk-gnss`: THBK มุมเงย 10°, ดาวทุกดวงในรายชื่อที่มี PRN, ช่วง 00:00–24:00 UTC ของ D, ทุก 30 วินาที, snapshot ที่เพิ่งดึง, access จาก THBK ไปทุก Constellation
-3. propagate แล้ว analyze THBK
+   เขียนทับเฉพาะ scenario ของงานประจำวัน (มีช่อง `daily`) ถ้าชื่อนี้เป็นของ scenario ของผู้ใช้ (ไม่มีช่อง `daily` หรือชื่อต่างแค่ตัวพิมพ์)
+   job ล้มเหลวด้วย `SCENARIO_INVALID` (หรือ `NAME_EXISTS`) ก่อนดึงข้อมูล และไม่แตะ scenario นั้น
+3. propagate แล้ว analyze THBK สำเร็จแล้วตั้ง `computed: true` ให้ access ของ THBK ใน scenario
 4. คัดลอก `legacy_gps.csv` ไปที่ `data/daily/thbk_gnss_pred_<YYYYMMDD>_24h.csv` และ `data/daily/latest.csv` (เขียนแบบ atomic)
 5. ส่ง SSE `daily` และข้อความผลลัพธ์
 
@@ -296,7 +316,14 @@ api-interop/gnss-predict/server/
 
 ### 9.3 งานที่พลาด
 
-ตอนเปิด server ถ้าเวลาปัจจุบันเลย `run_at_utc` ของวันนี้แล้ว และยังไม่มี scenario ของ D ที่สำเร็จ ให้รันทันที
+ตัวตั้งเวลาตรวจทุก 60 วินาที (และทันทีตอนเปิด server) โดย D = วันถัดไปของวันที่ปัจจุบันตาม UTC เสมอ จะสั่ง job `daily` ของ D เองเมื่อ
+เวลาปัจจุบันอยู่ระหว่าง `run_at_utc` ของวันนี้ถึง 24:00 UTC และ D ยังไม่มีอย่างใดอย่างหนึ่งต่อไปนี้: ไฟล์ CSV ของ D, job daily ของ D ที่
+สำเร็จ รออยู่ หรือกำลังรัน, ที่ถูกยกเลิก หรือที่ล้มเหลวด้วยรหัสอื่นนอกจาก `INTERRUPTED` (ใครสั่งก็ตาม) จึงไล่ทันอัตโนมัติได้เฉพาะเมื่อ
+เปิด server (หรือเครื่องตื่น) ก่อน 24:00 UTC ของวันเดียวกัน (`run_at_utc` 21:00 UTC คือ 04:00 เวลาไทย ช่วงไล่ทันจึงถึง 07:00 เวลาไทย)
+หลัง 24:00 UTC D เลื่อนเป็นวันถัดไป วันที่พลาด ล้มเหลว ถูกยกเลิก หรือถูกขัดจังหวะจึงไม่ถูกสั่งเอง
+
+ผู้ใช้สั่งเองได้ด้วย `POST /api/daily/run` `{for_date?}` (หัวข้อ 6.8) สำหรับวันเมื่อวาน วันนี้ หรือพรุ่งนี้ตาม UTC รวมถึงวันที่ล้มเหลว
+ถูกยกเลิก หรือถูกขัดจังหวะ (การขยายช่วงไล่ทันอัตโนมัติจะทำให้ server เริ่มดาวน์โหลดในเวลาใหม่ จึงต้องให้ผู้ใช้ยินยอมก่อน ยังไม่ทำในรุ่นนี้)
 
 ### 9.4 ตรวจย้อนหลัง (ทุก `validation_retry_hours`)
 
@@ -310,7 +337,8 @@ api-interop/gnss-predict/server/
 
 ## 10. ข้อผิดพลาด
 
-รูปแบบคำตอบ: `{"code": "...", "text": "<ไทย>", "field": null, "detail": null}`
+รูปแบบคำตอบ: `{"code": "...", "text": "<ไทย>", "field": null, "detail": null}` ยกเว้น `Host` ที่ไม่รับ ซึ่งได้ 400 ข้อความธรรมดา
+`Invalid host header` จาก `TrustedHostMiddleware` (หัวข้อ 6)
 
 | รหัส | HTTP | เมื่อไร |
 |---|---|---|
@@ -319,7 +347,8 @@ api-interop/gnss-predict/server/
 | `ETAG_MISMATCH` | 412 | scenario ถูกแก้จากที่อื่น |
 | `SCENARIO_INVALID` | 422 | ค่าผิด (มี `field`) |
 | `NO_SATELLITES` | 422 | คำนวณแล้วไม่เหลือดาว |
-| `JOB_RUNNING` | 409 | ลบ scenario ที่มี job กำลังรัน |
+| `JOB_RUNNING` | 409 | ลบ scenario ที่มี job รอหรือกำลังรัน (รวม job `daily` ของวันนั้นสำหรับ `daily_<YYYYMMDD>`) หรือ `POST /daily/run` ของวันที่มี job daily รอหรือรันอยู่ |
+| `FORBIDDEN_ORIGIN` | 403 | คำขอที่ไม่ใช่ GET, HEAD, OPTIONS มี `Origin` ที่ไม่ใช่ของ server เอง (หน้าเว็บอื่นสั่งงาน) `detail` คือ Origin ที่ส่งมา |
 | `RESULTS_NOT_CURRENT` | 409 | ขอช่วง access (`GET /access/intervals`) ของ Facility ที่ผล analyze ไม่ตรงกับ scenario ปัจจุบันหรือยังไม่มี |
 | รหัสอื่นของ engine (`ORBIT_SOURCE_UNAVAILABLE`, `GMAT_FAILED`, `TRUTH_UNAVAILABLE` ฯลฯ) | — | อยู่ใน `error` ของ job |
 | `INTERRUPTED` | — | job ค้างตอน server ปิด |
@@ -348,7 +377,7 @@ log ของ server เขียนลง `data/logs/server.log` หมุน�
 | # | ความเสี่ยง | วิธีรับมือ |
 |---|---|---|
 | S1 | `spawn` ช้า (เริ่ม Python ใหม่ราว 0.3–1 วินาทีต่อ job) | ยอมรับ เทียบกับเวลาคำนวณหลายวินาที |
-| S2 | เครื่องปิดหรือหลับตอน 21:00 UTC | งานที่พลาดรันตอนเปิด server (หัวข้อ 9.3) |
+| S2 | เครื่องปิดหรือหลับตอน 21:00 UTC | งานที่พลาดรันเองถ้าเปิด server ก่อน 24:00 UTC ไม่งั้นผู้ใช้สั่ง `POST /api/daily/run` (หัวข้อ 9.3) |
 | S3 | CelesTrak ไม่อัปเดตหรือได้ 403 ตอนงานประจำวัน | engine ใช้ snapshot เดิมพร้อมคำเตือน ผลยังมีแต่ข้อมูลเก่าลง ธงอายุแสดงในหน้าจอ |
 | S4 | CDDIS ช้าออก SP3 | ลองใหม่ได้ถึง 14 วัน |
 | S5 | ดิสก์เต็ม | `/health` แจ้ง และงานประจำวันข้ามพร้อม error |

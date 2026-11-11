@@ -356,7 +356,7 @@ server ของ GNSS Studio เป็น FastAPI ที่ให้หน้า
 
 ### 8.1 ติดตั้ง
 
-สร้าง virtualenv ใน `server/` ครั้งเดียว (ทดสอบกับ Python 3.14) `server/.venv/` อยู่ใน `.gitignore`
+สร้าง virtualenv ใน `server/` ครั้งเดียว ต้องใช้ Python ≥ 3.11 (ทดสอบกับ Python 3.14) `server/.venv/` อยู่ใน `.gitignore`
 
 ```bash
 cd api-interop/gnss-predict/server
@@ -376,6 +376,13 @@ cd api-interop/gnss-predict/server
 
 หยุดด้วย Ctrl-C หรือ `kill <pid>` (ถ้ามี job รันอยู่ server ฆ่า GMAT และ process ลูก แล้วบันทึก job นั้นและ job ที่รออยู่เป็น `failed` รหัส `INTERRUPTED`)
 server ฟังที่ `127.0.0.1` เท่านั้นโดยตั้งต้น ไม่มี login และไม่มี HTTPS (v1 สำหรับผู้ใช้คนเดียวบนเครื่องเดียว) จึงไม่ควรเปลี่ยน `GNSS_STUDIO_HOST`
+(ถ้าตั้งเป็นที่อยู่ที่ไม่ใช่ loopback server เตือนใน terminal และ `server.log` ตอนเปิด)
+
+server กันหน้าเว็บอื่นที่เปิดในเบราว์เซอร์เครื่องเดียวกันไม่ให้สั่งงาน (server §6):
+- header `Host` ต้องเป็น `127.0.0.1`, `localhost`, `[::1]` หรือค่า `GNSS_STUDIO_HOST` ไม่ใช่ได้ 400 `Invalid host header`
+  (กัน DNS rebinding: เปิดผ่านชื่ออื่นหรือ IP อื่นของเครื่องไม่ได้)
+- คำขอ POST, PUT, PATCH, DELETE ที่มี header `Origin` ต้องมาจาก `http://<ชื่อข้างบน>:<port>` ไม่ใช่ได้ 403 `FORBIDDEN_ORIGIN`
+  คำขอที่ไม่มี `Origin` (curl, script) ผ่านตามเดิม และ server ไม่ส่ง header CORS หน้าเว็บอื่นจึงอ่านผลของ GET ไม่ได้
 API ทั้งหมดอยู่ใต้ `/api` มี OpenAPI ที่ `/api/openapi.json` และหน้าลองเรียกที่ `/api/docs` ถ้ามีหน้าเว็บที่ build แล้วที่ `web/dist/`
 server ส่งหน้าเว็บจาก port เดียวกัน (ยังไม่มี: หน้าเว็บเป็นงานย่อยที่ 3–4)
 
@@ -409,9 +416,11 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 > **คำเตือน: เปิดงานประจำวันอยู่ = server ดาวน์โหลดจากเน็ตเองได้ทันทีที่เปิด**
 > กติกางานที่พลาด (server §9.3): ถ้าเปิด server หลังเวลา `run_at_utc` ของวันนั้น (เช่น เปิดตอน 22:00 UTC) และยังไม่มีผลพยากรณ์ของ D
 > ตัวตั้งเวลาจะสั่ง job `daily` **ทันที** ในรอบตรวจแรก ซึ่งดึงข้อมูลจาก CelesTrak (และ CDDIS) โดยไม่มีใครกดสั่ง
-> ถ้าไม่มี `data/settings.json` ใช้ค่าตั้งต้นซึ่ง **เปิด** งานประจำวัน (ไฟล์ที่เสียหรือไม่ระบุ `daily.enabled` เป็น true/false ถือว่า **ปิด**)
+> ถ้าไม่มีไฟล์ค่าตั้งใช้ค่าตั้งต้นซึ่ง **เปิด** งานประจำวัน (ไฟล์ที่เสีย อ่านไม่ได้ เป็น symlink ที่ชี้ไปไฟล์ที่ไม่มี
+> หรือไม่ระบุ `daily.enabled` เป็น true/false ถือว่า **ปิด**)
 >
-> ถ้าไม่ต้องการให้ดาวน์โหลด ให้ปิดก่อนเปิด server ครั้งแรก โดยเขียน `$GNSS_STUDIO_DATA/settings.json` ก่อน:
+> ถ้าไม่ต้องการให้ดาวน์โหลด ให้ปิดก่อนเปิด server ครั้งแรก โดยเขียนไฟล์ค่าตั้งก่อน: `api-interop/gnss-predict/data/settings.json`
+> โดยตั้งต้น หรือ `$GNSS_STUDIO_DATA/settings.json` ถ้าตั้ง `GNSS_STUDIO_DATA` ไว้ (โฟลเดอร์ data ต้องมีอยู่ก่อน: `mkdir -p` ให้เรียบร้อย)
 >
 > ```json
 > {"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
@@ -426,7 +435,34 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 >   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}'
 > ```
 >
-> งานที่ดึงข้อมูลจากเน็ตอีกสองทางมีแต่ที่ผู้ใช้สั่งเอง: `POST /api/orbits/fetch` และ `POST /api/scenarios/{sc}/validate`
+> การปิดไม่หยุด job `daily` หรือ `validate` ที่สั่งไปแล้ว ถ้ามี job ที่รออยู่หรือกำลังรัน ให้หา id แล้วยกเลิก (Stop ฆ่า GMAT และ process ลูก):
+>
+> ```bash
+> curl -s 'http://127.0.0.1:8000/api/jobs?state=running'; curl -s 'http://127.0.0.1:8000/api/jobs?state=queued'
+> curl -s -X POST http://127.0.0.1:8000/api/jobs/<id>/cancel              # ตอบบันทึก job ที่ state เป็น cancelled
+> ```
+>
+> นอกจากตัวตั้งเวลา มีสามทางที่ดึงข้อมูลจากเน็ต: `POST /api/orbits/fetch`, `POST /api/scenarios/{sc}/validate` และ `POST /api/daily/run`
+> ทั้งสามรับเฉพาะคำขอที่ `Host` เป็นของ server เอง และไม่มี `Origin` หรือ `Origin` เป็นของ server เอง (หัวข้อ 8.2)
+> หน้าเว็บอื่นในเบราว์เซอร์จึงสั่งไม่ได้ (ได้ 400 หรือ 403) แต่โปรแกรมใดก็ได้บนเครื่องนี้ที่เรียก `127.0.0.1` ได้ (curl, script) สั่งได้
+> เพราะ server ไม่มี login
+
+**ช่วงไล่ทันอัตโนมัติและการสั่งเอง** (server §9.3): D คือวันถัดไปตาม UTC ของเวลาปัจจุบันเสมอ ตัวตั้งเวลาไล่ทันงานของ D เองได้
+เฉพาะเมื่อ server เปิด (หรือเครื่องตื่น) ระหว่าง `run_at_utc` ถึง 24:00 UTC ของวันเดียวกัน ค่าตั้งต้น 21:00 UTC คือ 04:00 เวลาไทย
+ช่วงไล่ทันจึงคือ 04:00–07:00 เวลาไทย หลังจากนั้น D เลื่อนไปวันถัดไป วันที่พลาด (เครื่องหลับหรือปิด) ล้มเหลว ถูกยกเลิก หรือถูกขัดจังหวะ
+จะไม่ถูกสั่งเอง ให้สั่งเองด้วย `POST /api/daily/run` (ดึงข้อมูลจากเน็ตเหมือนงานอัตโนมัติ ทำงานแม้ `daily.enabled` เป็น false):
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/daily/run                                   # D = วันถัดไปตาม UTC
+curl -s -X POST http://127.0.0.1:8000/api/daily/run -H 'Content-Type: application/json' \
+  -d '{"for_date": "2026-11-12"}'                                                       # วันที่ระบุ
+# ตอบ HTTP 202 {"job": "<id ของ job>"} ติดตามด้วย GET /api/jobs/<id> หรือ SSE ที่ /api/events
+```
+
+`for_date` ต้องเป็นเมื่อวาน วันนี้ หรือพรุ่งนี้ตาม UTC (ไม่งั้น 422 ที่ `for_date`) มี job daily ของวันนั้นที่รอหรือรันอยู่ได้ 409 `JOB_RUNNING`
+สั่งซ้ำวันที่ล้มเหลว ถูกยกเลิก ถูกขัดจังหวะ หรือเสร็จแล้วได้ สำเร็จแล้วเขียนทับ CSV ของวันนั้นและ `latest.csv`
+job ที่สั่งเองนับเป็นรอบของวันนั้น: ถ้าสั่ง D เองแล้วล้มเหลว ตัวตั้งเวลาไม่สั่ง D ซ้ำตอน `run_at_utc` (สั่งเองอีกครั้งได้)
+งานประจำวันไม่เขียนทับ scenario ชื่อ `daily_<YYYYMMDD>` ที่ผู้ใช้สร้างเอง (ไม่มีช่อง `daily`): job ล้มเหลวด้วย `SCENARIO_INVALID` ก่อนดึงข้อมูล
 
 ค่าตั้งใน `settings.json` (ตัวอย่างข้างบนคือค่าตั้งต้นของ server §9.1 ยกเว้น `enabled`):
 
@@ -434,7 +470,7 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 |---|---|---|---|
 | `daily.enabled` | `true` | true/false | เปิดงานพยากรณ์ ตรวจย้อนหลัง และเก็บรักษา |
 | `daily.run_at_utc` | `"21:00"` | `HH:MM` | เวลา UTC ที่เริ่มพยากรณ์ของวันถัดไป |
-| `daily.facility` | `"THBK"` | ชื่อ object | Facility ที่ analyze และคัดลอก CSV |
+| `daily.facility` | `"THBK"` | ต้องเป็น `THBK` | Facility ที่ analyze และคัดลอก CSV แม่แบบ `thbk-gnss` สร้างแค่ THBK ชื่ออื่นทำให้ job ล้มเหลว (`SCENARIO_INVALID`) |
 | `daily.retention_days` | `30` | 1–3650 | อายุของ `ephem/` และ `access/` ของ scenario รายวัน |
 | `daily.validation_retry_hours` | `3` | 1–168 | ระยะห่างของการลองตรวจย้อนหลังซ้ำ |
 | `daily.validation_give_up_days` | `14` | 1–365 | เลิกตรวจหลังจากวัน D ผ่านไปกี่วัน |
@@ -450,10 +486,11 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 | ทั่วไป | `GET /health`, `GET/PUT /settings`, `GET /events` (SSE), `GET /messages` | §6.1, §8 |
 | วงโคจร | `GET /orbits`, `POST /orbits/fetch` (ดึงจากเน็ต), `GET /catalog` | §6.2 |
 | Scenario | `GET/POST /scenarios`, `GET/PUT/DELETE /scenarios/{sc}`, `POST /scenarios/{sc}/copy`, `GET/PUT /scenarios/{sc}/workbook` | §6.3 |
-| Object | `GET/POST /scenarios/{sc}/objects`, `GET/PATCH/DELETE /scenarios/{sc}/objects/{class}/{name}`, `POST .../rename`, `POST /scenarios/{sc}/groups` | §6.4 |
+| Object | `GET/POST /scenarios/{sc}/objects`, `GET/PATCH/DELETE /scenarios/{sc}/objects/{class}/{name}`, `POST .../rename`, `POST /scenarios/{sc}/groups` (`{name, members[]}` ต้องส่ง `members`) | §6.4 |
 | ผลลัพธ์ | `GET /scenarios/{sc}/results`, `POST /scenarios/{sc}/propagate`, `GET /scenarios/{sc}/ephem/{hash}/{file}`, `GET /scenarios/{sc}/access/{facility}/{hash}/{file}` | §6.5 |
 | Access | `GET /scenarios/{sc}/access`, `POST .../access/compute`, `.../clear`, `.../remove`, `GET .../access/intervals?from=&to=` | §6.6 |
 | Job | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` | §6.8, §7 |
+| งานประจำวัน | `POST /daily/run` (ดึงจากเน็ต) `{for_date?}` สั่งพยากรณ์ของวันนั้นเอง | §6.8, §9.3 |
 | ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/{sc}/{day}` | §6.8 |
 
 ยังไม่มีในรุ่นนี้: data provider, style และรายงาน (server §6.7) ซึ่งอยู่ในแผนของงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine
@@ -466,11 +503,13 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 1. เปิด server ด้วยค่าตั้งต้น (งานประจำวันเปิด ไม่ต้องมี `settings.json`) ใน `data/` ที่จะเก็บผลจริง และเช็กว่า GMAT พบ:
    `curl -s http://127.0.0.1:8000/api/health` ต้องได้ `"gmat_found": true`
 2. ปล่อยให้ server รันต่อเนื่องอย่างน้อย 3 วัน UTC ติดกัน เครื่องต้องไม่หลับ (เช่น `caffeinate -i .venv/bin/python -m gnss_studio_server`)
-   ถ้าเปิดหลัง 21:00 UTC รอบของวันนั้นรันทันที (คำเตือนในหัวข้อ 8.3) รอบถัดไปรันเองเวลา `run_at_utc` ของแต่ละวัน
+   ถ้าเปิดระหว่าง 21:00–24:00 UTC รอบของวันนั้นรันทันที (คำเตือนในหัวข้อ 8.3) รอบถัดไปรันเองเวลา `run_at_utc` ของแต่ละวัน
+   (รอบที่สั่งด้วย `POST /api/daily/run` มี `origin` เป็น `user` จึงไม่นับในเกณฑ์นี้)
 3. หลังรอบที่ 3 จบ ตรวจว่ามีผลพยากรณ์ 3 วันติดกันที่ตัวตั้งเวลาสั่งเอง:
 
    ```bash
-   ls data/daily/                      # thbk_gnss_pred_<D1>_24h.csv, <D2>, <D3> ที่เป็นวันติดกัน และ latest.csv
+   ls ../data/daily/                   # จากโฟลเดอร์ server/: thbk_gnss_pred_<D1>_24h.csv, <D2>, <D3> ที่เป็นวันติดกัน และ latest.csv
+                                       # (ถ้าตั้ง GNSS_STUDIO_DATA ใช้ ls "$GNSS_STUDIO_DATA/daily/")
    curl -s 'http://127.0.0.1:8000/api/jobs?state=succeeded' | python3 -c '
    import json, sys
    for j in json.load(sys.stdin):
@@ -498,7 +537,7 @@ cd api-interop/gnss-predict && python3 -m unittest discover -s tests       # tes
 
 test ใช้ `data/` ชั่วคราวและไม่ใช้เน็ตทั้งหมด `server/tests/test_integration_gmat.py` รันทั้งสายผ่าน HTTP API ด้วย GMAT จริงและ process ลูกจริง
 (New จากแม่แบบ → propagate → Access THBK→GPS → intervals มี G01 → `scene.czml` เปิดเป็น JSON) และข้ามอัตโนมัติถ้าหา GmatConsole ไม่เจอ
-ผลเมื่อ 2026-11-11: server 859 ข้อผ่านใน 38 วินาที (รวม integration test ที่ใช้ GMAT จริงราว 1 วินาที), engine 461 ข้อผ่านใน 7 วินาที
+ผลเมื่อ 2026-11-11: server 923 ข้อผ่านใน 40–45 วินาที (รวม integration test ที่ใช้ GMAT จริงราว 2 วินาที), engine 461 ข้อผ่านใน 6 วินาที
 
 ### 8.7 บันทึกการทดลองจริงบนเครื่อง
 
