@@ -136,6 +136,14 @@ describe("Windows... dialog", () => {
     expect(await within(dialog).findByRole("row", { name: /^3D Graphics 2 - Earth/ })).toBeDefined();
   });
 
+  test("a window whose title changes shows the new title (a title-only change must reach the list)", async () => {
+    const dialog = await openDialog();
+    expect(rowOf(dialog, "Message Viewer")).toBeDefined();
+    act(() => apiOf().getPanel("messageViewer")!.api.setTitle("Renamed Viewer"));
+    expect(within(dialog).getByRole("row", { name: /^Renamed Viewer/ })).toBeDefined(); // at once, not after some later layout event
+    expect(within(dialog).queryByRole("row", { name: /^Message Viewer/ })).toBeNull();
+  });
+
   test("OK closes the dialog", async () => {
     const dialog = await openDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));

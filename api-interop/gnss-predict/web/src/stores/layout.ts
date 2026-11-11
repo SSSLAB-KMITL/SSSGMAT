@@ -128,9 +128,16 @@ export const useLayout = create<LayoutState>()((set, get) => {
   const syncAllTitles = (api: DockviewApi): void => {
     for (const panel of api.panels) syncTitle(panel);
   };
-  /** params ของหน้าต่างเปลี่ยนไม่ว่าใครสั่ง (openPanel หรือ panel.api.updateParameters ตรง ๆ) ให้ชื่อตามทัน */
+  /**
+   * params ของหน้าต่างเปลี่ยนไม่ว่าใครสั่ง (openPanel หรือ panel.api.updateParameters ตรง ๆ) ให้ชื่อตามทัน
+   * และชื่อเปลี่ยนอย่างเดียว (ตำแหน่งไม่เปลี่ยน ไม่มี onDidLayoutChange ให้ทันที) ต้อง bump revision เอง
+   * ไม่งั้นรายชื่อหน้าต่าง (เมนู Window, กล่อง Windows...) แสดงชื่อเก่าค้าง
+   */
   const watch = (panel: IDockviewPanel): void => {
-    if (!watched.has(panel)) watched.set(panel, panel.api.onDidParametersChange(() => syncTitle(panel)));
+    if (watched.has(panel)) return;
+    const params = panel.api.onDidParametersChange(() => syncTitle(panel));
+    const title = panel.api.onDidTitleChange(bump);
+    watched.set(panel, { dispose: () => { params.dispose(); title.dispose(); } });
   };
   /** ย้ายหน้าต่างทำให้ dockview ส่ง add/remove ซ้ำ ๆ: เลิกฟังเมื่อหน้าต่างหายจาก api จริงเท่านั้น */
   const unwatch = (api: DockviewApi, panel: IDockviewPanel): void => {

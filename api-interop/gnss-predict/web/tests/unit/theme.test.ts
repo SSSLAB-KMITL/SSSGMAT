@@ -41,7 +41,8 @@ test("every token of the theme contract exists", () => {
   const v = readCssVars("src/theme.css");
   for (const name of ["--bg", "--panel", "--border", "--text", "--text-muted", "--menu-bg", "--menu-text",
                       "--titlebar-bg", "--titlebar-active-bg", "--titlebar-active-text", "--selected-bg", "--selected-text",
-                      "--danger", "--warning", "--font-ui", "--font-mono", "--font-size",
+                      "--danger", "--warning", "--danger-bg", "--danger-text", "--banner-bg", "--banner-text", "--tip-bg", "--tip-text",
+                      "--font-ui", "--font-mono", "--font-size",
                       "--color-gps", "--color-glonass", "--color-galileo", "--color-beidou", "--color-facility", "--color-access"])
     expect(v[name], name).toBeTruthy();
 });
@@ -51,6 +52,9 @@ test("text tokens meet WCAG AA on their backgrounds", () => {
   for (const [fg, bg] of [["--text", "--bg"], ["--text", "--panel"], ["--text-muted", "--panel"],
                           ["--menu-text", "--menu-bg"], ["--selected-text", "--selected-bg"],
                           ["--titlebar-active-text", "--titlebar-active-bg"],
+                          // แถบสถานะ: ขาดการติดต่อ (ขาวบนแดง) แถบเตือนดิสก์ tooltip และจำนวนข้อความที่ยังไม่อ่านบนพื้นแถบสถานะ
+                          ["--danger-text", "--danger-bg"], ["--banner-text", "--banner-bg"], ["--tip-text", "--tip-bg"],
+                          ["--danger", "--menu-bg"], ["--warning", "--menu-bg"],
                           // แท็บหน้าต่าง dockview ที่ไม่ได้เลือก (วางบนแถบชื่อ)
                           ["--text", "--titlebar-bg"], ["--text-muted", "--titlebar-bg"]])
     expect(contrast(v[fg], v[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);

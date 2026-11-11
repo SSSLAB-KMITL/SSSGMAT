@@ -81,6 +81,8 @@ interface ScenarioState {
   load(name: string): Promise<boolean>;
   /** โหลด doc + tree ใหม่จาก server แล้วล้าง conflict (ล้มเหลว = ข้อความใน Message Viewer และ conflict ค้างอยู่) */
   reload(): Promise<void>;
+  /** Cancel ในกล่อง 412: ปิดกล่องโดยไม่โหลดใหม่ (ค่าบนหน้านี้คงเดิม ETag ยังเก่า เขียนครั้งต่อไปจะได้ 412 อีก) */
+  clearConflict(): void;
   /** โหลดใหม่เงียบ ๆ ถ้า ETag บน server ต่างจากที่ถืออยู่ (ตอนต่อ SSE ใหม่เพื่อปิดช่องว่างที่ event หลุด) */
   resync(): Promise<void>;
   close(): void;
@@ -339,6 +341,8 @@ export const useScenario = create<ScenarioState>()((set, get) => {
       }
       if (get().name === name) set({ conflict: false });
     },
+
+    clearConflict: () => set({ conflict: false }),
 
     resync: () => pullQuiet(true),
 

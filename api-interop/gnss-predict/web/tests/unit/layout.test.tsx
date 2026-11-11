@@ -1005,3 +1005,21 @@ describe("tile equalises the integrated groups", () => {
     expectEqual(api, "width");
   });
 });
+
+describe("window titles", () => {
+  test("a title-only change bumps the revision, so lists of windows (Window menu, Windows... dialog) re-read the titles", async () => {
+    const { api } = await mount();
+    const before = st().revision;
+    api.getPanel("messageViewer")!.api.setTitle("Renamed Viewer");
+    expect(st().revision).toBeGreaterThan(before);
+    expect(st().listWindows().find((w) => w.id === "messageViewer")?.title).toBe("Renamed Viewer");
+  });
+
+  test("a window added after attach is watched too", async () => {
+    const { api } = await mount();
+    const id = st().openPanel("propertiesBrowser", { path: "*/Satellite/G01" });
+    const before = st().revision;
+    api.getPanel(id)!.api.setTitle("Other");
+    expect(st().revision).toBeGreaterThan(before);
+  });
+});

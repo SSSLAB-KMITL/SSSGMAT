@@ -1,7 +1,7 @@
 // พื้นที่ทำงานของแอป (spec §4): dockview + ทะเบียนหน้าต่าง
-//   [ header  ]  ช่องเมนูบาร์และแถบเครื่องมือ (งานถัดไปใส่)
+//   [ header  ]  ช่องเมนูบาร์และแถบเครื่องมือ (App ใส่ HealthBanner + MenuBar + Toolbars)
 //   [ dockview ] หน้าต่างทั้งหมด
-//   [ footer  ]  ช่องแถบสถานะ (งานถัดไปใส่)
+//   [ footer  ]  ช่องแถบสถานะ (App ใส่ StatusBar)
 // หน้าต่างแต่ละบานวาดจากทะเบียน (layout/panels.ts) ตอน render จึงแทนที่ด้วยของจริงได้โดยลงทะเบียนซ้ำ
 
 import {
@@ -48,7 +48,7 @@ function tabContextMenu({ panel }: GetTabContextMenuItemsParams): ReactContextMe
 }
 
 export interface WorkspaceProps {
-  /** เหนือหน้าต่าง: เมนูบาร์ + แถบเครื่องมือ */
+  /** เหนือหน้าต่าง: แถบเตือนดิสก์ + เมนูบาร์ + แถบเครื่องมือ */
   header?: ReactNode;
   /** ใต้หน้าต่าง: แถบสถานะ */
   footer?: ReactNode;

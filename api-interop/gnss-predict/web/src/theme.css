@@ -29,6 +29,15 @@
   /* สถานะ (ใช้เป็นสีข้อความหรือเส้นบนพื้น --panel ได้) */
   --danger: #b3261e;
   --warning: #8a5300;
+  /* แถบสถานะขาดการติดต่อ server (พื้นแดง ตัวอักษรขาว) และแถบเตือนดิสก์ด้านบน */
+  --danger-bg: #b3261e;
+  --danger-text: #ffffff;
+  --banner-bg: #fff3cd;
+  --banner-text: #5c3b00;
+
+  /* คำอธิบายเมื่อชี้ (tooltip) */
+  --tip-bg: #2b2b2b;
+  --tip-text: #ffffff;
 
   /* ตัวอักษร: system UI และ monospace สำหรับตัวเลขและเวลา ไม่โหลดฟอนต์จากเครือข่าย */
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", Thonburi, sans-serif;
@@ -257,4 +266,336 @@ body {
 
 .windows-ok {
   margin-top: auto;
+}
+
+/* ---------- เมนูบาร์ แถบเครื่องมือ แถบสถานะ (src/chrome) ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.menubar {
+  display: flex;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border-bottom: 1px solid var(--border);
+}
+
+.menubar-trigger {
+  padding: 2px 10px;
+  background: none;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: default;
+}
+
+.menubar-trigger[data-highlighted],
+.menubar-trigger[data-state="open"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.menubar-trigger:focus-visible,
+.tool-btn:focus-visible,
+.status-button:focus-visible,
+.field:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.menu-content {
+  z-index: 1100;
+  min-width: 200px;
+  padding: 2px 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 6px;
+  cursor: default;
+  outline: none;
+  user-select: none;
+}
+
+.menu-item[data-highlighted],
+.menu-item[data-state="open"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.menu-item[aria-disabled="true"] {
+  color: var(--text-muted);
+}
+
+.menu-item[aria-disabled="true"][data-highlighted] {
+  background: var(--hover-bg);
+  color: var(--text-muted);
+}
+
+.menu-indicator {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+}
+
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-muted);
+}
+
+.menu-item[data-highlighted]:not([aria-disabled="true"]) .menu-shortcut {
+  color: inherit;
+}
+
+.menu-chevron {
+  margin-left: auto;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border);
+}
+
+.tip {
+  z-index: 1200;
+  max-width: 320px;
+  padding: 3px 8px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  font-size: var(--font-size);
+}
+
+.toolbars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 2px 4px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 3px;
+  background: var(--border);
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  color: var(--menu-text);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.tool-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--border);
+}
+
+.tool-btn[aria-pressed="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+  border-color: var(--border);
+}
+
+.tool-btn[aria-disabled="true"] {
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tool-btn[aria-disabled="true"]:hover {
+  background: none;
+  border-color: transparent;
+}
+
+.icon-mirror {
+  transform: scaleX(-1);
+}
+
+.field {
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 4px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--font-size);
+}
+
+.field-time {
+  width: 230px;
+}
+
+.field-step {
+  width: 90px;
+  background: var(--menu-bg);
+}
+
+.field-multiplier {
+  width: 70px;
+}
+
+.field-invalid {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border-top: 1px solid var(--border);
+}
+
+.status-field {
+  display: inline-flex;
+  flex: none;
+  align-self: stretch;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.status-field:first-child {
+  border-left: 0;
+}
+
+.status-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-mono {
+  font-family: var(--font-mono);
+}
+
+.status-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+  background: none;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-button[aria-disabled="true"] {
+  cursor: default;
+}
+
+.status-count {
+  font-family: var(--font-mono);
+}
+
+.status-count-unread {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.status-warn {
+  color: var(--warning);
+}
+
+.progress {
+  display: inline-block;
+  width: 90px;
+  height: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--selected-bg);
+}
+
+.progress-fill[data-indeterminate] {
+  width: 100%;
+  opacity: 0.4;
+}
+
+.status-disconnected {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.health-banner {
+  padding: 3px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+/* กล่องข้อความ (412, job ล้มเหลว, confirm) */
+.dlg-message {
+  min-width: 360px;
+  max-width: 520px;
+}
+
+.dlg-text {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.dlg-detail {
+  max-height: 40vh;
+  margin: 0 12px;
+  padding: 6px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.dlg-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
 }

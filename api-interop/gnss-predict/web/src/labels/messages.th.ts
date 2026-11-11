@@ -20,6 +20,20 @@ const MESSAGES = {
 
   // คำสั่งที่รอ งานย่อยที่ 4 (W4)
   "tooltip.subtask4": "อยู่ในงานย่อยที่ 4",
+  "tooltip.noScenario": "ยังไม่ได้เปิด scenario",
+
+  // แถบเครื่องมือ Animation: ปุ่ม Start/Reverse ที่กดแล้วไม่ขยับเพราะ Animation Cycle เป็น Stop at Time และเวลาอยู่ที่ปลายช่วงแล้ว (W1)
+  "anim.reachedEnd": "เวลาอยู่ที่ปลายช่วงวิเคราะห์แล้ว และ Animation Cycle เป็น Stop at Time จึงเล่นต่อไม่ได้ กด Reset หรือพิมพ์เวลาใหม่ในช่อง Current Scenario Time",
+  "anim.reachedStart": "เวลาอยู่ที่ต้นช่วงวิเคราะห์แล้ว และ Animation Cycle เป็น Stop at Time จึงเล่นถอยหลังต่อไม่ได้ กด Reset หรือพิมพ์เวลาใหม่ในช่อง Current Scenario Time",
+
+  // แถบสถานะ: งานประจำวัน (server §8 `daily.state`)
+  "daily.state.idle": "ว่าง",
+  "daily.state.running": "กำลังรัน",
+  "daily.state.ok": "สำเร็จ",
+  "daily.state.failed": "ล้มเหลว",
+
+  // View → Full Screen ที่ browser ไม่อนุญาต
+  "fullscreen.failed": "เปิดโหมดเต็มจอไม่ได้: {message}",
 
   // กล่องโต้ตอบ (spec §7, §15)
   "confirm.delete": "ลบ \"{name}\" หรือไม่? การลบนี้ย้อนกลับไม่ได้",
