@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { ComponentType } from "react";
-import { gridFor, parseLayout, VIEW_LABELS } from "../layout";
+import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
 import type { ModuleConfig, Tick } from "../types";
+import { MapView } from "../views/MapView";
 
 /** What every view receives. */
 export interface ViewProps {
@@ -9,18 +11,39 @@ export interface ViewProps {
   config: ModuleConfig;
   /** newest tick, null before the first one */
   tick: Tick | null;
+  /** NORAD number of the module's selected satellite, null if none (one per module, shared by Map, Polar and List; not saved) */
+  selected: number | null;
+  /** a view selects a satellite (null: unselects) */
+  onSelect: (norad: number | null) => void;
+  /** right click on a satellite: the view calls it with the client position for the popup menu (Task 18) */
+  onSatContextMenu?: (norad: number, clientX: number, clientY: number) => void;
+  /** double click on a satellite: Satellite info (sub-project 4, nothing yet) */
+  onSatDoubleClick?: (norad: number) => void;
 }
 
+/** What the page gives ModuleView: the selection is held here, not above. */
+export type ModuleViewProps = Omit<ViewProps, "selected" | "onSelect">;
+
 /**
- * The component of each view type. Tasks 14-16 add their entry here, one line each:
- *   [VIEW.Map]: MapView (Task 14), [VIEW.Polar]: PolarView and [VIEW.SingleSat]: SingleSatView (Task 15),
+ * The component of each view type. Tasks 15-16 add their entry here, one line each:
+ *   [VIEW.Polar]: PolarView and [VIEW.SingleSat]: SingleSatView (Task 15),
  *   [VIEW.List]: ListView and [VIEW.EventList]: EventListView (Task 16).
  * A cell whose type has no entry yet is a labelled placeholder.
  */
-const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {};
+const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
+  [VIEW.Map]: MapView,
+};
 
-/** The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3). */
-export function ModuleView(props: ViewProps) {
+/**
+ * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3).
+ * It holds the module's selected satellite (ref §5: one at a time, in every view); a new module starts with none.
+ */
+export function ModuleView(props: ModuleViewProps) {
+  return <ModuleViews key={props.module} {...props} />;
+}
+
+function ModuleViews(props: ModuleViewProps) {
+  const [selected, setSelected] = useState<number | null>(null);
   let grid;
   try {
     grid = gridFor(parseLayout(props.config.layout_code));
@@ -49,7 +72,7 @@ export function ModuleView(props: ViewProps) {
             data-view={label}
             style={{ gridColumn: area.gridColumn, gridRow: area.gridRow }}
           >
-            {View ? <View {...props} /> : <div className="view-placeholder">{label}</div>}
+            {View ? <View {...props} selected={selected} onSelect={setSelected} /> : <div className="view-placeholder">{label}</div>}
           </div>
         );
       })}
