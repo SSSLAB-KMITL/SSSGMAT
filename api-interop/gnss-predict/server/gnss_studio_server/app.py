@@ -4,9 +4,13 @@ from fastapi import FastAPI
 
 from .config import Config
 from .errors import install_error_handlers
+from .events import EventBus
 from .log import make_logger
-from .routes import health, objects, scenarios
+from .routes import events, health, objects, scenarios
 from .store import ScenarioStore
+
+
+SSE_PING_S = 15.0
 
 
 def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
@@ -17,9 +21,12 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.start_background = start_background
     app.state.store = ScenarioStore(config.data_dir)
     app.state.logger, app.state.log_handler = make_logger(config.data_dir)
+    app.state.bus = EventBus(app.state.logger)
+    app.state.sse_ping_s = SSE_PING_S               # test ตั้งให้สั้นลงได้ (ต้องตั้งก่อนเปิด /api/events)
     web_root = config.web_dist.resolve()
     install_error_handlers(app, web_root if web_root.is_dir() else None)
     app.include_router(health.router, prefix="/api")
+    app.include_router(events.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(objects.router, prefix="/api")
     return app

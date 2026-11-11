@@ -159,6 +159,13 @@ class ScenarioStore:
             raise ApiError(422, "SCENARIO_INVALID", f"scenario.json ของ {name} อ่านไม่ได้ (ไม่ใช่ JSON object ที่ถูกต้อง)", "<file>")
         return doc, etag(data)
 
+    def current_etag(self, name: str) -> str:
+        """ETag ปัจจุบันของไฟล์ โดยไม่แปลงเป็น JSON (ไฟล์ที่เสียก็ได้ ETag) ไม่มี scenario -> 404"""
+        try:
+            return etag((self._existing(name) / SCENARIO_FILE).read_bytes())
+        except FileNotFoundError:
+            raise ApiError(404, "NOT_FOUND", f"ไม่พบ scenario {name}") from None
+
     # ---------- เขียน ----------
 
     def _prepare(self, name: str, doc: Any) -> bytes:

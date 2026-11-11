@@ -281,7 +281,9 @@ def test_put_accepts_quoted_bare_and_weak_etag(client, snapshot):
 def test_put_response_body_is_saved_document(client, snapshot):
     r = make(client); doc = r.json(); doc["description"] = "x"
     ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(r)})
-    assert ok.json() == doc == client.get("/api/scenarios/S1").json()
+    body = ok.json()
+    assert body.pop("results_stale") is False                       # Task 5 เพิ่มช่องนี้ช่องเดียว (ดู test_events.py) นอกนั้นคือเอกสารที่บันทึก
+    assert body == doc == client.get("/api/scenarios/S1").json()
 
 
 def test_put_missing_scenario_is_404(client, snapshot):

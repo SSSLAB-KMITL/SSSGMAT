@@ -13,11 +13,15 @@ from .app import create_app                                      # noqa: E402
 from .config import Config                                       # noqa: E402
 
 
+GRACEFUL_SHUTDOWN_S = 2
+
+
 def main(environ: Mapping[str, str] = os.environ) -> None:
     config = Config.from_env(environ)
     app = create_app(config)
     print(f"GNSS Studio: http://{config.host}:{config.port}/", flush=True)
-    uvicorn.run(app, host=config.host, port=config.port)
+    # SSE (/api/events) ค้างเชื่อมต่อตลอด: ถ้าไม่ตั้ง timeout uvicorn จะรอให้แท็บที่เปิดอยู่ปิดเองก่อนจึงจะหยุด (Ctrl-C ไม่ทำงาน)
+    uvicorn.run(app, host=config.host, port=config.port, timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S)
 
 
 if __name__ == "__main__":
