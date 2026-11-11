@@ -349,12 +349,41 @@ def test_settings_harmless_noise_never_flips_enabled_false(client, data_dir, con
 
 
 def test_settings_partial_file_fills_missing_fields_with_defaults(client, data_dir):
-    (data_dir / "settings.json").write_text(json.dumps({"daily": {"run_at_utc": "06:00", "retention_days": 7}}))
+    path = data_dir / "settings.json"
+    path.write_text(json.dumps({"daily": {"enabled": True, "run_at_utc": "06:00", "retention_days": 7}}))
     assert client.get("/api/settings").json() == {**DEFAULTS, "daily": {**DEFAULT_DAILY, "run_at_utc": "06:00", "retention_days": 7}}
-    (data_dir / "settings.json").write_text("{}")
+    path.write_text(json.dumps({"daily": {"enabled": True}}))                          # มี enabled อย่างเดียว: ที่เหลือเป็นค่าตั้งต้น
     assert client.get("/api/settings").json() == DEFAULTS
-    (data_dir / "settings.json").write_text(json.dumps({"cesium_ion_token": "t"}))
-    assert client.get("/api/settings").json() == {**DEFAULTS, "cesium_ion_token": "t"}
+    path.write_text(json.dumps({"daily": {"enabled": False, "facility": "BKK"}, "cesium_ion_token": "t"}))
+    assert client.get("/api/settings").json() == {"daily": {**DEFAULT_DAILY, "enabled": False, "facility": "BKK"},
+                                                  "cesium_ion_token": "t"}
+
+
+@pytest.mark.parametrize("content", [
+    b"{}", b'{"daily": {}}', b'{"cesium_ion_token": "x"}',                             # ไม่ได้ระบุ daily.enabled เลย
+    b'{"daily": {"enable": false}}', b'{"daily": {"Enabled": false}}',                  # พิมพ์ชื่อช่องผิด ถูกเมินโดย extra="ignore"
+    b'{"daily": {"run_at_utc": "06:00", "retention_days": 7}}', b'\xef\xbb\xbf{"daily": {"enabled_": true}}',
+])
+def test_settings_file_without_an_explicit_enabled_fails_safe(client, data_dir, content):
+    from gnss_studio_server import settings
+    (data_dir / "settings.json").write_bytes(content)
+    assert client.get("/api/settings").json() == FAIL_SAFE                            # ไม่ยืนยัน enabled: ไม่เปิดงานดึงข้อมูลเอง
+    assert settings.load(data_dir).daily.enabled is False
+    assert sum("settings.json" in line for line in server_log(data_dir).splitlines()) == 1     # เตือนครั้งเดียวต่อสถานะไฟล์
+    assert "daily.enabled" in server_log(data_dir)                                    # บอกว่าขาดอะไร
+
+
+def test_settings_missing_enabled_warns_once_and_recovers_when_added(data_dir):
+    from gnss_studio_server import settings
+    logger, seen = capture_logger()
+    path = data_dir / "settings.json"
+    path.write_text("{}", encoding="utf-8")
+    for _ in range(4):
+        assert settings.load(data_dir, logger) == settings.Settings(daily=settings.Daily(enabled=False))
+    assert len(seen) == 1 and seen[0].levelno == logging.WARNING
+    path.write_text(json.dumps({"daily": {"enabled": True}}), encoding="utf-8")        # ผู้ใช้ใส่ enabled แล้ว ใช้ค่าในไฟล์ ไม่เตือน
+    assert settings.load(data_dir, logger) == settings.Settings()
+    assert len(seen) == 1
 
 
 def test_settings_lenient_load_still_checks_types_and_ranges(client, data_dir):

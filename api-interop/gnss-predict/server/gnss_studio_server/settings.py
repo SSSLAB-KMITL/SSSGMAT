@@ -10,7 +10,9 @@
   - ไม่มีไฟล์ = ค่าตั้งต้นของ 9.1 (เปิดงานประจำวัน เป็นการตั้งที่ผู้ใช้อนุมัติแล้ว)
   - ไฟล์เสียหรือค่าผิด (ไม่ใช่ JSON, ชนิดหรือช่วงผิด ฯลฯ) = ค่าตั้งต้นแต่ `daily.enabled = False` (fail safe) พร้อม log เตือน
     ครั้งเดียวต่อสถานะของไฟล์ (path, mtime_ns, size): ตัวตั้งเวลาเรียก load ทุก 60 วินาที ไม่ควรท่วม log
-  - ผ่อนปรนเฉพาะสิ่งที่ไม่เสียหาย: อ่านแบบ utf-8-sig (BOM ที่โปรแกรมแก้ไขบางตัวใส่ให้), ข้ามช่องที่ไม่รู้จัก, ช่องที่หายได้ค่าตั้งต้น
+  - ไฟล์ที่มีอยู่แต่ไม่ได้ระบุ `daily.enabled` เป็น true/false (ไม่มี `daily`, `daily` ว่าง หรือพิมพ์ชื่อช่องผิดเช่น `enable`) นับเป็นไม่ได้ยืนยัน
+    = fail safe เหมือนไฟล์เสีย (PUT เขียน `enabled` เสมอ จึงกระทบเฉพาะไฟล์ที่แก้มือ)
+  - ผ่อนปรนเฉพาะสิ่งที่ไม่เสียหาย: อ่านแบบ utf-8-sig (BOM ที่โปรแกรมแก้ไขบางตัวใส่ให้), ข้ามช่องที่ไม่รู้จัก, ช่องอื่นที่หายได้ค่าตั้งต้น
     (`{"daily": {"enabled": false}}` จึงโหลดเป็นปิดเสมอ)
 - `save(data_dir, settings)`: เขียนแบบ atomic
 - `ignore_change`: ค่าตั้งต้นของ `app.state.settings_on_change` ที่ PUT /api/settings เรียกหลังบันทึกแล้ว (ตัวตั้งเวลาแทนที่ใน Task 11)
@@ -115,6 +117,8 @@ def load(data_dir: Path, logger: logging.Logger | None = None) -> Settings:
     path = Path(data_dir) / SETTINGS_FILE
     try:
         loaded = Settings.model_validate(json.loads(path.read_bytes().decode("utf-8-sig")))
+        if "enabled" not in loaded.daily.model_fields_set:      # ไม่มี daily ก็เข้าข้อนี้ (daily มาจากค่าตั้งต้น fields_set ว่าง)
+            raise ValueError("daily.enabled: ต้องระบุเป็น true หรือ false อย่างชัดเจน")
     except FileNotFoundError:
         return Settings()
     except (OSError, ValueError, RecursionError) as exc:       # รวม UnicodeDecodeError, JSONDecodeError และ ValidationError
