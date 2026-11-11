@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { ComponentType } from "react";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
+import { SatPopup } from "./SatPopup";
+import type { PopupSat, PopupView } from "../satPopup";
 import type { ModuleConfig, Tick } from "../types";
 import { EventListView } from "../views/EventListView";
 import { ListView } from "../views/ListView";
@@ -19,7 +21,7 @@ export interface ViewProps {
   selected: number | null;
   /** a view selects a satellite (null: unselects) */
   onSelect: (norad: number | null) => void;
-  /** right click on a satellite: the view calls it with the client position for the popup menu (Task 18) */
+  /** right click on a satellite: the view calls it with the client position; ModuleView opens the satellite's popup menu there */
   onSatContextMenu?: (norad: number, clientX: number, clientY: number) => void;
   /** double click on a satellite: Satellite info (sub-project 4, nothing yet) */
   onSatDoubleClick?: (norad: number) => void;
@@ -32,8 +34,14 @@ export interface ViewProps {
   onSaveConfig: (change: (config: ModuleConfig) => ModuleConfig) => Promise<void>;
 }
 
-/** What the page gives ModuleView: the selection is held here, not above. */
-export type ModuleViewProps = Omit<ViewProps, "selected" | "onSelect">;
+/**
+ * What the page gives ModuleView. The selected satellite is held by the page (App), not here: the Module menu's "Select
+ * satellite" and Autotrack change it too.
+ */
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu"> & {
+  /** a change from a satellite popup was refused: the Thai text for the notice strip */
+  onError?: (text: string) => void;
+};
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -44,16 +52,40 @@ const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
   [VIEW.EventList]: EventListView,
 };
 
+/** The popup of a right click on a satellite in each view type (Single sat has its own, from its header button). */
+const POPUP_VIEW: Partial<Record<number, PopupView>> = {
+  [VIEW.List]: "list",
+  [VIEW.Map]: "map",
+  [VIEW.Polar]: "polar",
+  [VIEW.EventList]: "event",
+};
+
+/** A satellite popup that is open: where, in which view and for which satellite (as it was when it was asked for). */
+interface OpenPopup {
+  view: PopupView;
+  sat: PopupSat;
+  x: number;
+  y: number;
+}
+
 /**
- * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3).
- * It holds the module's selected satellite (ref §5: one at a time, in every view); a new module starts with none.
+ * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3). It opens
+ * the popup menu of a satellite where a view reports a right click (ref §4-§8). A new module starts with no satellite selected.
  */
 export function ModuleView(props: ModuleViewProps) {
   return <ModuleViews key={props.module} {...props} />;
 }
 
-function ModuleViews(props: ModuleViewProps) {
-  const [selected, setSelected] = useState<number | null>(null);
+function ModuleViews({ onError, ...props }: ModuleViewProps) {
+  const [popup, setPopup] = useState<OpenPopup | null>(null);
+  const closePopup = useCallback(() => setPopup(null), []);
+  const reportError = useCallback((text: string) => onError?.(text), [onError]);
+
+  const openPopup = (view: PopupView, norad: number, x: number, y: number) => {
+    const sat = props.tick?.sats?.find((s) => s.norad === norad);
+    if (sat !== undefined) setPopup({ view, sat: { norad, name: sat.name, el: sat.el, dir: sat.dir }, x, y });
+  };
+
   let grid;
   try {
     grid = gridFor(parseLayout(props.config.layout_code));
@@ -65,31 +97,50 @@ function ModuleViews(props: ModuleViewProps) {
     );
   }
   return (
-    <div
-      className="view-grid"
-      style={{
-        gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
-      }}
-    >
-      {grid.areas.map((area, i) => {
-        const View = VIEWS[area.type];
-        const label = VIEW_LABELS[area.type] ?? `View ${area.type}`;
-        return (
-          <div
-            key={i}
-            className="view-cell"
-            data-view={label}
-            style={{ gridColumn: area.gridColumn, gridRow: area.gridRow }}
-          >
-            {View ? (
-              <View {...props} selected={selected} onSelect={setSelected} />
-            ) : (
-              <div className="view-placeholder">{label}</div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <>
+      <div
+        className="view-grid"
+        style={{
+          gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
+        }}
+      >
+        {grid.areas.map((area, i) => {
+          const View = VIEWS[area.type];
+          const label = VIEW_LABELS[area.type] ?? `View ${area.type}`;
+          const popupView = POPUP_VIEW[area.type];
+          return (
+            <div
+              key={i}
+              className="view-cell"
+              data-view={label}
+              style={{ gridColumn: area.gridColumn, gridRow: area.gridRow }}
+            >
+              {View ? (
+                <View
+                  {...props}
+                  onSatContextMenu={popupView === undefined ? undefined : (norad, x, y) => openPopup(popupView, norad, x, y)}
+                />
+              ) : (
+                <div className="view-placeholder">{label}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {popup !== null && (
+        <SatPopup
+          key={`${popup.sat.norad}:${popup.x}:${popup.y}`}
+          view={popup.view}
+          sat={popup.sat}
+          config={props.config}
+          x={popup.x}
+          y={popup.y}
+          onSaveConfig={props.onSaveConfig}
+          onError={reportError}
+          onClose={closePopup}
+        />
+      )}
+    </>
   );
 }

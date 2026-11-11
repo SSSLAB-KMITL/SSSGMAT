@@ -99,6 +99,9 @@ body {
 .menubar-item {
   padding: 2px 10px;
 }
+.menubar-item.open {
+  background: var(--pressed);
+}
 
 /* ---------------------------------------------------------------- notebook tabs */
 
@@ -430,8 +433,27 @@ body {
 .popup-check {
   flex: none;
   width: 14px;
-  font-size: 9px;
+  font-size: 10px;
   text-align: center;
+}
+.popup-accel,
+.popup-arrow {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-dim);
+}
+.popup-arrow {
+  padding-left: 16px;
+  font-size: 9px;
+}
+.popup-item:hover:not(.disabled) .popup-accel,
+.popup-item:focus-visible:not(.disabled) .popup-accel,
+.popup-item:hover:not(.disabled) .popup-arrow,
+.popup-item:focus-visible:not(.disabled) .popup-arrow {
+  color: inherit;
+}
+.popup-item.open:not(:hover):not(:focus-visible) {
+  background: var(--hover);
 }
 .popup-separator {
   height: 1px;
@@ -653,4 +675,132 @@ body {
 .tc-toggle.active {
   background: var(--pressed);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------------------------------------------------------------- dialogs (Open module, Clone, Delete, TLE Update, Help) */
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+}
+.dialog-text {
+  margin: 0;
+  white-space: pre-line;
+}
+.dialog-error {
+  margin: 0;
+  padding: 4px 8px;
+  white-space: pre-line;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.dialog-buttons .button {
+  min-width: 72px;
+}
+.dialog-entry {
+  padding: 3px 6px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+.dialog-list {
+  height: 200px;
+  overflow-y: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  user-select: none;
+}
+.dialog-list-head {
+  position: sticky;
+  top: 0;
+  padding: 3px 10px;
+  background: linear-gradient(#fbfafa, #ebe9e7);
+  border-bottom: 1px solid var(--border);
+}
+.dialog-row {
+  padding: 3px 10px;
+}
+.dialog-row.selected {
+  background: var(--accent);
+  color: #ffffff;
+}
+.dialog a {
+  color: var(--accent);
+}
+.license-text {
+  height: 60vh;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tle {
+  gap: 4px;
+}
+.tle-heading,
+.tle-activity {
+  text-align: center;
+}
+.tle-progress {
+  width: 100%;
+  margin: 6px 0;
+}
+.tle-stats {
+  align-self: center;
+  margin: 4px 0;
+  white-space: pre;
+  tab-size: 4;
+}
+.tle-messages {
+  max-height: 30vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.tle-messages li {
+  margin-bottom: 2px;
+  padding: 4px 8px;
+  border-left: 4px solid;
+}
+
+/* ---------------------------------------------------------------- after File → Quit (ของเรา) */
+
+.stopped {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100vh;
+  padding: 24px;
+  text-align: center;
+}
+.stopped-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.stopped-detail {
+  color: var(--text-dim);
 }

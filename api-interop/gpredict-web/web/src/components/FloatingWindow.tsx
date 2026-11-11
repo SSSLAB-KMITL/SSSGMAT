@@ -11,7 +11,7 @@ interface Props {
   children: ReactNode;
   /** top left corner in client px; the window is moved back inside the page if it does not fit. Default: centred */
   initialPosition?: Point;
-  /** width of the window in px. Default: as wide as its content */
+  /** width of the window in px. Default: as wide as its content (`max-content`) */
   width?: number;
 }
 
@@ -61,11 +61,22 @@ export function FloatingWindow({ title, onClose, children, initialPosition, widt
     setPos((p) => (p !== null && p.x === next.x && p.y === next.y ? p : next));
   }, []);
 
-  // first position, then focus (Escape and the keyboard work from the window)
+  // first position
   useLayoutEffect(() => {
     place(initialPosition ?? null);
-    box.current?.focus({ preventScroll: true });
   }, []); // only the first position counts: after that the user's drag and the keep-inside effect move the window
+
+  // then focus, once the window is visible (an element that is not visible cannot take the focus): the control marked
+  // data-autofocus if the window has one, else the window itself, so that Escape and the keyboard work from it
+  const focused = useRef(false);
+  useEffect(() => {
+    if (pos === null || focused.current) return;
+    focused.current = true;
+    const el = box.current;
+    const target = el?.querySelector<HTMLElement>("[data-autofocus]") ?? el;
+    target?.focus({ preventScroll: true });
+    if (target instanceof HTMLInputElement) target.select();
+  }, [pos]);
 
   // the window grew (an error line, say) or the page shrank: keep it inside
   useEffect(() => {
@@ -135,7 +146,7 @@ export function FloatingWindow({ title, onClose, children, initialPosition, widt
       role="dialog"
       aria-labelledby={titleId}
       tabIndex={-1}
-      style={{ left: pos?.x ?? 0, top: pos?.y ?? 0, width, zIndex: z, visibility: pos === null ? "hidden" : undefined }}
+      style={{ left: pos?.x ?? 0, top: pos?.y ?? 0, width: width ?? "max-content", zIndex: z, visibility: pos === null ? "hidden" : undefined }}
       onPointerDownCapture={raise}
     >
       <div

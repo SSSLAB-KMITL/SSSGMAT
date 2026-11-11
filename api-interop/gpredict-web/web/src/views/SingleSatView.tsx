@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorText, getSatellite } from "../api";
 import type { ViewProps } from "../components/ModuleView";
+import { toEntries } from "../components/menuEntries";
 import { PopupMenu } from "../components/PopupMenu";
 import type { MenuEntry } from "../components/PopupMenu";
-import { laterTooltip } from "../later";
+import { satPopup } from "../satPopup";
 import type { Tick } from "../types";
 import { useMeta } from "../useMeta";
 import { useRefreshGate } from "./canvasHooks";
@@ -72,16 +73,9 @@ export function SingleSatView({ config, tick, onSaveConfig }: ViewProps) {
     });
   };
 
+  // the satellite's name in bold (Satellite info) and the pass items, as in every satellite popup (satPopup.ts); then one radio item per satellite
   const items: MenuEntry[] = [
-    // Satellite info (sub-project 4)
-    { kind: "item", label: <b>{name}</b>, disabled: true, title: laterTooltip(4) },
-    { kind: "separator" },
-    // the pass predictions (sub-project 2)
-    ...(sat !== undefined && sat.el !== null && sat.el > 0
-      ? [{ kind: "item", label: "Show current pass", disabled: true, title: laterTooltip(2) } satisfies MenuEntry]
-      : []),
-    { kind: "item", label: "Show next pass", disabled: true, title: laterTooltip(2) },
-    { kind: "item", label: "Future passes", disabled: true, title: laterTooltip(2) },
+    ...toEntries(satPopup("single", { norad: norad ?? 0, name, el: sat?.el ?? null, dir: sat?.dir ?? "" }, config), () => undefined),
     { kind: "separator" },
     ...choices.map((c): MenuEntry => ({ kind: "radio", label: c.name, checked: c.norad === norad, onChoose: () => choose(c.norad) })),
   ];
