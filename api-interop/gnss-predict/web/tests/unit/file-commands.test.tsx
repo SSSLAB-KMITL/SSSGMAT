@@ -8,6 +8,7 @@ import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useScenario } from "../../src/stores/scenario";
 import { openScenario, resetAll } from "./helpers/chrome";
+import { stubFetch } from "./helpers/fake-fetch";
 import { fakeFlow, setUrl, type FakeFlow } from "./helpers/files";
 
 const FILE_IDS: CommandId[] = ["file.new", "file.open", "file.save", "file.saveAs", "file.close", "file.exit"];
@@ -190,6 +191,21 @@ describe("recent scenarios", () => {
     start();
     runCommand("file.recent.2");
     await vi.waitFor(() => expect(flow.calls).toEqual(["load:A", "restore:A"]));
+  });
+
+  test("running one whose scenario is gone (404 NOT_FOUND) takes it out of the File menu, and the others close ranks", async () => {
+    const real = useScenario.getInitialState().load;
+    useScenario.setState({ load: real });
+    const gone = { status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ scenario Gone" } };
+    stubFetch({ "GET /api/scenarios/Gone": gone, "GET /api/scenarios/Gone/objects": gone });
+    recent.push("Keep");
+    recent.push("Gone");
+    start();
+    expect([commandText("file.recent.1"), commandText("file.recent.2")]).toEqual(["Gone", "Keep"]);
+    runCommand("file.recent.1");
+    await vi.waitFor(() => expect(isRegistered("file.recent.2")).toBe(false));
+    expect(commandText("file.recent.1")).toBe("Keep");
+    expect(recent.list()).toEqual(["Keep"]);
   });
 
   test("are off while the workspace is not mounted", () => {

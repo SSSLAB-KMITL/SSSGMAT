@@ -191,6 +191,55 @@ describe("load", () => {
     expect(st().catalog.size).toBe(0);
   });
 
+  describe("loadFailure (why the last open failed)", () => {
+    const NOT_FOUND = { status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ scenario E2E" } };
+
+    test("is empty until an open fails", () => {
+      expect(st().loadFailure).toBeNull();
+    });
+
+    test("names the scenario, the HTTP status and the server's code when the server refuses", async () => {
+      server({ [`GET ${BASE}`]: NOT_FOUND, [`GET ${BASE}/objects`]: NOT_FOUND });
+      expect(await st().load("E2E")).toBe(false);
+      expect(st().loadFailure).toEqual({ name: "E2E", status: 404, code: "NOT_FOUND" });
+    });
+
+    test("uses status 0 for what is not an HTTP answer: a server that cannot be reached, or a document that cannot be used", async () => {
+      const f = server();
+      f.routes[`GET ${BASE}`] = () => {
+        throw new Error("offline");
+      };
+      expect(await st().load("E2E")).toBe(false);
+      expect(st().loadFailure).toMatchObject({ name: "E2E", status: 0, code: "NETWORK" });
+      server({ [`GET ${BASE}`]: { json: { hello: "world" }, headers: { ETag: E1 } } });
+      expect(await st().load("E2E")).toBe(false);
+      expect(st().loadFailure).toEqual({ name: "E2E", status: 0, code: "SCENARIO_UNUSABLE" });
+    });
+
+    test("is cleared when the next open starts, and stays empty after a successful open", async () => {
+      server({ [`GET ${BASE}`]: NOT_FOUND, [`GET ${BASE}/objects`]: NOT_FOUND });
+      await st().load("E2E");
+      expect(st().loadFailure).not.toBeNull();
+      server();
+      expect(await st().load("E2E")).toBe(true);
+      expect(st().loadFailure).toBeNull();
+    });
+
+    test("is cleared by close, and an open that was overtaken by a newer one does not record anything", async () => {
+      server({ [`GET ${BASE}`]: NOT_FOUND, [`GET ${BASE}/objects`]: NOT_FOUND });
+      await st().load("E2E");
+      st().close();
+      expect(st().loadFailure).toBeNull();
+      const slow = deferred<{ status: number; json: unknown }>();
+      server({ [`GET ${BASE}`]: () => slow.promise });
+      const older = st().load("E2E");
+      st().close(); // overtakes it
+      slow.resolve(NOT_FOUND);
+      expect(await older).toBe(false);
+      expect(st().loadFailure).toBeNull();
+    });
+  });
+
   test("close empties the store and the results", async () => {
     server();
     await st().load("E2E");

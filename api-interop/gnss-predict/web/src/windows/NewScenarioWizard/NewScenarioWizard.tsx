@@ -176,7 +176,8 @@ export function NewScenarioWizard({ panelId = "newScenarioWizard" }: Partial<Pan
         <button type="submit" className="btn" disabled={busy}>
           {t("dialog.ok")}
         </button>
-        <button type="button" className="btn" onClick={() => useLayout.getState().closePanel(panelId)}>
+        {/* ระหว่างสร้างและเปิด Cancel ใช้ไม่ได้: wizard ที่ "ยกเลิก" แล้วยังเปิด scenario ใหม่ต่อจะสับสน (เหมือน Save As) */}
+        <button type="button" className="btn" disabled={busy} onClick={() => useLayout.getState().closePanel(panelId)}>
           {t("dialog.cancel")}
         </button>
       </div>

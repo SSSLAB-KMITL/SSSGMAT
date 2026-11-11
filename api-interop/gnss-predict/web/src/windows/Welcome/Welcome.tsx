@@ -50,10 +50,13 @@ function utcg(iso: string | null): string {
 
 export function Welcome(_props: Partial<PanelProps>) {
   const [list, setList] = useState<ListState>({ status: "loading" });
-  const [recentNames] = useState(() => recent.list());
+  const [recentNames, setRecentNames] = useState(() => recent.list());
   const [opening, setOpening] = useState(false);
   const recentId = useId();
   const openId = useId();
+
+  // รายการล่าสุดเปลี่ยนขณะหน้านี้เปิดอยู่ (ชื่อที่เปิดไม่ได้เพราะ scenario ถูกลบไปแล้วถูกถอดออก)
+  useEffect(() => recent.subscribe(() => setRecentNames(recent.list())), []);
 
   useEffect(() => {
     const ctl = new AbortController();

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { nextGraphicsTitle, PANEL_KINDS } from "../../src/layout/panels";
-import { WORKBOOK_MAX_BYTES, validateWorkbook, workbookBytes, type Workbook } from "../../src/layout/workbook";
+import { WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes, type Workbook } from "../../src/layout/workbook";
 
 /** workbook ที่ใช้ได้เล็กที่สุด (dockview เป็น object ใดก็ได้ เพราะ validate ตรวจแค่รูปร่าง ไม่ได้ให้ dockview ตรวจ) */
 const valid = (): Workbook => ({
@@ -118,4 +118,83 @@ test("every panel kind of the contract is known", () => {
     "objectBrowser", "propertiesBrowser", "satelliteCatalog", "stkReference", "timelineView", "viewFromTo", "welcome", "windowProperties2d",
     "windowProperties3d",
   ]);
+});
+
+describe("withoutPanels", () => {
+  /** the parts of DockviewApi.toJSON() that name panels: grid leaves, panels, floating and edge groups */
+  const sample = () => ({
+    grid: {
+      root: {
+        type: "branch",
+        size: 100,
+        data: [
+          { type: "leaf", size: 50, data: { id: "1", views: ["a"], activeView: "a" } },
+          { type: "leaf", size: 50, data: { id: "2", views: ["w", "b"], activeView: "w" } },
+          { type: "leaf", size: 50, data: { id: "3", views: ["x"], activeView: "x" } },
+        ],
+      },
+      width: 100,
+      height: 100,
+      orientation: "HORIZONTAL",
+    },
+    panels: { a: { id: "a" }, b: { id: "b" }, w: { id: "w" }, x: { id: "x" }, f: { id: "f" }, g: { id: "g" }, e: { id: "e" }, t: { id: "t" } },
+    activeGroup: "2",
+    floatingGroups: [
+      { data: { views: ["f"], activeView: "f", id: "5" }, position: { top: 1 } },
+      { data: { views: ["g", "f"], activeView: "f", id: "6" }, position: { top: 2 } },
+    ],
+    edgeGroups: {
+      left: { size: 260, visible: true, group: { views: ["e"], activeView: "e", id: "edge-left" } },
+      bottom: { size: 220, visible: true, group: { views: ["t", "w2"], activeView: "w2", id: "edge-bottom" } },
+    },
+  });
+  type Sample = ReturnType<typeof sample>;
+  const leaves = (d: Sample) => d.grid.root.data.map((n) => (n.data as { views: string[] }).views);
+
+  test("with nothing to drop it returns an equal copy, and never the same object", () => {
+    const input = sample();
+    const out = withoutPanels(input, new Set());
+    expect(out).toEqual(input);
+    expect(out).not.toBe(input);
+  });
+
+  test("does not change its input", () => {
+    const input = sample();
+    withoutPanels(input, new Set(["w", "f", "e", "w2"]));
+    expect(input).toEqual(sample());
+  });
+
+  test("takes the panels out of the panels table and out of every group's views", () => {
+    const out = withoutPanels(sample(), new Set(["w", "f"])) as unknown as Sample;
+    expect(Object.keys(out.panels).sort()).toEqual(["a", "b", "e", "g", "t", "x"]);
+    expect(leaves(out)).toEqual([["a"], ["b"], ["x"]]);
+  });
+
+  test("a group's active view moves to the first view left", () => {
+    const out = withoutPanels(sample(), new Set(["w", "f"])) as unknown as Sample;
+    expect((out.grid.root.data[1].data as { activeView: string }).activeView).toBe("b");
+    expect(out.floatingGroups[0].data.views).toEqual(["g"]);
+    expect(out.floatingGroups[0].data.activeView).toBe("g");
+  });
+
+  test("a floating group left with no window is removed, and the key goes when no floating group is left", () => {
+    const some = withoutPanels(sample(), new Set(["f"])) as unknown as Sample;
+    expect(some.floatingGroups.map((g) => g.data.id)).toEqual(["6"]);
+    const none = withoutPanels(sample(), new Set(["f", "g"])) as unknown as Partial<Sample>;
+    expect(none).not.toHaveProperty("floatingGroups");
+  });
+
+  test("an edge group that only held dropped windows is removed; one that held others keeps them", () => {
+    const out = withoutPanels(sample(), new Set(["e", "w2"])) as unknown as Sample;
+    expect(Object.keys(out.edgeGroups)).toEqual(["bottom"]);
+    expect(out.edgeGroups.bottom.group.views).toEqual(["t"]);
+    expect(out.edgeGroups.bottom.group.activeView).toBe("t");
+  });
+
+  test("a grid group that only held a dropped window stays as an empty group without an active view (restoring removes it, which lets dockview resize its neighbours)", () => {
+    const out = withoutPanels(sample(), new Set(["x"])) as unknown as Sample;
+    expect(leaves(out)).toEqual([["a"], ["w", "b"], []]);
+    expect(out.grid.root.data[2].data).not.toHaveProperty("activeView");
+    expect(out.grid.root.data[2].size).toBe(50);
+  });
 });

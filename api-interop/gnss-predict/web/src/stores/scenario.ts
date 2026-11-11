@@ -77,7 +77,13 @@ interface ScenarioState {
   conflict: boolean;
   /** doc เก่ากว่า etag: การเขียนครั้งล่าสุดสำเร็จแต่โหลด doc ใหม่ไม่ได้ (การโหลดที่สำเร็จครั้งถัดไปล้าง) putDoc จะโหลดใหม่ก่อน */
   docStale: boolean;
-  /** เปิด scenario; true = เปิดได้ false = เปิดไม่ได้ (มีข้อความใน Message Viewer; scenario ที่เปิดอยู่ก่อนไม่เปลี่ยน) */
+  /**
+   * เหตุที่ load ครั้งล่าสุดล้มเหลว (null = ไม่ล้มเหลว): status = HTTP status ที่ server ตอบ (0 = ไม่ใช่คำตอบ HTTP เช่นต่อ server ไม่ได้
+   * หรือเอกสารใช้ไม่ได้), code = code ของ server (NOT_FOUND ฯลฯ) ผู้เรียกใช้ตัดสินใจต่อ เช่น 404 NOT_FOUND = scenario หายไปแล้ว
+   * ล้างเมื่อเริ่ม load ใหม่ เมื่อเปิดได้ และเมื่อ close; load ที่ถูกแซงด้วย load/close ใหม่กว่าไม่บันทึกอะไร
+   */
+  loadFailure: { name: string; status: number; code: string } | null;
+  /** เปิด scenario; true = เปิดได้ false = เปิดไม่ได้ (มีข้อความใน Message Viewer และ loadFailure; scenario ที่เปิดอยู่ก่อนไม่เปลี่ยน) */
   load(name: string): Promise<boolean>;
   /** โหลด doc + tree ใหม่จาก server แล้วล้าง conflict (ล้มเหลว = ข้อความใน Message Viewer และ conflict ค้างอยู่) */
   reload(): Promise<void>;
@@ -107,6 +113,7 @@ const EMPTY = {
   catalog: new Map<number, CatalogEntry>(),
   conflict: false,
   docStale: false,
+  loadFailure: null,
 };
 
 const enc = encodeURIComponent;
@@ -299,6 +306,7 @@ export const useScenario = create<ScenarioState>()((set, get) => {
       loadCtl = ctl;
       const token = ++loadSeq;
       opening = { name, token, events: [] };
+      if (get().loadFailure !== null) set({ loadFailure: null });
       const { signal } = ctl;
       try {
         const [docRes, treeRes] = await Promise.all([
@@ -324,7 +332,9 @@ export const useScenario = create<ScenarioState>()((set, get) => {
         opening = null;
         ctl.abort();
         if (isAbortError(e)) return false;
-        report("error", e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE", msg("scenario.openFailed", { name, message: errorText(e) }));
+        const code = e instanceof ApiError ? e.code : "SCENARIO_UNUSABLE";
+        set({ loadFailure: { name, status: e instanceof ApiError ? e.status : 0, code } });
+        report("error", code, msg("scenario.openFailed", { name, message: errorText(e) }));
         return false;
       }
     },

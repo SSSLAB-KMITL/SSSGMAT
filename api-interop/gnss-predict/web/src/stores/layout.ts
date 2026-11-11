@@ -4,6 +4,8 @@
 // - ชนิดหน้าต่าง (Dockable / Integrated / Floating) อ่านจากตำแหน่งจริงใน dockview ไม่เก็บซ้ำ (ดู layout/placement.ts)
 // - คำสั่งเมนู Window (Windows..., Cascade, Tile) เรียกผ่านที่นี่; เมนูบาร์มาในงานถัดไป
 // - workbook (W6): toWorkbook / fromWorkbook / applyDefault / restoreFor(name) (เรียกหลัง useScenario.load สำเร็จ) / saveWorkbook (File → Save)
+//   workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist): หน้าต่างลอยและชั่วคราวไม่ถูกบันทึกพร้อม windowProps ของมัน และถูกข้ามตอนจัดกลับ
+//   restoreFor ที่ค้างอยู่ถูกทิ้งเมื่อ scenario ปิดหรือเปลี่ยนระหว่างรอ workbook (ไม่งั้นคำตอบเก่าแทนที่ทุกหน้าต่าง รวม Welcome ที่เพิ่งเปิด)
 // - หน้าต่างที่มี Cesium ต้องแจ้ง viewer.resize() เมื่อ panel เปลี่ยนขนาด: ใช้ onPanelResize(id, cb) หรือ hook usePanelResize(panelId, cb)
 
 import type { DockviewApi, DockviewIDisposable, IDockviewPanel } from "dockview-react";
@@ -18,7 +20,7 @@ import {
 } from "../layout/panels";
 import { cascadeIntegrated, centrePanel, moveToType, revealPanel, tileIntegrated, windowTypeOf, type MoveHints } from "../layout/placement";
 import {
-  DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, validateWorkbook, workbookBytes,
+  DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes,
   type ToolbarName, type Toolbars, type Workbook, type WindowProps,
 } from "../layout/workbook";
 import { report } from "./messages";
@@ -95,6 +97,9 @@ function freeId(api: DockviewApi, kind: string): string {
 
 const isGraphics = (kind: string): kind is GraphicsKind => kind === "graphics3d" || kind === "graphics2d";
 
+/** หน้าต่างชนิดนี้ไม่เก็บใน workbook (PanelDef.persist เป็น false); ชนิดที่ไม่รู้จักไม่ใช่ชั่วคราว (มีทางจัดการของมันเอง: ข้ามพร้อมคำเตือน) */
+const isTransient = (kind: unknown): boolean => typeof kind === "string" && getPanelDef(kind)?.persist === false;
+
 export const useLayout = create<LayoutState>()((set, get) => {
   let subscriptions: DockviewIDisposable[] = [];
   /** ผู้ฟัง params ของแต่ละหน้าต่าง (ชื่อหน้าต่างบางชนิดขึ้นกับ params) และผู้ฟังการลงทะเบียนซ้ำ */
@@ -102,6 +107,11 @@ export const useLayout = create<LayoutState>()((set, get) => {
   let unsubscribeRegistry: (() => void) | null = null;
   /** นับทุก restoreFor: คำตอบของครั้งที่ถูกครั้งใหม่กว่าแซง ทิ้ง */
   let restoreSeq = 0;
+  // scenario ปิด (Close/Exit หรือถูกลบจากแท็บอื่น) หรือเปลี่ยนชื่อระหว่างรอ workbook: คำตอบที่ค้างอยู่เป็นของ scenario เดิม ทิ้งเช่นกัน
+  // (store นี้มีอายุเท่าหน้าเว็บ จึงไม่ต้องเลิกฟัง)
+  useScenario.subscribe((state, prev) => {
+    if (state.name !== prev.name) restoreSeq++;
+  });
 
   const need = (): DockviewApi => {
     const api = get().api;
@@ -286,13 +296,17 @@ export const useLayout = create<LayoutState>()((set, get) => {
     toWorkbook: () => {
       const api = need();
       const s = get();
+      // เฉพาะหน้าต่างของพื้นที่ทำงาน: หน้าต่างชั่วคราวที่เปิดอยู่ตอนนี้ไม่เข้าไฟล์ (ทั้งใน dockview, panels และ windowProps)
+      const drop = new Set(api.panels.filter((p) => isTransient(p.api.component)).map((p) => p.id));
       return {
         version: 1,
-        dockview: clone(api.toJSON()) as unknown as Record<string, unknown>,
-        panels: Object.fromEntries(api.panels.map((p) => [p.id, { kind: p.api.component, params: clone(p.params ?? {}) }])),
+        dockview: withoutPanels(api.toJSON() as unknown as Record<string, unknown>, drop),
+        panels: Object.fromEntries(
+          api.panels.filter((p) => !drop.has(p.id)).map((p) => [p.id, { kind: p.api.component, params: clone(p.params ?? {}) }]),
+        ),
         toolbars: { ...s.toolbars },
         timelineHidden: [...s.timelineHidden],
-        windowProps: clone(s.windowProps),
+        windowProps: Object.fromEntries(Object.entries(clone(s.windowProps)).filter(([id]) => !drop.has(id))),
       };
     },
 
@@ -316,15 +330,22 @@ export const useLayout = create<LayoutState>()((set, get) => {
       const entries = isRecord(layout.panels) ? layout.panels : {};
       const unknownIds: string[] = [];
       const unknownKinds = new Set<string>();
+      // หน้าต่างชั่วคราว (workbook เก่าที่เก็บ Welcome ฯลฯ ไว้): ข้ามเงียบ ๆ ด้วยวิธีเดียวกัน (ไม่มีคำเตือน เพราะไม่ใช่ความผิดของไฟล์)
+      const skipIds: string[] = [];
       for (const [id, entry] of Object.entries(entries)) {
         if (!isRecord(entry)) continue;
         const kinds = [entry.contentComponent, w.panels[id]?.kind];
         const bad = kinds.find((k) => k !== undefined && !isPanelKind(k));
-        if (bad === undefined) continue;
-        unknownIds.push(id);
-        unknownKinds.add(String(bad));
-        entry.contentComponent = UNKNOWN_PANEL;
+        if (bad !== undefined) {
+          unknownIds.push(id);
+          unknownKinds.add(String(bad));
+          entry.contentComponent = UNKNOWN_PANEL;
+        } else if (kinds.some(isTransient)) {
+          skipIds.push(id);
+          entry.contentComponent = UNKNOWN_PANEL;
+        }
       }
+      const droppedIds = new Set([...skipIds, ...Object.entries(w.panels).filter(([, p]) => isTransient(p.kind)).map(([id]) => id)]);
       try {
         api.fromJSON(layout as unknown as Parameters<DockviewApi["fromJSON"]>[0]);
       } catch (e) {
@@ -332,14 +353,22 @@ export const useLayout = create<LayoutState>()((set, get) => {
         get().applyDefault();
         return;
       }
-      for (const id of unknownIds) {
+      for (const id of [...unknownIds, ...skipIds]) {
         const panel = api.getPanel(id);
         if (panel !== undefined) api.removePanel(panel);
+      }
+      // กลุ่มในกริดกลางที่ว่าง (workbook ที่บันทึกตอนหน้าต่างชั่วคราวอยู่ในกลุ่มของมันเอง): ลบให้ dockview ขยายกลุ่มข้างเคียงแทน
+      for (const group of [...api.groups]) {
+        if (group.panels.length === 0 && group.api.location.type === "grid") api.removeGroup(group);
       }
       for (const kind of unknownKinds) report("warning", "WORKBOOK_UNKNOWN_KIND", msg("workbook.unknownKind", { kind }));
       // ชื่อหน้าต่างมาจากตารางชื่อเสมอ (ไม่ใช้ชื่อที่เก็บไว้ในไฟล์ ซึ่งอาจเป็นชื่อของรุ่นเก่า)
       syncAllTitles(api);
-      set({ toolbars: w.toolbars, timelineHidden: w.timelineHidden, windowProps: w.windowProps });
+      set({
+        toolbars: w.toolbars,
+        timelineHidden: w.timelineHidden,
+        windowProps: Object.fromEntries(Object.entries(w.windowProps).filter(([id]) => !droppedIds.has(id))),
+      });
       bump();
     },
 

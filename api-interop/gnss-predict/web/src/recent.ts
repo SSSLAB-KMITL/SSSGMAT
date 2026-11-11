@@ -50,9 +50,22 @@ export function push(name: string): void {
   for (const listener of [...listeners]) listener();
 }
 
+/** ถอนชื่อออกจากรายการ (scenario ถูกลบไปแล้ว) ไม่มีชื่อนี้อยู่ = ไม่ทำอะไรและไม่แจ้งใคร เขียนไม่ได้ = ข้าม */
+export function remove(name: string): void {
+  const current = list();
+  const next = current.filter((x) => !sameName(x, name));
+  if (next.length === current.length) return;
+  try {
+    storage()?.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // เต็มหรือถูกปิด: รายการเดิมอยู่ต่อ
+  }
+  for (const listener of [...listeners]) listener();
+}
+
 export function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-export const recent = { list, push, subscribe };
+export const recent = { list, push, remove, subscribe };

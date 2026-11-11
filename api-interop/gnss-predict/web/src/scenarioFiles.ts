@@ -7,7 +7,8 @@
 
 import { apiSend } from "./api/client";
 import { msg } from "./labels/messages.th";
-import { push as pushRecent } from "./recent";
+import { getPanelDef } from "./layout/panels";
+import { push as pushRecent, remove as removeRecent } from "./recent";
 import { useLayout } from "./stores/layout";
 import { report } from "./stores/messages";
 import { useScenario } from "./stores/scenario";
@@ -43,11 +44,6 @@ function setScenarioParam(name: string | null): void {
   }
 }
 
-/** หน้าต่างลอยที่ผูกกับ scenario ที่เปิดอยู่ (อ้าง object หรือผลของมัน) ปิดตอน Close/Exit; หน้าต่างของแอป (About, Fetch Orbit Data ฯลฯ) ไม่ปิด */
-const SCENARIO_WINDOWS: ReadonlySet<string> = new Set([
-  "propertiesBrowser", "insertObjects", "satelliteCatalog", "viewFromTo", "windowProperties3d", "windowProperties2d",
-]);
-
 /** เปิด Welcome (เปิดอยู่แล้ว = โฟกัสตัวเดิม); พื้นที่ทำงานยังไม่พร้อม = ไม่ทำอะไร */
 export function showWelcome(): void {
   const layout = useLayout.getState();
@@ -57,23 +53,29 @@ export function showWelcome(): void {
 /**
  * เปิด scenario: โหลด → URL → จำในรายการล่าสุด → จัดหน้าต่างตาม workbook (restoreFor แทนที่ทุกหน้าต่างที่เปิดอยู่)
  * คืน false เมื่อเปิดไม่ได้ (ข้อความอยู่ใน Message Viewer แล้ว และไม่มีอะไรเปลี่ยน)
+ * ยกเว้นรายการล่าสุด: server ตอบ 404 NOT_FOUND (scenario ถูกลบไปแล้ว) = ถอดชื่อนั้นออกจากรายการ ไม่ให้เหลือรายการที่เปิดไม่ได้ตลอดไป
+ * (ล้มเหลวเพราะเหตุอื่น เช่น ต่อ server ไม่ได้ ไม่ถอด: scenario ยังอยู่)
  */
 export async function openScenario(name: string): Promise<boolean> {
-  if (!(await useScenario.getState().load(name))) return false;
+  if (!(await useScenario.getState().load(name))) {
+    const failure = useScenario.getState().loadFailure;
+    if (failure !== null && failure.name === name && failure.status === 404 && failure.code === "NOT_FOUND") removeRecent(name);
+    return false;
+  }
   setScenarioParam(name);
   pushRecent(name);
   await useLayout.getState().restoreFor(name);
   return true;
 }
 
-/** หลัง scenario ถูกปิด (ไม่ว่าใครสั่ง): ถอด sc ออกจาก URL ปิดหน้าต่างที่ผูกกับ scenario แล้วเปิด Welcome ทำซ้ำได้ */
+/** หลัง scenario ถูกปิด (ไม่ว่าใครสั่ง): ถอด sc ออกจาก URL ปิดหน้าต่างที่ผูกกับ scenario (PanelDef.scenarioBound) แล้วเปิด Welcome ทำซ้ำได้ */
 function afterScenarioClosed(): void {
   setScenarioParam(null);
   const layout = useLayout.getState();
   const api = layout.api;
   if (api === null) return;
   for (const panel of [...api.panels]) {
-    if (SCENARIO_WINDOWS.has(panel.api.component)) layout.closePanel(panel.id);
+    if (getPanelDef(panel.api.component)?.scenarioBound === true) layout.closePanel(panel.id);
   }
   showWelcome();
 }
@@ -111,7 +113,7 @@ export class WorkbookNotSaved extends Error {
  */
 export async function saveScenarioAs(newName: string): Promise<boolean> {
   const source = useScenario.getState().name;
-  if (source === null) throw new Error("no scenario is open");
+  if (source === null) throw new Error(msg("saveAs.noScenario"));
   try {
     await useLayout.getState().saveWorkbook();
   } catch {

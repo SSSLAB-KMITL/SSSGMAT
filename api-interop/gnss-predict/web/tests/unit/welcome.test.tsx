@@ -5,6 +5,7 @@ import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import * as recent from "../../src/recent";
 import { Welcome } from "../../src/windows/Welcome/Welcome";
+import { useScenario } from "../../src/stores/scenario";
 import { resetAll } from "./helpers/chrome";
 import { fakeFlow, setUrl } from "./helpers/files";
 import { deferred, stubFetch } from "./helpers/fake-fetch";
@@ -127,6 +128,40 @@ describe("opening", () => {
     await user.click(within(recentRegion()).getByRole("button", { name: "E2E" }));
     await waitFor(() => expect(flow.load).toHaveBeenCalledWith("E2E"));
     await waitFor(() => expect(flow.restoreFor).toHaveBeenCalledWith("E2E"));
+  });
+
+  test("a recent name whose scenario is gone (404 NOT_FOUND) disappears from the recent list, and the list of scenarios is left as it is", async () => {
+    const user = userEvent.setup();
+    fakeFlow();
+    useScenario.setState({ load: useScenario.getInitialState().load }); // the real load tells why it failed
+    const gone = { status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ scenario Gone" } };
+    stubFetch({
+      "GET /api/scenarios": { json: SCENARIOS },
+      "GET /api/scenarios/Gone": gone,
+      "GET /api/scenarios/Gone/objects": gone,
+    });
+    recent.push("E2E");
+    recent.push("Gone");
+    mount();
+    await screen.findByRole("table");
+    expect(within(recentRegion()).getAllByRole("button").map((b) => b.textContent)).toEqual(["Gone", "E2E"]);
+    await user.click(within(recentRegion()).getByRole("button", { name: "Gone" }));
+    await waitFor(() => expect(within(recentRegion()).getAllByRole("button").map((b) => b.textContent)).toEqual(["E2E"]));
+    expect(recent.list()).toEqual(["E2E"]);
+    expect(within(allRegion()).getAllByRole("row")).toHaveLength(SCENARIOS.length + 1);
+  });
+
+  test("when that was the only recent name the whole recent section goes", async () => {
+    const user = userEvent.setup();
+    fakeFlow();
+    useScenario.setState({ load: useScenario.getInitialState().load });
+    const gone = { status: 404, json: { code: "NOT_FOUND", text: "ไม่พบ scenario Gone" } };
+    stubFetch({ "GET /api/scenarios": { json: SCENARIOS }, "GET /api/scenarios/Gone": gone, "GET /api/scenarios/Gone/objects": gone });
+    recent.push("Gone");
+    mount();
+    await screen.findByRole("table");
+    await user.click(within(recentRegion()).getByRole("button", { name: "Gone" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: t("menu.file.recent") })).toBeNull());
   });
 
   test("a scenario that cannot be opened changes nothing: no layout, no URL, no recent entry", async () => {

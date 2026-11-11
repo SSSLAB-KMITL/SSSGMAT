@@ -76,6 +76,7 @@ const MESSAGES = {
 
   // File → Save (บันทึกสำเร็จ; ที่ล้มเหลว saveWorkbook แจ้งเองแล้ว) และ File → Save As
   "workbook.saved": "บันทึก workbook แล้ว",
+  "saveAs.noScenario": "ยังไม่ได้เปิด scenario จึง Save As ไม่ได้",
   "saveAs.workbookFailed": "บันทึก workbook ไม่สำเร็จ จึงยังไม่ได้ Save As (ดูรายละเอียดใน Message Viewer) แก้ปัญหาแล้วกด OK ใหม่ หรือกด Cancel",
 
   // ชื่อ scenario และเวลาในหน้าต่างสร้างและ Save As (กติกาเดียวกับ server: ตัวอักษร A-Z a-z ตัวเลข _ - ยาว 1-32 ตัว)

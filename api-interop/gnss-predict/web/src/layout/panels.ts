@@ -50,6 +50,13 @@ export interface PanelDef {
   edge?: EdgePosition;
   /** ขนาดเมื่อเป็น Floating (ไม่ระบุ = DEFAULT_FLOAT_SIZE) */
   size?: PanelSize;
+  /**
+   * true = หน้าต่างของพื้นที่ทำงาน บันทึกลง workbook (ตำแหน่ง ขนาด params และ windowProps) และจัดกลับตอนเปิด scenario
+   * false = หน้าต่างลอยหรือชั่วคราว (Welcome, Wizard, Properties Browser ฯลฯ) ไม่บันทึกและไม่คืนจาก workbook แม้มีอยู่ในไฟล์เก่า
+   */
+  persist: boolean;
+  /** true = หน้าต่างที่ต้องมี scenario ที่เปิดอยู่ (อ้าง object หรือผลของมัน) ปิดพร้อม scenario ตอน Close/Exit; false = ไม่ปิด */
+  scenarioBound: boolean;
 }
 
 export const DEFAULT_FLOAT_SIZE: PanelSize = { width: 480, height: 360 };
@@ -120,35 +127,42 @@ interface Base {
   instanceKey?: PanelDef["instanceKey"];
   edge?: EdgePosition;
   size?: PanelSize;
+  persist: boolean;
+  scenarioBound: boolean;
 }
 
-/** ชนิดตั้งต้นตาม spec §4.1: Object Browser / Timeline View / Message Viewer = Dockable, 3D/2D = Integrated, ที่เหลือ = Floating */
+/**
+ * ชนิดตั้งต้นตาม spec §4.1: Object Browser / Timeline View / Message Viewer = Dockable, 3D/2D = Integrated, ที่เหลือ = Floating
+ * persist: เฉพาะห้าหน้าต่างของพื้นที่ทำงานบันทึกลง workbook; หน้าต่างลอยและชั่วคราวไม่บันทึก
+ * scenarioBound: หน้าต่างที่อ้าง object หรือผลของ scenario ที่เปิดอยู่ ปิดพร้อม scenario; หน้าต่างอื่น (Welcome, About, Fetch Orbit Data ฯลฯ) ไม่ปิด
+ * หน้าต่างชนิดใหม่ต้องตัดสินใจสองค่านี้เอง (ฟิลด์บังคับ)
+ */
 const BASE: Record<PanelKind, Base> = {
-  objectBrowser: { label: "window.objectBrowser", type: "dockable", edge: "left", size: { width: 320, height: 520 } },
-  graphics3d: { label: "window.graphics3d", type: "integrated", multiple: true, size: { width: 640, height: 480 } },
-  graphics2d: { label: "window.graphics2d", type: "integrated", multiple: true, size: { width: 640, height: 400 } },
-  timelineView: { label: "window.timelineView", type: "dockable", edge: "bottom", size: { width: 720, height: 280 } },
-  messageViewer: { label: "window.messageViewer", type: "dockable", edge: "bottom", size: { width: 720, height: 280 } },
+  objectBrowser: { label: "window.objectBrowser", type: "dockable", edge: "left", size: { width: 320, height: 520 }, persist: true, scenarioBound: false },
+  graphics3d: { label: "window.graphics3d", type: "integrated", multiple: true, size: { width: 640, height: 480 }, persist: true, scenarioBound: false },
+  graphics2d: { label: "window.graphics2d", type: "integrated", multiple: true, size: { width: 640, height: 400 }, persist: true, scenarioBound: false },
+  timelineView: { label: "window.timelineView", type: "dockable", edge: "bottom", size: { width: 720, height: 280 }, persist: true, scenarioBound: false },
+  messageViewer: { label: "window.messageViewer", type: "dockable", edge: "bottom", size: { width: 720, height: 280 }, persist: true, scenarioBound: false },
   // หนึ่งบานต่อหนึ่ง object (กุญแจ = params.path) ชื่อมีชื่อ object ("G01 Properties"); ไม่มี path = "Properties Browser" เฉยๆ
   propertiesBrowser: {
-    label: "window.propertiesBrowser", type: "floating", size: { width: 640, height: 480 },
+    label: "window.propertiesBrowser", type: "floating", size: { width: 640, height: 480 }, persist: false, scenarioBound: true,
     title: (params) => {
       const name = objectName(params);
       return name === null ? t("window.propertiesBrowser") : t("window.propertiesBrowserFor", { name });
     },
     instanceKey: (params) => (typeof params?.path === "string" ? params.path : ""),
   },
-  insertObjects: { label: "window.insertObjects", type: "floating", size: { width: 560, height: 420 } },
-  satelliteCatalog: { label: "window.satelliteCatalog", type: "floating", size: { width: 760, height: 480 } },
-  newScenarioWizard: { label: "window.newScenarioWizard", type: "floating", size: { width: 560, height: 420 } },
-  welcome: { label: "window.welcome", type: "floating", size: { width: 560, height: 400 } },
-  viewFromTo: { label: "window.viewFromTo", type: "floating", size: { width: 400, height: 300 } },
-  windowProperties3d: { label: "window.properties3d", type: "floating", size: { width: 560, height: 440 } },
-  windowProperties2d: { label: "window.properties2d", type: "floating", size: { width: 560, height: 440 } },
-  fetchOrbitData: { label: "window.fetchOrbitData", type: "floating", size: { width: 520, height: 360 } },
-  dailyForecastSettings: { label: "window.dailyForecastSettings", type: "floating", size: { width: 520, height: 360 } },
-  about: { label: "help.about", type: "floating", size: { width: 480, height: 320 } },
-  stkReference: { label: "help.stkReference", type: "floating", size: { width: 760, height: 520 } },
+  insertObjects: { label: "window.insertObjects", type: "floating", size: { width: 560, height: 420 }, persist: false, scenarioBound: true },
+  satelliteCatalog: { label: "window.satelliteCatalog", type: "floating", size: { width: 760, height: 480 }, persist: false, scenarioBound: true },
+  newScenarioWizard: { label: "window.newScenarioWizard", type: "floating", size: { width: 560, height: 420 }, persist: false, scenarioBound: false },
+  welcome: { label: "window.welcome", type: "floating", size: { width: 560, height: 400 }, persist: false, scenarioBound: false },
+  viewFromTo: { label: "window.viewFromTo", type: "floating", size: { width: 400, height: 300 }, persist: false, scenarioBound: true },
+  windowProperties3d: { label: "window.properties3d", type: "floating", size: { width: 560, height: 440 }, persist: false, scenarioBound: true },
+  windowProperties2d: { label: "window.properties2d", type: "floating", size: { width: 560, height: 440 }, persist: false, scenarioBound: true },
+  fetchOrbitData: { label: "window.fetchOrbitData", type: "floating", size: { width: 520, height: 360 }, persist: false, scenarioBound: false },
+  dailyForecastSettings: { label: "window.dailyForecastSettings", type: "floating", size: { width: 520, height: 360 }, persist: false, scenarioBound: false },
+  about: { label: "help.about", type: "floating", size: { width: 480, height: 320 }, persist: false, scenarioBound: false },
+  stkReference: { label: "help.stkReference", type: "floating", size: { width: 760, height: 520 }, persist: false, scenarioBound: false },
 };
 
 // ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")
@@ -183,6 +197,6 @@ for (const kind of PANEL_KINDS) {
   const title = titleFor(b.label);
   registerPanel(kind, {
     component: placeholder(b.title ?? title), title: b.title ?? title, type: b.type, singleton: b.multiple !== true, instanceKey: b.instanceKey,
-    edge: b.edge, size: b.size,
+    edge: b.edge, size: b.size, persist: b.persist, scenarioBound: b.scenarioBound,
   });
 }

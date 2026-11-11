@@ -2,12 +2,15 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { DockviewApi } from "dockview-react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as recent from "../../src/recent";
-import { closeScenario, openScenario, scenarioSearch, showWelcome, startWorkspaceFlow } from "../../src/scenarioFiles";
+import { getPanelDef, registerPanel } from "../../src/layout/panels";
+import { msg } from "../../src/labels/messages.th";
+import { closeScenario, openScenario, saveScenarioAs, scenarioSearch, showWelcome, startWorkspaceFlow } from "../../src/scenarioFiles";
 import { useLayout } from "../../src/stores/layout";
+import { useMessages } from "../../src/stores/messages";
 import { useScenario } from "../../src/stores/scenario";
 import { Workspace } from "../../src/Workspace";
 import { openScenario as openFakeScenario, resetAll } from "./helpers/chrome";
-import { deferred } from "./helpers/fake-fetch";
+import { deferred, stubFetch } from "./helpers/fake-fetch";
 import { setUrl } from "./helpers/files";
 
 const apiOf = (): DockviewApi => {
@@ -170,6 +173,155 @@ describe("closeScenario (File → Close and Exit)", () => {
     expect(() => closeScenario()).not.toThrow();
     expect(useScenario.getState().name).toBeNull();
     expect(window.location.search).toBe("");
+  });
+});
+
+describe("which windows closeScenario closes (the scenarioBound flag of each window)", () => {
+  test("a window is closed with the scenario exactly when its registration says scenarioBound, so later windows need no list here", async () => {
+    await mount();
+    openFakeScenario();
+    const original = getPanelDef("fetchOrbitData")!;
+    try {
+      registerPanel("fetchOrbitData", { ...original, scenarioBound: true });
+      useLayout.getState().openPanel("fetchOrbitData");
+      useLayout.getState().openPanel("about"); // scenarioBound false
+      closeScenario();
+      expect(kinds()).not.toContain("fetchOrbitData");
+      expect(kinds()).toContain("about");
+    } finally {
+      registerPanel("fetchOrbitData", original);
+    }
+  });
+
+  test("the workspace windows are never closed, whatever their type", async () => {
+    await mount();
+    openFakeScenario();
+    closeScenario();
+    expect(ids()).toEqual([...DEFAULT_IDS, "welcome"].sort());
+  });
+});
+
+describe("Close while the layout of the opened scenario is still being restored", () => {
+  test("Welcome stays and the old workbook is not applied when it finally arrives", async () => {
+    const api = await mount();
+    useLayout.getState().newGraphicsWindow("graphics3d");
+    const withExtra = JSON.parse(JSON.stringify(useLayout.getState().toWorkbook())) as unknown;
+    useLayout.getState().applyDefault();
+    const slow = deferred<{ json: unknown }>();
+    const f = stubFetch({ "GET /api/scenarios/W/workbook": () => slow.promise });
+    useScenario.setState({
+      load: vi.fn(async (name: string) => {
+        useScenario.setState({ name }); // the real load sets the name before it answers
+        return true;
+      }),
+    } as never);
+    const opening = openScenario("W");
+    await vi.waitFor(() => expect(f.count("GET /api/scenarios/W/workbook")).toBe(1));
+
+    closeScenario();
+    expect(kinds()).toContain("welcome");
+    slow.resolve({ json: withExtra });
+    await opening;
+
+    expect(kinds()).toContain("welcome"); // the late workbook would have replaced every window, Welcome included
+    expect(api.getPanel("graphics3d-2")).toBeUndefined();
+    expect(window.location.search).toBe("?test");
+  });
+
+  test("the scenario deleted from another tab at that moment: the same", async () => {
+    const api = await mount();
+    useLayout.getState().newGraphicsWindow("graphics3d");
+    const withExtra = JSON.parse(JSON.stringify(useLayout.getState().toWorkbook())) as unknown;
+    useLayout.getState().applyDefault();
+    const slow = deferred<{ json: unknown }>();
+    const f = stubFetch({ "GET /api/scenarios/W/workbook": () => slow.promise });
+    useScenario.setState({
+      load: vi.fn(async (name: string) => {
+        useScenario.setState({ name });
+        return true;
+      }),
+    } as never);
+    stop = startWorkspaceFlow();
+    await new Promise((r) => setTimeout(r, 0));
+    useLayout.getState().closePanel("welcome");
+    const opening = openScenario("W");
+    await vi.waitFor(() => expect(f.count("GET /api/scenarios/W/workbook")).toBe(1));
+
+    await useScenario.getState().onScenarioEvent({ name: "W", etag: null, results_stale: false });
+    slow.resolve({ json: withExtra });
+    await opening;
+
+    expect(kinds()).toContain("welcome");
+    expect(api.getPanel("graphics3d-2")).toBeUndefined();
+  });
+});
+
+describe("a recent entry whose scenario no longer exists", () => {
+  const routes = (status = 404, code = "NOT_FOUND") => ({
+    "GET /api/scenarios/Gone": { status, json: { code, text: "ไม่พบ scenario Gone" } },
+    "GET /api/scenarios/Gone/objects": { status, json: { code, text: "ไม่พบ scenario Gone" } },
+  });
+
+  beforeEach(() => {
+    useLayout.setState({ restoreFor: vi.fn() } as never);
+    recent.push("Keep");
+    recent.push("Gone");
+  });
+
+  test("is removed from the recent list when opening it fails with 404 NOT_FOUND (the real load decides)", async () => {
+    stubFetch(routes());
+    expect(await openScenario("Gone")).toBe(false);
+    expect(recent.list()).toEqual(["Keep"]);
+    expect(useMessages.getState().items.some((m) => m.code === "NOT_FOUND")).toBe(true); // the failure itself is still reported
+  });
+
+  test.each([
+    ["a server error", 500, "INTERNAL"],
+    ["a 404 that is not the server's NOT_FOUND (a proxy, a wrong address)", 404, "HTTP_404"],
+    ["a refusal for another reason", 403, "FORBIDDEN_ORIGIN"],
+  ])("stays in the list on %s", async (_what, status, code) => {
+    stubFetch(routes(status, code));
+    expect(await openScenario("Gone")).toBe(false);
+    expect(recent.list()).toEqual(["Gone", "Keep"]);
+  });
+
+  test("stays in the list when the server cannot be reached", async () => {
+    const f = stubFetch(routes());
+    f.routes["GET /api/scenarios/Gone"] = () => {
+      throw new Error("offline");
+    };
+    expect(await openScenario("Gone")).toBe(false);
+    expect(recent.list()).toEqual(["Gone", "Keep"]);
+  });
+
+  test("an entry that opens is not touched, and a name that was never in the list is not added", async () => {
+    stubFetch(routes());
+    await openScenario("Gone");
+    expect(recent.list()).toEqual(["Keep"]);
+    expect(recent.list()).not.toContain("Gone");
+  });
+
+  test("a scenario opened by ?sc= at start-up that is gone is dropped from the list too", async () => {
+    stubFetch(routes());
+    setUrl("?sc=Gone");
+    stop = startWorkspaceFlow();
+    await mount();
+    await waitFor(() => expect(kinds()).toContain("welcome"));
+    expect(recent.list()).toEqual(["Keep"]);
+  });
+});
+
+describe("saveScenarioAs with no scenario open", () => {
+  test("rejects with a Thai message and does nothing", async () => {
+    const saveWorkbook = vi.fn(async () => undefined);
+    useLayout.setState({ saveWorkbook } as never);
+    const f = stubFetch({});
+    const failure = await saveScenarioAs("Copy").then(() => null, (e: unknown) => e);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(msg("saveAs.noScenario"));
+    expect((failure as Error).message).toMatch(/[\u0E00-\u0E7F]/);
+    expect(saveWorkbook).not.toHaveBeenCalled();
+    expect(f.calls).toEqual([]);
   });
 });
 

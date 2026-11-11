@@ -95,6 +95,49 @@ describe("storage that cannot be used", () => {
   });
 });
 
+describe("remove", () => {
+  test("takes a name out and keeps the order of the rest", () => {
+    for (const name of ["A", "B", "C"]) recent.push(name);
+    recent.remove("B");
+    expect(recent.list()).toEqual(["C", "A"]);
+  });
+
+  test("ignores case, like push (the server ignores case in names)", () => {
+    recent.push("Gone");
+    recent.remove("gone");
+    expect(recent.list()).toEqual([]);
+  });
+
+  test("a name that is not in the list changes nothing and tells nobody", () => {
+    recent.push("A");
+    const listener = vi.fn();
+    recent.subscribe(listener);
+    recent.remove("Z");
+    expect(recent.list()).toEqual(["A"]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  test("tells listeners after removing", () => {
+    recent.push("A");
+    const listener = vi.fn();
+    recent.subscribe(listener);
+    recent.remove("A");
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  test("storage that cannot be used never throws", () => {
+    recent.push("A");
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    expect(() => recent.remove("A")).not.toThrow();
+    vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new DOMException("denied", "SecurityError");
+    });
+    expect(() => recent.remove("A")).not.toThrow();
+  });
+});
+
 describe("subscribe", () => {
   test("tells listeners after a push, and stops after unsubscribing", () => {
     const listener = vi.fn();

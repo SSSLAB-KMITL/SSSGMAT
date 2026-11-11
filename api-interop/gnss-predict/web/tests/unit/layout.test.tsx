@@ -95,6 +95,18 @@ describe("registry", () => {
     for (const kind of FLOATING) expect(getPanelDef(kind)?.type, kind).toBe("floating");
   });
 
+  test("only the five workspace windows are saved in the workbook (persist)", () => {
+    const persisted = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.persist === true).sort();
+    expect(persisted).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "timelineView"]);
+    for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.persist, kind).toBe("boolean");
+  });
+
+  test("the windows that depend on the open scenario are the ones closed with it (scenarioBound)", () => {
+    const bound = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.scenarioBound === true).sort();
+    expect(bound).toEqual(["insertObjects", "propertiesBrowser", "satelliteCatalog", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
+    for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.scenarioBound, kind).toBe("boolean");
+  });
+
   test("3D and 2D windows are never singletons, everything else is", () => {
     for (const kind of PANEL_KINDS) expect(getPanelDef(kind)?.singleton, kind).toBe(kind !== "graphics3d" && kind !== "graphics2d");
   });
@@ -537,7 +549,6 @@ describe("toWorkbook / fromWorkbook (W6)", () => {
   test("a workbook round trip on a new api gives back the same panel ids, titles and groups", async () => {
     const first = await mount();
     st().newGraphicsWindow("graphics2d");
-    st().openPanel("propertiesBrowser");
     st().setType("messageViewer", "floating");
     st().tile("horizontal");
     st().setToolbar("graphics3d", true);
@@ -653,6 +664,108 @@ describe("toWorkbook / fromWorkbook (W6)", () => {
     expect(api.panels.map((p) => p.id).sort()).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "timelineView"]);
     expect(loc("objectBrowser")).toEqual({ type: "edge", position: "left" });
     expect(warnings().map((m) => m.code)).toEqual(["WORKBOOK_RESTORE_FAILED"]);
+  });
+});
+
+describe("which windows the workbook keeps", () => {
+  const WORKSPACE = ["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "timelineView"];
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+  const noEmptyGroups = (api: DockviewApi) => api.groups.filter((g) => g.panels.length === 0 && g.api.location.type !== "edge").map((g) => g.id);
+
+  /** Welcome, About and a Properties Browser, one in each kind of place (floating, dockable at the bottom, integrated in the grid) */
+  function openTransient() {
+    st().openPanel("welcome");
+    st().openPanel("about");
+    st().openPanel("propertiesBrowser", { path: "*/Satellite/G01" });
+  }
+
+  test("saving while Welcome, About and a Properties Browser are open leaves all three out", async () => {
+    await mount();
+    openTransient();
+    useLayout.setState({ windowProps: { graphics3d: { showLabels: false }, welcome: { x: 1 }, "propertiesBrowser": { y: 2 } } });
+    const w = st().toWorkbook();
+    expect(Object.keys(w.panels).sort()).toEqual(WORKSPACE);
+    expect(Object.keys(w.dockview.panels as object).sort()).toEqual(WORKSPACE);
+    expect(JSON.stringify(w)).not.toMatch(/welcome|about|propertiesBrowser|Satellite\/G01/);
+    expect(w.windowProps).toEqual({ graphics3d: { showLabels: false } });
+    expect(validateWorkbook(w)).not.toBeNull();
+  });
+
+  test("the saved file goes over the wire and PUT sends exactly that", async () => {
+    await mount();
+    useScenario.setState({ name: "E2E" });
+    openTransient();
+    const fetch = stubFetch({ "PUT /api/scenarios/E2E/workbook": { status: 204 } });
+    await st().saveWorkbook();
+    const body = fetch.calls[0].body as Workbook;
+    expect(Object.keys(body.panels).sort()).toEqual(WORKSPACE);
+    expect(JSON.stringify(body)).not.toMatch(/welcome|about|propertiesBrowser/);
+  });
+
+  test("windows that were moved into the grid, onto an edge or alone in their own group are left out as well", async () => {
+    await mount();
+    openTransient();
+    st().setType("welcome", "integrated"); // alone in a grid group of its own
+    st().setType("about", "dockable"); // tabbed with the Timeline View and the Message Viewer
+    st().openPanel("insertObjects");
+    st().setType("insertObjects", "dockable"); // also tabbed into the bottom edge group
+    const w = st().toWorkbook();
+    expect(Object.keys(w.panels).sort()).toEqual(WORKSPACE);
+    expect(JSON.stringify(w.dockview)).not.toMatch(/welcome|about|propertiesBrowser|insertObjects/);
+  });
+
+  test("restoring that file shows only the workspace windows, laid out as they were without the others", async () => {
+    const first = await mount();
+    st().setType("messageViewer", "floating");
+    const before = snapshot(first.api);
+    const shape = gridShape(first.api);
+    openTransient();
+    st().setType("welcome", "integrated");
+    const wire = clone(st().toWorkbook());
+    first.unmount();
+
+    const second = await mount();
+    st().fromWorkbook(wire);
+    expect(second.api.panels.map((p) => p.id).sort()).toEqual(WORKSPACE);
+    expect(snapshot(second.api)).toEqual(before);
+    expect(gridShape(second.api)).toEqual(shape);
+    expect(noEmptyGroups(second.api)).toEqual([]);
+    expect(warnings()).toEqual([]);
+  });
+
+  test("a workbook saved before this rule, with Welcome, About, a Properties Browser and their windowProps in it, restores without them", async () => {
+    const { api } = await mount();
+    openTransient();
+    st().setType("welcome", "integrated");
+    const old: Workbook = {
+      version: 1,
+      dockview: clone(api.toJSON()) as unknown as Record<string, unknown>,
+      panels: Object.fromEntries(api.panels.map((p) => [p.id, { kind: p.api.component, params: clone(p.params ?? {}) }])),
+      toolbars: { default: true, animation: true, graphics3d: false, defaults3d: false, defaults2d: false },
+      timelineHidden: [],
+      windowProps: { graphics3d: { showLabels: false }, welcome: { x: 1 }, propertiesBrowser: { y: 2 } },
+    };
+    expect(Object.keys(old.panels)).toContain("welcome");
+    st().applyDefault();
+    st().fromWorkbook(old);
+    expect(api.panels.map((p) => p.id).sort()).toEqual(WORKSPACE);
+    expect(noEmptyGroups(api)).toEqual([]);
+    expect(warnings()).toEqual([]);
+    expect(st().windowProps).toEqual({ graphics3d: { showLabels: false } });
+    expect(st().toWorkbook().windowProps).toEqual({ graphics3d: { showLabels: false } });
+  });
+
+  test("windowProps of an id that has no window at all are kept (they belong to a workspace window that is not open yet)", async () => {
+    await mount();
+    const wire = clone(st().toWorkbook());
+    wire.windowProps = { "graphics2d-9": { x: 1 } };
+    st().fromWorkbook(wire);
+    expect(st().toWorkbook().windowProps).toEqual({ "graphics2d-9": { x: 1 } });
+  });
+
+  test("with nothing transient open the file is exactly what dockview serialises", async () => {
+    const { api } = await mount();
+    expect(st().toWorkbook().dockview).toEqual(clone(api.toJSON()));
   });
 });
 
@@ -788,6 +901,67 @@ describe("restoreFor (spec §4.2)", () => {
     await older;
     expect(api.getPanel("graphics3d-2")).toBeUndefined();
     expect(api.panels).toHaveLength(5);
+  });
+
+  describe("the scenario being closed or replaced while the workbook is on its way", () => {
+    /** a workbook that differs from the default layout by one more 3D window, and a request for it that the test releases */
+    async function slowRestore() {
+      const { api } = await mount();
+      st().newGraphicsWindow("graphics3d");
+      const withExtra = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
+      st().applyDefault();
+      useScenario.setState({ name: "E2E" });
+      const slow = deferred<{ json: unknown }>();
+      stubFetch({ [url]: () => slow.promise });
+      const restoring = st().restoreFor("E2E");
+      const release = async () => {
+        slow.resolve({ json: withExtra });
+        await restoring;
+      };
+      return { api, release };
+    }
+
+    test("Close: the answer is discarded, the old workbook is not applied", async () => {
+      const { api, release } = await slowRestore();
+      useScenario.getState().close();
+      await release();
+      expect(api.getPanel("graphics3d-2")).toBeUndefined();
+      expect(api.panels).toHaveLength(5);
+    });
+
+    test("the scenario deleted from another tab (the SSE event closes it): the same", async () => {
+      const { api, release } = await slowRestore();
+      await useScenario.getState().onScenarioEvent({ name: "E2E", etag: null, results_stale: false });
+      expect(useScenario.getState().name).toBeNull();
+      await release();
+      expect(api.getPanel("graphics3d-2")).toBeUndefined();
+    });
+
+    test("another scenario opened meanwhile: the same", async () => {
+      const { api, release } = await slowRestore();
+      useScenario.setState({ name: "Other" });
+      await release();
+      expect(api.getPanel("graphics3d-2")).toBeUndefined();
+    });
+
+    test("a failed request after the close adds no warning either", async () => {
+      const { api } = await mount();
+      useScenario.setState({ name: "E2E" });
+      const slow = deferred<{ status: number; json: unknown }>();
+      stubFetch({ [url]: () => slow.promise });
+      const restoring = st().restoreFor("E2E");
+      useScenario.getState().close();
+      slow.resolve({ status: 500, json: { code: "BOOM", text: "server พัง" } });
+      await restoring;
+      expect(warnings()).toEqual([]);
+      expect(api.panels).toHaveLength(5);
+    });
+
+    test("with the same scenario still open the answer is applied", async () => {
+      const { api, release } = await slowRestore();
+      await release();
+      expect(api.getPanel("graphics3d-2")).toBeDefined();
+    });
   });
 
   test("does nothing when the workspace is not mounted", async () => {

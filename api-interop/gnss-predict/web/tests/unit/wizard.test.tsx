@@ -202,6 +202,38 @@ describe("OK", () => {
     expect(f.count("POST /api/scenarios")).toBe(1);
   });
 
+  test("Cancel is off while the request is running, so a cancelled wizard cannot still open the new scenario, and back on after a refusal", async () => {
+    const user = userEvent.setup();
+    const gate = deferred<{ status: number; json: unknown }>();
+    server({ "POST /api/scenarios": () => gate.promise });
+    await mount();
+    const cancel = () => screen.getByRole("button", { name: t("dialog.cancel") }) as HTMLButtonElement;
+    expect(cancel().disabled).toBe(false);
+    await user.type(field(t("field.name")), "NEW1");
+    await user.click(ok());
+    await waitFor(() => expect(cancel().disabled).toBe(true));
+    await user.click(cancel());
+    expect(flow.closePanel).not.toHaveBeenCalled();
+    gate.resolve({ status: 409, json: { code: "NAME_EXISTS", text: "ซ้ำ", field: "name" } });
+    await waitFor(() => expect(cancel().disabled).toBe(false));
+    await user.click(cancel());
+    expect(flow.closePanel).toHaveBeenCalledWith("newScenarioWizard");
+  });
+
+  test("Cancel stays off while the new scenario is being opened, until the wizard is replaced", async () => {
+    const user = userEvent.setup();
+    const gate = deferred<void>();
+    flow.restoreFor.mockImplementation(() => gate.promise);
+    server();
+    await mount();
+    await user.type(field(t("field.name")), "NEW1");
+    await user.click(ok());
+    await waitFor(() => expect(flow.restoreFor).toHaveBeenCalled());
+    expect((screen.getByRole("button", { name: t("dialog.cancel") }) as HTMLButtonElement).disabled).toBe(true);
+    gate.resolve();
+    await waitFor(() => expect(flow.calls).toContain("open:insertObjects"));
+  });
+
   test("the scenario was created but cannot be opened: no Insert STK Objects, and the wizard closes", async () => {
     const user = userEvent.setup();
     flow = fakeFlow(false);
