@@ -1,10 +1,12 @@
 """การเปิด server ครั้งแรก (หัวข้อ 7.1 ของ spec)
 
 - ไม่มี QTH เลย: สร้าง THBK จาก config.THBK_* ของ engine แล้วตั้งเป็นสถานีตั้งต้น
-- ไม่มี module เลย: ดึงเฉพาะกลุ่ม amateur แล้วสร้างและเปิด module Amateur ที่ใช้ "** DEFAULT **" และมีดาวทุกดวงในกลุ่มนั้น
+- ไม่มี module เลยและยังไม่เคยสร้าง Amateur (ธง bootstrap_done ใน settings.json ยังไม่ตั้ง): ดึงเฉพาะกลุ่ม amateur แล้วสร้างและเปิด module Amateur ที่ใช้ "** DEFAULT **" และมีดาวทุกดวงในกลุ่มนั้น
   (Gpredict เปิด module "Amateur" ตอนเริ่มครั้งแรก) ถ้าเกิน MAX_SATS ใช้ MAX_SATS ดวงแรกตามลำดับชื่อพร้อมคำเตือน
-  ไม่มีดาวเลย (ไม่มีเน็ตและไม่มี OMM cache): ไม่สร้าง module และบอกผู้ใช้ให้ Update TLE เอง ไม่ใช่ server ล้ม
-- เรียกซ้ำเมื่อมีทั้ง QTH และ module แล้วไม่เปลี่ยนอะไรและไม่ส่ง request
+  ไม่มีดาวเลย (ไม่มีเน็ตและไม่มี OMM cache): ไม่สร้าง module, ไม่ตั้งธง (เริ่มครั้งหน้าที่ออนไลน์ยังสร้าง Amateur)
+  และบอกผู้ใช้ให้ Update TLE เอง ไม่ใช่ server ล้ม
+- ตั้งธง bootstrap_done เมื่อสร้าง Amateur แล้ว ผู้ใช้ลบ module หมดก็ไม่สร้างกลับมาและไม่ส่ง request
+- เรียกซ้ำเมื่อมีทั้ง QTH และ module (หรือธงตั้งแล้ว) ไม่เปลี่ยนอะไรและไม่ส่ง request
 """
 
 from datetime import datetime
@@ -27,7 +29,7 @@ _ALL = 1_000_000                       # ไม่จำกัดจำนวน
 def bootstrap(store: Store, satdb: SatDb, cfg: Config, now: datetime, opener=urlopen) -> list[Message]:
     """เตรียม QTH และ module ตั้งต้น คืนข้อความถึงผู้ใช้ (ภาษาไทย) ที่หน้าเว็บแสดงตอนเปิด"""
     _ensure_station(store)
-    if store.list_modules():
+    if store.bootstrap_done() or store.list_modules():
         return []
 
     result = update_from_network(satdb, cfg, now, groups=(AMATEUR_GROUP,), opener=opener)
@@ -50,6 +52,7 @@ def bootstrap(store: Store, satdb: SatDb, cfg: Config, now: datetime, opener=url
     module = module_from_dict({"name": AMATEUR_MODULE, "qth": None, "satellites": [r.norad for r in sats]},
                               set(store.qth_names()), satdb.norads())
     store.put_module(module)
+    store.set_bootstrap_done()
     store.set_session([*store.session(), AMATEUR_MODULE])
     return messages
 

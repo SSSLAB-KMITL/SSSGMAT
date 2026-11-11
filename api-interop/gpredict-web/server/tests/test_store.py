@@ -173,6 +173,45 @@ class QthTests(StoreTestCase):
         (self.cfg.data_dir / "qth" / "Broken.json").write_text("{", encoding="utf-8")   # ไฟล์เสียก็ยังนับชื่อ
         self.assertEqual(self.store.qth_names(), ["Alpha", "Broken", "THBK"])
 
+    def write_qth_file(self, name: str, content: bytes) -> None:
+        d = self.cfg.data_dir / "qth"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{name}.json").write_bytes(content)
+
+    def test_get_qth_maps_every_bad_file_to_qth_invalid(self):
+        """ไฟล์เสียทุกแบบเป็น 422 QTH_INVALID เหมือน get_module ไม่ใช่ 500 (UnicodeDecodeError, int เกิน 4300 หลัก)"""
+        cases = {"NotJson": b"{", "NotUtf8": b"\xff\xfe\x00", "BigInt": b'{"name": "BigInt", "lat_deg": ' + b"9" * 5000 + b"}",
+                 "NotObject": b"[1, 2]", "BadRange": b'{"name": "BadRange", "lat_deg": 99}'}
+        for name, content in cases.items():
+            self.write_qth_file(name, content)
+        for name in cases:
+            with self.subTest(name):
+                with self.assertRaises(ApiError) as cm:
+                    self.store.get_qth(name)
+                self.assertEqual((cm.exception.code, cm.exception.status), ("QTH_INVALID", 422))
+        for name in ("NotJson", "NotUtf8", "BigInt"):                          # อ่านไม่ได้: object = ชื่อ QTH
+            with self.assertRaises(ApiError) as cm:
+                self.store.get_qth(name)
+            self.assertEqual(cm.exception.object, name)
+
+    def test_list_qth_skips_bad_files(self):
+        self.store.put_qth(thbk())
+        self.write_qth_file("Broken", b"{")
+        self.write_qth_file("NotUtf8", b"\xff\xfe")
+        self.store.put_qth(Qth(name="Alpha"))
+        self.assertEqual([q.name for q in self.store.list_qth()], ["Alpha", "THBK"])      # ไม่ล้มทั้งรายการ
+
+    def test_list_qth_checked_reports_the_skipped_files(self):
+        self.store.put_qth(thbk())
+        self.write_qth_file("Broken", b"{")
+        self.write_qth_file("Range", b'{"name": "Range", "lon_deg": 181}')
+        good, skipped = self.store.list_qth_checked()
+        self.assertEqual([q.name for q in good], ["THBK"])
+        self.assertEqual([(file, e.code, e.status) for file, e in skipped],
+                         [("Broken.json", "QTH_INVALID", 422), ("Range.json", "QTH_INVALID", 422)])
+        self.assertEqual(self.store.list_qth_checked()[1][0][0], "Broken.json")
+        self.assertEqual(Store(self.cfg.data_dir / "nowhere").list_qth_checked(), ([], []))
+
     def test_delete_last_qth_is_in_use(self):
         self.store.put_qth(thbk())
         with self.assertRaises(ApiError) as cm:
@@ -219,6 +258,39 @@ class DefaultQthTests(StoreTestCase):
         self.store.set_default_qth("THBK")
         (self.cfg.data_dir / "qth" / "THBK.json").unlink()
         self.assertIsNone(self.store.default_qth())
+
+
+class BootstrapFlagTests(StoreTestCase):
+    """bootstrap_done ใน settings.json: module Amateur ถูกสร้างแล้ว (ผู้ใช้ลบ module หมดก็ไม่สร้างใหม่)"""
+
+    def settings(self) -> dict:
+        return json.loads((self.cfg.data_dir / "settings.json").read_text(encoding="utf-8"))
+
+    def test_flag_is_unset_until_set(self):
+        self.assertFalse(self.store.bootstrap_done())
+        self.store.set_bootstrap_done()
+        self.assertTrue(self.store.bootstrap_done())
+        self.assertTrue(Store(self.cfg.data_dir).bootstrap_done())
+        self.assertIs(self.settings()["bootstrap_done"], True)
+
+    def test_flag_keeps_the_default_station_and_vice_versa(self):
+        self.store.put_qth(thbk())
+        self.store.set_default_qth("THBK")
+        self.store.set_bootstrap_done()
+        self.assertEqual(self.settings(), {"default_qth": "THBK", "bootstrap_done": True})
+        self.store.put_qth(Qth(name="Other"))
+        self.store.set_default_qth("Other")
+        self.assertTrue(self.store.bootstrap_done())
+        self.assertEqual(self.store.default_qth(), "Other")
+
+    def test_only_true_counts_and_unreadable_settings_read_as_unset(self):
+        for content in (b"{}", b'{"bootstrap_done": false}', b'{"bootstrap_done": "yes"}', b'{"bootstrap_done": 1}',
+                        b"[]", b"{", b"\xff\xfe"):
+            with self.subTest(content=content):
+                (self.cfg.data_dir).mkdir(parents=True, exist_ok=True)
+                (self.cfg.data_dir / "settings.json").write_bytes(content)
+                self.assertFalse(self.store.bootstrap_done())
+                self.assertIsNone(self.store.default_qth())
 
 
 class AtomicWriteTests(StoreTestCase):

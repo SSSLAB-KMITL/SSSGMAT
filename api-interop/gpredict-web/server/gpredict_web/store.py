@@ -1,4 +1,4 @@
-"""ที่เก็บข้อมูลบนดิสก์: QTH ที่ data/qth/<name>.json, สถานีตั้งต้นที่ data/settings.json,
+"""ที่เก็บข้อมูลบนดิสก์: QTH ที่ data/qth/<name>.json, สถานีตั้งต้นและธง bootstrap_done ที่ data/settings.json,
 module ที่ data/modules/<name>.json และ session (module ที่เปิดค้างตามลำดับแท็บ) ที่ data/session.json (หัวข้อ 7.1 ของ spec)
 
 ทุกไฟล์เขียนลงไฟล์ชั่วคราวในโฟลเดอร์เดียวกันแล้ว rename ทับ จึงไม่มีไฟล์ที่เขียนค้างครึ่งเดียว
@@ -133,19 +133,32 @@ class Store:
             return self._qth_names()
 
     def get_qth(self, name: str) -> Qth:
+        """404 ถ้าไม่มี, 422 QTH_INVALID ถ้าไฟล์เสีย (ไม่ใช่ JSON/UTF-8 ที่ถูกต้อง หรือช่องผิด) เหมือน get_module"""
         path = self._qth_path(name)
         try:
-            raw = path.read_text(encoding="utf-8")
+            data = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             raise _not_found(name) from None
-        try:
-            return qth_from_dict(json.loads(raw))
-        except json.JSONDecodeError:
+        except ValueError:                     # JSONDecodeError, UnicodeDecodeError และ int เกิน 4300 หลัก
             raise ApiError("QTH_INVALID", 422, f"ไฟล์ QTH ของ {name} อ่านไม่ได้ (ไม่ใช่ JSON ที่ถูกต้อง)", name) from None
+        return qth_from_dict(data)
+
+    def list_qth_checked(self) -> tuple[list[Qth], list[tuple[str, ApiError]]]:
+        """(QTH ที่ใช้ได้เรียงตามชื่อ, [(ชื่อไฟล์ เช่น "Broken.json", error)] ของไฟล์ที่ถูกข้าม) ไฟล์ที่เสียไม่ทำให้ทั้งรายการล้ม
+        ไฟล์ที่หายไประหว่างอ่าน (ถูกลบพอดี) ไม่นับว่าเสีย"""
+        with self._lock:
+            good, skipped = [], []
+            for n in self._qth_names():
+                try:
+                    good.append(self.get_qth(n))
+                except ApiError as exc:
+                    if exc.status != 404:
+                        skipped.append((f"{n}.json", exc))
+            return sorted(good, key=lambda q: q.name), skipped
 
     def list_qth(self) -> list[Qth]:
-        with self._lock:
-            return sorted((self.get_qth(n) for n in self._qth_names()), key=lambda q: q.name)
+        """QTH ที่ใช้ได้ทุกตัว (ข้ามไฟล์ที่เสีย ดู list_qth_checked)"""
+        return self.list_qth_checked()[0]
 
     def put_qth(self, q: Qth) -> None:
         q = validate_qth(q)
@@ -175,7 +188,7 @@ class Store:
         """settings.json ที่หายหรืออ่านไม่ได้ถือเป็นว่าง (มีแค่ตัวชี้สถานีตั้งต้น เขียนใหม่ได้)"""
         try:
             data = json.loads((self.data_dir / SETTINGS_FILE).read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (FileNotFoundError, ValueError):            # ValueError: JSONDecodeError และ UnicodeDecodeError
             return {}
         return data if isinstance(data, dict) else {}
 
@@ -187,6 +200,17 @@ class Store:
         settings = self._read_settings()
         settings["default_qth"] = name
         write_json_atomic(self.data_dir / SETTINGS_FILE, settings)
+
+    def bootstrap_done(self) -> bool:
+        """module Amateur ถูกสร้างแล้ว (bootstrap_done: true ใน settings.json) ผู้ใช้ลบ module หมดก็ไม่สร้างกลับมา"""
+        with self._lock:
+            return self._read_settings().get("bootstrap_done") is True
+
+    def set_bootstrap_done(self) -> None:
+        with self._lock:
+            settings = self._read_settings()
+            settings["bootstrap_done"] = True
+            write_json_atomic(self.data_dir / SETTINGS_FILE, settings)
 
     def default_qth(self) -> str | None:
         """ชื่อสถานีตั้งต้น หรือ None ถ้ายังไม่ตั้งหรือสถานีนั้นไม่มีไฟล์แล้ว"""

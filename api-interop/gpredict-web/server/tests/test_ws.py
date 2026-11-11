@@ -15,6 +15,7 @@ from unittest import mock
 from starlette.websockets import WebSocketDisconnect
 
 from gpredict_web import app as app_module
+from gnss_predict.errors import GmatRunError
 from gpredict_web.runtime import ModuleClosedError
 from tests.test_api import ApiTestBase
 from tests.test_runtime import NORADS, SAT_KEYS, T0, TICK_KEYS, iso, parse_iso
@@ -83,6 +84,42 @@ class WebSocketTest(ApiTestBase):
                     break
             else:
                 self.fail("ไม่ได้ tick ok หลัง GMAT เสร็จ")
+
+    def next_tick_with(self, ws, status: str, limit: int = 100) -> dict:
+        """อ่าน tick ต่อไปจนได้ tick ที่ status ตามต้องการ"""
+        for _ in range(limit):
+            tick = ws.receive_json()
+            if tick["status"] == status:
+                return tick
+        self.fail(f"ไม่ได้ tick ที่ status เป็น {status} ภายใน {limit} tick")
+
+    def test_computing_and_failed_ticks_carry_their_messages(self):
+        """spec 9.2: tick ที่ GMAT ยังคำนวณมี EPHEM_COMPUTING (info) และเมื่อล้มเหลวมี GMAT_FAILED (error) ไม่มี sats ทั้งคู่
+        กด Retry แล้ว computing อีกครั้งจนได้ ok"""
+        self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
+        self.open_module(drain=False)
+        with self.client.websocket_connect("/ws/modules/M") as ws:
+            tick = ws.receive_json()
+            self.assertEqual(tick["status"], "computing")
+            self.assertNotIn("sats", tick)
+            self.assertEqual([(m["code"], m["level"], m["object"]) for m in tick["messages"]],
+                             [("EPHEM_COMPUTING", "info", None)])
+            self.assertRegex(tick["messages"][0]["text"], r"[ก-๙]")
+
+            self.ephem.drain()                                       # งาน GMAT แรกล้มเหลว
+            tick = self.next_tick_with(ws, "failed")
+            self.assertNotIn("sats", tick)
+            self.assertEqual([(m["code"], m["level"]) for m in tick["messages"]], [("GMAT_FAILED", "error")])
+            self.assertIn("exit code 3", tick["messages"][0]["text"])
+
+            self.fake.fail = None
+            self.assertEqual(self.client.post("/api/modules/M/retry").status_code, 204)
+            tick = self.next_tick_with(ws, "computing")
+            self.assertEqual([m["code"] for m in tick["messages"]], ["EPHEM_COMPUTING"])
+            self.ephem.drain()
+            tick = self.next_tick_with(ws, "ok")
+            self.assertEqual([s["norad"] for s in tick["sats"]], list(NORADS))
+            self.assertEqual(tick["messages"], [])
 
     def test_interval_follows_refresh_data_ms(self):
         """Ruling 2: ช่วงห่างของ tick ที่ติดกันอยู่ใน [0.5, 3] × refresh.data_ms (วัดจาก t ของ tick ซึ่งเป็นเวลาจริงของ server)"""

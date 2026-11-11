@@ -269,10 +269,15 @@ class EphemManager:
     # ---- API
 
     def ensure(self, owner: str, sats: list[SatSpec], window: Window) -> None:
-        """ตั้งรายการดาวของคู่ (owner, window) แล้วสั่ง GMAT เฉพาะดาวที่ยังไม่มีค่า (ไม่ลองใหม่เองถ้าคู่นี้ failed)"""
+        """ตั้งรายการดาวของคู่ (owner, window) แล้วสั่ง GMAT เฉพาะดาวที่ยังไม่มีค่า
+        คู่ที่ failed ไม่ลองใหม่เองถ้าชุดดาวเดิม (รอ Retry) แต่ถ้าชุดดาวต่างจากเดิม (Configure เพิ่ม/ลดดาว หรือ TLE ใหม่)
+        ล้างความล้มเหลวของคู่นั้นแล้วสั่งดาวที่ยังไม่มีค่าใหม่"""
         w = _check_window(window)
         specs = {tle_key(s.tle_lines): s for s in sats}
         with self._lock:
+            pair = (owner, w)
+            if pair in self._failed and specs.keys() != self._pairs.get(pair, {}).keys():
+                del self._failed[pair]
             self._pairs[(owner, w)] = specs
             self._latest[owner] = w
             self._mem.setdefault(w, {})

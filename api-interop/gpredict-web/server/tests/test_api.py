@@ -11,6 +11,7 @@ from urllib.error import URLError
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from gpredict_web import app as app_module
 from gpredict_web.app import create_app, host_allow_list
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
@@ -19,7 +20,7 @@ from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_C
 from gpredict_web.store import Store
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
-from tests.helpers import FakeNow, temp_config
+from tests.helpers import TEST_HOSTS, FakeNow, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
 from tests.test_runtime import NORADS, ORIGIN, OTHER, T0, OrbitPropagate, iso, peak, record
 
@@ -70,7 +71,7 @@ class ApiTestBase(unittest.TestCase):
         def on_quit():
             self.quits += 1
         args = dict(start_background=self.start_background, opener=self.opener, now=self.wall, on_quit=on_quit,
-                    ephem=self.ephem)
+                    ephem=self.ephem, allowed_hosts=TEST_HOSTS)
         args.update(kw)
         return create_app(self.cfg, **args)
 
@@ -127,6 +128,34 @@ class QthApiTest(ApiTestBase):
         self.assertEqual([q["name"] for q in body["qth"]], ["ORIGIN", "OTHER"])
         self.assertEqual(body["qth"][0], {"name": "ORIGIN", "description": "", "location": "Gulf of Guinea",
                                           "lat_deg": 0.0, "lon_deg": 0.0, "alt_m": 0.0, "weather_station": ""})
+
+    def test_list_qth_has_no_messages_when_all_files_are_good(self):
+        self.assertEqual(self.client.get("/api/qth").json()["messages"], [])
+
+    def test_list_qth_skips_bad_files_and_reports_them(self):
+        qth_dir = self.cfg.data_dir / "qth"
+        (qth_dir / "Broken.json").write_text("{", encoding="utf-8")
+        (qth_dir / "Latin.json").write_bytes(b'{"name": "Latin", "location": "\xff"}')      # ไม่ใช่ UTF-8
+        (qth_dir / "Range.json").write_text('{"name": "Range", "lat_deg": 99}', encoding="utf-8")
+        r = self.client.get("/api/qth")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual([q["name"] for q in body["qth"]], ["ORIGIN", "OTHER"])
+        self.assertEqual(body["default"], "ORIGIN")
+        self.assertEqual([(m["code"], m["level"], m["object"]) for m in body["messages"]],
+                         [("QTH_INVALID", "warning", "Broken.json"), ("QTH_INVALID", "warning", "Latin.json"),
+                          ("QTH_INVALID", "warning", "Range.json")])
+        for m in body["messages"]:
+            self.assertEqual(list(m), ERROR_KEYS)
+            self.assertRegex(m["text"], r"[ก-๙]")
+            self.assertIn(m["object"], m["text"])
+
+    def test_get_bad_qth_file_is_qth_invalid(self):
+        qth_dir = self.cfg.data_dir / "qth"
+        (qth_dir / "Latin.json").write_bytes(b"\xff\xfe")
+        (qth_dir / "Big.json").write_text('{"name": "Big", "lat_deg": ' + "9" * 5000 + "}", encoding="utf-8")
+        self.assert_error(self.client.get("/api/qth/Latin"), 422, "QTH_INVALID", "Latin")
+        self.assert_error(self.client.get("/api/qth/Big"), 422, "QTH_INVALID", "Big")
 
     def test_put_get_delete_qth(self):
         q = {"name": "NEW", "description": "สถานีทดลอง", "location": "Chiang Mai", "lat_deg": 18.79,
@@ -521,16 +550,43 @@ class MiscApiTest(ApiTestBase):
         self.assertTrue(r.headers["content-type"].startswith("text/plain"))
         self.assertEqual(r.text, (REPO_ROOT / "License.txt").read_text(encoding="utf-8"))
 
+    def test_license_missing_is_not_found(self):
+        with mock.patch.object(app_module, "LICENSE_FILE", self.cfg.data_dir / "nope" / "License.txt"):
+            self.assert_error(self.client.get("/api/license"), 404, "NOT_FOUND", None)
+
+    def test_readme(self):
+        """Help → Online help แสดง README ของโปรแกรมในหน้าเว็บ (ไม่มีลิงก์ออกนอก)"""
+        r = self.client.get("/api/readme")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.headers["content-type"].startswith("text/plain"))
+        self.assertEqual(r.text, (REPO_ROOT / "api-interop" / "gpredict-web" / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("Gpredict Web", r.text)
+
+    def test_readme_missing_is_not_found(self):
+        with mock.patch.object(app_module, "README_FILE", self.cfg.data_dir / "nope" / "README.md"):
+            self.assert_error(self.client.get("/api/readme"), 404, "NOT_FOUND", None)
+
+    def test_readme_not_utf8_is_not_found(self):
+        bad = self.cfg.data_dir / "README.md"
+        bad.parent.mkdir(parents=True, exist_ok=True)
+        bad.write_bytes(b"\xff\xfe")
+        with mock.patch.object(app_module, "README_FILE", bad):
+            self.assert_error(self.client.get("/api/readme"), 404, "NOT_FOUND", None)
+
     def test_quit_calls_hook(self):
         self.assertEqual(self.quits, 0)
         r = self.client.post("/api/quit")
         self.assertEqual(r.status_code, 204)
         self.assertEqual(self.quits, 1)
 
-    def test_quit_without_hook(self):
+    def test_quit_without_hook_is_conflict_not_204(self):
+        """dev (uvicorn โดยตรง) ไม่มีตัวหยุด server: ตอบ 409 QUIT_UNAVAILABLE เพื่อให้หน้าเว็บไม่ขึ้นว่า server หยุดแล้ว"""
         client = self.enter(self.make_app(on_quit=None))
         with self.assertLogs("gpredict_web.app", "WARNING"):
-            self.assertEqual(client.post("/api/quit").status_code, 204)
+            r = client.post("/api/quit")
+        body = self.assert_error(r, 409, "QUIT_UNAVAILABLE", None)
+        self.assertIn("python -m gpredict_web", body["text"])
+        self.assertEqual(self.quits, 0)
 
     def test_static_served_when_dist_exists(self):
         dist = self.cfg.web_dist
@@ -640,8 +696,17 @@ class HostOriginTest(ApiTestBase):
         self.assert_error(client.get("/api/meta", headers={"host": "evil.example"}), 403, "FORBIDDEN_HOST", None)
         self.assert_error(self.client.get("/api/meta", headers={"host": h["host"]}), 403, "FORBIDDEN_HOST", None)
 
+    def test_default_allow_list_has_no_testserver(self):
+        """allow list ตั้งต้นของ server จริงไม่มี testserver (test ส่งเองผ่าน allowed_hosts)"""
+        client = self.enter(create_app(self.cfg, start_background=False, ephem=self.ephem))
+        self.assert_error(client.get("/api/meta"), 403, "FORBIDDEN_HOST", None)          # Host ของ TestClient = testserver
+        self.assert_error(client.get("/api/meta", headers={"host": "testserver"}), 403, "FORBIDDEN_HOST", None)
+        for host in ("127.0.0.1:8740", "localhost:8740", "[::1]:8740"):
+            self.assertEqual(client.get("/api/meta", headers={"host": host}).status_code, 200, host)
+        self.assertEqual(client.app.state.allowed_hosts, {"127.0.0.1", "localhost", "::1"})
+
     def test_host_allow_list(self):
-        base = {"127.0.0.1", "localhost", "::1", "testserver"}
+        base = {"127.0.0.1", "localhost", "::1"}
         self.assertEqual(host_allow_list(), base)
         self.assertEqual(host_allow_list("localhost"), base)
         self.assertEqual(host_allow_list("[::1]"), base)
@@ -689,6 +754,23 @@ class LifespanTest(ApiTestBase):
         self.assertIsNotNone(self.app.state.hub.get("Amateur"))
         self.assertEqual(client.get("/api/modules/Amateur").json()["qth"], None)
 
+    def test_restart_after_deleting_every_module_does_not_bring_amateur_back(self):
+        self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
+        client = self.start()
+        self.assertEqual(client.get("/api/modules").json()["modules"], ["Amateur"])
+        self.assertEqual(client.delete("/api/modules/Amateur").status_code, 204)
+        self.opener.urls.clear()
+        client = self.start()                                               # เริ่ม server ใหม่บน data dir เดิม
+        self.assertEqual(client.get("/api/modules").json(), {"modules": [], "open": [], "messages": []})
+        self.assertEqual(self.opener.urls, [])
+
+    def test_offline_first_start_then_online_start_creates_amateur(self):
+        client = self.start()
+        self.assertEqual(client.get("/api/modules").json()["modules"], [])
+        self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
+        client = self.start()
+        self.assertEqual(client.get("/api/modules").json(), {"modules": ["Amateur"], "open": ["Amateur"], "messages": []})
+
     def test_startup_message_cleared_after_tle_update(self):
         client = self.start()
         self.assertTrue(client.get("/api/modules").json()["messages"])
@@ -729,7 +811,7 @@ class LifespanTest(ApiTestBase):
             self.app = self.make_app(start_background=False)
             client = self.enter(self.app)
         prune.assert_not_called()
-        self.assertEqual(client.get("/api/qth").json(), {"qth": [], "default": None})
+        self.assertEqual(client.get("/api/qth").json(), {"qth": [], "default": None, "messages": []})
         self.assertEqual(self.opener.urls, [])
 
 

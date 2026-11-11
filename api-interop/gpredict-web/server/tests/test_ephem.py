@@ -421,6 +421,75 @@ class ManagerTest(ManagerTestBase):
         self.assertEqual(codes(self.m.status("A")), ("ok", []))
         self.assertEqual(len(self.fake.calls), 2)
 
+    def fail_once(self, sats, owner="A") -> None:
+        self.fake.fail = GmatRunError("boom")
+        self.m.ensure(owner, sats, self.w)
+        self.m.drain()
+        self.fake.fail = None
+        self.assertEqual(codes(self.m.status(owner)), ("failed", ["GMAT_FAILED"]))
+
+    def test_adding_satellites_clears_the_failure_and_queues_the_missing_ones(self):
+        """Configure ที่เพิ่มดาวเข้า module ที่ GMAT ล้มอยู่ไม่ค้างที่ failed (ไม่ต้องกด Retry)"""
+        s1, s2 = spec(25544), spec(43013)
+        self.fail_once([s1])
+        self.m.ensure("A", [s1, s2], self.w)
+        self.assertEqual(codes(self.m.status("A")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.status("A")), ("ok", []))
+        self.assertEqual(len(self.fake.calls), 2)
+        self.assertEqual(sorted(self.fake.calls[1]["prns"]), sorted([s1.prn, s2.prn]))      # ดวงที่ยังไม่มีค่าทุกดวง
+        self.assertIsNotNone(self.m.get(s1, self.w))
+        self.assertIsNotNone(self.m.get(s2, self.w))
+
+    def test_removing_a_satellite_also_clears_the_failure(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.fail_once([s1, s2])
+        self.m.ensure("A", [s1], self.w)
+        self.assertEqual(codes(self.m.status("A")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.status("A")), ("ok", []))
+
+    def test_a_new_tle_of_the_same_satellite_also_clears_the_failure(self):
+        self.fail_once([spec(25544)])
+        self.m.ensure("A", [spec(25544, rev=1)], self.w)                      # TLE ใหม่ของดวงเดิม = ชุดดาวต่างจากเดิม
+        self.assertEqual(codes(self.m.status("A")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.status("A")), ("ok", []))
+
+    def test_same_satellites_keep_the_failure_until_retry(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.fail_once([s1, s2])
+        calls = len(self.fake.calls)
+        self.m.ensure("A", [s2, s1], self.w)                                   # ชุดเดิม ลำดับต่าง: ยัง failed
+        self.m.drain()
+        self.assertEqual(len(self.fake.calls), calls)
+        self.assertEqual(codes(self.m.status("A")), ("failed", ["GMAT_FAILED"]))
+        self.m.retry("A")
+        self.m.drain()
+        self.assertEqual(codes(self.m.status("A")), ("ok", []))
+
+    def test_changed_set_of_one_owner_leaves_another_owners_failure(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.fake.fail = GmatRunError("boom")
+        self.m.ensure("A", [s1], self.w)
+        self.m.ensure("B", [s1], self.w)
+        self.m.drain()
+        self.fake.fail = None
+        self.assertEqual(codes(self.m.status("B")), ("failed", ["GMAT_FAILED"]))
+        self.m.ensure("A", [s1, s2], self.w)
+        self.assertEqual(codes(self.m.status("A")), ("computing", []))
+        self.assertEqual(codes(self.m.status("B")), ("failed", ["GMAT_FAILED"]))
+
+    def test_changed_set_that_fails_again_is_failed_again(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.fail_once([s1])
+        self.fake.fail = GmatRunError("boom again")
+        self.m.ensure("A", [s1, s2], self.w)
+        self.m.drain()
+        st = self.m.status("A")
+        self.assertEqual(codes(st), ("failed", ["GMAT_FAILED"]))
+        self.assertIn("boom again", st[1][0].text)
+
     def test_failure_moves_on_with_new_window(self):
         s1 = spec(25544)
         self.fake.fail = GmatRunError("boom")

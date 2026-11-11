@@ -14,6 +14,10 @@ from gpredict_web.ephem import SatEphem
 from gpredict_web.observe import QthGeo
 
 
+# Host ที่ TestClient ใช้ (testserver) ไม่อยู่ใน allow list ตั้งต้นของ server จริง test ส่งเข้า create_app(allowed_hosts=...) เอง
+TEST_HOSTS = ("testserver", "127.0.0.1", "localhost", "::1")
+
+
 def temp_config(testcase: TestCase | None = None) -> Config:
     """Config ที่ทุก path ชี้ไปใต้ temp dir เดียว ลบทิ้งเมื่อ test จบ (ส่ง testcase มา) หรือเมื่อโปรแกรมจบ"""
     root = Path(tempfile.mkdtemp(prefix="gpredict_web_test_"))

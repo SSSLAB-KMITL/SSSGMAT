@@ -56,11 +56,12 @@ class MainTest(unittest.TestCase):
         server, _ = self.build()
         client = TestClient(server.config.app)
         self.assertEqual(client.get("/api/meta", headers={"host": "127.0.0.1:8740"}).status_code, 200)
+        self.assertEqual(client.get("/api/meta").status_code, 403)                          # testserver ไม่ใช่ชื่อของเครื่องจริง
         self.assertEqual(client.get("/api/meta", headers={"host": "192.168.1.5:8740"}).status_code, 403)
         server, err = self.build("--host", "192.168.1.5")
         self.assertIn("192.168.1.5", server.config.app.state.allowed_hosts)
-        client = TestClient(server.config.app)
-        self.assertEqual(client.get("/api/meta", headers={"host": "192.168.1.5:8740"}).status_code, 200)
+        client = TestClient(server.config.app, base_url="http://192.168.1.5:8740")
+        self.assertEqual(client.get("/api/meta").status_code, 200)
         self.assertEqual(client.post("/api/quit", headers={"origin": "http://192.168.1.5:8740"}).status_code, 204)
         self.assertEqual(client.get("/api/meta", headers={"host": "localhost:8740"}).status_code, 200)
         self.assertEqual(client.get("/api/meta", headers={"host": "evil.example"}).status_code, 403)
@@ -73,7 +74,7 @@ class MainTest(unittest.TestCase):
     def test_quit_sets_should_exit(self):
         server, _ = self.build()
         self.assertFalse(server.should_exit)
-        r = TestClient(server.config.app).post("/api/quit")                # ไม่ใช้ with: ไม่เปิด lifespan
+        r = TestClient(server.config.app, base_url="http://127.0.0.1:8740").post("/api/quit")   # ไม่ใช้ with: ไม่เปิด lifespan
         self.assertEqual(r.status_code, 204)
         self.assertTrue(server.should_exit)
 

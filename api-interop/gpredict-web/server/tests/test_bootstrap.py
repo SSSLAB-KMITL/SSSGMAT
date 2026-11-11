@@ -11,7 +11,8 @@ from urllib.error import URLError
 
 from gpredict_web.bootstrap import AMATEUR_GROUP, AMATEUR_MODULE, THBK_NAME, bootstrap
 from gpredict_web.config import MAX_SATS
-from gpredict_web.satdb import SatDb
+from gpredict_web.module import module_from_dict
+from gpredict_web.satdb import SatDb, update_from_network
 from gpredict_web.store import Qth, Store
 from gnss_predict import config as engine_config
 from gnss_predict.errors import Message
@@ -138,6 +139,42 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(msgs, [])
         self.assertEqual(tree(self.cfg.data_dir), before)
 
+    def test_flag_is_set_once_amateur_is_created(self):
+        self.assertFalse(self.store.bootstrap_done())
+        self.run_bootstrap(FakeOpener(json.dumps(SAMPLE).encode("utf-8")))
+        self.assertTrue(self.store.bootstrap_done())
+        settings = json.loads((self.cfg.data_dir / "settings.json").read_text(encoding="utf-8"))
+        self.assertIs(settings["bootstrap_done"], True)
+        self.assertEqual(settings["default_qth"], THBK_NAME)                     # ไม่ทับตัวชี้สถานีตั้งต้น
+
+    def test_deleting_every_module_keeps_the_empty_state(self):
+        """ผู้ใช้ลบ module หมด: เริ่มใหม่ไม่สร้าง Amateur กลับมาและไม่ส่ง request (opener ที่ถูกเรียกคือ test พัง)"""
+        self.run_bootstrap(FakeOpener(json.dumps(SAMPLE).encode("utf-8")))
+        self.store.delete_module(AMATEUR_MODULE)
+        before = tree(self.cfg.data_dir)
+        opener = FakeOpener()
+        self.assertEqual(self.run_bootstrap(opener), [])
+        self.assertEqual(opener.urls, [])
+        self.assertEqual(self.store.list_modules(), [])
+        self.assertEqual(self.store.session(), [])
+        self.assertEqual(tree(self.cfg.data_dir), before)
+
+    def test_offline_first_start_leaves_flag_unset_so_a_later_online_start_creates_amateur(self):
+        self.run_bootstrap(FakeOpener(URLError("ไม่มีเน็ต")))
+        self.assertFalse(self.store.bootstrap_done())
+        self.assertEqual(self.store.list_modules(), [])
+        msgs = self.run_bootstrap(FakeOpener(json.dumps(SAMPLE).encode("utf-8")))
+        self.assertEqual(self.store.list_modules(), [AMATEUR_MODULE])
+        self.assertTrue(self.store.bootstrap_done())
+        self.assertEqual([m.code for m in msgs if m.level != "info"], [])
+
+    def test_existing_modules_do_not_set_the_flag(self):
+        """มี module อยู่แล้ว (ผู้ใช้สร้างเองตอนออฟไลน์): ไม่ส่ง request และไม่ตั้งธง ลบหมดแล้วเริ่มใหม่ออนไลน์ยังได้ Amateur"""
+        self.run_bootstrap(FakeOpener(URLError("ไม่มีเน็ต")))
+        self.store.put_module(module_from_dict({"name": "Mine", "qth": None, "satellites": [25544]}, None, None))
+        self.assertEqual(self.run_bootstrap(FakeOpener()), [])
+        self.assertFalse(self.store.bootstrap_done())
+
     def test_existing_qth_is_kept_and_amateur_still_created(self):
         self.store.put_qth(Qth(name="HOME", lat_deg=1.0, lon_deg=2.0))
         self.store.set_default_qth("HOME")
@@ -155,8 +192,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(self.store.qth_names(), ["HOME", "Zulu"])
 
     def test_offline_uses_satellites_already_in_the_index(self):
-        self.run_bootstrap(FakeOpener(json.dumps(SAMPLE).encode("utf-8")))
-        self.store.delete_module(AMATEUR_MODULE)                                 # ไม่มี module แต่ดัชนีมีดาวกลุ่ม amateur
+        update_from_network(self.satdb, self.cfg, T0, groups=(AMATEUR_GROUP,),     # Update TLE ไว้แล้วแต่ยังไม่เคยมี module
+                            opener=FakeOpener(json.dumps(SAMPLE).encode("utf-8")))
+        self.assertEqual(self.store.list_modules(), [])
+        self.assertFalse(self.store.bootstrap_done())
         for p in self.cfg.omm_cache_dir.glob("*.json"):
             if p.name != self.cfg.state_file.name:
                 p.unlink()

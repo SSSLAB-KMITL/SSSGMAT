@@ -1,6 +1,6 @@
 """FastAPI app ของ Gpredict Web: REST /api, WebSocket /ws/modules/{name} และไฟล์หน้าเว็บที่ build แล้ว (หัวข้อ 3 และ 7 ของ spec)
 
-- route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license
+- route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
@@ -54,7 +54,8 @@ WS_SERVER_STOP = 1001                  # close code: server กำลังป�
 WS_INTERNAL_ERROR = 1011               # close code: producer หยุดเพราะ error ภายใน (หน้าเว็บต่อใหม่)
 WS_SEND_FAILED = 1013                  # close code: ส่ง tick ให้ socket นี้ไม่ทันหรือไม่สำเร็จ (Try Again Later)
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")     # ชื่อของเครื่องตัวเองที่ browser ใช้เปิด server
-TEST_HOST = "testserver"                            # Host ของ TestClient
+LICENSE_FILE = REPO_ROOT / "License.txt"
+README_FILE = REPO_ROOT / "api-interop" / "gpredict-web" / "README.md"      # คู่มือที่ Help → Online help แสดงในหน้าเว็บ
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -146,8 +147,9 @@ def _norm_host(name: str) -> str:
 
 
 def host_allow_list(bind_host: str = LOCAL_HOSTS[0]) -> frozenset[str]:
-    """ชื่อเครื่องที่ยอมให้อยู่ใน Host และ Origin: เครื่องตัวเอง, testserver และ --host เมื่อไม่ใช่เครื่องตัวเอง"""
-    return frozenset(_norm_host(h) for h in (*LOCAL_HOSTS, TEST_HOST, bind_host) if h and h.strip())
+    """ชื่อเครื่องที่ยอมให้อยู่ใน Host และ Origin: เครื่องตัวเองและ --host เมื่อไม่ใช่เครื่องตัวเอง
+    (ไม่มี testserver: test ที่ใช้ TestClient ส่ง allowed_hosts เข้า create_app เอง)"""
+    return frozenset(_norm_host(h) for h in (*LOCAL_HOSTS, bind_host) if h and h.strip())
 
 
 def _host_name(value: str | None, *, origin: bool) -> str | None:
@@ -449,7 +451,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     """- start_background=False (test): ไม่ prune/bootstrap/เปิด session ตอนเริ่ม และ EphemManager ที่สร้างเองไม่มี worker thread
     - opener: ใช้ดึง OMM (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
     - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
-    - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองและ testserver)"""
+    - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)"""
     store = Store(cfg.data_dir)
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
@@ -541,7 +543,12 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/qth")
     def list_qth():
-        return {"qth": [asdict(q) for q in store.list_qth()], "default": store.default_qth()}
+        """ไฟล์ QTH ที่เสียถูกข้าม (ไม่ล้มทั้งรายการ) และรายงานใน messages เป็น warning ที่ object = ชื่อไฟล์"""
+        good, skipped = store.list_qth_checked()
+        messages = [Message("QTH_INVALID", "warning", f"ข้ามไฟล์ QTH {file} เพราะใช้ไม่ได้: {exc.text}", file)
+                    for file, exc in skipped]
+        return {"qth": [asdict(q) for q in good], "default": store.default_qth(),
+                "messages": [m.to_dict() for m in messages]}
 
     @app.get("/api/qth/{name}")
     def get_qth(name: str):
@@ -739,23 +746,33 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.post("/api/quit", status_code=204)
     def quit_server():
-        """หยุด server (ของเรา: แทน File → Quit)"""
-        if on_quit is not None:
-            on_quit()
-        else:
+        """หยุด server (ของเรา: แทน File → Quit) ไม่มีตัวหยุด (dev: uvicorn โดยตรง) ตอบ 409 QUIT_UNAVAILABLE ไม่ใช่ 204
+        เพื่อให้หน้าเว็บไม่ขึ้นว่า server หยุดแล้วทั้งที่ยังทำงานอยู่"""
+        if on_quit is None:
             _log.warning("POST /api/quit แต่ไม่มีตัวหยุด server (รันด้วย python -m gpredict_web เพื่อใช้ Quit)")
+            raise ApiError("QUIT_UNAVAILABLE", 409,
+                           "server นี้ไม่ได้รันด้วย python -m gpredict_web จึงปิดจากหน้าเว็บไม่ได้")
+        on_quit()
         return Response(status_code=204)
 
     @app.get("/api/meta")
     def meta():
         return _meta()
 
+    def repo_text(path: Path) -> PlainTextResponse:
+        try:
+            return PlainTextResponse(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):                # ไม่มีไฟล์ อ่านไม่ได้ หรือไม่ใช่ UTF-8
+            raise ApiError("NOT_FOUND", 404, f"ไม่พบหรืออ่านไฟล์ {path.name} ของ repo ไม่ได้") from None
+
     @app.get("/api/license", response_class=PlainTextResponse)
     def license_text():
-        try:
-            return PlainTextResponse((REPO_ROOT / "License.txt").read_text(encoding="utf-8"))
-        except OSError:
-            raise ApiError("NOT_FOUND", 404, "ไม่พบไฟล์ License.txt ของ repo") from None
+        return repo_text(LICENSE_FILE)
+
+    @app.get("/api/readme", response_class=PlainTextResponse)
+    def readme_text():
+        """README ของ Gpredict Web ให้ Help → Online help แสดงในหน้าเว็บ (ไม่ลิงก์ออกนอกโปรแกรม)"""
+        return repo_text(README_FILE)
 
     @app.websocket("/ws/modules/{name}")
     async def module_socket(ws: WebSocket, name: str):
