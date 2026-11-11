@@ -8,8 +8,8 @@
     "build": "vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "gen:api": "../server/.venv/bin/python -I ../server/tools/dump_openapi.py src/api/openapi.json && openapi-typescript src/api/openapi.json -o src/api/types.gen.ts && node tools/gen-enums.mjs",
-    "gen:api:check": "npm run gen:api && git diff --exit-code -- src/api"
+    "gen:api": "../server/.venv/bin/python -I ../server/tools/dump_openapi.py src/api/openapi.json && openapi-typescript src/api/openapi.json --default-non-nullable false -o src/api/types.gen.ts && node tools/gen-enums.mjs",
+    "gen:api:check": "npm run gen:api && git diff --exit-code HEAD -- src/api && test -z \"$(git status --porcelain -- src/api)\""
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "2.4.1",

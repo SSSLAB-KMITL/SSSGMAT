@@ -2,23 +2,10 @@
 // Literal ใน server/gnss_studio_server/schema.py ถูก pydantic ใส่ inline ในแต่ละ property จึงหาค่าด้วย model + property
 // ถ้าชื่อ model หรือ property เปลี่ยนไปจน enum หาย สคริปต์หยุดพร้อมบอกว่าขาดอะไร ไม่เขียนไฟล์ครึ่งๆ กลางๆ
 import { readFileSync, writeFileSync } from "node:fs";
+import { SOURCES } from "./enum-sources.mjs";   // ชื่อใน ENUMS -> model + property ที่ประกาศ Literal
 
 const SPEC = new URL("../src/api/openapi.json", import.meta.url);
 const OUT = new URL("../src/api/enums.gen.ts", import.meta.url);
-
-// ชื่อใน ENUMS -> [model, property] ที่ประกาศ Literal นั้น; ตัวที่ 3 (ถ้ามี) คือที่อื่นที่ใช้ alias เดียวกัน ต้องได้ค่าเท่ากัน
-const SOURCES = {
-  MarkerStyle: ["Graphics2DSat", "marker_style", [["Graphics2DFac", "marker_style"]]],
-  LineStyle: ["Graphics2DSat", "line_style"],
-  LeadType: ["PassSettings", "lead_type"],
-  TrailType: ["PassSettings", "trail_type"],
-  VisibleSides: ["PassSettings", "visible_sides"],
-  SwathOptions: ["SwathSettings", "options"],
-  OrbitSystem: ["Graphics3DSat", "orbit_system"],
-  UpdateMode: ["Animation", "update_mode"],
-  Cycle: ["Animation", "cycle"],
-  DateFormat: ["Units", "date_format"],
-};
 
 const spec = JSON.parse(readFileSync(SPEC, "utf8"));
 const schemas = spec.components?.schemas ?? {};

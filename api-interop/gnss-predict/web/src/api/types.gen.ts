@@ -571,18 +571,18 @@ export interface components {
              * Computed
              * @default false
              */
-            computed: boolean;
+            computed?: boolean;
             /** From */
             from: string;
             /** @default null */
-            graphics: components["schemas"]["AccessGraphics"] | null;
+            graphics?: components["schemas"]["AccessGraphics"] | null;
             /** @default null */
-            time_period: components["schemas"]["AccessTimePeriod"] | null;
+            time_period?: components["schemas"]["AccessTimePeriod"] | null;
             /**
              * Timeline
              * @default true
              */
-            timeline: boolean;
+            timeline?: boolean;
             /** To */
             to: string[];
         } & {
@@ -594,38 +594,38 @@ export interface components {
              * Animate Highlight
              * @default false
              */
-            animate_highlight: boolean;
+            animate_highlight?: boolean;
             /**
              * Animate Line
              * @default true
              */
-            animate_line: boolean;
+            animate_line?: boolean;
             /**
              * Color Mode
              * @default object
              * @enum {string}
              */
-            color_mode: "object" | "custom";
+            color_mode?: "object" | "custom";
             /**
              * Custom Color
              * @default null
              */
-            custom_color: string | null;
+            custom_color?: string | null;
             /**
              * Inherit
              * @default true
              */
-            inherit: boolean;
+            inherit?: boolean;
             /**
              * Show
              * @default true
              */
-            show: boolean;
+            show?: boolean;
             /**
              * Static Highlight
              * @default false
              */
-            static_highlight: boolean;
+            static_highlight?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -640,17 +640,17 @@ export interface components {
              * @default object
              * @enum {string}
              */
-            mode: "object" | "specify";
+            mode?: "object" | "specify";
             /**
              * Start
              * @default null
              */
-            start: string | null;
+            start?: string | null;
             /**
              * Stop
              * @default null
              */
-            stop: string | null;
+            stop?: string | null;
         } & {
             [key: string]: unknown;
         };
@@ -670,28 +670,28 @@ export interface components {
              * @default loop
              * @enum {string}
              */
-            cycle: "off" | "stop" | "loop";
+            cycle?: "off" | "stop" | "loop";
             /**
              * Start
              * @default null
              */
-            start: string | null;
+            start?: string | null;
             /**
              * Time Step S
              * @default 60
              */
-            time_step_s: number;
+            time_step_s?: number;
             /**
              * Update Mode
              * @default time_step
              * @enum {string}
              */
-            update_mode: "time_step" | "real_time" | "x_real_time";
+            update_mode?: "time_step" | "real_time" | "x_real_time";
             /**
              * X Real Time Multiplier
              * @default 60
              */
-            x_real_time_multiplier: number;
+            x_real_time_multiplier?: number;
         } & {
             [key: string]: unknown;
         };
@@ -712,7 +712,7 @@ export interface components {
              * Assigned Objects
              * @default []
              */
-            assigned_objects: string[];
+            assigned_objects?: string[];
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -722,19 +722,19 @@ export interface components {
              * Color
              * @default null
              */
-            color: string | null;
+            color?: string | null;
             /**
              * Description
              * @default
              */
-            description: string;
+            description?: string;
             /** Name */
             name: string;
             /**
              * System
              * @default null
              */
-            system: ("G" | "R" | "E" | "C") | null;
+            system?: ("G" | "R" | "E" | "C") | null;
         } & {
             [key: string]: unknown;
         };
@@ -749,32 +749,32 @@ export interface components {
              * Enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             /**
              * Facility
              * @default THBK
              */
-            facility: string;
+            facility?: string;
             /**
              * Retention Days
              * @default 30
              */
-            retention_days: number;
+            retention_days?: number;
             /**
              * Run At Utc
              * @default 21:00
              */
-            run_at_utc: string;
+            run_at_utc?: string;
             /**
              * Validation Give Up Days
              * @default 14
              */
-            validation_give_up_days: number;
+            validation_give_up_days?: number;
             /**
              * Validation Retry Hours
              * @default 3
              */
-            validation_retry_hours: number;
+            validation_retry_hours?: number;
         };
         /** DailyInfo */
         DailyInfo: {
@@ -796,12 +796,12 @@ export interface components {
              * Elevation Angle Max Deg
              * @default null
              */
-            elevation_angle_max_deg: number | null;
+            elevation_angle_max_deg?: number | null;
             /**
              * Elevation Angle Min Deg
              * @default 0
              */
-            elevation_angle_min_deg: number;
+            elevation_angle_min_deg?: number;
         } & {
             [key: string]: unknown;
         };
@@ -813,16 +813,16 @@ export interface components {
              */
             class: "Facility";
             /** @default null */
-            constraints: components["schemas"]["FacilityConstraints"] | null;
+            constraints?: components["schemas"]["FacilityConstraints"] | null;
             /**
              * Description
              * @default
              */
-            description: string;
+            description?: string;
             /** @default null */
-            graphics2d: components["schemas"]["Graphics2DFac"] | null;
+            graphics2d?: components["schemas"]["Graphics2DFac"] | null;
             /** @default null */
-            graphics3d: components["schemas"]["Graphics3DFac"] | null;
+            graphics3d?: components["schemas"]["Graphics3DFac"] | null;
             /** Name */
             name: string;
             position: components["schemas"]["Position"];
@@ -835,7 +835,7 @@ export interface components {
              * Systems
              * @default GREC
              */
-            systems: string;
+            systems?: string;
         };
         /** Graphics2DFac */
         Graphics2DFac: {
@@ -843,22 +843,22 @@ export interface components {
              * Color
              * @default null
              */
-            color: string | null;
+            color?: string | null;
             /**
              * Inherit
              * @default true
              */
-            inherit: boolean;
+            inherit?: boolean;
             /**
              * Marker Style
              * @default null
              */
-            marker_style: ("Point" | "Plus" | "Star" | "Square" | "Circle" | "Diamond" | "Triangle" | "Cross") | null;
+            marker_style?: ("Point" | "Plus" | "Star" | "Square" | "Circle" | "Diamond" | "Triangle" | "Cross") | null;
             /**
              * Show
              * @default true
              */
-            show: boolean;
+            show?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -868,7 +868,7 @@ export interface components {
              * Show Labels
              * @default true
              */
-            show_labels: boolean;
+            show_labels?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -878,36 +878,36 @@ export interface components {
              * Color
              * @default null
              */
-            color: string | null;
+            color?: string | null;
             /**
              * Inherit
              * @default true
              */
-            inherit: boolean;
+            inherit?: boolean;
             /**
              * Line Style
              * @default null
              */
-            line_style: ("Solid" | "Dashed" | "Dotted" | "Dot Dashed" | "Long Dashed" | "Dash Dot Dot" | "Medium Dashed" | "Short Dashed") | null;
+            line_style?: ("Solid" | "Dashed" | "Dotted" | "Dot Dashed" | "Long Dashed" | "Dash Dot Dot" | "Medium Dashed" | "Short Dashed") | null;
             /**
              * Line Width
              * @default null
              */
-            line_width: number | null;
+            line_width?: number | null;
             /**
              * Marker Style
              * @default null
              */
-            marker_style: ("Point" | "Plus" | "Star" | "Square" | "Circle" | "Diamond" | "Triangle" | "Cross") | null;
+            marker_style?: ("Point" | "Plus" | "Star" | "Square" | "Circle" | "Diamond" | "Triangle" | "Cross") | null;
             /** @default null */
-            pass: components["schemas"]["PassSettings"] | null;
+            pass?: components["schemas"]["PassSettings"] | null;
             /**
              * Show
              * @default true
              */
-            show: boolean;
+            show?: boolean;
             /** @default null */
-            swath: components["schemas"]["SwathSettings"] | null;
+            swath?: components["schemas"]["SwathSettings"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -917,7 +917,7 @@ export interface components {
              * Show
              * @default true
              */
-            show: boolean;
+            show?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -928,12 +928,12 @@ export interface components {
              * @default Fixed by Window
              * @enum {string}
              */
-            orbit_system: "Fixed by Window" | "Inertial by Window";
+            orbit_system?: "Fixed by Window" | "Inertial by Window";
             /**
              * Show
              * @default true
              */
-            show: boolean;
+            show?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -947,7 +947,7 @@ export interface components {
              * Members
              * @default []
              */
-            members: string[];
+            members?: string[];
             /** Name */
             name: string;
         } & {
@@ -981,7 +981,7 @@ export interface components {
              * Shell Km
              * @default 400
              */
-            shell_km: number;
+            shell_km?: number;
         } & {
             [key: string]: unknown;
         };
@@ -1007,50 +1007,50 @@ export interface components {
              * Lead Percent
              * @default null
              */
-            lead_percent: number | null;
+            lead_percent?: number | null;
             /**
              * Lead Time S
              * @default null
              */
-            lead_time_s: number | null;
+            lead_time_s?: number | null;
             /**
              * Lead Type
              * @default Time
              * @enum {string}
              */
-            lead_type: "Time" | "Percent" | "Quarter" | "Half" | "Full" | "All" | "None" | "One Pass" | "Current Interval";
+            lead_type?: "Time" | "Percent" | "Quarter" | "Half" | "Full" | "All" | "None" | "One Pass" | "Current Interval";
             /**
              * Show Pass Labels
              * @default false
              */
-            show_pass_labels: boolean;
+            show_pass_labels?: boolean;
             /**
              * Show Path Labels
              * @default false
              */
-            show_path_labels: boolean;
+            show_path_labels?: boolean;
             /**
              * Trail Percent
              * @default null
              */
-            trail_percent: number | null;
+            trail_percent?: number | null;
             /**
              * Trail Time S
              * @default null
              */
-            trail_time_s: number | null;
+            trail_time_s?: number | null;
             /**
              * Trail Type
              * @default Time
              * @enum {string}
              */
-            trail_type: "Time" | "Percent" | "Quarter" | "Half" | "Full" | "All" | "None" | "One Pass" | "Current Interval" | "Same As Lead";
+            trail_type?: "Time" | "Percent" | "Quarter" | "Half" | "Full" | "All" | "None" | "One Pass" | "Current Interval" | "Same As Lead";
             /**
              * Visible Sides
              * @default Both
              * @enum {string}
              */
-            visible_sides: "Both" | "Ascending" | "Descending";
+            visible_sides?: "Both" | "Ascending" | "Descending";
         } & {
             [key: string]: unknown;
         };
@@ -1067,7 +1067,7 @@ export interface components {
              * @default Geodetic
              * @constant
              */
-            type: "Geodetic";
+            type?: "Geodetic";
         } & {
             [key: string]: unknown;
         };
@@ -1077,12 +1077,12 @@ export interface components {
              * Show No Broadcast
              * @default false
              */
-            show_no_broadcast: boolean;
+            show_no_broadcast?: boolean;
             /**
              * Show Too Old
              * @default false
              */
-            show_too_old: boolean;
+            show_too_old?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -1097,11 +1097,11 @@ export interface components {
              * Description
              * @default
              */
-            description: string;
+            description?: string;
             /** @default null */
-            graphics2d: components["schemas"]["Graphics2DSat"] | null;
+            graphics2d?: components["schemas"]["Graphics2DSat"] | null;
             /** @default null */
-            graphics3d: components["schemas"]["Graphics3DSat"] | null;
+            graphics3d?: components["schemas"]["Graphics3DSat"] | null;
             /** Name */
             name: string;
             /** Norad */
@@ -1115,31 +1115,31 @@ export interface components {
              * Accesses
              * @default []
              */
-            accesses: components["schemas"]["AccessDef"][];
+            accesses?: components["schemas"]["AccessDef"][];
             analysis_period: components["schemas"]["AnalysisPeriod"];
             /** @default null */
-            animation: components["schemas"]["Animation"] | null;
+            animation?: components["schemas"]["Animation"] | null;
             /** @default null */
-            daily: components["schemas"]["DailyInfo"] | null;
+            daily?: components["schemas"]["DailyInfo"] | null;
             /**
              * Description
              * @default
              */
-            description: string;
+            description?: string;
             /**
              * Format
              * @constant
              */
             format: "gnss-studio-scenario/1";
             /** @default null */
-            graphics2d_global: components["schemas"]["Graphics2DGlobal"] | null;
+            graphics2d_global?: components["schemas"]["Graphics2DGlobal"] | null;
             /**
              * Groups
              * @default []
              */
-            groups: components["schemas"]["Group"][];
+            groups?: components["schemas"]["Group"][];
             /** @default null */
-            ionosphere: components["schemas"]["Ionosphere"] | null;
+            ionosphere?: components["schemas"]["Ionosphere"] | null;
             /** Name */
             name: string;
             /** Objects */
@@ -1147,19 +1147,19 @@ export interface components {
             /** Orbit Snapshot */
             orbit_snapshot: string;
             /** @default null */
-            satellite_filter: components["schemas"]["SatelliteFilter"] | null;
+            satellite_filter?: components["schemas"]["SatelliteFilter"] | null;
             /**
              * Step S
              * @default 30
              */
-            step_s: number;
+            step_s?: number;
             /**
              * Styles
              * @default []
              */
-            styles: unknown[];
+            styles?: unknown[];
             /** @default null */
-            units: components["schemas"]["Units"] | null;
+            units?: components["schemas"]["Units"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -1182,7 +1182,7 @@ export interface components {
              * Cesium Ion Token
              * @default
              */
-            cesium_ion_token: string;
+            cesium_ion_token?: string;
             daily?: components["schemas"]["DailyIn"];
         };
         /** SwathSettings */
@@ -1191,19 +1191,19 @@ export interface components {
              * Elevation Deg
              * @default 10
              */
-            elevation_deg: number;
+            elevation_deg?: number;
             /**
              * Options
              * @default No Graphics
              * @enum {string}
              */
-            options: "No Graphics" | "Edge Limits" | "Filled Limits";
+            options?: "No Graphics" | "Edge Limits" | "Filled Limits";
             /**
              * Type
              * @default Ground Elevation
              * @constant
              */
-            type: "Ground Elevation";
+            type?: "Ground Elevation";
         } & {
             [key: string]: unknown;
         };
@@ -1214,24 +1214,24 @@ export interface components {
              * @default deg
              * @constant
              */
-            angle: "deg";
+            angle?: "deg";
             /**
              * Date Format
              * @default UTCG
              * @enum {string}
              */
-            date_format: "UTCG" | "LTZG";
+            date_format?: "UTCG" | "LTZG";
             /**
              * Distance
              * @default km
              * @constant
              */
-            distance: "km";
+            distance?: "km";
             /**
              * Ltz Offset
              * @default +07:00
              */
-            ltz_offset: string;
+            ltz_offset?: string;
         } & {
             [key: string]: unknown;
         };
