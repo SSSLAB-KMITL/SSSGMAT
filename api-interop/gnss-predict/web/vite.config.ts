@@ -32,5 +32,11 @@ export default defineConfig({
       },
     },
   },
-  test: { environment: "jsdom", include: ["tests/unit/**/*.test.{ts,tsx}"] },
+  test: {
+    environment: "jsdom",
+    include: ["tests/unit/**/*.test.{ts,tsx}"],
+    // เวลาทั้งแอปต้องไม่ขึ้นกับ timezone ของเครื่อง จึงรัน test ใน timezone ที่ไม่ใช่ UTC และมี DST ตลอด
+    // (โค้ดที่ไปเรียก getHours/getDate ฯลฯ แบบเวลาท้องถิ่นจะ fail ใน suite; time-format.test.ts มี test ยืนยันว่าตั้งผลจริง)
+    env: { TZ: "America/New_York" },
+  },
 });

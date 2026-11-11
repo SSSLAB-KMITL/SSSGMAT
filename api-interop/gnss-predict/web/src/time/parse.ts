@@ -37,12 +37,18 @@ export function parseTime(text: string, fmt: DateFormat, ltzOffset: string): Dat
   return toDate(Number(m[3]), month, Number(m[1]), Number(m[4]), Number(m[5]), Number(m[6]), ms, offsetMin);
 }
 
-const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z$/;
+// ISO 8601 date-time ลงท้าย Z หรือ ±hh:mm (engine รับทั้งสองแบบ: scenario.py _parse_time) มีหรือไม่มีเศษวินาทีก็ได้
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|([+-]\d{2}:\d{2}))$/;
 
-/** เวลา ISO 8601 UTC ลงท้าย `Z` ของ API (มีหรือไม่มีมิลลิวินาที) → Date; ไม่ใช่รูปนี้หรือไม่มีวันนั้นจริง → null */
+/**
+ * เวลา ISO 8601 ของ API → Date (UTC): ลงท้าย `Z` หรือ `±hh:mm` (แปลง offset เป็น UTC) มีหรือไม่มีมิลลิวินาที
+ * ไม่ระบุเขตเวลา, offset ผิดรูป (hh 00–23, mm 00–59) หรือส่วนที่ไม่มีจริง (เดือน 13, วัน 32, ชั่วโมง 24 ฯลฯ) → null
+ */
 export function parseIsoUtc(text: string): Date | null {
   const m = ISO_RE.exec(text);
   if (!m) return null;
+  const offsetMin = m[8] === undefined ? 0 : parseOffset(m[8]);
+  if (offsetMin === null) return null;
   const ms = m[7] === undefined ? 0 : Number(m[7].slice(0, 3).padEnd(3, "0"));
-  return toDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]), ms, 0);
+  return toDate(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]), ms, offsetMin);
 }

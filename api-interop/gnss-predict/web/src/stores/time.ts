@@ -27,6 +27,9 @@ export interface TimeState {
   residualMs?: number;
 }
 
+/** ช่วงที่ Date แทนได้ (±8.64e15 ms จาก epoch) */
+const DATE_LIMIT_MS = 8.64e15;
+
 /** W2: Normal Animation Mode เดิน 1 step ต่อ refresh ที่ 30 ครั้งต่อวินาทีคงที่ */
 export const NORMAL_REFRESH_HZ = 30;
 
@@ -51,19 +54,23 @@ function move(s: TimeState, deltaMs: number): Moved {
     if (forward ? exact > hi : exact < lo) return { current: new Date(forward ? lo : hi), residualMs: 0, stopped: false };
   }
   const whole = Math.round(total);
-  return { current: new Date(cur + whole), residualMs: total - whole, stopped: false };
+  const t = cur + whole;
+  // เกินช่วงของ Date (หรือไม่ใช่ตัวเลข) → คงเวลาเดิมแล้วหยุด ไม่เก็บ Invalid Date ลง store
+  if (!(Math.abs(t) <= DATE_LIMIT_MS)) return { current: s.current, residualMs: 0, stopped: true };
+  return { current: new Date(t), residualMs: total - whole, stopped: false };
 }
 
 /**
  * เดินเวลาตามเวลาจริงที่ผ่านไป `dtRealS` วินาที (W1, W2)
  * Normal: direction × step_s × 30 × dt; Real-Time: direction × dt; X Real-Time: direction × multiplier × dt
  * หยุดอยู่ (direction 0) หรือ dt ใช้ไม่ได้ → คืน state เดิมตัวเดิม
+ * ผลที่เกินช่วงของ Date → คงเวลาเดิมและตั้ง direction 0
  */
 export function advance(s: TimeState, dtRealS: number): TimeState {
   if (s.direction === 0 || !(dtRealS > 0)) return s;
   const rate = s.mode === "normal" ? s.step_s * NORMAL_REFRESH_HZ : s.mode === "realtime" ? 1 : s.multiplier;
   const deltaMs = s.direction * rate * dtRealS * 1000;
-  if (!Number.isFinite(deltaMs) || deltaMs === 0) return s;
+  if (deltaMs === 0) return s;
   const m = move(s, deltaMs);
   return { ...s, current: m.current, residualMs: m.residualMs, direction: m.stopped ? 0 : s.direction };
 }
@@ -80,14 +87,14 @@ const MODE_OF_UPDATE_MODE: Record<NonNullable<NonNullable<ScenarioDoc["animation
 
 function readTime(field: string, text: string): Date {
   const d = parseIsoUtc(text);
-  if (!d) throw new RangeError(`${field} is not an ISO 8601 UTC time ending in Z: ${JSON.stringify(text)}`);
+  if (!d) throw new RangeError(`${field} is not an ISO 8601 time ending in Z or +/-hh:mm: ${JSON.stringify(text)}`);
   return d;
 }
 
 /**
  * ค่าตั้งต้นของ store จาก scenario: ฟิลด์ animation ที่หายใช้ค่าเริ่มต้นของ server
  * (time_step_s 60, update_mode time_step, x_real_time_multiplier 60, cycle loop, start = ต้นช่วงวิเคราะห์)
- * เวลาที่อ่านไม่ได้ throw RangeError
+ * เวลาลงท้าย Z หรือ ±hh:mm (แปลงเป็น UTC); อ่านไม่ได้ throw RangeError
  */
 export function timeFromScenario(doc: TimeSource): TimeState {
   const a: NonNullable<TimeSource["animation"]> = doc.animation ?? {};

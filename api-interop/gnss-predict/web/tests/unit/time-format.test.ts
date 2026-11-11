@@ -114,10 +114,38 @@ describe("parseIsoUtc (API times)", () => {
     expect(parseIsoUtc("2026-11-12T07:00:00.250Z")?.toISOString()).toBe("2026-11-12T07:00:00.250Z");
     expect(parseIsoUtc("2026-11-12T07:00:00.123456Z")?.toISOString()).toBe("2026-11-12T07:00:00.123Z");
   });
-  test("rejects a missing Z, impossible dates and other shapes", () => {
-    for (const s of ["", "2026-11-12T07:00:00", "2026-11-12T07:00:00+07:00", "2026-02-30T00:00:00Z", "2026-11-12T24:00:00Z",
+  test("reads +hh:mm and -hh:mm offsets as the same instant as the Z form", () => {
+    const cases: Array<[string, string]> = [
+      ["2026-11-12T14:00:00+07:00", "2026-11-12T07:00:00.000Z"],
+      ["2026-11-12T00:00:00-05:00", "2026-11-12T05:00:00.000Z"],
+      ["2026-11-12T12:30:00.250+05:30", "2026-11-12T07:00:00.250Z"],
+      ["2026-11-12T07:00:00.123456+00:00", "2026-11-12T07:00:00.123Z"],
+      ["2026-11-12T07:00:00-00:00", "2026-11-12T07:00:00.000Z"],
+      ["2026-01-01T03:00:00+07:00", "2025-12-31T20:00:00.000Z"], // crosses the year to the west
+      ["2025-12-31T22:00:00-05:00", "2026-01-01T03:00:00.000Z"], // crosses the year to the east
+      ["2024-03-01T05:00:00+07:00", "2024-02-29T22:00:00.000Z"], // leap day
+      ["2026-11-12T23:59:59.999-23:59", "2026-11-13T23:58:59.999Z"],
+    ];
+    for (const [text, utc] of cases) expect(parseIsoUtc(text)?.toISOString(), text).toBe(utc);
+  });
+  test("rejects bad parts in offset forms too, and offsets that are not +-hh:mm", () => {
+    for (const s of ["2026-13-01T00:00:00+07:00", "2026-11-32T00:00:00+07:00", "2026-11-12T24:00:00+07:00", "2026-11-12T07:60:00-05:00",
+                     "2026-11-12T07:00:60+07:00", "2026-02-30T00:00:00-05:00", "2026-11-12T07:00:00+24:00", "2026-11-12T07:00:00+07:60",
+                     "2026-11-12T07:00:00+0700", "2026-11-12T07:00:00+07", "2026-11-12T07:00:00 +07:00", "2026-11-12T07:00:00Z+07:00",
+                     "2026-11-12T07:00:00+7:00", "2026-11-12T07:00:00z"])
+      expect(parseIsoUtc(s), s).toBeNull();
+  });
+  test("rejects a missing zone, impossible dates and other shapes", () => {
+    for (const s of ["", "2026-11-12T07:00:00", "2026-02-30T00:00:00Z", "2026-11-12T24:00:00Z",
                      "2026-11-12 07:00:00Z", "12 Nov 2026 07:00:00.000 UTCG", "2026-13-01T00:00:00Z", "2026-00-10T00:00:00Z",
                      "2026-11-00T00:00:00Z", "2026-11-12T07:60:00Z", "2026-11-12T07:00:60Z"])
       expect(parseIsoUtc(s), s).toBeNull();
   });
+});
+
+test("the suite runs in a DST time zone that is not UTC, so a local-time getter would fail it", () => {
+  const jan = new Date("2026-01-15T12:00:00Z").getTimezoneOffset();
+  const jul = new Date("2026-07-15T12:00:00Z").getTimezoneOffset();
+  expect(jan).not.toBe(0);
+  expect(jul).not.toBe(jan);
 });

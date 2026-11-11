@@ -91,6 +91,50 @@ describe("advance", () => {
     expect(s.current.toISOString()).toBe("2026-11-11T23:40:00.000Z"); expect(s.direction).toBe(-1);
   });
 
+  test("cycle loop: a jump of more than a whole period lands on the opposite end", () => {
+    const fwd = advance({ ...S0, direction: 1, cycle: "loop", step_s: 31536000 }, 1); // about 30 years
+    expect(fwd.current.toISOString()).toBe("2026-11-12T00:00:00.000Z"); expect(fwd.direction).toBe(1);
+    const back = advance({ ...S0, direction: -1, cycle: "loop", step_s: 31536000 }, 1);
+    expect(back.current.toISOString()).toBe("2026-11-13T00:00:00.000Z"); expect(back.direction).toBe(-1);
+    // same in real time: 3 days of wall clock in one frame
+    expect(advance({ ...S0, mode: "realtime", direction: 1, cycle: "loop" }, 3 * 86_400).current.toISOString()).toBe("2026-11-12T00:00:00.000Z");
+    expect(advance({ ...S0, mode: "realtime", direction: -1, cycle: "loop" }, 3 * 86_400).current.toISOString()).toBe("2026-11-13T00:00:00.000Z");
+  });
+
+  test("cycle stop: a huge jump clamps to the end it was heading for and pauses", () => {
+    const fwd = advance({ ...S0, direction: 1, cycle: "stop", step_s: 31536000 }, 1);
+    expect(fwd.current.toISOString()).toBe("2026-11-13T00:00:00.000Z"); expect(fwd.direction).toBe(0);
+    const back = advance({ ...S0, direction: -1, cycle: "stop", step_s: 31536000 }, 1);
+    expect(back.current.toISOString()).toBe("2026-11-12T00:00:00.000Z"); expect(back.direction).toBe(0);
+  });
+
+  test("a move that would leave the Date range keeps the previous time and pauses", () => {
+    // cycle off, largest step, normal mode, huge dt: 31536000 * 30 * 1e5 s is far beyond 8.64e15 ms
+    const fwd = advance({ ...S0, direction: 1, cycle: "off", step_s: 31536000 }, 1e5);
+    expect(fwd.current).toBe(S0.current); expect(fwd.direction).toBe(0);
+    const back = advance({ ...S0, direction: -1, cycle: "off", step_s: 31536000 }, 1e5);
+    expect(back.current).toBe(S0.current); expect(back.direction).toBe(0);
+    // an infinite dt is out of range too
+    const inf = advance({ ...S0, direction: 1, cycle: "off" }, Infinity);
+    expect(inf.current).toBe(S0.current); expect(inf.direction).toBe(0);
+    // a large but representable jump still plays (30 years)
+    const ok = advance({ ...S0, direction: 1, cycle: "off", step_s: 31536000 }, 1);
+    expect(ok.current.getUTCFullYear()).toBe(2056); expect(ok.direction).toBe(1);
+  });
+
+  test("the Date limits themselves: reaching +-8.64e15 ms is allowed, passing it is not", () => {
+    const MAX = 8.64e15;
+    const nearMax = { ...S0, mode: "realtime" as const, direction: 1 as const, cycle: "off" as const, current: new Date(MAX - 1000) };
+    expect(+advance(nearMax, 1).current).toBe(MAX);
+    expect(advance(nearMax, 1).direction).toBe(1);
+    const over = advance(nearMax, 2);
+    expect(+over.current).toBe(MAX - 1000); expect(over.direction).toBe(0);
+    const nearMin = { ...nearMax, direction: -1 as const, current: new Date(-MAX + 1000) };
+    expect(+advance(nearMin, 1).current).toBe(-MAX);
+    const under = advance(nearMin, 2);
+    expect(+under.current).toBe(-MAX + 1000); expect(under.direction).toBe(0);
+  });
+
   test("sub-millisecond steps accumulate instead of vanishing (0.0001 s step, 60 frames of 1/60 s = 3 ms)", () => {
     let s: TimeState = { ...S0, direction: 1, step_s: 0.0001 };
     for (let i = 0; i < 60; i++) s = advance(s, 1 / 60);
@@ -156,6 +200,26 @@ describe("timeFromScenario", () => {
     expect(s.animStart.toISOString()).toBe("2026-11-12T01:00:00.000Z");
   });
 
+  test("analysis_period and animation.start given with a +hh:mm offset are converted to UTC", () => {
+    const s = timeFromScenario({
+      analysis_period: { start: "2026-11-12T07:00:00+07:00", stop: "2026-11-13T07:00:00.500+07:00" },
+      animation: { start: "2026-11-12T13:00:00+07:00" },
+    });
+    expect(s.periodStart.toISOString()).toBe("2026-11-12T00:00:00.000Z");
+    expect(s.periodStop.toISOString()).toBe("2026-11-13T00:00:00.500Z");
+    expect(s.animStart.toISOString()).toBe("2026-11-12T06:00:00.000Z");
+    expect(s.current.toISOString()).toBe("2026-11-12T06:00:00.000Z");
+    const west = timeFromScenario({ analysis_period: { start: "2026-11-11T19:00:00-05:00", stop: "2026-11-12T19:00:00-05:00" } });
+    expect(west.periodStart.toISOString()).toBe("2026-11-12T00:00:00.000Z");
+    expect(west.animStart.toISOString()).toBe("2026-11-12T00:00:00.000Z");
+  });
+
+  test("an offset form with a bad part still throws", () => {
+    expect(() => timeFromScenario({ analysis_period: { start: "2026-13-12T07:00:00+07:00", stop: AP.stop } })).toThrow(RangeError);
+    expect(() => timeFromScenario({ analysis_period: { start: AP.start, stop: "2026-11-13T24:00:00+07:00" } })).toThrow(RangeError);
+    expect(() => timeFromScenario({ analysis_period: AP, animation: { start: "2026-11-12T07:00:00+25:00" } })).toThrow(RangeError);
+  });
+
   test("a time that is not ISO UTC throws instead of producing an Invalid Date", () => {
     expect(() => timeFromScenario({ analysis_period: { start: "tomorrow", stop: AP.stop } })).toThrow(RangeError);
     expect(() => timeFromScenario({ analysis_period: { start: AP.start, stop: "2026-11-13T00:00:00" } })).toThrow(RangeError);
@@ -214,6 +278,22 @@ describe("useTime", () => {
     useTime.setState({ current: nearStart, cycle: "off" });
     useTime.getState().stepBackward();
     expect(useTime.getState().current.toISOString()).toBe("2026-11-11T23:59:30.000Z");
+  });
+
+  test("buttons: a step that would leave the Date range keeps the time and stays paused", () => {
+    useTime.setState({ cycle: "off", step_s: 1e13, direction: 1 });
+    useTime.getState().stepForward();
+    expect(useTime.getState().current).toBe(S0.current); expect(useTime.getState().direction).toBe(0);
+    useTime.setState({ direction: -1 });
+    useTime.getState().stepBackward();
+    expect(useTime.getState().current).toBe(S0.current); expect(useTime.getState().direction).toBe(0);
+  });
+
+  test("tick with a move beyond the Date range pauses instead of storing an Invalid Date", () => {
+    useTime.setState({ cycle: "off", step_s: 31536000, direction: 1 });
+    useTime.getState().tick(1e5);
+    expect(useTime.getState().current).toBe(S0.current); expect(useTime.getState().direction).toBe(0);
+    expect(Number.isFinite(+useTime.getState().current)).toBe(true);
   });
 
   test("buttons: start and reverse set the direction, pause keeps the current time", () => {
