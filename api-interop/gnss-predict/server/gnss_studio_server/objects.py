@@ -359,9 +359,12 @@ def delete(doc: dict, cls: str, name: str) -> None:
 
 def set_group(doc: dict, name: Any, members: Any) -> str:
     """สร้างกลุ่ม `name` หรือตั้งสมาชิกของกลุ่มที่มีอยู่ (ชื่อไม่สนตัวพิมพ์เล็กใหญ่) ให้เป็น `members` ตรงตัว คืนชื่อกลุ่มที่เก็บ
-    สมาชิกต้องเป็นดาวที่มีอยู่ ดาวที่ย้ายเข้ากลุ่มนี้ออกจากกลุ่มอื่น (ดาวอยู่ได้กลุ่มเดียว)"""
+    สมาชิกต้องเป็นดาวที่มีอยู่ ดาวที่ย้ายเข้ากลุ่มนี้ออกจากกลุ่มอื่น (ดาวอยู่ได้กลุ่มเดียว) members เป็น None (ไม่ได้ส่ง) -> 422
+    ไม่ตีความเป็นกลุ่มว่าง: ลืมส่งแล้วสมาชิกของกลุ่มเดิมหายหมดไม่ได้"""
     if not isinstance(name, str) or not name.strip():
         raise _invalid("ชื่อกลุ่มต้องไม่ว่าง", "name")
+    if members is None:
+        raise _invalid("ต้องระบุ members เป็นรายการดาวของกลุ่ม (ส่ง [] ถ้าต้องการกลุ่มว่าง)", "members")
     members = list(dict.fromkeys(_require_existing(doc, members, "members", satellites_only=True)))
     groups = doc.setdefault("groups", [])
     target = next((g for g in groups if g["name"].casefold() == name.casefold()), None)

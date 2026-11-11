@@ -157,6 +157,14 @@ _RECORD_TYPES = {
 }
 
 
+def _written_scenario(rec: JobRecord) -> str | None:
+    """scenario ที่ job นี้อ่านหรือเขียน: ช่อง scenario หรือของ job daily คือ `daily_<YYYYMMDD>` (ชื่อเดียวกับ daily.scenario_name)"""
+    if rec.scenario is not None:
+        return rec.scenario
+    for_date = rec.params.get("for_date") if rec.kind == "daily" else None
+    return f"daily_{for_date.replace('-', '')}" if isinstance(for_date, str) else None
+
+
 def _event(rec: JobRecord) -> dict:
     data = {"id": rec.id, "kind": rec.kind, "scenario": rec.scenario, "state": rec.state,
             "progress": copy.deepcopy(rec.progress)}
@@ -336,11 +344,11 @@ class JobManager:
         return recs[::-1]
 
     def active_for(self, scenario: str) -> bool:
-        """มี job ของ scenario นี้ที่ยังรอหรือกำลังรัน (ชื่อไม่แยกตัวพิมพ์เหมือน store)"""
+        """มี job ของ scenario นี้ที่ยังรอหรือกำลังรัน (ชื่อไม่แยกตัวพิมพ์เหมือน store) job daily ไม่มีช่อง scenario
+        แต่สร้างและเขียน `daily_<YYYYMMDD ของ for_date>` จึงนับเป็น job ของ scenario นั้น"""
         key = scenario.casefold()
         with self._cond:
-            return any(r.state in ACTIVE and r.scenario is not None and r.scenario.casefold() == key
-                       for r in self._jobs.values())
+            return any(r.state in ACTIVE and (_written_scenario(r) or "").casefold() == key for r in self._jobs.values())
 
     def wait(self, job_id: str, timeout: float | None = None) -> JobRecord:
         """รอจน job จบหรือหมดเวลา แล้วคืนสำเนา"""
@@ -400,10 +408,12 @@ class JobManager:
             if job_id not in self._jobs and not (self.jobs_dir / f"{job_id}.json").exists():
                 return job_id
 
-    def submit(self, kind: str, scenario: str | None, params: dict, origin: str = "user") -> JobRecord:
+    def submit(self, kind: str, scenario: str | None, params: dict, origin: str = "user", *,
+               reuse_active: bool = True) -> JobRecord:
         """เพิ่ม job เข้าคิว ค่าผิด -> ApiError 422 SCENARIO_INVALID (field ชี้ค่าที่ผิด) ไม่มี scenario -> 404
 
-        job ที่ kind, scenario และ params เหมือน job ที่ยังรอหรือกำลังรัน คืนตัวเดิม (ไม่สนใจ origin)"""
+        job ที่ kind, scenario และ params เหมือน job ที่ยังรอหรือกำลังรัน คืนตัวเดิม (ไม่สนใจ origin)
+        หรือ ApiError 409 JOB_RUNNING (detail = id ของตัวเดิม) ถ้า reuse_active เป็น False (ตรวจใต้ล็อกเดียวกับการเพิ่ม)"""
         if kind not in KINDS:
             raise _invalid("kind", f"ชนิด job ต้องเป็นหนึ่งใน {', '.join(KINDS)}")
         if origin not in ORIGINS:
@@ -415,6 +425,9 @@ class JobManager:
         with self._cond:
             for rec in self._jobs.values():
                 if rec.state in ACTIVE and (rec.kind, rec.scenario, rec.params) == (kind, scenario, params):
+                    if not reuse_active:
+                        raise ApiError(409, "JOB_RUNNING", f"มี job {kind} แบบเดียวกันที่รออยู่หรือกำลังทำงาน ({rec.id}) "
+                                                           "รอให้จบหรือยกเลิกก่อนจึงสั่งใหม่ได้", detail=rec.id)
                     return copy.deepcopy(rec)
             now = self.clock()
             rec = JobRecord(id=self._new_id(now), kind=kind, scenario=scenario, params=params,

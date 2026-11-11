@@ -6,13 +6,17 @@
   ไม่ใช่ object, มี NaN/Infinity ซึ่งส่งเป็น JSON ไม่ได้, UTF-8 เสีย) ข้ามพร้อม log ไม่มีไฟล์ = `[]`
 - `GET /validation/{sc}/{day}`: เนื้อ `validation_<day>.json` หาตามลำดับ (1) ephem bundle ที่ current ของ scenario (2)
   `data/validation/<sc>/` ซึ่งเป็นที่ที่การเก็บรักษา (Task 11) ย้ายไปไว้ก่อนลบ `ephem/` (ใช้ได้แม้ scenario ถูกลบไปแล้ว)
-  ไม่มีทั้งสองที่ ไฟล์เสีย หรือไม่ใช่ JSON object -> 404 NOT_FOUND (ไฟล์เสียมี log) bundle ที่ stale ไม่นับเป็น current
+  (3) `ephem/<hash>/` อื่นใดก็ได้ของ scenario ใหม่สุดตาม mtime ของไฟล์ก่อน ข้าม bundle และไฟล์ที่เป็น symlink
+  (ตรงกับที่ตัวตั้งเวลานับว่าวันนั้นตรวจแล้ว: ผลตรวจของ bundle ที่ไม่ current แล้วก็เป็นหลักฐานของพยากรณ์ที่ส่งออกไปแล้ว)
+  ไม่มีที่ใดเลย ไฟล์เสีย หรือไม่ใช่ JSON object -> 404 NOT_FOUND (ไฟล์เสียมี log แล้วลองที่ถัดไป)
   ทุกไฟล์ต้องอยู่ใต้ `data/` หลังตาม symlink ไม่งั้นถือว่าไม่มี
 """
 
 import json
 import logging
 import math
+import os
+import stat
 from pathlib import Path
 
 from fastapi import APIRouter, Depends
@@ -140,6 +144,28 @@ def _current_bundle(directory: Path, sc: str, plans: PlanCache) -> Path | None:
     return directory / EPHEM_DIR / entry["hash"] if entry["status"] == "current" else None
 
 
+def _bundle_files(directory: Path, name: str) -> list[Path]:
+    """ไฟล์ `name` ที่เป็นไฟล์จริงใน `ephem/<hash>/` ที่เป็นโฟลเดอร์จริง ใหม่สุดตาม mtime ก่อน (ไม่ตาม symlink ทั้งโฟลเดอร์และไฟล์)"""
+    ephem = directory / EPHEM_DIR
+    found: list[tuple[int, str, Path]] = []
+    try:
+        if ephem.is_symlink() or not ephem.is_dir():
+            return []
+        with os.scandir(ephem) as entries:
+            bundles = [Path(e.path) for e in entries if e.is_dir(follow_symlinks=False)]
+    except OSError:
+        return []
+    for bundle in bundles:
+        path = bundle / name
+        try:
+            st = path.lstat()
+        except OSError:
+            continue
+        if stat.S_ISREG(st.st_mode):
+            found.append((st.st_mtime_ns, bundle.name, path))
+    return [path for _, _, path in sorted(found, reverse=True)]
+
+
 @router.get("/validation/{sc}/{day}")
 def get_day(sc: str, day: str, store: ScenarioStore = Depends(get_store), plans: PlanCache = Depends(get_plans),
             config: Config = Depends(get_config), logger: logging.Logger = Depends(get_logger)) -> dict:
@@ -147,7 +173,9 @@ def get_day(sc: str, day: str, store: ScenarioStore = Depends(get_store), plans:
     check_day(day, "day")
     name = f"validation_{day}.json"
     bundle = _current_bundle(directory, sc, plans)
-    for path in ([bundle / name] if bundle is not None else []) + [config.data_dir / VALIDATION_DIR / sc / name]:
+    first = ([bundle / name] if bundle is not None else []) + [config.data_dir / VALIDATION_DIR / sc / name]
+    rest = [path for path in _bundle_files(directory, name) if bundle is None or path.parent != bundle]
+    for path in first + rest:
         found = _read_object(config.data_dir, path, logger)
         if found is not None:
             return found

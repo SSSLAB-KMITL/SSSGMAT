@@ -21,6 +21,13 @@ from gnss_studio_server.config import Config            # noqa: E402
 
 SNAPSHOT_SRC = ENGINE_ROOT / "tests" / "fixtures" / "studio" / "snapshot"
 SNAPSHOT_ID = "20261110T0000Z"
+# server รับเฉพาะ Host ของตัวเอง (guard.py): ชื่อตั้งต้นของ TestClient ("testserver") ถูกปฏิเสธ 400 จึงใช้ 127.0.0.1
+API_BASE_URL = "http://127.0.0.1"
+
+
+def make_client(app, **kw) -> TestClient:
+    """TestClient ที่ส่ง Host เป็น 127.0.0.1 (ทุก test ที่สร้าง client เองต้องใช้ตัวนี้)"""
+    return TestClient(app, base_url=API_BASE_URL, **kw)
 
 
 @pytest.fixture
@@ -40,7 +47,7 @@ def no_web_dist(tmp_path):
 
 @pytest.fixture
 def client(data_dir, no_web_dist):
-    return TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False))
+    return make_client(create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False))
 
 
 @pytest.fixture
@@ -138,7 +145,7 @@ def boom_client_factory(no_web_dist):
         def boom():
             raise RuntimeError("boom")
 
-        return TestClient(app, raise_server_exceptions=False)
+        return make_client(app, raise_server_exceptions=False)
     return make
 
 
@@ -154,7 +161,7 @@ def client_with_web_dist(tmp_path, data_dir):
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text('<!doctype html><html><body><div id="root"></div></body></html>')
     (dist / "assets" / "app.js").write_text("console.log('studio');")
-    return TestClient(create_app(Config(data_dir=data_dir, web_dist=dist), start_background=False))
+    return make_client(create_app(Config(data_dir=data_dir, web_dist=dist), start_background=False))
 
 
 @pytest.fixture
@@ -165,6 +172,6 @@ def client_inline(data_dir, no_web_dist):
     app.state.jobs = JobManager(data_dir, app.state.bus, runner=InlineRunner(), logger=app.state.logger)
     app.state.jobs.start()
     try:
-        yield TestClient(app)
+        yield make_client(app)
     finally:
         app.state.jobs.stop()

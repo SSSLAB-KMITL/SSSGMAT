@@ -3,12 +3,15 @@
 `run_daily(data_dir, for_date, settings, now, progress)` ทำตามลำดับ ขั้นใดล้มเหลว raise `GnssPredictError` ของขั้นนั้น
 (รหัสของ engine ตรงตัว ApiError ของแม่แบบหรือ store แปลงเป็น `DailyStepError` ที่คงรหัสเดิม) ขั้นหลังจากนั้นไม่ทำ:
 
+0. ชื่อ `daily_<YYYYMMDD>` ต้องว่างหรือเป็น scenario ของงานประจำวัน (มีช่อง `daily`) ถ้าเป็นของผู้ใช้ (ไม่มีช่อง `daily`
+   หรือชื่อต่างแค่ตัวพิมพ์) ล้มเหลวทันทีด้วย `SCENARIO_INVALID` / `NAME_EXISTS` ก่อนดึงข้อมูลใด ๆ และไม่แตะ scenario นั้น
 1. `studio.fetch_snapshot` (กติกาการดาวน์โหลดของ CelesTrak อยู่ใน engine)
 2. สร้างหรือเขียนทับ scenario `daily_<YYYYMMDD>` จากแม่แบบ `thbk-gnss` ช่วง D 00:00Z ถึง D+1 00:00Z ด้วย snapshot ที่เพิ่งดึง
-   และช่อง `daily = {"for_date", "created_utc"}` (เขียนจากฝั่ง server: ไม่ตรวจ ETag)
+   และช่อง `daily = {"for_date", "created_utc"}` (ตรวจข้อ 0 ซ้ำ แล้วเขียนทับด้วย ETag ที่อ่านตอนตรวจ: ถูกแก้ระหว่างนั้น = ETAG_MISMATCH)
 3. `studio.run_propagate` แล้ว 4. `studio.run_analyze` ของ Facility ตามค่าตั้ง `daily.facility`
+   สำเร็จแล้วตั้ง `computed: true` ให้ access ที่ออกจาก Facility นั้นใน scenario (ผล analyze มีแล้ว) บันทึกไม่ได้เป็นแค่ข้อความ warning
 5. คัดลอก `legacy_gps.csv` ของผล analyze ไปที่ `data/daily/thbk_gnss_pred_<YYYYMMDD>_24h.csv` และ `data/daily/latest.csv`
-   (เขียนแบบ atomic ทีละไฟล์ ไฟล์ตามวันก่อน)
+   (เขียนแบบ atomic ทีละไฟล์ ไฟล์ตามวันก่อน ทับไฟล์เดิมของวันนั้นถ้ามี)
 
 progress: ขั้นของ engine ถูกเติมชื่อขั้นนำหน้า (`fetch.omm`, `propagate.gmat`, `analyze.propagate.gmat`, ...) fraction ของทั้งงาน
 ขั้นที่ GMAT ทำงานจึงลงท้าย `.gmat` เสมอ (worker ใช้รู้ว่า pgid ของ GMAT ยังใช้ได้) จบด้วย `("done", 1.0)`
@@ -38,6 +41,8 @@ STAGES = {"fetch": (0.0, 0.2), "scenario": (0.2, 0.25), "propagate": (0.25, 0.75
           "publish": (0.95, 1.0)}
 
 Progress = Callable[[str, float], None]
+USER_SCENARIO_TEXT = ("ชื่อ {name} ถูกใช้โดย scenario ของผู้ใช้ (ไม่มีช่อง daily) งานประจำวันจะไม่เขียนทับ "
+                      "เปลี่ยนชื่อหรือลบ scenario นั้นก่อน แล้วสั่งงานประจำวันของวันนั้นใหม่")
 
 
 class DailyStepError(GnssPredictError):
@@ -67,26 +72,60 @@ def _stage(report: Progress, stage: str) -> Progress:
     return lambda inner, fraction: report(f"{stage}.{inner}", lo + (hi - lo) * fraction)
 
 
-def _write_scenario(data_dir: Path, name: str, for_date: date, snapshot: str, now: datetime) -> None:
-    """สร้าง scenario ของวันนั้น หรือเขียนทับทั้งก้อนถ้ามีอยู่แล้ว ApiError -> DailyStepError รหัสเดิม"""
-    start = datetime.combine(for_date, time(0), tzinfo=timezone.utc)
+def _daily_etag(store: ScenarioStore, name: str) -> str | None:
+    """ETag ของ scenario งานประจำวันชื่อ name ที่มีอยู่ หรือ None ถ้ายังไม่มีชื่อนี้ (กติกาข้อ 0 ที่หัวไฟล์)
+    ชื่อถูกใช้โดย scenario ของผู้ใช้ -> ApiError (ไม่แตะไฟล์)"""
     try:
-        doc = new_scenario(name, start, start + timedelta(days=1), TEMPLATE, snapshot, data_dir)
-        doc["daily"] = {"for_date": for_date.isoformat(), "created_utc": iso_utc(now)}
-        store = ScenarioStore(data_dir)
-        try:
-            store.create(name, doc)
-        except ApiError as exists:
-            if exists.code != "NAME_EXISTS":
-                raise
-            try:
-                store.write(name, doc, if_match=None)
-            except ApiError as missing:
-                if missing.code == "NOT_FOUND":       # ชื่อซ้ำแค่ต่างตัวพิมพ์ (scenario ของผู้ใช้): ไม่แตะ บอกว่าชื่อชน
-                    raise exists from None
-                raise
+        store.ensure_free(name)
+        return None
+    except ApiError as taken:
+        if taken.code != "NAME_EXISTS" or taken.detail != name:      # ชื่อต่างแค่ตัวพิมพ์: ของผู้ใช้แน่นอน
+            raise
+    doc, tag = store.read(name)
+    if not isinstance(doc.get("daily"), dict):
+        raise ApiError(422, "SCENARIO_INVALID", USER_SCENARIO_TEXT.format(name=name), "name", name)
+    return tag
+
+
+def _check_name(data_dir: Path, name: str) -> None:
+    try:
+        _daily_etag(ScenarioStore(data_dir), name)
     except ApiError as exc:
         raise DailyStepError(exc.code, exc.text) from exc
+
+
+def _write_scenario(data_dir: Path, name: str, for_date: date, snapshot: str, now: datetime) -> None:
+    """สร้าง scenario ของวันนั้น หรือเขียนทับทั้งก้อนถ้าเป็น scenario ของงานประจำวันอยู่แล้ว ApiError -> DailyStepError รหัสเดิม"""
+    start = datetime.combine(for_date, time(0), tzinfo=timezone.utc)
+    store = ScenarioStore(data_dir)
+    try:
+        tag = _daily_etag(store, name)
+        doc = new_scenario(name, start, start + timedelta(days=1), TEMPLATE, snapshot, data_dir)
+        doc["daily"] = {"for_date": for_date.isoformat(), "created_utc": iso_utc(now)}
+        if tag is None:
+            store.create(name, doc)
+        else:
+            store.write(name, doc, if_match=tag)
+    except ApiError as exc:
+        raise DailyStepError(exc.code, exc.text) from exc
+
+
+def _mark_computed(data_dir: Path, name: str, facility: str) -> list[Message]:
+    """ตั้ง `computed: true` ให้ access ที่ออกจาก Facility ใน scenario (หลัง analyze สำเร็จ) ไม่สำเร็จ -> ข้อความ warning หนึ่งข้อ
+    (ผลพยากรณ์ถูกต้องแล้ว ไม่ทำให้งานล้มเหลวเพราะสถานะที่หน้าจอแสดง)"""
+    source = f"*/Facility/{facility}"
+    store = ScenarioStore(data_dir)
+    try:
+        doc, tag = store.read(name)
+        entries = [e for e in doc.get("accesses", []) if isinstance(e, dict) and e.get("from") == source]
+        if any(e.get("computed") is not True for e in entries):
+            for entry in entries:
+                entry["computed"] = True
+            store.write(name, doc, if_match=tag)
+    except ApiError as exc:
+        return [Message(exc.code, "warning", f"บันทึกว่า access ของ {facility} คำนวณแล้วใน scenario {name} ไม่ได้: {exc.text}",
+                        f"{SCENARIOS_DIR}/{name}")]
+    return []
 
 
 def run_daily(data_dir: Path, for_date: date, settings: Settings, now: datetime, progress: Progress | None = None, *,
@@ -101,6 +140,7 @@ def run_daily(data_dir: Path, for_date: date, settings: Settings, now: datetime,
     name = scenario_name(for_date)
     scenario_dir = data_dir / SCENARIOS_DIR / name
 
+    _check_name(data_dir, name)                      # ชื่อเป็นของผู้ใช้: ล้มเหลวก่อนดาวน์โหลด
     snapshot_dir, messages = studio.fetch_snapshot(data_dir, now, systems=SYSTEMS, progress=_stage(report, "fetch"))
     messages = list(messages)
     report("scenario", STAGES["scenario"][0])
@@ -111,6 +151,7 @@ def run_daily(data_dir: Path, for_date: date, settings: Settings, now: datetime,
     access_dir, analyze_messages = studio.run_analyze(scenario_dir, settings.daily.facility, data_dir, console=console,
                                                       progress=_stage(report, "analyze"), on_gmat_start=on_gmat_start)
     messages += analyze_messages
+    messages += _mark_computed(data_dir, name, settings.daily.facility)
 
     report("publish", STAGES["publish"][0])
     data = (Path(access_dir) / LEGACY_CSV).read_bytes()

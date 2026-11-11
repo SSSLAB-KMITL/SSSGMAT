@@ -1,7 +1,9 @@
 """คิว job กับ process ลูกจริง (multiprocessing แบบ spawn) และ GMAT ปลอม (สคริปต์ shell)
 
 GMAT ปลอมตอบ `--version` ทันที (engine เรียก gmat_version ก่อนรันจริง) ส่วนการรันจริงเป็น `sleep 30`
-ทุกการรอมีขอบเวลา ทั้งไฟล์ควรใช้เวลาไม่เกินราว 20 วินาที
+ทุกการรอมีขอบเวลา: การรอที่ขึ้นกับการเริ่ม process ลูก (job ถึง running, ขั้น gmat, pgid, จบ) ได้ SPAWN_TIMEOUT 20 วินาที
+เพราะ spawn บนเครื่องที่ช้าหรือมีงานอื่นพร้อมกันช้าได้หลายวินาที ส่วนขอบเวลาตาม spec คงเดิม (CANCEL_BOUND_S, GMAT_DEAD_BOUND_S,
+STOP_BOUND_S) ปกติทั้งไฟล์ใช้เวลาไม่กี่วินาที
 """
 
 import json
@@ -18,7 +20,10 @@ from gnss_studio_server import jobs as jobs_module
 from gnss_studio_server.events import EventBus
 from gnss_studio_server.jobs import JobManager, ProcessRunner
 
-TIMEOUT = 10.0
+SPAWN_TIMEOUT = 20.0                     # รอ process ลูกเริ่ม/ทำงาน/จบ: ไม่ใช่ขอบเวลาตาม spec
+CANCEL_BOUND_S = 2                       # spec §1 ข้อ 3: ยกเลิกเสร็จและ GMAT หายภายใน 2 วินาที
+GMAT_DEAD_BOUND_S = 2
+STOP_BOUND_S = 5                         # ปิด server ไม่ค้าง
 FINISHED = ("succeeded", "failed", "cancelled")
 VERSION_FAST = 'case "$1" in --version) echo "Build Date: fake"; exit 0;; esac\n'
 
@@ -42,7 +47,7 @@ def process_group_alive(pgid: int) -> bool:
     return True
 
 
-def wait_until(pred, timeout: float = TIMEOUT, what: str = "เงื่อนไข"):
+def wait_until(pred, timeout: float, what: str = "เงื่อนไข"):
     deadline = time.monotonic() + timeout
     while not pred():
         assert time.monotonic() < deadline, f"รอ {what} เกิน {timeout} วินาที"
@@ -50,16 +55,16 @@ def wait_until(pred, timeout: float = TIMEOUT, what: str = "เงื่อน�
 
 
 def wait_state(mgr, job_id, *states):
-    wait_until(lambda: mgr.get(job_id).state in states, what=f"{job_id} เป็น {states}")
+    wait_until(lambda: mgr.get(job_id).state in states, SPAWN_TIMEOUT, what=f"{job_id} เป็น {states}")
     return mgr.get(job_id)
 
 
 def wait_progress_stage(mgr, job_id, stage):
-    wait_until(lambda: (mgr.get(job_id).progress or {}).get("stage") == stage, what=f"ขั้น {stage}")
+    wait_until(lambda: (mgr.get(job_id).progress or {}).get("stage") == stage, SPAWN_TIMEOUT, what=f"ขั้น {stage}")
 
 
 def wait_gmat_pgid(mgr, job_id) -> int:
-    wait_until(lambda: mgr.get(job_id).gmat_pgid is not None, what="pgid ของ GMAT")
+    wait_until(lambda: mgr.get(job_id).gmat_pgid is not None, SPAWN_TIMEOUT, what="pgid ของ GMAT")
     return mgr.get(job_id).gmat_pgid
 
 
@@ -95,10 +100,10 @@ def test_cancel_kills_gmat_within_2s(mgr_process, s1):
     assert process_group_alive(pgid)
     t0 = time.monotonic()                                                # นับจากตอนสั่งยกเลิก
     got = mgr.cancel(j.id)
-    assert time.monotonic() - t0 < 2, "cancel ไม่เสร็จภายใน 2 วินาที"
+    assert time.monotonic() - t0 < CANCEL_BOUND_S, "cancel ไม่เสร็จภายใน 2 วินาที"
     assert got.state == "cancelled"
     while process_group_alive(pgid):
-        assert time.monotonic() - t0 < 2, "GMAT ยังไม่ตายภายใน 2 วินาทีหลังสั่งยกเลิก"
+        assert time.monotonic() - t0 < GMAT_DEAD_BOUND_S, "GMAT ยังไม่ตายภายใน 2 วินาทีหลังสั่งยกเลิก"
         time.sleep(0.05)
     assert mgr.get(j.id).state == "cancelled"
     assert mgr.get(j.id).gmat_pgid is None and mgr.get(j.id).error is None
@@ -118,7 +123,7 @@ def test_cancelled_running_job_leaves_no_child_process(mgr_process, s1):
     assert multiprocessing.active_children() == []
     with pytest.raises(ProcessLookupError):
         os.kill(child.pid, 0)                                            # ถูกเก็บกวาดแล้ว ไม่เหลือ zombie
-    wait_until(lambda: not process_group_alive(pgid), timeout=2, what="GMAT ตาย")
+    wait_until(lambda: not process_group_alive(pgid), GMAT_DEAD_BOUND_S, what="GMAT ตาย")
 
 
 def test_daily_job_in_child_tracks_gmat_and_cancels(data_dir, fake_gmat_sleep):
@@ -132,7 +137,7 @@ def test_daily_job_in_child_tracks_gmat_and_cancels(data_dir, fake_gmat_sleep):
         doc = json.loads((data_dir / "scenarios" / "daily_20261112" / "scenario.json").read_text())
         assert doc["daily"]["for_date"] == "2026-11-12"
         assert mgr.cancel(j.id).state == "cancelled"
-        wait_until(lambda: not process_group_alive(pgid), timeout=2, what="GMAT ตาย")
+        wait_until(lambda: not process_group_alive(pgid), GMAT_DEAD_BOUND_S, what="GMAT ตาย")
         assert not (data_dir / "daily").exists()
     finally:
         mgr.stop()
@@ -184,8 +189,18 @@ def test_stop_kills_running_job_and_marks_it_interrupted(data_dir, s1, fake_gmat
     pgid = wait_gmat_pgid(mgr, j.id)
     t0 = time.monotonic()
     mgr.stop()
-    assert time.monotonic() - t0 < 5
-    wait_until(lambda: not process_group_alive(pgid), timeout=2, what="GMAT ตาย")
+    assert time.monotonic() - t0 < STOP_BOUND_S
+    wait_until(lambda: not process_group_alive(pgid), GMAT_DEAD_BOUND_S, what="GMAT ตาย")
     got = mgr.get(j.id)
     assert got.state == "failed" and got.error["code"] == "INTERRUPTED" and got.gmat_pgid is None
     assert multiprocessing.active_children() == [] and no_job_thread()
+
+
+def test_wait_bounds_separate_spawn_slack_from_spec_bounds():
+    """การรอที่ขึ้นกับการเริ่ม process แบบ spawn (เครื่องที่ช้าหรือรัน test พร้อมกันอาจใช้หลายวินาที) ได้ 20 วินาที
+    ส่วนขอบเวลาตาม spec ห้ามหลวม: ยกเลิกเสร็จใน 2 วินาที, GMAT ตายใน 2 วินาที, stop() ใน 5 วินาที"""
+    assert SPAWN_TIMEOUT == 20.0
+    assert (CANCEL_BOUND_S, GMAT_DEAD_BOUND_S, STOP_BOUND_S) == (2, 2, 5)
+    import inspect
+    for helper in (wait_state, wait_progress_stage, wait_gmat_pgid):
+        assert "SPAWN_TIMEOUT" in inspect.getsource(helper), helper.__name__

@@ -15,8 +15,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
+from conftest import SNAPSHOT_ID, make_client
 from gnss_predict import studio
 from gnss_predict.errors import GmatRunError, Message
 
@@ -780,12 +780,34 @@ def test_stop_marks_queued_jobs_interrupted(data_dir, bus, s1, monkeypatch):
     assert not any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())
 
 
+def test_submit_without_reuse_conflicts_with_an_active_duplicate(mgr_idle):
+    a = mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}, origin="scheduler")
+    with pytest.raises(ApiError) as e:
+        mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}, reuse_active=False)
+    assert (e.value.status, e.value.code, e.value.detail) == (409, "JOB_RUNNING", a.id) and e.value.text
+    assert mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}).id == a.id                 # ตั้งต้นยังคืนตัวเดิม
+    assert len(mgr_idle.list()) == 1
+    mgr_idle.cancel(a.id)
+    b = mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}, reuse_active=False)
+    assert b.id != a.id and b.state == "queued"
+
+
 def test_active_for(mgr_idle, s1):
     assert not mgr_idle.active_for("S1")
     j = mgr_idle.submit("propagate", "S1", {})
     assert mgr_idle.active_for("S1") and not mgr_idle.active_for("S2")
     mgr_idle.cancel(j.id)
     assert not mgr_idle.active_for("S1")
+
+
+def test_active_for_counts_a_daily_job_for_its_scenario(mgr_idle):
+    """job daily ไม่มีช่อง scenario แต่เขียน daily_<YYYYMMDD ของ for_date>: นับว่าเป็น job ของ scenario นั้น"""
+    assert not mgr_idle.active_for("daily_20261112")
+    j = mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}, origin="scheduler")
+    assert mgr_idle.active_for("daily_20261112") and mgr_idle.active_for("DAILY_20261112")
+    assert not mgr_idle.active_for("daily_20261113") and not mgr_idle.active_for("S1")
+    mgr_idle.cancel(j.id)
+    assert not mgr_idle.active_for("daily_20261112")
 
 
 # ---------- route ----------
@@ -815,6 +837,44 @@ def test_delete_scenario_with_queued_job_409(client, s1):
     assert client.delete("/api/scenarios/S1").status_code == 204
 
 
+def _daily_scenario(client):
+    r = client.post("/api/scenarios", json={"name": "daily_20261112", "start": "2026-11-12T00:00:00Z",
+                                            "stop": "2026-11-13T00:00:00Z", "template": "empty", "snapshot": SNAPSHOT_ID})
+    assert r.status_code == 201, r.text
+
+
+def test_delete_daily_scenario_with_queued_daily_job_409(client, snapshot):
+    _daily_scenario(client)
+    j = client.app.state.jobs.submit("daily", None, {"for_date": "2026-11-12"}, origin="scheduler")
+    r = client.delete("/api/scenarios/daily_20261112")
+    assert r.status_code == 409 and r.json()["code"] == "JOB_RUNNING"
+    assert client.post(f"/api/jobs/{j.id}/cancel").json()["state"] == "cancelled"
+    assert client.delete("/api/scenarios/daily_20261112").status_code == 204
+
+
+def test_delete_daily_scenario_with_running_daily_job_409(client_inline, snapshot, monkeypatch):
+    from gnss_studio_server import daily as daily_module
+    run = FakeEngine(block=True)
+
+    def fake_run_daily(data_dir, for_date, *args, **kw):                 # ไม่ fetch ไม่ใช้เน็ต: รอ release แล้วคืนผลรูปแบบจริง
+        run(data_dir)
+        return {"path": Path(data_dir) / "daily" / "thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112",
+                "messages": []}
+
+    monkeypatch.setattr(daily_module, "run_daily", fake_run_daily)
+    _daily_scenario(client_inline)
+    jobs = client_inline.app.state.jobs
+    try:
+        j = jobs.submit("daily", None, {"for_date": "2026-11-12"}, origin="scheduler")
+        assert run.entered.wait(TIMEOUT) and jobs.get(j.id).state == "running"
+        r = client_inline.delete("/api/scenarios/daily_20261112")
+        assert r.status_code == 409 and r.json()["code"] == "JOB_RUNNING"
+    finally:
+        run.release.set()
+    wait_done(jobs, j.id)
+    assert client_inline.delete("/api/scenarios/daily_20261112").status_code == 204
+
+
 def test_job_routes(client, s1):
     jobs = client.app.state.jobs
     a = jobs.submit("propagate", "S1", {})
@@ -841,7 +901,7 @@ def test_app_wires_process_runner_with_gmat_bin(data_dir, no_web_dist):
                      start_background=False)
     assert isinstance(app.state.jobs, JobManager)
     assert isinstance(app.state.jobs.runner, ProcessRunner) and app.state.jobs.runner.gmat_bin == "/opt/gmat/GmatConsole"
-    with TestClient(app):
+    with make_client(app):
         assert not any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())   # ไม่เริ่มคิว
 
 
@@ -856,7 +916,7 @@ def test_app_starts_and_stops_jobs_with_lifespan(data_dir, no_web_dist):
     calls = []
     app.state.scheduler.start = lambda: calls.append(("start", job_thread()))
     app.state.scheduler.stop = lambda: calls.append(("stop", job_thread()))
-    with TestClient(app) as c:
+    with make_client(app) as c:
         assert job_thread() and calls == [("start", True)]
         got = c.get("/api/jobs/j-20261110T000000-aaaa").json()
         assert got["state"] == "failed" and got["error"]["code"] == "INTERRUPTED"

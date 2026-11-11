@@ -7,7 +7,8 @@
 - `SettingsIn` / `DailyIn` คือรูปแบบของ body ที่ PUT: ไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422) และ `missing_field` บอกช่องแรกที่
   ไม่ได้ส่ง (PUT ต้องส่งทั้งเอกสาร: ช่องที่หายจะไม่ถูกเติมเป็นค่าตั้งต้น เพราะค่าตั้งต้นของ `daily.enabled` คือเปิด)
 - `load(data_dir)` ไม่มีการดึงข้อมูลจากเน็ตโดยที่ผู้ใช้ไม่ยินยอม:
-  - ไม่มีไฟล์ = ค่าตั้งต้นของ 9.1 (เปิดงานประจำวัน เป็นการตั้งที่ผู้ใช้อนุมัติแล้ว)
+  - ไม่มีไฟล์ = ค่าตั้งต้นของ 9.1 (เปิดงานประจำวัน เป็นการตั้งที่ผู้ใช้อนุมัติแล้ว) symlink ที่ชี้ไปไฟล์ที่ไม่มีไม่นับเป็น "ไม่มีไฟล์"
+    (มีชื่อนี้อยู่แต่อ่านไม่ได้ = fail safe ข้างล่าง)
   - ไฟล์เสียหรือค่าผิด (ไม่ใช่ JSON, ชนิดหรือช่วงผิด ฯลฯ) = ค่าตั้งต้นแต่ `daily.enabled = False` (fail safe) พร้อม log เตือน
     ครั้งเดียวต่อสถานะของไฟล์ (path, mtime_ns, size): ตัวตั้งเวลาเรียก load ทุก 60 วินาที ไม่ควรท่วม log
   - ไฟล์ที่มีอยู่แต่ไม่ได้ระบุ `daily.enabled` เป็น true/false (ไม่มี `daily`, `daily` ว่าง หรือพิมพ์ชื่อช่องผิดเช่น `enable`) นับเป็นไม่ได้ยืนยัน
@@ -19,6 +20,7 @@
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Annotated
@@ -118,8 +120,11 @@ def load(data_dir: Path, logger: logging.Logger | None = None) -> Settings:
         loaded = Settings.model_validate(json.loads(path.read_bytes().decode("utf-8-sig")))
         if "enabled" not in loaded.daily.model_fields_set:      # ไม่มี daily ก็เข้าข้อนี้ (daily มาจากค่าตั้งต้น fields_set ว่าง)
             raise ValueError("daily.enabled: ต้องระบุเป็น true หรือ false อย่างชัดเจน")
-    except FileNotFoundError:
-        return Settings()
+    except FileNotFoundError as exc:
+        if not os.path.lexists(path):
+            return Settings()
+        _warn_once(path, f"symlink ชี้ไปไฟล์ที่ไม่มี ({exc.filename or path})", logger or _logger)   # มีชื่ออยู่แต่อ่านไม่ได้
+        return _fail_safe()
     except (OSError, ValueError, RecursionError) as exc:       # รวม UnicodeDecodeError, JSONDecodeError และ ValidationError
         _warn_once(path, _reason(exc), logger or _logger)
         return _fail_safe()

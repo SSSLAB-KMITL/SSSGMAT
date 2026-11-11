@@ -89,5 +89,5 @@ def set_group(sc: str, request: Request, body: dict[str, Any], if_match: str | N
               store: ScenarioStore = Depends(get_store),
               bus: EventBus = Depends(get_bus)) -> JSONResponse:
     _, tag, stale = _edit(request, store, bus, sc, if_match,
-                          lambda doc: objects.set_group(doc, body.get("name"), body.get("members", [])))
+                          lambda doc: objects.set_group(doc, body.get("name"), body.get("members")))
     return _saved(tag, stale)

@@ -111,11 +111,11 @@ def test_settings_put_saves_and_returns_the_document(client, data_dir):
 
 
 def test_settings_put_survives_a_new_app_on_the_same_data(client, data_dir, no_web_dist):
-    from fastapi.testclient import TestClient
+    from conftest import make_client
     from gnss_studio_server.app import create_app
     from gnss_studio_server.config import Config
     assert client.put("/api/settings", json=CUSTOM).status_code == 200
-    again = TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False))
+    again = make_client(create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False))
     assert again.get("/api/settings").json() == CUSTOM
 
 
@@ -440,6 +440,22 @@ def test_settings_file_is_a_directory_fails_safe_once(client, data_dir):
     assert sum("settings.json" in line for line in server_log(data_dir).splitlines()) == 1
 
 
+def test_settings_dangling_symlink_fails_safe_and_warns_once(client, data_dir, tmp_path):
+    """settings.json ที่เป็น symlink ชี้ไปไฟล์ที่ไม่มี = มีไฟล์แต่อ่านไม่ได้ (ไม่ใช่ "ไม่มีไฟล์" ซึ่งเปิดงานประจำวัน)"""
+    from gnss_studio_server import settings
+    (data_dir / "settings.json").symlink_to(tmp_path / "gone" / "settings.json")
+    for _ in range(3):
+        assert client.get("/api/settings").json() == FAIL_SAFE
+    warnings = [line for line in server_log(data_dir).splitlines() if "settings.json" in line]
+    assert len(warnings) == 1 and " WARNING " in warnings[0]
+    logger, seen = capture_logger()
+    for _ in range(3):                                                                  # ตัวตั้งเวลาอ่านทุก tick: ไม่เตือนซ้ำ
+        assert settings.load(data_dir, logger).daily.enabled is False
+    assert seen == []
+    assert client.put("/api/settings", json=CUSTOM).status_code == 200                 # PUT แทนที่ตัว link ด้วยไฟล์จริง
+    assert client.get("/api/settings").json() == CUSTOM
+
+
 def test_put_after_corrupt_file_replaces_it(client, data_dir):
     (data_dir / "settings.json").write_text("{nope", encoding="utf-8")
     assert client.put("/api/settings", json=CUSTOM).status_code == 200
@@ -598,13 +614,61 @@ def test_day_file_falls_back_to_the_moved_copy(client, s1_computed, data_dir):
     assert client.get(day_url()).json()["where"] == "moved"
 
 
-def test_day_file_in_a_stale_bundle_is_not_current(client, s1_computed, data_dir):
+def test_day_file_in_a_stale_bundle_is_still_served(client, s1_computed, data_dir):
+    """ตัวตั้งเวลานับไฟล์ใน ephem bundle ใดก็ได้ว่าตรวจแล้ว (หลักฐานของพยากรณ์ที่ส่งออกไปแล้ว) route ต้องหาเจอเหมือนกัน
+    ลำดับ: bundle ที่ current, ที่เก็บรักษา, แล้ว bundle อื่น"""
     put_day_file(s1_computed["ephem_dir"], {**DAY_RECORD, "where": "bundle"})
     put_doc(client, lambda doc: doc["analysis_period"].update(stop="2026-11-10T05:00:00Z"))   # hash ของ ephem เปลี่ยน → bundle เดิม stale
     assert client.get(f"/api/scenarios/{SC}/results").json()["ephem"]["status"] == "stale"
-    assert_error(client.get(day_url()), 404, "NOT_FOUND")
+    assert client.get(day_url()).json()["where"] == "bundle"
     put_day_file(moved_dir(data_dir), {**DAY_RECORD, "where": "moved"})
     assert client.get(day_url()).json()["where"] == "moved"
+
+
+def _set_mtime(folder, when):
+    os.utime(folder / f"validation_{DAY}.json", (when, when))
+
+
+def test_day_file_from_any_bundle_newest_first(client, s1_computed, data_dir):
+    ephem = s1_computed["ephem_dir"].parent
+    put_day_file(ephem / "aaaaaaaaaaaa", {**DAY_RECORD, "where": "old"})
+    put_day_file(ephem / "bbbbbbbbbbbb", {**DAY_RECORD, "where": "new"})
+    put_day_file(ephem / "cccccccccccc", {**DAY_RECORD, "where": "middle"})
+    _set_mtime(ephem / "aaaaaaaaaaaa", 1_700_000_000)
+    _set_mtime(ephem / "bbbbbbbbbbbb", 1_800_000_000)
+    _set_mtime(ephem / "cccccccccccc", 1_750_000_000)
+    assert client.get(day_url()).json()["where"] == "new"                                # bundle ที่ current ไม่มีไฟล์ของวันนี้
+    (ephem / "bbbbbbbbbbbb" / f"validation_{DAY}.json").write_bytes(b"{bad")              # ไฟล์เสีย: ข้ามไปตัวถัดไป
+    _set_mtime(ephem / "bbbbbbbbbbbb", 1_800_000_000)
+    assert client.get(day_url()).json()["where"] == "middle"
+    put_day_file(s1_computed["ephem_dir"], {**DAY_RECORD, "where": "current"})
+    assert client.get(day_url()).json()["where"] == "current"
+
+
+def test_day_file_from_any_bundle_matches_the_scheduler(client, s1_computed, data_dir):
+    from gnss_studio_server.scheduler import Scheduler
+    sched = Scheduler(data_dir, client.app.state.jobs)
+    other = s1_computed["ephem_dir"].parent / "0123456789ab"
+    assert not sched._validated(SC, DAY)
+    assert_error(client.get(day_url()), 404, "NOT_FOUND")
+    put_day_file(other, {**DAY_RECORD, "where": "other"})
+    assert sched._validated(SC, DAY)
+    assert client.get(day_url()).json()["where"] == "other"
+
+
+def test_day_file_from_any_bundle_skips_symlinks(client, s1_computed, data_dir, tmp_path):
+    ephem = s1_computed["ephem_dir"].parent
+    elsewhere = data_dir / "elsewhere"                                                    # ใต้ data/ แต่ไม่ใช่ bundle จริง
+    put_day_file(elsewhere, {**DAY_RECORD, "where": "linked"})
+    (ephem / "linkedbundle").symlink_to(elsewhere, target_is_directory=True)              # bundle ที่เป็น symlink
+    (ephem / "realbundle").mkdir()
+    (ephem / "realbundle" / f"validation_{DAY}.json").symlink_to(elsewhere / f"validation_{DAY}.json")   # ไฟล์ที่เป็น symlink
+    outside = tmp_path / "outside"
+    put_day_file(outside, {"secret": True})
+    (ephem / "outsidebundle").symlink_to(outside, target_is_directory=True)
+    r = client.get(day_url())
+    assert_error(r, 404, "NOT_FOUND")
+    assert "secret" not in r.text
 
 
 def test_day_file_with_no_computed_bundle_is_404(client, s1):

@@ -882,8 +882,15 @@ def test_group_new_empty_and_dedup(client, s1):
     assert _folders(client)["ดาวของฉัน"] == []
     assert_saved(group(client, "ดาวของฉัน", ["*/Satellite/G01", "*/Satellite/G01"]), client)
     assert _folders(client)["ดาวของฉัน"] == ["*/Satellite/G01"]
-    r = client.post("/api/scenarios/S1/groups", json={"name": "NoMembers"}, headers=_headers(client, CURRENT))
-    assert_saved(r, client); assert _folders(client)["NoMembers"] == []
+
+
+def test_group_requires_members(client, s1, data_dir):
+    """ไม่ส่ง members ต้องไม่ล้างสมาชิกของกลุ่มเดิม (กลุ่มว่างต้องส่ง [] เอง)"""
+    before = file_bytes(data_dir)
+    for body in ({"name": "GPS sats"}, {"name": "NoMembers"}, {"name": "GPS sats", "members": None}):
+        r = client.post("/api/scenarios/S1/groups", json=body, headers=_headers(client, CURRENT))
+        assert_error(r, 422, "SCENARIO_INVALID", "members")
+    assert file_bytes(data_dir) == before
 
 
 def test_group_members_must_be_existing_satellites(client, s1, data_dir):

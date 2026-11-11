@@ -12,8 +12,8 @@ import threading
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 
+from conftest import make_client
 from gnss_predict.errors import GmatNotFoundError
 from gnss_predict.run_gmat import find_gmat_console
 from gnss_studio_server import jobs as jobs_module
@@ -46,7 +46,7 @@ def real_client(data_dir, no_web_dist):
                                 logger=app.state.logger)
     app.state.jobs.start()
     try:
-        yield TestClient(app)
+        yield make_client(app)
     finally:
         app.state.jobs.stop()
         assert not any(t.name == jobs_module.THREAD_NAME for t in threading.enumerate())

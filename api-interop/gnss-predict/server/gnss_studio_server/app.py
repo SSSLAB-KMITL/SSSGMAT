@@ -9,10 +9,11 @@ from .config import Config
 from .digests import FileDigests
 from .errors import install_error_handlers
 from .events import EventBus
+from .guard import install_guards
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
-from .routes import access, events, health, jobs, objects, orbits, results, scenarios, settings, validation
+from .routes import access, daily, events, health, jobs, objects, orbits, results, scenarios, settings, validation
 from .scheduler import Scheduler
 from .store import ScenarioStore
 
@@ -48,6 +49,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.start_background = start_background
     app.state.store = ScenarioStore(config.data_dir)
     app.state.logger, app.state.log_handler = make_logger(config.data_dir)
+    install_guards(app, config, app.state.logger)  # Host ของ server เอง และ Origin ของ server เองสำหรับคำขอที่แก้ข้อมูล
     app.state.plans = PlanCache(app.state.store, app.state.logger)
     app.state.digests = FileDigests()
     app.state.bus = EventBus(app.state.logger)
@@ -66,6 +68,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(results.router, prefix="/api")
     app.include_router(access.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(daily.router, prefix="/api")
     app.include_router(validation.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     return app

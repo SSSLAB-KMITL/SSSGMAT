@@ -363,6 +363,133 @@ def test_run_at_and_enabled_are_reread_every_tick(at, data_dir, jobs, quick_dail
     assert len(ids) == 1 and jobs.get(ids[0]).params == {"for_date": "2026-11-12"}
 
 
+# ---------- สั่งงานประจำวันเอง: POST /api/daily/run ----------
+
+@pytest.fixture
+def idle_app(data_dir, no_web_dist, clock):
+    """แอปที่ไม่เริ่มคิวและตัวตั้งเวลา (job ค้าง queued ไม่ดึงข้อมูลจริง) คิวและตัวตั้งเวลาใช้นาฬิกาจำลองตัวเดียวกัน"""
+    from conftest import make_client
+    from gnss_studio_server.app import create_app
+    from gnss_studio_server.config import Config
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
+    app.state.jobs.clock = clock
+    app.state.scheduler.clock = clock
+    return make_client(app)
+
+
+def run_daily_by_hand(client, body=None):
+    return client.post("/api/daily/run", json=body) if body is not None else client.post("/api/daily/run")
+
+
+def test_interrupted_daily_after_midnight_is_not_caught_up_but_can_be_run_by_hand(idle_app, data_dir, clock):
+    """พฤติกรรมปัจจุบันของตัวตั้งเวลา (ไม่ขยายช่วงไล่ทันอัตโนมัติ: จะเริ่มดาวน์โหลดในเวลาใหม่ ต้องให้ผู้ใช้ยินยอมก่อน):
+    งานของ D ที่ถูกขัดจังหวะ แล้วเปิด server ใหม่ตอน 01:00 UTC ของวัน D ไม่ถูกสั่งเอง ผู้ใช้สั่งเองได้ด้วย POST /api/daily/run"""
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-12"}, state="running",
+              started_utc="2026-11-11T21:00:01.000Z")
+    jobs, sched = idle_app.app.state.jobs, idle_app.app.state.scheduler
+    jobs.recover()
+    assert jobs.get("j-20261111T210000-0001").error["code"] == "INTERRUPTED"
+    clock.t = T("2026-11-12T01:00Z")
+    assert sched.tick(clock.t) == []                               # D = 2026-11-13 ยังไม่ถึง run_at_utc, 2026-11-12 ไม่ไล่ทัน
+    assert sched.tick(T("2026-11-12T20:59Z")) == []
+    assert [r.id for r in jobs.list()] == ["j-20261111T210000-0001"]
+
+    r = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert r.status_code == 202, r.text
+    j = jobs.get(r.json()["job"])
+    assert (j.kind, j.scenario, j.params, j.origin, j.state) == ("daily", None, {"for_date": "2026-11-12"}, "user", "queued")
+
+
+def test_daily_run_defaults_to_the_next_utc_day(idle_app, clock):
+    clock.t = T("2026-11-11T23:59Z")
+    r = run_daily_by_hand(idle_app)
+    assert r.status_code == 202 and set(r.json()) == {"job"}
+    assert idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": "2026-11-12"}
+    clock.t = T("2026-11-12T00:00Z")
+    r = run_daily_by_hand(idle_app, {})
+    assert idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": "2026-11-13"}
+
+
+@pytest.mark.parametrize("day", ["2026-11-10", "2026-11-11", "2026-11-12"])
+def test_daily_run_accepts_yesterday_today_and_tomorrow(idle_app, day):
+    r = run_daily_by_hand(idle_app, {"for_date": day})
+    assert r.status_code == 202 and idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": day}
+
+
+@pytest.mark.parametrize("day", ["2026-11-09", "2026-11-13", "2027-11-12", "20261112", "2026-02-30", "2026-11-12 ", "",
+                                 "tomorrow", 20261112, None])
+def test_daily_run_rejects_dates_outside_the_window(idle_app, data_dir, day):
+    r = run_daily_by_hand(idle_app, {"for_date": day})
+    assert r.status_code == 422, r.text
+    j = r.json()
+    assert j["code"] == "SCENARIO_INVALID" and j["field"] == "for_date" and re.search("[\u0e00-\u0e7f]", j["text"])
+    assert idle_app.app.state.jobs.list() == [] and not (data_dir / "jobs").exists()
+
+
+def test_daily_run_rejects_unknown_fields(idle_app):
+    r = run_daily_by_hand(idle_app, {"for_date": "2026-11-12", "force": True})
+    assert r.status_code == 422 and r.json()["field"] == "force"
+    assert idle_app.app.state.jobs.list() == []
+
+
+def test_daily_run_conflicts_with_a_queued_daily_for_that_date(idle_app):
+    jobs = idle_app.app.state.jobs
+    first = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert first.status_code == 202
+    again = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert again.status_code == 409
+    j = again.json()
+    assert j["code"] == "JOB_RUNNING" and j["detail"] == first.json()["job"] and re.search("[\u0e00-\u0e7f]", j["text"])
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-11"}).status_code == 202          # วันอื่นสั่งได้
+    assert len(jobs.list()) == 2
+
+
+def test_daily_run_conflicts_with_the_schedulers_queued_job(idle_app, clock):
+    clock.t = T("2026-11-11T21:00Z")
+    (auto,) = idle_app.app.state.scheduler.tick(clock.t)
+    r = run_daily_by_hand(idle_app)
+    assert r.status_code == 409 and r.json()["code"] == "JOB_RUNNING" and r.json()["detail"] == auto
+
+
+def test_daily_run_reruns_failed_cancelled_and_published_days(idle_app, data_dir):
+    jobs = idle_app.app.state.jobs
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-10"}, state="failed",
+              error={"code": "GMAT_FAILED", "text": "GMAT ล้มเหลว", "detail": None})
+    jobs.recover()
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-10"}).status_code == 202           # ล้มเหลว
+    cancelled = run_daily_by_hand(idle_app, {"for_date": "2026-11-11"}).json()["job"]
+    assert jobs.cancel(cancelled).state == "cancelled"
+    again = run_daily_by_hand(idle_app, {"for_date": "2026-11-11"})                              # ถูกยกเลิก
+    assert again.status_code == 202 and again.json()["job"] != cancelled
+    out = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    out.parent.mkdir(parents=True)
+    out.write_text("ของเดิม\n")
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-12"}).status_code == 202           # มี CSV แล้วก็สั่งซ้ำได้
+
+
+def test_daily_run_by_hand_overwrites_the_days_csv(data_dir, no_web_dist, clock, fetch, fake_gmat):
+    """รันจริงในคิว (InlineRunner, fetch และ GMAT ปลอม) CSV ของวันนั้นที่มีอยู่แล้วถูกเขียนทับเมื่อสำเร็จ"""
+    from conftest import make_client
+    from gnss_studio_server.app import create_app
+    from gnss_studio_server.config import Config
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
+    app.state.jobs = JobManager(data_dir, app.state.bus, runner=InlineRunner(), clock=clock, logger=app.state.logger)
+    out = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    out.parent.mkdir(parents=True)
+    out.write_text("ของเดิม\n")
+    app.state.jobs.start()
+    try:
+        r = run_daily_by_hand(make_client(app), {"for_date": "2026-11-12"})
+        assert r.status_code == 202
+        j = wait_done(app.state.jobs, r.json()["job"])
+    finally:
+        app.state.jobs.stop()
+    assert j.state == "succeeded" and j.origin == "user", j.error
+    legacy = _legacy_csv(data_dir, "daily_20261112").read_bytes()
+    assert out.read_bytes() == legacy and (data_dir / "daily" / "latest.csv").read_bytes() == legacy
+    assert len(fetch.calls) == 1
+
+
 # ---------- ปิดงานประจำวัน ----------
 
 @pytest.mark.parametrize("settings_bytes", [None, b"{not json", b'{"daily": {}}'])
@@ -421,6 +548,38 @@ def test_daily_overwrites_existing_scenario(at, data_dir, jobs, snapshot, fake_g
     doc, _ = ScenarioStore(data_dir).read("daily_20261112")
     assert doc["description"] == "" and doc["orbit_snapshot"] != SNAPSHOT_ID
     assert doc["daily"]["created_utc"] != "2026-11-11T21:00:00Z"
+
+
+def test_daily_refuses_to_overwrite_a_user_scenario(at, data_dir, jobs, fetch, snapshot, fake_gmat):
+    """scenario ชื่อ daily_<D> ที่ไม่มีช่อง daily เป็นของผู้ใช้: งานประจำวันต้องไม่เขียนทับ ไม่ดึงข้อมูล และไม่มี CSV"""
+    sc = make_daily(data_dir, "2026-11-12", daily=False, description="ของผู้ใช้")
+    before = (sc / "scenario.json").read_bytes()
+    with pytest.raises(GnssPredictError) as e:
+        daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    assert e.value.code == "SCENARIO_INVALID" and "daily_20261112" in str(e.value) and "ผู้ใช้" in str(e.value)
+    (job_id,) = at("2026-11-11T21:00Z")
+    j = jobs.get(job_id)
+    assert j.state == "failed" and j.error["code"] == "SCENARIO_INVALID" and "ผู้ใช้" in j.error["text"]
+    assert (sc / "scenario.json").read_bytes() == before
+    assert fetch.calls == [] and not (data_dir / "daily").exists()
+
+
+def test_daily_marks_the_facility_access_computed(data_dir, fetch, fake_gmat):
+    daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    thbk = [a for a in doc["accesses"] if a["from"] == "*/Facility/THBK"]
+    assert thbk and all(a["computed"] is True for a in thbk)
+    assert doc["daily"]["for_date"] == "2026-11-12"
+    sc = data_dir / "scenarios" / "daily_20261112"
+    assert studio.plan_analyze(sc, "THBK", data_dir) == _legacy_csv(data_dir, "daily_20261112").parent.name   # ผลยัง current
+
+
+def test_daily_leaves_access_not_computed_when_analyze_fails(data_dir, fetch, fake_gmat, monkeypatch):
+    monkeypatch.setattr(studio, "run_analyze", _raise(GmatRunError("GMAT ล้มเหลว (test)")))
+    with pytest.raises(GnssPredictError):
+        daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    assert all(a["computed"] is False for a in doc["accesses"])
 
 
 def test_run_daily_reports_stages_and_uses_settings(data_dir, fetch, fake_gmat, monkeypatch):

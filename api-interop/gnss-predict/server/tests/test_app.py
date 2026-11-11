@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from conftest import make_client
 from gnss_predict.errors import GmatNotFoundError, ScenarioError, TleUnavailableError
 from gnss_studio_server.app import create_app
 from gnss_studio_server.config import Config
@@ -42,9 +42,9 @@ def test_health_gmat_found_follows_config(data_dir, tmp_path, no_web_dist):
     fake = tmp_path / "GmatConsole"
     fake.write_text("#!/bin/sh\n")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-    found = TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(fake)), start_background=False))
+    found = make_client(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(fake)), start_background=False))
     assert found.get("/api/health").json()["gmat_found"] is True
-    missing = TestClient(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(tmp_path / "nope")), start_background=False))
+    missing = make_client(create_app(Config(data_dir=data_dir, web_dist=no_web_dist, gmat_bin=str(tmp_path / "nope")), start_background=False))
     assert missing.get("/api/health").json()["gmat_found"] is False
 
 
@@ -159,7 +159,7 @@ def client_with_error_routes(data_dir, no_web_dist):
     def dict_detail():
         raise HTTPException(400, detail={"reason": "ผิด", "n": 1})
 
-    return TestClient(app, raise_server_exceptions=False)
+    return make_client(app, raise_server_exceptions=False)
 
 
 def test_api_error_is_translated(client_with_error_routes):
@@ -280,3 +280,105 @@ def test_main_runs_uvicorn_with_config(monkeypatch, tmp_path, capsys):
     assert kw["host"] == "127.0.0.1" and kw["port"] == 8765
     assert "http://127.0.0.1:8765/" in capsys.readouterr().out
     assert app.openapi_url == "/api/openapi.json" and (tmp_path / "d" / "logs" / "server.log").exists()
+
+
+# ---------- กันคำขอข้ามเว็บไซต์และ DNS rebinding ----------
+
+FOREIGN_ORIGIN = "http://evil.example"
+
+
+def _settings_doc(enabled: bool) -> dict:
+    return {"daily": {"enabled": enabled, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
+                      "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "secret"}
+
+
+@pytest.mark.parametrize("host", ["rebind.evil.example", "rebind.evil.example:8000", "testserver", "127.0.0.2:8000",
+                                  "localhost.evil.example:8000"])
+def test_foreign_host_is_rejected_on_every_route(client, data_dir, host):
+    for method, path, kw in (("get", "/api/settings", {}), ("get", "/api/health", {}),
+                             ("put", "/api/settings", {"json": _settings_doc(True)}),
+                             ("post", "/api/orbits/fetch", {}), ("delete", "/api/scenarios/S1", {})):
+        r = getattr(client, method)(path, headers={"Host": host}, **kw)
+        assert r.status_code == 400, (method, path, host)
+        assert "secret" not in r.text
+    assert client.app.state.jobs.list() == []
+    assert not (data_dir / "settings.json").exists()
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1:8000", "127.0.0.1", "localhost:8000", "LOCALHOST:8000", "[::1]:8000"])
+def test_loopback_hosts_are_accepted(client, host):
+    assert client.get("/api/health", headers={"Host": host}).status_code == 200
+
+
+@pytest.mark.parametrize("origin", [FOREIGN_ORIGIN, "null", "http://127.0.0.1:9999", "https://127.0.0.1:8000",
+                                    "http://rebind.evil.example:8000"])
+def test_cross_site_write_is_forbidden_and_submits_nothing(client, data_dir, s1, origin):
+    before = (data_dir / "scenarios" / "S1" / "scenario.json").read_bytes()
+    hdr = {"Origin": origin}
+    form = client.post("/api/orbits/fetch", data={"systems": "G"}, headers=hdr)       # ฟอร์ม HTML ธรรมดา (ไม่มี preflight)
+    for r in (form, client.post("/api/orbits/fetch", headers=hdr),
+              client.put("/api/settings", json=_settings_doc(True), headers=hdr),
+              client.delete("/api/scenarios/S1", headers=hdr),
+              client.patch("/api/scenarios/S1/objects/Facility/THBK", json={}, headers=hdr)):
+        assert r.status_code == 403, (r.request.method, r.request.url)
+        j = r.json()
+        assert set(j) == ERROR_KEYS and j["code"] == "FORBIDDEN_ORIGIN" and j["field"] is None
+        assert re.search("[฀-๿]", j["text"]) and j["detail"] == origin
+    assert client.app.state.jobs.list() == []
+    assert not (data_dir / "settings.json").exists()
+    assert (data_dir / "scenarios" / "S1" / "scenario.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:8000", "http://localhost:8000", "http://[::1]:8000",
+                                    "HTTP://LOCALHOST:8000"])
+def test_same_origin_write_is_allowed(client, origin):
+    r = client.post("/api/orbits/fetch", headers={"Origin": origin})
+    assert r.status_code == 202 and r.json()["job"]
+
+
+def test_write_without_origin_is_allowed(client):
+    assert client.post("/api/orbits/fetch").status_code == 202               # curl และ TestClient ไม่ส่ง Origin
+
+
+def test_cross_site_get_works_but_adds_no_cors_headers(client):
+    r = client.get("/api/settings", headers={"Origin": FOREIGN_ORIGIN})
+    assert r.status_code == 200
+    assert not [h for h in r.headers if h.lower().startswith("access-control-")]
+    pre = client.options("/api/settings", headers={"Origin": FOREIGN_ORIGIN, "Access-Control-Request-Method": "PUT"})
+    assert not [h for h in pre.headers if h.lower().startswith("access-control-")]
+    assert client.head("/api/health", headers={"Origin": FOREIGN_ORIGIN}).status_code in (200, 405)
+
+
+def test_configured_host_and_port_are_trusted(data_dir, no_web_dist):
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist, host="192.168.1.5", port=8123), start_background=False)
+    c = make_client(app)
+    assert c.get("/api/health", headers={"Host": "192.168.1.5:8123"}).status_code == 200
+    assert c.post("/api/orbits/fetch", headers={"Host": "192.168.1.5:8123", "Origin": "http://192.168.1.5:8123"}).status_code == 202
+    assert c.post("/api/orbits/fetch", headers={"Origin": "http://127.0.0.1:8123"}).status_code == 202
+    assert c.post("/api/orbits/fetch", headers={"Origin": "http://127.0.0.1:8000"}).status_code == 403   # port อื่น
+    assert c.get("/api/health", headers={"Host": "192.168.1.6:8123"}).status_code == 400
+
+
+def test_ipv6_configured_host_is_bracketed(data_dir, no_web_dist):
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist, host="::1", port=8123), start_background=False)
+    c = make_client(app)
+    assert c.get("/api/health", headers={"Host": "[::1]:8123"}).status_code == 200
+    assert c.post("/api/orbits/fetch", headers={"Origin": "http://[::1]:8123"}).status_code == 202
+
+
+@pytest.mark.parametrize("host, warns", [("0.0.0.0", True), ("192.168.1.5", True), ("example.org", True),
+                                         ("127.0.0.1", False), ("localhost", False), ("::1", False), ("127.0.0.2", False)])
+def test_non_loopback_host_warns_at_startup(data_dir, no_web_dist, host, warns):
+    create_app(Config(data_dir=data_dir, web_dist=no_web_dist, host=host), start_background=False)
+    log = _read_log(data_dir)
+    assert ("WARNING" in log and host in log) is warns, log
+
+
+def test_main_prints_a_warning_for_a_non_loopback_host(monkeypatch, tmp_path, capsys):
+    import uvicorn
+    from gnss_studio_server import __main__ as entry
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: None)
+    entry.main({"GNSS_STUDIO_DATA": str(tmp_path / "a"), "GNSS_STUDIO_HOST": "0.0.0.0"})
+    assert "0.0.0.0" in capsys.readouterr().err
+    entry.main({"GNSS_STUDIO_DATA": str(tmp_path / "b")})
+    assert capsys.readouterr().err == ""
