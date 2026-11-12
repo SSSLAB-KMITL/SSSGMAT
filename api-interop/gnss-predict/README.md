@@ -706,7 +706,21 @@ npm ci
 
 ### 9.2 พัฒนา
 
-เปิด server (หัวข้อ 8.2) ที่ port 8000 แล้วเปิด Vite คู่กัน:
+**ก่อนเปิด server ครั้งแรก ให้ปิดงานประจำวันก่อน** checkout ใหม่ยังไม่มี `data/settings.json` server จึงใช้ค่าตั้งต้นที่ **เปิด** งานประจำวัน
+ถ้าเปิด server หลัง 21:00 UTC (04:00 เวลาไทย) server จะดาวน์โหลดจาก CelesTrak, IGS และ CDDIS เองภายในประมาณ 60 วินาทีโดยไม่มีใครกด
+([คำเตือนในหัวข้อ 8.3](#83-งานประจำวัน-ดาวน์โหลดจากเน็ต)) ขั้นนี้ทำครั้งเดียว และไม่เขียนทับไฟล์ค่าตั้งที่มีอยู่แล้ว:
+
+```bash
+cd api-interop/gnss-predict
+mkdir -p data
+[ -e data/settings.json ] || printf '%s\n' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}' > data/settings.json
+python3 -I -c 'import json; print(json.load(open("data/settings.json"))["daily"]["enabled"])'   # ต้องพิมพ์ False
+```
+
+ถ้าพิมพ์ `True` แปลว่ามีไฟล์ค่าตั้งเดิมที่เปิดงานประจำวันไว้ ให้แก้ `"enabled"` เป็น `false` ในไฟล์นั้นก่อนเปิด server (หรือตั้งใจเปิดไว้ก็ได้)
+อีกทางคือไม่แตะ `data/` จริงเลย: เปิด server บนโฟลเดอร์ data ชั่วคราวด้วย `GNSS_STUDIO_DATA` ที่เขียน `settings.json` ที่ปิดงานประจำวันไว้ก่อน แบบขั้นที่ 2 ในหัวข้อ 9.6
+
+จากนั้นเปิด server (หัวข้อ 8.2) ที่ port 8000 แล้วเปิด Vite คู่กัน:
 
 ```bash
 cd api-interop/gnss-predict/server && .venv/bin/python -m gnss_studio_server     # terminal 1: http://127.0.0.1:8000/
@@ -721,6 +735,9 @@ proxy เขียนใหม่เมื่อ `Origin` ตรงกับ `ht
 `/api/orbits/fetch`, `/api/daily/run` หรือ `/validate` ผ่าน Vite ไม่ได้ ถ้า server ไม่ได้ฟังที่ port 8000 ให้แก้ `SERVER_ORIGIN` ใน `web/vite.config.ts`
 
 ### 9.3 build แล้วเปิดจาก server
+
+ปิดงานประจำวันใน `data/settings.json` ตามหัวข้อ 9.2 ก่อน (หรือใช้ `GNSS_STUDIO_DATA` ชั่วคราว) ไม่งั้น server ที่เปิดหลัง 21:00 UTC
+ดาวน์โหลดจากเน็ตเองได้ ([คำเตือนในหัวข้อ 8.3](#83-งานประจำวัน-ดาวน์โหลดจากเน็ต))
 
 ```bash
 cd api-interop/gnss-predict/web && npm run build        # ได้ web/dist/ (Cesium Workers, Assets, Widgets, ThirdParty คัดลอกไป dist/cesium/)
@@ -792,9 +809,9 @@ printf '%s' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","r
 # 3) คัดลอกเท่านั้น (ไม่เปิด ไม่รันไฟล์ในนั้น): scenario รายวันที่มีผลแล้วกับ snapshot ที่มันใช้ (ชื่อใน orbit_snapshot ของ scenario.json)
 cd $REPO/api-interop/gnss-predict
 cp -R data/scenarios/acc_20261111 $P/scenarios/ && cp -R data/orbits/20261110T2147Z $P/orbits/
-# 4) เปิด server ที่ port 8767 (ไม่มี GMAT ก็ได้เพราะผลมีอยู่แล้ว)
+# 4) เปิด server ที่ 127.0.0.1 port 8767 (ตั้ง GNSS_STUDIO_HOST เองกันค่าที่ export ค้างไว้ใน shell; ไม่มี GMAT ก็ได้เพราะผลมีอยู่แล้ว)
 cd $REPO/api-interop/gnss-predict/server
-GNSS_STUDIO_DATA=$P GNSS_STUDIO_PORT=8767 GMAT_BIN=/nonexistent .venv/bin/python -m gnss_studio_server
+GNSS_STUDIO_DATA=$P GNSS_STUDIO_HOST=127.0.0.1 GNSS_STUDIO_PORT=8767 GMAT_BIN=/nonexistent .venv/bin/python -m gnss_studio_server
 ```
 
 ```bash
