@@ -3,6 +3,7 @@
 // - ChromeBoundary ห่อแถบเมนู + แถบเครื่องมือ, แถบสถานะ และกล่องโต้ตอบ (App.tsx): ข้อความไทยแทนส่วนนั้น ปุ่ม Retry หน้าต่างทั้งหมดยังใช้ได้
 // ทั้งสองแจ้งข้อผิดพลาดใน Message Viewer (รหัส PANEL_CRASH / CHROME_CRASH รายละเอียดคือ stack ของ error และของ component)
 // Retry เปลี่ยน key ของลูก: ส่วนนั้นเริ่มใหม่จากสถานะตั้งต้น (สถานะที่ทำให้พังไม่ค้าง)
+// ทุก error ที่จับได้ส่งต่อให้ window.reportError ด้วย: e2e และ unit test จึงยังเห็นหน้าต่างที่พังเป็นความล้มเหลว
 
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
 import { errorText } from "../api/client";
@@ -32,6 +33,9 @@ export class ErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
   componentDidCatch(error: unknown, info: ErrorInfo): void {
     this.props.onError(error, info);
+    // ส่งต่อเป็นข้อผิดพลาดที่ไม่ถูกจับของหน้า (ErrorEvent ที่ window, Chromium = pageerror ของ Playwright): React build จริงส่ง error ที่ boundary จับได้
+    // ไปแค่ console.error เท่านั้น ถ้าไม่ส่งต่อ หน้าต่างที่พังจะผ่าน e2e (fixtures.ts ฟัง pageerror) และ unit test (setup.ts ฟัง reportError) ไปเงียบ ๆ
+    if (typeof window.reportError === "function") window.reportError(error);
   }
 
   private readonly retry = (): void => this.setState((s) => ({ failed: false, attempt: s.attempt + 1 }));

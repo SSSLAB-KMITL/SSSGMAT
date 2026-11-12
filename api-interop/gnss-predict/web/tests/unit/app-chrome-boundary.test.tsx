@@ -13,6 +13,7 @@ import { useScenario } from "../../src/stores/scenario";
 import { useSettings } from "../../src/stores/settings";
 import { stubFetch } from "./helpers/fake-fetch";
 import { setUrl } from "./helpers/files";
+import { takeReportedErrors } from "./helpers/reported-errors";
 
 const state = vi.hoisted(() => ({ crash: true }));
 vi.mock("../../src/time/clock", () => ({ startClock: () => () => undefined }));
@@ -48,6 +49,10 @@ afterEach(() => {
   consoleError.mockRestore();
 });
 
+/** the boundary hands every caught error to window.reportError (setup.ts fails a test that leaves any): these tests crash on purpose */
+const reportedMessages = () => takeReportedErrors().map((e) => (e instanceof Error ? e.message : String(e)));
+const CRASH = "manifest.satellites.flatMap is not a function";
+
 test("a status bar that throws leaves the menu bar and every window alive, shows the Thai message there and reports it", async () => {
   render(<App />);
   await waitFor(() => expect((useLayout.getState().api?.panels ?? []).map((p) => p.id)).toEqual(expect.arrayContaining(DEFAULT_IDS)));
@@ -58,6 +63,7 @@ test("a status bar that throws leaves the menu bar and every window alive, shows
   expect(useMessages.getState().items.find((m) => m.code === "CHROME_CRASH")!.text).toBe(
     msg("chrome.crashedLog", { part: msg("chrome.part.footer"), message: "manifest.satellites.flatMap is not a function" }),
   );
+  expect(reportedMessages()).toEqual([CRASH]); // also an uncaught error of the page, so e2e (pageerror) and setup.ts see it
 });
 
 test("Retry draws the status bar again", async () => {
@@ -66,4 +72,5 @@ test("Retry draws the status bar again", async () => {
   state.crash = false;
   fireEvent.click(retry);
   expect(await screen.findByText("status bar is back")).toBeDefined();
+  expect(reportedMessages()).toEqual([CRASH]); // the first try only
 });

@@ -10,6 +10,7 @@ import { getPanelDef, registerPanel, type PanelDef } from "../../src/layout/pane
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { Workspace } from "../../src/Workspace";
+import { takeReportedErrors } from "./helpers/reported-errors";
 
 const st = () => useLayout.getState();
 const panelEl = (id: string): HTMLElement => {
@@ -32,6 +33,9 @@ afterEach(() => {
   consoleError.mockRestore();
 });
 
+/** the boundary hands every caught error to window.reportError (setup.ts fails a test that leaves any): these tests crash on purpose */
+const reportedMessages = () => takeReportedErrors().map((e) => (e instanceof Error ? e.message : String(e)));
+
 async function mountWith(component: PanelDef["component"]) {
   registerPanel("objectBrowser", { ...original, component });
   render(<Workspace />);
@@ -48,6 +52,7 @@ describe("a window that throws while rendering", () => {
     expect(within(panelEl("messageViewer")).getByText(msg("panel.placeholder"))).toBeDefined();
     expect(within(panelEl("timelineView")).getByText(msg("panel.placeholder"))).toBeDefined();
     expect(st().api?.panels.map((p) => p.id).sort()).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "timelineView"]);
+    expect(reportedMessages()).toEqual(["boom"]); // also an uncaught error of the page, so e2e (pageerror) and setup.ts see it
   });
 
   test("reports the error in the Message Viewer with the window name", async () => {
@@ -58,6 +63,7 @@ describe("a window that throws while rendering", () => {
     const logged = useMessages.getState().items.find((m) => m.code === "PANEL_CRASH")!;
     expect(logged.level).toBe("error");
     expect(logged.text).toBe(msg("panel.crashedLog", { window: t("window.objectBrowser"), message: "boom" }));
+    expect(reportedMessages()).toEqual(["boom"]);
   });
 
   test("Retry draws the window again", async () => {
@@ -70,6 +76,7 @@ describe("a window that throws while rendering", () => {
     fail = false;
     fireEvent.click(within(alert).getByRole("button", { name: t("dialog.retry") }));
     expect(await within(panelEl("objectBrowser")).findByText("works now")).toBeDefined();
+    expect(reportedMessages()).toEqual(["boom"]); // the first try only
   });
 
   test("Close closes that window", async () => {
@@ -80,6 +87,7 @@ describe("a window that throws while rendering", () => {
     act(() => fireEvent.click(within(alert).getByRole("button", { name: t("dialog.windows.close") })));
     await waitFor(() => expect(st().api?.getPanel("objectBrowser")).toBeUndefined());
     expect(st().api?.getPanel("messageViewer")).toBeDefined();
+    expect(reportedMessages()).toEqual(["boom"]);
   });
 
   test("a window that throws later (after an update) is caught the same way", async () => {
@@ -96,5 +104,15 @@ describe("a window that throws while rendering", () => {
     act(() => bump());
     expect((await within(panelEl("objectBrowser")).findByRole("alert")).textContent).toContain(msg("panel.crashed"));
     expect(screen.getAllByText(msg("panel.placeholder")).length).toBeGreaterThan(0);
+    expect(reportedMessages()).toEqual(["late 1"]);
+  });
+});
+
+describe("crash detection in tests (tests/unit/setup.ts)", () => {
+  test("a caught crash is handed to window.reportError, and an unexpected one fails the test", async () => {
+    const { failOnReportedErrors } = await import("./helpers/reported-errors");
+    window.reportError(new Error("unexpected"));
+    expect(() => failOnReportedErrors()).toThrow(/an error boundary caught 1 render error\(s\) that no test expected: Error: unexpected/);
+    expect(() => failOnReportedErrors()).not.toThrow(); // taken: the next test starts clean
   });
 });

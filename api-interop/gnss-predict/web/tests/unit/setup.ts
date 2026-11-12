@@ -1,4 +1,8 @@
 // ตัวช่วยของ jsdom ที่ทุก test ใช้ร่วมกัน (vite.config.ts: test.setupFiles)
+
+import { afterEach } from "vitest";
+import { failOnReportedErrors, recordReportedError } from "./helpers/reported-errors";
+
 // jsdom ไม่มี ResizeObserver ซึ่ง dockview ใช้ตามขนาดของ container: ตัวปลอมนี้เรียก callback ครั้งเดียวตอน observe
 // (jsdom ไม่มี layout จริง ขนาดที่ส่งเป็นค่าสมมติ) test ที่ต้องการขนาดอื่นสั่ง `api.layout(w, h, true)` เอง
 
@@ -21,3 +25,8 @@ if (typeof globalThis.ResizeObserver === "undefined") globalThis.ResizeObserver 
 // jsdom ไม่มี canvas จริง: getContext ของมันพิมพ์ "Not implemented" ทุกครั้งแล้วคืน null หน้าต่างที่วาดด้วย canvas (Timeline View) ข้ามการวาดเมื่อได้ null
 // ตัวนี้ทำให้เงียบ test ที่ต้องดูการวาดสั่ง vi.spyOn(HTMLCanvasElement.prototype, "getContext") เอง
 if (typeof HTMLCanvasElement !== "undefined") HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+
+// error boundary ของแอปส่งข้อผิดพลาดที่จับได้ให้ window.reportError (เหมือนข้อผิดพลาดที่ไม่ถูกจับ): หน้าต่างหรือแถบที่พังตอนวาด
+// ต้องทำให้ test ล้มเหลว ไม่ใช่ผ่านไปเงียบ ๆ เพราะ boundary แสดงข้อความแทน test ที่ตั้งใจทำให้พังเรียก takeReportedErrors() ไปตรวจเอง
+if (typeof window !== "undefined") window.reportError = recordReportedError;
+afterEach(() => failOnReportedErrors());
