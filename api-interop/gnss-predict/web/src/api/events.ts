@@ -197,16 +197,35 @@ function toScenarioEvent(x: unknown): ScenarioEvent | null {
   return { name: x.name, etag: x.etag, results_stale: x.results_stale === true };
 }
 
+/** ชื่อ scenario ของงานประจำวัน (server daily.py: `daily_<YYYYMMDD>`) */
+const DAILY_SCENARIO = /^daily_\d{8}$/;
+
+/** scenario ที่เปิดอยู่เป็นของงานประจำวันไหม: ชื่อตามรูปของงานประจำวัน หรือ doc มีช่อง `daily` (server เขียนให้ทุก scenario ที่งานนี้สร้าง) */
+function dailyScenarioOpen(): boolean {
+  const { name, doc } = useScenario.getState();
+  return name !== null && (DAILY_SCENARIO.test(name) || isRecord(doc?.daily));
+}
+
+function onJob(data: RawJobEvent): void {
+  useJobs.getState().onJobEvent(data);
+  if (data.state !== "succeeded") return;
+  if (data.scenario !== null && data.scenario === useScenario.getState().name) {
+    void useResults.getState().refresh();
+  } else if (data.kind === "daily" && dailyScenarioOpen()) {
+    // job daily มี scenario = null และเขียน scenario daily_<D> ผ่าน store ของ server โดยตรง จึงไม่มี event `scenario` ตามมา:
+    // ดึงใหม่เอง (resync โหลด doc และ tree เมื่อ ETag ต่าง) ไม่งั้นหน้านี้ค้างผลเก่าหรือแถบ "ยังไม่มีผลลัพธ์" และ Apply ครั้งถัดไปได้ 412
+    void useScenario.getState().resync();
+    void useResults.getState().refresh();
+  }
+}
+
 function dispatch(name: EventName, data: unknown): void {
   switch (name) {
     case "message":
       if (isMessage(data)) useMessages.getState().add(data, { fromServer: true });
       break;
     case "job":
-      if (isJobEvent(data)) {
-        useJobs.getState().onJobEvent(data);
-        if (data.state === "succeeded" && data.scenario !== null && data.scenario === useScenario.getState().name) void useResults.getState().refresh();
-      }
+      if (isJobEvent(data)) onJob(data);
       break;
     case "scenario": {
       const e = toScenarioEvent(data);

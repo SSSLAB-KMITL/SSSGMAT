@@ -5,6 +5,7 @@ import { useMessages, type Message } from "../../src/stores/messages";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useSettings } from "../../src/stores/settings";
+import { makeDoc } from "./helpers/chrome";
 import { deferred, stubFetch, type Handler } from "./helpers/fake-fetch";
 import { FakeES, FakeEventSource } from "./helpers/fake-event-source";
 
@@ -238,6 +239,85 @@ describe("startEventWiring", () => {
     await flush();
     expect(useJobs.getState().jobs.j1.state).toBe("succeeded");
     expect(f.count("GET /api/scenarios/E2E/results")).toBe(1);
+  });
+
+  describe("a daily job that succeeds (the daily writes send no scenario event, and the job has scenario null)", () => {
+    const DAILY = "daily_20261113";
+    const dailyDoc = (over: object = {}) => makeDoc({ name: DAILY, daily: { for_date: "2026-11-13", created_utc: "2026-11-12T21:00:00Z" }, ...over } as never);
+    const tree = { path: "*", class: "Scenario", name: DAILY, children: [] };
+    const dailyJob = (state: string) => ({ id: "d1", kind: "daily", scenario: null, state, progress: { stage: "analyze", fraction: 1 } });
+
+    function dailyServer() {
+      return server({
+        [`GET /api/scenarios/${DAILY}`]: { json: dailyDoc(), headers: { ETag: '"2222222222222222"' } },
+        [`GET /api/scenarios/${DAILY}/objects`]: { json: tree },
+        [`GET /api/scenarios/${DAILY}/results`]: { json: RESULTS_MISSING },
+      });
+    }
+
+    test("reloads the open daily scenario and its results, so the next Apply does not hit a surprise 412", async () => {
+      const f = dailyServer();
+      useScenario.setState({ name: DAILY, doc: dailyDoc(), etag: '"1111111111111111"' });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.emit("job", dailyJob("running"));
+      await flush();
+      expect(f.count(`GET /api/scenarios/${DAILY}`)).toBe(0);
+      expect(f.count(`GET /api/scenarios/${DAILY}/results`)).toBe(0);
+      FakeEventSource.last.emit("job", dailyJob("succeeded"));
+      await flush();
+      expect(f.count(`GET /api/scenarios/${DAILY}`)).toBe(1);
+      expect(f.count(`GET /api/scenarios/${DAILY}/objects`)).toBe(1);
+      expect(f.count(`GET /api/scenarios/${DAILY}/results`)).toBe(1);
+      expect(useScenario.getState().etag).toBe('"2222222222222222"');
+    });
+
+    test("a scenario named daily_<YYYYMMDD> counts as a daily one even if its doc has no daily field", async () => {
+      const f = dailyServer();
+      useScenario.setState({ name: DAILY, doc: makeDoc({ name: DAILY }), etag: '"1111111111111111"' });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.emit("job", dailyJob("succeeded"));
+      await flush();
+      expect(f.count(`GET /api/scenarios/${DAILY}`)).toBe(1);
+      expect(f.count(`GET /api/scenarios/${DAILY}/results`)).toBe(1);
+    });
+
+    test("leaves a scenario that is not a daily one alone, and so does a daily job that fails or is cancelled", async () => {
+      const f = server({ "GET /api/scenarios/E2E": { json: makeDoc({ name: "E2E" }), headers: { ETag: '"2222222222222222"' } } });
+      useScenario.setState({ name: "E2E", doc: makeDoc({ name: "E2E" }), etag: '"1111111111111111"' });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.emit("job", dailyJob("succeeded"));
+      await flush();
+      expect(f.count("GET /api/scenarios/E2E")).toBe(0);
+      expect(f.count("GET /api/scenarios/E2E/results")).toBe(0);
+
+      stop();
+      const g = dailyServer();
+      useScenario.setState({ name: DAILY, doc: dailyDoc(), etag: '"1111111111111111"' });
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.emit("job", { ...dailyJob("failed"), id: "d2" });
+      FakeEventSource.last.emit("job", { ...dailyJob("cancelled"), id: "d3" });
+      await flush();
+      expect(g.count(`GET /api/scenarios/${DAILY}`)).toBe(0);
+      expect(g.count(`GET /api/scenarios/${DAILY}/results`)).toBe(0);
+    });
+
+    test("does nothing with no scenario open", async () => {
+      const f = dailyServer();
+      stop = startEventWiring();
+      FakeEventSource.last.open();
+      await flush();
+      FakeEventSource.last.emit("job", dailyJob("succeeded"));
+      await flush();
+      expect(f.calls.filter((c) => c.path.startsWith("/api/scenarios"))).toEqual([]);
+    });
   });
 
   test("scenario events go to the scenario store and daily events to the jobs store", async () => {
