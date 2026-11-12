@@ -14,5 +14,6 @@ mkdir -p "$WEB/test-results"
 "$SERVER/.venv/bin/python" -I "$WEB/tests/e2e/fixture/build_fixture.py" "$DATA"
 
 cd "$SERVER"
-export GNSS_STUDIO_DATA="$DATA" GNSS_STUDIO_PORT=8766 GMAT_BIN=/nonexistent
+# GNSS_STUDIO_HOST ตรึงที่ loopback: ค่าที่ค้างอยู่ใน environment ของผู้รัน (เช่น 0.0.0.0) ต้องไม่เปิด server ของ e2e ให้เครื่องอื่นในเครือข่าย
+export GNSS_STUDIO_DATA="$DATA" GNSS_STUDIO_HOST=127.0.0.1 GNSS_STUDIO_PORT=8766 GMAT_BIN=/nonexistent
 exec .venv/bin/python -m gnss_studio_server

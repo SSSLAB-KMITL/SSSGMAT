@@ -4,13 +4,17 @@
 import { expect, openObjectProperties, openScenario, propertiesWindow, saveScenario, test, treeRow, waitForScene } from "./fixtures";
 
 test.describe("Properties Browser", () => {
-  let restore: () => Promise<void>;
+  // undefined = ยังไม่ได้เก็บเอกสารเดิม (beforeEach ล้มก่อน): ไม่มีอะไรให้คืน และต้องไม่เรียกค่าของ test ก่อนหน้า
+  let restore: (() => Promise<void>) | undefined;
 
   test.beforeEach(async ({ request }) => {
+    restore = undefined;
     restore = await saveScenario(request, "E2E");
   });
   test.afterEach(async () => {
-    await restore();
+    const undo = restore;
+    restore = undefined;
+    if (undo !== undefined) await undo();
   });
 
   test("changing the colour of G01 and applying recolours the entity", async ({ page }) => {

@@ -773,19 +773,35 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 ผลขึ้นกับเครื่องและ GPU จึงวัดบนเครื่องพัฒนาด้วย `--headed` (การเรนเดอร์ด้วย CPU/SwiftShader ใน headless ไม่ใช่ตัวตัดสิน
 `playwright.config.ts` ไม่ใส่ `--use-angle=swiftshader` เมื่อตั้ง `GNSS_E2E_PERF_URL`)
 
-ขั้นตอน (ห้ามเปิด server บน `data/` จริง เพราะงานประจำวันอาจดึงข้อมูลจาก CelesTrak):
+ขั้นตอน (ห้ามเปิด server บน `data/` จริง เพราะงานประจำวันอาจดึงข้อมูลจาก CelesTrak) ใช้สอง terminal คำสั่งทุกบล็อกขึ้นต้นด้วย `cd` ของมันเอง
+`$REPO` คือ root ของ repo (โฟลเดอร์ที่มี `api-interop/`) และใช้ `data/` ของ `api-interop/gnss-predict` เป็นแหล่งคัดลอกเท่านั้น
+
+ก่อนเริ่ม: **ต้อง build หน้าเว็บก่อน** (`npm run build` ได้ `web/dist/` ซึ่งทั้ง server ที่วัดและ server ของ e2e ส่งให้ browser; `npx playwright test` ไม่ build ให้เอง
+ต่างจาก `npm run e2e`) และ **port 8766 ต้องว่าง** เพราะ `webServer` ใน `playwright.config.ts` เปิด server ของ fixture e2e ที่ port 8766 ทุกครั้งที่รัน `playwright test`
+รวมถึงตอนวัด (server นั้นใช้ข้อมูลของ fixture ไม่เกี่ยวกับ scenario ที่วัด และ Playwright ปิดให้เมื่อจบ) ถ้ามีอะไรฟังที่ 8766 อยู่ Playwright จะไม่เริ่ม
 
 ```bash
-# 1) โฟลเดอร์ data ชั่วคราว: เขียน settings.json ที่ปิดงานประจำวัน "ก่อน" เปิด server
+# terminal 1 (ทิ้งไว้ตลอดการวัด)
+# 1) build หน้าเว็บ
+cd $REPO/api-interop/gnss-predict/web && npm run build
+# 2) โฟลเดอร์ data ชั่วคราว: เขียน settings.json ที่ปิดงานประจำวัน "ก่อน" เปิด server
 P=/tmp/gnss-perf; mkdir -p $P/scenarios $P/orbits
 printf '%s' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}' > $P/settings.json
-# 2) คัดลอกเท่านั้น (ไม่เปิด ไม่รันไฟล์ในนั้น): scenario รายวันที่มีผลแล้วกับ snapshot ที่มันใช้ (ชื่อใน orbit_snapshot ของ scenario.json)
+# 3) คัดลอกเท่านั้น (ไม่เปิด ไม่รันไฟล์ในนั้น): scenario รายวันที่มีผลแล้วกับ snapshot ที่มันใช้ (ชื่อใน orbit_snapshot ของ scenario.json)
+cd $REPO/api-interop/gnss-predict
 cp -R data/scenarios/acc_20261111 $P/scenarios/ && cp -R data/orbits/20261110T2147Z $P/orbits/
-# 3) เปิด server ที่ port 8767 (ไม่มี GMAT ก็ได้เพราะผลมีอยู่แล้ว)
-cd server && GNSS_STUDIO_DATA=$P GNSS_STUDIO_PORT=8767 GMAT_BIN=/nonexistent .venv/bin/python -m gnss_studio_server
-# 4) วัด (terminal อื่น) แล้วปิด server ด้วย Ctrl-C; พิมพ์ "PERF load: ..." และ "PERF frames in 5 s: ..."
-cd web && GNSS_E2E_PERF_URL="http://127.0.0.1:8767/?sc=acc_20261111&test" npx playwright test perf.spec.ts --headed
+# 4) เปิด server ที่ port 8767 (ไม่มี GMAT ก็ได้เพราะผลมีอยู่แล้ว)
+cd $REPO/api-interop/gnss-predict/server
+GNSS_STUDIO_DATA=$P GNSS_STUDIO_PORT=8767 GMAT_BIN=/nonexistent .venv/bin/python -m gnss_studio_server
 ```
+
+```bash
+# terminal 2: วัด พิมพ์ "PERF load: ..." และ "PERF frames in 5 s: ..." (browser เปิดขึ้นบนหน้าจอเพราะ --headed)
+cd $REPO/api-interop/gnss-predict/web
+GNSS_E2E_PERF_URL="http://127.0.0.1:8767/?sc=acc_20261111&test" npx playwright test perf.spec.ts --headed
+```
+
+เสร็จแล้วกด Ctrl-C ที่ terminal 1 เพื่อปิด server ที่ 8767
 
 (ถ้า scenario ที่ใช้ไม่ตรง `GET /api/scenarios/<ชื่อ>/results` ต้องตอบ `ephem.status` เป็น `current` ไม่งั้นหน้าต่าง 3D แสดงแถบ "ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบัน" และไม่โหลดภาพ)
 
