@@ -11,6 +11,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { CircleX, Info, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTimeFormatter } from "../../chrome/hooks";
+import { useReturnFocus } from "../../chrome/returnFocus";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
@@ -242,11 +243,12 @@ export function MessageViewer({ panelId }: Partial<PanelProps>) {
 
 /** กล่อง Details: ข้อความเต็ม รายละเอียด รหัส object และเวลาของข้อความที่เลือก */
 function DetailsDialog({ message, time, onClose }: { message: Message | null; time: string; onClose(): void }) {
+  const returnFocus = useReturnFocus(message !== null); // ปิดแล้วกลับไปที่ปุ่ม Details หรือรายการ (คีย์ลูกศรใช้ต่อได้)
   return (
     <Dialog.Root open={message !== null} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
-        <Dialog.Content className="dlg mv-dialog" aria-describedby={undefined}>
+        <Dialog.Content className="dlg mv-dialog" aria-describedby={undefined} onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
           <Dialog.Title className="dlg-title">{t("mv.details")}</Dialog.Title>
           {message !== null && (
             <div className="mv-dialog-body">

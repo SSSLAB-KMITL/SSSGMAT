@@ -24,6 +24,52 @@ function setup(over: Partial<NamePromptDialogProps> = {}) {
   return { submit, onClose, view, props };
 }
 
+/** ปุ่มที่เปิดกล่อง (เช่น Rename ของ Object Browser) อยู่นอกกล่อง: ปิดกล่องแล้วโฟกัสต้องกลับมาที่ปุ่มนี้ */
+function WithOpener({ submit = async () => undefined }: { submit?(value: string): Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        opener
+      </button>
+      <NamePromptDialog open={open} title="Ask" validate={() => null} submit={submit} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
+describe("focus after the dialog closes", () => {
+  const opener = () => screen.getByRole("button", { name: "opener" });
+
+  test("Cancel gives the focus back to what opened the dialog", async () => {
+    const user = userEvent.setup();
+    render(<WithOpener />);
+    await user.click(opener());
+    await waitFor(() => expect(document.activeElement).toBe(field()));
+    await user.click(cancel());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener()));
+  });
+
+  test("Escape gives it back too", async () => {
+    const user = userEvent.setup();
+    render(<WithOpener />);
+    await user.click(opener());
+    await waitFor(() => expect(document.activeElement).toBe(field()));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener()));
+  });
+
+  test("so does OK after the name is saved", async () => {
+    const user = userEvent.setup();
+    render(<WithOpener />);
+    await user.click(opener());
+    await user.type(field(), "abc{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener()));
+  });
+});
+
 describe("NamePromptDialog", () => {
   test("shows the title and one Name field that starts focused with the initial value, OK and Cancel", () => {
     setup({ initialValue: "abc" });

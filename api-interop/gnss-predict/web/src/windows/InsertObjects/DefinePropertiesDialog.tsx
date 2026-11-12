@@ -11,6 +11,7 @@ import { errorText } from "../../api/client";
 import { isObjectName } from "../../api/names";
 import { isConflict, isFieldError, reportWriteError } from "../../api/writes";
 import { FormField } from "../../chrome/FormField";
+import { useReturnFocus } from "../../chrome/returnFocus";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { parseDecimal, parseInteger, type Parsed } from "../fieldRules";
@@ -79,6 +80,7 @@ export function DefinePropertiesDialog({ cls, onClose, onInserted }: DefinePrope
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const returnFocus = useReturnFocus(true); // กล่อง mount เมื่อเปิดเท่านั้น: ปิดแล้วกลับไปที่ปุ่มที่เปิด (Insert...)
 
   const edit = (key: string, value: string): void => {
     setTexts((s) => ({ ...s, [key]: value }));
@@ -120,7 +122,12 @@ export function DefinePropertiesDialog({ cls, onClose, onInserted }: DefinePrope
     <Dialog.Root open onOpenChange={(next) => !next && !busy && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
-        <Dialog.Content className="dlg dlg-form" aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}>
+        <Dialog.Content
+          className="dlg dlg-form"
+          aria-describedby={undefined}
+          onInteractOutside={(e) => e.preventDefault()}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <Dialog.Title className="dlg-title">{`${t(CLASS_LABEL[cls])}: ${t("dialog.insert.defineProperties")}`}</Dialog.Title>
           <form className="form" noValidate onSubmit={(e) => void submit(e)}>
             {form.fields.map((field) => (

@@ -265,9 +265,23 @@ describe("selection and Details", () => {
     await screen.findByRole("dialog");
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(button(t("mv.details"))));
     await user.click(button(t("mv.details")));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.windows.close") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(button(t("mv.details"))));
+  });
+
+  test("Details opened with Enter from the list gives the focus back to the list, so the arrow keys keep working", async () => {
+    seed();
+    renderMv();
+    await select(2);
+    grid().focus();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(grid()));
   });
 
   test("the selection stays on the message when others arrive, and goes when its message is cleared", async () => {

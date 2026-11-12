@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
+import { useReturnFocus } from "../../../chrome/returnFocus";
 import { t } from "../../../labels/labels";
 import { msg } from "../../../labels/messages.th";
 import { DescriptionRows, Group, NumberRow, ReadOnlyRow, useEditorApi, type PageDef } from "../fields";
@@ -28,6 +29,7 @@ const MAX = "constraints.elevation_angle_max_deg";
 /** Select Constraints to Add: v1 มีเฉพาะ Elevation Angle */
 function AddConstraintDialog({ open, listed, onAdd, onClose }: { open: boolean; listed: boolean; onAdd(): void; onClose(): void }) {
   const [choice, setChoice] = useState("");
+  const returnFocus = useReturnFocus(open); // ปิดแล้วกลับไปที่ปุ่ม Add...
   const close = (): void => {
     setChoice("");
     onClose();
@@ -40,7 +42,12 @@ function AddConstraintDialog({ open, listed, onAdd, onClose }: { open: boolean; 
     <Dialog.Root open={open} onOpenChange={(next) => !next && close()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
-        <Dialog.Content className="dlg dlg-form" aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}>
+        <Dialog.Content
+          className="dlg dlg-form"
+          aria-describedby={undefined}
+          onInteractOutside={(e) => e.preventDefault()}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <Dialog.Title className="dlg-title">{t("field.selectConstraintsToAdd")}</Dialog.Title>
           <div className="form">
             {listed ? (

@@ -1,6 +1,7 @@
 // กล่องถามชื่อกล่องเดียวที่ใช้ร่วมกัน (Save As, New Group, Rename): หัวกล่อง ช่องชื่อเดียว OK / Cancel
 // - validate ตรวจก่อนส่ง (ข้อความขึ้นที่ช่อง); submit ทำจริง สำเร็จ = onClose; ล้มเหลว = ข้อผิดพลาดที่ fieldError บอกว่าเป็นของช่อง (เช่น server 409/422) ขึ้นที่ช่อง
 //   ข้อผิดพลาดอื่นให้ handleError ตัดสิน (แจ้ง Message Viewer เองได้) แล้วข้อความที่ได้ขึ้นใต้ช่อง (null = ไม่ขึ้นอะไร เช่น 412 ที่มีกล่องของตัวเอง)
+// - ปิดแล้วโฟกัสกลับไปที่ element ที่ถือโฟกัสตอนเปิด (returnFocus.ts) เช่น แถวของ Object Browser ที่สั่ง Rename
 // - ระหว่าง submit ปิดกล่องไม่ได้ (Cancel / Esc / คลิกนอกกล่องไม่ทำงาน) กล่องจึงไม่หายไปใต้งานที่ยังวิ่งอยู่; กล่อง mount ฟอร์มเฉพาะตอนเปิด จึงเริ่มจาก initialValue ทุกครั้ง
 
 import * as Dialog from "@radix-ui/react-dialog";
@@ -8,6 +9,7 @@ import { useState, type FormEvent } from "react";
 import { errorText } from "../api/client";
 import { t } from "../labels/labels";
 import { FormField } from "./FormField";
+import { useReturnFocus } from "./returnFocus";
 
 export interface NamePromptDialogProps {
   open: boolean;
@@ -30,11 +32,17 @@ export interface NamePromptDialogProps {
 
 export function NamePromptDialog(props: NamePromptDialogProps) {
   const [busy, setBusy] = useState(false);
+  const returnFocus = useReturnFocus(props.open);
   return (
     <Dialog.Root open={props.open} onOpenChange={(next) => !next && !busy && props.onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
-        <Dialog.Content className="dlg dlg-form" aria-describedby={undefined} onInteractOutside={(e) => e.preventDefault()}>
+        <Dialog.Content
+          className="dlg dlg-form"
+          aria-describedby={undefined}
+          onInteractOutside={(e) => e.preventDefault()}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <Dialog.Title className="dlg-title">{props.title}</Dialog.Title>
           <NameForm {...props} busy={busy} setBusy={setBusy} />
         </Dialog.Content>

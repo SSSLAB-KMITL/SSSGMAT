@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { DockviewApi } from "dockview-react";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { t } from "../../src/labels/labels";
 import { useLayout } from "../../src/stores/layout";
 import { Workspace } from "../../src/Workspace";
@@ -149,6 +149,45 @@ describe("Windows... dialog", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(st().windowsDialogOpen).toBe(false);
+  });
+
+  test("OK gives the focus back to what had it when the dialog opened", async () => {
+    render(
+      <>
+        <button type="button">opener</button>
+        <Workspace />
+      </>,
+    );
+    await waitFor(() => expect(st().api).not.toBeNull());
+    const opener = screen.getByRole("button", { name: "opener" });
+    opener.focus();
+    act(() => st().openWindowsDialog());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  test("after Activate the focus is not pulled back to where it was (that would make the old window active again)", async () => {
+    render(
+      <>
+        <button type="button">opener</button>
+        <Workspace />
+      </>,
+    );
+    await waitFor(() => expect(st().api).not.toBeNull());
+    const opener = screen.getByRole("button", { name: "opener" });
+    opener.focus();
+    const focus = vi.spyOn(opener, "focus");
+    act(() => st().openWindowsDialog());
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(rowOf(dialog, "Message Viewer"));
+    fireEvent.click(button(dialog, "activate"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => new Promise((r) => setTimeout(r, 10)));
+    expect(focus).not.toHaveBeenCalled();
+    expect(apiOf().activePanel?.id).toBe("messageViewer");
   });
 
   test("Escape closes it too", async () => {

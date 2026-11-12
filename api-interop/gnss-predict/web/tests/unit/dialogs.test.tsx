@@ -19,6 +19,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** ปุ่มนอกกล่องที่ถือโฟกัสอยู่ตอนกล่องเปิด (เช่น แถวของ Object Browser ที่กด Delete) */
+function renderWithOpener(): HTMLElement {
+  render(
+    <>
+      <button type="button">opener</button>
+      <Dialogs />
+    </>,
+  );
+  const opener = screen.getByRole("button", { name: "opener" });
+  opener.focus();
+  return opener;
+}
+
 describe("412 conflict dialog", () => {
   test("is closed while there is no conflict", () => {
     render(<Dialogs />);
@@ -78,6 +91,28 @@ describe("412 conflict dialog", () => {
     expect(useScenario.getState().conflict).toBe(false);
   });
 
+  test("focus starts on Cancel, so a stray Enter does not throw away the edits that are not applied yet", async () => {
+    const user = userEvent.setup();
+    const reload = vi.fn(async () => true);
+    useScenario.setState({ reload });
+    render(<Dialogs />);
+    act(() => useScenario.setState({ conflict: true }));
+    const cancel = await screen.findByRole("button", { name: t("dialog.cancel") });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await user.keyboard("{Enter}");
+    expect(reload).not.toHaveBeenCalled();
+    expect(useScenario.getState().conflict).toBe(false);
+  });
+
+  test("Cancel gives the focus back to what had it when the box opened", async () => {
+    const user = userEvent.setup();
+    const opener = renderWithOpener();
+    act(() => useScenario.setState({ conflict: true }));
+    await user.click(await screen.findByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
   test("the scenario store has clearConflict()", () => {
     useScenario.setState({ conflict: true });
     useScenario.getState().clearConflict();
@@ -117,6 +152,15 @@ describe("job failed dialog", () => {
     expect(screen.getByText(/line 1/).textContent).toBe("line 1\nline 2");
     await user.click(screen.getByRole("button", { name: t("mv.details") })); // toggles
     expect(screen.queryByText(/line 1/)).toBeNull();
+  });
+
+  test("OK gives the focus back to what had it when the box opened", async () => {
+    const user = userEvent.setup();
+    const opener = renderWithOpener();
+    failLive();
+    await user.click(screen.getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   test("there is no Details button when the job has no detail", () => {
@@ -357,6 +401,59 @@ describe("confirm()", () => {
     await user.click(screen.getByRole("button", { name: t("dialog.ok") })); // answer the first
     await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("two"));
     await waitFor(() => expect(document.activeElement).toBe(cancelOf()));
+  });
+
+  test("Cancel gives the focus back to the element that had it (the Object Browser row that pressed Delete keeps its keys)", async () => {
+    const user = userEvent.setup();
+    const opener = renderWithOpener();
+    let answer: Promise<boolean>;
+    act(() => {
+      answer = confirm("x");
+    });
+    await user.click(await screen.findByRole("button", { name: t("dialog.cancel") }));
+    await expect(answer!).resolves.toBe(false);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  test("Escape gives the focus back as well", async () => {
+    const user = userEvent.setup();
+    const opener = renderWithOpener();
+    act(() => void confirm("x"));
+    const cancel = await screen.findByRole("button", { name: t("dialog.cancel") });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  test("OK gives the focus back once the whole queue is answered", async () => {
+    const user = userEvent.setup();
+    const opener = renderWithOpener();
+    act(() => {
+      void confirm("one");
+      void confirm("two");
+    });
+    await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("two"));
+    await user.click(screen.getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  test("an element that was removed while the box was open is not focused (nothing is forced)", async () => {
+    const user = userEvent.setup();
+    const opener = document.body.appendChild(document.createElement("button")); // not React's, so it can be taken out of the page
+    opener.focus();
+    render(<Dialogs />);
+    act(() => void confirm("x"));
+    await screen.findByRole("dialog");
+    opener.remove();
+    const focus = vi.spyOn(opener, "focus");
+    await user.click(screen.getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => new Promise((r) => setTimeout(r, 10)));
+    expect(focus).not.toHaveBeenCalled();
   });
 
   test("two requests are asked one after the other", async () => {

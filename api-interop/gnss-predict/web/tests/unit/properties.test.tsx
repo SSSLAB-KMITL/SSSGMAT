@@ -455,6 +455,22 @@ describe("Apply on a stale ETag shows the conflict dialog and Reload refetches",
     expect(patches(f, "Facility/THBK")).toHaveLength(1); // the second Apply sent nothing
   });
 
+  test("the box starts on Cancel: a stray Enter keeps the typed value, and the focus goes back to Apply", async () => {
+    const f = server({ [`PATCH ${API}/objects/Facility/THBK`]: stale });
+    await mountFacility();
+    await openPage("Constraints - Active");
+    await type(t("field.min"), "15");
+    await user.click(button(t("dialog.apply")));
+    const dialog = await screen.findByRole("dialog", { name: msg("conflict.title") });
+    const cancel = within(dialog).getByRole("button", { name: t("dialog.cancel") });
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(input(t("field.min")).value).toBe("15");
+    expect(f.calls.filter((c) => c.method === "GET" && c.path === API)).toHaveLength(0); // no Reload
+    await waitFor(() => expect(document.activeElement).toBe(button(t("dialog.apply"))));
+  });
+
   test("OK on a stale ETag does not close the window", async () => {
     server({ [`PATCH ${API}/objects/Facility/THBK`]: stale });
     await mountFacility();

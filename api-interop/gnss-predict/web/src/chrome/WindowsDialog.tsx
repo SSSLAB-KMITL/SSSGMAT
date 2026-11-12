@@ -4,9 +4,12 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useMemo, useState } from "react";
 import { t } from "../labels/labels";
 import { useLayout } from "../stores/layout";
+import { useReturnFocus } from "./returnFocus";
 
 export function WindowsDialog() {
   const open = useLayout((s) => s.windowsDialogOpen);
+  // ปิดแล้วโฟกัสกลับไปที่เดิม เว้นแต่ผู้ใช้กด Activate (โฟกัสที่เดิมจะทำให้หน้าต่างเดิมกลับมา active)
+  const returnFocus = useReturnFocus(open);
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (next ? useLayout.getState().openWindowsDialog() : useLayout.getState().closeWindowsDialog())}>
       <Dialog.Portal>
@@ -14,6 +17,7 @@ export function WindowsDialog() {
         <Dialog.Content
           className="dlg windows-dialog"
           aria-describedby={undefined}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
           onOpenAutoFocus={(e) => {
             // โฟกัสแถวที่เลือกอยู่ (ไม่ใช่แถวแรก) ไม่งั้นวงโฟกัสกับแถบสีน้ำเงินอยู่คนละแถว
             const row = e.currentTarget instanceof HTMLElement ? e.currentTarget.querySelector<HTMLElement>('tr[aria-selected="true"]') : null;
@@ -24,7 +28,7 @@ export function WindowsDialog() {
           }}
         >
           <Dialog.Title className="dlg-title">{t("window.windows")}</Dialog.Title>
-          <WindowsList />
+          <WindowsList onActivate={returnFocus.forget} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -32,7 +36,7 @@ export function WindowsDialog() {
 }
 
 /** เนื้อกล่อง: mount เฉพาะตอนเปิด จึงเลือกหน้าต่างที่ active อยู่เป็นค่าเริ่มต้นได้ตั้งแต่ render แรก */
-function WindowsList() {
+function WindowsList({ onActivate }: { onActivate(): void }) {
   const revision = useLayout((s) => s.revision);
   const [selected, setSelected] = useState<string | null>(() => useLayout.getState().api?.activePanel?.id ?? null);
 
@@ -43,6 +47,10 @@ function WindowsList() {
     if (current !== null) run(current.id);
   };
   const layout = useLayout.getState;
+  const activate = (id: string): void => {
+    onActivate();
+    layout().activatePanel(id);
+  };
 
   return (
     <div className="windows-dialog-body">
@@ -60,7 +68,7 @@ function WindowsList() {
               aria-selected={w.id === selected}
               tabIndex={0}
               onClick={() => setSelected(w.id)}
-              onDoubleClick={() => layout().activatePanel(w.id)}
+              onDoubleClick={() => activate(w.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
@@ -75,7 +83,7 @@ function WindowsList() {
         </tbody>
       </table>
       <div className="windows-buttons">
-        <button type="button" className="btn" disabled={current === null} onClick={act((id) => layout().activatePanel(id))}>
+        <button type="button" className="btn" disabled={current === null} onClick={act(activate)}>
           {t("dialog.windows.activate")}
         </button>
         <button type="button" className="btn" disabled={current === null || current.type === "integrated"} onClick={act((id) => layout().setType(id, "integrated"))}>

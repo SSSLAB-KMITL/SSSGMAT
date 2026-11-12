@@ -1,5 +1,5 @@
 // กล่องโต้ตอบกลางของแอป (spec §15): 412 (Reload / Cancel), job ล้มเหลวพร้อม Details, และ confirm(text) ที่ใช้ร่วมกัน
-// <Dialogs/> วางครั้งเดียวที่ราก (App) ทั้งสามกล่องอยู่ในนั้น
+// <Dialogs/> วางครั้งเดียวที่ราก (App) ทั้งสามกล่องอยู่ในนั้น ทุกกล่องคืนโฟกัสให้ element ที่ถือโฟกัสตอนเปิดเมื่อปิด (returnFocus.ts)
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useRef, useState } from "react";
@@ -8,6 +8,7 @@ import { t } from "../labels/labels";
 import { msg } from "../labels/messages.th";
 import { isActiveJob, useJobs, type Job } from "../stores/jobs";
 import { useScenario } from "../stores/scenario";
+import { useReturnFocus } from "./returnFocus";
 
 // ---------- 412: scenario ถูกแก้จากที่อื่น ----------
 
@@ -19,9 +20,14 @@ export interface ConflictBoxProps {
   onCancel(): void;
 }
 
-/** กล่องข้อความเดียวกันสำหรับ 412 ของ store และหน้าต่างที่ถือค่าแก้ค้างอยู่ (Properties Browser): ข้อความไทยและปุ่ม Reload / Cancel ชุดเดียว */
+/**
+ * กล่องข้อความเดียวกันสำหรับ 412 ของ store และหน้าต่างที่ถือค่าแก้ค้างอยู่ (Properties Browser): ข้อความไทยและปุ่ม Reload / Cancel ชุดเดียว
+ * เริ่มที่ Cancel: Reload ทิ้งค่าที่ยังไม่ได้ Apply กด Enter เฉย ๆ จึงต้องไม่ทิ้งงานของผู้ใช้ ปิดแล้วโฟกัสกลับไปที่เดิม (returnFocus.ts)
+ */
 export function ConflictBox({ open, onReload, onCancel }: ConflictBoxProps) {
   const [busy, setBusy] = useState(false);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const returnFocus = useReturnFocus(open);
   const reload = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -35,14 +41,22 @@ export function ConflictBox({ open, onReload, onCancel }: ConflictBoxProps) {
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
         {/* คลิกนอกกล่องไม่ปิด: ต้องเลือก Reload หรือ Cancel (Esc = Cancel) */}
-        <Dialog.Content className="dlg dlg-message" onInteractOutside={(e) => e.preventDefault()}>
+        <Dialog.Content
+          className="dlg dlg-message"
+          onInteractOutside={(e) => e.preventDefault()}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            cancel.current?.focus();
+          }}
+          onCloseAutoFocus={returnFocus.onCloseAutoFocus}
+        >
           <Dialog.Title className="dlg-title">{msg("conflict.title")}</Dialog.Title>
           <Dialog.Description className="dlg-text">{msg("conflict.body")}</Dialog.Description>
           <div className="dlg-buttons">
             <button type="button" className="btn" disabled={busy} onClick={() => void reload()}>
               {t("dialog.reload")}
             </button>
-            <button type="button" className="btn" onClick={onCancel}>
+            <button type="button" className="btn" ref={cancel} onClick={onCancel}>
               {t("dialog.cancel")}
             </button>
           </div>
@@ -135,6 +149,7 @@ function JobFailedDialog() {
   }, []);
 
   const job = queue[0];
+  const returnFocus = useReturnFocus(job !== undefined);
   const close = (): void => {
     setQueue((q) => q.slice(1));
     setDetails(false);
@@ -144,7 +159,7 @@ function JobFailedDialog() {
       <Dialog.Portal>
         <Dialog.Overlay className="dlg-overlay" />
         {job !== undefined && (
-          <Dialog.Content className="dlg dlg-message">
+          <Dialog.Content className="dlg dlg-message" onCloseAutoFocus={returnFocus.onCloseAutoFocus}>
             <Dialog.Title className="dlg-title">{msg("job.failed", { message: job.error?.text ?? job.id })}</Dialog.Title>
             <Dialog.Description className="dlg-text">{`${job.kind} · ${job.id}`}</Dialog.Description>
             {details && job.error?.detail != null && <pre className="dlg-detail">{job.error.detail}</pre>}
@@ -199,6 +214,8 @@ export function confirm(text: string, opts: { okLabel?: string } = {}): Promise<
 function ConfirmHost() {
   const request = useConfirmQueue((s) => s.queue[0]);
   const cancel = useRef<HTMLButtonElement>(null);
+  // กล่องเดียวเปิดค้างตลอดคิว: จำที่โฟกัสอยู่ตอนคำขอแรก แล้วคืนให้เมื่อคิวหมด
+  const returnFocus = useReturnFocus(request !== undefined);
 
   // กล่องเดียวใช้ต่อทุกคำขอ onOpenAutoFocus จึงทำงานแค่ตอนเปิดครั้งแรก: คำขอถัดไปในคิวต้องคืนโฟกัสให้ Cancel เองทุกครั้งที่เปลี่ยนคำขอ
   const requestId = request?.id;
@@ -231,6 +248,7 @@ function ConfirmHost() {
               e.preventDefault(); // เริ่มที่ Cancel: กด Enter เฉย ๆ ไม่ยืนยันการลบโดยไม่ตั้งใจ
               cancel.current?.focus();
             }}
+            onCloseAutoFocus={returnFocus.onCloseAutoFocus}
           >
             <Dialog.Title className="dlg-title">{t("dialog.confirm")}</Dialog.Title>
             <Dialog.Description className="dlg-text">{request.text}</Dialog.Description>
