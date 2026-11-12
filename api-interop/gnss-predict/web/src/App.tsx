@@ -23,10 +23,12 @@ import { registerGraphics3DCommands } from "./windows/Graphics3D/commands3d";
 import { registerGraphics3DPanel } from "./windows/Graphics3D/Graphics3D";
 import { registerWindowProperties3DPanel } from "./windows/Graphics3D/WindowProperties3D";
 import { registerInsertObjectsPanel } from "./windows/InsertObjects/InsertObjects";
+import { registerMessageViewerPanel } from "./windows/MessageViewer/MessageViewer";
 import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
 import { registerSatelliteCatalogPanel } from "./windows/SatelliteCatalog/SatelliteCatalog";
+import { registerTimelineViewPanel } from "./windows/TimelineView/TimelineView";
 import { registerViewFromToPanel } from "./windows/ViewFromTo/ViewFromTo";
 import { Workspace } from "./Workspace";
 
@@ -35,7 +37,7 @@ export function App() {
   // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), Properties Browser (object.properties เปิดมัน),
   // Insert STK Objects / Search Satellite Catalog / Fetch Orbit Data / Daily Forecast Settings (คำสั่ง insert.* และ utilities.* ลงทะเบียนระดับแอปเช่นกัน),
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
-  // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active),
+  // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -49,6 +51,8 @@ export function App() {
     const unregisterGraphics2DCommands = registerGraphics2DCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
+    registerTimelineViewPanel();
+    registerMessageViewerPanel();
     registerPropertiesBrowserPanel();
     registerInsertObjectsPanel();
     registerSatelliteCatalogPanel();

@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, test } from "vitest";
-import { MESSAGE_CAP, useMessages, useVisibleMessages, type Message } from "../../src/stores/messages";
+import { MESSAGE_CAP, isMessage, report, useMessages, useVisibleMessages, type Message } from "../../src/stores/messages";
 
 const msgAt = (sec: number, level: Message["level"] = "info", code = "C", text = "t", object: string | null = null): Message => ({
   time: new Date(Date.UTC(2026, 10, 12, 1, 0, 0) + sec * 1000).toISOString(),
@@ -147,5 +147,28 @@ describe("useVisibleMessages", () => {
     act(() => st().clearTab("error"));
     expect(result.current).toEqual([]);
     expect(renders).toBeLessThan(10);
+  });
+});
+
+describe("detail", () => {
+  test("a message may carry a detail (the long text that Details shows) and it is kept", () => {
+    st().add({ ...msgAt(1, "error", "JOB_FAILED", "GMAT ล้มเหลว"), detail: "Traceback (most recent call last): ..." });
+    expect(st().items[0].detail).toBe("Traceback (most recent call last): ...");
+    expect(st().visible("error")[0].detail).toBe("Traceback (most recent call last): ...");
+  });
+
+  test("report() takes the object and the detail", () => {
+    report("error", "X", "text", "*/Satellite/G01", "more");
+    expect(st().items[0]).toMatchObject({ code: "X", text: "text", object: "*/Satellite/G01", detail: "more" });
+    report("info", "Y", "plain");
+    expect(st().items[1].detail ?? null).toBeNull();
+  });
+
+  test("a message from the network may have a detail that is a string or null, but not another type", () => {
+    const base = { time: "2026-11-12T01:00:00Z", level: "error", code: "C", text: "t", object: null };
+    expect(isMessage({ ...base, detail: "d" })).toBe(true);
+    expect(isMessage({ ...base, detail: null })).toBe(true);
+    expect(isMessage(base)).toBe(true);
+    expect(isMessage({ ...base, detail: 5 })).toBe(false);
   });
 });

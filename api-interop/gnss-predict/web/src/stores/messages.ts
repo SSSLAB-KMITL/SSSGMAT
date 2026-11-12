@@ -16,6 +16,8 @@ export interface Message {
   code: string;
   text: string;
   object: string | null;
+  /** ข้อความยาว/รายละเอียดเพิ่มเติม (เช่น traceback ของ job) ที่ปุ่ม Details แสดง ไม่มี = ไม่มีรายละเอียด */
+  detail?: string | null;
 }
 
 export const MESSAGE_CAP = 5000;
@@ -30,17 +32,18 @@ export function isMessage(x: unknown): x is Message {
   const m = x as Record<string, unknown>;
   return typeof m.time === "string" && typeof m.code === "string" && typeof m.text === "string"
     && (m.level === "info" || m.level === "warning" || m.level === "error")
-    && (m.object === undefined || m.object === null || typeof m.object === "string");
+    && (m.object === undefined || m.object === null || typeof m.object === "string")
+    && (m.detail === undefined || m.detail === null || typeof m.detail === "string");
 }
 
 /** ข้อความที่หน้าเว็บสร้างเอง (เวลา = ตอนนี้) */
-export function localMessage(level: MessageLevel, code: string, text: string, object: string | null = null): Message {
-  return { time: new Date().toISOString(), level, code, text, object };
+export function localMessage(level: MessageLevel, code: string, text: string, object: string | null = null, detail?: string | null): Message {
+  return { time: new Date().toISOString(), level, code, text, object, ...(detail === undefined || detail === null ? {} : { detail }) };
 }
 
 /** ใส่ข้อความที่หน้าเว็บสร้างเองเข้า store */
-export function report(level: MessageLevel, code: string, text: string, object: string | null = null): void {
-  useMessages.getState().add(localMessage(level, code, text, object));
+export function report(level: MessageLevel, code: string, text: string, object: string | null = null, detail?: string | null): void {
+  useMessages.getState().add(localMessage(level, code, text, object, detail));
 }
 
 function matches(tab: MessageTab, m: Message): boolean {

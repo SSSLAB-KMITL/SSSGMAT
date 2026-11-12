@@ -185,6 +185,22 @@ const MESSAGES = {
   "stkRef.count": "แสดง {shown} จาก {total} รายการ",
   "stkRef.noMatch": "ไม่พบรายการที่ตรงกับคำค้น",
 
+  // Timeline View (spec §10): แถวช่วงเวลาของ access ที่เปิด Timeline
+  "timeline.notCurrent": "ยังไม่มีช่วงเวลาของ access นี้ เพราะผลลัพธ์ของ Facility ต้นทางไม่ตรงกับ scenario ปัจจุบันหรือยังไม่มี กด Apply ในหน้าต่าง 3D หรือ 2D เพื่อคำนวณใหม่",
+  "timeline.failed": "ดึงช่วงเวลา access ของ {name} ไม่สำเร็จ: {message}",
+  "timeline.badReply": "server ตอบรูปแบบช่วงเวลาที่อ่านไม่ได้",
+  "timeline.empty": "ยังไม่มีแถวให้แสดง (ไม่มี access ที่เปิด Timeline หรือแถวถูก Remove from Timeline ไว้หมด)",
+  // {time} = เวลา animation, {from} {to} = ช่วงที่เห็นอยู่ (View Port), {rows} = จำนวนแถว
+  "timeline.canvas": "Timeline: เวลา animation {time} ช่วงที่เห็น {from} ถึง {to} มี {rows} แถว",
+  // {name} = ชื่อแถว, {start} {stop} = ต้นและปลายช่วง, {duration} = ความยาว, {maxEl} = มุมเงยสูงสุด
+  "timeline.interval": "{name}: {start} ถึง {stop} ({duration}, มุมเงยสูงสุด {maxEl}°)",
+  "timeline.intervalNoElevation": "{name}: {start} ถึง {stop} ({duration})",
+
+  // Message Viewer (spec §11)
+  "mv.empty": "ไม่มีข้อความในแท็บนี้",
+  "mv.noDetail": "ข้อความนี้ไม่มีรายละเอียดเพิ่มเติม",
+  "mv.selectFirst": "เลือกข้อความก่อนจึงจะดูรายละเอียดได้",
+
   // หน้าต่างที่ยังไม่ได้ทำ (ตัวแทนชั่วคราวใน src/layout/panels.ts จนกว่างานของหน้าต่างนั้นจะลงทะเบียนของจริง)
   "panel.placeholder": "ยังไม่ทำ (งานถัดไป)",
 

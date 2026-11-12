@@ -89,3 +89,27 @@ test("the dockview theme maps every tab and surface variable onto the tokens, wi
   expect(vars["--dv-inactivegroup-visiblepanel-tab-background-color"]).toBe("var(--panel)");
   expect(vars["--dv-inactivegroup-visiblepanel-tab-color"]).toBe("var(--text)");
 });
+
+test("the Timeline View tokens exist, the text on the timeline surfaces passes WCAG AA and the white pointer stands out from the bar", () => {
+  const v = readCssVars("src/theme.css");
+  for (const name of ["--timeline-bg", "--timeline-row-alt", "--timeline-bar-bg", "--timeline-viewport-fill", "--timeline-viewport-line", "--timeline-grid",
+                      "--timeline-text", "--timeline-text-muted", "--timeline-pointer", "--timeline-now", "--timeline-hatch", "--timeline-bar-outline"])
+    expect(v[name], name).toBeTruthy();
+  for (const [fg, bg] of [["--timeline-text", "--timeline-bg"], ["--timeline-text", "--timeline-row-alt"], ["--timeline-text-muted", "--timeline-bg"],
+                          ["--timeline-text-muted", "--timeline-row-alt"], ["--timeline-text-muted", "--timeline-bar-bg"]])
+    expect(contrast(v[fg], v[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+  // ตัวชี้เวลาเป็นสีขาวบนแถบ (กราฟิก: อย่างน้อย 3:1) และเส้นเวลาปัจจุบันเห็นชัดบนพื้นของ Time Display
+  expect(v["--timeline-pointer"].toLowerCase()).toBe("#ffffff");
+  expect(contrast(v["--timeline-pointer"], v["--timeline-bar-bg"])).toBeGreaterThanOrEqual(3);
+  expect(contrast(v["--timeline-now"], v["--timeline-bg"])).toBeGreaterThanOrEqual(3);
+});
+
+test("the rules of the Timeline View and the Message Viewer use tokens only", () => {
+  const css = readFileSync(resolve(WEB_ROOT, "src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const own = rules.filter((r) => /(^|[\s,>])\.(tl|mv)([\s.:[,{-]|$)|\.(tl|mv)-/.test(r.selector));
+  expect(own.length).toBeGreaterThan(15);
+  for (const r of own) expect(r.body, r.selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  // the selected message row uses the same colours as every other selection
+  expect(own.find((r) => r.selector.startsWith('.mv-row[aria-selected="true"]'))?.body).toContain("var(--selected-bg)");
+});

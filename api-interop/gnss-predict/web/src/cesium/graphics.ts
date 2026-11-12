@@ -20,48 +20,15 @@ import {
   PointGraphics, PolylineDashMaterialProperty, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
+import { effectiveColor, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
 
 type ScenarioDoc = components["schemas"]["ScenarioDoc"];
-export type SceneObject = ScenarioDoc["objects"][number];
 type SatelliteObj = components["schemas"]["SatelliteObj"];
-type ConstellationObj = components["schemas"]["ConstellationObj"];
 
-// ---------- สีของธีม ----------
-
-export interface ColorTokens {
-  gps: string;
-  glonass: string;
-  galileo: string;
-  beidou: string;
-  /** ดาวที่รู้ระบบไม่ได้ */
-  other: string;
-  facility: string;
-  access: string;
-}
-export type TokenName = keyof ColorTokens;
-type SystemToken = Exclude<TokenName, "other" | "facility" | "access">;
-
-const TOKEN_VARS: Record<TokenName, string> = {
-  gps: "--color-gps", glonass: "--color-glonass", galileo: "--color-galileo", beidou: "--color-beidou", other: "--color-other",
-  facility: "--color-facility", access: "--color-access",
-};
-
-/** ค่าตัวแปร CSS ของหน้า (ตัดช่องว่าง) ไม่มี = "" */
-const readCssVar = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-
-let cachedTokens: ColorTokens | null = null;
-
-/** สีของระบบจากตัวแปร CSS ใน theme.css (อ่านครั้งแรกที่ใช้แล้วจำไว้) ตัวแปรที่อ่านไม่ได้ = ขาว */
-export function themeTokens(): ColorTokens {
-  if (cachedTokens !== null) return cachedTokens;
-  const tokens = Object.fromEntries(
-    (Object.keys(TOKEN_VARS) as TokenName[]).map((k) => [k, readCssVar(TOKEN_VARS[k]) || "#ffffff"]),
-  ) as unknown as ColorTokens;
-  // jsdom และหน้าที่ยังไม่โหลด theme.css ไม่มีค่า: ไม่จำค่าว่างไว้ ให้รอบถัดไปอ่านใหม่
-  if (Object.values(tokens).some((v) => v !== "#ffffff")) cachedTokens = tokens;
-  return tokens;
-}
+// สีของธีม ระบบของดาว และสีที่ใช้จริงของ object อยู่ใน colors.ts (ไม่ import Cesium: Timeline View ใช้ร่วม) ส่งต่อที่นี่ให้ผู้ใช้เดิมไม่ต้องเปลี่ยน
+export { objectPath, systemTokenOf, themeTokens } from "./colors";
+export type { ColorTokens, SceneObject, TokenName } from "./colors";
 
 /** หน้าตาของสิ่งที่วาดในภาพ 3D/2D นอกจากสีของ object (theme.css: --scene-*) */
 export interface SceneStyle {
@@ -123,20 +90,7 @@ export function sceneStyle(): SceneStyle {
   return style;
 }
 
-/** ระบบของดาวจากอักษรนำของ PRN (G R E C) หรือชื่อระบบ ไม่ใช่สี่ระบบนี้ = null */
-export function systemTokenOf(system: string | null | undefined): SystemToken | null {
-  switch ((system ?? "").trim().toUpperCase()) {
-    case "G": case "GPS": return "gps";
-    case "R": case "GLONASS": return "glonass";
-    case "E": case "GALILEO": return "galileo";
-    case "C": case "BEIDOU": case "BDS": return "beidou";
-    default: return null;
-  }
-}
-
 // ---------- id ของ entity (W8) ----------
-
-export const objectPath = (obj: Pick<SceneObject, "class" | "name">): string => `*/${obj.class}/${obj.name}`;
 
 /** id ของ entity ใน CZML ของ object: Facility = fac/<ชื่อ>, Satellite = sat/<PRN จาก NORAD> (ไม่มีใน manifest = undefined), Constellation = undefined */
 export function entityIdFor(obj: SceneObject, prnByNorad: ReadonlyMap<number, string>): string | undefined {
@@ -228,30 +182,6 @@ const graphics2dOf = (obj: SceneObject): Graphics2DLike => ((obj as { graphics2d
 const graphics3dOf = (obj: SceneObject): { show?: boolean; orbit_system?: string } =>
   ((obj as { graphics3d?: { show?: boolean; orbit_system?: string } | null }).graphics3d ?? {});
 
-/** สีของ Constellation ตัวแรก (ตามลำดับใน doc) ที่มี object นี้และตั้งสีไว้ */
-function constellationColor(path: string, doc: ScenarioDoc): string | null {
-  for (const o of doc.objects) {
-    if (o.class !== "Constellation") continue;
-    const c = o as ConstellationObj;
-    if ((c.assigned_objects ?? []).includes(path) && typeof c.color === "string" && c.color !== "") return c.color;
-  }
-  return null;
-}
-
-/** ระบบของดาว: อักษรนำของ PRN ตาม NORAD ไม่งั้น system ของ Constellation แรก (ตามลำดับใน doc) ที่มีดาวนี้และระบุระบบไว้ ไม่รู้ = null */
-function systemOfSatellite(obj: SceneObject, doc: ScenarioDoc, prnByNorad: ReadonlyMap<number, string> | undefined): string | null {
-  if (obj.class !== "Satellite") return null;
-  const prn = prnByNorad?.get((obj as SatelliteObj).norad);
-  if (prn !== undefined && prn !== "") return prn.slice(0, 1);
-  const path = objectPath(obj);
-  for (const o of doc.objects) {
-    if (o.class !== "Constellation") continue;
-    const c = o as ConstellationObj;
-    if (typeof c.system === "string" && (c.assigned_objects ?? []).includes(path)) return c.system;
-  }
-  return null;
-}
-
 export function graphicsFor(obj: SceneObject, doc: ScenarioDoc, ctx: GraphicsCtx): ObjectGraphics {
   const tokens = ctx.tokens ?? themeTokens();
   const g2 = graphics2dOf(obj);
@@ -259,17 +189,12 @@ export function graphicsFor(obj: SceneObject, doc: ScenarioDoc, ctx: GraphicsCtx
   const shownHere = ctx.mode === "3d" ? (g3.show ?? true) : (g2.show ?? true);
   const show = shownHere && !ctx.hidden;
 
-  let color: string;
-  const own = typeof g2.color === "string" && g2.color !== "" ? g2.color : null;
-  const system = ctx.system ?? systemOfSatellite(obj, doc, ctx.prnByNorad);
-  const fallback = obj.class === "Facility" ? tokens.facility : tokens[systemTokenOf(system) ?? "other"];
-  if (g2.inherit === false) color = own ?? fallback;
-  else color = constellationColor(objectPath(obj), doc) ?? fallback;
+  const color = effectiveColor(obj, doc, { system: ctx.system, prnByNorad: ctx.prnByNorad, tokens });
 
   const markerStyle = g2.marker_style ?? DEFAULT_MARKER;
   return {
     show,
-    color: color.toLowerCase(),
+    color,
     labelShow: show && (doc.graphics2d_global?.show_labels ?? true),
     pointPixelSize: markerPoint(markerStyle).pixelSize,
     markerStyle,

@@ -17,3 +17,7 @@ class FakeResizeObserver implements ResizeObserver {
 }
 
 if (typeof globalThis.ResizeObserver === "undefined") globalThis.ResizeObserver = FakeResizeObserver;
+
+// jsdom ไม่มี canvas จริง: getContext ของมันพิมพ์ "Not implemented" ทุกครั้งแล้วคืน null หน้าต่างที่วาดด้วย canvas (Timeline View) ข้ามการวาดเมื่อได้ null
+// ตัวนี้ทำให้เงียบ test ที่ต้องดูการวาดสั่ง vi.spyOn(HTMLCanvasElement.prototype, "getContext") เอง
+if (typeof HTMLCanvasElement !== "undefined") HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;

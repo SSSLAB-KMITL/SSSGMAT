@@ -7,7 +7,7 @@
 // - การเลือก: sync กับ useSelection.activePath (คลิกแถว = เลือก, เลือกจากที่อื่น = แถวนี้ถูกไฮไลต์และเปิดโฟลเดอร์ที่พับครอบอยู่) โฟลเดอร์ไม่ใช่ object จึงเลือกแล้ว activePath = null
 // - ขนาดแถวและเยื้องเป็นค่าคงที่ที่ virtual list ต้องรู้ จึงอยู่ที่นี่และใส่เป็น inline style ส่วนสีและฟอนต์อยู่ใน theme.css
 
-import { defaultRangeExtractor, useVirtualizer, type Range, type Rect, type Virtualizer } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer, type Range, type Rect } from "@tanstack/react-virtual";
 import {
   ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Folder, FolderOpen, FolderPlus, Globe, MapPin, Orbit, Palette, Satellite,
   Scissors, Search, SlidersHorizontal, SquareCheck, Trash2, TriangleAlert, X, type LucideIcon,
@@ -23,6 +23,7 @@ import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels
 import { OBJECT_BROWSER_SCOPE } from "../../shortcuts";
 import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
+import { observeViewportWithFallback } from "../virtualList";
 import { find, objectRows, openProperties, requestScroll, reveal, selectKey, setColor, setOpen, setShow } from "./actions";
 import { FindDialog } from "./FindDialog";
 import { NewGroupDialog } from "./NewGroupDialog";
@@ -36,21 +37,7 @@ const INDENT = 14;
 /** ขนาดพื้นที่เห็นที่ใช้เมื่อยังวัดไม่ได้ (วัดได้ 0: ยังไม่มี layout เช่นหน้าต่างเพิ่งสร้าง หรือ jsdom) = ขนาดตั้งต้นของหน้าต่าง */
 const FALLBACK_RECT: Rect = { width: 320, height: 520 };
 
-/**
- * วัดพื้นที่เห็นของ virtual list เหมือนตัววัดมาตรฐานของ TanStack Virtual (clientWidth/clientHeight และตามเมื่อขนาดเปลี่ยน) ต่างตรงที่ขนาด 0 ใช้ FALLBACK_RECT
- * ไม่งั้นรายการว่างทั้งที่มีแถว: แถวที่เกินพื้นที่จริงถูกตัดโดย overflow อยู่แล้ว และเมื่อวัดได้จริงค่านั้นแทนที่ทันที
- */
-function observeViewport(instance: Virtualizer<HTMLDivElement, Element>, cb: (rect: Rect) => void): (() => void) | void {
-  const element = instance.scrollElement;
-  const view = instance.targetWindow;
-  if (element === null || view === null) return;
-  const measure = (): void => cb(element.clientHeight > 0 ? { width: element.clientWidth, height: element.clientHeight } : FALLBACK_RECT);
-  measure();
-  if (!view.ResizeObserver) return;
-  const observer = new view.ResizeObserver(measure);
-  observer.observe(element, { box: "content-box" });
-  return () => observer.unobserve(element);
-}
+const observeViewport = observeViewportWithFallback(FALLBACK_RECT);
 
 const CLASS_ICONS: Record<RowClass, LucideIcon> = { Scenario: Globe, Facility: MapPin, Constellation: Orbit, Satellite };
 
