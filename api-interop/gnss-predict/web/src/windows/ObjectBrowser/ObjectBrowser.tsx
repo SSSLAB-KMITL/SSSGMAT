@@ -25,11 +25,11 @@ import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import { observeViewportWithFallback } from "../virtualList";
-import { find, objectRows, openProperties, requestScroll, reveal, selectKey, setColor, setOpen, setShow } from "./actions";
+import { find, objectRows, openProperties, requestFocus, requestScroll, reveal, selectKey, setColor, setOpen, setShow } from "./actions";
 import { FindDialog } from "./FindDialog";
 import { NewGroupDialog } from "./NewGroupDialog";
 import { RenameDialog } from "./RenameDialog";
-import { useObjectBrowser } from "./state";
+import { TREE_FOCUS, useObjectBrowser } from "./state";
 import { flattenTree, hasToggle, type Row, type RowClass } from "./tree";
 
 const ROW_HEIGHT = 22;
@@ -159,7 +159,8 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
   const catalog = useScenario((s) => s.catalog);
   const prnByNorad = useResults((s) => s.prnByNorad);
   const activePath = useSelection((s) => s.activePath);
-  const { collapsed, groupSelected, flaggedOnly, showColors, showToggles, findOpen, findToken, newGroupOpen, renaming, scrollTarget, busy } = useObjectBrowser();
+  const { collapsed, groupSelected, flaggedOnly, showColors, showToggles, findOpen, findToken, newGroupOpen, renaming, scrollTarget, focusTarget, busy } =
+    useObjectBrowser();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -219,6 +220,22 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
       focusRequest.current = null;
       el.focus({ preventScroll: true });
     }
+  });
+
+  // โฟกัสที่ร้องขอหลัง Rename / Delete (แถวเดิมหายจาก DOM เพราะแถวผูกกับ path): ลองทุกครั้งที่วาดจนโฟกัสลง
+  // กล่องโต้ตอบแบบ modal ที่ยังเปิดอยู่ (Rename ก่อนปิด) ดึงโฟกัสกลับ = ลองใหม่รอบถัดไป แถวที่ไม่มีในรายการแล้ว = เลิก
+  useEffect(() => {
+    if (focusTarget === null) return;
+    const el =
+      focusTarget === TREE_FOCUS
+        ? listRef.current
+        : (Array.from(listRef.current?.children ?? []).find((child) => child.getAttribute("data-row-key") === focusTarget) ?? null);
+    if (!(el instanceof HTMLElement)) {
+      if (focusTarget === TREE_FOCUS || !rows.some((row) => row.key === focusTarget)) requestFocus(null);
+      return; // แถวยังไม่ถูกวาด (virtual list เพิ่งเลื่อน): รอรอบถัดไป
+    }
+    el.focus({ preventScroll: true });
+    if (document.activeElement === el || document.querySelector('[role="dialog"][data-state="open"]') === null) requestFocus(null);
   });
 
   const closeFind = (): void => {
@@ -343,7 +360,16 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
               {tree === null ? (
                 <p className="ob-empty">{msg("tooltip.noScenario")}</p>
               ) : (
-                <div ref={listRef} className="ob-tree" role="tree" aria-label={t("window.objectBrowser")} style={{ height: virtualizer.getTotalSize() }} onKeyDown={onKeyDown}>
+                <div
+                  ref={listRef}
+                  className="ob-tree"
+                  role="tree"
+                  aria-label={t("window.objectBrowser")}
+                  // โฟกัสได้ด้วยโปรแกรมเท่านั้น (ไม่อยู่ในลำดับ Tab): ที่รับโฟกัสเมื่อแถวที่ลบไม่มีแถวข้างเคียง คีย์ลูกศรเริ่มจากแถวแรก
+                  tabIndex={-1}
+                  style={{ height: virtualizer.getTotalSize() }}
+                  onKeyDown={onKeyDown}
+                >
                   {virtualizer.getVirtualItems().map((item) => {
                     const row = rows[item.index];
                     if (row === undefined) return null;
@@ -377,6 +403,7 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
             const newPath = `*/${target.cls}/${newName}`;
             useSelection.getState().select(newPath);
             requestScroll(newPath);
+            requestFocus(newPath); // แถวเดิมหายไปแล้ว (แถวผูกกับ path) กล่อง Rename จึงคืนโฟกัสให้มันไม่ได้
           }}
         />
       </div>

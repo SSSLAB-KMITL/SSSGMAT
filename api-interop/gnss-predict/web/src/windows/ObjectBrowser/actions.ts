@@ -4,12 +4,13 @@
 
 import { confirm } from "../../chrome/Dialogs";
 import { msg } from "../../labels/messages.th";
+import { OBJECT_BROWSER_SCOPE } from "../../shortcuts";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
 import { useScenario, type ObjectPages } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import { copyName, useClipboard } from "./clipboard";
-import { useObjectBrowser } from "./state";
+import { TREE_FOCUS, useObjectBrowser } from "./state";
 import { expandableKeys, findMatches, flattenTree, isEditable, isSatellite, ROOT_KEY, type Row } from "./tree";
 import { attempt } from "../../api/writes";
 
@@ -82,6 +83,34 @@ export function reveal(key: string): void {
 }
 
 export const requestScroll = (key: string | null): void => useObjectBrowser.setState({ scrollTarget: key });
+
+/** ให้หน้าต่างโฟกัสแถวนี้ (หรือ TREE_FOCUS = ตัวต้นไม้) เมื่อแถวถูกวาด */
+export const requestFocus = (key: string | null): void => useObjectBrowser.setState({ focusTarget: key });
+
+/** แถวที่เห็นอยู่ตอนนี้ (ตามการพับและตัวกรองธง) ลำดับเดียวกับหน้าต่าง */
+function visibleRows(): Row[] {
+  const { tree } = useScenario.getState();
+  if (tree === null) return [];
+  const { collapsed, flaggedOnly } = useObjectBrowser.getState();
+  return flattenTree(tree, new Set([...objectRows().allKeys].filter((key) => !collapsed.has(key))), { flaggedOnly });
+}
+
+/** แถวข้างเคียงของแถวที่จะหายไป: ถัดไป ไม่มีก็ก่อนหน้า (แถวที่ไม่ได้อยู่ในรายการที่เห็น = null) */
+function neighbourOf(key: string): string | null {
+  const rows = visibleRows();
+  const at = rows.findIndex((row) => row.key === key);
+  return at < 0 ? null : (rows[at + 1]?.key ?? rows[at - 1]?.key ?? null);
+}
+
+/**
+ * โฟกัสต้องตามการลบไปที่แถวข้างเคียงไหม: ใช่ถ้าโฟกัสอยู่ในต้นไม้ (คีย์ Delete) ในเมนู (คลิกขวา เมนูของ object) ที่จะหายไป หรือไม่มีโฟกัส
+ * ไม่ถ้าอยู่ที่ปุ่มที่ยังอยู่ต่อ (ปุ่ม Delete บนแถบเครื่องมือ หรือหน้าต่างอื่น): กล่องยืนยันคืนโฟกัสให้ที่นั่นเอง (returnFocus.ts)
+ */
+function focusFollowsDelete(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || active === document.body) return true;
+  return active.closest(`[data-focus-scope="${OBJECT_BROWSER_SCOPE}"] [role="tree"]`) !== null || active.closest('[role="menu"], [role="menubar"]') !== null;
+}
 
 export const expandAll = (): void => useObjectBrowser.setState({ collapsed: new Set() });
 /** พับทุกโฟลเดอร์ แต่ราก (Scenario) ยังเปิดอยู่ เห็น Facility, Constellation และโฟลเดอร์ */
@@ -159,11 +188,26 @@ export async function setColor(row: Row, color: string): Promise<void> {
   await attempt(() => useScenario.getState().patchObject(row.cls, row.name, pages), row.path);
 }
 
+/**
+ * ลบหลังยืนยัน: สำเร็จแล้วการเลือกย้ายไปแถวข้างเคียง (ถัดไป ไม่มีก็ก่อนหน้า) ถ้าแถวที่ลบเป็นแถวที่เลือกอยู่
+ * และโฟกัสตามไปด้วยเมื่อโฟกัสอยู่ในต้นไม้หรือเมนูตอนสั่ง (focusFollowsDelete) ไม่มีแถวข้างเคียง = โฟกัสตัวต้นไม้
+ * ล้มเหลว = ไม่ย้ายอะไร (กล่องยืนยันคืนโฟกัสให้แถวเดิม)
+ */
 export async function deleteRow(row: Row): Promise<void> {
   if (!isEditable(row)) return;
+  const followFocus = focusFollowsDelete();
   if (!(await confirm(msg("confirm.delete", { name: row.name })))) return;
+  const neighbour = neighbourOf(row.key);
   const done = await attempt(() => useScenario.getState().remove(row.cls, row.name), row.path);
-  if (done.ok && useSelection.getState().activePath === row.path) useSelection.getState().select(null);
+  if (!done.ok) return;
+  if (useSelection.getState().activePath === row.path) {
+    useSelection.getState().select(null);
+    if (neighbour !== null) selectKey(neighbour);
+  }
+  if (followFocus) {
+    if (neighbour !== null) requestScroll(neighbour);
+    requestFocus(neighbour ?? TREE_FOCUS);
+  }
 }
 
 // ---------- Cut / Copy / Paste (W15) ----------

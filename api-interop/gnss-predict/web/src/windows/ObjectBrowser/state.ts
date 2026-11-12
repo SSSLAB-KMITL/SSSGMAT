@@ -31,6 +31,11 @@ interface ObjectBrowserState {
   renaming: RenameTarget | null;
   /** key ของแถวที่หน้าต่างต้องเลื่อนไปให้เห็นเมื่อแถวนั้นอยู่ในรายการ */
   scrollTarget: string | null;
+  /**
+   * key ของแถวที่ต้องได้โฟกัสคีย์บอร์ดเมื่อแถวนั้นถูกวาด (TREE_FOCUS = ตัวต้นไม้) หลัง Rename หรือ Delete แถวเดิมหายไปจาก DOM
+   * (แถวผูกกับ path) กล่องโต้ตอบจึงคืนโฟกัสให้แถวเดิมไม่ได้ หน้าต่างล้างค่านี้เมื่อโฟกัสลงแล้ว
+   */
+  focusTarget: string | null;
   /** แถวที่กำลังเขียนอยู่: ช่องติ๊กของแถวนั้นปิดไว้จนเขียนเสร็จ */
   busy: ReadonlySet<string>;
 }
@@ -43,7 +48,11 @@ const FRESH = {
   newGroupOpen: false,
   renaming: null,
   scrollTarget: null,
+  focusTarget: null,
 } satisfies Partial<ObjectBrowserState>;
+
+/** focusTarget ที่หมายถึงตัวต้นไม้ (ไม่มีแถวข้างเคียงให้โฟกัส) */
+export const TREE_FOCUS = "tree:";
 
 export const useObjectBrowser = create<ObjectBrowserState>()(() => ({
   ...FRESH,

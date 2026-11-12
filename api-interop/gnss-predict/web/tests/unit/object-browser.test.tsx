@@ -13,7 +13,7 @@ import { installShortcuts } from "../../src/shortcuts";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useResults } from "../../src/stores/results";
-import { useScenario } from "../../src/stores/scenario";
+import { useScenario, type TreeNode, type TreeObject } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useClipboard } from "../../src/windows/ObjectBrowser/clipboard";
 import { ObjectBrowser, registerObjectBrowserPanel } from "../../src/windows/ObjectBrowser/ObjectBrowser";
@@ -78,6 +78,31 @@ const colorInput = (name: string) => row(name).querySelector<HTMLInputElement>('
 const button = (name: string) => screen.getByRole("button", { name });
 const selected = () => screen.queryAllByRole("treeitem", { hidden: true }).filter((r) => r.getAttribute("aria-selected") === "true").map((r) => r.textContent);
 const item = (menu: HTMLElement, name: string) => within(menu).getByRole("menuitem", { name });
+
+/** what the real store does before rename() / remove() resolve: the doc and the tree are reloaded (rows are keyed by path) */
+function renameInStore(oldName: string, newName: string): void {
+  const swap = (path: string) => (path === satPath(oldName) ? satPath(newName) : path);
+  const { doc, tree } = useScenario.getState();
+  const nextDoc = structuredClone(doc!);
+  for (const o of nextDoc.objects as { name: string; assigned_objects?: string[] }[]) {
+    if (o.name === oldName) o.name = newName;
+    if (o.assigned_objects) o.assigned_objects = o.assigned_objects.map(swap);
+  }
+  for (const g of nextDoc.groups ?? []) g.members = (g.members ?? []).map(swap);
+  const rename = (n: TreeNode): TreeNode => ("group" in n ? { ...n, children: n.children.map((c) => rename(c) as TreeObject) } : n.name === oldName ? { ...n, name: newName, path: swap(n.path) } : n);
+  useScenario.setState({ doc: nextDoc, tree: { ...tree!, children: tree!.children.map(rename) } });
+}
+
+function removeFromStore(name: string): void {
+  const { doc, tree } = useScenario.getState();
+  const nextDoc = structuredClone(doc!);
+  nextDoc.objects = nextDoc.objects.filter((o) => o.name !== name);
+  const keep = (n: TreeNode): TreeNode[] => ("group" in n ? [{ ...n, children: n.children.filter((c) => c.name !== name) }] : n.name === name ? [] : [n]);
+  useScenario.setState({ doc: nextDoc, tree: { ...tree!, children: tree!.children.flatMap(keep) } });
+}
+
+/** let the dialog's own close steps (Radix runs them in a timeout) finish */
+const settle = () => act(async () => new Promise((r) => setTimeout(r, 20)));
 
 describe("rows", () => {
   test("shows the scenario, the Facility, the Constellation, the folders with their members and the ungrouped satellites", () => {
@@ -546,7 +571,123 @@ describe("Delete", () => {
     expect(spies.remove).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
     await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
-    await waitFor(() => expect(useSelection.getState().activePath).toBeNull());
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("G02"))); // the selection moves to the next row
+  });
+
+  test("Delete key → OK moves the selection and the focus to the next row, so the arrow keys keep working", async () => {
+    loadObjects();
+    spies.remove.mockImplementationOnce((async (_cls: string, name: string) => {
+      removeFromStore(name);
+      return written;
+    }) as never);
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G01"));
+    expect(document.activeElement).toBe(row("G01"));
+    await user.keyboard("{Delete}");
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: t("dialog.cancel") })));
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Enter}"); // OK
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+    await waitFor(() => expect(hasRow("G01")).toBe(false));
+    await waitFor(() => expect(document.activeElement).toBe(row("G02")));
+    await settle();
+    expect(document.activeElement).toBe(row("G02"));
+    expect(selected()).toEqual(["G02"]);
+    await user.keyboard("{ArrowDown}");
+    expect(selected()).toEqual(["Mine"]);
+    expect(document.activeElement).toBe(row("Mine"));
+  });
+
+  test("right-click → Delete → OK puts the focus on the next row too (the menu it came from is gone)", async () => {
+    loadObjects();
+    spies.remove.mockImplementationOnce((async (_cls: string, name: string) => {
+      removeFromStore(name);
+      return written;
+    }) as never);
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("G01") });
+    await user.click(item(await screen.findByRole("menu"), "Delete"));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Enter}");
+    await waitFor(() => expect(hasRow("G01")).toBe(false));
+    await waitFor(() => expect(document.activeElement).toBe(row("G02")));
+    await settle();
+    expect(document.activeElement).toBe(row("G02"));
+    expect(selected()).toEqual(["G02"]);
+  });
+
+  test("deleting the last row moves the selection and the focus to the row before it", async () => {
+    loadObjects();
+    spies.remove.mockImplementationOnce((async (_cls: string, name: string) => {
+      removeFromStore(name);
+      return written;
+    }) as never);
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G05"));
+    await user.keyboard("{Delete}");
+    await screen.findByRole("dialog");
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Enter}");
+    await waitFor(() => expect(hasRow("G05")).toBe(false));
+    await waitFor(() => expect(document.activeElement).toBe(row("G04")));
+    await settle();
+    expect(document.activeElement).toBe(row("G04"));
+    expect(selected()).toEqual(["G04"]);
+  });
+
+  test("Delete from the toolbar button: the selection moves to the next row and the focus goes back to the button", async () => {
+    loadObjects();
+    spies.remove.mockImplementationOnce((async (_cls: string, name: string) => {
+      removeFromStore(name);
+      return written;
+    }) as never);
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(hasRow("G01")).toBe(false));
+    await settle();
+    expect(selected()).toEqual(["G02"]);
+    expect(document.activeElement).toBe(button(t("ob.delete")));
+  });
+
+  test("an object deleted while the flag filter hides it has no neighbour: the focus goes to the tree, where the arrow keys start again", async () => {
+    loadObjects();
+    spies.remove.mockImplementationOnce((async (_cls: string, name: string) => {
+      removeFromStore(name);
+      return written;
+    }) as never);
+    renderOb();
+    await user.click(row("G01"));
+    act(() => runCommand("ob.showFlagged")); // G01 has no flag: its row leaves the list, and the focus with it
+    expect(hasRow("G01")).toBe(false);
+    act(() => runCommand("object.delete"));
+    await screen.findByRole("dialog");
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Enter}");
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+    const tree = screen.getByRole("tree", { name: t("window.objectBrowser") });
+    await waitFor(() => expect(document.activeElement).toBe(tree));
+    await settle();
+    expect(document.activeElement).toBe(tree);
+    expect(useSelection.getState().activePath).toBeNull();
+    await user.keyboard("{ArrowDown}");
+    expect(selected()).toEqual(["S1"]);
+  });
+
+  test("a failed delete keeps the selection and gives the focus back to the row", async () => {
+    loadObjects();
+    spies.remove.mockRejectedValueOnce(new ApiError({ status: 404, code: "NOT_FOUND", text: "ไม่พบ" }));
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G01"));
+    await user.keyboard("{Delete}");
+    await screen.findByRole("dialog");
+    await user.keyboard("{Shift>}{Tab}{/Shift}{Enter}");
+    await waitFor(() => expect(useMessages.getState().items.some((m) => m.code === "NOT_FOUND")).toBe(true));
+    await settle();
+    expect(selected()).toEqual(["G01"]);
+    expect(document.activeElement).toBe(row("G01"));
   });
 
   test("Cancel deletes nothing", async () => {
@@ -804,6 +945,29 @@ describe("Rename", () => {
     await waitFor(() => expect(spies.rename).toHaveBeenCalledWith("Satellite", "G01", "GPS01"));
     await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("GPS01")));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  test("Rename → OK leaves the focus on the renamed row (its old row is gone), so the arrow keys keep working", async () => {
+    loadObjects();
+    spies.rename.mockImplementationOnce((async (_cls: string, name: string, newName: string) => {
+      renameInStore(name, newName);
+      return written;
+    }) as never);
+    renderOb();
+    await user.click(row("G01"));
+    expect(document.activeElement).toBe(row("G01"));
+    act(() => runCommand("object.rename"));
+    const dialog = await screen.findByRole("dialog", { name: t("menu.object.rename") });
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") });
+    await user.clear(field);
+    await user.type(field, "GPS01{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row("GPS01")));
+    await settle();
+    expect(document.activeElement).toBe(row("GPS01"));
+    expect(selected()).toEqual(["GPS01"]);
+    await user.keyboard("{ArrowDown}");
+    expect(selected()).toEqual(["G02"]);
   });
 
   test("a name with a space, a dot or more than 32 characters is refused before any request", async () => {
