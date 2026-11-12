@@ -1,4 +1,5 @@
-// สีของ object ที่ไม่พึ่ง Cesium (graphics.ts ใช้สำหรับภาพ 3D/2D และ Timeline View ใช้สำหรับแถวช่วงเวลา: ต้องเลือกสีของดาวให้ตรงกันทุกหน้าต่าง)
+// สีของ object ที่ไม่พึ่ง Cesium (graphics.ts ใช้สำหรับภาพ 3D/2D, Timeline View ใช้สำหรับแถวช่วงเวลา และ Object Browser ใช้กับกล่องสี:
+// ต้องเลือกสีของดาวให้ตรงกันทุกหน้าต่าง)
 //
 // - ลำดับสี (effectiveColor): inherit false + สีของตัวเอง → สีตัวเอง; inherit true (ไม่ระบุ = true ตาม server) + Constellation ที่มีดาวนี้และมีสี
 //   (ตัวแรกตามลำดับใน doc ที่มีสี; ตัวที่เป็นสมาชิกแต่ไม่มีสีข้ามไป) → สีนั้น; อื่น ๆ → ตัวแปร CSS ของระบบ (--color-gps/glonass/galileo/beidou,
@@ -106,4 +107,16 @@ export function effectiveColor(obj: SceneObject, doc: ScenarioDoc, ctx: ColorCtx
   const fallback = obj.class === "Facility" ? tokens.facility : tokens[systemTokenOf(system) ?? "other"];
   const color = g2.inherit === false ? (own ?? fallback) : (constellationColor(objectPath(obj), doc) ?? fallback);
   return color.toLowerCase();
+}
+
+/**
+ * สีของกล่องสีใน Object Browser: Facility และ Satellite = effectiveColor (สีที่หน้าต่าง 3D, 2D และ Timeline วาดจริง ไม่ใช่สีสำรองที่ server เก็บ)
+ * Constellation (ไม่ถูกวาดเอง) = สีของตัวเองที่สมาชิกที่ inherit ใช้ ไม่มีก็สีของระบบที่ระบุ ระบุไม่ได้ = --color-other
+ */
+export function objectBoxColor(obj: SceneObject, doc: ScenarioDoc, ctx: ColorCtx = {}): string {
+  if (obj.class !== "Constellation") return effectiveColor(obj, doc, ctx);
+  const tokens = ctx.tokens ?? themeTokens();
+  const c = obj as ConstellationObj;
+  const own = typeof c.color === "string" && c.color !== "" ? c.color : null;
+  return (own ?? tokens[systemTokenOf(c.system) ?? "other"]).toLowerCase();
 }

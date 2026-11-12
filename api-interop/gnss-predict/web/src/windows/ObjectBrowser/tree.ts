@@ -2,11 +2,15 @@
 // - ต้นไม้จาก GET /objects: ราก (Scenario), Facility, Constellation, โฟลเดอร์กลุ่ม {group, children}, แล้วดาวที่ไม่อยู่ในกลุ่มใด
 //   Constellation ไม่มีลูกในต้นไม้ (สมาชิกของมันแสดงในโฟลเดอร์/ดาวที่ไม่อยู่ในกลุ่ม)
 // - ต้นไม้ไม่มี NORAD ของดาว: ธง (ซ่อน/⚠) และ tooltip มาจาก catalog ผ่าน NORAD ที่อยู่ใน doc.objects (W9) จึงจับคู่ได้แม้ดาวเปลี่ยนชื่อหรือถูกคัดลอก
+// - กล่องสี = สีที่หน้าต่าง 3D, 2D และ Timeline วาด (objectBoxColor ของ cesium/colors.ts กับ NORAD → PRN ของผลลัพธ์ ไม่มีก็ของ catalog)
+//   ไม่ใช่ `color` ของต้นไม้: server ใช้ graphics2d.color ที่เก็บไว้ (#cccccc ของดาวที่วางหรือสร้างจาก Define Properties) เมื่อดาวไม่อยู่ใน Constellation ที่มีสี
 // - key ของแถว: ราก "*", object = path ของมัน, โฟลเดอร์ = `group:<ชื่อ>` (ชื่อกลุ่มเป็นข้อความอิสระ จึงมีคำนำหน้ากันชนกับ path)
 
+import { objectBoxColor, objectPath } from "../../cesium/colors";
 import { satelliteInfo, type SatelliteInfo } from "../../data/catalog";
 import { t, type LabelKey } from "../../labels/labels";
 import { MSG_KEYS, msg, type MsgKey } from "../../labels/messages.th";
+import { useResults } from "../../stores/results";
 import { useScenario, type ObjectTree, type TreeGroup, type TreeNode, type TreeObject } from "../../stores/scenario";
 
 export type RowClass = "Scenario" | TreeObject["class"];
@@ -63,18 +67,39 @@ export interface TreeContext {
   info(norad: number): SatelliteInfo | undefined;
   /** assigned_objects ของ Constellation */
   membersOf(path: string): string[] | undefined;
+  /** สีของกล่องสี (สีที่หน้าต่างอื่นวาด) ไม่ระบุหรือ undefined = สีในต้นไม้ */
+  colorOf?(path: string): string | undefined;
 }
 
-/** อ่านจาก scenario ที่เปิดอยู่ (doc.objects สำหรับ NORAD และสมาชิก, catalog สำหรับธง) */
+/**
+ * อ่านจาก scenario ที่เปิดอยู่ (doc.objects สำหรับ NORAD และสมาชิก, catalog สำหรับธง) และสีของกล่องจาก objectBoxColor
+ * ด้วย NORAD → PRN ของผลลัพธ์ (ตัวเดียวกับที่หน้าต่าง 3D, 2D และ Timeline ใช้) เติมด้วย PRN ใน catalog ของ snapshot สำหรับดาวที่ยังไม่มีผลลัพธ์
+ */
 export function storeContext(): TreeContext {
+  const { doc, catalog } = useScenario.getState();
   const norads = new Map<string, number>();
   const members = new Map<string, string[]>();
-  for (const o of useScenario.getState().doc?.objects ?? []) {
-    const path = `*/${o.class}/${o.name}`;
+  for (const o of doc?.objects ?? []) {
+    const path = objectPath(o);
     if (o.class === "Satellite") norads.set(path, o.norad);
     else if (o.class === "Constellation") members.set(path, [...(o.assigned_objects ?? [])]);
   }
-  return { noradOf: (p) => norads.get(p), info: satelliteInfo, membersOf: (p) => members.get(p) };
+  const prnByNorad = new Map<number, string>();
+  for (const [norad, entry] of catalog) if (typeof entry.prn === "string" && entry.prn !== "") prnByNorad.set(norad, entry.prn);
+  for (const [norad, prn] of useResults.getState().prnByNorad) prnByNorad.set(norad, prn);
+  const colors = new Map<string, string>();
+  const colorOf = (path: string): string | undefined => {
+    if (doc === null) return undefined;
+    let color = colors.get(path);
+    if (color === undefined) {
+      const obj = doc.objects.find((o) => objectPath(o) === path);
+      if (obj === undefined) return undefined;
+      color = objectBoxColor(obj, doc, { prnByNorad });
+      colors.set(path, color);
+    }
+    return color;
+  };
+  return { noradOf: (p) => norads.get(p), info: satelliteInfo, membersOf: (p) => members.get(p), colorOf };
 }
 
 // ---------- tooltip ----------
@@ -152,7 +177,7 @@ export function flattenTree(tree: ObjectTree, expanded: ReadonlySet<string>, opt
   const rows: Row[] = [];
   const objectRow = (node: TreeObject, depth: number, parentKey: string): Row => {
     const row: Row = {
-      key: node.path, depth, kind: "object", path: node.path, cls: node.class, name: node.name, color: node.color, show: node.show,
+      key: node.path, depth, kind: "object", path: node.path, cls: node.class, name: node.name, color: ctx.colorOf?.(node.path) ?? node.color, show: node.show,
       hidden: false, warn: false, tooltip: "", parentKey, expandable: false, expanded: false,
     };
     if (node.class === "Satellite") {

@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
+import { effectiveColor, type SceneObject } from "../../src/cesium/colors";
 import { t } from "../../src/labels/labels";
+import { useResults } from "../../src/stores/results";
+import type { ObjectTree, ScenarioDoc } from "../../src/stores/scenario";
 import { msg } from "../../src/labels/messages.th";
 import { useClipboard, copyName } from "../../src/windows/ObjectBrowser/clipboard";
 import { expandableKeys, findMatches, flattenTree, groupKey, type Row } from "../../src/windows/ObjectBrowser/tree";
@@ -205,4 +210,85 @@ describe("clipboard", () => {
 
 test("the fixture catalog is what these tests assume", () => {
   expect(CATALOG.map((e) => e.prn)).toEqual(["G01", "G02", "G03", "G04", "G05"]);
+});
+
+describe("colour box: the colour the 3D, 2D and Timeline windows draw, not the colour stored in the tree", () => {
+  const GPS = "#ffd23f";
+  const GLONASS = "#ff6b6b";
+  const OTHER = "#c8c8c8";
+  const FACILITY = "#ff79e6";
+
+  /** S1 plus extra objects; the tree node of each extra satellite carries the server's fallback grey */
+  function withObjects(extra: object[], loose: string[] = []): { tree: ObjectTree; doc: ScenarioDoc } {
+    const doc = makeScenarioDoc();
+    (doc.objects as unknown[]).push(...extra);
+    const tree = makeTree({ loose: ["G03", "G04", "G05", ...loose] });
+    for (const node of tree.children) if ("path" in node && loose.includes(node.name)) node.color = "#cccccc";
+    return loadObjects({ doc, tree });
+  }
+  const objectNamed = (doc: ScenarioDoc, name: string) => doc.objects.find((o) => o.name === name) as SceneObject;
+  const colorOf = (tree: ObjectTree, name: string) => byName(flattenTree(tree, everything(tree)), name).color;
+
+  test("an inheriting copy in no coloured Constellation shows its system colour, as effectiveColor gives it (not the stored #cccccc)", () => {
+    const { tree, doc } = withObjects([{ class: "Satellite", name: "G01_1", norad: 40101, graphics2d: { inherit: true, color: "#cccccc" } }], ["G01_1"]);
+    useResults.setState({ prnByNorad: new Map([[40101, "G01"]]) });
+    const prnByNorad = useResults.getState().prnByNorad;
+    expect(colorOf(tree, "G01_1")).toBe(effectiveColor(objectNamed(doc, "G01_1"), doc, { prnByNorad }));
+    expect(colorOf(tree, "G01_1")).toBe(GPS);
+  });
+
+  test("before there are results, the PRN in the snapshot catalog gives the system", () => {
+    const { tree } = withObjects([{ class: "Satellite", name: "G01_1", norad: 40101, graphics2d: { inherit: true, color: "#cccccc" } }], ["G01_1"]);
+    expect(colorOf(tree, "G01_1")).toBe(GPS);
+  });
+
+  test("the PRN of the results wins over the catalog, as in the windows that draw it", () => {
+    const { tree, doc } = withObjects([{ class: "Satellite", name: "X1", norad: 40101 }], ["X1"]);
+    useResults.setState({ prnByNorad: new Map([[40101, "R07"]]) });
+    expect(colorOf(tree, "X1")).toBe(GLONASS);
+    expect(colorOf(tree, "X1")).toBe(effectiveColor(objectNamed(doc, "X1"), doc, { prnByNorad: useResults.getState().prnByNorad }));
+  });
+
+  test("a satellite of unknown system shows --color-other", () => {
+    const { tree } = withObjects([{ class: "Satellite", name: "X9", norad: 99999 }], ["X9"]);
+    expect(colorOf(tree, "X9")).toBe(OTHER);
+  });
+
+  test("a member of a Constellation with a colour shows that colour; inherit false shows its own", () => {
+    const { tree } = withObjects(
+      [
+        { class: "Constellation", name: "Mine", color: "#123456", assigned_objects: ["*/Satellite/G01_1"] },
+        { class: "Satellite", name: "G01_1", norad: 40101 },
+        { class: "Satellite", name: "G01_2", norad: 40101, graphics2d: { inherit: false, color: "#abcdef" } },
+      ],
+      ["G01_1", "G01_2"],
+    );
+    expect(colorOf(tree, "G01_1")).toBe("#123456");
+    expect(colorOf(tree, "G01_2")).toBe("#abcdef");
+  });
+
+  test("a Constellation shows its own colour, or the colour of its system when it has none", () => {
+    const { tree } = withObjects([{ class: "Constellation", name: "GLO", system: "R", assigned_objects: [] }]);
+    tree.children.splice(2, 0, { path: "*/Constellation/GLO", class: "Constellation", name: "GLO", color: "#cccccc", show: true });
+    expect(colorOf(tree, "GLO")).toBe(GLONASS);
+    expect(colorOf(tree, "GPS")).toBe(GPS); // system G, no colour of its own
+  });
+
+  test("the Object Browser gets the colour without importing Cesium (only the Cesium-free colors.ts)", () => {
+    for (const file of ["src/windows/ObjectBrowser/tree.ts", "src/windows/ObjectBrowser/actions.ts", "src/windows/ObjectBrowser/ObjectBrowser.tsx"]) {
+      const source = readFileSync(resolve(__dirname, "../..", file), "utf8");
+      expect(source, file).not.toMatch(/from\s+["']cesium["']/);
+      expect(source, file).not.toMatch(/from\s+["'](\.\.?\/)+(cesium\/)?(graphics|czml|viewer|scene3d|scene2d|passes|overlay2d|swath)["']/);
+    }
+  });
+
+  test("a Facility that inherits shows the Facility colour it is drawn with, even with a colour stored", () => {
+    const doc = makeScenarioDoc();
+    const thbk = doc.objects.find((o) => o.name === "THBK") as { graphics2d?: unknown };
+    thbk.graphics2d = { inherit: true, color: "#abcdef" };
+    const tree = makeTree();
+    (tree.children[0] as { color: string }).color = "#abcdef"; // what the server puts in the tree
+    loadObjects({ doc, tree });
+    expect(colorOf(tree, "THBK")).toBe(FACILITY);
+  });
 });

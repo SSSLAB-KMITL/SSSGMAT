@@ -1,5 +1,7 @@
 // scenario ปลอมสำหรับ test ของ Object Browser: ต้นไม้ตามรูปของ GET /objects (Facility, Constellation, โฟลเดอร์กลุ่ม, ดาวที่ไม่อยู่ในกลุ่ม) + doc + catalog
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { CatalogEntry } from "../../../src/data/catalog";
 import { useScenario, type ObjectTree, type ScenarioDoc, type TreeObject } from "../../../src/stores/scenario";
 import { makeDoc } from "./chrome";
@@ -62,8 +64,23 @@ export function makeScenarioDoc(extra: Partial<ScenarioDoc> = {}): ScenarioDoc {
   });
 }
 
-/** เปิด scenario ปลอม S1 พร้อมต้นไม้และ catalog (ไม่ผ่านเครือข่าย) */
+/**
+ * ตัวแปรสี --color-* จาก theme.css ใส่ที่ <html> (jsdom ไม่โหลด CSS ของแอป) กล่องสีของ Object Browser จึงได้สีของระบบแบบเดียวกับหน้าจริง
+ * (themeTokens ใน cesium/colors.ts อ่านตัวแปรเหล่านี้; ไม่มีค่า = ขาวทุกระบบ)
+ */
+export function applyThemeColors(): void {
+  const css = readFileSync(resolve(import.meta.dirname, "../../../src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const seen = new Set<string>();
+  for (const m of css.matchAll(/(--color-[\w-]+)\s*:\s*([^;]+);/g)) {
+    if (seen.has(m[1])) continue;
+    seen.add(m[1]);
+    document.documentElement.style.setProperty(m[1], m[2].trim());
+  }
+}
+
+/** เปิด scenario ปลอม S1 พร้อมต้นไม้และ catalog (ไม่ผ่านเครือข่าย) และสีของธีม (applyThemeColors) */
 export function loadObjects(opts: { tree?: ObjectTree; doc?: ScenarioDoc; catalog?: CatalogEntry[] } = {}): { tree: ObjectTree; doc: ScenarioDoc } {
+  applyThemeColors();
   const tree = opts.tree ?? makeTree();
   const doc = opts.doc ?? makeScenarioDoc();
   useScenario.setState({ name: "S1", doc, etag: '"e1"', tree, catalog: new Map((opts.catalog ?? CATALOG).map((e) => [e.norad, e])) });

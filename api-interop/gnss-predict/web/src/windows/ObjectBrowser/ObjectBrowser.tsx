@@ -21,6 +21,7 @@ import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
 import { OBJECT_BROWSER_SCOPE } from "../../shortcuts";
+import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import { observeViewportWithFallback } from "../virtualList";
@@ -153,9 +154,10 @@ function TreeRow({ row, top, selected, tabbable, showToggles, showColors, busy, 
 
 export function ObjectBrowser(_props: Partial<PanelProps>) {
   const tree = useScenario((s) => s.tree);
-  // flattenTree ตอบจากสามอย่างนี้: doc (NORAD, สมาชิก, ตัวกรอง), catalog (ธง) และ tree
+  // flattenTree ตอบจากสี่อย่างนี้: doc (NORAD, สมาชิก, ตัวกรอง, สี), catalog (ธง, PRN), NORAD → PRN ของผลลัพธ์ (สีของกล่อง) และ tree
   const doc = useScenario((s) => s.doc);
   const catalog = useScenario((s) => s.catalog);
+  const prnByNorad = useResults((s) => s.prnByNorad);
   const activePath = useSelection((s) => s.activePath);
   const { collapsed, groupSelected, flaggedOnly, showColors, showToggles, findOpen, findToken, newGroupOpen, renaming, scrollTarget, busy } = useObjectBrowser();
 
@@ -166,7 +168,7 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
   // ---------- แถว ----------
   const { allKeys, allRows, rowByKey } = objectRows();
   const expanded = useMemo(() => new Set([...allKeys].filter((key) => !collapsed.has(key))), [allKeys, collapsed]);
-  const rows = useMemo(() => (tree === null ? [] : flattenTree(tree, expanded, { flaggedOnly })), [tree, doc, catalog, expanded, flaggedOnly]);
+  const rows = useMemo(() => (tree === null ? [] : flattenTree(tree, expanded, { flaggedOnly })), [tree, doc, catalog, prnByNorad, expanded, flaggedOnly]);
 
   const selectedKey = groupSelected ?? activePath;
   const tabKey = rows.some((row) => row.key === selectedKey) ? selectedKey : rows[0]?.key;

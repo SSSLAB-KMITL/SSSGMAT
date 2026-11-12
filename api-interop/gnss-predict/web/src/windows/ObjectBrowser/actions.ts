@@ -5,6 +5,7 @@
 import { confirm } from "../../chrome/Dialogs";
 import { msg } from "../../labels/messages.th";
 import { useLayout } from "../../stores/layout";
+import { useResults } from "../../stores/results";
 import { useScenario, type ObjectPages } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import { copyName, useClipboard } from "./clipboard";
@@ -23,17 +24,18 @@ export interface ObjectRows {
 }
 
 const NO_ROWS: ObjectRows = { allKeys: new Set(), allRows: [], rowByKey: new Map() };
-let cached: { tree: unknown; doc: unknown; catalog: unknown; rows: ObjectRows } | null = null;
+let cached: { tree: unknown; doc: unknown; catalog: unknown; prnByNorad: unknown; rows: ObjectRows } | null = null;
 
-/** แถวของ scenario ที่เปิดอยู่ (คำนวณใหม่เมื่อ tree, doc หรือ catalog เปลี่ยนเท่านั้น) */
+/** แถวของ scenario ที่เปิดอยู่ (คำนวณใหม่เมื่อ tree, doc, catalog หรือ NORAD → PRN ของผลลัพธ์ (สีของกล่อง) เปลี่ยนเท่านั้น) */
 export function objectRows(): ObjectRows {
   const { tree, doc, catalog } = useScenario.getState();
+  const { prnByNorad } = useResults.getState();
   if (tree === null) return NO_ROWS;
-  if (cached !== null && cached.tree === tree && cached.doc === doc && cached.catalog === catalog) return cached.rows;
+  if (cached !== null && cached.tree === tree && cached.doc === doc && cached.catalog === catalog && cached.prnByNorad === prnByNorad) return cached.rows;
   const allKeys = new Set(expandableKeys(tree));
   const allRows = flattenTree(tree, allKeys);
   const rows = { allKeys, allRows, rowByKey: new Map(allRows.map((row) => [row.key, row])) };
-  cached = { tree, doc, catalog, rows };
+  cached = { tree, doc, catalog, prnByNorad, rows };
   return rows;
 }
 

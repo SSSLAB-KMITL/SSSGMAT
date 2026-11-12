@@ -12,6 +12,7 @@ import { getPanelDef } from "../../src/layout/panels";
 import { installShortcuts } from "../../src/shortcuts";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
+import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useClipboard } from "../../src/windows/ObjectBrowser/clipboard";
@@ -426,10 +427,26 @@ describe("colour box", () => {
     expect(spies.patchObject).toHaveBeenCalledWith("Constellation", "GPS", { basic: { color: "#abcdef" } });
   });
 
-  test("the box shows the colour of the tree, and the input starts from it", () => {
+  test("the box shows the colour the object is drawn with (here the same as the tree), and the input starts from it", () => {
     loadObjects();
     renderOb();
     expect(colorInput("THBK").value).toBe("#ff79e6");
+  });
+
+  test("a copy that inherits shows the colour it is drawn with, and follows the results when they arrive", () => {
+    const doc = makeScenarioDoc();
+    (doc.objects as unknown[]).push({ class: "Satellite", name: "C19_1", norad: 44199, graphics2d: { inherit: true, color: "#cccccc" } });
+    const tree = makeTree({ loose: ["G03", "G04", "G05", "C19_1"] });
+    for (const node of tree.children) if ("path" in node && node.name === "C19_1") node.color = "#cccccc";
+    loadObjects({ doc, tree });
+    renderOb();
+    expect(swatch("C19_1").getAttribute("aria-label")).toBe(`${t("field.color")}: #c8c8c8`); // not in the catalog: system unknown yet
+    act(() => useResults.setState({ prnByNorad: new Map([[44199, "C19"]]) }));
+    expect(swatch("C19_1").getAttribute("aria-label")).toBe(`${t("field.color")}: #45c8ff`); // BeiDou, as the 3D and 2D windows draw it
+    fireEvent.doubleClick(swatch("C19_1"));
+    expect(colorInput("C19_1").value).toBe("#45c8ff"); // the picker opens on the colour shown
+    fireEvent.change(colorInput("C19_1"), { target: { value: "#45c8ff" } });
+    expect(spies.patchObject).not.toHaveBeenCalled(); // choosing the colour it is drawn with changes nothing
   });
 
   test("picking the colour it already has does nothing", () => {
