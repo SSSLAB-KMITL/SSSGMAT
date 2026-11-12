@@ -713,10 +713,12 @@ cd api-interop/gnss-predict/server && .venv/bin/python -m gnss_studio_server    
 cd api-interop/gnss-predict/web && npm run dev                                      # terminal 2: Vite (ตั้งต้น http://localhost:5173/)
 ```
 
-Vite ส่งต่อ `/api` (รวม SSE ที่ `/api/events`) ไป `http://127.0.0.1:8000` และ **เขียน header `Origin` ใหม่เป็น `http://127.0.0.1:8000`**
-เพราะ server ตอบ 403 `FORBIDDEN_ORIGIN` กับคำขอ POST, PUT, PATCH, DELETE ที่ `Origin` ไม่ตรง origin ของ server เอง (หัวข้อ 8.2)
-หน้าเว็บที่ Vite ส่งอยู่ที่ port 5173 จึงจะส่ง `Origin: http://localhost:5173` ซึ่ง server ปฏิเสธถ้าไม่เขียนใหม่ (ค่าตั้งอยู่ใน `web/vite.config.ts`)
-ถ้า server ไม่ได้ฟังที่ port 8000 ให้แก้ `SERVER_ORIGIN` ในไฟล์นั้น
+Vite ส่งต่อ `/api` (รวม SSE ที่ `/api/events`) ไป `http://127.0.0.1:8000` และ **เขียน header `Origin` ใหม่เป็น `http://127.0.0.1:8000`
+เฉพาะคำขอจากหน้าเว็บของ Vite เอง** เพราะ server ตอบ 403 `FORBIDDEN_ORIGIN` กับคำขอ POST, PUT, PATCH, DELETE ที่ `Origin` ไม่ตรง origin ของ server เอง
+(หัวข้อ 8.2) หน้าเว็บที่ Vite ส่งอยู่ที่ port 5173 จึงส่ง `Origin: http://localhost:5173` ซึ่ง server ปฏิเสธถ้าไม่เขียนใหม่
+proxy เขียนใหม่เมื่อ `Origin` ตรงกับ `http://<Host ของคำขอ>` และ Host เป็น `localhost`, `127.0.0.1` หรือ `[::1]` เท่านั้น (`web/devOrigin.ts`)
+`Origin` ของเว็บอื่นผ่านไปตามเดิมแล้ว server ตอบ 403 เว็บอื่นที่เปิดในเบราว์เซอร์ระหว่าง `npm run dev` จึงส่งฟอร์มมาสั่ง
+`/api/orbits/fetch`, `/api/daily/run` หรือ `/validate` ผ่าน Vite ไม่ได้ ถ้า server ไม่ได้ฟังที่ port 8000 ให้แก้ `SERVER_ORIGIN` ใน `web/vite.config.ts`
 
 ### 9.3 build แล้วเปิดจาก server
 
