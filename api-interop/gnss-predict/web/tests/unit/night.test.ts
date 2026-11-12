@@ -1,9 +1,9 @@
-// กลางวันกลางคืนของหน้าต่าง 2D (src/cesium/night.ts): จุดใต้ดวงอาทิตย์, เส้นแบ่งกลางวันกลางคืน และ polygon กลางคืน (spec §17 W2)
+// กลางวันกลางคืนของหน้าต่าง 2D (src/cesium/night.ts): จุดใต้ดวงอาทิตย์, เส้นแบ่งกลางวันกลางคืน (Show Outline) และ polygon กลางคืน
+// (Shading ใช้แสงของ globe ของ Cesium: spec §17 W2 ตรวจแล้วว่าใช้ได้ในโหมด 2D)
 // ค่าที่คาด: ช่วงอายันและวิษุวัตของปี 2026, สมการเวลา (equation of time) และเรขาคณิตของทรงกลม
 
 import { describe, expect, test } from "vitest";
-import { capColumns } from "../../src/cesium/lonlat";
-import { nightColumns, nightPolygon, subsolarPoint, terminator } from "../../src/cesium/night";
+import { nightPolygon, subsolarPoint, terminator } from "../../src/cesium/night";
 
 const RAD = Math.PI / 180;
 
@@ -79,20 +79,5 @@ describe("nightPolygon", () => {
 
   test("terminator() is the polygon without its pole corners", () => {
     expect(terminator(june, 36)).toEqual(nightPolygon(june, 36).slice(0, 37));
-  });
-});
-
-describe("nightColumns", () => {
-  test("is the cap of 90° around the antisolar point, bounded by the terminator", () => {
-    const d = new Date("2026-11-11T03:30:00Z");
-    const s = subsolarPoint(d);
-    const cols = nightColumns(d, 2);
-    expect(cols).toEqual(capColumns(-s.lat, wrap(s.lon + 180), Math.PI / 2, 2));
-    const line = new Map(terminator(d, 180).map(([lon, lat]) => [lon, lat]));
-    // พฤศจิกายน: ขั้วเหนือมืด ขอบล่างของทุกคอลัมน์คือเส้นแบ่งกลางวันกลางคืน
-    for (const c of cols) {
-      expect(c.hi).toBe(90);
-      expect(c.lo!).toBeCloseTo(line.get(c.lon)!, 9);
-    }
   });
 });

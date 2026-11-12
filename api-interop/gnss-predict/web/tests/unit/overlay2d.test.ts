@@ -1,15 +1,17 @@
 // ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (src/cesium/overlay2d.ts) ด้วยคลาสจริงของ Cesium (ไม่วาด: ไม่มี WebGL ใน jsdom)
-// วง Swath, พื้นที่ Filled Limits, เส้นแบ่งกลางวันกลางคืน, พื้นที่กลางคืน, จุดและเส้นทาง IPP และตัวจัดการ primitive ที่ตั้งค่าตามรอบ
+// การเลือกดาวที่มี Swath, วง Swath, พื้นที่ Filled Limits และเมื่อไรต้องสร้างใหม่, เส้นแบ่งกลางวันกลางคืน, จุดและเส้นทาง IPP
+// และตัวจัดการ primitive ที่ตั้งค่าตามรอบ (Shading ใช้แสงของ globe ไม่มีพื้นที่กลางคืนที่วาดเอง)
 
 import { Cartesian3, Cartographic, Color, Math as CMath, PointPrimitiveCollection, PolylineCollection, Primitive, PrimitiveCollection, type Geometry } from "cesium";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { capColumns } from "../../src/cesium/lonlat";
 import { subsolarPoint } from "../../src/cesium/night";
 import {
-  ippItems, lonLatPositions, MAX_LAT, meshGeometry, nightItems, Overlays2D, swathItems, type LineItem,
+  FILL_MOVE_DEG, fillMoved, fillStates, ippItems, lonLatPositions, MAX_LAT, meshGeometry, Overlays2D, swathInputs, swathItems, terminatorItem,
+  type FillState, type LineItem, type SwathInput,
 } from "../../src/cesium/overlay2d";
-import { EARTH_RADIUS_KM, footprintCentralAngleRad } from "../../src/cesium/swath";
-import type { SceneStyle } from "../../src/cesium/graphics";
+import { EARTH_RADIUS_KM, footprintCentralAngleRad, WGS84_E2 } from "../../src/cesium/swath";
+import type { EntityLook, SceneStyle } from "../../src/cesium/graphics";
 
 // jsdom ไม่มี ImageBitmap และ OffscreenCanvas (Material ของ Cesium ใช้ instanceof ทั้งสองตอนดูชนิดของ uniform) browser มีเสมอ
 beforeAll(() => {
@@ -20,7 +22,7 @@ afterAll(() => vi.unstubAllGlobals());
 
 const STYLE: SceneStyle = {
   labelFont: "12px sans-serif", labelOutline: "#000000", pointOutline: "#000000", accessWidth: 1, gridLine: "#ffffff",
-  swathFillOpacity: 0.3, swathEdgeWidth: 1.5, nightFill: "#00000066", terminatorLine: "#ffeeaa", terminatorWidth: 2, ippPointSize: 7, ippTrackWidth: 3,
+  swathFillOpacity: 0.3, swathEdgeWidth: 1.5, terminatorLine: "#ffeeaa", terminatorWidth: 2, ippPointSize: 7, ippTrackWidth: 3,
 };
 const deg = (c: Cartesian3): { lat: number; lon: number } => {
   const g = Cartographic.fromCartesian(c);
@@ -77,9 +79,12 @@ describe("swathItems", () => {
     expect(ring.color.toCssHexString()).toBe("#ff0000");
     expect(Cartesian3.equals(ring.positions[0], ring.positions.at(-1)!)).toBe(true);
     const theta = footprintCentralAngleRad(26_571.0088 - EARTH_RADIUS_KM, 10);
+    // ศูนย์กลางวาดที่ละติจูด geodetic ของจุดใต้ดาว (ดาวอยู่ที่ geocentric 20°): วงรอบจุดนั้นที่มุม θ พอดี
+    const centreLat = CMath.toDegrees(Math.atan2(Math.sin(CMath.toRadians(20)), (1 - WGS84_E2) * Math.cos(CMath.toRadians(20))));
+    expect(centreLat).toBeCloseTo(20.1240, 4);
     for (const q of ring.positions) {
       const { lat, lon } = deg(q);
-      expect(Math.abs(angle(dir(lat, lon), dir(20, 0)) - theta)).toBeLessThan(0.004); // ละติจูดที่วาดเป็น geodetic (ต่างจาก geocentric ไม่เกิน 0.2°)
+      expect(Math.abs(angle(dir(lat, lon), dir(centreLat, 0)) - theta)).toBeLessThan(1e-9);
     }
   });
 
@@ -99,30 +104,70 @@ describe("swathItems", () => {
   });
 });
 
-describe("nightItems", () => {
-  const d = new Date("2026-11-11T03:30:00Z");
-
-  test("Show Outline draws the terminator 90° from the sun; Shading fills the night side", () => {
-    const { line, fill } = nightItems(d, { outline: true, shading: true }, STYLE);
+describe("terminatorItem (Lighting → Show Outline)", () => {
+  test("the terminator 90° from the sun in the theme's colour and width", () => {
+    const d = new Date("2026-11-11T03:30:00Z");
+    const line = terminatorItem(d, STYLE);
     const s = subsolarPoint(d);
-    expect(line!.color.toCssHexString()).toBe("#ffeeaa");
-    expect(line!.width).toBe(2);
-    for (const q of line!.positions) {
+    expect(line.key).toBe("terminator");
+    expect(line.color.toCssHexString()).toBe("#ffeeaa");
+    expect(line.width).toBe(2);
+    expect(line.positions).toHaveLength(181);
+    for (const q of line.positions) {
       const { lat, lon } = deg(q);
       if (Math.abs(lat) > 89) continue; // จุดที่ถูกดึงจากขั้ว
-      expect(Math.abs(angle(dir(lat, lon), dir(s.lat, s.lon)) - Math.PI / 2)).toBeLessThan(0.004);
+      expect(Math.abs(angle(dir(lat, lon), dir(s.lat, s.lon)) - Math.PI / 2)).toBeLessThan(1e-9);
     }
-    expect(fill!.color.alpha).toBeCloseTo(0x66 / 255, 6);
-    // จุดตรงข้ามดวงอาทิตย์อยู่ในพื้นที่ที่เติม: มีสามเหลี่ยมคลุมลองจิจูดนั้น
-    const anti = ((s.lon + 360) % 360) - 180;
-    const v = vertices(fill!.geometry).map(deg);
-    expect(v.some((q) => Math.abs(q.lon - anti) <= 2 && q.lat < -s.lat) && v.some((q) => Math.abs(q.lon - anti) <= 2 && q.lat > -s.lat)).toBe(true);
+  });
+});
+
+describe("swathInputs: which satellites draw a swath", () => {
+  const g = (show: boolean, color = "#ff0000") => ({ show, color, labelShow: show, pointPixelSize: 6, markerStyle: "Point", lineStyle: "Solid", lineWidth: 1 });
+  const sat = (name: string, swath?: object) => ({ class: "Satellite", name, norad: 1, ...(swath === undefined ? {} : { graphics2d: { swath } }) }) as never;
+  const p = new Cartesian3(26_571_008.8, 0, 0);
+  const looks = new Map<string, EntityLook>([
+    ["sat/G01", { obj: sat("G01", { options: "Filled Limits", elevation_deg: 15 }), g: g(true, "#00ff00") }],
+    ["sat/G02", { obj: sat("G02", { options: "Edge Limits" }), g: g(true) }],
+    ["sat/G03", { obj: sat("G03", { options: "Edge Limits" }), g: g(false) }],
+    ["sat/G04", { obj: sat("G04"), g: g(true) }],
+    ["sat/G05", { obj: sat("G05", { options: "No Graphics" }), g: g(true) }],
+    ["sat/G06", { obj: sat("G06", { options: "Edge Limits" }), g: g(true) }],
+    ["fac/THBK", { obj: { class: "Facility", name: "THBK" } as never, g: g(true) }],
+  ]);
+
+  test("shown satellites with Edge or Filled Limits and a position now, with their colour and elevation (default 10°)", () => {
+    const inputs = swathInputs(looks, (id) => (id === "sat/G06" ? undefined : p));
+    expect(inputs.map((s) => [s.key, s.options, s.elevationDeg, s.color.toCssHexString()])).toEqual([
+      ["sat/G01", "Filled Limits", 15, "#00ff00"],
+      ["sat/G02", "Edge Limits", 10, "#ff0000"],
+    ]);
+    expect(inputs[0].position).toBe(p);
+  });
+});
+
+describe("Filled Limits: rebuild only when a footprint moved", () => {
+  const at = (key: string, lat: number, lon: number, color = Color.RED, elevationDeg = 10, altM = 26_571_008.8): SwathInput => ({
+    key, color, elevationDeg, options: "Filled Limits",
+    position: Cartesian3.fromElements(altM * Math.cos(CMath.toRadians(lat)) * Math.cos(CMath.toRadians(lon)), altM * Math.cos(CMath.toRadians(lat)) * Math.sin(CMath.toRadians(lon)), altM * Math.sin(CMath.toRadians(lat))),
   });
 
-  test("each part can be off", () => {
-    expect(nightItems(d, { outline: false, shading: false }, STYLE)).toEqual({ line: null, fill: null });
-    expect(nightItems(d, { outline: true, shading: false }, STYLE).fill).toBeNull();
-    expect(nightItems(d, { outline: false, shading: true }, STYLE).line).toBeNull();
+  test("states cover only Filled Limits satellites that have a footprint", () => {
+    const states = fillStates([at("a", 10, 20), { ...at("b", 0, 0), options: "Edge Limits" }, { ...at("c", 0, 0), position: new Cartesian3(1000, 0, 0) }]);
+    expect(states.map((x: FillState) => x.key)).toEqual(["a"]);
+    expect(states[0].angleDeg).toBeCloseTo(66.341744, 5);
+  });
+
+  test("nothing before, another set of satellites, a colour or elevation change, or a move of more than 0.5° rebuilds; small moves do not", () => {
+    expect(FILL_MOVE_DEG).toBe(0.5);
+    const base = fillStates([at("a", 10, 20), at("b", -30, 179.8)]);
+    expect(fillMoved(null, base)).toBe(true);
+    expect(fillMoved(base, fillStates([at("a", 10, 20), at("b", -30, 179.8)]))).toBe(false);
+    expect(fillMoved(base, fillStates([at("a", 10.3, 20), at("b", -30, -179.9)]))).toBe(false); // 0.3° และข้ามเส้น 180° ไป 0.26°
+    expect(fillMoved(base, fillStates([at("a", 10.6, 20), at("b", -30, 179.8)]))).toBe(true);
+    expect(fillMoved(base, fillStates([at("a", 10, 20)]))).toBe(true);
+    expect(fillMoved(base, fillStates([at("a", 10, 20, Color.BLUE), at("b", -30, 179.8)]))).toBe(true);
+    expect(fillMoved(base, fillStates([at("a", 10, 20, Color.RED, 20), at("b", -30, 179.8)]))).toBe(true);
+    expect(fillMoved(fillStates([]), fillStates([]))).toBe(false);
   });
 });
 

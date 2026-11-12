@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "vitest";
 import { capColumns, columnsMesh, type Column } from "../../src/cesium/lonlat";
-import { EARTH_RADIUS_KM, footprintCentralAngleRad, footprintRing } from "../../src/cesium/swath";
+import { EARTH_RADIUS_KM, footprintCentralAngleRad, footprintRing, subSatellite, WGS84_E2 } from "../../src/cesium/swath";
 
 const RAD = Math.PI / 180;
 
@@ -50,6 +50,25 @@ describe("footprintRing", () => {
       turned += d;
     }
     expect(Math.abs(Math.abs(turned) - 360)).toBeLessThan(1e-9);
+  });
+});
+
+describe("subSatellite", () => {
+  test("the centre is the geodetic latitude of the surface point under the satellite (WGS 84: tan φd = tan φc / (1 − e²))", () => {
+    expect(WGS84_E2).toBeCloseTo(0.00669437999014, 14);
+    const r = 26_560_000;
+    const c = 45 * RAD;
+    const s = subSatellite({ x: r * Math.cos(c), y: 0, z: r * Math.sin(c) });
+    expect(s.lat).toBeCloseTo(45.192423, 6); // geocentric 45° → geodetic 45.19° (≈ 21 km north)
+    expect(s.lon).toBe(0);
+    expect(s.altKm).toBeCloseTo(26_560 - EARTH_RADIUS_KM, 9);
+  });
+
+  test("the equator and the poles stay where they are; longitude is in [-180, 180)", () => {
+    expect(subSatellite({ x: 26_560_000, y: 0, z: 0 }).lat).toBe(0);
+    expect(subSatellite({ x: 0, y: 0, z: 26_560_000 }).lat).toBeCloseTo(90, 12);
+    expect(subSatellite({ x: 0, y: 0, z: -26_560_000 }).lat).toBeCloseTo(-90, 12);
+    expect(subSatellite({ x: -26_560_000, y: 0, z: 0 }).lon).toBe(-180);
   });
 });
 

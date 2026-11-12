@@ -13,9 +13,15 @@
 
 import { ConstantProperty, ExtrapolationType, JulianDate, SampledProperty, type Entity, type Property } from "cesium";
 import type { components } from "../api/types.gen";
+import { EARTH_RADIUS_KM } from "./swath";
 
 /** ค่าคงที่ความโน้มถ่วงของโลก (WGS 84) km³/s² */
 export const MU_KM3_S2 = 398600.4418;
+
+/**
+ * คาบที่สั้นกว่านี้ (วินาที) เป็นไปไม่ได้สำหรับวงโคจรเหนือโลก (วงโคจรที่ผิวโลกพอดีมีคาบราว 5,060 วินาที): ตัวอย่างที่เสียไม่ทำให้ต่อจุดขึ้นวนไม่รู้จบ
+ */
+export const MIN_ORBIT_PERIOD_S = 3000;
 
 /** ระยะ lead/trail แบบ Time เมื่อช่องว่าง (เท่า DEFAULT_PASS_S ของแม่แบบดาวใน server) */
 export const DEFAULT_PASS_S = 1800;
@@ -25,7 +31,7 @@ export function orbitPeriodS(meanRadiusKm: number): number {
   return 2 * Math.PI * Math.sqrt((meanRadiusKm * meanRadiusKm * meanRadiusKm) / MU_KM3_S2);
 }
 
-/** คาบโดยประมาณจากรัศมีเฉลี่ยของตำแหน่งตัวอย่าง (เมตร, Earth-fixed ใช้ได้) ไม่มีตัวอย่างที่ใช้ได้ = null */
+/** คาบโดยประมาณจากรัศมีเฉลี่ยของตำแหน่งตัวอย่าง (เมตร, Earth-fixed ใช้ได้) ไม่มีตัวอย่างที่ใช้ได้ หรือรัศมีเฉลี่ยต่ำกว่าผิวโลก (ข้อมูลเสีย) = null */
 export function estimatePeriod(points: readonly { x: number; y: number; z: number }[]): number | null {
   let sum = 0;
   let n = 0;
@@ -35,7 +41,8 @@ export function estimatePeriod(points: readonly { x: number; y: number; z: numbe
     sum += r;
     n++;
   }
-  return n === 0 ? null : orbitPeriodS(sum / n / 1000);
+  const meanKm = n === 0 ? 0 : sum / n / 1000;
+  return meanKm < EARTH_RADIUS_KM ? null : orbitPeriodS(meanKm);
 }
 
 /** เวลาที่ z เปลี่ยนจากลบเป็นบวก (ประมาณเชิงเส้น) ตัวอย่างเรียงตามเวลา ตัวที่ z = 0 พอดีนับเป็นจุดขึ้นถ้าตัวก่อนหน้าติดลบ */
@@ -182,7 +189,7 @@ export function entityOrbit(entity: Entity): OrbitInfo | null {
  */
 export function extendNodes(nodes: readonly number[], periodS: number, start: number, stop: number): number[] {
   const out = [...nodes].sort((a, b) => a - b);
-  if (out.length === 0 || !(periodS > 0)) return out;
+  if (out.length === 0 || !(periodS >= MIN_ORBIT_PERIOD_S)) return out; // คาบที่เป็นไปไม่ได้ (รวม NaN): ไม่ต่อ
   while (out[0] > start) out.unshift(out[0] - periodS);
   while (out[out.length - 1] <= stop) out.push(out[out.length - 1] + periodS);
   return out;

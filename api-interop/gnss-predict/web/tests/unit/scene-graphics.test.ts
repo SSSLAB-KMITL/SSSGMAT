@@ -16,18 +16,18 @@ const TOKENS: ColorTokens = {
 };
 const STYLE: SceneStyle = {
   labelFont: "13px Test Sans", labelOutline: "#102030", pointOutline: "#405060", accessWidth: 2.5, gridLine: "#ffffff66",
-  swathFillOpacity: 0.3, swathEdgeWidth: 1.5, nightFill: "#00000066", terminatorLine: "#ffffffb3", terminatorWidth: 1.5, ippPointSize: 6, ippTrackWidth: 2,
+  swathFillOpacity: 0.3, swathEdgeWidth: 1.5, terminatorLine: "#ffffffb3", terminatorWidth: 1.5, ippPointSize: 6, ippTrackWidth: 2,
 };
 const T0 = "2026-11-11T00:00:00Z";
 const time = JulianDate.fromIso8601("2026-11-11T06:00:00Z");
 const R = 26_560_000;
 
 /** ดาววงกลมรัศมี R ตัวอย่างทุก 300 s หนึ่งวัน ตามรูปของ scene.czml */
-function satPacket(prn: string, phase = 0): object {
+function satPacket(prn: string, phase = 0, radius = R): object {
   const cartesian: number[] = [];
   for (let s = 0; s <= 86_400; s += 300) {
     const a = phase + (2 * Math.PI * s) / 43_078;
-    cartesian.push(s, R * Math.cos(a), R * Math.sin(a) * 0.5, R * Math.sin(a) * 0.866);
+    cartesian.push(s, radius * Math.cos(a), radius * Math.sin(a) * 0.5, radius * Math.sin(a) * 0.866);
   }
   return {
     id: `sat/${prn}`,
@@ -186,6 +186,23 @@ describe("applyGraphics", () => {
       expect(value(path.material)?.dashPattern).toBe(0xff00);
     });
 
+    test("corrupt samples inside the Earth are not an orbit: no ground track in 2D and no path in 3D", async () => {
+      const ds = await CzmlDataSource.load([DOCUMENT, satPacket("G01", 0, 1_000_000)]);
+      applyGraphics(ds, docOf([sat("G01", 62339)]), ctx2d);
+      expect(value(byId(ds, "sat/G01").path?.show)).toBe(false);
+      applyGraphics(ds, docOf([sat("G01", 62339)]), baseCtx);
+      expect(value(byId(ds, "sat/G01").path?.show)).toBe(false);
+    });
+
+    test("applyGraphics returns the look of every entity it styled (the 2D overlays reuse it)", async () => {
+      const ds = await scene(false);
+      const looks = applyGraphics(ds, docOf([sat("GPS01", 62339), sat("E05", 40128, { graphics2d: { show: false } })]), ctx2d);
+      expect(looks.get("sat/G01")?.obj.name).toBe("GPS01");
+      expect(looks.get("sat/G01")?.g.color).toBe(TOKENS.gps);
+      expect(looks.get("sat/E05")?.g.show).toBe(false);
+      expect(applyGraphics(ds, null, ctx2d).size).toBe(0);
+    });
+
     test("without the analysis period there is no track", async () => {
       const ds = await scene(false);
       applyGraphics(ds, docOf([sat("G01", 62339)]), { ...baseCtx, mode: "2d" });
@@ -318,12 +335,12 @@ describe("scene style from theme.css variables", () => {
     const vars: Record<string, string> = {
       "--scene-label-font-size": " 12px", "--font-ui": " system-ui, sans-serif", "--scene-label-outline": "#000000",
       "--scene-point-outline": "#111111", "--scene-access-width": "1.5px", "--scene-grid-line": "#ffffff66",
-      "--scene-swath-fill-opacity": "0.2", "--scene-swath-edge-width": "2px", "--scene-night-fill": "#00000080",
+      "--scene-swath-fill-opacity": "0.2", "--scene-swath-edge-width": "2px",
       "--scene-terminator-line": "#ffeeaa", "--scene-terminator-width": "1px", "--scene-ipp-point-size": "5px", "--scene-ipp-track-width": "3px",
     };
     expect(sceneStyleFrom((name) => vars[name] ?? "")).toEqual({
       labelFont: "12px system-ui, sans-serif", labelOutline: "#000000", pointOutline: "#111111", accessWidth: 1.5, gridLine: "#ffffff66",
-      swathFillOpacity: 0.2, swathEdgeWidth: 2, nightFill: "#00000080", terminatorLine: "#ffeeaa", terminatorWidth: 1, ippPointSize: 5, ippTrackWidth: 3,
+      swathFillOpacity: 0.2, swathEdgeWidth: 2, terminatorLine: "#ffeeaa", terminatorWidth: 1, ippPointSize: 5, ippTrackWidth: 3,
     });
   });
 
@@ -342,7 +359,7 @@ describe("scene style from theme.css variables", () => {
     const style = sceneStyleFrom((name) => vars[name] ?? "");
     expect(style.accessWidth).toBeGreaterThan(0);
     expect(style.labelFont).toMatch(/^\d+px /);
-    for (const c of [style.labelOutline, style.pointOutline, style.gridLine, style.nightFill, style.terminatorLine]) expect(c).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i);
+    for (const c of [style.labelOutline, style.pointOutline, style.gridLine, style.terminatorLine]) expect(c).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i);
     for (const name of ["--scene-swath-fill-opacity", "--scene-swath-edge-width", "--scene-terminator-width", "--scene-ipp-point-size", "--scene-ipp-track-width"])
       expect(vars[name], name).toBeDefined();
     expect(vars["--color-other"]).toMatch(/^#[0-9a-f]{6}$/i);

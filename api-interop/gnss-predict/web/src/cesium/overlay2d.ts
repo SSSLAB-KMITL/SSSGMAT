@@ -1,24 +1,29 @@
-// ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (spec §9.3): Swath, กลางวันกลางคืน, จุดและเส้นทาง IPP
+// ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (spec §9.3): Swath, เส้นแบ่งกลางวันกลางคืน (Show Outline), จุดและเส้นทาง IPP
+// (Shading ใช้แสงของ globe ของ Cesium: scene2d.ts applyProps)
 //
-// - ตัวสร้าง (swathItems, nightItems, ippItems) แปลงผลของ swath.ts / night.ts / ipp.ts เป็นรายการเส้น จุด และพื้นที่ของ Cesium พร้อมสีและขนาดจาก theme
+// - swathInputs เลือกดาวที่วาด Swath จากหน้าตาของ entity (ดาวที่แสดงอยู่ ตั้ง Edge/Filled Limits และมีตำแหน่ง ณ ตอนนี้)
+// - ตัวสร้าง (swathItems, terminatorItem, ippItems) แปลงผลของ swath.ts / night.ts / ipp.ts เป็นรายการเส้น จุด และพื้นที่ของ Cesium พร้อมสีและขนาดจาก theme
+// - fillStates / fillMoved: พื้นที่ Filled Limits สร้าง primitive ใหม่เฉพาะเมื่อชุดดาว สี มุมเงย หรือจุดใต้ดาว/รัศมีของรอยเท้าดวงใดเปลี่ยนเกิน 0.5°
+//   (จุดใต้ดาว MEO เลื่อนราว 0.006–0.013° ต่อวินาทีของภาพ: ที่ Real Time หรือเดินทีละ step สั้น ๆ แทบไม่สร้างใหม่ แต่ที่ความเร็วตั้งต้น
+//   (1,800 วินาทีของภาพต่อวินาที วาด 10 ครั้งต่อวินาที) เลื่อน 1–2° ต่อการวาด จึงยังสร้างใหม่ทุกครั้งเพื่อให้ภาพตามดาว)
 // - Overlays2D วาดรายการเหล่านั้นเป็น primitive ของ scene โดยตรง (ไม่ใช่ entity): ตั้งค่าใหม่ได้ทันทีในเฟรมเดียว ไม่ผ่าน worker และไม่อยู่ใน
 //   DataSourceDisplay (การข้าม update ตอนอยู่เฉย ๆ ของ idleUpdates.ts จึงไม่เกี่ยว) ผู้เรียกขอ render เองหลังตั้งค่า
 //   - เส้น: PolylineCollection ต่อชั้น เก็บตาม key (รอบถัดไปแก้ตำแหน่ง/สีของเส้นเดิม) โหมด 2D ของ Cesium ตัดเส้นที่ข้ามเส้น 180° ให้เอง
 //   - จุด: PointPrimitiveCollection ต่อชั้น เก็บตาม key เช่นกัน
 //   - พื้นที่: Primitive แบบ synchronous หนึ่งตัวต่อชั้น (หลาย instance) สร้างใหม่ทุกรอบ จากตาข่ายตามคอลัมน์ของ lonlat.ts ซึ่งไม่มีสามเหลี่ยมพาดขั้ว
 //     หรือพาดเส้น 180° (เหตุที่ไม่ใช้ PolygonGeometry อยู่ใน lonlat.ts)
-//   ลำดับชั้น (ล่างขึ้นบน): กลางคืน, Swath แบบเติม, เส้นแบ่งกลางวันกลางคืน, ขอบ Swath, เส้นทาง IPP, จุด IPP
+//   ลำดับชั้น (ล่างขึ้นบน): Swath แบบเติม, เส้นแบ่งกลางวันกลางคืน, ขอบ Swath, เส้นทาง IPP, จุด IPP
 
 import {
   BoundingSphere, Cartesian3, Color, ColorGeometryInstanceAttribute, ComponentDatatype, Geometry, GeometryAttribute, GeometryAttributes, GeometryInstance,
   Material, PerInstanceColorAppearance, PointPrimitiveCollection, PolylineCollection, Primitive, PrimitiveCollection, PrimitiveType,
   type PointPrimitive, type Polyline,
 } from "cesium";
-import type { SceneStyle } from "./graphics";
-import { columnsMesh, type Column } from "./lonlat";
-import { nightColumns, terminator } from "./night";
+import { cssColor, type EntityLook, type SceneStyle } from "./graphics";
 import type { IppPoint, IppTrack } from "./ipp";
-import { swathShape } from "./swath";
+import { columnsMesh, type Column } from "./lonlat";
+import { terminator } from "./night";
+import { footprintCentralAngleRad, subSatellite, swathShape } from "./swath";
 
 /** ละติจูดสูงสุดของจุดที่วาด: ที่ขั้วพอดีทุกลองจิจูดเป็นจุดเดียวกัน Cesium จะหาลองจิจูดคืนไม่ได้เมื่อฉายลง 2D */
 export const MAX_LAT = 89.99;
@@ -43,8 +48,6 @@ export interface FillItem {
   geometry: Geometry;
   color: Color;
 }
-
-const cssColor = (hex: string): Color => Color.fromCssColorString(hex) ?? Color.WHITE;
 
 /** [lon, lat] องศา → ตำแหน่งบนทรงรีที่ความสูง 0 (ละติจูดถูกบีบไว้ใน ±MAX_LAT) */
 export function lonLatPositions(points: readonly [number, number][]): Cartesian3[] {
@@ -82,6 +85,74 @@ export interface SwathInput {
   options: SwathOption;
 }
 
+const DEFAULT_SWATH_ELEVATION_DEG = 10;
+/** หน้า 2D Graphics - Swath ของดาว (ไม่มี = No Graphics ที่มุมเงย 10° ตามค่าตั้งต้นของ server) */
+function swathOf(obj: EntityLook["obj"]): { options: SwathOption; elevationDeg: number } {
+  const sw = (obj as { graphics2d?: { swath?: { options?: SwathOption; elevation_deg?: number } | null } | null }).graphics2d?.swath;
+  return { options: sw?.options ?? "No Graphics", elevationDeg: sw?.elevation_deg ?? DEFAULT_SWATH_ELEVATION_DEG };
+}
+
+/**
+ * ดาวที่วาด Swath: id `sat/…` ที่หน้าตาบอกว่าแสดงอยู่ ตั้ง Edge Limits หรือ Filled Limits และ positionOf(id) ให้ตำแหน่ง Earth-fixed ณ ตอนนี้
+ * (ผู้เรียกคืน undefined เมื่อไม่มี entity, entity ถูกซ่อน หรืออยู่นอกช่วงที่มีข้อมูล) สีตามหน้าตา มุมเงยตามหน้า Swath
+ */
+export function swathInputs(looks: ReadonlyMap<string, EntityLook>, positionOf: (id: string) => Cartesian3 | undefined): SwathInput[] {
+  const out: SwathInput[] = [];
+  for (const [id, look] of looks) {
+    if (!id.startsWith("sat/") || !look.g.show) continue;
+    const { options, elevationDeg } = swathOf(look.obj);
+    if (options === "No Graphics") continue;
+    const position = positionOf(id);
+    if (position === undefined) continue;
+    out.push({ key: id, position, color: cssColor(look.g.color), elevationDeg, options });
+  }
+  return out;
+}
+
+/** สถานะของพื้นที่ Filled Limits หนึ่งดวง: จุดใต้ดาว รัศมีเชิงมุมของรอยเท้า และสี */
+export interface FillState {
+  key: string;
+  lat: number;
+  lon: number;
+  angleDeg: number;
+  color: string;
+}
+
+/** พื้นที่ Filled Limits เปลี่ยนเกินเท่านี้ (องศา: จุดใต้ดาวหรือรัศมีของรอยเท้า) จึงสร้างใหม่ */
+export const FILL_MOVE_DEG = 0.5;
+
+/** สถานะของดาวที่ตั้ง Filled Limits และมีรอยเท้า (เรียงตาม sats) */
+export function fillStates(sats: readonly SwathInput[]): FillState[] {
+  const out: FillState[] = [];
+  for (const s of sats) {
+    if (s.options !== "Filled Limits") continue;
+    const sub = subSatellite(s.position);
+    if (!(sub.altKm > 0)) continue;
+    const angle = footprintCentralAngleRad(sub.altKm, s.elevationDeg);
+    if (!(angle > 0)) continue;
+    out.push({ key: s.key, lat: sub.lat, lon: sub.lon, angleDeg: (angle * 180) / Math.PI, color: s.color.toCssHexString() });
+  }
+  return out;
+}
+
+/** มุมระหว่างสองจุดบนทรงกลม (องศา) */
+function separationDeg(a: FillState, b: FillState): number {
+  const r = Math.PI / 180;
+  const v = (lat: number, lon: number) => [Math.cos(lat * r) * Math.cos(lon * r), Math.cos(lat * r) * Math.sin(lon * r), Math.sin(lat * r)];
+  const [p, q] = [v(a.lat, a.lon), v(b.lat, b.lon)];
+  const cross = [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  return Math.atan2(Math.hypot(cross[0], cross[1], cross[2]), p[0] * q[0] + p[1] * q[1] + p[2] * q[2]) / r;
+}
+
+/** ต้องสร้างพื้นที่ Filled Limits ใหม่ไหม: ยังไม่เคยสร้าง, ชุดดาวหรือสีเปลี่ยน, หรือจุดใต้ดาว/รัศมีดวงใดเปลี่ยนเกิน minDeg */
+export function fillMoved(prev: readonly FillState[] | null, next: readonly FillState[], minDeg = FILL_MOVE_DEG): boolean {
+  if (prev === null || prev.length !== next.length) return true;
+  return next.some((n, i) => {
+    const p = prev[i];
+    return p.key !== n.key || p.color !== n.color || Math.abs(p.angleDeg - n.angleDeg) > minDeg || separationDeg(p, n) > minDeg;
+  });
+}
+
 /** Swath ของดาวแต่ละดวง: Edge Limits = วงขอบรอยเท้า, Filled Limits = พื้นที่โปร่งแสงสีของดาว, No Graphics หรือไม่มีรอยเท้า = ไม่วาด */
 export function swathItems(sats: readonly SwathInput[], style: SceneStyle): { edges: LineItem[]; fills: FillItem[] } {
   const edges: LineItem[] = [];
@@ -100,11 +171,9 @@ export function swathItems(sats: readonly SwathInput[], style: SceneStyle): { ed
   return { edges, fills };
 }
 
-/** Lighting ของหน้าต่าง 2D ณ เวลา d: Show Outline = เส้นแบ่งกลางวันกลางคืน, Shading = พื้นที่กลางคืน */
-export function nightItems(d: Date, on: { outline: boolean; shading: boolean }, style: SceneStyle): { line: LineItem | null; fill: FillItem | null } {
-  const line = on.outline ? { key: "terminator", positions: lonLatPositions(terminator(d)), color: cssColor(style.terminatorLine), width: style.terminatorWidth } : null;
-  const geometry = on.shading ? meshGeometry(nightColumns(d)) : null;
-  return { line, fill: geometry === null ? null : { key: "night", geometry, color: cssColor(style.nightFill) } };
+/** Lighting → Show Outline ณ เวลา d: เส้นแบ่งกลางวันกลางคืน (181 จุด) สีและความหนาจาก theme */
+export function terminatorItem(d: Date, style: SceneStyle): LineItem {
+  return { key: "terminator", positions: lonLatPositions(terminator(d)), color: cssColor(style.terminatorLine), width: style.terminatorWidth };
 }
 
 /** จุดและเส้นทาง IPP ที่ ipp.ts เลือก ในสีของดาว (colorOf คืน null = ดาวที่ไม่แสดง: ไม่วาด) */
@@ -131,12 +200,12 @@ export function ippItems(
 
 // ---------- ชั้นของ primitive ----------
 
-export type FillLayer = "night" | "swath";
+export type FillLayer = "swath";
 export type LineLayer = "terminator" | "swathEdge" | "ippTrack";
 export type PointLayer = "ipp";
 export type OverlayLayer = FillLayer | LineLayer | PointLayer;
 
-const ORDER: OverlayLayer[] = ["night", "swath", "terminator", "swathEdge", "ippTrack", "ipp"];
+const ORDER: OverlayLayer[] = ["swath", "terminator", "swathEdge", "ippTrack", "ipp"];
 
 export class Overlays2D {
   private readonly root: PrimitiveCollection;
@@ -148,7 +217,7 @@ export class Overlays2D {
   constructor(private readonly parent: PrimitiveCollection) {
     this.root = parent.add(new PrimitiveCollection()) as PrimitiveCollection;
     for (const layer of ORDER) {
-      if (layer === "night" || layer === "swath") this.fills.set(layer, this.root.add(new PrimitiveCollection()) as PrimitiveCollection);
+      if (layer === "swath") this.fills.set(layer, this.root.add(new PrimitiveCollection()) as PrimitiveCollection);
       else if (layer === "ipp") this.points.set(layer, { collection: this.root.add(new PointPrimitiveCollection()) as PointPrimitiveCollection, byKey: new Map() });
       else this.lines.set(layer, { collection: this.root.add(new PolylineCollection()) as PolylineCollection, byKey: new Map() });
     }
@@ -219,7 +288,7 @@ export class Overlays2D {
   counts(): Record<OverlayLayer, number> {
     const out = {} as Record<OverlayLayer, number>;
     for (const layer of ORDER) {
-      if (layer === "night" || layer === "swath") out[layer] = this.fillCounts.get(layer) ?? 0;
+      if (layer === "swath") out[layer] = this.fillCounts.get(layer) ?? 0;
       else if (layer === "ipp") out[layer] = this.points.get(layer)!.byKey.size;
       else out[layer] = this.lines.get(layer)!.byKey.size;
     }

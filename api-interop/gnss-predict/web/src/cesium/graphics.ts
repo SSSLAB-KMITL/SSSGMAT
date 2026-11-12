@@ -6,7 +6,7 @@
 //   (ตัวแรกตามลำดับใน doc ที่มีสี; ตัวที่เป็นสมาชิกแต่ไม่มีสีข้ามไป) → สีนั้น; อื่น ๆ → ตัวแปร CSS ของระบบ (--color-gps/glonass/galileo/beidou,
 //   ระบบที่รู้ไม่ได้ = --color-other, Facility = --color-facility) สีของระบบอ่านจาก theme.css ครั้งเดียวแล้วจำไว้ (themeTokens) test ส่ง tokens เข้ามาเอง
 //   ระบบของดาว: ctx.system ถ้าผู้เรียกบอก ไม่งั้นอักษรนำของ PRN (ctx.prnByNorad) ไม่งั้น system ของ Constellation แรกที่มีดาวนี้
-// - ขนาดตัวอักษร/ขอบของป้ายชื่อ ขอบจุด ความหนาเส้น access สีเส้น Lat/Lon และหน้าตาของ Swath / กลางวันกลางคืน / IPP ในหน้าต่าง 2D
+// - ขนาดตัวอักษร/ขอบของป้ายชื่อ ขอบจุด ความหนาเส้น access สีเส้น Lat/Lon และหน้าตาของ Swath / เส้นแบ่งกลางวันกลางคืน / IPP ในหน้าต่าง 2D
 //   เป็นตัวแปร CSS เช่นกัน (sceneStyle: --scene-*)
 // - applyGraphics ตั้งกราฟิกของ entity ใน data source ที่โหลดแล้ว ไม่โหลด CZML ใหม่: แก้ Properties แล้วเห็นทันที
 //   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง: passes.ts)
@@ -78,8 +78,6 @@ export interface SceneStyle {
   swathFillOpacity: number;
   /** ความหนาเส้น Swath แบบ Edge Limits (พิกเซล) */
   swathEdgeWidth: number;
-  /** สีพื้นที่กลางคืน (Lighting → Shading, #rrggbbaa) */
-  nightFill: string;
   /** สีและความหนาของเส้นแบ่งกลางวันกลางคืน (Lighting → Show Outline) */
   terminatorLine: string;
   terminatorWidth: number;
@@ -108,7 +106,6 @@ export function sceneStyleFrom(read: (name: string) => string): SceneStyle {
     gridLine: get("--scene-grid-line", "#ffffff"),
     swathFillOpacity: Number.isFinite(opacity) && opacity > 0 && opacity <= 1 ? opacity : 0.25,
     swathEdgeWidth: size("--scene-swath-edge-width", 1),
-    nightFill: get("--scene-night-fill", "#00000066"),
     terminatorLine: get("--scene-terminator-line", "#ffffff"),
     terminatorWidth: size("--scene-terminator-width", 1),
     ippPointSize: size("--scene-ipp-point-size", 6),
@@ -306,7 +303,8 @@ export function entityPeriod(entity: Entity): number | null {
   return entityOrbit(entity)?.periodS ?? null;
 }
 
-const cssColor = (hex: string): Color => Color.fromCssColorString(hex) ?? Color.WHITE;
+/** สี CSS (#rrggbb, #rrggbbaa ฯลฯ) → Color ของ Cesium อ่านไม่ได้ = ขาว (ใช้ร่วมทั้ง graphics, overlay2d และหน้าต่าง 2D) */
+export const cssColor = (hex: string): Color => Color.fromCssColorString(hex) ?? Color.WHITE;
 
 function lineMaterial(color: Color, lineStyle: string): MaterialProperty {
   const dash = dashFor(lineStyle);
@@ -392,7 +390,6 @@ function accessStyle(doc: ScenarioDoc, facility: string, tokens: ColorTokens): {
   return { show: (g.show ?? true) && (g.animate_line ?? true), color: custom ?? tokens.access };
 }
 
-/** ตั้งกราฟิกของทุก entity ใน collection ตาม doc (ไม่มี doc = ซ่อนทั้งหมด) */
 /** ground track ของดาวในหน้าต่าง 2D: path ที่ lead/trail ตามหน้า Pass (ไม่มีช่วงวิเคราะห์หรือตัวอย่างตำแหน่ง = ซ่อน) */
 function groundTrack(entity: Entity, obj: SceneObject, g: ObjectGraphics, color: Color, analysis: ApplyCtx["analysis"]): PathGraphics {
   const orbit = analysis === undefined ? null : entityOrbit(entity);
@@ -402,7 +399,11 @@ function groundTrack(entity: Entity, obj: SceneObject, g: ObjectGraphics, color:
   return new PathGraphics({ show: true, leadTime, trailTime, width: g.lineWidth, resolution: PATH_RESOLUTION_S, material: lineMaterial(color, g.lineStyle) });
 }
 
-export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioDoc | null, ctx: ApplyCtx): void {
+/**
+ * ตั้งกราฟิกของทุก entity ใน collection ตาม doc (ไม่มี doc = ซ่อนทั้งหมด)
+ * คืนหน้าตาของทุก entity ตาม doc (entityLooks ชุดเดียวที่ใช้ตั้ง: หน้าต่าง 2D ใช้ต่อกับ Swath และ IPP ไม่ต้องคำนวณซ้ำ)
+ */
+export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioDoc | null, ctx: ApplyCtx): Map<string, EntityLook> {
   const tokens = ctx.tokens ?? themeTokens();
   const style = ctx.style ?? sceneStyle();
   const looks = doc === null ? new Map<string, EntityLook>() : entityLooks(doc, { ...ctx, tokens });
@@ -460,4 +461,5 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
   } finally {
     entities.resumeEvents();
   }
+  return looks;
 }

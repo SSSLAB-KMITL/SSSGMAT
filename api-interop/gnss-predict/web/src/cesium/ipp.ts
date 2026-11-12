@@ -5,9 +5,37 @@
 //   หรือ epoch ขาด (ห่างเกิน 1.5 step) ท่อนที่มีจุดเดียวไม่วาด
 // - indexAer ทำครั้งเดียวต่อไฟล์ (ไฟล์หนึ่งวันมีราว 150,000 แถว) ippAt ค้นแบบทวิภาค
 
+import type { components } from "../api/types.gen";
 import type { AerRow } from "../data/files";
+import type { ResultsInfo, ResultsStatus } from "../stores/results";
+
+type ScenarioDoc = components["schemas"]["ScenarioDoc"];
+type FacilityObj = components["schemas"]["FacilityObj"];
 
 export const IPP_TRACK_HALF_MS = 600_000;
+
+/** aer.csv ที่ใช้: Facility, มุมเงยต่ำสุดของมัน และกุญแจ scenario/Facility/hash (เปลี่ยน = โหลดใหม่) */
+export interface IppSource {
+  facility: string;
+  minEl: number;
+  key: string;
+}
+
+/**
+ * Facility ที่ใช้ทำ IPP: ตัวแรกตามลำดับใน doc ที่ผล access เป็น current และมี hash (ephem ต้อง current ด้วย) มุมเงยต่ำสุดจาก
+ * constraints.elevation_angle_min_deg (ไม่มี = 0) ผลไม่ current หรือไม่มี scenario = null (ไม่แสดง IPP)
+ */
+export function ippSource(doc: ScenarioDoc | null, name: string | null, results: { status: ResultsStatus; info: ResultsInfo | null }): IppSource | null {
+  if (name === null || doc === null || results.status !== "current") return null;
+  for (const o of doc.objects) {
+    if (o.class !== "Facility") continue;
+    const e = results.info?.access[o.name];
+    if (e?.status !== "current" || !e.hash) continue;
+    const minEl = (o as FacilityObj).constraints?.elevation_angle_min_deg ?? 0;
+    return { facility: o.name, minEl, key: `${name}/${o.name}/${e.hash}` };
+  }
+  return null;
+}
 
 export interface IppIndex {
   /** epoch ที่มีในไฟล์ (ms, เรียง) */

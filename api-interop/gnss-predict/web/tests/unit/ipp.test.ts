@@ -1,8 +1,10 @@
 // จุดและเส้นทาง IPP ของหน้าต่าง 2D (src/cesium/ipp.ts, ของเราเอง spec §9.3): เลือกจาก aer.csv ของ Facility ตามเวลาและมุมเงยต่ำสุด
 
 import { describe, expect, test } from "vitest";
-import { indexAer, ippAt, IPP_TRACK_HALF_MS } from "../../src/cesium/ipp";
+import { indexAer, ippAt, ippSource, IPP_TRACK_HALF_MS } from "../../src/cesium/ipp";
 import type { AerRow } from "../../src/data/files";
+import type { ResultsInfo } from "../../src/stores/results";
+import { makeDoc } from "./helpers/chrome";
 
 const T0 = Date.parse("2026-11-11T00:00:00Z");
 const STEP = 30_000;
@@ -73,5 +75,31 @@ describe("ippAt", () => {
 
   test("an empty file has no points and no tracks", () => {
     expect(ippAt(indexAer([]), T0, 0)).toEqual({ points: [], tracks: [] });
+  });
+});
+
+describe("ippSource: which Facility's aer.csv feeds the IPP", () => {
+  const fac = (name: string, min?: number) =>
+    ({ class: "Facility", name, position: { type: "Geodetic", lat_deg: 0, lon_deg: 0, alt_m: 0 }, ...(min === undefined ? {} : { constraints: { elevation_angle_min_deg: min } }) }) as never;
+  const doc = makeDoc({ name: "T", objects: [fac("AAA", 5), { class: "Satellite", name: "G01", norad: 1 } as never, fac("BBB", 15), fac("CCC")] });
+  const entry = (status: "current" | "stale" | "missing", hash: string | null) => ({ hash, status, available: [] });
+  const info = (access: ResultsInfo["access"]): ResultsInfo => ({ ephem: entry("current", "e"), access, error: null });
+
+  test("the first Facility in doc order whose access is current, with its minimum elevation", () => {
+    const src = ippSource(doc, "T", { status: "current", info: info({ AAA: entry("stale", "a"), BBB: entry("current", "b"), CCC: entry("current", "c") }) });
+    expect(src).toEqual({ facility: "BBB", minEl: 15, key: "T/BBB/b" });
+  });
+
+  test("a Facility without constraints has a minimum elevation of 0; a current entry without a hash does not count", () => {
+    expect(ippSource(doc, "T", { status: "current", info: info({ BBB: entry("current", null), CCC: entry("current", "c") }) })).toEqual({ facility: "CCC", minEl: 0, key: "T/CCC/c" });
+  });
+
+  test("nothing when the results are not current, no Facility has current access, or no scenario is open", () => {
+    const ok = info({ AAA: entry("current", "a") });
+    expect(ippSource(doc, "T", { status: "stale", info: ok })).toBeNull();
+    expect(ippSource(doc, "T", { status: "current", info: info({ AAA: entry("missing", null) }) })).toBeNull();
+    expect(ippSource(doc, "T", { status: "current", info: null })).toBeNull();
+    expect(ippSource(null, "T", { status: "current", info: ok })).toBeNull();
+    expect(ippSource(doc, null, { status: "current", info: ok })).toBeNull();
   });
 });

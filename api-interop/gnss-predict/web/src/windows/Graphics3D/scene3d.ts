@@ -1,7 +1,7 @@
 // ภาพในหน้าต่าง 3D หนึ่งบาน (spec §9.1–§9.2): viewer + CzmlDataSource ตัวเดียว + การตามเวลา/scenario/ผลลัพธ์/ค่าตั้งของหน้าต่าง
 // โหลดแบบ dynamic import จาก Graphics3D.tsx: Cesium ทั้งก้อนอยู่ใน chunk ของตัวเอง ไม่ถ่วงการเปิดหน้าเว็บ
 //
-// - data source (sceneSource.ts): โหลดใหม่เมื่อ URL ของ scene.czml / access.czml (ซึ่งมี hash อยู่ใน URL) เปลี่ยนเท่านั้น
+// - data source (graphics/sceneSource.ts CzmlScene ที่หน้าต่าง 2D ใช้ด้วย): โหลดใหม่เมื่อ URL ของ scene.czml / access.czml (ซึ่งมี hash อยู่ใน URL) เปลี่ยนเท่านั้น
 //   ผลไม่ current = data source ว่างที่มีแค่ Facility จาก doc (Review Focus 1) การแก้กราฟิกเรียก applyGraphics อย่างเดียว ไม่โหลด CZML ใหม่
 //   โหลดไม่สำเร็จ = Facility อย่างเดียวพร้อมแถบแจ้ง (sceneFailed) แล้วลองใหม่ใน refresh ถัดไปแม้ hash เท่าเดิม (Review Focus 2)
 // - dataSourceDisplay ข้ามการ update ตอนอยู่เฉย ๆ (cesium/idleUpdates.ts): หน้าต่างนี้จึงห้ามใช้ CallbackProperty, path ที่ relativeTo INERTIAL
@@ -14,14 +14,13 @@
 // - Grab Globe / Zoom In: โหมดเมาส์ของปุ่มซ้าย (Zoom In: ลากกรอบแล้วบินไปที่กรอบ คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง จบแล้วกลับเป็น Grab Globe)
 
 import {
-  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, CzmlDataSource, JulianDate, Matrix3, Matrix4,
+  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, JulianDate, Matrix3, Matrix4,
   PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
   TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
-import { errorText } from "../../api/client";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
-import { ensureFacilities, loadScene } from "../../cesium/czml";
+import { ensureFacilities } from "../../cesium/czml";
 import {
   applyGraphics, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, type SceneObject,
 } from "../../cesium/graphics";
@@ -29,9 +28,7 @@ import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
 import { createViewer, latLonGrid } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
-import { msg } from "../../labels/messages.th";
 import { useLayout } from "../../stores/layout";
-import { report } from "../../stores/messages";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useTime } from "../../stores/time";
@@ -40,7 +37,7 @@ import { props3d, type Props3D } from "./props";
 import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
-import { SceneSource } from "../graphics/sceneSource";
+import { currentSceneUrls, CzmlScene } from "../graphics/sceneSource";
 import { Throttle } from "../graphics/throttle";
 import { boxRectangle, ZoomBox } from "../graphics/zoomBox";
 
@@ -61,7 +58,6 @@ const FACILITY_VIEW_FROM = new Cartesian3(0, -1_500_000, 1_500_000);
 const INERTIAL_STEP_S = 300;
 const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
-const DATA_SOURCE_NAME = "gnss-studio";
 
 type View = { kind: "free" } | { kind: "track"; path: string } | { kind: "fromTo"; req: ViewFromToRequest };
 
@@ -92,8 +88,7 @@ export function mountScene3D(panelId: string, el: HTMLElement): Scene3DHandle {
 }
 
 class Scene3D implements Scene3DHandle {
-  private ds: CzmlDataSource | null = null;
-  private readonly source: SceneSource<CzmlDataSource>;
+  private readonly czml: CzmlScene;
   private destroyed = false;
   private frames = 0;
   private view: View = { kind: "free" };
@@ -116,20 +111,7 @@ class Scene3D implements Scene3DHandle {
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
-    this.source = new SceneSource<CzmlDataSource>({
-      load: (url, access, signal) => loadScene(viewer, url, access, { signal }),
-      empty: async () => {
-        const ds = new CzmlDataSource(DATA_SOURCE_NAME);
-        await viewer.dataSources.add(ds);
-        return ds;
-      },
-      adopt: (ds, scene) => this.adopt(ds, scene),
-      discard: (ds) => {
-        if (!this.destroyed) viewer.dataSources.remove(ds, true);
-      },
-      failed: (e) => report("warning", "SCENE_LOAD", msg("scene.loadFailed", { window: "3D", message: errorText(e) })),
-      changed: notifyScenes,
-    });
+    this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: notifyScenes });
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     this.props = props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
@@ -167,37 +149,27 @@ class Scene3D implements Scene3DHandle {
 
   // ---------- data source ----------
 
-  /** URL ของผลที่ใช้ได้ตอนนี้: scene.czml ของ ephem ที่ current + access.czml ของทุก Facility ที่ current (เฉพาะเมื่อมี scene) */
-  private refreshScene(): void {
-    if (this.destroyed) return;
-    const results = useResults.getState();
-    const sceneUrl = results.ephemUrl("scene.czml");
-    const accessUrls =
-      sceneUrl === null
-        ? []
-        : Object.keys(results.info?.access ?? {})
-            .sort()
-            .flatMap((f) => {
-              const url = results.accessUrl(f, "access.czml");
-              return url === null ? [] : [url];
-            });
-    // URL เท่าเดิม: manifest (NORAD → PRN) มาทีหลังสถานะ หรือ doc เปลี่ยน: entity เดิม กราฟิกใหม่
-    if (!this.source.update({ sceneUrl, accessUrls })) this.restyle();
+  /** data source ที่ใช้อยู่ (CzmlScene สลับให้) */
+  private get ds() {
+    return this.czml.ds;
   }
 
-  /** ใช้ data source ใหม่แทนตัวเก่า แล้วตั้งกราฟิกและกล้องตามเดิม (entity เป็นตัวใหม่) */
-  private adopt(ds: CzmlDataSource, scene: boolean): void {
+  /** โหลดผลที่ใช้ได้ตอนนี้ (currentSceneUrls) URL เท่าเดิม: manifest (NORAD → PRN) มาทีหลังสถานะ หรือ doc เปลี่ยน: entity เดิม กราฟิกใหม่ */
+  private refreshScene(): void {
     if (this.destroyed) return;
-    const old = this.ds;
-    this.ds = ds;
-    if (old !== null && old !== ds) this.viewer.dataSources.remove(old, true);
+    if (!this.czml.update(currentSceneUrls(useResults.getState()))) this.restyle();
+  }
+
+  /** ได้ data source ใหม่ (ตัวเก่าถูกเอาออกแล้ว): ตั้งกราฟิกและกล้องตามเดิม (entity เป็นตัวใหม่) */
+  private adopted(fromScene: boolean): void {
+    if (this.destroyed) return;
     this.restyle();
     this.restoreView();
-    if (scene) noteSceneLoaded();
+    if (fromScene) noteSceneLoaded();
   }
 
   sceneFailed(): boolean {
-    return this.source.failed();
+    return this.czml.failed();
   }
 
   /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) */
@@ -509,13 +481,12 @@ class Scene3D implements Scene3DHandle {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.source.dispose();
+    this.czml.dispose();
     for (const off of this.offs) off();
     this.inertialThrottle.dispose();
     this.handler.destroy();
     this.zoom.destroy();
     this.inertialPaths.clear();
-    this.ds = null;
     this.viewer.destroy(); // ทำลาย data source, entity, primitive และ WebGL context ของหน้าต่างนี้ทั้งหมด
   }
 

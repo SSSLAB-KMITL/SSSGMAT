@@ -69,10 +69,10 @@
   --scene-point-outline: #000000;
   --scene-access-width: 1.5px;
   --scene-grid-line: #ffffff66;
-  /* หน้าต่าง 2D: Swath (Filled Limits ใช้สีของดาวที่ความทึบนี้), กลางวันกลางคืน (Shading / Show Outline), จุดและเส้นทาง IPP */
+  /* หน้าต่าง 2D: Swath (Filled Limits ใช้สีของดาวที่ความทึบนี้), เส้นแบ่งกลางวันกลางคืน (Show Outline), จุดและเส้นทาง IPP
+     (Shading ใช้แสงของ globe ของ Cesium ไม่มีสีของตัวเอง) */
   --scene-swath-fill-opacity: 0.25;
   --scene-swath-edge-width: 1.5px;
-  --scene-night-fill: #00000073;
   --scene-terminator-line: #fff3c4d9;
   --scene-terminator-width: 1.5px;
   --scene-ipp-point-size: 6px;

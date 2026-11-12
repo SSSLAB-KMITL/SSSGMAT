@@ -2,7 +2,7 @@
 // ค่าที่คาดเป็นสูตรปิด (ตัวเลขของบรีฟงาน 12 ตามตัว)
 
 import { describe, expect, test } from "vitest";
-import { ascendingNodeTimes, DEFAULT_PASS_S, estimatePeriod, extendNodes, leadTrailS, MU_KM3_S2, orbitPeriodS } from "../../src/cesium/passes";
+import { ascendingNodeTimes, DEFAULT_PASS_S, estimatePeriod, extendNodes, leadTrailS, MIN_ORBIT_PERIOD_S, MU_KM3_S2, orbitPeriodS } from "../../src/cesium/passes";
 
 const T = 43077.757;
 
@@ -109,12 +109,26 @@ describe("leadTrailS beyond the brief", () => {
 
 describe("extendNodes", () => {
   test("adds nodes one period apart until every time in the period has a node at or before it and one after it", () => {
-    expect(extendNodes([150, 250], 100, 0, 400)).toEqual([-50, 50, 150, 250, 350, 450]);
-    expect(extendNodes([0], 100, 0, 100)).toEqual([0, 100, 200]);
+    expect(extendNodes([50_000], 43_000, 0, 100_000)).toEqual([-36_000, 7_000, 50_000, 93_000, 136_000]);
+    expect(extendNodes([0], 43_000, 0, 43_000)).toEqual([0, 43_000, 86_000]);
   });
 
   test("no nodes or no period: nothing to extend", () => {
-    expect(extendNodes([], 100, 0, 400)).toEqual([]);
-    expect(extendNodes([150], 0, 0, 400)).toEqual([150]);
+    expect(extendNodes([], 43_000, 0, 86_400)).toEqual([]);
+    expect(extendNodes([150], 0, 0, 86_400)).toEqual([150]);
+  });
+
+  test("an implausible period (shorter than any orbit above the Earth) is not extended, so corrupt samples cannot loop", () => {
+    expect(MIN_ORBIT_PERIOD_S).toBe(3000);
+    expect(extendNodes([150], 1, 0, 86_400)).toEqual([150]);
+    expect(extendNodes([150], 1e-9, -1e12, 1e12)).toEqual([150]);
+    expect(extendNodes([150], Number.NaN, 0, 86_400)).toEqual([150]);
+  });
+});
+
+describe("estimatePeriod guards", () => {
+  test("samples inside the Earth (mean radius below Re) are not an orbit", () => {
+    expect(estimatePeriod([{ x: 1_000_000, y: 0, z: 0 }, { x: 0, y: 1_000_000, z: 0 }])).toBeNull();
+    expect(estimatePeriod([{ x: 7_000_000, y: 0, z: 0 }])).toBeCloseTo(orbitPeriodS(7000), 6); // LEO ราว 5,800 s ยังใช้ได้
   });
 });

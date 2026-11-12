@@ -2,13 +2,16 @@
 //
 // โลกทรงกลมรัศมีเฉลี่ย Re (IUGG) มุมศูนย์กลางจากจุดใต้ดาวถึงขอบรอยเท้า θ = acos(Re·cos ε / (Re + h)) − ε
 // (สามเหลี่ยม ศูนย์กลางโลก–ผู้สังเกต–ดาว: มุมที่ผู้สังเกตเป็น 90° + ε, ไซน์รูล sin(มุมที่ดาว) = Re·cos ε / (Re + h), มุมที่ดาว + θ + 90° + ε = 180°)
-// จุดใต้ดาวเป็นทิศของตำแหน่งดาว (ละติจูด geocentric) และ h = |r| − Re ให้เข้ากับโลกทรงกลมเดียวกัน
+// จุดใต้ดาวคือจุดบนผิวโลกในทิศของตำแหน่งดาว: ละติจูด geocentric φc ของทิศนั้นแปลงเป็น geodetic (WGS 84: tan φd = tan φc / (1 − e²))
+// เพราะทั้งวงและพื้นที่ถูกวาดเป็นละติจูด geodetic (ไม่แปลงจะคลาดไปทางขั้วราว 0.19° / 21 km ที่ละติจูดกลาง ๆ) h = |r| − Re
 // Edge Limits วาดวงจาก footprintRing, Filled Limits วาดพื้นที่จาก capColumns (lonlat.ts) ของวงเดียวกัน
 
 import { capColumns, destination, wrapLon, type Column } from "./lonlat";
 
 /** รัศมีเฉลี่ยของโลก (IUGG, km) */
 export const EARTH_RADIUS_KM = 6371.0088;
+/** ความเยื้องศูนย์กลางกำลังสองของทรงรี WGS 84 */
+export const WGS84_E2 = 0.00669437999014;
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -25,10 +28,13 @@ export function footprintRing(latDeg: number, lonDeg: number, altKm: number, ele
   return Array.from({ length: n }, (_, i) => destination(latDeg, lonDeg, θ, (2 * Math.PI * i) / n));
 }
 
-/** จุดใต้ดาวและความสูงจากตำแหน่ง Earth-fixed (เมตร) บนโลกทรงกลมรัศมี EARTH_RADIUS_KM */
+/** จุดใต้ดาว (ละติจูด geodetic ของจุดบนผิวโลกในทิศของดาว) และความสูงเหนือโลกทรงกลมรัศมี EARTH_RADIUS_KM จากตำแหน่ง Earth-fixed (เมตร) */
 export function subSatellite(p: { x: number; y: number; z: number }): { lat: number; lon: number; altKm: number } {
   const r = Math.hypot(p.x, p.y, p.z);
-  return { lat: Math.asin(p.z / r) * DEG, lon: wrapLon(Math.atan2(p.y, p.x) * DEG), altKm: r / 1000 - EARTH_RADIUS_KM };
+  const horizontal = Math.hypot(p.x, p.y);
+  // tan φd = tan φc / (1 − e²) เขียนแบบ atan2 ให้ขั้วได้ ±90° พอดี
+  const lat = Math.atan2(p.z, (1 - WGS84_E2) * horizontal) * DEG;
+  return { lat, lon: wrapLon(Math.atan2(p.y, p.x) * DEG), altKm: r / 1000 - EARTH_RADIUS_KM };
 }
 
 export interface SwathShape {

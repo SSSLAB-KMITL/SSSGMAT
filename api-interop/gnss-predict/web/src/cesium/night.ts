@@ -1,5 +1,5 @@
-// กลางวันกลางคืนของหน้าต่าง 2D (spec §9.3, §17 W2): Lighting → Show Outline (เส้นแบ่งกลางวันกลางคืน) และ Shading (พื้นที่กลางคืนโปร่งแสง)
-// ทั้งสองใช้จุดใต้ดวงอาทิตย์จากที่นี่ ขอบของพื้นที่กลางคืนจึงตรงกับเส้นพอดี
+// กลางวันกลางคืนของหน้าต่าง 2D (spec §9.3): Lighting → Show Outline วาดเส้นแบ่งกลางวันกลางคืนจากที่นี่
+// (Shading ใช้แสงของ globe ของ Cesium ซึ่งตรวจแล้วว่าทำให้ด้านกลางคืนมืดลงในโหมด 2D: spec §17 W2 ไม่ต้องวาดพื้นที่เอง)
 //
 // จุดใต้ดวงอาทิตย์จากสูตรความแม่นต่ำของ Astronomical Almanac (ราว 0.01°: เกินพอสำหรับภาพ) ไม่ต้องใช้ข้อมูลภายนอก
 //   n = JD − 2451545.0, L = 280.460° + 0.9856474°·n, g = 357.528° + 0.9856003°·n, λ = L + 1.915°·sin g + 0.020°·sin 2g, ε = 23.439° − 4e-7°·n
@@ -7,7 +7,7 @@
 // เส้นแบ่งกลางวันกลางคืนคือวงกลมใหญ่ที่ห่าง 90° จากจุดใต้ดวงอาทิตย์: ที่ลองจิจูด λ  tan φ = −cos(λ − λs) / tan δ
 // พื้นที่กลางคืนคือครึ่งทรงกลมรอบจุดตรงข้ามดวงอาทิตย์ (คลุมขั้วที่มืด: ขั้วใต้เมื่อ δ ≥ 0, ขั้วเหนือเมื่อ δ < 0)
 
-import { capColumns, wrapLon, type Column } from "./lonlat";
+import { wrapLon } from "./lonlat";
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -43,10 +43,4 @@ export function terminator(d: Date, n = 180): [number, number][] {
 export function nightPolygon(d: Date, n = 180): [number, number][] {
   const pole = subsolarPoint(d).lat >= 0 ? -90 : 90;
   return [...terminator(d, n), [180, pole], [-180, pole]];
-}
-
-/** พื้นที่กลางคืนเป็นคอลัมน์สำหรับวาด (ครึ่งทรงกลมรอบจุดตรงข้ามดวงอาทิตย์: ขอบคือ terminator ที่ลองจิจูดเดียวกัน) */
-export function nightColumns(d: Date, stepDeg = 2): Column[] {
-  const s = subsolarPoint(d);
-  return capColumns(-s.lat, wrapLon(s.lon + 180), Math.PI / 2, stepDeg);
 }

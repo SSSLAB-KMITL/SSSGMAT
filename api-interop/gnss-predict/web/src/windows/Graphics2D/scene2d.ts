@@ -1,34 +1,37 @@
-// ภาพในหน้าต่าง 2D หนึ่งบาน (spec §9.1, §9.3): viewer โหมด SCENE2D + CzmlDataSource ตัวเดียว + ภาพที่เปลี่ยนตามเวลา (Swath, กลางวันกลางคืน, IPP)
+// ภาพในหน้าต่าง 2D หนึ่งบาน (spec §9.1, §9.3): viewer โหมด SCENE2D + CzmlDataSource ตัวเดียว + ภาพที่เปลี่ยนตามเวลา (Swath, เส้นแบ่งกลางวันกลางคืน, IPP)
 // โหลดแบบ dynamic import จาก Graphics2D.tsx: Cesium ทั้งก้อนอยู่ใน chunk ของตัวเอง
 //
 // - Projection ตั้งตอนสร้าง viewer (Graphics2D สร้างใหม่เมื่อเปลี่ยน พร้อมพื้นที่ที่เห็นอยู่) Display Coordinate Frame = ECF เสมอใน v1
-// - data source (graphics/sceneSource.ts) เหมือนหน้าต่าง 3D: โหลดใหม่เมื่อ URL ของ scene.czml / access.czml เปลี่ยนเท่านั้น ผลไม่ current = Facility จาก doc
+// - data source: CzmlScene + currentSceneUrls (graphics/sceneSource.ts) ตัวเดียวกับหน้าต่าง 3D ผลไม่ current = Facility จาก doc
 //   กราฟิกจาก scenario.json ผ่าน applyGraphics(mode "2d"): จุด ป้ายชื่อ และ ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า Pass
 //   (passes.ts: ค่าที่ขึ้นกับเวลาเป็น SampledProperty ที่ตรงทุกเวลา จึงไม่ต้องคำนวณใหม่ระหว่างเล่น) Visible Sides วาดแบบ Both (W20)
+//   applyGraphics คืนหน้าตาของทุก entity (entityLooks ครั้งเดียวต่อการตั้งกราฟิก) ภาพที่เปลี่ยนตามเวลาใช้ชุดนั้นต่อ
 // - dataSourceDisplay ข้ามการ update ตอนอยู่เฉย ๆ (cesium/idleUpdates.ts) เหมือนหน้าต่าง 3D: path ของดาวราว 130 ดวงไม่ถูกคำนวณใหม่ทุกเฟรมตอนไม่มีอะไรเปลี่ยน
 //   หน้าต่างนี้ไม่ใช้ CallbackProperty, path ที่ relativeTo INERTIAL หรือ visualizer เพิ่มเอง ค่าทุกตัวของ entity ขึ้นกับเวลาหรือถูกตั้งผ่าน property
 //   (ส่ง event) ส่วนภาพที่เปลี่ยนตามเวลาเป็น primitive ของ scene โดยตรง (cesium/overlay2d.ts) ไม่อยู่ใน DataSourceDisplay จึงไม่ถูกข้าม
-// - ภาพที่เปลี่ยนตามเวลา วาดใหม่เมื่อเวลา animation เปลี่ยน ไม่เกิน 10 ครั้งต่อวินาที (ครั้งสุดท้ายตามมาเสมอ) และทันทีเมื่อ doc/ผล/ค่าตั้งเปลี่ยน:
-//   - Swath ของดาวที่ตั้ง Edge Limits / Filled Limits: ศูนย์กลางคือจุดใต้ดาว ณ เวลาปัจจุบัน ความสูง = รัศมีของตำแหน่ง − EARTH_RADIUS_KM
-//   - Lighting: Show Outline (เส้นแบ่งกลางวันกลางคืน) และ Shading (พื้นที่กลางคืนโปร่งแสง) คำนวณใหม่เมื่อเวลาของภาพเลื่อนไปอย่างน้อย 1 วินาที
-//     Shading เป็นแผ่นที่วาดเอง ไม่ใช่ globe.enableLighting (spec §17 W2: ตรวจแล้วว่าแสงของ globe ใน SCENE2D ของ Cesium 1.147 แสดงด้านกลางคืนได้
-//     แต่แผ่นโปร่งแสงมีขอบตรงกับเส้นของ Show Outline พอดีเพราะใช้จุดใต้ดวงอาทิตย์เดียวกัน สีอยู่ใน theme.css และเป็นแบบ Shading ของ STK)
-//   - IPP (ของเราเอง): aer.csv ของ Facility แรกใน doc ที่ผล access เป็น current โหลดเมื่อเปิดตัวเลือกเท่านั้น ผลไม่ current = ไม่แสดง
+// - Lighting → Shading = globe.enableLighting (spec §17 W2: ตรวจแล้วว่าแสงของ globe ใน SCENE2D ของ Cesium 1.147 ทำให้ด้านกลางคืนมืดลง
+//   ตามเวลาของ clock ทุกเฟรม ไม่ต้องวาดพื้นที่เอง)
+// - ภาพที่เปลี่ยนตามเวลา วาดใหม่ (drawOverlays) เมื่อเวลา animation เปลี่ยน ไม่เกิน 10 ครั้งต่อวินาที (ครั้งสุดท้ายตามมาเสมอ) และหนึ่งครั้งต่อหนึ่งเหตุการณ์
+//   เมื่อ doc / ผลลัพธ์ / ช่วงวิเคราะห์ / ค่าตั้งของหน้าต่างเปลี่ยน (restyle และ refreshIpp ไม่วาดเอง ผู้ฟังเหตุการณ์เรียก redraw ครั้งเดียวตอนท้าย):
+//   - Swath ของดาวที่ตั้ง Edge Limits / Filled Limits (overlay2d.ts swathInputs): ศูนย์กลางคือจุดใต้ดาว ณ เวลาปัจจุบัน (ละติจูด geodetic)
+//     ความสูง = รัศมีของตำแหน่ง − EARTH_RADIUS_KM พื้นที่ Filled Limits สร้างใหม่เฉพาะเมื่อรอยเท้าดวงใดเลื่อนเกิน 0.5° (fillMoved)
+//   - Show Outline: เส้นแบ่งกลางวันกลางคืน คำนวณใหม่เมื่อเวลาของภาพเลื่อนไปอย่างน้อย 1 วินาที
+//   - IPP (ของเราเอง): aer.csv ของ Facility จาก ipp.ts ippSource โหลดเมื่อเปิดตัวเลือกเท่านั้น ผลไม่ current = ไม่แสดง
+//     โหลดไม่สำเร็จ = แจ้งเตือนแล้วลืมกุญแจ: การ refresh ผลลัพธ์ครั้งถัดไปโหลดใหม่
 // - เมาส์: พิกัดใต้เมาส์ → useSelection.cursorLatLon (ไม่เกินหนึ่งครั้งต่อเฟรม ออกจากภาพ = null), Zoom In ลากกรอบแล้วบินไปที่กรอบ
 //   (คลิกเฉย ๆ ซูมเข้าสองเท่า แล้วกลับเป็นลากเลื่อนแผนที่), Zoom Out = ภาพกว้างขึ้นสองเท่า
 
 import {
-  Cartesian2, Cartesian3, Color, CzmlDataSource, JulianDate, Math as CesiumMath, Rectangle, ReferenceFrame, ScreenSpaceEventHandler,
-  ScreenSpaceEventType, type ImageryLayer, type Viewer,
+  Cartesian2, Cartesian3, JulianDate, Math as CesiumMath, Rectangle, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType,
+  type Color, type ImageryLayer, type Viewer,
 } from "cesium";
 import { errorText } from "../../api/client";
-import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
-import { ensureFacilities, loadScene } from "../../cesium/czml";
-import { applyGraphics, entityLooks, sceneStyle, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
+import { ensureFacilities } from "../../cesium/czml";
+import { applyGraphics, cssColor, entityLooks, sceneStyle, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
-import { indexAer, ippAt, type IppIndex } from "../../cesium/ipp";
-import { ippItems, nightItems, Overlays2D, swathItems, type SwathInput, type SwathOption } from "../../cesium/overlay2d";
+import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../../cesium/ipp";
+import { fillMoved, fillStates, ippItems, Overlays2D, swathInputs, swathItems, terminatorItem, type FillState } from "../../cesium/overlay2d";
 import { createViewer, latLonGrid } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import type { AerRow } from "../../data/files";
@@ -40,7 +43,7 @@ import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import { useTime } from "../../stores/time";
 import type { MouseMode } from "../graphics/sceneRegistry";
-import { SceneSource } from "../graphics/sceneSource";
+import { currentSceneUrls, CzmlScene } from "../graphics/sceneSource";
 import { Throttle } from "../graphics/throttle";
 import { boxRectangle, ZoomBox } from "../graphics/zoomBox";
 import { CursorTracker } from "./cursor";
@@ -48,16 +51,11 @@ import { props2d, type Projection2D, type Props2D } from "./props2d";
 import { notifyScenes2D, type Scene2DHandle, type ViewRect } from "./registry2d";
 import { viewRectOf } from "./view2d";
 
-type FacilityObj = components["schemas"]["FacilityObj"];
-type SatelliteObj = components["schemas"]["SatelliteObj"];
-
 /** ภาพที่เปลี่ยนตามเวลาวาดใหม่ไม่เกิน 10 ครั้งต่อวินาที */
 const OVERLAY_INTERVAL_MS = 100;
-/** กลางวันกลางคืนคำนวณใหม่เมื่อเวลาของภาพเลื่อนอย่างน้อยเท่านี้ (วินาที): ดวงอาทิตย์เลื่อน 0.004° ต่อวินาที */
-const NIGHT_MIN_STEP_S = 1;
-const DATA_SOURCE_NAME = "gnss-studio";
+/** เส้นแบ่งกลางวันกลางคืนคำนวณใหม่เมื่อเวลาของภาพเลื่อนอย่างน้อยเท่านี้ (วินาที): ดวงอาทิตย์เลื่อน 0.004° ต่อวินาที */
+const OUTLINE_MIN_STEP_S = 1;
 const WORLD: ViewRect = [-180, -90, 180, 90];
-const DEFAULT_SWATH_ELEVATION_DEG = 10;
 
 /** aer.csv ที่จัดดัชนีแล้ว ต่อแถวชุดเดียวกัน (useResults.loadAer คืนชุดเดิมจาก cache: หลายหน้าต่างใช้ดัชนีเดียวกัน) */
 const ippIndexes = new WeakMap<AerRow[], IppIndex>();
@@ -69,14 +67,6 @@ function ippIndexOf(rows: AerRow[]): IppIndex {
   }
   return index;
 }
-
-/** หน้า 2D Graphics - Swath ของดาว (ไม่มี = No Graphics ที่มุมเงย 10° ตามค่าตั้งต้นของ server) */
-function swathOf(obj: EntityLook["obj"]): { options: SwathOption; elevationDeg: number } {
-  const sw = (obj as SatelliteObj).graphics2d?.swath;
-  return { options: sw?.options ?? "No Graphics", elevationDeg: sw?.elevation_deg ?? DEFAULT_SWATH_ELEVATION_DEG };
-}
-
-const cssColor = (hex: string): Color => Color.fromCssColorString(hex) ?? Color.WHITE;
 
 /** สร้าง viewer 2D ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน) */
 export function mountScene2D(panelId: string, el: HTMLElement, opts: { projection: Projection2D; view: ViewRect | null }): Scene2DHandle {
@@ -90,8 +80,7 @@ export function mountScene2D(panelId: string, el: HTMLElement, opts: { projectio
 }
 
 class Scene2D implements Scene2DHandle {
-  private ds: CzmlDataSource | null = null;
-  private readonly source: SceneSource<CzmlDataSource>;
+  private readonly czml: CzmlScene;
   private destroyed = false;
   private mode: MouseMode = "grab";
   private props: Props2D;
@@ -99,8 +88,13 @@ class Scene2D implements Scene2DHandle {
   private looks = new Map<string, EntityLook>();
   private readonly overlays: Overlays2D;
   private readonly overlayThrottle = new Throttle(OVERLAY_INTERVAL_MS, () => this.drawOverlays());
-  /** เวลาของภาพตอนวาดกลางวันกลางคืนครั้งล่าสุด (null = ต้องวาดใหม่) */
-  private nightAt: JulianDate | null = null;
+  /** จำนวนครั้งที่วาดภาพที่เปลี่ยนตามเวลา และที่สร้างพื้นที่ Filled Limits ใหม่ (window.__gnssStudioTest.overlays2d) */
+  private redraws = 0;
+  private fillBuilds = 0;
+  /** เวลาของภาพตอนวาดเส้นแบ่งกลางวันกลางคืนครั้งล่าสุด (null = ต้องวาดใหม่) */
+  private outlineAt: JulianDate | null = null;
+  /** สถานะของพื้นที่ Filled Limits ที่วาดอยู่ (null = ต้องสร้างใหม่) */
+  private fills: FillState[] | null = null;
   /** aer.csv ที่ใช้อยู่: key = scenario/Facility/hash, seq กันคำตอบที่มาช้า */
   private ipp: { key: string | null; index: IppIndex | null; seq: number } = { key: null, index: null, seq: 0 };
   private readonly offs: (() => void)[] = [];
@@ -117,18 +111,13 @@ class Scene2D implements Scene2DHandle {
     const scene = viewer.scene;
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
-    this.source = new SceneSource<CzmlDataSource>({
-      load: (url, access, signal) => loadScene(viewer, url, access, { signal }),
-      empty: async () => {
-        const ds = new CzmlDataSource(DATA_SOURCE_NAME);
-        await viewer.dataSources.add(ds);
-        return ds;
+    this.czml = new CzmlScene(viewer, {
+      window: "2D",
+      adopted: () => {
+        if (this.destroyed) return;
+        this.restyle();
+        this.redraw();
       },
-      adopt: (ds) => this.adopt(ds),
-      discard: (ds) => {
-        if (!this.destroyed) viewer.dataSources.remove(ds, true);
-      },
-      failed: (e) => report("warning", "SCENE_LOAD", msg("scene.loadFailed", { window: "2D", message: errorText(e) })),
       changed: notifyScenes2D,
     });
     this.overlays = new Overlays2D(scene.primitives);
@@ -159,6 +148,7 @@ class Scene2D implements Scene2DHandle {
         if (s.doc === prev.doc && s.catalog === prev.catalog) return;
         this.restyle();
         this.refreshIpp();
+        this.redraw();
       }),
     );
     this.offs.push(
@@ -166,11 +156,14 @@ class Scene2D implements Scene2DHandle {
         if (s.info === prev.info && s.prnByNorad === prev.prnByNorad && s.status === prev.status) return;
         this.refreshScene();
         this.refreshIpp();
+        this.redraw();
       }),
     );
     this.offs.push(
       useTime.subscribe((s, prev) => {
-        if (s.periodStart !== prev.periodStart || s.periodStop !== prev.periodStop) this.restyle(); // All / Current Interval / One Pass
+        if (s.periodStart === prev.periodStart && s.periodStop === prev.periodStop) return;
+        this.restyle(); // All / Current Interval / One Pass
+        this.redraw();
       }),
     );
     this.offs.push(
@@ -180,43 +173,34 @@ class Scene2D implements Scene2DHandle {
         this.props = props2d(s.windowProps[panelId]);
         this.applyProps();
         if (before.showIpp !== this.props.showIpp) this.refreshIpp();
-        else this.overlayThrottle.flush();
+        this.redraw();
       }),
     );
     this.showRect(view ?? WORLD);
     this.refreshScene();
     this.refreshIpp();
+    this.redraw();
+  }
+
+  /** วาดภาพที่เปลี่ยนตามเวลาใหม่ทันที (หนึ่งครั้งต่อเหตุการณ์) */
+  private redraw(): void {
+    this.overlayThrottle.flush();
   }
 
   // ---------- data source ----------
 
-  /** URL ของผลที่ใช้ได้ตอนนี้: scene.czml ของ ephem ที่ current + access.czml ของทุก Facility ที่ current (เฉพาะเมื่อมี scene) */
-  private refreshScene(): void {
-    if (this.destroyed) return;
-    const results = useResults.getState();
-    const sceneUrl = results.ephemUrl("scene.czml");
-    const accessUrls =
-      sceneUrl === null
-        ? []
-        : Object.keys(results.info?.access ?? {})
-            .sort()
-            .flatMap((f) => {
-              const url = results.accessUrl(f, "access.czml");
-              return url === null ? [] : [url];
-            });
-    if (!this.source.update({ sceneUrl, accessUrls })) this.restyle();
+  private get ds() {
+    return this.czml.ds;
   }
 
-  private adopt(ds: CzmlDataSource): void {
+  /** โหลดผลที่ใช้ได้ตอนนี้ URL เท่าเดิม = ตั้งกราฟิกใหม่อย่างเดียว (ไม่วาด: ผู้เรียกวาด) */
+  private refreshScene(): void {
     if (this.destroyed) return;
-    const old = this.ds;
-    this.ds = ds;
-    if (old !== null && old !== ds) this.viewer.dataSources.remove(old, true);
-    this.restyle();
+    if (!this.czml.update(currentSceneUrls(useResults.getState()))) this.restyle();
   }
 
   sceneFailed(): boolean {
-    return this.source.failed();
+    return this.czml.failed();
   }
 
   private applyCtx(): ApplyCtx {
@@ -229,7 +213,7 @@ class Scene2D implements Scene2DHandle {
     };
   }
 
-  /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) แล้ววาดภาพที่เปลี่ยนตามเวลาใหม่ทันที */
+  /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) และหน้าตาของ entity ที่ภาพที่เปลี่ยนตามเวลาใช้ (ไม่วาด: ผู้เรียกวาด) */
   private restyle(): void {
     if (this.destroyed) return;
     const ds = this.ds;
@@ -237,71 +221,69 @@ class Scene2D implements Scene2DHandle {
     const ctx = this.applyCtx();
     if (ds !== null) {
       ensureFacilities(ds.entities, doc);
-      applyGraphics(ds, doc, ctx);
+      this.looks = applyGraphics(ds, doc, ctx);
+    } else {
+      this.looks = doc === null ? new Map() : entityLooks(doc, ctx);
     }
-    this.looks = doc === null ? new Map() : entityLooks(doc, ctx);
-    this.overlayThrottle.flush();
+    this.fills = null; // สีหรือดาวอาจเปลี่ยน
   }
 
   // ---------- ค่าตั้งของหน้าต่าง ----------
 
-  /** Details → Lat/Lon Lines (ชั้นภาพ GridImageryProvider เหมือนหน้าต่าง 3D) แสงและ IPP วาดใน drawOverlays */
+  /**
+   * Details → Lat/Lon Lines (ชั้นภาพ GridImageryProvider เหมือนหน้าต่าง 3D)
+   * Lighting → Shading = แสงอาทิตย์ของ globe: Cesium ทำให้ด้านกลางคืนมืดลงตามเวลาของ clock เองทุกเฟรม (ภาพโลกใช้ dayAlpha/nightAlpha ตั้งต้น = 1)
+   * Show Outline และ IPP วาดใน drawOverlays
+   */
   private applyProps(): void {
     const { imageryLayers, scene } = this.viewer;
+    scene.globe.enableLighting = this.props.shading;
     if (this.props.latLonLines && this.grid === null) {
       this.grid = imageryLayers.addImageryProvider(latLonGrid(sceneStyle().gridLine));
     } else if (!this.props.latLonLines && this.grid !== null) {
       imageryLayers.remove(this.grid, true);
       this.grid = null;
     }
-    this.nightAt = null;
+    this.outlineAt = null;
     scene.requestRender();
   }
 
   // ---------- IPP ----------
 
-  /** Facility ที่ใช้ทำ IPP: ตัวแรกใน doc ที่ผล access เป็น current (ephem ต้อง current ด้วย) ปิดตัวเลือกหรือไม่มี = null */
-  private ippSource(): { facility: string; minEl: number; key: string } | null {
+  /** Facility ที่ใช้ทำ IPP (ปิดตัวเลือก = null) */
+  private currentIppSource(): IppSource | null {
     if (!this.props.showIpp) return null;
     const { name, doc } = useScenario.getState();
-    const results = useResults.getState();
-    if (name === null || doc === null || results.status !== "current") return null;
-    for (const o of doc.objects) {
-      if (o.class !== "Facility") continue;
-      const e = results.info?.access[o.name];
-      if (e?.status !== "current" || !e.hash) continue;
-      const minEl = (o as FacilityObj).constraints?.elevation_angle_min_deg ?? 0;
-      return { facility: o.name, minEl, key: `${name}/${o.name}/${e.hash}` };
-    }
-    return null;
+    return ippSource(doc, name, useResults.getState());
   }
 
-  /** โหลด aer.csv เมื่อ Facility หรือผลของมันเปลี่ยน (ตัวที่โหลดอยู่ของชุดเก่าถูกทิ้ง) แล้ววาดใหม่ */
+  /**
+   * โหลด aer.csv เมื่อ Facility หรือผลของมันเปลี่ยน (ตัวที่โหลดอยู่ของชุดเก่าถูกทิ้ง) ไม่วาด: ผู้เรียกวาด ส่วนเมื่อโหลดเสร็จวาดเอง
+   * โหลดไม่สำเร็จ = แจ้งเตือนแล้วลืมกุญแจ การ refresh ผลลัพธ์ครั้งถัดไป (เช่น หลัง server กลับมา) จึงโหลดใหม่
+   */
   private refreshIpp(): void {
     if (this.destroyed) return;
-    const src = this.ippSource();
+    const src = this.currentIppSource();
     const key = src?.key ?? null;
-    if (key !== this.ipp.key) {
-      const seq = this.ipp.seq + 1;
-      this.ipp = { key, index: null, seq };
-      if (src !== null) {
-        useResults
-          .getState()
-          .loadAer(src.facility)
-          .then(
-            (rows) => {
-              if (this.destroyed || this.ipp.seq !== seq) return;
-              this.ipp.index = ippIndexOf(rows);
-              this.overlayThrottle.flush();
-            },
-            (e: unknown) => {
-              if (this.destroyed || this.ipp.seq !== seq) return;
-              report("warning", "IPP_LOAD", msg("ipp.loadFailed", { facility: src.facility, message: errorText(e) }));
-            },
-          );
-      }
-    }
-    this.overlayThrottle.flush();
+    if (key === this.ipp.key) return;
+    const seq = this.ipp.seq + 1;
+    this.ipp = { key, index: null, seq };
+    if (src === null) return;
+    useResults
+      .getState()
+      .loadAer(src.facility)
+      .then(
+        (rows) => {
+          if (this.destroyed || this.ipp.seq !== seq) return;
+          this.ipp.index = ippIndexOf(rows);
+          this.redraw();
+        },
+        (e: unknown) => {
+          if (this.destroyed || this.ipp.seq !== seq) return;
+          this.ipp = { key: null, index: null, seq };
+          report("warning", "IPP_LOAD", msg("ipp.loadFailed", { facility: src.facility, message: errorText(e) }));
+        },
+      );
   }
 
   // ---------- ภาพที่เปลี่ยนตามเวลา ----------
@@ -315,35 +297,35 @@ class Scene2D implements Scene2DHandle {
 
   private drawOverlays(): void {
     if (this.destroyed) return;
+    this.redraws++;
     const time = this.viewer.clock.currentTime;
     const style = sceneStyle();
 
-    const swaths: SwathInput[] = [];
+    // Swath: ขอบตั้งใหม่ทุกครั้ง (เส้นเดิมถูกแก้ตำแหน่ง) พื้นที่สร้างใหม่เมื่อรอยเท้าดวงใดเลื่อนเกิน 0.5°
     const ds = this.ds;
-    if (ds !== null) {
-      for (const [id, look] of this.looks) {
-        if (!id.startsWith("sat/") || !look.g.show) continue;
-        const { options, elevationDeg } = swathOf(look.obj);
-        if (options === "No Graphics") continue;
-        const entity = ds.entities.getById(id);
-        if (entity === undefined || !entity.show) continue;
-        const position = entity.position?.getValueInReferenceFrame(time, ReferenceFrame.FIXED, new Cartesian3());
-        if (position === undefined) continue; // นอกช่วงที่มีข้อมูล
-        swaths.push({ key: id, position, color: cssColor(look.g.color), elevationDeg, options });
-      }
-    }
-    const swath = swathItems(swaths, style);
+    const inputs =
+      ds === null
+        ? []
+        : swathInputs(this.looks, (id) => {
+            const entity = ds.entities.getById(id);
+            return entity === undefined || !entity.show ? undefined : entity.position?.getValueInReferenceFrame(time, ReferenceFrame.FIXED, new Cartesian3());
+          });
+    const states = fillStates(inputs);
+    const rebuildFills = fillMoved(this.fills, states);
+    const swath = swathItems(rebuildFills ? inputs : inputs.filter((s) => s.options !== "Filled Limits"), style);
     this.overlays.setLines("swathEdge", swath.edges);
-    this.overlays.setFills("swath", swath.fills);
-
-    if (this.nightAt === null || Math.abs(JulianDate.secondsDifference(time, this.nightAt)) >= NIGHT_MIN_STEP_S) {
-      const night = nightItems(JulianDate.toDate(time), { outline: this.props.showOutline, shading: this.props.shading }, style);
-      this.overlays.setLines("terminator", night.line === null ? [] : [night.line]);
-      this.overlays.setFills("night", night.fill === null ? [] : [night.fill]);
-      this.nightAt = JulianDate.clone(time);
+    if (rebuildFills) {
+      this.overlays.setFills("swath", swath.fills);
+      this.fills = states;
+      this.fillBuilds++;
     }
 
-    const src = this.ippSource();
+    if (this.outlineAt === null || Math.abs(JulianDate.secondsDifference(time, this.outlineAt)) >= OUTLINE_MIN_STEP_S) {
+      this.overlays.setLines("terminator", this.props.showOutline ? [terminatorItem(JulianDate.toDate(time), style)] : []);
+      this.outlineAt = JulianDate.clone(time);
+    }
+
+    const src = this.currentIppSource();
     const index = src !== null && src.key === this.ipp.key ? this.ipp.index : null;
     if (src !== null && index !== null) {
       const items = ippItems(ippAt(index, JulianDate.toDate(time).getTime(), src.minEl), (prn) => this.satelliteColor(prn), style);
@@ -430,20 +412,19 @@ class Scene2D implements Scene2DHandle {
     const time = this.viewer.clock.currentTime;
     let groundTracks = 0;
     for (const e of this.ds?.entities.values ?? []) if (e.show && e.path?.show?.getValue(time) === true) groundTracks++;
-    return { groundTracks, ...this.overlays.counts() };
+    return { groundTracks, ...this.overlays.counts(), shading: this.viewer.scene.globe.enableLighting ? 1 : 0, redraws: this.redraws, fillBuilds: this.fillBuilds };
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.source.dispose();
+    this.czml.dispose();
     for (const off of this.offs) off();
     this.overlayThrottle.dispose();
     this.cursor.dispose();
     this.handler.destroy();
     this.zoom.destroy();
     this.overlays.destroy();
-    this.ds = null;
     this.viewer.destroy(); // ทำลาย data source, entity, primitive และ WebGL context ของหน้าต่างนี้ทั้งหมด
   }
 }
