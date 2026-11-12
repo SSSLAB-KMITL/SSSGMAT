@@ -1,14 +1,15 @@
 // หน้าต่าง 3D ที่เปิดอยู่ (ไม่ import Cesium: คำสั่ง แถบเครื่องมือ และ window.__gnssStudioTest อยู่ใน bundle หลัก ส่วน Cesium โหลดทีหลังกับหน้าต่าง)
 //
+// - ทะเบียนแบบทั่วไปของ graphics/sceneRegistry.ts (หน้าต่าง 2D มีทะเบียนของตัวเองแบบเดียวกัน)
 // - Graphics3D ลงทะเบียน Scene3DHandle ของตัวเองเมื่อ viewer พร้อม และถอนเมื่อปิด
 // - "หน้าต่าง 3D ที่ active" (คำสั่ง g3d.* และ object.zoomTo ทำกับมัน): panel ที่ dockview บอกว่า active ถ้าเป็นหน้าต่าง 3D,
 //   ไม่งั้นหน้าต่าง 3D ที่ผู้ใช้แตะล่าสุด (markActive), ไม่งั้นบานแรกที่เปิด
 // - "viewer 3D ตัวแรก" ของ test hook: หน้าต่าง id `graphics3d` (บานแรกของ layout ตั้งต้น) ถ้าเปิดอยู่ ไม่งั้นบานที่เปิดก่อนสุด
 // - ทะเบียนเป็น observable (subscribeScenes) ให้คำสั่งและปุ่มวาดสถานะใหม่เมื่อหน้าต่างเปิด/ปิดหรือโหมดเมาส์เปลี่ยน
 
-import { useLayout } from "../../stores/layout";
+import { createSceneRegistry, type MouseMode, type SceneRegistry } from "../graphics/sceneRegistry";
 
-export type MouseMode = "grab" | "zoomIn";
+export type { MouseMode };
 export type ReferenceFrame = "fixed" | "inertial";
 
 export interface ViewFromToRequest {
@@ -46,49 +47,25 @@ export interface Scene3DHandle {
   frameCount(): number;
 }
 
-const scenes = new Map<string, Scene3DHandle>();
-const listeners = new Set<() => void>();
-let lastActive: string | null = null;
+const registry = createSceneRegistry<Scene3DHandle>();
+/** ทะเบียนของหน้าต่าง 3D (ส่วนร่วมของหน้าต่าง เช่นแถบ "โหลดผลไม่สำเร็จ" อ่านจากที่นี่) */
+export const registry3d: SceneRegistry<Scene3DHandle> = registry;
 let loadedAt: number | null = null;
-let version = 0;
 
 /** แจ้งผู้ฟังว่าชุดหน้าต่างหรือสถานะของหน้าต่าง (โหมดเมาส์) เปลี่ยน */
-export function notifyScenes(): void {
-  version++;
-  for (const l of [...listeners]) l();
-}
+export const notifyScenes = (): void => registry.notify();
 
 /** ลงทะเบียนหน้าต่าง 3D คืนตัวถอนที่ถอนเฉพาะเมื่อยังเป็น handle ตัวนี้ */
-export function registerScene(handle: Scene3DHandle): () => void {
-  scenes.set(handle.panelId, handle);
-  notifyScenes();
-  return () => {
-    if (scenes.get(handle.panelId) !== handle) return;
-    scenes.delete(handle.panelId);
-    if (lastActive === handle.panelId) lastActive = null;
-    notifyScenes();
-  };
-}
+export const registerScene = (handle: Scene3DHandle): (() => void) => registry.register(handle);
 
-export const getScene = (panelId: string): Scene3DHandle | undefined => scenes.get(panelId);
+export const getScene = (panelId: string): Scene3DHandle | undefined => registry.get(panelId);
 
 /** ผู้ใช้แตะหน้าต่าง 3D นี้ (คลิก โฟกัส): เป็นบานที่คำสั่งทำงานด้วยเมื่อ dockview ไม่ได้ชี้หน้าต่าง 3D */
-export function markActive(panelId: string): void {
-  if (lastActive === panelId) return;
-  lastActive = panelId;
-  notifyScenes();
-}
+export const markActive = (panelId: string): void => registry.markActive(panelId);
 
-export function activeScene(): Scene3DHandle | undefined {
-  const active = useLayout.getState().api?.activePanel?.id;
-  if (active !== undefined && scenes.has(active)) return scenes.get(active);
-  if (lastActive !== null && scenes.has(lastActive)) return scenes.get(lastActive);
-  return scenes.values().next().value;
-}
+export const activeScene = (): Scene3DHandle | undefined => registry.active();
 
-export function firstScene(): Scene3DHandle | undefined {
-  return scenes.get("graphics3d") ?? scenes.values().next().value;
-}
+export const firstScene = (): Scene3DHandle | undefined => registry.first("graphics3d");
 
 /** เวลา (performance.now) ที่ scene.czml โหลดเสร็จครั้งแรกในหน้านี้ */
 export function noteSceneLoaded(at: number = performance.now()): void {
@@ -96,16 +73,11 @@ export function noteSceneLoaded(at: number = performance.now()): void {
 }
 export const sceneLoadedAt = (): number | null => loadedAt;
 
-export function subscribeScenes(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-export const scenesVersion = (): number => version;
+export const subscribeScenes = (listener: () => void): (() => void) => registry.subscribe(listener);
+export const scenesVersion = (): number => registry.version();
 
 /** ล้างทะเบียน (test) */
 export function resetScenes(): void {
-  scenes.clear();
-  lastActive = null;
   loadedAt = null;
-  notifyScenes();
+  registry.reset();
 }

@@ -28,16 +28,23 @@ const MESSAGES = {
   // ปุ่ม Apply บนแถบ (POST /propagate: คำนวณด้วย GMAT ในเครื่อง ไม่ดาวน์โหลดอะไร)
   "banner.running": "กำลังคำนวณผลลัพธ์อยู่ ดูความคืบหน้าที่แถบสถานะ",
   "banner.applyFailed": "สั่งคำนวณผลลัพธ์ใหม่ไม่สำเร็จ: {message}",
-  "scene.loadFailed": "โหลดผลลัพธ์เข้าหน้าต่าง 3D ไม่สำเร็จ ({message}) จึงแสดงเฉพาะ Facility",
-  "banner.sceneFailed": "โหลดผลลัพธ์เข้าหน้าต่าง 3D ไม่สำเร็จ จึงแสดงเฉพาะ Facility จะลองโหลดใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป (เช่น หลังเชื่อมต่อ server ได้อีกครั้ง)",
-  // ส่วนแสดงผล 3D (Cesium) แยกไฟล์และโหลดเมื่อเปิดหน้าต่าง: ไฟล์นั้นโหลดไม่ได้ (เช่น server ถูกอัปเดตระหว่างที่หน้าเปิดอยู่)
-  "g3d.chunkFailed": "โหลดส่วนแสดงผล 3D ไม่สำเร็จ ลองโหลดหน้าใหม่",
-  "g3d.chunkFailedLog": "โหลดส่วนแสดงผล 3D ไม่สำเร็จ ({message}) ลองโหลดหน้าใหม่",
+  // {window} = "3D" หรือ "2D" (หน้าต่างที่แจ้ง)
+  "scene.loadFailed": "โหลดผลลัพธ์เข้าหน้าต่าง {window} ไม่สำเร็จ ({message}) จึงแสดงเฉพาะ Facility",
+  "banner.sceneFailed": "โหลดผลลัพธ์เข้าหน้าต่าง {window} ไม่สำเร็จ จึงแสดงเฉพาะ Facility จะลองโหลดใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป (เช่น หลังเชื่อมต่อ server ได้อีกครั้ง)",
+  // ส่วนแสดงผล 3D/2D (Cesium) แยกไฟล์และโหลดเมื่อเปิดหน้าต่าง: ไฟล์นั้นโหลดไม่ได้ (เช่น server ถูกอัปเดตระหว่างที่หน้าเปิดอยู่)
+  "scene.chunkFailed": "โหลดส่วนแสดงผล {window} ไม่สำเร็จ ลองโหลดหน้าใหม่",
+  "scene.chunkFailedLog": "โหลดส่วนแสดงผล {window} ไม่สำเร็จ ({message}) ลองโหลดหน้าใหม่",
 
   // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
   "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",
   "g3d.nightLightsNote": "ภาพแสงไฟเมืองตอนกลางคืนต้องโหลดจากอินเทอร์เน็ต (Cesium ion) จึงไม่มีในโปรแกรมที่ทำงานออฟไลน์นี้ ค่า Night Lights Level ถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
   "g3d.noWindow": "หน้าต่าง 3D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 3D ที่ต้องการ",
+  // หน้าต่าง 2D: 2D Graphics Window Properties (spec §9.3)
+  "g2d.noWindow": "หน้าต่าง 2D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 2D ที่ต้องการ",
+  "g2d.coordFrameNote": "v1 แสดงแผนที่ในกรอบ ECF (หมุนไปกับโลก) เท่านั้น การแสดงในกรอบ ECI จะมีในรุ่นหลัง",
+  "g2d.ippNote": "IPP คือจุดที่สัญญาณจากดาวผ่านชั้นไอโอโนสเฟียร์ แสดงจุดตอนนี้และเส้นทาง ±10 นาทีของดาวที่ Facility แรกที่มีผลลัพธ์ตรงกับ scenario เห็นสูงกว่ามุมเงยต่ำสุด (จาก aer.csv) ไม่แสดงเมื่อผลลัพธ์ไม่ตรงกับ scenario",
+  "g2d.lightingNote": "Shading วาดพื้นที่กลางคืนเป็นแผ่นโปร่งแสงจากตำแหน่งดวงอาทิตย์เดียวกับเส้นของ Show Outline ขอบของพื้นที่จึงตรงกับเส้นพอดี",
+  "ipp.loadFailed": "โหลด aer.csv ของ {facility} เพื่อแสดง IPP ไม่สำเร็จ: {message}",
   "viewFromTo.same": "From Position กับ To Position ต้องเป็นคนละ object",
   "viewFromTo.notFound": "หา object ที่เลือกในหน้าต่าง 3D ไม่เจอ (ยังไม่มีผลลัพธ์ของดาวดวงนั้น หรือ object ถูกซ่อนอยู่)",
   "viewFromTo.noObjects": "scenario นี้ยังไม่มี Facility หรือ Satellite ให้เลือก",
@@ -203,6 +210,7 @@ const MESSAGES = {
   // หมายเหตุในหน้า (spec §8, §11, W20)
   "note.readOnly": "หน้านี้อ่านอย่างเดียวใน v1",
   "note.visibleSidesBoth": "v1 วาดเส้นทางแบบ Both เสมอ ค่า Visible Sides ที่ตั้งจะถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
+  "note.passLabelsStored": "v1 ยังไม่วาดป้ายของ Show Pass Labels และ Show Path Labels ค่าที่ตั้งจะถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
   "about.disclaimer": "ชื่อเมนู หน้าต่าง และหน้าตั้งค่าอ้างอิงคู่มือ STK 13.1.0 รายการที่ติดป้าย Added by GNSS Studio เป็นส่วนที่เพิ่มเอง GNSS Studio ไม่ใช่ผลิตภัณฑ์ของผู้พัฒนา STK",
 } as const satisfies Record<string, string>;
 

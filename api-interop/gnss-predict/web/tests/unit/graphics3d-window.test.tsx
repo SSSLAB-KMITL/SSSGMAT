@@ -179,7 +179,7 @@ describe("Graphics3D", () => {
     await waitFor(() => expect(activeScene()).toBe(scene));
     expect(screen.queryByRole("status")).toBeNull();
     act(() => scene.setFailed(true));
-    expect(screen.getByRole("status").textContent).toBe(msg("banner.sceneFailed"));
+    expect(screen.getByRole("status").textContent).toBe(msg("banner.sceneFailed", { window: "3D" }));
     act(() => scene.setFailed(false));
     expect(screen.queryByRole("status")).toBeNull();
   });

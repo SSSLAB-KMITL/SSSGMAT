@@ -16,6 +16,9 @@ import { registerDataCommands } from "./windows/dataCommands";
 import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSettings/DailyForecastSettings";
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
 import { registerFilePanels } from "./windows/filePanels";
+import { registerGraphics2DCommands } from "./windows/Graphics2D/commands2d";
+import { registerGraphics2DPanel } from "./windows/Graphics2D/Graphics2D";
+import { registerWindowProperties2DPanel } from "./windows/Graphics2D/WindowProperties2D";
 import { registerGraphics3DCommands } from "./windows/Graphics3D/commands3d";
 import { registerGraphics3DPanel } from "./windows/Graphics3D/Graphics3D";
 import { registerWindowProperties3DPanel } from "./windows/Graphics3D/WindowProperties3D";
@@ -32,6 +35,7 @@ export function App() {
   // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), Properties Browser (object.properties เปิดมัน),
   // Insert STK Objects / Search Satellite Catalog / Fetch Orbit Data / Daily Forecast Settings (คำสั่ง insert.* และ utilities.* ลงทะเบียนระดับแอปเช่นกัน),
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
+  // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -42,6 +46,7 @@ export function App() {
     const unregisterObjectCommands = registerObjectBrowserCommands();
     const unregisterDataCommands = registerDataCommands();
     const unregisterGraphics3DCommands = registerGraphics3DCommands();
+    const unregisterGraphics2DCommands = registerGraphics2DCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerPropertiesBrowserPanel();
@@ -52,12 +57,15 @@ export function App() {
     registerGraphics3DPanel();
     registerViewFromToPanel();
     registerWindowProperties3DPanel();
+    registerGraphics2DPanel();
+    registerWindowProperties2DPanel();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
     return () => {
       stopFlow();
       stopShortcuts();
+      unregisterGraphics2DCommands();
       unregisterGraphics3DCommands();
       unregisterDataCommands();
       unregisterObjectCommands();

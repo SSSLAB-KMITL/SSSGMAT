@@ -1,8 +1,8 @@
-// การเลือกและโหลด data source ของหน้าต่าง 3D (src/windows/Graphics3D/sceneSource.ts) โดยไม่มี Cesium: ตัวโหลดเป็นตัวปลอม
+// การเลือกและโหลด data source ของหน้าต่าง 3D/2D (src/windows/graphics/sceneSource.ts) โดยไม่มี Cesium: ตัวโหลดเป็นตัวปลอม
 // สำคัญ: โหลด scene ไม่สำเร็จ (เช่น server ปิดระหว่างดึง CZML: Review Focus 2) ต้องลองใหม่ได้ในการ refresh ครั้งถัดไปแม้ hash เท่าเดิม
 
 import { describe, expect, test, vi } from "vitest";
-import { SceneSource, type SceneUrls } from "../../src/windows/Graphics3D/sceneSource";
+import { SceneSource, type SceneUrls } from "../../src/windows/graphics/sceneSource";
 
 type DS = { name: string };
 

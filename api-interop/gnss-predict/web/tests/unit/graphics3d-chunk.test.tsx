@@ -24,11 +24,11 @@ afterEach(() => {
 test("a 3D chunk that cannot be loaded shows its own Thai message and logs it", async () => {
   render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
   const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toBe(msg("g3d.chunkFailed"));
+  expect(alert.textContent).toBe(msg("scene.chunkFailed", { window: "3D" }));
   expect(alert.textContent).not.toBe(msg("webgl.unsupported"));
   // Message Viewer: ข้อความของตัวเองพร้อมรายละเอียดของ browser (vitest ห่อ error ของ factory ด้วยข้อความของมันเอง จึงตรวจแค่ส่วนต้น)
   const logged = useMessages.getState().items.at(-1);
   expect(logged?.code).toBe("SCENE_CHUNK");
-  const [before] = msg("g3d.chunkFailedLog", { message: "\u0000" }).split("\u0000");
+  const [before] = msg("scene.chunkFailedLog", { window: "3D", message: "\u0000" }).split("\u0000");
   expect(logged?.text.startsWith(before)).toBe(true);
 });

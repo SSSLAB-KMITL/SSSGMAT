@@ -69,6 +69,14 @@
   --scene-point-outline: #000000;
   --scene-access-width: 1.5px;
   --scene-grid-line: #ffffff66;
+  /* หน้าต่าง 2D: Swath (Filled Limits ใช้สีของดาวที่ความทึบนี้), กลางวันกลางคืน (Shading / Show Outline), จุดและเส้นทาง IPP */
+  --scene-swath-fill-opacity: 0.25;
+  --scene-swath-edge-width: 1.5px;
+  --scene-night-fill: #00000073;
+  --scene-terminator-line: #fff3c4d9;
+  --scene-terminator-width: 1.5px;
+  --scene-ipp-point-size: 6px;
+  --scene-ipp-track-width: 2px;
 }
 
 html,
@@ -1542,8 +1550,8 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* ---------- หน้าต่าง 3D Graphics (src/windows/Graphics3D) ---------- */
-.g3d {
+/* ---------- หน้าต่าง 3D / 2D Graphics (src/windows/graphics: ส่วนร่วม, Graphics3D, Graphics2D) ---------- */
+.gfx {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1552,8 +1560,8 @@ body {
   color: var(--text);
 }
 
-/* แถบ 3D Graphics และ 3D Window Defaults บนหน้าต่าง */
-.g3d-toolbars {
+/* แถบ 3D Graphics, 3D Window Defaults และ 2D Window Defaults บนหน้าต่าง */
+.gfx-toolbars {
   display: flex;
   flex: none;
   flex-wrap: wrap;
@@ -1565,7 +1573,7 @@ body {
 }
 
 /* แถบเหนือภาพเมื่อผลลัพธ์ไม่ตรงหรือยังไม่มี (spec §9.1) */
-.g3d-banner {
+.gfx-banner {
   display: flex;
   flex: none;
   align-items: center;
@@ -1577,19 +1585,19 @@ body {
   font-weight: 600;
 }
 
-.g3d-banner-text {
+.gfx-banner-text {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
 }
 
-.g3d-banner-error,
-.g3d-banner-note {
+.gfx-banner-error,
+.gfx-banner-note {
   font-weight: 400;
 }
 
-.g3d-stage {
+.gfx-stage {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
@@ -1597,16 +1605,16 @@ body {
   background: var(--scene-bg);
 }
 
-.g3d-view {
+.gfx-view {
   position: absolute;
   inset: 0;
 }
 
-.g3d-zoom-mode canvas {
+.gfx-zoom-mode canvas {
   cursor: crosshair;
 }
 
-.g3d-zoombox {
+.gfx-zoombox {
   position: absolute;
   z-index: 2;
   box-sizing: border-box;
@@ -1615,7 +1623,7 @@ body {
 }
 
 /* ไม่มี WebGL: ข้อความแทนภาพ */
-.g3d-message {
+.gfx-message {
   position: absolute;
   inset: 0;
   display: flex;

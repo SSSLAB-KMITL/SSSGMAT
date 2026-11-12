@@ -1,9 +1,9 @@
-// ฟังก์ชันล้วนของกราฟิกในหน้าต่าง 3D/2D (src/cesium/graphics.ts): id ของ entity (W8), สีและการแสดงผลจาก scenario.json, คาบวงโคจร
+// ฟังก์ชันล้วนของกราฟิกในหน้าต่าง 3D/2D (src/cesium/graphics.ts): id ของ entity (W8), สีและการแสดงผลจาก scenario.json
 // และการแปลงชื่อ object เป็น id ของ entity ที่ window.__gnssStudioTest ใช้ (W19) ไม่วาด Cesium ใน jsdom
 
 import { describe, expect, test } from "vitest";
 import {
-  dashFor, entityIdFor, entityIdForName, estimatePeriod, graphicsFor, markerPoint, periodFromRadius, systemTokenOf, type ColorTokens, type SceneObject,
+  dashFor, entityIdFor, entityIdForName, graphicsFor, markerPoint, systemTokenOf, type ColorTokens, type SceneObject,
 } from "../../src/cesium/graphics";
 import type { ScenarioDoc } from "../../src/stores/scenario";
 import { makeDoc } from "./helpers/chrome";
@@ -188,29 +188,7 @@ test("system tokens: letters and names, case-insensitive, unknown is null", () =
   expect(systemTokenOf(null)).toBeNull();
 });
 
-describe("orbital period", () => {
-  test("a GPS-like radius of 26,560 km gives 43,078 s", () => {
-    expect(Math.abs(periodFromRadius(26_560_000) - 43_078)).toBeLessThan(1);
-  });
-
-  test("estimatePeriod uses the mean radius of the samples", () => {
-    const r = 26_560_000;
-    const ring = Array.from({ length: 24 }, (_, i) => {
-      const a = (2 * Math.PI * i) / 24;
-      return { x: r * Math.cos(a), y: r * Math.sin(a), z: 0 };
-    });
-    expect(Math.abs(estimatePeriod(ring)! - 43_078)).toBeLessThan(1);
-    // วงรีเล็กน้อย: รัศมีเฉลี่ยของตัวอย่างยังให้คาบใกล้เคียง
-    const squashed = ring.map((p) => ({ x: p.x * 1.001, y: p.y * 0.999, z: 0 }));
-    expect(Math.abs(estimatePeriod(squashed)! - 43_078)).toBeLessThan(10);
-  });
-
-  test("no samples or nonsense radii give no period", () => {
-    expect(estimatePeriod([])).toBeNull();
-    expect(estimatePeriod([{ x: 0, y: 0, z: 0 }])).toBeNull();
-    expect(estimatePeriod([{ x: Number.NaN, y: 0, z: 0 }])).toBeNull();
-  });
-});
+// คาบวงโคจร (orbitPeriodS / estimatePeriod) ย้ายไป src/cesium/passes.ts: tests/unit/passes.test.ts
 
 describe("the test hooks' names", () => {
   const doc = docWith([fac("THBK"), sat("GPS01", 62339), sat("G01_1", 62339), sat("X", 99999), con("GPS", ["*/Satellite/GPS01"], null)]);

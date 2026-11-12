@@ -6,14 +6,18 @@ import {
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, periodFromRadius, sceneStyleFrom, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { applyGraphics, sceneStyleFrom, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { orbitPeriodS } from "../../src/cesium/passes";
 import type { ScenarioDoc } from "../../src/stores/scenario";
 import { makeDoc } from "./helpers/chrome";
 
 const TOKENS: ColorTokens = {
   gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", other: "#c8c8c8", facility: "#ff79e6", access: "#9dff6b",
 };
-const STYLE: SceneStyle = { labelFont: "13px Test Sans", labelOutline: "#102030", pointOutline: "#405060", accessWidth: 2.5, gridLine: "#ffffff66" };
+const STYLE: SceneStyle = {
+  labelFont: "13px Test Sans", labelOutline: "#102030", pointOutline: "#405060", accessWidth: 2.5, gridLine: "#ffffff66",
+  swathFillOpacity: 0.3, swathEdgeWidth: 1.5, nightFill: "#00000066", terminatorLine: "#ffffffb3", terminatorWidth: 1.5, ippPointSize: 6, ippTrackWidth: 2,
+};
 const T0 = "2026-11-11T00:00:00Z";
 const time = JulianDate.fromIso8601("2026-11-11T06:00:00Z");
 const R = 26_560_000;
@@ -81,7 +85,7 @@ describe("applyGraphics", () => {
     const ds = await scene(false);
     applyGraphics(ds, docOf([sat("G01", 62339)]), baseCtx);
     const path = byId(ds, "sat/G01").path;
-    const half = periodFromRadius(R) / 2;
+    const half = orbitPeriodS(R / 1000) / 2;
     expect(value(path?.show)).toBe(true);
     expect(value(path?.leadTime)).toBeCloseTo(half, 0);
     expect(value(path?.trailTime)).toBeCloseTo(half, 0);
@@ -123,6 +127,70 @@ describe("applyGraphics", () => {
     expect(hex(value(byId(ds, "access/THBK/G01").polyline?.material)?.color as Color | undefined)).toBe("#123456");
     applyGraphics(ds, docOf(objects, { accesses: [{ from: "*/Facility/THBK", to: ["*/Satellite/G01"], graphics: { inherit: false, show: false } }] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
+  });
+
+  describe("2D ground track (Pass page)", () => {
+    const at = (iso: string) => JulianDate.fromIso8601(iso);
+    const analysis = { start: at(T0), stop: at("2026-11-12T00:00:00Z") };
+    const ctx2d = { ...baseCtx, mode: "2d" as const, analysis };
+    const pathAt = (e: Entity, iso: string) => ({
+      lead: e.path?.leadTime?.getValue(at(iso)) as number,
+      trail: e.path?.trailTime?.getValue(at(iso)) as number,
+    });
+    const passOf = (pass: object) => sat("G01", 62339, { graphics2d: { pass } });
+
+    test("a satellite without a Pass page gets the server template: 1800 s each side", async () => {
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([sat("G01", 62339)]), ctx2d);
+      const path = byId(ds, "sat/G01").path;
+      expect(value(path?.show)).toBe(true);
+      expect(pathAt(byId(ds, "sat/G01"), "2026-11-11T06:00:00Z")).toEqual({ lead: 1800, trail: 1800 });
+    });
+
+    test("Quarter / Percent use the period estimated from the samples", async () => {
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([passOf({ lead_type: "Quarter", trail_type: "Percent", trail_percent: 10 })]), ctx2d);
+      const p = pathAt(byId(ds, "sat/G01"), "2026-11-11T06:00:00Z");
+      // รัศมีของตัวอย่างใน CZML ทดสอบเป็น 0.99998·R: คาบที่ประมาณได้ห่างจาก T(R) ไม่ถึงหนึ่งวินาที
+      expect(p.lead).toBeCloseTo(orbitPeriodS(R / 1000) / 4, 0);
+      expect(p.trail).toBeCloseTo(orbitPeriodS(R / 1000) / 10, 0);
+    });
+
+    test("One Pass runs to the next ascending node and back to the previous one at every time, without recomputing", async () => {
+      // G01 ขึ้นผ่านศูนย์สูตรที่ 43,078 s และ 86,156 s หลัง T0 (z = R·0.866·sin(2πs/43078))
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([passOf({ lead_type: "One Pass", trail_type: "Same As Lead" })]), ctx2d);
+      const g01 = byId(ds, "sat/G01");
+      expect(pathAt(g01, "2026-11-11T06:00:00Z").lead).toBeCloseTo(43_078 - 21_600, 0);
+      expect(pathAt(g01, "2026-11-11T11:57:50Z").lead).toBeCloseTo(8, 0);
+      expect(pathAt(g01, "2026-11-11T12:00:00Z").lead).toBeCloseTo(86_156 - 43_200, 0);
+      applyGraphics(ds, docOf([passOf({ lead_type: "None", trail_type: "One Pass" })]), ctx2d);
+      expect(pathAt(g01, "2026-11-11T12:00:00Z")).toEqual({ lead: 0, trail: expect.closeTo(122, 0) });
+      // ก่อนจุดขึ้นแรกในข้อมูล: ต่อถอยหลังหนึ่งคาบ (คาบที่ประมาณสั้นกว่า 43,078 s ราวหนึ่งวินาที จุดที่ต่อจึงอยู่หลัง T0 เล็กน้อย)
+      expect(pathAt(g01, "2026-11-11T06:00:00Z").trail).toBeCloseTo(21_600, -1);
+    });
+
+    test("All and Current Interval reach the ends of the analysis period", async () => {
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([passOf({ lead_type: "All", trail_type: "Current Interval" })]), ctx2d);
+      expect(pathAt(byId(ds, "sat/G01"), "2026-11-11T06:00:00Z")).toEqual({ lead: expect.closeTo(64_800, 6), trail: expect.closeTo(21_600, 6) });
+      expect(pathAt(byId(ds, "sat/G01"), "2026-11-11T18:00:00Z")).toEqual({ lead: expect.closeTo(21_600, 6), trail: expect.closeTo(64_800, 6) });
+    });
+
+    test("the track has the satellite's 2D colour, line width and line style", async () => {
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([sat("G01", 62339, { graphics2d: { inherit: false, color: "#00ff00", line_width: 3, line_style: "Dashed" } })]), ctx2d);
+      const path = byId(ds, "sat/G01").path!;
+      expect(value(path.width)).toBe(3);
+      expect(hex(value(path.material)?.color as Color | undefined)).toBe("#00ff00");
+      expect(value(path.material)?.dashPattern).toBe(0xff00);
+    });
+
+    test("without the analysis period there is no track", async () => {
+      const ds = await scene(false);
+      applyGraphics(ds, docOf([sat("G01", 62339)]), { ...baseCtx, mode: "2d" });
+      expect(value(byId(ds, "sat/G01").path?.show)).toBe(false);
+    });
   });
 
   test("Show Labels off hides every label; a graphics edit applies again without reloading", async () => {
@@ -250,10 +318,20 @@ describe("scene style from theme.css variables", () => {
     const vars: Record<string, string> = {
       "--scene-label-font-size": " 12px", "--font-ui": " system-ui, sans-serif", "--scene-label-outline": "#000000",
       "--scene-point-outline": "#111111", "--scene-access-width": "1.5px", "--scene-grid-line": "#ffffff66",
+      "--scene-swath-fill-opacity": "0.2", "--scene-swath-edge-width": "2px", "--scene-night-fill": "#00000080",
+      "--scene-terminator-line": "#ffeeaa", "--scene-terminator-width": "1px", "--scene-ipp-point-size": "5px", "--scene-ipp-track-width": "3px",
     };
     expect(sceneStyleFrom((name) => vars[name] ?? "")).toEqual({
       labelFont: "12px system-ui, sans-serif", labelOutline: "#000000", pointOutline: "#111111", accessWidth: 1.5, gridLine: "#ffffff66",
+      swathFillOpacity: 0.2, swathEdgeWidth: 2, nightFill: "#00000080", terminatorLine: "#ffeeaa", terminatorWidth: 1, ippPointSize: 5, ippTrackWidth: 3,
     });
+  });
+
+  test("missing or broken scene variables fall back to drawable values", () => {
+    const style = sceneStyleFrom((name) => (name === "--scene-swath-fill-opacity" ? "lots" : name === "--scene-ipp-point-size" ? "-2px" : ""));
+    expect(style.swathFillOpacity).toBeGreaterThan(0);
+    expect(style.swathFillOpacity).toBeLessThan(1);
+    expect(style.ippPointSize).toBeGreaterThan(0);
   });
 
   test("the real theme.css defines every scene style variable", async () => {
@@ -264,7 +342,9 @@ describe("scene style from theme.css variables", () => {
     const style = sceneStyleFrom((name) => vars[name] ?? "");
     expect(style.accessWidth).toBeGreaterThan(0);
     expect(style.labelFont).toMatch(/^\d+px /);
-    for (const c of [style.labelOutline, style.pointOutline, style.gridLine]) expect(c).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i);
+    for (const c of [style.labelOutline, style.pointOutline, style.gridLine, style.nightFill, style.terminatorLine]) expect(c).toMatch(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i);
+    for (const name of ["--scene-swath-fill-opacity", "--scene-swath-edge-width", "--scene-terminator-width", "--scene-ipp-point-size", "--scene-ipp-track-width"])
+      expect(vars[name], name).toBeDefined();
     expect(vars["--color-other"]).toMatch(/^#[0-9a-f]{6}$/i);
   });
 });

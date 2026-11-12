@@ -14,9 +14,9 @@
 // - Grab Globe / Zoom In: โหมดเมาส์ของปุ่มซ้าย (Zoom In: ลากกรอบแล้วบินไปที่กรอบ คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง จบแล้วกลับเป็น Grab Globe)
 
 import {
-  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, CzmlDataSource, GridImageryProvider, JulianDate, Matrix3, Matrix4,
-  PolylineDashMaterialProperty, PolylineGraphics, Rectangle, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
-  TrackingReferenceFrame, Transforms, type Cartographic, type Entity, type ImageryLayer, type Viewer,
+  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, CzmlDataSource, JulianDate, Matrix3, Matrix4,
+  PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
+  TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import { errorText } from "../../api/client";
 import type { components } from "../../api/types.gen";
@@ -27,7 +27,7 @@ import {
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
-import { createViewer } from "../../cesium/viewer";
+import { createViewer, latLonGrid } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import { msg } from "../../labels/messages.th";
 import { useLayout } from "../../stores/layout";
@@ -40,7 +40,9 @@ import { props3d, type Props3D } from "./props";
 import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
-import { SceneSource } from "./sceneSource";
+import { SceneSource } from "../graphics/sceneSource";
+import { Throttle } from "../graphics/throttle";
+import { boxRectangle, ZoomBox } from "../graphics/zoomBox";
 
 type FacilityObj = components["schemas"]["FacilityObj"];
 
@@ -100,11 +102,9 @@ class Scene3D implements Scene3DHandle {
   private grid: ImageryLayer | null = null;
   private readonly offs: (() => void)[] = [];
   private readonly inertialPaths = new Map<string, Entity>();
-  private inertialAt = Number.NEGATIVE_INFINITY;
-  private inertialTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly inertialThrottle = new Throttle(INERTIAL_INTERVAL_MS, () => this.drawInertial());
   private readonly handler: ScreenSpaceEventHandler;
-  private readonly box: HTMLDivElement;
-  private drag: Cartesian2 | null = null;
+  private readonly zoom: ZoomBox;
   private icrfPreloaded = false;
 
   constructor(
@@ -127,17 +127,14 @@ class Scene3D implements Scene3DHandle {
       discard: (ds) => {
         if (!this.destroyed) viewer.dataSources.remove(ds, true);
       },
-      failed: (e) => report("warning", "SCENE_LOAD", msg("scene.loadFailed", { message: errorText(e) })),
+      failed: (e) => report("warning", "SCENE_LOAD", msg("scene.loadFailed", { window: "3D", message: errorText(e) })),
       changed: notifyScenes,
     });
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     this.props = props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
 
-    this.box = document.createElement("div");
-    this.box.className = "g3d-zoombox";
-    this.box.hidden = true;
-    el.appendChild(this.box);
+    this.zoom = new ZoomBox(el);
     this.handler = new ScreenSpaceEventHandler(scene.canvas);
     this.handler.setInputAction((e: ScreenSpaceEventHandler.PositionedEvent) => this.dragStart(e.position), ScreenSpaceEventType.LEFT_DOWN);
     this.handler.setInputAction((e: ScreenSpaceEventHandler.MotionEvent) => this.dragMove(e.endPosition), ScreenSpaceEventType.MOUSE_MOVE);
@@ -283,19 +280,12 @@ class Scene3D implements Scene3DHandle {
   /** วาดเส้นทาง Inertial by Window ใหม่ (force = ทันที, ไม่งั้นไม่เกิน 4 ครั้งต่อวินาทีโดยรอบสุดท้ายตามมาเสมอ) */
   private updateInertial(force: boolean): void {
     if (this.destroyed) return;
-    const wait = this.inertialAt + INERTIAL_INTERVAL_MS - performance.now();
-    if (!force && wait > 0) {
-      this.inertialTimer ??= setTimeout(() => {
-        this.inertialTimer = null;
-        this.updateInertial(true);
-      }, wait);
-      return;
-    }
-    if (this.inertialTimer !== null) {
-      clearTimeout(this.inertialTimer);
-      this.inertialTimer = null;
-    }
-    this.inertialAt = performance.now();
+    if (force) this.inertialThrottle.flush();
+    else this.inertialThrottle.request();
+  }
+
+  private drawInertial(): void {
+    if (this.destroyed) return;
     const targets = this.inertialTargets();
     const entities = this.viewer.entities;
     const time = this.viewer.clock.currentTime;
@@ -361,15 +351,7 @@ class Scene3D implements Scene3DHandle {
       base.nightAlpha = p.ambientLevel / 100;
     }
     if (p.latLonLines && this.grid === null) {
-      this.grid = imageryLayers.addImageryProvider(
-        new GridImageryProvider({
-          cells: 6,
-          color: Color.fromCssColorString(sceneStyle().gridLine) ?? Color.WHITE,
-          glowColor: Color.TRANSPARENT,
-          glowWidth: 2,
-          backgroundColor: Color.TRANSPARENT,
-        }),
-      );
+      this.grid = imageryLayers.addImageryProvider(latLonGrid(sceneStyle().gridLine));
     } else if (!p.latLonLines && this.grid !== null) {
       imageryLayers.remove(this.grid, true);
       this.grid = null;
@@ -486,56 +468,32 @@ class Scene3D implements Scene3DHandle {
     c.enableTranslate = grab;
     c.enableTilt = grab;
     c.enableLook = grab;
-    this.el.classList.toggle("g3d-zoom-mode", !grab);
-    if (grab) this.endBox();
+    this.el.classList.toggle("gfx-zoom-mode", !grab);
+    if (grab) this.zoom.cancel();
     notifyScenes();
   }
 
   private dragStart(at: Cartesian2): void {
-    if (this.mode !== "zoomIn") return;
-    this.drag = Cartesian2.clone(at);
-    this.drawBox(at, at);
+    if (this.mode === "zoomIn") this.zoom.start(at);
   }
 
   private dragMove(at: Cartesian2): void {
-    if (this.drag !== null) this.drawBox(this.drag, at);
+    this.zoom.move(at);
   }
 
   private dragEnd(at: Cartesian2): void {
-    const start = this.drag;
-    if (start === null) return;
-    this.endBox();
-    this.zoomBox(start, at);
+    const box = this.zoom.end(at);
+    if (box === null) return;
+    this.zoomBox(box.a, box.b);
     this.setMouseMode("grab");
-  }
-
-  private drawBox(a: Cartesian2, b: Cartesian2): void {
-    const s = this.box.style;
-    s.left = `${Math.min(a.x, b.x)}px`;
-    s.top = `${Math.min(a.y, b.y)}px`;
-    s.width = `${Math.abs(a.x - b.x)}px`;
-    s.height = `${Math.abs(a.y - b.y)}px`;
-    this.box.hidden = false;
-  }
-
-  private endBox(): void {
-    this.drag = null;
-    this.box.hidden = true;
   }
 
   /** กรอบเล็กกว่า 4 px = คลิก: ซูมเข้าครึ่งหนึ่งของความสูงกล้อง ไม่งั้นบินไปที่พื้นที่บนโลกในกรอบ (มุมที่ไม่ตกบนโลกถูกข้าม) */
   private zoomBox(a: Cartesian2, b: Cartesian2): void {
     const camera = this.viewer.camera;
-    const ellipsoid = this.viewer.scene.globe.ellipsoid;
     this.release();
-    const corners =
-      Math.abs(a.x - b.x) < 4 || Math.abs(a.y - b.y) < 4
-        ? []
-        : [a, b, new Cartesian2(a.x, b.y), new Cartesian2(b.x, a.y)].flatMap((p): Cartographic[] => {
-            const hit = camera.pickEllipsoid(p, ellipsoid);
-            return hit === undefined ? [] : [ellipsoid.cartesianToCartographic(hit)];
-          });
-    if (corners.length >= 2) camera.flyTo({ destination: Rectangle.fromCartographicArray(corners), duration: 0.8 });
+    const rect = boxRectangle(camera, this.viewer.scene.globe.ellipsoid, a, b);
+    if (rect !== null) camera.flyTo({ destination: rect, duration: 0.8 });
     else camera.zoomIn(camera.positionCartographic.height / 2);
     this.viewer.scene.requestRender();
   }
@@ -553,9 +511,9 @@ class Scene3D implements Scene3DHandle {
     this.destroyed = true;
     this.source.dispose();
     for (const off of this.offs) off();
-    if (this.inertialTimer !== null) clearTimeout(this.inertialTimer);
+    this.inertialThrottle.dispose();
     this.handler.destroy();
-    this.box.remove();
+    this.zoom.destroy();
     this.inertialPaths.clear();
     this.ds = null;
     this.viewer.destroy(); // ทำลาย data source, entity, primitive และ WebGL context ของหน้าต่างนี้ทั้งหมด

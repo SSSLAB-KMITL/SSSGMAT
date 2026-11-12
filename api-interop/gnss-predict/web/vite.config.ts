@@ -19,7 +19,11 @@ export default defineConfig({
     }),
   ],
   define: { CESIUM_BASE_URL: JSON.stringify("/cesium") },
-  build: { outDir: "dist" },
+  build: {
+    outDir: "dist",
+    // Cesium (ราว 4 MB) อยู่ใน chunk ของตัวเองที่หน้าต่าง 3D และ 2D ใช้ร่วมกัน ตั้งชื่อเองให้อ่านรายการคำขอได้ (ไม่งั้นได้ชื่อของโมดูลที่ใช้ร่วมตัวใดตัวหนึ่ง)
+    rolldownOptions: { output: { codeSplitting: { groups: [{ name: "cesium", test: /[\\/]node_modules[\\/](cesium|@cesium)[\\/]/ }] } } },
+  },
   server: {
     proxy: {
       "/api": {

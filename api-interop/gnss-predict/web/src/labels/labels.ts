@@ -324,6 +324,7 @@ const LABELS = {
   "field.labelDeclutter": stk("Label Declutter", "E"),
   "field.showTime": stk("Show Time", "E"),
   // 2D Graphics Window Properties
+  "field.projection": stk("Projection", "E"),
   "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),
   "field.showOutline": stk("Show Outline", "E"),
   "field.shading": stk("Shading", "E"),

@@ -1,4 +1,4 @@
-// data source ของหน้าต่าง 3D ตามผลลัพธ์ที่ใช้ได้ตอนนี้ (ไม่ import Cesium: ตัวโหลดจริงฉีดมาจาก scene3d.ts จึงทดสอบได้ใน jsdom)
+// data source ของหน้าต่าง 3D/2D ตามผลลัพธ์ที่ใช้ได้ตอนนี้ (ไม่ import Cesium: ตัวโหลดจริงฉีดมาจาก scene3d.ts / scene2d.ts จึงทดสอบได้ใน jsdom)
 //
 // - update(urls): URL ของ scene.czml / access.czml (มี hash อยู่ใน URL) ชุดใหม่ = โหลดใหม่, ชุดเดิม = ไม่ทำอะไร (ผู้เรียกแค่ตั้งกราฟิกใหม่)
 //   ไม่มีผลที่ current (sceneUrl = null) = data source ว่างให้ Facility จาก doc (Review Focus 1) ไม่นับเป็นความล้มเหลว

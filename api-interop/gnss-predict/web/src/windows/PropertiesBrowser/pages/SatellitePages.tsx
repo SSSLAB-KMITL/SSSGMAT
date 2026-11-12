@@ -85,6 +85,7 @@ function PassPage() {
       <p className="props-note">{msg("note.visibleSidesBoth")}</p>
       <CheckRow k="graphics2d.pass.show_pass_labels" label={t("field.showPassLabels")} />
       <CheckRow k="graphics2d.pass.show_path_labels" label={t("field.showPathLabels")} />
+      <p className="props-note">{msg("note.passLabelsStored")}</p>
     </>
   );
 }

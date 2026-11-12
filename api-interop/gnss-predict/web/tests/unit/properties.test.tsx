@@ -1065,12 +1065,13 @@ describe("Satellite pages", () => {
       expect(screen.queryByLabelText(t("field.trailTime"))).toBeNull();
     });
 
-    test("Visible Sides can be set and the page says that v1 draws Both", async () => {
+    test("Visible Sides and the pass/path labels can be set; the page says that v1 draws Both and no pass/path labels yet", async () => {
       const f = server();
       await mountSatellite();
       await openPage("2D Graphics - Pass");
       expect(optionValues(select(t("field.visibleSides")))).toEqual([...ENUMS.VisibleSides]);
       expect(screen.getByText(msg("note.visibleSidesBoth"))).toBeDefined();
+      expect(screen.getByText(msg("note.passLabelsStored"))).toBeDefined();
       await user.selectOptions(select(t("field.visibleSides")), "Ascending");
       await user.click(input(t("field.showPassLabels")));
       await user.click(input(t("field.showPathLabels")));

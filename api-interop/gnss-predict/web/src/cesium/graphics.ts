@@ -6,10 +6,13 @@
 //   (ตัวแรกตามลำดับใน doc ที่มีสี; ตัวที่เป็นสมาชิกแต่ไม่มีสีข้ามไป) → สีนั้น; อื่น ๆ → ตัวแปร CSS ของระบบ (--color-gps/glonass/galileo/beidou,
 //   ระบบที่รู้ไม่ได้ = --color-other, Facility = --color-facility) สีของระบบอ่านจาก theme.css ครั้งเดียวแล้วจำไว้ (themeTokens) test ส่ง tokens เข้ามาเอง
 //   ระบบของดาว: ctx.system ถ้าผู้เรียกบอก ไม่งั้นอักษรนำของ PRN (ctx.prnByNorad) ไม่งั้น system ของ Constellation แรกที่มีดาวนี้
-// - ขนาดตัวอักษร/ขอบของป้ายชื่อ ขอบจุด ความหนาเส้น access และสีเส้น Lat/Lon เป็นตัวแปร CSS เช่นกัน (sceneStyle: --scene-*)
+// - ขนาดตัวอักษร/ขอบของป้ายชื่อ ขอบจุด ความหนาเส้น access สีเส้น Lat/Lon และหน้าตาของ Swath / กลางวันกลางคืน / IPP ในหน้าต่าง 2D
+//   เป็นตัวแปร CSS เช่นกัน (sceneStyle: --scene-*)
 // - applyGraphics ตั้งกราฟิกของ entity ใน data source ที่โหลดแล้ว ไม่โหลด CZML ใหม่: แก้ Properties แล้วเห็นทันที
-//   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง)
+//   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง: passes.ts)
 //   ดาว Inertial by Window ไม่มี path ของ Cesium (Graphics3D วาด polyline จาก toInertial แทน) เส้น access ใช้ --color-access ถ้า access ไม่ได้ตั้งสีเอง
+//   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
+//   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
 //   และคง `show` ตามช่วงเวลาใน CZML ไว้ (ซ่อนทั้งเส้นด้วย entity.show เมื่อดาวหรือ Facility ปลายทางถูกซ่อน)
 
 import {
@@ -17,6 +20,7 @@ import {
   PointGraphics, PolylineDashMaterialProperty, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
+import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
 
 type ScenarioDoc = components["schemas"]["ScenarioDoc"];
 export type SceneObject = ScenarioDoc["objects"][number];
@@ -69,6 +73,19 @@ export interface SceneStyle {
   accessWidth: number;
   /** สีเส้น Lat/Lon (#rrggbbaa) */
   gridLine: string;
+  // หน้าต่าง 2D (spec §9.3)
+  /** ความทึบของพื้นที่ Swath แบบ Filled Limits (0–1, สีของดาว) */
+  swathFillOpacity: number;
+  /** ความหนาเส้น Swath แบบ Edge Limits (พิกเซล) */
+  swathEdgeWidth: number;
+  /** สีพื้นที่กลางคืน (Lighting → Shading, #rrggbbaa) */
+  nightFill: string;
+  /** สีและความหนาของเส้นแบ่งกลางวันกลางคืน (Lighting → Show Outline) */
+  terminatorLine: string;
+  terminatorWidth: number;
+  /** ขนาดจุด IPP และความหนาเส้นทาง IPP (พิกเซล) */
+  ippPointSize: number;
+  ippTrackWidth: number;
 }
 
 /**
@@ -77,13 +94,25 @@ export interface SceneStyle {
  */
 export function sceneStyleFrom(read: (name: string) => string): SceneStyle {
   const get = (name: string, missing: string): string => read(name).trim() || missing;
-  const width = Number.parseFloat(get("--scene-access-width", "1"));
+  /** ขนาดบวก (พิกเซลหรือตัวเลขเฉย ๆ) อ่านไม่ได้หรือไม่บวก = missing */
+  const size = (name: string, missing: number): number => {
+    const v = Number.parseFloat(read(name));
+    return Number.isFinite(v) && v > 0 ? v : missing;
+  };
+  const opacity = Number.parseFloat(read("--scene-swath-fill-opacity"));
   return {
     labelFont: `${get("--scene-label-font-size", "12px")} ${get("--font-ui", "sans-serif")}`,
     labelOutline: get("--scene-label-outline", "#000000"),
     pointOutline: get("--scene-point-outline", "#000000"),
-    accessWidth: Number.isFinite(width) && width > 0 ? width : 1,
+    accessWidth: size("--scene-access-width", 1),
     gridLine: get("--scene-grid-line", "#ffffff"),
+    swathFillOpacity: Number.isFinite(opacity) && opacity > 0 && opacity <= 1 ? opacity : 0.25,
+    swathEdgeWidth: size("--scene-swath-edge-width", 1),
+    nightFill: get("--scene-night-fill", "#00000066"),
+    terminatorLine: get("--scene-terminator-line", "#ffffff"),
+    terminatorWidth: size("--scene-terminator-width", 1),
+    ippPointSize: size("--scene-ipp-point-size", 6),
+    ippTrackWidth: size("--scene-ipp-track-width", 2),
   };
 }
 
@@ -155,6 +184,7 @@ export interface ObjectGraphics {
 
 interface Graphics2DLike {
   show?: boolean;
+  pass?: unknown;
   inherit?: boolean;
   color?: string | null;
   marker_style?: string | null;
@@ -251,27 +281,6 @@ export function graphicsFor(obj: SceneObject, doc: ScenarioDoc, ctx: GraphicsCtx
   };
 }
 
-// ---------- คาบวงโคจร ----------
-
-/** ค่าคงที่ความโน้มถ่วงของโลก (WGS 84, m³/s²) */
-export const MU_EARTH = 3.986004418e14;
-
-/** คาบของวงโคจรวงกลมรัศมี r เมตร (วินาที) */
-export const periodFromRadius = (r: number): number => 2 * Math.PI * Math.sqrt((r * r * r) / MU_EARTH);
-
-/** คาบโดยประมาณจากรัศมีเฉลี่ยของตำแหน่งตัวอย่าง (Earth-fixed ใช้ได้: การหมุนไม่เปลี่ยนรัศมี) ไม่มีตัวอย่างที่ใช้ได้ = null */
-export function estimatePeriod(points: readonly { x: number; y: number; z: number }[]): number | null {
-  let sum = 0;
-  let n = 0;
-  for (const p of points) {
-    const r = Math.hypot(p.x, p.y, p.z);
-    if (!Number.isFinite(r) || r <= 0) continue;
-    sum += r;
-    n++;
-  }
-  return n === 0 ? null : periodFromRadius(sum / n);
-}
-
 // ---------- ตั้งกราฟิกให้ entity (ไม่โหลด CZML ใหม่) ----------
 
 export interface ApplyCtx {
@@ -284,35 +293,17 @@ export interface ApplyCtx {
   style?: SceneStyle;
   /** Label Declutter ของหน้าต่าง */
   declutter?: boolean;
+  /** ช่วงวิเคราะห์ (2D: lead/trail แบบ All, Current Interval) ไม่ระบุ = ไม่มี ground track ในหน้าต่าง 2D */
+  analysis?: { start: JulianDate; stop: JulianDate };
 }
 
 const INERTIAL_BY_WINDOW = "Inertial by Window";
 /** ความละเอียดของ path (วินาที) เท่าระยะห่างของตัวอย่างใน CZML: จุดยอดของเส้นอยู่ที่ตัวอย่างพอดี */
 const PATH_RESOLUTION_S = 300;
-/** จำนวนจุดที่ใช้ประมาณรัศมีเฉลี่ย (กระจายทั่วช่วงที่มีข้อมูล) */
-const PERIOD_SAMPLES = 48;
 
-/** คาบโดยประมาณของ entity ดาว จำไว้ต่อ entity (ตำแหน่งของ entity ใน data source หนึ่งไม่เปลี่ยน) */
-const periodCache = new WeakMap<Entity, number | null>();
-
+/** คาบโดยประมาณของ entity ดาวจากรัศมีเฉลี่ยของตัวอย่าง (passes.ts entityOrbit จำไว้ต่อ entity) ไม่มีตัวอย่าง = null */
 export function entityPeriod(entity: Entity): number | null {
-  if (periodCache.has(entity)) return periodCache.get(entity) ?? null;
-  let period: number | null = null;
-  const interval = entity.availability?.start !== undefined ? entity.availability : undefined;
-  const position = entity.position;
-  if (interval !== undefined && position !== undefined) {
-    const span = JulianDate.secondsDifference(interval.stop, interval.start);
-    const points: { x: number; y: number; z: number }[] = [];
-    if (Number.isFinite(span) && span > 0) {
-      for (let i = 0; i <= PERIOD_SAMPLES; i++) {
-        const p = position.getValue(JulianDate.addSeconds(interval.start, (span * i) / PERIOD_SAMPLES, new JulianDate()));
-        if (p !== undefined) points.push(p);
-      }
-    }
-    period = estimatePeriod(points);
-  }
-  periodCache.set(entity, period);
-  return period;
+  return entityOrbit(entity)?.periodS ?? null;
 }
 
 const cssColor = (hex: string): Color => Color.fromCssColorString(hex) ?? Color.WHITE;
@@ -362,9 +353,34 @@ function objectsByEntity(doc: ScenarioDoc, prnByNorad: ReadonlyMap<number, strin
 }
 
 /** หลาย object ต่อ entity เดียว (ดาวที่คัดลอก): ใช้ตัวแรกที่แสดงอยู่ ไม่มีตัวที่แสดง = ตัวแรก */
-function pick(objs: SceneObject[], doc: ScenarioDoc, ctxOf: (o: SceneObject) => GraphicsCtx): { obj: SceneObject; g: ObjectGraphics } {
+function pick(objs: SceneObject[], doc: ScenarioDoc, ctxOf: (o: SceneObject) => GraphicsCtx): EntityLook {
   const all = objs.map((obj) => ({ obj, g: graphicsFor(obj, doc, ctxOf(obj)) }));
   return all.find((x) => x.g.show) ?? all[0];
+}
+
+/** object ของ scenario ที่ entity ใช้หน้าตาของมัน และหน้าตานั้น */
+export interface EntityLook {
+  obj: SceneObject;
+  g: ObjectGraphics;
+}
+
+/** id ของ entity (sat/…, fac/…) → object ที่กำหนดหน้าตาและหน้าตาของมันในหน้าต่างชนิด ctx.mode (กติกาเดียวกับ applyGraphics) */
+export function entityLooks(doc: ScenarioDoc, ctx: ApplyCtx): Map<string, EntityLook> {
+  const tokens = ctx.tokens ?? themeTokens();
+  const out = new Map<string, EntityLook>();
+  for (const [id, objs] of objectsByEntity(doc, ctx.prnByNorad)) {
+    const system = id.startsWith("sat/") ? id.slice(4, 5) : null;
+    out.set(
+      id,
+      pick(objs, doc, (o) => ({
+        hidden: o.class === "Satellite" && ctx.isHidden((o as SatelliteObj).norad),
+        mode: ctx.mode,
+        system,
+        tokens,
+      })),
+    );
+  }
+  return out;
 }
 
 /** ค่ากราฟิกของ access จาก Access tool: ไม่มีหรือ inherit = ใช้ค่าตั้งต้น (แสดง, สี --color-access) */
@@ -377,29 +393,32 @@ function accessStyle(doc: ScenarioDoc, facility: string, tokens: ColorTokens): {
 }
 
 /** ตั้งกราฟิกของทุก entity ใน collection ตาม doc (ไม่มี doc = ซ่อนทั้งหมด) */
+/** ground track ของดาวในหน้าต่าง 2D: path ที่ lead/trail ตามหน้า Pass (ไม่มีช่วงวิเคราะห์หรือตัวอย่างตำแหน่ง = ซ่อน) */
+function groundTrack(entity: Entity, obj: SceneObject, g: ObjectGraphics, color: Color, analysis: ApplyCtx["analysis"]): PathGraphics {
+  const orbit = analysis === undefined ? null : entityOrbit(entity);
+  if (orbit === null || analysis === undefined) return new PathGraphics({ show: false });
+  const pass = graphics2dOf(obj).pass as PassLike | null | undefined;
+  const { leadTime, trailTime } = leadTrailProperties(pass, orbit, analysis);
+  return new PathGraphics({ show: true, leadTime, trailTime, width: g.lineWidth, resolution: PATH_RESOLUTION_S, material: lineMaterial(color, g.lineStyle) });
+}
+
 export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioDoc | null, ctx: ApplyCtx): void {
   const tokens = ctx.tokens ?? themeTokens();
   const style = ctx.style ?? sceneStyle();
-  const byEntity = doc === null ? new Map<string, SceneObject[]>() : objectsByEntity(doc, ctx.prnByNorad);
+  const looks = doc === null ? new Map<string, EntityLook>() : entityLooks(doc, { ...ctx, tokens });
   const entities = ds.entities;
   const shown = new Set<string>();
   entities.suspendEvents();
   try {
     for (const entity of entities.values) {
       const id = entity.id;
-      const objs = byEntity.get(id);
+      const look = looks.get(id);
       if (id.startsWith("access/")) continue; // ทำหลังรู้ว่าปลายทางไหนแสดงอยู่
-      if (objs === undefined || doc === null || !(id.startsWith("sat/") || id.startsWith("fac/"))) {
+      if (look === undefined || doc === null || !(id.startsWith("sat/") || id.startsWith("fac/"))) {
         entity.show = false;
         continue;
       }
-      const system = id.startsWith("sat/") ? id.slice(4, 5) : null;
-      const { obj, g } = pick(objs, doc, (o) => ({
-        hidden: o.class === "Satellite" && ctx.isHidden((o as SatelliteObj).norad),
-        mode: ctx.mode,
-        system,
-        tokens,
-      }));
+      const { obj, g } = look;
       const color = cssColor(g.color);
       entity.show = g.show;
       entity.name = obj.name;
@@ -421,6 +440,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
                 material: lineMaterial(color, g.lineStyle),
               });
       }
+      if (obj.class === "Satellite" && ctx.mode === "2d") entity.path = groundTrack(entity, obj, g, color, ctx.analysis);
     }
     for (const entity of entities.values) {
       const parts = entity.id.split("/");

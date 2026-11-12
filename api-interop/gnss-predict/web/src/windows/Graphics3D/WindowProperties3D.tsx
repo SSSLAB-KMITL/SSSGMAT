@@ -2,6 +2,7 @@
 // - หน้า Lighting (Enable Lighting, Ambient Level, Sun Level, Night Lights Level), Details (Lat/Lon Lines, Label Declutter), Annotation (Show Time)
 // - Apply เขียน useLayout.windowProps[target] (ไปกับ workbook เมื่อ Save) หน้าต่าง 3D อ่านค่าแล้วปรับภาพทันที ไม่โหลดอะไรใหม่
 //   OK = Apply แล้วปิด, Cancel = ปิดโดยไม่เปลี่ยน ระดับแสงเป็นเปอร์เซ็นต์ 0–100 ตรวจด้วยกติกาตัวเลขเดียวของแอป (parseDecimal)
+//   แท็บ ปุ่ม และกรณีหน้าต่างเป้าหมายถูกปิด อยู่ในกรอบร่วม graphics/WindowPropertiesShell.tsx (ใช้กับหน้าต่าง 2D ด้วย)
 // - การจับคู่กับ Cesium อธิบายใน scene3d.ts (applyProps) Night Lights ไม่มีภาพในโหมดออฟไลน์: แสดงหมายเหตุไทย
 
 import { useEffect, useState, type ReactNode } from "react";
@@ -11,6 +12,7 @@ import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
 import { useLayout } from "../../stores/layout";
 import { parseDecimal } from "../fieldRules";
+import { CheckField, useTargetWindow, WindowPropertiesShell } from "../graphics/WindowPropertiesShell";
 import { props3d, type LevelKey, type Props3D } from "./props";
 
 type PageId = "lighting" | "details" | "annotation";
@@ -37,9 +39,7 @@ const draftOf = (p: Props3D): Draft => ({
 const LEVELS: LevelKey[] = ["ambientLevel", "sunLevel", "nightLightsLevel"];
 
 export function WindowProperties3D({ params, panelId }: PanelProps) {
-  const target = typeof params?.target === "string" ? params.target : null;
-  const stored = useLayout((s) => (target === null ? undefined : s.windowProps[target]));
-  const exists = useLayout((s) => target !== null && s.api?.getPanel(target) !== undefined);
+  const { target, stored, exists } = useTargetWindow(params);
   const [draft, setDraft] = useState<Draft>(() => draftOf(props3d(stored)));
   const [errors, setErrors] = useState<Partial<Record<LevelKey, string>>>({});
   const [page, setPage] = useState<PageId>("lighting");
@@ -50,7 +50,6 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
     setErrors({});
   }, [target]);
 
-  const close = (): void => useLayout.getState().closePanel(panelId);
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(props3d(stored)));
 
   const apply = (): boolean => {
@@ -81,19 +80,7 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
   };
 
   const check = (k: BoolKey, label: LabelKey) => (
-    <FormField label={t(label)}>
-      {({ id, "aria-invalid": invalid, "aria-describedby": describedBy }) => (
-        <input
-          id={id}
-          type="checkbox"
-          className="form-check"
-          aria-invalid={invalid}
-          aria-describedby={describedBy}
-          checked={draft[k]}
-          onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.checked }))}
-        />
-      )}
-    </FormField>
+    <CheckField label={label} checked={draft[k]} onChange={(v) => setDraft((d) => ({ ...d, [k]: v }))} />
   );
   const level = (k: LevelKey, label: LabelKey, hint?: ReactNode) => (
     <FormField label={t(label)} error={errors[k]} hint={hint ?? t("field.unit.percent")}>
@@ -115,74 +102,36 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
     </FormField>
   );
 
-  const tabId = (id: PageId): string => `${panelId}-tab-${id}`;
-  const pageDomId = `${panelId}-page`;
   return (
-    <div className="props">
-      <div className="props-body">
-        <div className="props-tabs" role="tablist" aria-orientation="vertical" aria-label={t("window.properties3d")}>
-          {PAGES.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              id={tabId(p.id)}
-              className="props-tab"
-              aria-selected={p.id === page}
-              aria-controls={pageDomId}
-              tabIndex={p.id === page ? 0 : -1}
-              onClick={() => setPage(p.id)}
-            >
-              {t(p.title)}
-            </button>
-          ))}
-        </div>
-        <div className="props-page" role="tabpanel" id={pageDomId} aria-labelledby={tabId(page)}>
-          {!exists && (
-            <p className="form-error" role="alert">
-              {msg("g3d.noWindow")}
-            </p>
-          )}
-          <fieldset className="props-fields" disabled={!exists}>
-            {page === "lighting" && (
-              <>
-                {check("enableLighting", "field.enableLighting")}
-                {level("ambientLevel", "field.ambientLevel")}
-                {level("sunLevel", "field.sunLevel")}
-                {level("nightLightsLevel", "field.nightLightsLevel")}
-                <p className="props-note">{msg("g3d.lightingNote")}</p>
-                <p className="props-note">{msg("g3d.nightLightsNote")}</p>
-              </>
-            )}
-            {page === "details" && (
-              <>
-                {check("latLonLines", "field.latLonLines")}
-                {check("labelDeclutter", "field.labelDeclutter")}
-              </>
-            )}
-            {page === "annotation" && check("showTime", "field.showTime")}
-          </fieldset>
-        </div>
-      </div>
-      <div className="props-buttons">
-        <button
-          type="button"
-          className="btn"
-          disabled={!exists}
-          onClick={() => {
-            if (apply()) close();
-          }}
-        >
-          {t("dialog.ok")}
-        </button>
-        <button type="button" className="btn" onClick={close}>
-          {t("dialog.cancel")}
-        </button>
-        <button type="button" className="btn" disabled={!exists || !dirty} onClick={() => void apply()}>
-          {t("dialog.apply")}
-        </button>
-      </div>
-    </div>
+    <WindowPropertiesShell<PageId>
+      panelId={panelId}
+      title="window.properties3d"
+      pages={PAGES}
+      page={page}
+      onPage={setPage}
+      exists={exists}
+      noWindow={msg("g3d.noWindow")}
+      dirty={dirty}
+      apply={apply}
+    >
+      {page === "lighting" && (
+        <>
+          {check("enableLighting", "field.enableLighting")}
+          {level("ambientLevel", "field.ambientLevel")}
+          {level("sunLevel", "field.sunLevel")}
+          {level("nightLightsLevel", "field.nightLightsLevel")}
+          <p className="props-note">{msg("g3d.lightingNote")}</p>
+          <p className="props-note">{msg("g3d.nightLightsNote")}</p>
+        </>
+      )}
+      {page === "details" && (
+        <>
+          {check("latLonLines", "field.latLonLines")}
+          {check("labelDeclutter", "field.labelDeclutter")}
+        </>
+      )}
+      {page === "annotation" && check("showTime", "field.showTime")}
+    </WindowPropertiesShell>
   );
 }
 
