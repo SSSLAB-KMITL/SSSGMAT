@@ -63,7 +63,7 @@ export function Graphics3D({ panelId }: PanelProps) {
     host,
     window: "3D",
     load: () => import("./scene3d"),
-    create: (m, el) => m.mountScene3D(panelId, el),
+    create: (m, el, stopped) => m.mountScene3D(panelId, el, stopped),
     register: registerScene,
   });
   useShiftWheelSteps(host);

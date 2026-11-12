@@ -117,6 +117,47 @@ describe("Graphics3D", () => {
     expect(activeScene()).toBeUndefined();
   });
 
+  describe("when the picture stops (render error or lost WebGL context)", () => {
+    /** the callback Graphics3D hands to mountScene3D for a stopped picture */
+    const stoppedCallback = () => vi.mocked(mountScene3D).mock.calls[0][2] as (reason: string, error?: unknown) => void;
+
+    test("a render error shows the Thai message in the window and logs it in the Message Viewer", async () => {
+      withWebGL();
+      vi.mocked(mountScene3D).mockReturnValue(fakeScene("graphics3d"));
+      render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+      await waitFor(() => expect(activeScene()).toBeDefined());
+      expect(screen.queryByRole("alert")).toBeNull();
+      act(() => stoppedCallback()("renderError", new Error("shader failed")));
+      expect((await screen.findByRole("alert")).textContent).toBe(msg("scene.renderStopped"));
+      const logged = useMessages.getState().items.at(-1);
+      expect(logged?.code).toBe("SCENE_RENDER");
+      expect(logged?.level).toBe("error");
+      expect(logged?.text).toBe(msg("scene.renderStoppedLog", { window: "3D", message: "shader failed" }));
+    });
+
+    test("a lost WebGL context does the same", async () => {
+      withWebGL();
+      vi.mocked(mountScene3D).mockReturnValue(fakeScene("graphics3d"));
+      render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+      await waitFor(() => expect(activeScene()).toBeDefined());
+      act(() => stoppedCallback()("contextLost"));
+      expect((await screen.findByRole("alert")).textContent).toBe(msg("scene.renderStopped"));
+      expect(useMessages.getState().items.at(-1)?.code).toBe("SCENE_RENDER");
+    });
+
+    test("nothing is shown or logged for a window that is already closed", async () => {
+      withWebGL();
+      vi.mocked(mountScene3D).mockReturnValue(fakeScene("graphics3d"));
+      const { unmount } = render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+      await waitFor(() => expect(activeScene()).toBeDefined());
+      const stopped = stoppedCallback();
+      unmount();
+      const before = useMessages.getState().items.length;
+      act(() => stopped("contextLost"));
+      expect(useMessages.getState().items).toHaveLength(before);
+    });
+  });
+
   describe("results banner", () => {
     test("stale results: the agreed Thai line and Apply, which queues propagate for this scenario", async () => {
       const user = userEvent.setup();

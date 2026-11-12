@@ -26,7 +26,7 @@ import {
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
-import { createViewer, latLonGrid } from "../../cesium/viewer";
+import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
@@ -76,13 +76,16 @@ export function fromToResult(from: Entity | undefined, to: Entity | undefined): 
   return from === to ? "same" : "ok";
 }
 
-/** สร้าง viewer ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน) */
-export function mountScene3D(panelId: string, el: HTMLElement): Scene3DHandle {
+/**
+ * สร้าง viewer ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน)
+ * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
+ */
+export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): Scene3DHandle {
   const viewer = createViewer(el, "3d");
   try {
-    return new Scene3D(panelId, el, viewer);
+    return new Scene3D(panelId, el, viewer, onRenderStopped);
   } catch (e) {
-    viewer.destroy();
+    destroyViewer(viewer);
     throw e;
   }
 }
@@ -106,6 +109,7 @@ class Scene3D implements Scene3DHandle {
     readonly panelId: string,
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
+    onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
@@ -145,6 +149,8 @@ class Scene3D implements Scene3DHandle {
     );
     this.homeView();
     this.refreshScene();
+    // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene3D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
+    this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
   }
 
   // ---------- data source ----------
@@ -487,7 +493,7 @@ class Scene3D implements Scene3DHandle {
     this.handler.destroy();
     this.zoom.destroy();
     this.inertialPaths.clear();
-    this.viewer.destroy(); // ทำลาย data source, entity, primitive และ WebGL context ของหน้าต่างนี้ทั้งหมด
+    destroyViewer(this.viewer); // ทำลาย data source, entity, primitive และคืน WebGL context ของหน้าต่างนี้ทันที
   }
 
   // ---------- window.__gnssStudioTest ----------

@@ -32,7 +32,7 @@ import { applyGraphics, cssColor, entityLooks, sceneStyle, type ApplyCtx, type E
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../../cesium/ipp";
 import { fillMoved, fillStates, ippItems, Overlays2D, swathInputs, swathItems, terminatorItem, type FillState } from "../../cesium/overlay2d";
-import { createViewer, latLonGrid } from "../../cesium/viewer";
+import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import type { AerRow } from "../../data/files";
 import { msg } from "../../labels/messages.th";
@@ -68,13 +68,21 @@ function ippIndexOf(rows: AerRow[]): IppIndex {
   return index;
 }
 
-/** สร้าง viewer 2D ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน) */
-export function mountScene2D(panelId: string, el: HTMLElement, opts: { projection: Projection2D; view: ViewRect | null }): Scene2DHandle {
+/**
+ * สร้าง viewer 2D ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน)
+ * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
+ */
+export function mountScene2D(
+  panelId: string,
+  el: HTMLElement,
+  opts: { projection: Projection2D; view: ViewRect | null },
+  onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
+): Scene2DHandle {
   const viewer = createViewer(el, "2d", { projection: opts.projection === "mercator" ? "mercator" : "geographic" });
   try {
-    return new Scene2D(panelId, el, viewer, opts.view);
+    return new Scene2D(panelId, el, viewer, opts.view, onRenderStopped);
   } catch (e) {
-    viewer.destroy();
+    destroyViewer(viewer);
     throw e;
   }
 }
@@ -107,6 +115,7 @@ class Scene2D implements Scene2DHandle {
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
     view: ViewRect | null,
+    onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
   ) {
     const scene = viewer.scene;
     const idle = skipIdleDisplayUpdates(viewer);
@@ -180,6 +189,8 @@ class Scene2D implements Scene2DHandle {
     this.refreshScene();
     this.refreshIpp();
     this.redraw();
+    // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene2D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
+    this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
   }
 
   /** วาดภาพที่เปลี่ยนตามเวลาใหม่ทันที (หนึ่งครั้งต่อเหตุการณ์) */
@@ -425,6 +436,6 @@ class Scene2D implements Scene2DHandle {
     this.handler.destroy();
     this.zoom.destroy();
     this.overlays.destroy();
-    this.viewer.destroy(); // ทำลาย data source, entity, primitive และ WebGL context ของหน้าต่างนี้ทั้งหมด
+    destroyViewer(this.viewer); // ทำลาย data source, entity, primitive และคืน WebGL context ของหน้าต่างนี้ทันที (เปลี่ยน Projection ก็ผ่านทางนี้)
   }
 }

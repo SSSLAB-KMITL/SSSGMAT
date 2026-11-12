@@ -4,6 +4,7 @@
 // - แถบเหนือภาพเมื่อผล `stale` หรือ `missing` ปุ่ม Apply = POST /propagate (GMAT ในเครื่อง ไม่ดาวน์โหลด: ไม่ต้องขอความยินยอม)
 //   ใส่ job queued ใน useJobs ทันที ปิดปุ่มระหว่างที่ scenario มีงานค้าง
 // - เครื่องไม่มี WebGL (หรือสร้าง viewer ไม่ได้) = ข้อความไทยแทนภาพ หน้าต่างอื่นยังใช้ได้; โหลดไฟล์ส่วนแสดงผลไม่ได้ = ข้อความของตัวเอง
+// - ภาพหยุดระหว่างใช้ (ข้อผิดพลาดตอนวาด หรือ browser ทิ้ง WebGL context) = ข้อความไทยให้ปิดแล้วเปิดหน้าต่างใหม่ และแจ้ง Message Viewer (SCENE_RENDER)
 // - โหลดผลลัพธ์เข้าภาพไม่สำเร็จ (sceneFailed) = แถบไทยเหนือภาพจนกว่าการลองใหม่จะสำเร็จ
 // - Shift + ล้อเมาส์บนภาพ = Step Forward (หมุนขึ้น) / Step Backward (หมุนลง) ผ่านคำสั่ง anim.* ล้อเฉย ๆ ซูมตามปกติของ Cesium
 // - panel เปลี่ยนขนาด → handle.resize() (spec §17 W3)
@@ -27,7 +28,10 @@ export type WindowName = "3D" | "2D";
 /** browser มี WebGL ไหม (jsdom และ browser ที่ปิด WebGL ไม่มี WebGLRenderingContext: ไม่ต้องโหลด Cesium เลย) */
 export const webglAvailable = (): boolean => typeof window !== "undefined" && typeof window.WebGLRenderingContext !== "undefined";
 
-export type ViewState = "loading" | "ready" | "nowebgl" | "chunkFailed";
+export type ViewState = "loading" | "ready" | "nowebgl" | "chunkFailed" | "renderStopped";
+
+/** เหตุที่ภาพหยุด (เหมือน RenderFailure ของ cesium/viewer.ts ไฟล์นี้ไม่ import ส่วน Cesium) */
+export type RenderStopReason = "renderError" | "contextLost";
 
 /** สิ่งที่ handle ของภาพ (scene3d / scene2d) ต้องมีให้ส่วนร่วมนี้ใช้ */
 export interface MountedScene {
@@ -82,12 +86,13 @@ export function SceneFailedBanner<H extends MountedScene>({ registry, panelId, w
   );
 }
 
-/** ข้อความแทนภาพ: ไม่มี WebGL หรือโหลดส่วนแสดงผลไม่ได้ */
+/** ข้อความแทนภาพ: ไม่มี WebGL, โหลดส่วนแสดงผลไม่ได้ หรือภาพหยุดระหว่างใช้ */
 export function SceneMessage({ view, window }: { view: ViewState; window: WindowName }) {
-  if (view !== "nowebgl" && view !== "chunkFailed") return null;
+  if (view !== "nowebgl" && view !== "chunkFailed" && view !== "renderStopped") return null;
+  const text = view === "nowebgl" ? msg("webgl.unsupported") : view === "chunkFailed" ? msg("scene.chunkFailed", { window }) : msg("scene.renderStopped");
   return (
     <div className="gfx-message" role="alert">
-      {view === "nowebgl" ? msg("webgl.unsupported") : msg("scene.chunkFailed", { window })}
+      {text}
     </div>
   );
 }
@@ -98,8 +103,8 @@ export interface SceneMountOptions<M, H extends MountedScene> {
   window: WindowName;
   /** dynamic import ของส่วน Cesium (reject = โหลดไฟล์ไม่ได้) */
   load(): Promise<M>;
-  /** สร้างภาพใน el (โยน = ไม่มี WebGL หรือสร้าง viewer ไม่ได้) */
-  create(module: M, el: HTMLElement): H;
+  /** สร้างภาพใน el (โยน = ไม่มี WebGL หรือสร้าง viewer ไม่ได้) onRenderStopped = ส่งต่อให้ภาพเรียกเมื่อภาพหยุดระหว่างใช้ */
+  create(module: M, el: HTMLElement, onRenderStopped: (reason: RenderStopReason, error?: unknown) => void): H;
   register(handle: H): () => void;
   /** ค่านี้เปลี่ยน = ทำลายภาพแล้วสร้างใหม่ (หน้าต่าง 2D: Projection) */
   remountKey?: string;
@@ -129,11 +134,17 @@ export function useSceneMount<M, H extends MountedScene>(opts: SceneMountOptions
     let handle: H | null = null;
     let unregister: (() => void) | null = null;
     const o = latest.current;
+    const stopped = (reason: RenderStopReason, error?: unknown): void => {
+      if (disposed) return;
+      const message = reason === "contextLost" ? "WebGL context lost" : errorText(error);
+      report("error", "SCENE_RENDER", msg("scene.renderStoppedLog", { window: o.window, message }), null, error instanceof Error ? (error.stack ?? null) : null);
+      setView("renderStopped");
+    };
     o.load()
       .then((module) => {
         if (disposed) return;
         try {
-          handle = latest.current.create(module, el);
+          handle = latest.current.create(module, el, stopped);
         } catch (e) {
           el.replaceChildren(); // กล่อง error ภาษาอังกฤษที่ Cesium วาดไว้
           console.error(`${o.window} viewer could not start`, e);

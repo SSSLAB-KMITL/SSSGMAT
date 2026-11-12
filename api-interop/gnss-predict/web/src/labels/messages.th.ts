@@ -34,6 +34,9 @@ const MESSAGES = {
   // ส่วนแสดงผล 3D/2D (Cesium) แยกไฟล์และโหลดเมื่อเปิดหน้าต่าง: ไฟล์นั้นโหลดไม่ได้ (เช่น server ถูกอัปเดตระหว่างที่หน้าเปิดอยู่)
   "scene.chunkFailed": "โหลดส่วนแสดงผล {window} ไม่สำเร็จ ลองโหลดหน้าใหม่",
   "scene.chunkFailedLog": "โหลดส่วนแสดงผล {window} ไม่สำเร็จ ({message}) ลองโหลดหน้าใหม่",
+  // ภาพหยุดระหว่างใช้: ข้อผิดพลาดตอนวาด หรือ browser ทิ้ง WebGL context (Chrome ทิ้งตัวที่เก่าที่สุดเมื่อมี context มากเกินไป)
+  "scene.renderStopped": "การแสดงผลกราฟิกหยุดทำงาน ปิดแล้วเปิดหน้าต่างนี้ใหม่ (ถ้าเปิดหน้าต่าง 3D และ 2D ไว้หลายบาน ให้ปิดบานที่ไม่ใช้ก่อน) หน้าต่างอื่นยังใช้ได้",
+  "scene.renderStoppedLog": "การแสดงผลกราฟิกของหน้าต่าง {window} หยุดทำงาน ({message}) ปิดแล้วเปิดหน้าต่างนี้ใหม่",
 
   // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
   "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",

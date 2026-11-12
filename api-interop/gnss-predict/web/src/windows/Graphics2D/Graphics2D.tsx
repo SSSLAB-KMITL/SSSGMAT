@@ -45,7 +45,7 @@ export function Graphics2D({ panelId }: PanelProps) {
     host,
     window: "2D",
     load: () => import("./scene2d"),
-    create: (m, el) => m.mountScene2D(panelId, el, { projection, view: lastView.current }),
+    create: (m, el, stopped) => m.mountScene2D(panelId, el, { projection, view: lastView.current }, stopped),
     register: registerScene2D,
     remountKey: projection,
     beforeDestroy: (handle) => {

@@ -10,6 +10,7 @@ import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
+import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
 import { useTime } from "../../src/stores/time";
 import { registerGraphics2DCommands } from "../../src/windows/Graphics2D/commands2d";
@@ -115,6 +116,19 @@ describe("Graphics2D", () => {
     // ค่าอื่นของหน้าต่าง (เช่น Lat/Lon Lines) ไม่สร้างภาพใหม่
     act(() => useLayout.getState().setWindowProps("graphics2d", { ...DEFAULT_PROPS_2D, projection: "mercator", latLonLines: false }));
     expect(mountScene2D).toHaveBeenCalledTimes(2);
+  });
+
+  test("a map whose picture stops (render error or lost WebGL context) shows the Thai message and logs it", async () => {
+    withWebGL();
+    vi.mocked(mountScene2D).mockReturnValue(fakeScene("graphics2d"));
+    render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene2D()).toBeDefined());
+    const stopped = vi.mocked(mountScene2D).mock.calls[0][3] as (reason: string, error?: unknown) => void;
+    act(() => stopped("contextLost"));
+    expect((await screen.findByRole("alert")).textContent).toBe(msg("scene.renderStopped"));
+    const logged = useMessages.getState().items.at(-1);
+    expect(logged?.code).toBe("SCENE_RENDER");
+    expect(logged?.text).toBe(msg("scene.renderStoppedLog", { window: "2D", message: "WebGL context lost" }));
   });
 
   test("a map that cannot start (WebGL blocked) gets the same message", async () => {
