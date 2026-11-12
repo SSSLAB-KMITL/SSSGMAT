@@ -7,9 +7,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, errorText } from "../api/client";
 import { isEnabled, runCommand } from "../commands";
 import { satelliteInfo } from "../data/catalog";
-import { t } from "../labels/labels";
+import { t, type LabelKey } from "../labels/labels";
 import { msg } from "../labels/messages.th";
-import { isActiveJob, useJobs, type Job } from "../stores/jobs";
+import { useJobs, type Job, type JobKind } from "../stores/jobs";
 import { useLayout } from "../stores/layout";
 import { messageKey, report, useMessages } from "../stores/messages";
 import { useResults } from "../stores/results";
@@ -136,19 +136,28 @@ function FlaggedField() {
 
 // ---------- งาน ----------
 
-/** งานที่กำลังรัน: ของ scenario ที่เปิดอยู่ก่อน ไม่มีก็งานประจำวัน */
+/**
+ * งานที่กำลังรัน: ของ scenario ที่เปิดอยู่ก่อน ไม่มีก็งานที่ไม่ผูกกับ scenario (ดึงข้อมูลวงโคจร หรืองานประจำวัน) กำลังรันก่อนแล้วใหม่สุดก่อน
+ * หน้าต่าง Fetch Orbit Data และ Daily Forecast Settings บอกให้ดูความคืบหน้าและปุ่ม Stop ที่นี่
+ */
 function useRunningJob(): Job | undefined {
   const jobs = useJobs((s) => s.jobs);
   const scenario = useScenario((s) => s.name);
   return useMemo(() => {
-    const own = scenario === null ? undefined : useJobs.getState().activeFor(scenario);
-    if (own !== undefined) return own;
-    return Object.values(jobs)
-      .filter((j) => j.kind === "daily" && isActiveJob(j))
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .at(-1);
+    const { activeFor } = useJobs.getState();
+    return (scenario === null ? undefined : activeFor(scenario)) ?? activeFor(null);
   }, [jobs, scenario]);
 }
+
+/** ชื่อของช่องงานตามชนิดงาน (ชนิดที่ไม่รู้จักแสดงรหัสตามที่ได้) */
+const JOB_LABELS: Record<JobKind, LabelKey> = {
+  fetch: "status.job.fetch",
+  daily: "status.dailyForecast",
+  propagate: "status.job.propagate",
+  analyze: "status.job.analyze",
+  validate: "status.job.validate",
+};
+const jobLabel = (kind: string): string => (Object.hasOwn(JOB_LABELS, kind) ? t(JOB_LABELS[kind as JobKind]) : kind);
 
 function stop(job: Job): void {
   useJobs.getState().cancel(job.id).catch((e: unknown) => report("error", e instanceof ApiError ? e.code : "JOB_CANCEL", errorText(e)));
@@ -161,7 +170,7 @@ function JobField() {
   const percent = fraction === null ? null : Math.round(Math.min(1, Math.max(0, fraction)) * 100);
   const stage = job.progress.stage ?? job.kind;
   return (
-    <Field name="job" label={t("status.dailyForecast")} className="status-job">
+    <Field name="job" label={jobLabel(job.kind)} className="status-job">
       <span className="progress" role="progressbar" aria-label={stage} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent ?? undefined}>
         <span className="progress-fill" style={percent === null ? undefined : { width: `${percent}%` }} data-indeterminate={percent === null ? "" : undefined} />
       </span>

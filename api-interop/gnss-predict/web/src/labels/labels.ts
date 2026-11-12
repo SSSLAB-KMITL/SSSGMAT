@@ -500,6 +500,11 @@ const LABELS = {
   "status.maxDataAge": ours("Max Data Age"),
   "status.flaggedSatellites": ours("Flagged Satellites"),
   "status.dailyForecast": ours("Daily Forecast"),
+  // ชื่อของช่องงานที่กำลังรันตามชนิดงาน (งาน daily ใช้ status.dailyForecast)
+  "status.job.fetch": ours("Fetch Orbit Data"),
+  "status.job.propagate": ours("Propagate"),
+  "status.job.analyze": ours("Analyze"),
+  "status.job.validate": ours("Validation"),
   "status.disconnected": ours("Server Disconnected"),
 } satisfies Record<string, Label>;
 

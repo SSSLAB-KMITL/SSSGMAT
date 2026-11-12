@@ -315,6 +315,59 @@ describe("daily job", () => {
     expect(field("job")?.textContent).toContain("fetch");
   });
 
+  test("an orbit fetch (a job of no scenario) shows its progress under its own name, and Stop cancels it", async () => {
+    const user = userEvent.setup();
+    const cancel = vi.fn(() => Promise.resolve());
+    useJobs.setState({ jobs: { f: job({ id: "f", kind: "fetch", scenario: null, progress: { stage: "celestrak", fraction: 0.25 } }) }, cancel });
+    render(<StatusBar />);
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
+    expect(field("job")?.textContent).toContain("celestrak 25%");
+    expect(field("job")?.getAttribute("aria-label")).toBe(t("status.job.fetch"));
+    expect(field("job")?.getAttribute("aria-label")).not.toBe(t("status.dailyForecast"));
+    await user.click(screen.getByRole("button", { name: t("status.stop") }));
+    expect(cancel).toHaveBeenCalledWith("f");
+  });
+
+  test("an orbit fetch is shown with no scenario open as well", () => {
+    useScenario.setState({ name: null, doc: null });
+    useJobs.setState({ jobs: { f: job({ id: "f", kind: "fetch", scenario: null, state: "queued", progress: { stage: null, fraction: null } }) } });
+    render(<StatusBar />);
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBeNull();
+    expect(field("job")?.getAttribute("aria-label")).toBe(t("status.job.fetch"));
+  });
+
+  test("the open scenario's own job comes before an orbit fetch; among jobs of no scenario the running one, then the newest", () => {
+    useJobs.setState({
+      jobs: {
+        a: job({ id: "j-20261112T000000-aaaa" }),
+        f: job({ id: "j-20261112T000100-ffff", kind: "fetch", scenario: null, progress: { stage: "igs", fraction: 0.5 } }),
+      },
+    });
+    render(<StatusBar />);
+    expect(field("job")?.textContent).toContain("propagate");
+    act(() => useJobs.setState({
+      jobs: {
+        d: job({ id: "j-20261112T000000-dddd", kind: "daily", scenario: null, progress: { stage: "fetch", fraction: 0.1 } }),
+        f: job({ id: "j-20261112T000100-ffff", kind: "fetch", scenario: null, progress: { stage: "igs", fraction: 0.5 } }),
+      },
+    }));
+    expect(field("job")?.textContent).toContain("igs");
+    expect(field("job")?.getAttribute("aria-label")).toBe(t("status.job.fetch"));
+  });
+
+  test("the job field is named after the kind of job", () => {
+    const kinds = [["propagate", "status.job.propagate"], ["analyze", "status.job.analyze"], ["validate", "status.job.validate"]] as const;
+    for (const [kind, key] of kinds) {
+      useJobs.setState({ jobs: { a: job({ id: "a", kind }) } });
+      const view = render(<StatusBar />);
+      expect(field("job")?.getAttribute("aria-label")).toBe(t(key));
+      view.unmount();
+    }
+    useJobs.setState({ jobs: { d: job({ id: "d", kind: "daily", scenario: null }) } });
+    render(<StatusBar />);
+    expect(field("job")?.getAttribute("aria-label")).toBe(t("status.dailyForecast"));
+  });
+
   test("a job of another scenario is not shown", () => {
     useJobs.setState({ jobs: { x: job({ id: "x", scenario: "OTHER" }) } });
     render(<StatusBar />);

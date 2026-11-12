@@ -62,8 +62,8 @@ interface JobsState {
   daily: DailyStatus | null;
   onJobEvent(e: RawJobEvent): void;
   onDailyEvent(d: DailyStatus): void;
-  /** job ที่ยังรอหรือกำลังรันของ scenario นี้ (กำลังรันก่อน แล้วใหม่สุดก่อน) */
-  activeFor(scenario: string): Job | undefined;
+  /** job ที่ยังรอหรือกำลังรันของ scenario นี้ (กำลังรันก่อน แล้วใหม่สุดก่อน) null = job ที่ไม่ผูกกับ scenario (fetch, daily) */
+  activeFor(scenario: string | null): Job | undefined;
   cancel(id: string): Promise<void>;
   /** ดึงรายการทั้งหมดจาก server (ตอนต่อ SSE ได้ เพื่อปิดช่องว่างที่ event หลุด) ผิดพลาดเงียบ: สถานะการเชื่อมต่อแจ้งอยู่แล้ว */
   refresh(): Promise<void>;
