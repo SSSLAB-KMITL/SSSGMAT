@@ -14,6 +14,7 @@ import {
 } from "dockview-react";
 import "dockview-react/dist/styles/dockview.css";
 import { useCallback, useEffect, useRef, useSyncExternalStore, type FC, type ReactNode } from "react";
+import { PanelBoundary } from "./chrome/ErrorBoundary";
 import { WindowsDialog } from "./chrome/WindowsDialog";
 import { t } from "./labels/labels";
 import { getPanelDef, isPanelKind, PANEL_KINDS, panelRegistryVersion, subscribePanels, UNKNOWN_PANEL, type WindowType } from "./layout/panels";
@@ -23,14 +24,21 @@ import { useLayout } from "./stores/layout";
 /** สีและขนาดของธีมอยู่ใน theme.css (.dockview-theme-gnss) */
 const THEME: DockviewTheme = { name: "gnss", className: "dockview-theme-gnss", colorScheme: "light" };
 
-/** dockview เรียก component ตามชื่อชนิด: ทุกชนิดใช้ตัวเดียวที่หา component จริงจากทะเบียนตอน render */
+/**
+ * dockview เรียก component ตามชื่อชนิด: ทุกชนิดใช้ตัวเดียวที่หา component จริงจากทะเบียนตอน render
+ * เนื้อของแต่ละหน้าต่างอยู่ใน PanelBoundary ของตัวเอง: หน้าต่างที่โยนตอนวาดแสดงข้อความไทย หน้าต่างอื่นยังอยู่
+ */
 function PanelHost(props: IDockviewPanelProps) {
   useSyncExternalStore(subscribePanels, panelRegistryVersion);
   const kind = props.api.component;
   const def = isPanelKind(kind) ? getPanelDef(kind) : undefined;
   if (def === undefined) return null; // UNKNOWN_PANEL: ชนิดที่ไม่รู้จักจาก workbook ถูกลบทันทีหลังสร้าง
   const Component = def.component;
-  return <Component params={props.params} panelId={props.api.id} />;
+  return (
+    <PanelBoundary panelId={props.api.id} title={props.api.title ?? def.title(props.params)}>
+      <Component params={props.params} panelId={props.api.id} />
+    </PanelBoundary>
+  );
 }
 
 const COMPONENTS: Record<string, FC<IDockviewPanelProps>> = Object.fromEntries([...PANEL_KINDS, UNKNOWN_PANEL].map((k) => [k, PanelHost]));

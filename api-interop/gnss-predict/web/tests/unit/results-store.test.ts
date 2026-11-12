@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { parseAerCsv, parseDopCsv } from "../../src/data/files";
+import { msg } from "../../src/labels/messages.th";
 import { useMessages } from "../../src/stores/messages";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
@@ -175,6 +176,23 @@ describe("refresh", () => {
     const warned = useMessages.getState().items.filter((m) => m.level === "warning");
     expect(warned).toHaveLength(1);
     expect(warned[0].text).toContain("ไม่พบไฟล์ผลลัพธ์ที่ร้องขอ");
+  });
+
+  test.each([
+    ["satellites is not a list", { gmat_version: "R2025a", satellites: { G01: {} } }],
+    ["satellites is missing", { gmat_version: "R2025a" }],
+    ["a satellite is not an object", { gmat_version: "R2025a", satellites: [null] }],
+    ["the manifest is not an object", ["G01"]],
+  ])("a malformed manifest (%s) is treated as unreadable: a Thai warning, no manifest, and the DOP still loads", async (_case, manifest) => {
+    stubFetch(routes({ [`GET /api/scenarios/E2E/ephem/${EPH}/manifest.json`]: { json: manifest } }));
+    await useResults.getState().refresh();
+    expect(useResults.getState().manifest).toBeNull();
+    expect(useResults.getState().prnByNorad.size).toBe(0);
+    expect(useResults.getState().dop).toHaveLength(3);
+    const warned = useMessages.getState().items.filter((m) => m.level === "warning");
+    expect(warned).toHaveLength(1);
+    expect(warned[0].code).toBe("RESULT_FILE");
+    expect(warned[0].text.startsWith(msg("results.fileFailed", { file: "manifest.json", message: "\u0000" }).split("\u0000")[0])).toBe(true);
   });
 
   test("a corrupt dop.csv adds a warning and leaves no DOP", async () => {

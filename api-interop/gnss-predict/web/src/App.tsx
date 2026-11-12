@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { startEventWiring } from "./api/events";
 import { registerCoreCommands } from "./chrome/coreCommands";
 import { Dialogs } from "./chrome/Dialogs";
+import { ChromeBoundary } from "./chrome/ErrorBoundary";
 import { registerFileCommands } from "./chrome/fileCommands";
 import { HealthBanner } from "./chrome/HealthBanner";
 import { MenuBar } from "./chrome/MenuBar";
@@ -82,20 +83,27 @@ export function App() {
 
   // header = แถบเตือนดิสก์ + เมนูบาร์ + แถบเครื่องมือ, footer = แถบสถานะ, กล่องโต้ตอบ (412, job ล้มเหลว, confirm, Save As) วางครั้งเดียวที่นี่
   // Welcome เป็นหน้าต่างใน Workspace (เปิดโดย startWorkspaceFlow)
+  // ทั้งสามส่วนอยู่ใน ChromeBoundary ของตัวเอง (หน้าต่างแต่ละบานมี PanelBoundary ใน Workspace): ส่วนที่โยนตอนวาดไม่ทำให้หน้าต่างทั้งหมดหาย
   return (
     <>
       <Workspace
         header={
-          <>
+          <ChromeBoundary part="header">
             <HealthBanner />
             <MenuBar />
             <Toolbars />
-          </>
+          </ChromeBoundary>
         }
-        footer={<StatusBar />}
+        footer={
+          <ChromeBoundary part="footer">
+            <StatusBar />
+          </ChromeBoundary>
+        }
       />
-      <Dialogs />
-      <SaveAsDialog />
+      <ChromeBoundary part="dialogs">
+        <Dialogs />
+        <SaveAsDialog />
+      </ChromeBoundary>
     </>
   );
 }

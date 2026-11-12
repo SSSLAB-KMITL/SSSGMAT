@@ -148,6 +148,48 @@ body {
   color: var(--text-muted);
 }
 
+/* ส่วนที่โยน exception ตอนวาด (src/chrome/ErrorBoundary.tsx): ข้อความไทยแทนเนื้อของหน้าต่าง หรือแทนแถบเมนู/แถบสถานะ/กล่องโต้ตอบ */
+.crashed {
+  box-sizing: border-box;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.crashed-panel {
+  height: 100%;
+  padding: 12px;
+  overflow: auto;
+}
+
+.crashed-text {
+  margin: 0 0 8px;
+}
+
+.crashed-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.crashed-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.crashed-chrome .crashed-text {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.crashed-dialogs {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 32px;
+  z-index: 1000;
+}
+
 /* ---------- ธีม dockview (ใช้กับ <DockviewReact theme>) ----------
    ชื่อหน้าต่างแบบเดสก์ท็อป: แถบชื่อสีอ่อน หน้าต่างที่ active สีน้ำเงินเข้มตัวอักษรขาว ทุกค่าอ้างโทเค็นด้านบน (ไม่ใส่สี hex ตรงนี้)
    tests/unit/theme.test.ts ตรวจว่าตัวแปรครบและคู่ข้อความ/พื้นผ่าน WCAG AA */

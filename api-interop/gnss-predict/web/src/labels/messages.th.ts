@@ -204,6 +204,16 @@ const MESSAGES = {
   // หน้าต่างที่ยังไม่ได้ทำ (ตัวแทนชั่วคราวใน src/layout/panels.ts จนกว่างานของหน้าต่างนั้นจะลงทะเบียนของจริง)
   "panel.placeholder": "ยังไม่ทำ (งานถัดไป)",
 
+  // error boundary (src/chrome/ErrorBoundary.tsx): ส่วนที่โยน exception ตอนวาด แสดงข้อความนี้แทน ส่วนอื่นยังทำงาน
+  "panel.crashed": "หน้าต่างนี้เกิดข้อผิดพลาดจึงแสดงต่อไม่ได้ ค่าที่ยังไม่ได้ Apply ในหน้าต่างนี้อาจหายไป หน้าต่างอื่นยังใช้ได้ตามปกติ กด Retry เพื่อลองแสดงใหม่ หรือ Close เพื่อปิดหน้าต่างนี้ (รายละเอียดอยู่ใน Message Viewer)",
+  "panel.crashedLog": "หน้าต่าง {window} เกิดข้อผิดพลาดและหยุดแสดง: {message}",
+  // {part} = ชื่อส่วนจาก chrome.part.*
+  "chrome.crashed": "{part}เกิดข้อผิดพลาดจึงแสดงไม่ได้ หน้าต่างต่าง ๆ ยังใช้ได้ กด Retry เพื่อลองแสดงใหม่ หรือโหลดหน้าใหม่ (รายละเอียดอยู่ใน Message Viewer)",
+  "chrome.crashedLog": "{part}เกิดข้อผิดพลาดและหยุดแสดง: {message}",
+  "chrome.part.header": "แถบเมนูและแถบเครื่องมือ",
+  "chrome.part.footer": "แถบสถานะ",
+  "chrome.part.dialogs": "กล่องโต้ตอบ",
+
   // Properties Browser (spec §8): โหลด/อ่านค่า ตรวจก่อน Apply และสถานะขัดแย้ง
   "props.loading": "กำลังอ่านค่าตั้งจาก server...",
   "props.loadFailed": "อ่านค่าตั้งของ \"{name}\" จาก server ไม่สำเร็จ: {message}",

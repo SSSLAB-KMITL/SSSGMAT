@@ -19,6 +19,7 @@ import { useSettings } from "../../src/stores/settings";
 import { useTime } from "../../src/stores/time";
 import { Workspace } from "../../src/Workspace";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
+import { stubFetch } from "./helpers/fake-fetch";
 
 let disposeCore: () => void;
 beforeEach(() => {
@@ -29,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   disposeCore();
 });
 
@@ -161,6 +163,18 @@ describe("max data age", () => {
     useResults.setState({ manifest: manifest([sat(1, 0.5, true), sat(2, 2.46, true), sat(3, 9, false)]) });
     render(<StatusBar />);
     expect(fieldText("maxDataAge")).toBe("2.5 d");
+  });
+
+  test("a malformed manifest from the server does not crash the bar (the store drops it with a warning)", async () => {
+    const results = { ephem: { hash: "abc", status: "current", available: ["abc"] }, access: {}, error: null };
+    stubFetch({
+      "GET /api/scenarios/T/results": { json: results },
+      "GET /api/scenarios/T/ephem/abc/manifest.json": { json: { satellites: { G01: { propagated: true, age_days: 1 } } } },
+    });
+    render(<StatusBar />);
+    await act(async () => useResults.getState().refresh());
+    expect(fieldText("maxDataAge")).toBe("—");
+    expect(useMessages.getState().items.map((m) => m.code)).toContain("RESULT_FILE");
   });
 
   test("is a dash with no manifest, no propagated satellite, or no age", () => {

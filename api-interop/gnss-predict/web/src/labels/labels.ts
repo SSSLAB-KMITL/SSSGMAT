@@ -167,6 +167,7 @@ const LABELS = {
   "dialog.apply": stk("Apply", "C"),
   "dialog.help": stk("Help", "C"),
   "dialog.reload": ours("Reload"),
+  "dialog.retry": ours("Retry"),
   "dialog.confirm": ours("Confirm"),
   "dialog.add": ours("Add..."),
   "dialog.remove": ours("Remove"),

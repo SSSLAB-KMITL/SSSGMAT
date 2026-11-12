@@ -86,6 +86,19 @@ function aerCachePut(key: string, rows: AerRow[]): void {
   while (aerCache.size > AER_CACHE_MAX) aerCache.delete(aerCache.keys().next().value as string);
 }
 
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/**
+ * manifest.json ที่ใช้ได้: object ที่มี satellites เป็นรายการของ object (แถบสถานะ ภาพ 3D/2D และ About อ่านช่องของดาวแต่ละดวงโดยตรง)
+ * ไม่งั้น RangeError: optional() เตือนแล้วถือว่าไม่มี manifest แทนที่จะให้ส่วนที่อ่านมันพังตอนวาด
+ */
+function assertManifest(x: unknown): EphemManifest {
+  if (!isRecord(x) || !Array.isArray(x.satellites) || !x.satellites.every(isRecord)) {
+    throw new RangeError('manifest.json: "satellites" is not a list of satellites');
+  }
+  return x as EphemManifest;
+}
+
 /** ไฟล์เสริมโหลดไม่ได้: แจ้งเตือนใน Message Viewer (ยกเว้นยกเลิกหรือสายหลุด ซึ่งแถบสถานะแจ้งอยู่แล้ว) แล้วคืน null */
 async function optional<T>(file: string, load: () => Promise<T>): Promise<T | null> {
   try {
@@ -124,7 +137,7 @@ export const useResults = create<ResultsState>()((set, get) => ({
       if (hash === null) return;
       const dopFacility = Object.entries(info.access).find(([, e]) => e.status === "current" && e.hash !== null)?.[0] ?? null;
       const [manifest, dop] = await Promise.all([
-        optional("manifest.json", () => apiGet<EphemManifest>(`${base}/ephem/${hash}/manifest.json`, { signal }).then((r) => r.data)),
+        optional("manifest.json", () => apiGet<unknown>(`${base}/ephem/${hash}/manifest.json`, { signal }).then((r) => assertManifest(r.data))),
         dopFacility === null
           ? Promise.resolve<DopRow[] | null>([])
           : optional("dop.csv", async () => parseDopCsv(await apiGetText(`${base}/access/${enc(dopFacility)}/${info.access[dopFacility].hash}/dop.csv`, { signal }))),
