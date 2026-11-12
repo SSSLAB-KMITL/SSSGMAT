@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import { defineConfig } from "vitest/config";
-import { devOriginRewrite } from "./devOrigin";
+import { devOriginRewrite } from "./devOrigin.ts";
 
 const SERVER_ORIGIN = "http://127.0.0.1:8000";
 const CESIUM_BUILD = "node_modules/cesium/Build/Cesium";
