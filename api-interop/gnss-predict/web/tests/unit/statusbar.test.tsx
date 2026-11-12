@@ -329,6 +329,13 @@ describe("daily job", () => {
     expect(field("job")?.textContent).not.toContain("%");
   });
 
+  test("a queued job whose progress the server reports as null shows an indeterminate bar instead of crashing", () => {
+    act(() => useJobs.getState().onJobEvent({ id: "q", kind: "propagate", scenario: "T", state: "queued", progress: null }));
+    render(<StatusBar />);
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBeNull();
+    expect(field("job")?.textContent).toContain("propagate");
+  });
+
   test("Stop cancels that job", async () => {
     const user = userEvent.setup();
     const cancel = vi.fn(() => Promise.resolve());

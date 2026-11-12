@@ -823,8 +823,8 @@ describe("Facility pages", () => {
     expect(screen.queryByLabelText(t("field.lineStyle"))).toBeNull(); // a Facility has no line
 
     fireEvent.change(input(t("field.color")), { target: { value: "#00ff00" } });
+    expect(input(t("field.inheritFromScenario")).checked).toBe(false); // picking a colour unticks it (no separate click needed any more)
     await user.selectOptions(select(t("field.markerStyle")), "Star");
-    await user.click(input(t("field.inheritFromScenario")));
     await user.click(button(t("dialog.apply")));
     await waitFor(() => expect(patches(f, "Facility/THBK")).toHaveLength(1));
     expect(patches(f, "Facility/THBK")[0].body).toEqual({ graphics2d: { color: "#00ff00", marker_style: "Star", inherit: false } });
@@ -1668,6 +1668,35 @@ describe("a row the user added to the Active list", () => {
 });
 
 describe("colour and choice controls", () => {
+  // e2e (properties.spec) found it: a colour picked while Inherit from Scenario stayed ticked was saved but never drawn
+  // (an inheriting satellite takes its Constellation's colour), the same as the Object Browser colour box, picking one means "use this colour"
+  test.each([
+    ["a Satellite", mountSatellite, "Satellite/G01"],
+    ["a Facility", mountFacility, "Facility/THBK"],
+  ] as const)("picking a colour unticks Inherit from Scenario so the colour takes effect (%s)", async (_name, mountObject, target) => {
+    const f = server();
+    await mountObject();
+    await openPage("2D Graphics - Attributes");
+    expect(input(t("field.inheritFromScenario")).checked).toBe(true);
+    fireEvent.change(input(t("field.color")), { target: { value: "#00ff00" } });
+    expect(input(t("field.inheritFromScenario")).checked).toBe(false);
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, target)).toHaveLength(1));
+    expect(patches(f, target)[0].body).toEqual({ graphics2d: { color: "#00ff00", inherit: false } });
+  });
+
+  test("Inherit from Scenario can be ticked again after a colour was picked", async () => {
+    const f = server();
+    await mountSatellite();
+    await openPage("2D Graphics - Attributes");
+    fireEvent.change(input(t("field.color")), { target: { value: "#00ff00" } });
+    await user.click(input(t("field.inheritFromScenario")));
+    expect(input(t("field.inheritFromScenario")).checked).toBe(true);
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(patches(f, "Satellite/G01")).toHaveLength(1));
+    expect(patches(f, "Satellite/G01")[0].body).toEqual({ graphics2d: { color: "#00ff00" } });
+  });
+
   test("picking black when there is no colour yet registers", async () => {
     pages = structuredClone(G01_PAGES);
     (pages.graphics2d as Record<string, unknown>).color = null;
@@ -1679,7 +1708,7 @@ describe("colour and choice controls", () => {
     expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(false);
     await user.click(button(t("dialog.apply")));
     await waitFor(() => expect(patches(f, "Satellite/G01")).toHaveLength(1));
-    expect(patches(f, "Satellite/G01")[0].body).toEqual({ graphics2d: { color: "#000000" } });
+    expect(patches(f, "Satellite/G01")[0].body).toEqual({ graphics2d: { color: "#000000", inherit: false } }); // black registered, and it takes effect
   });
 
   test("a nullable choice keeps its blank option after a value is picked, and blank sends null", async () => {

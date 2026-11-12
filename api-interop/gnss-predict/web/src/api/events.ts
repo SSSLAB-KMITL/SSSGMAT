@@ -10,7 +10,7 @@
 import { apiGet } from "./client";
 import { msg } from "../labels/messages.th";
 import { isMessage, report, useMessages } from "../stores/messages";
-import { useJobs, type DailyStatus, type JobEvent } from "../stores/jobs";
+import { useJobs, type DailyStatus, type RawJobEvent } from "../stores/jobs";
 import { useResults } from "../stores/results";
 import { useScenario, type ScenarioEvent } from "../stores/scenario";
 import { useSettings } from "../stores/settings";
@@ -187,7 +187,7 @@ export function connectEvents(h: EventHandlers, o: ConnectOptions = {}): () => v
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
-function isJobEvent(x: unknown): x is JobEvent {
+function isJobEvent(x: unknown): x is RawJobEvent {
   return isRecord(x) && typeof x.id === "string" && typeof x.state === "string";
 }
 

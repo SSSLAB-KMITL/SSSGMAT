@@ -114,15 +114,23 @@ export function CheckRow({ k, label }: RowProps) {
  */
 const UNSET_SWATCH = "#000001";
 
-/** สี: ช่องเลือกสี (input type=color) กับปุ่ม Clear (ว่าง = null คือไม่ได้ตั้งสีเอง) */
-export function ColorRow({ k, label }: RowProps) {
+/**
+ * สี: ช่องเลือกสี (input type=color) กับปุ่ม Clear (ว่าง = null คือไม่ได้ตั้งสีเอง)
+ * untick = key ของช่องติ๊กที่เลือกสีแล้วต้องเลิกติ๊ก (Inherit from Scenario: object ที่ inherit ใช้สีของ Constellation ไม่ใช่สีของตัวเอง
+ * การเลือกสีจึงไม่มีผลถ้ายังติ๊กอยู่ เหมือนกล่องสีใน Object Browser ที่ตั้งสีพร้อมเลิก inherit) ผู้ใช้ติ๊กกลับเองได้หลังเลือกสี; Clear ไม่แตะช่องนั้น
+ */
+export function ColorRow({ k, label, untick }: RowProps & { untick?: string }) {
   const api = useEditorApi();
   const value = text(api, k);
+  const pick = (color: string): void => {
+    api.set(k, color);
+    if (untick !== undefined) api.set(untick, false);
+  };
   return (
     <FormField label={label} error={api.errors[k]}>
       {({ id, "aria-invalid": invalid, "aria-describedby": describedBy }) => (
         <div className="color-row">
-          <input id={id} type="color" className="color-input" aria-invalid={invalid} aria-describedby={describedBy} value={value === "" ? UNSET_SWATCH : value} onChange={(e) => api.set(k, e.target.value)} />
+          <input id={id} type="color" className="color-input" aria-invalid={invalid} aria-describedby={describedBy} value={value === "" ? UNSET_SWATCH : value} onChange={(e) => pick(e.target.value)} />
           <span className="color-text">{value === "" ? "—" : value}</span>
           <button type="button" className="btn" disabled={value === ""} onClick={() => api.set(k, "")}>
             {t("dialog.clear")}

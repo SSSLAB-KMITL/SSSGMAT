@@ -27,6 +27,15 @@ export interface JobEvent {
   error?: JobError | null;
 }
 
+/**
+ * รูปที่ server ส่งมาจริง: `progress` เป็น null จนกว่า job จะรายงานขั้นแรก (job ที่เพิ่งเข้าคิว) store แปลงเป็นความคืบหน้าว่างก่อนเก็บ
+ * ทุกที่ที่อ่าน job จึงอ่าน progress.stage / progress.fraction ได้เสมอ
+ */
+export type RawJobEvent = Omit<JobEvent, "progress"> & { progress: JobProgress | null };
+
+const NO_PROGRESS: JobProgress = { stage: null, fraction: null };
+const withProgress = <T extends { progress: JobProgress | null }>(job: T): T & { progress: JobProgress } => ({ ...job, progress: job.progress ?? NO_PROGRESS });
+
 export interface Job extends JobEvent {
   error: JobError | null;
   params?: Record<string, unknown>;
@@ -51,7 +60,7 @@ export interface DailyStatus {
 interface JobsState {
   jobs: Record<string, Job>;
   daily: DailyStatus | null;
-  onJobEvent(e: JobEvent): void;
+  onJobEvent(e: RawJobEvent): void;
   onDailyEvent(d: DailyStatus): void;
   /** job ที่ยังรอหรือกำลังรันของ scenario นี้ (กำลังรันก่อน แล้วใหม่สุดก่อน) */
   activeFor(scenario: string): Job | undefined;
@@ -67,7 +76,7 @@ export const useJobs = create<JobsState>()((set, get) => ({
   daily: null,
 
   onJobEvent: (e) =>
-    set((s) => ({ jobs: { ...s.jobs, [e.id]: { ...s.jobs[e.id], ...e, error: e.error ?? null } } })),
+    set((s) => ({ jobs: { ...s.jobs, [e.id]: { ...s.jobs[e.id], ...withProgress(e), error: e.error ?? null } } })),
 
   onDailyEvent: (d) => set({ daily: d }),
 
@@ -80,15 +89,15 @@ export const useJobs = create<JobsState>()((set, get) => ({
   },
 
   cancel: async (id) => {
-    const { data } = await apiSend<Job>("POST", `/jobs/${encodeURIComponent(id)}/cancel`);
-    if (data) set((s) => ({ jobs: { ...s.jobs, [id]: { ...s.jobs[id], ...data } } }));
+    const { data } = await apiSend<Omit<Job, "progress"> & { progress: JobProgress | null }>("POST", `/jobs/${encodeURIComponent(id)}/cancel`);
+    if (data) set((s) => ({ jobs: { ...s.jobs, [id]: { ...s.jobs[id], ...withProgress(data) } } }));
   },
 
   fetchAll: async () => {
     try {
-      const { data } = await apiGet<Job[]>("/jobs");
+      const { data } = await apiGet<(Omit<Job, "progress"> & { progress: JobProgress | null })[]>("/jobs");
       if (!Array.isArray(data)) return false;
-      set({ jobs: Object.fromEntries(data.map((j) => [j.id, j])) });
+      set({ jobs: Object.fromEntries(data.map((j) => [j.id, withProgress(j)])) });
       return true;
     } catch {
       return false; // ดึงไม่ได้: คงรายการเดิม (การเชื่อมต่อที่หลุดแสดงที่แถบสถานะอยู่แล้ว)

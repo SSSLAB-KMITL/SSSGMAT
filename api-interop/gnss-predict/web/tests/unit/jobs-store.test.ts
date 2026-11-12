@@ -21,6 +21,20 @@ describe("useJobs", () => {
     expect(j.kind).toBe("propagate");
   });
 
+  // e2e (messages.spec) found it: the server sends `progress: null` until a job reports its first stage, and the status bar read progress.fraction
+  test("a job event whose progress is null (nothing reported yet) is stored with an empty progress", () => {
+    useJobs.getState().onJobEvent({ id: "j1", kind: "propagate", scenario: "E2E", state: "queued", progress: null });
+    expect(useJobs.getState().jobs.j1.progress).toEqual({ stage: null, fraction: null });
+    useJobs.getState().onJobEvent({ id: "j1", kind: "propagate", scenario: "E2E", state: "running", progress: { stage: "gmat", fraction: 0.1 } });
+    expect(useJobs.getState().jobs.j1.progress).toEqual({ stage: "gmat", fraction: 0.1 });
+  });
+
+  test("a job record from the list with progress null is stored with an empty progress", async () => {
+    stubFetch({ "GET /api/jobs": { json: [{ id: "q", kind: "daily", scenario: null, state: "queued", progress: null, error: null, messages: [] }] } });
+    await useJobs.getState().refresh();
+    expect(useJobs.getState().jobs.q.progress).toEqual({ stage: null, fraction: null });
+  });
+
   test("an event keeps the fields of the full record that the event does not carry", () => {
     useJobs.setState({ jobs: { j1: { ...ev(), params: { a: 1 }, created_utc: "2026-11-12T00:00:00.000Z", origin: "user" } as never } });
     useJobs.getState().onJobEvent(ev({ state: "succeeded" }));

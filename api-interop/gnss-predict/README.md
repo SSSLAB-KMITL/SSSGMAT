@@ -384,7 +384,7 @@ server กันหน้าเว็บอื่นที่เปิดใน�
 - คำขอ POST, PUT, PATCH, DELETE ที่มี header `Origin` ต้องมาจาก `http://<ชื่อข้างบน>:<port>` ไม่ใช่ได้ 403 `FORBIDDEN_ORIGIN`
   คำขอที่ไม่มี `Origin` (curl, script) ผ่านตามเดิม และ server ไม่ส่ง header CORS หน้าเว็บอื่นจึงอ่านผลของ GET ไม่ได้
 API ทั้งหมดอยู่ใต้ `/api` มี OpenAPI ที่ `/api/openapi.json` และหน้าลองเรียกที่ `/api/docs` ถ้ามีหน้าเว็บที่ build แล้วที่ `web/dist/`
-server ส่งหน้าเว็บจาก port เดียวกัน (ยังไม่มี: หน้าเว็บเป็นงานย่อยที่ 3–4)
+server ส่งหน้าเว็บจาก port เดียวกัน (build หน้าเว็บตามหัวข้อ 9)
 
 | ตัวแปร | ค่าเริ่มต้น | ความหมาย |
 |---|---|---|
@@ -686,3 +686,133 @@ content-type: application/json
 
 **9. หยุด server**: `kill <pid>` (SIGTERM) ได้ `Shutting down` / `Application shutdown complete` / `Finished server process` ภายในไม่ถึง 5 วินาที
 ตรวจแล้วไม่มี process ของ server หรือ `GmatConsole` ค้าง และ port 8765 ปิด
+
+## 9. GNSS Studio workspace
+
+หน้าเว็บของ GNSS Studio (งานย่อยที่ 3) ใช้งานเหมือน STK: เมนู แถบเครื่องมือ Object Browser, Properties Browser, Animation, Timeline View,
+หน้าต่าง 3D (Cesium) และ 2D, Message Viewer และแถบสถานะ ทำงานบน server ในหัวข้อ 8 โดยไม่ต่อเน็ตเอง (ภาพโลกคือ NaturalEarthII ที่มากับ Cesium
+ไม่ใช้ Cesium ion, Bing, terrain หรือ CDN) โค้ดอยู่ใต้ `web/` (React 18 + TypeScript + Vite, dockview, CesiumJS)
+
+- Spec: [docs/2026-11-11-gnss-studio-workspace-design.md](docs/2026-11-11-gnss-studio-workspace-design.md) (อ้างว่า "workspace §n")
+
+### 9.1 ติดตั้ง
+
+ต้องมี Node.js รุ่นใหม่พอสำหรับ Vite 8 (ทดสอบกับ Node 26 / npm 11) ทุกแพ็กเกจตรึงรุ่นแบบ `x.y.z` และ `package-lock.json` อยู่ใน git จึงติดตั้งด้วย `npm ci`
+
+```bash
+cd api-interop/gnss-predict/web
+npm ci
+```
+
+### 9.2 พัฒนา
+
+เปิด server (หัวข้อ 8.2) ที่ port 8000 แล้วเปิด Vite คู่กัน:
+
+```bash
+cd api-interop/gnss-predict/server && .venv/bin/python -m gnss_studio_server     # terminal 1: http://127.0.0.1:8000/
+cd api-interop/gnss-predict/web && npm run dev                                      # terminal 2: Vite (ตั้งต้น http://localhost:5173/)
+```
+
+Vite ส่งต่อ `/api` (รวม SSE ที่ `/api/events`) ไป `http://127.0.0.1:8000` และ **เขียน header `Origin` ใหม่เป็น `http://127.0.0.1:8000`**
+เพราะ server ตอบ 403 `FORBIDDEN_ORIGIN` กับคำขอ POST, PUT, PATCH, DELETE ที่ `Origin` ไม่ตรง origin ของ server เอง (หัวข้อ 8.2)
+หน้าเว็บที่ Vite ส่งอยู่ที่ port 5173 จึงจะส่ง `Origin: http://localhost:5173` ซึ่ง server ปฏิเสธถ้าไม่เขียนใหม่ (ค่าตั้งอยู่ใน `web/vite.config.ts`)
+ถ้า server ไม่ได้ฟังที่ port 8000 ให้แก้ `SERVER_ORIGIN` ในไฟล์นั้น
+
+### 9.3 build แล้วเปิดจาก server
+
+```bash
+cd api-interop/gnss-predict/web && npm run build        # ได้ web/dist/ (Cesium Workers, Assets, Widgets, ThirdParty คัดลอกไป dist/cesium/)
+cd ../server && .venv/bin/python -m gnss_studio_server  # server ส่ง web/dist ที่ http://127.0.0.1:8000/
+```
+
+เปิด `http://127.0.0.1:8000/` ได้หน้า Welcome ถ้าไม่มี scenario ที่เปิดค้าง หรือเปิด scenario ตรงด้วย `http://127.0.0.1:8000/?sc=<ชื่อ scenario>`
+(ต่อท้าย `&test` จะเปิดฟังก์ชันสำหรับ test `window.__gnssStudioTest` ซึ่งใช้ใน e2e และการวัดประสิทธิภาพเท่านั้น)
+
+### 9.4 type ของ API
+
+type ฝั่งหน้าเว็บ (`web/src/api/types.gen.ts`, `enums.gen.ts`, `openapi.json`) สร้างจาก OpenAPI ของ server ไม่แก้มือ รันซ้ำทุกครั้งที่ API ของ server เปลี่ยน แล้ว commit ผล:
+
+```bash
+cd api-interop/gnss-predict/web
+npm run gen:api          # dump OpenAPI -> openapi-typescript -> enums
+npm run gen:api:check    # ตรวจว่า type ที่ commit ตรงกับ server ปัจจุบัน
+```
+
+### 9.5 การทดสอบทุกชั้น
+
+| ชั้น | คำสั่ง (จากโฟลเดอร์ที่ระบุ) | ตรวจอะไร |
+|---|---|---|
+| Vitest (jsdom, timezone America/New_York) | `cd web && npm test` | เวลา UTCG/LTZG, store, คำสั่ง, เมนู, Object Browser, Properties, Timeline, ฟังก์ชันล้วนของ Cesium (สี กราฟิก swath IPP) และ `labels.ts` เทียบ STK ref |
+| TypeScript | `cd web && npm run typecheck` | ทั้ง `src/`, `tests/` (รวม e2e) และ config |
+| Playwright (Chromium) | `cd web && npm run e2e` | build หน้าเว็บแล้วรัน `tests/e2e/*.spec.ts` กับ server จริงที่ port 8766 (ด้านล่าง) |
+| server | `cd server && .venv/bin/python -W error -m pytest -q` | API, job, ตัวตั้งเวลา (0 warning) |
+| engine | `python3 -m unittest discover -s tests` (จาก `gnss-predict`) | หัวข้อ 6 และ 7 |
+
+**e2e** ต้องมี Chromium ของ Playwright ครั้งเดียว: `cd web && npx playwright install chromium` (ดาวน์โหลดราว 260 MB จาก CDN ของ Playwright)
+`npm run e2e` ทำ `npm run build && playwright test` ใช้ `workers: 1` เพราะทุก spec ใช้ server และข้อมูลชุดเดียวกัน
+`playwright.config.ts` เปิด server เองด้วย `tests/e2e/start-server.sh` (ไม่ใช้ server ที่เปิดค้างไว้: `reuseExistingServer: false` จึงต้องไม่มีอะไรฟัง port 8766)
+
+- ข้อมูลของ e2e สร้างใหม่ทุกครั้งที่ `web/test-results/e2e-data` โดย `tests/e2e/fixture/build_fixture.py` (รันด้วย `server/.venv/bin/python -I`):
+  คัดลอก snapshot fixture ของ engine (`tests/fixtures/studio/snapshot`), เขียน `settings.json` ที่ปิดงานประจำวัน **ก่อน** server เริ่ม,
+  สร้าง scenario `E2E` (thbk-gnss ช่วง 2026-11-10 00:00–06:00 UTC **มีผลลัพธ์**), `E2E_NORES` (ชุดเดียวกัน ไม่มีผล) และ `E2E_EMPTY` (ว่าง)
+  ผลลัพธ์ของ `E2E` มาจาก `run_propagate` และ `run_analyze("THBK")` ของ engine จริง โดยแทน `propagate`, `find_gmat_console` และ `gmat_version`
+  ด้วยวงโคจรวงกลมปลอม (รัศมี G 26 560 km, R 25 508 km, E 29 600 km, BeiDou MEO/IGSO 27 906 km, GEO 42 164 km ที่ลองจิจูดคงที่; ตำแหน่ง Earth-fixed
+  คือวงกลมเฉื่อยหมุนด้วย ωe = 7.2921151467e-5 rad/s) จึงไม่ต้องใช้ GMAT และไฟล์มีรูปแบบเหมือนของจริงทุกประการ สคริปต์ปิดการเชื่อมต่อเครือข่ายขณะสร้าง
+- **ไม่มี test ใดดาวน์โหลดจากเน็ต**: server ของ e2e มี `GMAT_BIN=/nonexistent` และ `daily.enabled: false` และ spec ไม่เรียก
+  `/api/orbits/fetch`, `/api/daily/run` หรือ `/api/scenarios/*/validate` (CelesTrak จำกัดความถี่ และห้ามดึงโดยไม่ได้ยินยอม)
+- spec: `layout` (การจัดวางตั้งต้นตามหัวข้อ 4.2; ปิด Timeline View แล้ว Ctrl+S แล้ว reload ได้ layout เดิม), `animation` (Start, Pause, Step Forward ได้ 60 วินาทีพอดี, Reset),
+  `position` (ตำแหน่ง G01 ใน 3D ต่างจาก `predicted.sp3` ไม่เกิน 1 ม. หลายเวลา; ที่วัดได้ราว 0.5 มม.), `properties` (สีของดาว, Show Labels), `timeline`
+  (Set Animation Time to Here ตรงตำแหน่งที่คลิก), `insert` (Satellite จาก Catalog สองดวง + Constellation), `messages` (ข้อความของ job ขึ้น Message Viewer, Clear this Tab ลบเฉพาะแท็บ),
+  `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+- ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว
+
+### 9.6 วัดประสิทธิภาพ (เกณฑ์ข้อ 1 และ 2 ของ spec)
+
+เกณฑ์ข้อ 1: เปิด scenario รายวันแล้วภาพขึ้นภายใน 3 วินาที (`scene.czml` ราว 2–3 MB) วัดที่ `window.__gnssStudioTest.sceneLoadedAt()` (เวลาตั้งแต่เปิดหน้า)
+เกณฑ์ข้อ 2: กด Start แล้วดาว 130 ดวงเคลื่อนพร้อมกันไม่ต่ำกว่า 30 ภาพต่อวินาที วัดจำนวนเฟรมของหน้าต่าง 3D ใน 5 วินาที (ต้อง ≥ 150) ขณะหน้าต่าง 2D เปิดอยู่ด้วย
+ผลขึ้นกับเครื่องและ GPU จึงวัดบนเครื่องพัฒนาด้วย `--headed` (การเรนเดอร์ด้วย CPU/SwiftShader ใน headless ไม่ใช่ตัวตัดสิน
+`playwright.config.ts` ไม่ใส่ `--use-angle=swiftshader` เมื่อตั้ง `GNSS_E2E_PERF_URL`)
+
+ขั้นตอน (ห้ามเปิด server บน `data/` จริง เพราะงานประจำวันอาจดึงข้อมูลจาก CelesTrak):
+
+```bash
+# 1) โฟลเดอร์ data ชั่วคราว: เขียน settings.json ที่ปิดงานประจำวัน "ก่อน" เปิด server
+P=/tmp/gnss-perf; mkdir -p $P/scenarios $P/orbits
+printf '%s' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}' > $P/settings.json
+# 2) คัดลอกเท่านั้น (ไม่เปิด ไม่รันไฟล์ในนั้น): scenario รายวันที่มีผลแล้วกับ snapshot ที่มันใช้ (ชื่อใน orbit_snapshot ของ scenario.json)
+cp -R data/scenarios/acc_20261111 $P/scenarios/ && cp -R data/orbits/20261110T2147Z $P/orbits/
+# 3) เปิด server ที่ port 8767 (ไม่มี GMAT ก็ได้เพราะผลมีอยู่แล้ว)
+cd server && GNSS_STUDIO_DATA=$P GNSS_STUDIO_PORT=8767 GMAT_BIN=/nonexistent .venv/bin/python -m gnss_studio_server
+# 4) วัด (terminal อื่น) แล้วปิด server ด้วย Ctrl-C; พิมพ์ "PERF load: ..." และ "PERF frames in 5 s: ..."
+cd web && GNSS_E2E_PERF_URL="http://127.0.0.1:8767/?sc=acc_20261111&test" npx playwright test perf.spec.ts --headed
+```
+
+(ถ้า scenario ที่ใช้ไม่ตรง `GET /api/scenarios/<ชื่อ>/results` ต้องตอบ `ephem.status` เป็น `current` ไม่งั้นหน้าต่าง 3D แสดงแถบ "ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบัน" และไม่โหลดภาพ)
+
+**ผลที่วัด** (2026-11-12, Apple M5 Pro 16 core, macOS 26.4.1, Chromium 158 ของ Playwright 1.65.0, หน้าต่าง 1440×900,
+scenario `acc_20261111`: วัตถุ 132 ชิ้น, `scene.czml` 2.1 MB, server ในเครื่อง):
+
+| วัดแบบ | โหลดภาพ (`sceneLoadedAt`, เกณฑ์ ≤ 3000 ms) | เฟรมใน 5 วินาที (เกณฑ์ ≥ 150) |
+|---|---|---|
+| `--headed` รันแรก (cache เย็น) | 2944 ms | 384 (76.8 ภาพ/วินาที) |
+| `--headed` รันซ้ำ 3 ครั้ง | 1496, 1329, 1212 ms | 387, 366, 401 (73–80 ภาพ/วินาที) |
+| headless บน GPU (ไม่ใช้ SwiftShader) 2 ครั้ง | 748, 620 ms | 302, 305 (ราว 60 ภาพ/วินาที ตาม vsync) |
+
+ทั้งสองเกณฑ์ผ่านบนเครื่องนี้ แต่รันแรกที่ cache เย็นใกล้เส้น 3 วินาที (2944 ms) เครื่องที่ช้ากว่านี้หรือไม่มี GPU อาจไม่ผ่าน
+ตัวเลขเฟรมนับเฉพาะ viewer 3D ตัวแรก (หน้าต่าง 2D วาดพร้อมกันแต่ไม่ถูกนับ)
+
+### 9.7 browser ที่รองรับ
+
+ต้องมี WebGL (Cesium วาด 3D และ 2D ด้วย WebGL) ทดสอบเฉพาะ Chromium รุ่นล่าสุด (Chrome, Edge ที่ใช้แกน Chromium) ส่วน Firefox และ Safari ยังไม่ได้ทดสอบ
+browser ที่ไม่มี WebGL (หรือปิดการเร่งด้วยฮาร์ดแวร์) แสดงข้อความไทยแทนภาพ 3D และ 2D ส่วน Object Browser, Properties และเมนูยังใช้ได้
+โปรแกรมทำงานกับ server ในเครื่องเท่านั้น ไม่โหลดฟอนต์หรือ script จากเน็ต เมนู ปุ่ม และหน้าตั้งค่าเป็นภาษาอังกฤษตามชื่อใน STK ส่วนข้อความอธิบายและข้อผิดพลาดเป็นภาษาไทย
+คีย์ลัดที่ใช้ได้คือ Ctrl+S, Delete, Ctrl+F เท่านั้น (Ctrl+N, Ctrl+O, Ctrl+Q เป็นของ browser)
+
+### 9.8 ข้อจำกัดของ v1
+
+- **Visible Sides** ของ 2D Graphics - Pass เก็บและแก้ได้ แต่ v1 วาดเส้นทางแบบ `Both` เสมอ (หน้าแสดงหมายเหตุไทย)
+- หน้าต่าง 2D แสดงแผนที่ในกรอบ **ECF** เท่านั้น (Display Coordinate Frame เลือก ECI ไม่ได้)
+- เมนู **Analysis** (Access..., Report & Graph Manager..., Validation...) และปุ่มบนแถบเครื่องมือที่เกี่ยวข้องปิดใช้ รอ **งานย่อยที่ 4**
+  (Access tool, Report & Graph Manager และหน้า Validation) แถว Timeline แสดงช่วงเวลาของ access ที่ scenario เปิด Timeline ไว้ (แม่แบบ thbk-gnss มีให้แล้ว)
+- ภาพแสงไฟเมืองตอนกลางคืน (Night Lights Level) ต้องใช้ภาพจาก Cesium ion จึงไม่มีในรุ่นออฟไลน์นี้ (เก็บค่าไว้แต่ไม่มีผลต่อภาพ)
+- Cut, Copy และ Paste ใน Object Browser ใช้ได้เฉพาะดาว ไม่รองรับการเปลี่ยนชื่อหรือลบกลุ่ม ไม่ใช่โปรแกรมหลายผู้ใช้ ไม่มีธีมมืด และไม่รองรับมือถือ

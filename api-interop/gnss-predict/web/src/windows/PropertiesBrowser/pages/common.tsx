@@ -8,7 +8,7 @@ import { CheckRow, ChoiceRow, ColorRow, NumberRow } from "../fields";
 export function Attributes2dPage({ satellite }: { satellite: boolean }) {
   return (
     <>
-      <ColorRow k="graphics2d.color" label={t("field.color")} />
+      <ColorRow k="graphics2d.color" label={t("field.color")} untick="graphics2d.inherit" />
       {satellite && (
         <>
           <ChoiceRow k="graphics2d.line_style" label={t("field.lineStyle")} options={ENUMS.LineStyle} labelOf={(c) => optionLabel("line_style", c)} nullable />
