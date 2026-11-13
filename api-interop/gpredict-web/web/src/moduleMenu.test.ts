@@ -25,7 +25,7 @@ describe("moduleMenu (ref §2)", () => {
     { norad: 7530, name: "OSCAR 7" },
   ];
 
-  it("has the items of Gpredict's module popup in order; Autotrack, Select satellite, Time Controller, Configure, Clone, Delete and Close work", () => {
+  it("has the items of Gpredict's module popup in order; Autotrack, Select satellite, Sky at a glance, Time Controller, Configure, Clone, Delete and Close work", () => {
     expect(outline(moduleMenu({ autotrack: false, choices, selected: null }))).toEqual([
       "Detach module (later 4)",
       "Full screen (later 4)",
@@ -35,7 +35,7 @@ describe("moduleMenu (ref §2)", () => {
       "  ( ) ISS",
       "  ( ) OSCAR 7",
       "-",
-      "Sky at a glance (later 2)",
+      "Sky at a glance",
       "Time Controller",
       "-",
       "Radio Control (later 3)",
@@ -75,7 +75,7 @@ describe("moduleMenu (ref §2)", () => {
       ["Detach module", undefined],
       ["Full screen", undefined],
       ["Autotrack", { type: "autotrack", on: true }],
-      ["Sky at a glance", undefined],
+      ["Sky at a glance", { type: "skyGlance" }],
       ["Time Controller", { type: "timeController" }],
       ["Radio Control", undefined],
       ["Antenna Control", undefined],
@@ -84,6 +84,12 @@ describe("moduleMenu (ref §2)", () => {
       ["Delete", { type: "delete" }],
       ["Close", { type: "close" }],
     ]);
+  });
+
+  it("module menu enables Sky at a glance: it is not a later item and its action opens the window", () => {
+    const item = moduleMenu({ autotrack: false, choices, selected: null }).find((e) => e.kind === "item" && e.label === "Sky at a glance");
+    expect(item).toEqual({ kind: "item", label: "Sky at a glance", action: { type: "skyGlance" } });
+    expect(item).not.toHaveProperty("later");
   });
 
   it("turns Autotrack off when it is chosen while on", () => {

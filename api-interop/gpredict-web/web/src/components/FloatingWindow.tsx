@@ -13,6 +13,8 @@ interface Props {
   initialPosition?: Point;
   /** width of the window in px. Default: as wide as its content (`max-content`) */
   width?: number;
+  /** (ของเรา) when this number changes the window comes to the front and takes the focus: the menu item that opens a window that is already open */
+  raiseToken?: number;
 }
 
 // ---------------------------------------------------------------- the stack of open windows (the last is in front)
@@ -43,7 +45,7 @@ function viewportSize(): Size {
  * button, dragged by the title bar, always kept inside the page, closed by Escape when it is in front. A press on a
  * window brings it to the front. It does not block the page behind it.
  */
-export function FloatingWindow({ title, onClose, children, initialPosition, width }: Props) {
+export function FloatingWindow({ title, onClose, children, initialPosition, width, raiseToken }: Props) {
   const id = useId();
   const titleId = `${id}-title`;
   const box = useRef<HTMLDivElement>(null);
@@ -120,6 +122,14 @@ export function FloatingWindow({ title, onClose, children, initialPosition, widt
   const raise = () => {
     if (stack[stack.length - 1] !== id) setStack([...stack.filter((w) => w !== id), id]);
   };
+
+  const raised = useRef(raiseToken);
+  useEffect(() => {
+    if (raised.current === raiseToken) return;
+    raised.current = raiseToken;
+    raise();
+    box.current?.focus({ preventScroll: true });
+  }, [raiseToken]); // `raise` only reads the stack, which is not state of this window
 
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button") !== null) return;

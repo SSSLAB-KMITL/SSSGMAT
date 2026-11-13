@@ -1294,6 +1294,42 @@ body {
   border-radius: 3px;
 }
 
+/* ---------------------------------------------------------------- Sky at a glance (ref-P §7) */
+
+/* The chart's size is the window's: it opens at the size of skyLayout and the corner makes it bigger, never smaller (the minimum is set inline) */
+.sky-holder {
+  position: relative;
+  overflow: hidden;
+  resize: both;
+  background: var(--view);
+}
+.sky-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 16px;
+  text-align: center;
+}
+.sky-status p {
+  margin: 0;
+}
+.sky-empty {
+  margin: 0;
+  padding: 4px;
+}
+.sky-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sky-error .dialog-error {
+  flex: 1;
+}
+
 /* ---------------------------------------------------------------- Pass details and Upcoming passes (ref-P §2, §3) */
 
 /*

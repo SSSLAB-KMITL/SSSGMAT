@@ -18,11 +18,11 @@ const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
   // Help: "ไม่มี News" - there is no News item at all
   ["Detach module", 4, "Module menu"],
   ["Full screen", 4, "Module menu"],
-  ["Sky at a glance", 2, "Module menu"],
   ["Radio Control", 3, "Module menu"],
   ["Antenna Control", 3, "Module menu"],
   ["Satellite info", 4, "popups of List, Map, Polar; the bold name of Single sat and Event list; the double click"],
-  // Show current pass, Show next pass and Future passes work since sub-project 2 (Task 13), so they are not here any more
+  // Show current pass, Show next pass and Future passes work since sub-project 2 (Task 13), and so does Sky at a glance (Task 14):
+  // they are not here any more
 ];
 
 describe("LATER (spec §8.2)", () => {
@@ -38,9 +38,12 @@ describe("LATER (spec §8.2)", () => {
     expect(LATER).not.toHaveProperty("News");
   });
 
-  it("has no Preferences: Edit → Preferences opens the window (Sky at a glance follows in its own task)", () => {
+  it("has no Preferences: Edit → Preferences opens the window", () => {
     expect(LATER).not.toHaveProperty("Preferences");
-    expect(LATER).toHaveProperty("Sky at a glance");
+  });
+
+  it("has no Sky at a glance: Module menu → Sky at a glance opens its window", () => {
+    expect(LATER).not.toHaveProperty("Sky at a glance");
   });
 
   it("has no pass items: Show current pass, Show next pass and Future passes open the pass windows", () => {
@@ -50,7 +53,7 @@ describe("LATER (spec §8.2)", () => {
 
 describe("laterOf", () => {
   it("gives the sub-project of a label in LATER", () => {
-    expect(laterOf("Sky at a glance")).toBe(2);
+    expect(laterOf("Detach module")).toBe(4);
     expect(laterOf("Radio Control")).toBe(3);
     expect(laterOf("Update TLE data from local files")).toBe(4);
   });
@@ -59,5 +62,6 @@ describe("laterOf", () => {
     expect(() => laterOf("Preference")).toThrow();
     expect(() => laterOf("Preferences")).toThrow(); // it works now
     expect(() => laterOf("Show next pass")).toThrow(); // so do the pass items
+    expect(() => laterOf("Sky at a glance")).toThrow(); // and Sky at a glance
   });
 });

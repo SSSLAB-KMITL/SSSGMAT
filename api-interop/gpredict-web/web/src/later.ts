@@ -17,7 +17,7 @@ export function laterTooltip(n: 2 | 3 | 4): string {
  * Every item of Gpredict's menus that cannot be used yet (the column "กดไม่ได้" of the table in spec §8.2), by its label as
  * Gpredict writes it, and the sub-project that adds it. "Satellite info" is also the bold satellite name of the Single sat and
  * Event list popups and the double click on a satellite. Help has no News (spec §8.2). Show current pass, Show next pass and
- * Future passes were here until sub-project 2 made them real (Task 13); "Sky at a glance" follows (Task 14).
+ * Future passes were here until sub-project 2 made them real (Task 13), and so was "Sky at a glance" (Task 14).
  */
 export const LATER: Readonly<Record<string, 2 | 3 | 4>> = {
   // File
@@ -28,7 +28,6 @@ export const LATER: Readonly<Record<string, 2 | 3 | 4>> = {
   // Module menu
   "Detach module": 4,
   "Full screen": 4,
-  "Sky at a glance": 2,
   "Radio Control": 3,
   "Antenna Control": 3,
   // the satellite popups

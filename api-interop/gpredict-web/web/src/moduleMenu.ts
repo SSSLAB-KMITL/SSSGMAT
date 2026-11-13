@@ -9,6 +9,7 @@ import { compareNames } from "./views/cells";
 export type ModuleAction =
   | { type: "autotrack"; on: boolean }
   | { type: "select"; norad: number }
+  | { type: "skyGlance" }
   | { type: "timeController" }
   | { type: "configure" }
   | { type: "clone" }
@@ -37,8 +38,8 @@ export interface ModuleMenuState {
 
 /**
  * Gpredict's module popup, docked: Detach module, Full screen, Autotrack, Select satellite, Sky at a glance, Time Controller,
- * Radio Control, Antenna Control, Configure, Clone..., Delete, Close. Detach, Full screen, Sky at a glance and the two controls
- * are for later sub-projects (spec §8.2). Select satellite is off while there is no satellite to choose.
+ * Radio Control, Antenna Control, Configure, Clone..., Delete, Close. Detach, Full screen and the two controls are for later
+ * sub-projects (spec §8.2); Sky at a glance opens its window (sub-project 2, Task 14). Select satellite is off while there is no satellite to choose.
  */
 export function moduleMenu({ autotrack, choices, selected }: ModuleMenuState): MenuSpec<ModuleAction>[] {
   return [
@@ -53,7 +54,7 @@ export function moduleMenu({ autotrack, choices, selected }: ModuleMenuState): M
       items: choices.map((c): MenuSpec<ModuleAction> => ({ kind: "radio", label: c.name, checked: c.norad === selected, action: { type: "select", norad: c.norad } })),
     },
     SEPARATOR,
-    laterItem("Sky at a glance"),
+    { kind: "item", label: "Sky at a glance", action: { type: "skyGlance" } },
     { kind: "item", label: "Time Controller", action: { type: "timeController" } },
     SEPARATOR,
     laterItem("Radio Control"),

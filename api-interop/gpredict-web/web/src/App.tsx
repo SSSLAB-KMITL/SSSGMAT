@@ -21,6 +21,9 @@ import { overlayFor } from "./overlay";
 import { PassWindows } from "./passes/PassWindowsHost";
 import { closeWindow, openWindow } from "./passes/passWindows";
 import type { PassWindow } from "./passes/passWindows";
+import { closeSky, openSky, pruneSky } from "./passes/skyGlance";
+import type { SkyOpen } from "./passes/skyGlance";
+import { SkyGlanceWindow } from "./passes/SkyGlanceWindow";
 import { runQuit } from "./quit";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
@@ -73,6 +76,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [timeController, setTimeController] = useState<string | null>(null); // module whose Time Controller is open
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]); // the floating dialogs that are open
   const [passWindows, setPassWindows] = useState<readonly PassWindow[]>([]); // the Pass details and Upcoming passes windows that are open
+  const [skyGlance, setSkyGlance] = useState<SkyOpen>(new Map()); // the modules whose "The sky at a glance" window is open (it shows with its module's tab)
   const [moduleMenu, setModuleMenu] = useState<{ x: number; y: number } | null>(null); // the Module menu, where it is open
   const [selections, setSelections] = useState<Selections>({}); // the selected satellite of each module (not saved)
   const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
@@ -120,9 +124,10 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const satNames = useSeenNames(current, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current);
 
-  // the selection and Autotrack of a module that is not open any more are forgotten
+  // the selection, Autotrack and the Sky at a glance window of a module that is not open any more are forgotten
   useEffect(() => {
     setSelections((s) => pruneToOpen(s, open));
+    setSkyGlance((s) => pruneSky(s, open));
     setAutotrack((a) => {
       const kept = [...a].filter((m) => open.includes(m));
       return kept.length === a.size ? a : new Set(kept);
@@ -188,6 +193,10 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [timeController, addLocalError],
   );
   const closeTimeController = useCallback(() => setTimeController(null), []);
+  /** Closing the Sky at a glance window of the module whose tab is shown (the window releases what the server holds for it) */
+  const closeSkyGlance = useCallback(() => {
+    if (current !== null) setSkyGlance((s) => closeSky(s, current));
+  }, [current]);
 
   const retry = useCallback(
     async (module: string) => {
@@ -286,6 +295,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
         return setAutotrack((a) => withMember(a, current, action.on));
       case "select":
         return selectEverywhere(action.norad);
+      case "skyGlance":
+        return setSkyGlance((s) => openSky(s, current)); // opens the window, or brings the open one to the front (ref-P §7.1)
       case "timeController":
         return openTimeController(current);
       case "configure":
@@ -406,6 +417,17 @@ function Main({ onStopped }: { onStopped: () => void }) {
         onTleUpdated={tleUpdated}
       />
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
+      {current !== null && config !== null && skyGlance.has(current) && (
+        <SkyGlanceWindow
+          key={current}
+          module={current}
+          satellites={config.satellites}
+          tick={tick}
+          raiseToken={skyGlance.get(current)!}
+          onOpenPassWindow={openPassWindow}
+          onClose={closeSkyGlance}
+        />
+      )}
       {current !== null && timeController === current && (
         <TimeController
           key={current}
