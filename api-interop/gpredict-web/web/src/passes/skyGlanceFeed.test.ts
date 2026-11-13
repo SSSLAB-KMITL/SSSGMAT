@@ -186,10 +186,88 @@ describe("later drawings", () => {
     feed.first(T);
     feed.rebuild();
     await flush();
-    expect(last().answer).toBe(newer);
     api.settle(ok("older"));
     await flush();
     expect(last().answer).toBe(newer);
+  });
+});
+
+describe("one request at a time (the server builds every drawing it is asked for)", () => {
+  it("a rebuild while a request is open waits for its answer, then asks once without t", async () => {
+    const { api, feed, last } = setup();
+    const newer = ok("newer");
+    api.hold().answers(newer);
+    feed.first(T);
+    feed.rebuild();
+    feed.rebuild();
+    await flush();
+    expect(api.calls).toEqual([T]); // nothing more while the first is open
+    expect(last()).toEqual({ answer: null, computing: true, error: null });
+    api.settle(ok("older"));
+    await flush();
+    expect(api.calls).toEqual([T, undefined]); // two rebuilds, one request
+    expect(last()).toEqual({ answer: newer, computing: false, error: null });
+  });
+
+  it("a rebuild while a poll is open waits for it too", async () => {
+    const { api, timer, feed, last } = setup();
+    const first = ok("first");
+    const second = ok("second");
+    api.answers(first, reply("computing")).hold().answers(second);
+    feed.first(T);
+    await flush();
+    feed.rebuild();
+    await flush();
+    timer.fire(); // the poll of the rebuild is open
+    await flush();
+    feed.rebuild();
+    feed.rebuild();
+    await flush();
+    expect(api.calls).toEqual([T, undefined, undefined]);
+    api.settle(reply("computing"));
+    await flush();
+    expect(api.calls).toEqual([T, undefined, undefined, undefined]);
+    expect(timer.pending.size).toBe(0); // the answer of the open poll was dropped: no poll for it
+    expect(last()).toEqual({ answer: second, computing: false, error: null });
+  });
+
+  it("the failure of the open request is dropped when a rebuild waits", async () => {
+    const { api, feed, last } = setup();
+    const newer = ok("newer");
+    api.hold().answers(newer);
+    feed.first(T);
+    feed.rebuild();
+    api.settle(new Error("the server went away"));
+    await flush();
+    expect(api.calls).toEqual([T, undefined]);
+    expect(last()).toEqual({ answer: newer, computing: false, error: null });
+  });
+
+  it("closing the window while a rebuild waits asks for nothing more", async () => {
+    const { api, feed } = setup();
+    api.hold();
+    feed.first(T);
+    feed.rebuild();
+    feed.stop();
+    api.settle(ok());
+    await flush();
+    expect(api.calls).toEqual([T]);
+  });
+
+  it("Retry while a request is open waits for it too", async () => {
+    const { api, feed, last } = setup();
+    const second = ok("second");
+    api.answers(reply("failed")).hold().answers(second);
+    feed.first(T);
+    await flush();
+    feed.rebuild(); // open
+    feed.retry(); // the release goes now, the request after the open one lands
+    await flush();
+    expect(api.log).toEqual([`get ${T}`, "get -", "release"]);
+    api.settle(ok("dropped"));
+    await flush();
+    expect(api.log).toEqual([`get ${T}`, "get -", "release", "get -"]);
+    expect(last().answer).toBe(second);
   });
 });
 

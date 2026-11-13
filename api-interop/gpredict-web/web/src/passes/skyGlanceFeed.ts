@@ -7,6 +7,10 @@
 // whenever `t` is sent, so the first drawing can start at real time; if the polls left `t` out, the server would start at module time
 // instead, which can be another day and would drop the GMAT job it has under way. Every later drawing (the chart has to be built again,
 // `needsRedraw`) sends no `t`: it starts at the module time, always.
+//
+// (ของเรา) One request at a time: the server builds a whole drawing for every request that finds the ephemeris ready, so a window that
+// asked at every tick of a fast Time Controller would pile builds up. While a request is open, a new drawing (or Retry) only marks that
+// one is wanted; when the open request lands its answer is dropped and exactly one request for the newest drawing goes out.
 
 import { errorText } from "../api";
 import { browserTimer } from "../useModuleSocket";
@@ -55,6 +59,10 @@ export class SkyGlanceFeed {
   private stopped = false;
   /** the `t` of the newest request, which Retry sends again */
   private lastT: string | undefined;
+  /** a GET is on its way: no other one goes out until it lands */
+  private open = false;
+  /** a newer request was made while one was open: it goes out when the open one lands */
+  private waiting = false;
 
   constructor(
     private readonly api: SkyApi,
@@ -67,7 +75,10 @@ export class SkyGlanceFeed {
     this.begin(t);
   }
 
-  /** A later drawing: asks without `t`, so the server starts at the module time. It takes over from a drawing that is still computing. */
+  /**
+   * A later drawing: asks without `t`, so the server starts at the module time. It takes over from a drawing that is still computing;
+   * while a request is open it is asked when that one lands, and several rebuilds in that time are one request.
+   */
   rebuild(): void {
     this.begin(undefined);
   }
@@ -84,7 +95,7 @@ export class SkyGlanceFeed {
       .release()
       .catch(ignore)
       .then(() => {
-        if (id === this.serial) this.ask(id, this.lastT);
+        if (id === this.serial) this.request();
       });
   }
 
@@ -98,10 +109,10 @@ export class SkyGlanceFeed {
 
   private begin(t: string | undefined): void {
     if (this.stopped) return;
-    const id = this.newest();
+    this.newest();
     this.lastT = t;
     this.show({ ...this.view, computing: true, error: null });
-    this.ask(id, t);
+    this.request();
   }
 
   /** Makes a new request the newest: the polls and answers of the ones before are dropped. Returns its number. */
@@ -111,18 +122,35 @@ export class SkyGlanceFeed {
     return ++this.serial;
   }
 
+  /** Asks for the newest request now, or when the request that is open lands. */
+  private request(): void {
+    if (this.open) this.waiting = true;
+    else this.ask(this.serial, this.lastT);
+  }
+
   private ask(id: number, t: string | undefined): void {
+    this.open = true;
     this.api.get(t).then(
       (a) => {
-        if (id === this.serial) this.take(id, a, t);
+        this.landed();
+        if (id === this.serial) this.take(id, a);
       },
       (e: unknown) => {
+        this.landed();
         if (id === this.serial) this.show({ ...this.view, computing: false, error: errorText(e) });
       },
     );
   }
 
-  private take(id: number, a: SkyGlanceAnswer, t: string | undefined): void {
+  /** The open request has its answer: the request that waited for it (a newer one, so this answer is dropped) goes out. */
+  private landed(): void {
+    this.open = false;
+    if (!this.waiting) return;
+    this.waiting = false;
+    if (!this.stopped) this.ask(this.serial, this.lastT);
+  }
+
+  private take(id: number, a: SkyGlanceAnswer): void {
     switch (a.status) {
       case "ok":
         this.show({ answer: a, computing: false, error: null });
@@ -130,7 +158,7 @@ export class SkyGlanceFeed {
       case "computing":
         this.poll = this.timer.set(() => {
           this.poll = null;
-          if (id === this.serial) this.ask(id, t);
+          if (id === this.serial) this.request();
         }, SKY_POLL_MS);
         return;
       case "failed":
