@@ -69,7 +69,7 @@ export function azElToXY(az: number, el: number, cx: number, cy: number, r: numb
 export function xyToAzEl(x: number, y: number, cx: number, cy: number, r: number, orientation: Orientation): [number, number] {
   const [dx, dy] = [x - cx, y - cy];
   const el = r > 0 ? (90 * (r - Math.hypot(dx, dy))) / r : -90;
-  const theta = (((Math.atan2(dx, -dy) / DEG) % 360) + 360) % 360;
+  const theta = (((Math.atan2(dx, cy - y) / DEG) % 360) + 360) % 360; // `cy - y` as Gpredict has it: `-dy` is -0 at the centre, and atan2(0, -0) is 180 degrees
   return [azimuthAt(theta, orientation), el];
 }
 

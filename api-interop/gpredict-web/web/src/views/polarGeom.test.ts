@@ -132,6 +132,13 @@ describe("xyToAzEl", () => {
     }
   });
 
+  it("reads the exact centre as azimuth 0 before the orientation, as Gpredict's atan2(x - cx, cy - y) does (not 180)", () => {
+    expect(xyToAzEl(CX, CY, CX, CY, R, "N/E/S/W")[0]).toBe(0);
+    expect(xyToAzEl(CX, CY, CX, CY, R, "S/E/N/W")[0]).toBe(180);
+    expect(xyToAzEl(CX, CY, CX, CY, R, "S/W/N/E")[0]).toBe(180);
+    expect(xyToAzEl(CX, CY, CX, CY, R, "N/W/S/E")[0]).toBe(0);
+  });
+
   it("does not divide by a radius of 0", () => {
     const [, el] = xyToAzEl(10, 10, 0, 0, 0, "N/E/S/W");
     expect(el).toBeLessThan(0);
