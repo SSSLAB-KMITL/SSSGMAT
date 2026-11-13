@@ -1193,7 +1193,8 @@ body {
   stroke-width: 3;
   stroke-linecap: round;
 }
-.no-pass-icon .dot {
+.no-pass-icon circle.dot {
+  /* as specific as `.no-pass-icon.info circle` and after it, so the dot of the "i" stays white on the disc */
   fill: #ffffff;
 }
 .no-pass-text {
