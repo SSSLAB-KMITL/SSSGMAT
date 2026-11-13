@@ -3,9 +3,11 @@
 (ยกเว้น test ของจังหวะ timer) วิทยุอยู่ใน data dir ชั่วคราว Host "localhost" port ของ fake"""
 
 import asyncio
+import gc
 import json
 import time
 import unittest
+import warnings
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -549,6 +551,33 @@ class ErrorAndTimerTest(RigTestCase):
         await ctl.act({"action": "engage", "on": False})
         self.assertFalse(ctl.engaged)
 
+    async def test_concurrent_engage_off_and_on(self):
+        # สองคำขอซ้อนกัน (ดับเบิลคลิกหรือสองแท็บ) ระหว่างรอบที่ rigctld ตอบช้า: off ต้องปิดการเชื่อมต่อเดิมให้จบก่อน on เริ่ม
+        self.write_radio("A")
+        ctl = self.controller(timer=True)
+        await ctl.act({"action": "cycle", "ms": 10})
+        with warnings.catch_warnings(record=True) as caught, self.assertNoLogs(LOGGER, "ERROR"):
+            warnings.simplefilter("always", ResourceWarning)
+            await self.engage(ctl)
+            await until(lambda: b"f\n" in self.fake.log)                       # รอบแรกจบ การเชื่อมต่อเปิดอยู่
+            self.fake.delay_s = 0.1
+            reads = self.fake.log.count(b"f\n")
+            await until(lambda: self.fake.log.count(b"f\n") > reads)           # มีรอบที่รอคำตอบอยู่
+            off = asyncio.create_task(ctl.act({"action": "engage", "on": False}))
+            await asyncio.sleep(0)
+            on = asyncio.create_task(ctl.act({"action": "engage", "on": True}))
+            await asyncio.gather(off, on)
+            self.fake.delay_s = 0.0
+            await until(lambda: self.fake.log.count(b"\\set_vfo_opt 1\n") == 2)   # การเชื่อมต่อใหม่ถูกตรวจ VFO option
+            self.assertTrue(ctl.engaged)
+            log = self.fake.log
+            self.assertEqual(log.count(b"q\n"), 1)                              # q ไปที่การเชื่อมต่อเดิมครั้งเดียว ก่อนการเชื่อมต่อใหม่
+            self.assertLess(log.index(b"q\n"), len(log) - 1 - log[::-1].index(b"\\set_vfo_opt 1\n"))
+            await ctl.act({"action": "engage", "on": False})
+            await until(lambda: self.fake.log.count(b"q\n") == 2)                # การเชื่อมต่อใหม่ก็ปิดด้วย q
+            gc.collect()
+        self.assertEqual([w for w in caught if issubclass(w.category, ResourceWarning)], [])
+
     async def test_disengage_ft817_split_off_then_q(self):
         self.write_radio("A", Type=4)
         ctl = self.controller()
@@ -569,6 +598,16 @@ class ErrorAndTimerTest(RigTestCase):
         self.assertFalse(ctl.engaged)
         self.assertEqual(self.hw.radio("A").cycle, 2000)
         await until(lambda: self.fake.log[-1:] == [b"q\n"])
+
+    async def test_act_after_close_is_refused(self):
+        self.write_radio("A")
+        ctl = self.controller()
+        await ctl.close()
+        with self.assertRaises(ApiError) as raised:
+            await ctl.act({"action": "engage", "on": True})
+        self.assertEqual((raised.exception.code, raised.exception.status), ("CONTROLLER_INVALID", 422))
+        self.assertFalse(ctl.engaged)
+        self.assertEqual(self.fake.log, [])
 
     async def test_close_logs_save_failure(self):
         self.write_radio("A")

@@ -284,6 +284,8 @@ class RigController:
       spec §9.1 ข้อ 8) นับครั้งเดียวต่ออุปกรณ์ต่อรอบ คำสั่งที่เหลือของรอบไม่ถูกส่ง (rigctld ที่ตายจึง disengage ใน 5 รอบ)
       AOS/LOS ที่ไม่ได้คำตอบไม่นับ (decision 12) แต่การเชื่อมต่อถูกปิด จึงต่อใหม่ก่อนทำ cycle ในรอบเดียวกัน
     - status (ของเรา): ข้อผิดพลาดล่าสุดเป็นภาษาไทย หายเมื่อตั้งความถี่สำเร็จหรือ Engage ใหม่ และเหตุที่ disengage เอง
+    - act และ close ทำทีละคำขอ (ของเรา): engage off ที่รอรอบช้าๆ ต้องปิดการเชื่อมต่อเดิมให้จบก่อน engage on ของอีกคำขอเริ่ม
+      หลัง close ทุก act ได้ CONTROLLER_INVALID (หน้าต่างปิดแล้ว) close ซ้ำไม่ทำอะไร
     """
 
     def __init__(self, module: str, hw: HwConf, sats: list[tuple[int, str]], target: int | None,
@@ -328,6 +330,8 @@ class RigController:
         self._last_toggle: float | None = None                   # เวลาที่ FT817 (auto) อัปเดต TX ล่าสุด None = ยังไม่เคย
         self._status: str | None = None
         self._busy = asyncio.Lock()                              # หนึ่งรอบหรือหนึ่ง SPACE ต่อครั้ง
+        self._acting = asyncio.Lock()                            # หนึ่ง act หรือ close ต่อครั้ง
+        self._closed = False
         self._wake = asyncio.Event()
         self._restart = False
         self._task: asyncio.Task | None = None
@@ -405,14 +409,16 @@ class RigController:
         action = body.get("action") if isinstance(body, dict) else None
         if not isinstance(action, str) or action not in handlers:
             raise _invalid("action", "action ต้องเป็นหนึ่งใน " + ", ".join(handlers))
-        await handlers[action](body)
+        async with self._acting:
+            if self._closed:
+                raise _invalid("action", f"หน้าต่าง Radio Control ของ module {self.module} ปิดแล้ว")
+            await handlers[action](body)
 
     async def _act_engage(self, body: dict) -> None:
         on = _flag(body, "on")
         if on and not self.engaged:
-            await self._settle()
-            if not self.engaged:
-                self._engage()
+            await self._settle()                                 # รอบที่กำลัง disengage เองจาก error ให้จบก่อน
+            self._engage()
         elif not on and self.engaged:
             await self._disengage()
 
@@ -610,11 +616,18 @@ class RigController:
 
     async def close(self) -> None:
         """หน้าต่างปิด (ref-R §3.1 "Window closed"): disengage ถ้า Engage อยู่ แล้วเก็บ Cycle ลงไฟล์ของอุปกรณ์ 1
-        เก็บไม่ได้แค่ log การปิดไม่ล้มเพราะเรื่องนี้ เรียกซ้ำได้"""
-        if self.engaged:
-            await self._disengage()
-        else:
-            await self._settle()
+        เก็บไม่ได้แค่ log การปิดไม่ล้มเพราะเรื่องนี้ เรียกซ้ำได้ (ครั้งหลังไม่ทำอะไร)"""
+        async with self._acting:
+            if self._closed:
+                return
+            self._closed = True
+            if self.engaged:
+                await self._disengage()
+            else:
+                await self._settle()
+            self._save_cycle()
+
+    def _save_cycle(self) -> None:
         conf = self._conf1
         if conf is None:
             return
