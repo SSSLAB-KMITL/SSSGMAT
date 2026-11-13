@@ -48,16 +48,21 @@ function isApiMessage(v: unknown): v is ApiMessage {
   return typeof v === "object" && v !== null && typeof (v as ApiMessage).code === "string" && typeof (v as ApiMessage).text === "string";
 }
 
-/** Send a request; throws ApiError if the server cannot be reached or answers with status >= 400. */
-async function send(method: string, path: string, body?: unknown): Promise<Response> {
+/**
+ * Send a request; throws ApiError if the server cannot be reached or answers with status >= 400.
+ * Aborting `signal` (ของเรา: the Cancel of a pass request) is not a failure of the server: the fetch's own AbortError is let through.
+ */
+async function send(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (e) {
+    if (signal?.aborted) throw e;
     throw new ApiError("NETWORK_ERROR", "ติดต่อ server ไม่ได้ (server ปิดอยู่หรือเครือข่ายขัดข้อง)", 0);
   }
   if (res.status >= 400) {
@@ -75,13 +80,14 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
   return res;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await send(method, path, body);
+/** One call of the server: the JSON answer (undefined for a 204). `signal` aborts it. Throws ApiError, or AbortError after an abort. */
+export async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await send(method, path, body, signal);
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-const seg = encodeURIComponent;
-const moduleUrl = (name: string) => `/api/modules/${seg(name)}`;
+export const seg = encodeURIComponent;
+export const moduleUrl = (name: string) => `/api/modules/${seg(name)}`;
 
 // ---------------------------------------------------------------- QTH
 
