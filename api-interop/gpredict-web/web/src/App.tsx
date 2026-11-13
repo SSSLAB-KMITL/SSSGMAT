@@ -419,7 +419,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
       {current !== null && config !== null && skyGlance.has(current) && (
         <SkyGlanceWindow
-          key={current}
+          key={`sky:${current}`} // not the Time Controller's key: siblings with one key are mixed up by React (appKeys.test.ts)
           module={current}
           satellites={config.satellites}
           tick={tick}
