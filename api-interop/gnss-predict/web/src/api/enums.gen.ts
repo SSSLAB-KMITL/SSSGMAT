@@ -14,4 +14,8 @@ export const ENUMS = {
   UpdateMode: ["time_step", "real_time", "x_real_time"],
   Cycle: ["off", "stop", "loop"],
   DateFormat: ["UTCG", "LTZG"],
+  SensorDefinitionType: ["Simple Conic"],
+  SensorPointingType: ["Fixed"],
+  SensorOrientation: ["Az-El"],
+  SensorAboutBoresight: ["Rotate"],
 } as const;

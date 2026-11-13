@@ -710,6 +710,36 @@
         "title": "Graphics2DSat",
         "type": "object"
       },
+      "Graphics2DSensor": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "default": "#e8c547",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "fill": {
+            "default": false,
+            "title": "Fill",
+            "type": "boolean"
+          },
+          "fill_translucency": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Fill Translucency",
+            "type": "integer"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics2DSensor",
+        "type": "object"
+      },
       "Graphics3DFac": {
         "additionalProperties": true,
         "properties": {
@@ -741,6 +771,34 @@
           }
         },
         "title": "Graphics3DSat",
+        "type": "object"
+      },
+      "Graphics3DSensor": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "default": "#e8c547",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          },
+          "show_boresight_marker": {
+            "default": false,
+            "title": "Show Boresight Marker",
+            "type": "boolean"
+          },
+          "show_radial_lines": {
+            "default": true,
+            "title": "Show Radial Lines",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics3DSensor",
         "type": "object"
       },
       "Group": {
@@ -1189,7 +1247,8 @@
                 "mapping": {
                   "Constellation": "#/components/schemas/ConstellationObj",
                   "Facility": "#/components/schemas/FacilityObj",
-                  "Satellite": "#/components/schemas/SatelliteObj"
+                  "Satellite": "#/components/schemas/SatelliteObj",
+                  "Sensor": "#/components/schemas/SensorObj"
                 },
                 "propertyName": "class"
               },
@@ -1202,6 +1261,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ConstellationObj"
+                },
+                {
+                  "$ref": "#/components/schemas/SensorObj"
                 }
               ]
             },
@@ -1275,6 +1337,123 @@
           "to"
         ],
         "title": "SelectBody",
+        "type": "object"
+      },
+      "SensorDefinition": {
+        "additionalProperties": true,
+        "description": "Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา",
+        "properties": {
+          "cone_half_angle": {
+            "default": 45.0,
+            "exclusiveMinimum": 0,
+            "maximum": 90,
+            "title": "Cone Half Angle",
+            "type": "number"
+          },
+          "type": {
+            "const": "Simple Conic",
+            "default": "Simple Conic",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SensorDefinition",
+        "type": "object"
+      },
+      "SensorObj": {
+        "additionalProperties": true,
+        "description": "Sensor ของดาว: เก็บเป็น object แบบแบนใน `objects` เหมือน class อื่น `parent` คือดาวที่ติดตั้ง (ต้องมีอยู่จริง ตรวจใน `validate_scenario`)\nengine ไม่ใช้ class นี้",
+        "properties": {
+          "class": {
+            "const": "Sensor",
+            "title": "Class",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SensorDefinition"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "graphics2d": {
+            "$ref": "#/components/schemas/Graphics2DSensor"
+          },
+          "graphics3d": {
+            "$ref": "#/components/schemas/Graphics3DSensor"
+          },
+          "long_description": {
+            "default": "",
+            "title": "Long Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "pattern": "^\\*/Satellite/[A-Za-z0-9_-]{1,32}$",
+            "title": "Parent",
+            "type": "string"
+          },
+          "pointing": {
+            "$ref": "#/components/schemas/SensorPointing"
+          }
+        },
+        "required": [
+          "class",
+          "name",
+          "parent",
+          "definition",
+          "pointing",
+          "graphics2d",
+          "graphics3d"
+        ],
+        "title": "SensorObj",
+        "type": "object"
+      },
+      "SensorPointing": {
+        "additionalProperties": true,
+        "description": "Basic - Pointing ของ STK: v1 มีเฉพาะ Fixed แบบ Az-El (Azimuth จาก +X ไป +Y ของกรอบตัวดาว, Elevation ไปทาง +Z) และ About Boresight = Rotate",
+        "properties": {
+          "about_boresight": {
+            "const": "Rotate",
+            "title": "About Boresight",
+            "type": "string"
+          },
+          "azimuth": {
+            "default": 0.0,
+            "exclusiveMaximum": 360,
+            "minimum": 0,
+            "title": "Azimuth",
+            "type": "number"
+          },
+          "elevation": {
+            "default": 90.0,
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Elevation",
+            "type": "number"
+          },
+          "orientation": {
+            "const": "Az-El",
+            "title": "Orientation",
+            "type": "string"
+          },
+          "type": {
+            "const": "Fixed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "orientation",
+          "about_boresight"
+        ],
+        "title": "SensorPointing",
         "type": "object"
       },
       "SettingsIn": {

@@ -12,4 +12,8 @@ export const SOURCES = {
   UpdateMode: ["Animation", "update_mode"],
   Cycle: ["Animation", "cycle"],
   DateFormat: ["Units", "date_format"],
+  SensorDefinitionType: ["SensorDefinition", "type"],
+  SensorPointingType: ["SensorPointing", "type"],
+  SensorOrientation: ["SensorPointing", "orientation"],
+  SensorAboutBoresight: ["SensorPointing", "about_boresight"],
 };

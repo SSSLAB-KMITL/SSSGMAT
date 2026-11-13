@@ -20,7 +20,7 @@ from .errors import ApiError
 FORMAT = "gnss-studio-scenario/1"
 NAME_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
 NAME_RE = re.compile(NAME_PATTERN)
-OBJECT_CLASSES = ("Facility", "Satellite", "Constellation")
+OBJECT_CLASSES = ("Facility", "Satellite", "Constellation", "Sensor")
 _UTC_Z_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
 
 # ค่าที่เลือกได้ (คำของ STK ตรงตัว)
@@ -65,6 +65,10 @@ UtcZ = Annotated[str, AfterValidator(_utc_z)]
 Name = Annotated[str, StringConstraints(pattern=NAME_PATTERN)]
 Color = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 ObjectPath = Annotated[str, StringConstraints(pattern=r"^\*/(Facility|Satellite|Constellation)/[A-Za-z0-9_-]{1,32}$")]
+# path ของดาว: ใช้เป็น `parent` ของ Sensor เท่านั้น (ไม่รวมใน ObjectPath ที่ groups, assigned_objects และ accesses ใช้ เพราะ Sensor ไม่อยู่ใน
+# กลุ่ม ไม่เป็นสมาชิก Constellation และไม่ใช่ปลายทางของ access)
+SATELLITE_PATH_PATTERN = r"^\*/Satellite/[A-Za-z0-9_-]{1,32}$"
+SatellitePath = Annotated[str, StringConstraints(pattern=SATELLITE_PATH_PATTERN)]
 LtzOffset = Annotated[str, StringConstraints(pattern=r"^[+-]\d{2}:\d{2}$")]
 
 
@@ -194,7 +198,50 @@ class ConstellationObj(_Model):
     assigned_objects: list[ObjectPath] = []
 
 
-SceneObject = Annotated[FacilityObj | SatelliteObj | ConstellationObj, Field(discriminator="class_")]
+class SensorDefinition(_Model):
+    """Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา"""
+    type: Literal["Simple Conic"] = "Simple Conic"
+    cone_half_angle: float = Field(45.0, gt=0, le=90, allow_inf_nan=False)
+
+
+class SensorPointing(_Model):
+    """Basic - Pointing ของ STK: v1 มีเฉพาะ Fixed แบบ Az-El (Azimuth จาก +X ไป +Y ของกรอบตัวดาว, Elevation ไปทาง +Z) และ About Boresight = Rotate"""
+    type: Literal["Fixed"]
+    orientation: Literal["Az-El"]
+    azimuth: float = Field(0.0, ge=0, lt=360, allow_inf_nan=False)
+    elevation: float = Field(90.0, ge=-90, le=90, allow_inf_nan=False)
+    about_boresight: Literal["Rotate"]
+
+
+class Graphics2DSensor(_Model):
+    show: bool = True
+    color: Color = "#e8c547"
+    fill: bool = False
+    fill_translucency: int = Field(50, ge=0, le=100)                  # 100 = มองไม่เห็น (ตาม STK)
+
+
+class Graphics3DSensor(_Model):
+    show: bool = True
+    color: Color = "#e8c547"
+    show_radial_lines: bool = True
+    show_boresight_marker: bool = False
+
+
+class SensorObj(_Model):
+    """Sensor ของดาว: เก็บเป็น object แบบแบนใน `objects` เหมือน class อื่น `parent` คือดาวที่ติดตั้ง (ต้องมีอยู่จริง ตรวจใน `validate_scenario`)
+    engine ไม่ใช้ class นี้"""
+    class_: Literal["Sensor"] = Field(alias="class")
+    name: Name
+    parent: SatellitePath
+    description: str = ""
+    long_description: str = ""
+    definition: SensorDefinition
+    pointing: SensorPointing
+    graphics2d: Graphics2DSensor
+    graphics3d: Graphics3DSensor
+
+
+SceneObject = Annotated[FacilityObj | SatelliteObj | ConstellationObj | SensorObj, Field(discriminator="class_")]
 
 
 def _not_blank(value: str) -> str:
@@ -307,7 +354,7 @@ def _reason(error: dict) -> str:
     if kind == "missing":
         return "ต้องมีค่า"
     if kind in _TAGGED_ERRORS:
-        return "class ต้องเป็น Facility, Satellite หรือ Constellation"
+        return "class ต้องเป็น Facility, Satellite, Constellation หรือ Sensor"
     if kind == "literal_error":
         expected = str(error.get("ctx", {}).get("expected", "")).replace(" or ", " หรือ ")
         return f"ต้องเป็นหนึ่งใน {expected}"
@@ -336,7 +383,7 @@ def to_api_error(exc: ValidationError) -> ApiError:
     return ApiError(422, "SCENARIO_INVALID", f"scenario.json ช่อง {field}: {_reason(first)}", field, first["msg"])
 
 
-OBJECT_MODELS = {"Facility": FacilityObj, "Satellite": SatelliteObj, "Constellation": ConstellationObj}
+OBJECT_MODELS = {"Facility": FacilityObj, "Satellite": SatelliteObj, "Constellation": ConstellationObj, "Sensor": SensorObj}
 
 
 def validate_object(cls: str, obj: Any, field_of: Callable[[str], str] = lambda field: field) -> None:
@@ -365,3 +412,8 @@ def validate_scenario(doc: Any) -> None:
             raise ApiError(422, "SCENARIO_INVALID", f"scenario.json ช่อง groups[{i}].name: ชื่อกลุ่ม '{group.name}' ซ้ำกับกลุ่มก่อนหน้า "
                            "(ไม่แยกตัวพิมพ์เล็กใหญ่)", f"groups[{i}].name", "duplicate group name")
         seen.add(key)
+    satellites = {f"*/Satellite/{o.name}" for o in parsed.objects if isinstance(o, SatelliteObj)}
+    for i, obj in enumerate(parsed.objects):
+        if isinstance(obj, SensorObj) and obj.parent not in satellites:
+            raise ApiError(422, "SCENARIO_INVALID", f"scenario.json ช่อง objects[{i}].parent: parent ต้องเป็นดาวที่มีอยู่ใน scenario "
+                           f"(ไม่พบ {obj.parent})", f"objects[{i}].parent", "sensor parent not found")

@@ -19,11 +19,13 @@ function resolve(schema) {
   return schema;
 }
 
-/** enum ของ property: อ่านได้ทั้งแบบ inline, ผ่าน $ref, และแบบ `X | None` (anyOf ที่มี null) */
+/** enum ของ property: อ่านได้ทั้งแบบ inline, ผ่าน $ref, และแบบ `X | None` (anyOf ที่มี null)
+ * Literal ค่าเดียว (เช่น "Simple Conic") pydantic ใส่เป็น `const` ไม่ใช่ `enum` นับเป็น enum ที่มีค่าเดียว */
 function enumsIn(schema) {
   const s = resolve(schema);
   if (!s) return [];
   if (Array.isArray(s.enum)) return [s.enum];
+  if (typeof s.const === "string") return [[s.const]];
   if (Array.isArray(s.anyOf)) return s.anyOf.flatMap(enumsIn);
   return [];
 }

@@ -12,8 +12,9 @@ test("enums come from the server schema", () => {
   expect(ENUMS.SwathOptions).toEqual(["No Graphics", "Edge Limits", "Filled Limits"]);
 });
 
-test("ENUMS has exactly the ten keys of the contract, each a non-empty list of strings", () => {
+test("ENUMS has exactly the keys of the contract, each a non-empty list of strings", () => {
   expect(Object.keys(ENUMS).sort()).toEqual(["Cycle", "DateFormat", "LeadType", "LineStyle", "MarkerStyle", "OrbitSystem",
+                                             "SensorAboutBoresight", "SensorDefinitionType", "SensorOrientation", "SensorPointingType",
                                              "SwathOptions", "TrailType", "UpdateMode", "VisibleSides"]);
   for (const [name, values] of Object.entries(ENUMS)) {
     expect(values.length, name).toBeGreaterThan(0);
@@ -29,19 +30,27 @@ test("the remaining enums carry the STK wording of the server schema", () => {
   expect(ENUMS.DateFormat).toEqual(["UTCG", "LTZG"]);
 });
 
+test("the Sensor enums carry the single v1 value of the STK wording", () => {
+  expect(ENUMS.SensorDefinitionType).toEqual(["Simple Conic"]);
+  expect(ENUMS.SensorPointingType).toEqual(["Fixed"]);
+  expect(ENUMS.SensorOrientation).toEqual(["Az-El"]);
+  expect(ENUMS.SensorAboutBoresight).toEqual(["Rotate"]);
+});
+
 // ---- ENUMS ตรงกับ src/api/openapi.json (ไม่ต้องใช้ Python): ตรวจว่า enums.gen.ts ไม่ล้าหลัง schema ที่ commit ไว้ ----
 
-type Schema = { enum?: string[]; anyOf?: Schema[]; properties?: Record<string, Schema> };
+type Schema = { enum?: string[]; const?: string; anyOf?: Schema[]; properties?: Record<string, Schema> };
 
 const spec = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../src/api/openapi.json"), "utf8")) as {
   components: { schemas: Record<string, Schema> };
 };
 
-/** enum ของ property ใน components.schemas: ประกาศตรงๆ หรืออยู่ในสาขาหนึ่งของ `X | None` (anyOf) */
+/** enum ของ property ใน components.schemas: ประกาศตรงๆ หรืออยู่ในสาขาหนึ่งของ `X | None` (anyOf) Literal ค่าเดียวเป็น `const` นับเป็น enum ค่าเดียว */
 function enumAt(model: string, prop: string): string[] {
   const property = spec.components.schemas[model]?.properties?.[prop];
   expect(property, `${model}.${prop} exists in openapi.json`).toBeDefined();
-  const found = property!.enum ? [property!.enum] : (property!.anyOf ?? []).flatMap((b) => (b.enum ? [b.enum] : []));
+  const of = (b: Schema): string[][] => (b.enum ? [b.enum] : b.const !== undefined ? [[b.const]] : []);
+  const found = of(property!).length ? of(property!) : (property!.anyOf ?? []).flatMap(of);
   expect(found, `${model}.${prop} carries exactly one enum`).toHaveLength(1);
   return found[0];
 }

@@ -4,7 +4,8 @@
   ไม่ใช่ 422/404/409 ที่คำนวณจากเอกสารที่เขาไม่ได้เห็น แล้ว `store.write` ตรวจซ้ำใต้ล็อกตอนเขียน
 - ตอบ `{"etag", "results_stale"}` (Insert เพิ่ม `created`) พร้อม header `ETag` ใหม่ `results_stale` เทียบ hash ของ propagate และ analyze
   ก่อนเขียน (จากไฟล์บนดิสก์) กับหลังเขียนสำเร็จ (`plans.py`) แล้วส่ง event `scenario` ด้วยค่าชุดเดียวกัน (ที่ตอบ 4xx ไม่ส่ง)
-- `{cls}` ที่ไม่ใช่ Facility/Satellite/Constellation และ object ที่ไม่มี = 404 NOT_FOUND
+- `{cls}` ที่ไม่ใช่ Facility/Satellite/Constellation/Sensor และ object ที่ไม่มี = 404 NOT_FOUND (Sensor ใช้ path แบน `/objects/Sensor/{name}`
+  เหมือน class อื่น ดาวแม่อยู่ในช่อง `parent` ของ object)
 """
 
 from collections.abc import Callable

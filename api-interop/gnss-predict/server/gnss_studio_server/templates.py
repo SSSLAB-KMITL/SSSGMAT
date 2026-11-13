@@ -36,6 +36,8 @@ ANIMATION_X_REAL_TIME = 60
 DEFAULT_PASS_S = 1800
 DEFAULT_SWATH_ELEVATION_DEG = 10.0
 ACCESS_CUSTOM_COLOR = "#9dff6b"
+SENSOR_COLOR = "#e8c547"
+SENSOR_CONE_HALF_ANGLE_DEG = 45.0            # ค่าตั้งต้นของ STK
 
 
 def parse_utc(value: str | datetime, field: str) -> datetime:
@@ -123,6 +125,16 @@ def satellite(name: str, norad: int, color: str) -> dict:
                            "swath": {"type": "Ground Elevation", "elevation_deg": DEFAULT_SWATH_ELEVATION_DEG,
                                      "options": "No Graphics"}},
             "graphics3d": {"show": True, "orbit_system": "Fixed by Window"}}
+
+
+def sensor(name: str, parent: str, cone_half_angle: float = SENSOR_CONE_HALF_ANGLE_DEG) -> dict:
+    """Sensor ของดาว `parent` (path `*/Satellite/<ชื่อ>`) พร้อมค่าตั้งต้นของ STK: Simple Conic, ชี้ Fixed Az 0 El 90 (ตรงลงโลก) ใช้ทั้ง
+    Insert Default และเป็นฐานให้ Define Properties ผสมค่าที่ผู้ใช้ส่ง"""
+    return {"class": "Sensor", "name": name, "parent": parent, "description": "", "long_description": "",
+            "definition": {"type": "Simple Conic", "cone_half_angle": cone_half_angle},
+            "pointing": {"type": "Fixed", "orientation": "Az-El", "azimuth": 0.0, "elevation": 90.0, "about_boresight": "Rotate"},
+            "graphics2d": {"show": True, "color": SENSOR_COLOR, "fill": False, "fill_translucency": 50},
+            "graphics3d": {"show": True, "color": SENSOR_COLOR, "show_radial_lines": True, "show_boresight_marker": False}}
 
 
 def constellation(name: str, system: str | None, color: str, assigned_objects: list[str]) -> dict:

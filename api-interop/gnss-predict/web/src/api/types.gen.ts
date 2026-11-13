@@ -932,6 +932,31 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** Graphics2DSensor */
+        Graphics2DSensor: {
+            /**
+             * Color
+             * @default #e8c547
+             */
+            color?: string;
+            /**
+             * Fill
+             * @default false
+             */
+            fill?: boolean;
+            /**
+             * Fill Translucency
+             * @default 50
+             */
+            fill_translucency?: number;
+            /**
+             * Show
+             * @default true
+             */
+            show?: boolean;
+        } & {
+            [key: string]: unknown;
+        };
         /** Graphics3DFac */
         Graphics3DFac: {
             /**
@@ -955,6 +980,31 @@ export interface components {
              * @default true
              */
             show?: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        /** Graphics3DSensor */
+        Graphics3DSensor: {
+            /**
+             * Color
+             * @default #e8c547
+             */
+            color?: string;
+            /**
+             * Show
+             * @default true
+             */
+            show?: boolean;
+            /**
+             * Show Boresight Marker
+             * @default false
+             */
+            show_boresight_marker?: boolean;
+            /**
+             * Show Radial Lines
+             * @default true
+             */
+            show_radial_lines?: boolean;
         } & {
             [key: string]: unknown;
         };
@@ -1164,7 +1214,7 @@ export interface components {
             /** Name */
             name: string;
             /** Objects */
-            objects: (components["schemas"]["FacilityObj"] | components["schemas"]["SatelliteObj"] | components["schemas"]["ConstellationObj"])[];
+            objects: (components["schemas"]["FacilityObj"] | components["schemas"]["SatelliteObj"] | components["schemas"]["ConstellationObj"] | components["schemas"]["SensorObj"])[];
             /** Orbit Snapshot */
             orbit_snapshot: string;
             /** @default null */
@@ -1193,6 +1243,90 @@ export interface components {
              * @description รายการ path ของดาวหรือ Constellation หรือ "all"
              */
             to: unknown;
+        };
+        /**
+         * SensorDefinition
+         * @description Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา
+         */
+        SensorDefinition: {
+            /**
+             * Cone Half Angle
+             * @default 45
+             */
+            cone_half_angle?: number;
+            /**
+             * Type
+             * @default Simple Conic
+             * @constant
+             */
+            type?: "Simple Conic";
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SensorObj
+         * @description Sensor ของดาว: เก็บเป็น object แบบแบนใน `objects` เหมือน class อื่น `parent` คือดาวที่ติดตั้ง (ต้องมีอยู่จริง ตรวจใน `validate_scenario`)
+         *     engine ไม่ใช้ class นี้
+         */
+        SensorObj: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            class: "Sensor";
+            definition: components["schemas"]["SensorDefinition"];
+            /**
+             * Description
+             * @default
+             */
+            description?: string;
+            graphics2d: components["schemas"]["Graphics2DSensor"];
+            graphics3d: components["schemas"]["Graphics3DSensor"];
+            /**
+             * Long Description
+             * @default
+             */
+            long_description?: string;
+            /** Name */
+            name: string;
+            /** Parent */
+            parent: string;
+            pointing: components["schemas"]["SensorPointing"];
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SensorPointing
+         * @description Basic - Pointing ของ STK: v1 มีเฉพาะ Fixed แบบ Az-El (Azimuth จาก +X ไป +Y ของกรอบตัวดาว, Elevation ไปทาง +Z) และ About Boresight = Rotate
+         */
+        SensorPointing: {
+            /**
+             * About Boresight
+             * @constant
+             */
+            about_boresight: "Rotate";
+            /**
+             * Azimuth
+             * @default 0
+             */
+            azimuth?: number;
+            /**
+             * Elevation
+             * @default 90
+             */
+            elevation?: number;
+            /**
+             * Orientation
+             * @constant
+             */
+            orientation: "Az-El";
+            /**
+             * Type
+             * @constant
+             */
+            type: "Fixed";
+        } & {
+            [key: string]: unknown;
         };
         /**
          * SettingsIn

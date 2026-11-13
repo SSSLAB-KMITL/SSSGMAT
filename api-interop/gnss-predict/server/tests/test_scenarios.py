@@ -11,6 +11,7 @@ import pytest
 
 from gnss_predict.catalog import build_catalog
 from gnss_predict.scenario import load_scenario
+from gnss_studio_server import templates
 from gnss_studio_server.errors import ApiError
 from gnss_studio_server.schema import field_path
 from gnss_studio_server.store import ScenarioStore, etag, normalize_etag
@@ -308,6 +309,7 @@ def _invalid_cases(doc):
     """(ฟังก์ชันแก้ doc, field ที่คาดไว้) ผิดที่ชั้น pydantic และชั้น engine"""
     sat = next(i for i, o in enumerate(doc["objects"]) if o["class"] == "Satellite")
     con = next(i for i, o in enumerate(doc["objects"]) if o["class"] == "Constellation")
+    new = len(doc["objects"])                                   # ตำแหน่งของ sensor ที่เพิ่มต่อท้ายใน doc
     return [
         (lambda d: d["objects"][0]["position"].__setitem__("lat_deg", -90.5), "objects[0].position.lat_deg"),
         (lambda d: d["objects"][0]["position"].__setitem__("lon_deg", 181), "objects[0].position.lon_deg"),
@@ -349,6 +351,15 @@ def _invalid_cases(doc):
         (lambda d: d.__setitem__("objects", {}), "objects"),
         (lambda d: d.__setitem__("format", "gnss-studio-scenario/2"), "format"),
         (lambda d: d.__setitem__("daily", {"for_date": "2026-11-10"}), "daily.created_utc"),
+        (lambda d: d["objects"].append({"class": "Sensor", "name": "S1"}), f"objects[{new}].parent"),             # ขาด parent
+        (lambda d: d["objects"].append(templates.sensor("S1", "*/Facility/THBK")), f"objects[{new}].parent"),       # parent ต้องเป็นดาว
+        (lambda d: d["objects"].append(templates.sensor("S1", "*/Satellite/NOPE")), f"objects[{new}].parent"),      # ไม่มีดาวนั้น
+        (lambda d: d["objects"].append({**templates.sensor("S1", "*/Satellite/G01"), "definition": {"cone_half_angle": 0}}),
+         f"objects[{new}].definition.cone_half_angle"),
+        (lambda d: d["objects"].append({**templates.sensor("S1", "*/Satellite/G01"), "pointing": {"type": "Targeted", "orientation": "Az-El",
+                                                                                                    "about_boresight": "Rotate"}}),
+         f"objects[{new}].pointing.type"),
+        (lambda d: d["objects"].append(templates.sensor("THBK", "*/Satellite/G01")), f"objects[{new}].name"),      # ชื่อซ้ำกับ Facility
         # ชั้น engine (pydantic ผ่าน)
         (lambda d: d.__setitem__("step_s", 7), "step_s"),
         (lambda d: d["analysis_period"].__setitem__("stop", "2026-11-20T00:00:00Z"), "analysis_period"),
@@ -368,6 +379,34 @@ def test_put_invalid_values_name_the_field_and_keep_file(client, snapshot, data_
         assert field in j["text"]
         assert file_bytes(data_dir) == before, field                             # ไม่เขียนทับ
         assert sorted(p.name for p in scenario_dir(data_dir).iterdir()) == ["scenario.json"], field
+
+
+def test_put_doc_with_orphan_sensor_rejected(client, snapshot, data_dir):
+    r = make(client); tag = tag_of(r); original = r.json(); before = file_bytes(data_dir)
+    n = len(original["objects"])
+    for parent in ("*/Satellite/NOPE", "*/Satellite/g01", "*/Facility/THBK", "*/Sensor/S1"):
+        doc = copy.deepcopy(original)
+        doc["objects"].append(templates.sensor("S1", parent))
+        resp = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag})
+        j = assert_error(resp, 422, "SCENARIO_INVALID", f"objects[{n}].parent")
+        assert f"objects[{n}].parent" in j["text"]
+        assert file_bytes(data_dir) == before
+    doc = copy.deepcopy(original)
+    doc["objects"].append(templates.sensor("S1", "*/Satellite/NOPE"))
+    doc["objects"].insert(0, templates.sensor("S2", "*/Satellite/NOPE"))                    # รายงานตัวแรกที่กำพร้า
+    assert_error(client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag}), 422, "SCENARIO_INVALID", "objects[0].parent")
+    assert file_bytes(data_dir) == before
+
+
+def test_put_doc_with_sensor_roundtrips_and_sensor_may_precede_its_satellite(client, snapshot, data_dir):
+    r = make(client); original = r.json()
+    doc = copy.deepcopy(original)
+    sensor = templates.sensor("S1", "*/Satellite/G01"); sensor["x_note"] = "keep"
+    doc["objects"].insert(0, sensor)                                                         # sensor อยู่ก่อนดาวแม่ได้
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(r)})
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/scenarios/S1").json() == doc and json.loads(file_bytes(data_dir)) == doc
+    load_scenario(scenario_dir(data_dir) / "scenario.json")                                 # engine ข้าม class Sensor
 
 
 def test_put_nan_in_unknown_field_is_422_and_keeps_file(client, snapshot, data_dir):

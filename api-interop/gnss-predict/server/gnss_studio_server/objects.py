@@ -4,6 +4,8 @@
 - ทุกฟังก์ชันแก้ `doc` (dict ของ scenario.json ที่ client ส่งมาเอง) ในที่เดิมและไม่แตะดิสก์ route เป็นคนอ่านและเขียนผ่าน `ScenarioStore`
   ฟังก์ชันที่แก้ตรวจทุกอย่างก่อนแก้ ผิดแล้ว raise `ApiError` โดย `doc` ยังเหมือนเดิม
 - path ของ object คือ `*/<class>/<name>` ชื่อไม่ซ้ำกันข้าม class แบบไม่สนตัวพิมพ์เล็กใหญ่ (กติกาของ engine)
+- Sensor เก็บเป็น object แบนเหมือน class อื่น มี `parent` เป็น path ของดาวที่ติดตั้ง (อ่านอย่างเดียวหลังสร้าง) Object Browser วาดซ้อนใต้ดาว
+  (`children` ของโหนดดาว) เปลี่ยนชื่อดาวแล้ว `parent` ตาม ลบดาวแล้ว sensor ของดาวนั้นถูกลบด้วย engine ไม่ใช้ class นี้
 - หน้าของ Properties Browser: `basic` คือช่องระดับบนของ object ตามตาราง `BASIC_KEYS` ส่วน `graphics2d`, `graphics3d`, `constraints`
   คือส่วนย่อยชื่อเดียวกันใน object ที่ class นั้นมี (ตาราง `PAGE_SECTIONS`) ที่ไม่มีคืน {}
 - `field` ของ 422 เรียกตามหน้า เช่น `basic.norad`, `graphics2d.pass.lead_type`
@@ -19,8 +21,8 @@ from gnss_predict.catalog import Catalog
 
 from . import templates
 from .errors import ApiError
-from .schema import NAME_RE, OBJECT_CLASSES, validate_object
-from .templates import DEFAULT_COLOR, FACILITY_COLOR, SYSTEM_COLORS
+from .schema import NAME_RE, OBJECT_CLASSES, SATELLITE_PATH_PATTERN, validate_object
+from .templates import DEFAULT_COLOR, FACILITY_COLOR, SENSOR_COLOR, SYSTEM_COLORS
 
 PAGE_GROUPS = ("basic", "graphics2d", "graphics3d", "constraints")
 # ช่องระดับบนของ object ที่หน้า Basic ของแต่ละ class เห็น (ชื่อ, class และ graphics อยู่นอกหน้านี้)
@@ -28,6 +30,7 @@ BASIC_KEYS = {
     "Facility": ("description", "long_description", "position"),
     "Satellite": ("description", "long_description", "norad"),                     # NORAD อ่านอย่างเดียวใน v1
     "Constellation": ("description", "long_description", "system", "color", "assigned_objects"),
+    "Sensor": ("description", "long_description", "parent", "definition", "pointing"),    # parent อ่านอย่างเดียว
 }
 # description = Short Description, long_description = Long Description ของหน้า Basic - Description
 BASIC_DEFAULTS = {"description": "", "long_description": "", "system": None, "color": None, "assigned_objects": []}
@@ -35,6 +38,12 @@ PAGE_SECTIONS = {
     "Facility": ("graphics2d", "graphics3d", "constraints"),
     "Satellite": ("graphics2d", "graphics3d"),
     "Constellation": (),
+    "Sensor": ("graphics2d", "graphics3d"),
+}
+# ช่องของหน้า basic ที่ส่งค่าเดิมกลับมาได้เท่านั้น: ช่อง -> ข้อความตอนถูกแก้
+READ_ONLY_BASIC = {
+    "norad": "NORAD แก้ไม่ได้ (อ่านอย่างเดียว)",                                                 # v1 ไม่ให้เปลี่ยนดาวของ object
+    "parent": "parent แก้ไม่ได้ (อ่านอย่างเดียว) ย้าย Sensor ไปดาวดวงอื่นไม่ได้ ให้สร้าง Sensor ใหม่ที่ดาวนั้น",
 }
 
 METHOD_DEFINE = "Define Properties"
@@ -46,9 +55,10 @@ _OBJECT_KEYS = {
     "Facility": frozenset({"name", "description", "long_description", "position", "constraints", "graphics2d", "graphics3d"}),
     "Satellite": frozenset({"name", "norad", "description", "long_description", "graphics2d", "graphics3d"}),
     "Constellation": frozenset({"name", "system", "description", "long_description", "color", "assigned_objects"}),
+    "Sensor": frozenset({"name", "parent", "description", "long_description", "definition", "pointing", "graphics2d", "graphics3d"}),
 }
 _CATALOG_KEYS = frozenset({"norads", "create_constellation"})
-_SATELLITE_PATH_RE = re.compile(r"^\*/Satellite/[A-Za-z0-9_-]{1,32}$")
+_SATELLITE_PATH_RE = re.compile(SATELLITE_PATH_PATTERN)
 _INVALID = "SCENARIO_INVALID"
 
 
@@ -112,7 +122,7 @@ def _require_existing(doc: dict, paths: Any, field: str, *, satellites_only: boo
         if not isinstance(p, str) or p not in existing:
             raise _invalid(f"ไม่พบ object {p} ใน scenario", field)
         if satellites_only and not _SATELLITE_PATH_RE.fullmatch(p):
-            raise _invalid(f"{p} ไม่ใช่ดาว กลุ่มใน Object Browser ใส่ได้เฉพาะดาว", field)
+            raise _invalid(f"{p} ไม่ใช่ดาว ช่องนี้ใส่ได้เฉพาะดาว", field)
     return paths
 
 
@@ -120,6 +130,7 @@ def _require_existing(doc: dict, paths: Any, field: str, *, satellites_only: boo
 
 def tree(doc: dict) -> dict:
     """โครง Object Browser: Facility, Constellation, โฟลเดอร์ของแต่ละกลุ่ม (ตามลำดับใน groups) แล้วดาวที่ไม่อยู่ในกลุ่มใด
+    โหนดดาวที่มี Sensor มี `children` เป็นโหนด Sensor ตามลำดับใน objects (ดาวที่ไม่มี Sensor ไม่มีคีย์นี้ Sensor ที่ไม่พบดาวแม่ไม่แสดง)
     ไม่ใช้ catalog: ธงและสถานะซ่อนของดาวมาจาก /catalog ภายหลัง"""
     objs = doc.get("objects", [])
     constellation_color: dict[str, str] = {}                  # path ของสมาชิก -> สีของ Constellation แรกที่มีสมาชิกนั้น
@@ -134,11 +145,20 @@ def tree(doc: dict) -> dict:
             color, show = obj.get("color") or DEFAULT_COLOR, True
         elif cls == "Facility":
             color, show = g2.get("color") or FACILITY_COLOR, g2.get("show", True)
+        elif cls == "Sensor":
+            color, show = g2.get("color") or SENSOR_COLOR, g2.get("show", True)
         else:
             inherited = constellation_color.get(path) if g2.get("inherit", True) else None
             color, show = inherited or g2.get("color") or DEFAULT_COLOR, g2.get("show", True)
-        return {"path": path, "class": cls, "name": obj["name"], "color": color, "show": show}
+        out = {"path": path, "class": cls, "name": obj["name"], "color": color, "show": show}
+        if cls == "Satellite" and path in sensors_of:
+            out["children"] = sensors_of[path]
+        return out
 
+    sensors_of: dict[str, list[dict]] = {}                    # path ของดาวแม่ -> โหนด Sensor ตามลำดับใน objects
+    for obj in objs:
+        if obj.get("class") == "Sensor" and isinstance(obj.get("parent"), str):
+            sensors_of.setdefault(obj["parent"], []).append(node(obj))
     children = [node(o) for o in objs if o.get("class") == "Facility"]
     children += [node(o) for o in objs if o.get("class") == "Constellation"]
     satellites = {path_of(o): node(o) for o in objs if o.get("class") == "Satellite"}
@@ -181,7 +201,7 @@ def _page_field(cls: str) -> Callable[[str], str]:
 
 def apply_pages(doc: dict, cls: str, name: str, patch: dict) -> dict:
     """Apply ของ Properties Browser: ผสมเฉพาะหน้าที่ส่งมา (deep merge) แล้วตรวจ object ทั้งก้อนด้วย schema คืน object ใหม่
-    หน้าที่ไม่รู้จัก, หน้าที่ class นั้นไม่มีแต่ส่งค่ามา, ช่อง basic นอกรายการ และการเปลี่ยน NORAD -> 422"""
+    หน้าที่ไม่รู้จัก, หน้าที่ class นั้นไม่มีแต่ส่งค่ามา, ช่อง basic นอกรายการ และการเปลี่ยน NORAD หรือ parent ของ Sensor -> 422"""
     index, obj = find(doc, cls, name)
     if not isinstance(patch, dict):
         raise _invalid("ต้องส่งเป็น object ของหน้าที่แก้")
@@ -196,10 +216,11 @@ def apply_pages(doc: dict, cls: str, name: str, patch: dict) -> dict:
             for key in values:
                 if key not in BASIC_KEYS[cls]:
                     raise _invalid(f"หน้า basic ของ {cls} ไม่มีช่อง {key}", f"basic.{key}")
-            if "norad" in values:                             # อ่านอย่างเดียว: ส่งค่าเดิมกลับมาได้ ค่าอื่นไม่ได้
-                if values["norad"] != obj["norad"] or isinstance(values["norad"], bool):
-                    raise _invalid("NORAD แก้ไม่ได้ (อ่านอย่างเดียว)", "basic.norad")
-                values = {k: v for k, v in values.items() if k != "norad"}
+            for key, text in READ_ONLY_BASIC.items():         # อ่านอย่างเดียว: ส่งค่าเดิมกลับมาได้ ค่าอื่นไม่ได้
+                if key in values:
+                    if values[key] != obj.get(key) or isinstance(values[key], bool):
+                        raise _invalid(text, f"basic.{key}")
+                    values = {k: v for k, v in values.items() if k != key}
             _deep_merge(merged, values)
         elif group in PAGE_SECTIONS[cls]:
             merged[group] = _deep_merge(merged.get(group) or {}, values)
@@ -230,7 +251,8 @@ def insert(doc: dict, body: dict, catalog: Callable[[], Catalog]) -> list[str]:
         raise _invalid(f"class ต้องเป็นหนึ่งใน {', '.join(OBJECT_CLASSES)}", "class")
     if not isinstance(method, str) or method not in INSERT_METHODS:
         raise _invalid(f"method ต้องเป็นหนึ่งใน {', '.join(INSERT_METHODS)}", "method")
-    allowed = _CONTROL_KEYS | {METHOD_DEFINE: _OBJECT_KEYS[cls], METHOD_DEFAULT: frozenset(), METHOD_CATALOG: _CATALOG_KEYS}[method]
+    default_keys = frozenset({"parent"}) if cls == "Sensor" else frozenset()        # Insert Default ของ Sensor ต้องบอกดาวแม่
+    allowed = _CONTROL_KEYS | {METHOD_DEFINE: _OBJECT_KEYS[cls], METHOD_DEFAULT: default_keys, METHOD_CATALOG: _CATALOG_KEYS}[method]
     for key in body:
         if key not in allowed:
             raise _invalid(f"วิธี {method} ไม่รับช่อง {key}", key)
@@ -238,7 +260,7 @@ def insert(doc: dict, body: dict, catalog: Callable[[], Catalog]) -> list[str]:
     if method == METHOD_DEFINE:
         created = _define(doc, names, cls, body)
     elif method == METHOD_DEFAULT:
-        created = _default(names, cls)
+        created = _default(doc, names, cls, body)
     else:
         created = _from_catalog(names, cls, body, catalog)
     doc["objects"].extend(created)
@@ -250,7 +272,7 @@ def _define(doc: dict, names: _Names, cls: str, body: dict) -> list[dict]:
     name = props.get("name")
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         raise _invalid("ชื่อต้องเป็นตัวอักษร A-Z a-z ตัวเลข _ หรือ - ยาว 1 ถึง 32 ตัว", "name")
-    required = {"Facility": "position", "Satellite": "norad"}.get(cls)
+    required = {"Facility": "position", "Satellite": "norad", "Sensor": "parent"}.get(cls)
     if required is not None and required not in props:
         raise _invalid(f"ช่อง {required}: ต้องมีค่า", required)
     if cls == "Facility":
@@ -259,6 +281,9 @@ def _define(doc: dict, names: _Names, cls: str, body: dict) -> list[dict]:
         obj["position"] = {"type": "Geodetic", **copy.deepcopy(position)} if isinstance(position, dict) else position
     elif cls == "Satellite":
         obj = _deep_merge(templates.satellite(name, 1, DEFAULT_COLOR), props)
+    elif cls == "Sensor":
+        _require_existing(doc, [props["parent"]], "parent", satellites_only=True)       # ตรวจก่อน เพื่อบอกว่าไม่ใช่ดาวแทนที่จะบอกแค่รูปแบบผิด
+        obj = _deep_merge(templates.sensor(name, props["parent"]), props)
     else:
         system = props.get("system")
         color = SYSTEM_COLORS.get(system, DEFAULT_COLOR) if isinstance(system, str) else DEFAULT_COLOR
@@ -270,9 +295,16 @@ def _define(doc: dict, names: _Names, cls: str, body: dict) -> list[dict]:
     return [obj]
 
 
-def _default(names: _Names, cls: str) -> list[dict]:
+def _default(doc: dict, names: _Names, cls: str, body: dict) -> list[dict]:
     if cls == "Satellite":
         raise _invalid("ดาวไม่มี Insert Default ให้เลือก From Satellite Catalog หรือ Define Properties", "method")
+    if cls == "Sensor":
+        if "parent" not in body:
+            raise _invalid("ช่อง parent: ต้องมีค่า (ดาวที่จะติดตั้ง Sensor เช่น */Satellite/G01)", "parent")
+        parent = _require_existing(doc, [body["parent"]], "parent", satellites_only=True)[0]
+        name = names.first_free(cls)
+        names.claim(name, "name")
+        return [templates.sensor(name, parent)]
     name = names.first_free(cls)
     names.claim(name, "name")
     if cls == "Facility":
@@ -310,14 +342,22 @@ def _from_catalog(names: _Names, cls: str, body: dict, catalog: Callable[[], Cat
 # ---------- Rename และ Delete ----------
 
 def _rewrite_refs(doc: dict, fn: Callable[[str], str | None]) -> None:
-    """แก้การอ้างถึง path ใน assigned_objects, groups.members และ accesses ด้วย fn(path) -> path ใหม่ หรือ None = ลบการอ้างถึง
-    access ที่ `from` ถูกลบ หรือที่ `to` เคยมีและเหลือว่างเพราะการลบ ถูกลบทั้ง access"""
+    """แก้การอ้างถึง path ใน assigned_objects, parent ของ Sensor, groups.members และ accesses ด้วย fn(path) -> path ใหม่ หรือ None = ลบการอ้างถึง
+    access ที่ `from` ถูกลบ หรือที่ `to` เคยมีและเหลือว่างเพราะการลบ ถูกลบทั้ง access Sensor ที่ดาวแม่ถูกลบ ถูกลบทั้ง object"""
     def mapped(paths: list[str]) -> list[str]:
         return [new for p in paths if (new := fn(p)) is not None]
 
+    survivors = []
     for obj in doc["objects"]:
         if obj.get("class") == "Constellation" and "assigned_objects" in obj:
             obj["assigned_objects"] = mapped(obj["assigned_objects"])
+        elif obj.get("class") == "Sensor" and isinstance(obj.get("parent"), str):
+            parent = fn(obj["parent"])
+            if parent is None:                                # ดาวแม่ถูกลบ: Sensor ไม่มีที่ติดตั้ง
+                continue
+            obj["parent"] = parent
+        survivors.append(obj)
+    doc["objects"][:] = survivors
     for grp in doc.get("groups", []):
         grp["members"] = mapped(grp.get("members", []))
     if "accesses" in doc:
@@ -349,7 +389,7 @@ def rename(doc: dict, cls: str, name: str, new_name: Any) -> str:
 
 def delete(doc: dict, cls: str, name: str) -> None:
     """ลบ object และลบ path ของมันออกจาก groups, assigned_objects และ `to` ของ access ลบ Facility ลบ access ที่ออกจากมันด้วย
-    access ที่ `to` ว่างเพราะการลบถูกลบ ลบ Constellation แล้วดาวสมาชิกยังอยู่"""
+    access ที่ `to` ว่างเพราะการลบถูกลบ ลบ Constellation แล้วดาวสมาชิกยังอยู่ ลบดาวแล้ว Sensor ของดาวนั้นถูกลบด้วย"""
     index, obj = find(doc, cls, name)
     path = path_of(obj)
     del doc["objects"][index]

@@ -980,3 +980,372 @@ def test_edits_keep_unknown_fields_and_scenario_valid(client, s1, data_dir):
     assert doc["x_custom"] == {"a": 1} and sat["x_svn"] == "G080" and sat["graphics2d"]["x_halo"] is True
     sc = load_scenario(data_dir / "scenarios" / SC / "scenario.json")
     assert ("GPS01", 62339) in sc.satellites
+
+
+# ---------- Sensor: object ลูกของดาว ----------
+
+SENSOR_DEFINE = {"class": "Sensor", "method": "Define Properties"}
+SENSOR_DEFAULT = {"class": "Sensor", "method": "Insert Default"}
+G01 = "*/Satellite/G01"
+
+
+def _add_sensor(client, name="S1", parent=G01, **extra):
+    r = insert(client, {**SENSOR_DEFINE, "name": name, "parent": parent, **extra})
+    assert_saved(r, client, 201)
+    return r
+
+
+def test_insert_sensor_define_properties_defaults(client, s1):
+    r = insert(client, {**SENSOR_DEFINE, "name": "S1", "parent": G01})
+    assert r.json()["created"] == ["*/Sensor/S1"]
+    j = assert_saved(r, client, 201)
+    sensor = obj_in(doc_of(client), "Sensor", "S1")
+    assert sensor == templates.sensor("S1", G01) and "method" not in sensor
+    assert sensor["definition"] == {"type": "Simple Conic", "cone_half_angle": 45.0}
+    assert sensor["pointing"] == {"type": "Fixed", "orientation": "Az-El", "azimuth": 0.0, "elevation": 90.0, "about_boresight": "Rotate"}
+    assert sensor["graphics2d"] == {"show": True, "color": "#e8c547", "fill": False, "fill_translucency": 50}
+    assert sensor["graphics3d"] == {"show": True, "color": "#e8c547", "show_radial_lines": True, "show_boresight_marker": False}
+    assert j["results_stale"] is False and set(j) == {"etag", "results_stale", "created"}
+
+
+def test_insert_sensor_define_properties_merges_given_fields_with_defaults(client, s1):
+    _add_sensor(client, "S2", description="กล้อง", definition={"cone_half_angle": 20}, pointing={"azimuth": 90, "elevation": 30},
+                graphics2d={"color": "#112233", "fill": True}, graphics3d={"show_boresight_marker": True})
+    sensor = obj_in(doc_of(client), "Sensor", "S2")
+    expected = templates.sensor("S2", G01)
+    expected["description"] = "กล้อง"
+    expected["definition"]["cone_half_angle"] = 20
+    expected["pointing"].update({"azimuth": 90, "elevation": 30})
+    expected["graphics2d"].update({"color": "#112233", "fill": True})
+    expected["graphics3d"]["show_boresight_marker"] = True
+    assert sensor == expected
+
+
+def test_templates_sensor_cone_half_angle_argument():
+    assert templates.sensor("S1", G01, 10.0)["definition"]["cone_half_angle"] == 10.0
+    assert templates.sensor("S1", G01)["definition"] == {"type": "Simple Conic", "cone_half_angle": 45.0}
+
+
+def test_insert_sensor_insert_default_names_sensor1_then_sensor2(client, s1):
+    r = insert(client, {**SENSOR_DEFAULT, "parent": G01})
+    assert r.json()["created"] == ["*/Sensor/Sensor1"]
+    assert_saved(r, client, 201)
+    assert obj_in(doc_of(client), "Sensor", "Sensor1") == templates.sensor("Sensor1", G01)
+    assert insert(client, {**SENSOR_DEFAULT, "parent": "*/Satellite/G22"}).json()["created"] == ["*/Sensor/Sensor2"]
+    assert obj_in(doc_of(client), "Sensor", "Sensor2")["parent"] == "*/Satellite/G22"
+    assert_saved(delete(client, "Sensor/Sensor1"), client)
+    assert insert(client, {**SENSOR_DEFAULT, "parent": G01}).json()["created"] == ["*/Sensor/Sensor1"]      # ชื่อว่างตัวแรก
+    put_doc(client, lambda d: obj_in(d, "Sensor", "Sensor2").update({"name": "SENSOR2"}))
+    assert insert(client, {**SENSOR_DEFAULT, "parent": G01}).json()["created"] == ["*/Sensor/Sensor3"]      # ไม่สนตัวพิมพ์
+
+
+@pytest.mark.parametrize("method", ["Define Properties", "Insert Default"])
+@pytest.mark.parametrize("parent", [None, "*/Facility/THBK", "*/Constellation/GPS", "*/Satellite/NOPE", "G01", 5, ["*/Satellite/G01"]])
+def test_insert_sensor_requires_existing_satellite_parent(client, s1, data_dir, method, parent):
+    body = {"class": "Sensor", "method": method}
+    if method == "Define Properties":
+        body["name"] = "S1"
+    if parent is not None:
+        body["parent"] = parent
+    before = file_bytes(data_dir)
+    assert_error(insert(client, body), 422, "SCENARIO_INVALID", "parent")
+    assert file_bytes(data_dir) == before
+
+
+def test_insert_sensor_define_properties_requires_name(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    assert_error(insert(client, {**SENSOR_DEFINE, "parent": G01}), 422, "SCENARIO_INVALID", "name")
+    assert_error(insert(client, {**SENSOR_DEFINE, "name": "a b", "parent": G01}), 422, "SCENARIO_INVALID", "name")
+    assert file_bytes(data_dir) == before
+
+
+def test_insert_sensor_insert_default_accepts_only_parent(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    assert_error(insert(client, {**SENSOR_DEFAULT, "parent": G01, "name": "Mine"}), 422, "SCENARIO_INVALID", "name")
+    assert_error(insert(client, {**SENSOR_DEFAULT, "parent": G01, "definition": {}}), 422, "SCENARIO_INVALID", "definition")
+    assert file_bytes(data_dir) == before
+
+
+@pytest.mark.parametrize("body", [
+    {"class": "Facility", "method": "Insert Default", "parent": G01},
+    {"class": "Constellation", "method": "Insert Default", "parent": G01},
+    {"class": "Satellite", "method": "Define Properties", "name": "A", "norad": 5, "parent": G01},
+    {"class": "Facility", "method": "Define Properties", "name": "A", "position": {"lat_deg": 0, "lon_deg": 0, "alt_m": 0}, "parent": G01},
+])
+def test_insert_other_class_does_not_accept_parent(client, s1, data_dir, body):
+    before = file_bytes(data_dir)
+    assert_error(insert(client, body), 422, "SCENARIO_INVALID", "parent")
+    assert file_bytes(data_dir) == before
+
+
+def test_insert_sensor_from_catalog_rejected(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    assert_error(insert(client, {"class": "Sensor", "method": "From Satellite Catalog", "norads": [62339]}), 422, "SCENARIO_INVALID", "class")
+    assert file_bytes(data_dir) == before
+
+
+# ค่าที่ผิดของ Sensor: (ส่วนของ object, ช่อง, ค่า) ใน Define Properties ชื่อช่องคือ path ใน object ใน PATCH หน้า Basic ขึ้นต้นด้วย `basic.`
+SENSOR_BAD_VALUES = [
+    ("definition", "cone_half_angle", 0),
+    ("definition", "cone_half_angle", 90.5),
+    ("definition", "cone_half_angle", -1),
+    ("definition", "cone_half_angle", "45"),
+    ("definition", "cone_half_angle", True),
+    ("definition", "type", "Rectangular"),
+    ("pointing", "azimuth", 360),
+    ("pointing", "azimuth", -1),
+    ("pointing", "elevation", 91),
+    ("pointing", "elevation", -90.5),
+    ("pointing", "type", "Targeted"),
+    ("pointing", "orientation", "Euler Angles"),
+    ("pointing", "about_boresight", "Hold"),
+    ("graphics2d", "color", "red"),
+    ("graphics2d", "fill_translucency", 101),
+    ("graphics2d", "fill_translucency", -1),
+    ("graphics2d", "fill_translucency", 50.5),
+    ("graphics2d", "fill", "yes"),
+    ("graphics3d", "color", "#12345"),
+    ("graphics3d", "show_radial_lines", 1),
+]
+
+
+@pytest.mark.parametrize("section,key,value", SENSOR_BAD_VALUES)
+def test_sensor_invalid_values_define_properties(client, s1, data_dir, section, key, value):
+    before = file_bytes(data_dir)
+    j = assert_error(insert(client, {**SENSOR_DEFINE, "name": "S1", "parent": G01, section: {key: value}}), 422, "SCENARIO_INVALID",
+                     f"{section}.{key}")
+    assert f"{section}.{key}" in j["text"] and file_bytes(data_dir) == before
+
+
+@pytest.mark.parametrize("section,key,value", SENSOR_BAD_VALUES)
+def test_sensor_invalid_values_patch(client, s1, data_dir, section, key, value):
+    _add_sensor(client)
+    before = file_bytes(data_dir)
+    body, field = ({"basic": {section: {key: value}}}, f"basic.{section}.{key}") if section in ("definition", "pointing") else (
+        {section: {key: value}}, f"{section}.{key}")
+    j = assert_error(patch(client, "Sensor/S1", body), 422, "SCENARIO_INVALID", field)
+    assert field in j["text"] and file_bytes(data_dir) == before
+
+
+@pytest.mark.parametrize("section,key,value", [
+    ("definition", "cone_half_angle", 90), ("definition", "cone_half_angle", 0.001), ("definition", "cone_half_angle", 13.9),
+    ("pointing", "azimuth", 0), ("pointing", "azimuth", 359.99), ("pointing", "elevation", -90), ("pointing", "elevation", 90),
+    ("graphics2d", "fill_translucency", 0), ("graphics2d", "fill_translucency", 100), ("graphics3d", "color", "#AbCdEf"),
+])
+def test_sensor_boundary_values_accepted(client, s1, section, key, value):
+    r = insert(client, {**SENSOR_DEFINE, "name": "S1", "parent": G01, section: {key: value}})
+    assert_saved(r, client, 201)
+    assert obj_in(doc_of(client), "Sensor", "S1")[section][key] == value
+
+
+def test_patch_sensor_pages(client, s1):
+    _add_sensor(client)
+    p = pages(client, "Sensor/S1")
+    assert set(p) == {"basic", "graphics2d", "graphics3d", "constraints"} and p["constraints"] == {}
+    assert p["basic"] == {"description": "", "long_description": "", "parent": G01,
+                          "definition": {"type": "Simple Conic", "cone_half_angle": 45.0},
+                          "pointing": {"type": "Fixed", "orientation": "Az-El", "azimuth": 0.0, "elevation": 90.0, "about_boresight": "Rotate"}}
+    assert p["graphics2d"] == {"show": True, "color": "#e8c547", "fill": False, "fill_translucency": 50}
+    assert p["graphics3d"] == {"show": True, "color": "#e8c547", "show_radial_lines": True, "show_boresight_marker": False}
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"definition": {"cone_half_angle": 13.9}}}), client)
+    assert pages(client, "Sensor/S1")["basic"]["definition"] == {"type": "Simple Conic", "cone_half_angle": 13.9}   # ผสมทีละชั้น type ยังอยู่
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"pointing": {"azimuth": 120, "elevation": 20}, "description": "ตัวทดสอบ"},
+                                              "graphics2d": {"fill": True, "fill_translucency": 80}, "graphics3d": {"show": False}}), client)
+    after = pages(client, "Sensor/S1")
+    assert after["basic"]["pointing"] == {"type": "Fixed", "orientation": "Az-El", "azimuth": 120, "elevation": 20, "about_boresight": "Rotate"}
+    assert after["basic"]["description"] == "ตัวทดสอบ" and after["basic"]["parent"] == G01
+    assert after["graphics2d"] == {"show": True, "color": "#e8c547", "fill": True, "fill_translucency": 80}
+    assert after["graphics3d"]["show"] is False and after["graphics3d"]["show_radial_lines"] is True
+
+
+def test_patch_sensor_parent_is_read_only(client, s1, data_dir):
+    _add_sensor(client)
+    before = file_bytes(data_dir)
+    for parent in ("*/Satellite/G22", "*/Satellite/NOPE", "*/Facility/THBK", None, 5):
+        assert_error(patch(client, "Sensor/S1", {"basic": {"parent": parent}}), 422, "SCENARIO_INVALID", "basic.parent")
+    assert file_bytes(data_dir) == before
+    r = patch(client, "Sensor/S1", {"basic": {"parent": G01, "description": "same parent"}})                   # ส่งค่าเดิมกลับมาได้
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+    assert pages(client, "Sensor/S1")["basic"]["parent"] == G01 and pages(client, "Sensor/S1")["basic"]["description"] == "same parent"
+
+
+def test_patch_sensor_rejects_keys_outside_the_page_and_constraints(client, s1, data_dir):
+    _add_sensor(client)
+    before = file_bytes(data_dir)
+    for key in ("name", "class", "norad", "position", "graphics2d"):
+        assert_error(patch(client, "Sensor/S1", {"basic": {key: "X"}}), 422, "SCENARIO_INVALID", f"basic.{key}")
+    assert_error(patch(client, "Sensor/S1", {"constraints": {"elevation_angle_min_deg": 5}}), 422, "SCENARIO_INVALID", "constraints")
+    assert file_bytes(data_dir) == before
+
+
+def test_sensor_basic_keys_do_not_leak_into_other_classes(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    for obj in ("Satellite/G01", "Facility/THBK", "Constellation/GPS"):
+        for key in ("parent", "definition", "pointing"):
+            assert_error(patch(client, obj, {"basic": {key: {}}}), 422, "SCENARIO_INVALID", f"basic.{key}")
+    assert file_bytes(data_dir) == before
+
+
+def test_tree_nests_sensors_under_satellite(client, s1):
+    _add_sensor(client, "S1", G01)
+    _add_sensor(client, "S2", "*/Satellite/G22")
+    _add_sensor(client, "S3", G01)
+    kids = tree_of(client)["children"]
+    nodes = {n["name"]: n for f in kids if "group" in f for n in f["children"]}
+    assert nodes["G01"]["children"] == [
+        {"path": "*/Sensor/S1", "class": "Sensor", "name": "S1", "color": "#e8c547", "show": True},
+        {"path": "*/Sensor/S3", "class": "Sensor", "name": "S3", "color": "#e8c547", "show": True}]
+    assert nodes["G22"]["children"] == [{"path": "*/Sensor/S2", "class": "Sensor", "name": "S2", "color": "#e8c547", "show": True}]
+    assert all("children" not in n for name, n in nodes.items() if name not in ("G01", "G22"))
+    assert not [k for k in kids if k.get("class") == "Sensor"]                                                    # sensor ไม่อยู่ที่ราก
+    assert "children" not in kids[0] and kids[0]["path"] == "*/Facility/THBK"                                      # Facility ไม่มี children
+
+
+def test_tree_sensor_node_color_and_show_follow_graphics2d(client, s1):
+    _add_sensor(client, "S1", G01)
+    assert_saved(patch(client, "Sensor/S1", {"graphics2d": {"color": "#010203", "show": False}, "graphics3d": {"color": "#aabbcc", "show": True}}), client)
+    nodes = {n["name"]: n for f in tree_of(client)["children"] if "group" in f for n in f["children"]}
+    assert nodes["G01"]["children"] == [{"path": "*/Sensor/S1", "class": "Sensor", "name": "S1", "color": "#010203", "show": False}]
+
+
+def test_tree_sensors_follow_an_ungrouped_satellite(client, s1):
+    put_doc(client, lambda d: [g.update({"members": [m for m in g["members"] if m != G01]}) for g in d["groups"]])
+    _add_sensor(client, "S1", G01)
+    kids = tree_of(client)["children"]
+    ungrouped = [k for k in kids if k.get("class") == "Satellite"]
+    assert [k["path"] for k in ungrouped][:1] == [G01] and [c["name"] for c in ungrouped[0]["children"]] == ["S1"]
+    assert not [k for k in kids if k.get("class") == "Sensor"]
+
+
+def test_tree_ignores_sensor_whose_parent_is_missing(s1):
+    """ไฟล์ที่แก้มือนอก API จนมี sensor กำพร้า: ต้นไม้ไม่พัง และไม่แสดง sensor นั้น"""
+    doc, _ = s1
+    doc["objects"].append(templates.sensor("Orphan", "*/Satellite/NOPE"))
+    kids = objects.tree(doc)["children"]
+    assert not [k for k in kids if k.get("class") == "Sensor"]
+    assert all("children" not in n for f in kids if "group" in f for n in f["children"])
+
+
+def test_sensor_name_collides_with_satellite(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    j = assert_error(insert(client, {**SENSOR_DEFINE, "name": "G22", "parent": G01}), 409, "NAME_EXISTS", "name")
+    assert j["detail"] == "G22"
+    assert_error(insert(client, {**SENSOR_DEFINE, "name": "g22", "parent": G01}), 409, "NAME_EXISTS", "name")     # ไม่แยกตัวพิมพ์เล็กใหญ่
+    assert_error(insert(client, {**SENSOR_DEFINE, "name": "THBK", "parent": G01}), 409, "NAME_EXISTS", "name")
+    assert file_bytes(data_dir) == before
+    _add_sensor(client, "S1")
+    assert_error(insert(client, {**SENSOR_DEFINE, "name": "s1", "parent": "*/Satellite/G22"}), 409, "NAME_EXISTS", "name")
+    assert_error(insert(client, {"class": "Satellite", "method": "Define Properties", "name": "s1", "norad": 5}), 409, "NAME_EXISTS", "name")
+    assert_error(rename(client, "Sensor/S1", "G22"), 409, "NAME_EXISTS", "new_name")
+    assert_error(rename(client, "Satellite/G22", "S1"), 409, "NAME_EXISTS", "new_name")
+
+
+def test_rename_sensor_keeps_parent(client, s1):
+    _add_sensor(client)
+    assert_saved(rename(client, "Sensor/S1", "Cam"), client)
+    sensor = obj_in(doc_of(client), "Sensor", "Cam")
+    assert sensor["parent"] == G01 and "S1" not in names_of(doc_of(client), "Sensor")
+    assert pages(client, "Sensor/Cam")["basic"]["parent"] == G01
+
+
+def test_rename_satellite_updates_sensor_parent(client, s1):
+    _add_sensor(client, "S1", G01)
+    _add_sensor(client, "S2", "*/Satellite/G22")
+    _add_sensor(client, "S3", G01)
+    r = rename(client, "Satellite/G01", "GPS01")
+    j = assert_saved(r, client); assert set(j) == {"etag", "results_stale"}
+    doc = doc_of(client)
+    assert obj_in(doc, "Sensor", "S1")["parent"] == "*/Satellite/GPS01" and obj_in(doc, "Sensor", "S3")["parent"] == "*/Satellite/GPS01"
+    assert obj_in(doc, "Sensor", "S2")["parent"] == "*/Satellite/G22"                                            # ของดาวอื่นไม่เปลี่ยน
+    nodes = {n["name"]: n for f in tree_of(client)["children"] if "group" in f for n in f["children"]}
+    assert [c["name"] for c in nodes["GPS01"]["children"]] == ["S1", "S3"]
+    assert pages(client, "Sensor/S1")["basic"]["parent"] == "*/Satellite/GPS01"
+
+
+def test_rename_satellite_updates_sensor_parent_for_case_only_change(client, s1):
+    _add_sensor(client, "S1", G01)
+    assert_saved(rename(client, "Satellite/G01", "g01"), client)
+    assert obj_in(doc_of(client), "Sensor", "S1")["parent"] == "*/Satellite/g01"
+
+
+def test_delete_satellite_deletes_its_sensors(client, s1):
+    _add_sensor(client, "S1", G01)
+    _add_sensor(client, "S2", "*/Satellite/G22")
+    _add_sensor(client, "S3", G01)
+    before = doc_of(client)
+    assert_saved(delete(client, "Satellite/G01"), client)
+    doc = doc_of(client)
+    assert names_of(doc, "Sensor") == ["S2"] and "G01" not in names_of(doc, "Satellite")
+    assert len(doc["objects"]) == len(before["objects"]) - 3
+    assert obj_in(doc, "Sensor", "S2") == obj_in(before, "Sensor", "S2")
+    assert "Satellite/G01" not in str(doc["objects"]) + str(doc["groups"]) + str(doc["accesses"])
+    assert_error(client.get("/api/scenarios/S1/objects/Sensor/S1"), 404, "NOT_FOUND")
+    assert_error(client.get("/api/scenarios/S1/objects/Sensor/S3"), 404, "NOT_FOUND")
+
+
+def test_delete_sensor_directly(client, s1):
+    _add_sensor(client, "S1", G01)
+    _add_sensor(client, "S2", G01)
+    before = doc_of(client)
+    assert_saved(delete(client, "Sensor/S1"), client)
+    doc = doc_of(client)
+    assert names_of(doc, "Sensor") == ["S2"] and "G01" in names_of(doc, "Satellite")
+    assert len(doc["objects"]) == len(before["objects"]) - 1
+    assert_error(delete(client, "Sensor/S1"), 404, "NOT_FOUND")
+    assert_error(delete(client, "Sensor/s2"), 404, "NOT_FOUND")
+
+
+def test_delete_other_class_keeps_sensors(client, s1):
+    _add_sensor(client, "S1", G01)
+    assert_saved(delete(client, "Constellation/GPS"), client)
+    assert_saved(delete(client, "Facility/THBK"), client)
+    assert names_of(doc_of(client), "Sensor") == ["S1"]
+
+
+def test_sensor_edits_do_not_make_results_stale(client, s1_computed):
+    r = insert(client, {**SENSOR_DEFINE, "name": "S1", "parent": G01})
+    assert_saved(r, client, 201); assert r.json()["results_stale"] is False
+    r = insert(client, {**SENSOR_DEFAULT, "parent": "*/Satellite/G22"})
+    assert_saved(r, client, 201); assert r.json()["results_stale"] is False
+    r = patch(client, "Sensor/S1", {"basic": {"definition": {"cone_half_angle": 10}}, "graphics2d": {"color": "#00ff00"}})
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+    r = rename(client, "Sensor/S1", "Cam")
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+    r = delete(client, "Sensor/Cam")
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+    r = delete(client, "Sensor/Sensor1")
+    assert_saved(r, client); assert r.json()["results_stale"] is False
+
+
+def test_sensor_is_ignored_by_the_engine(client, s1_computed, data_dir):
+    """engine ข้าม class Sensor: ไฟล์ที่มี sensor โหลดได้ และ hash ของ ephem กับ access ไม่เปลี่ยน"""
+    from gnss_predict.studio import plan_analyze, plan_propagate
+    scenario_dir = data_dir / "scenarios" / SC
+    ephem, access = plan_propagate(scenario_dir, data_dir).hash, plan_analyze(scenario_dir, "THBK", data_dir)
+    assert (ephem, access) == (s1_computed["ephem_hash"], s1_computed["access_hash"])
+    _add_sensor(client, "S1", G01)
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"pointing": {"azimuth": 10}}}), client)
+    assert (plan_propagate(scenario_dir, data_dir).hash, plan_analyze(scenario_dir, "THBK", data_dir)) == (ephem, access)
+    sc = load_scenario(scenario_dir / "scenario.json")
+    assert ("G01", 62339) in sc.satellites and all(f.name != "S1" for f in sc.facilities)
+
+
+def test_sensor_edits_require_if_match(client, s1, data_dir):
+    _add_sensor(client)
+    before = file_bytes(data_dir)
+    assert_error(insert(client, {**SENSOR_DEFAULT, "parent": G01}, etag=None), 412, "ETAG_MISMATCH")
+    assert_error(patch(client, "Sensor/S1", {"graphics2d": {"show": False}}, etag="0123456789abcdef"), 412, "ETAG_MISMATCH")
+    assert_error(delete(client, "Sensor/S1", etag=None), 412, "ETAG_MISMATCH")
+    assert file_bytes(data_dir) == before
+
+
+def test_sensor_edits_keep_unknown_fields(client, s1):
+    _add_sensor(client)
+    def mark(d):
+        obj_in(d, "Sensor", "S1")["x_note"] = "keep"
+        obj_in(d, "Sensor", "S1")["pointing"]["x_axes"] = "body"
+    put_doc(client, mark)
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"pointing": {"azimuth": 5}}, "graphics3d": {"show": False}}), client)
+    assert_saved(rename(client, "Satellite/G01", "GPS01"), client)
+    sensor = obj_in(doc_of(client), "Sensor", "S1")
+    assert sensor["x_note"] == "keep" and sensor["pointing"]["x_axes"] == "body" and sensor["parent"] == "*/Satellite/GPS01"
