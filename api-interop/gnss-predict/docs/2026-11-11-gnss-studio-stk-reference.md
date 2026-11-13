@@ -97,3 +97,17 @@ Base URL for relative links: `https://help.agi.com/stk/Content/`
 | DOP | STK | Coverage FOM **Dilution of Precision**: GDOP, PDOP/PDOP(3), HDOP/HDOP(3), VDOP/VDOP(3), EDOP/EDOP(3), NDOP/NDOP(3), TDOP; Over Determined / Best Four / Best N; one receiver clock vs GPS clock | cov/fom-13.htm |
 | Satellite count | STK | Coverage FOM **N Asset Coverage** | cov/fom-03.htm |
 | All DOPs style | OK | Time, GDOP, PDOP, HDOP, VDOP, TDOP | SubSystems/dataProviders/Content/htmlStyles/ObjectCoverage/Reports/All_DOPs.htm |
+
+## G. Sensor (verified 2026-11-13, STK 13.1.0 help, raw pages read)
+
+| Item | Verdict | STK term / behavior | Page |
+|---|---|---|---|
+| Sensor object | OK | "Models the field of view … of a sensing device attached to another STK object"; children of vehicles, facilities, places, targets; shown nested under its parent (+/− to expand) | stk/ObjectMap.htm, stk/ObjectMap_Sensor.htm, gettingstarted/GetStart_ObjectBrowser.htm |
+| Insert | OK | Insert STK Objects (Define Properties / Insert Default); Insert menu "New..." and "Default Object..."; after Insert Default a **Select Object** window picks the parent; auto names Sensor1, Sensor2, … | stk/NewObjectTool.htm, training/IntroSensors.htm, gettingstarted/OptionsNewObject.htm |
+| Basic pages | OK | Definition, Location, Pointing, Sensor AzEl Mask, Refraction, Resolution, Description | stk/ObjectMap_Sensor.htm |
+| Basic - Definition | STK | **Sensor Type**: Complex Conic, Custom, EOIR, Half Power, Rectangular, SAR, **Simple Conic** (default); Simple Conic field **Cone Half Angle** (default 45 deg, tutorial only) | stk/sn-01.htm, training/IntroSensors.htm |
+| Basic - Pointing | STK | **Pointing Type**: 3D Model, Along Vector, **Fixed** (default), Targeted, Spinning, External, Grazing Altitude, Fixed in Axes, Scheduled; Fixed → **Orientation Method** Az-El / Euler Angles / Quaternion / YPR Angles; Az-El fields Azimuth, Elevation, About Boresight (Rotate default); default Az 0, El 90 = nadir on a vehicle (elevation toward body +Z, azimuth from +X toward +Y) | stk/sn-08.htm, stk/sn-orientation.htm, stk/referenceFramesSensorPointing.htm |
+| 2D Graphics pages | OK | Attributes (Color, **Fill** with **% Translucency**, 100 = invisible), Projection, Boresight (Show Boresight Graphics), Display Times | stk/ObjectMap_Sensor.htm, stk/2DGraphicsAttributes.htm, stk/sn-15.htm, stk/sn-15aa.htm |
+| 3D Graphics pages | STK | Attributes (**Show Boresight Marker**, **Show Radial Lines**, Translucent Lines, Interior Fill + % Translucency), Projection (Type: All Intersections / **Earth Intersections** / None; Space Projection), Pulse, Vertex Offset, Vector, Attitude Sphere, Data Display | vo/sensors-01.htm, vo/sensors-02.htm |
+| View through a sensor | NF | No "Sensor View" / boresight-view command. Closest: Sensor menu → **Obscuration...** (Obscuration View looks down the boresight; vehicle sensors; half angle ≤ 79.5 deg) and the licensed EOIR Sensor Scene. View From/To never names sensors | vo/obscur.htm, eoir/eoir_sceneGenerate.htm, vo/3DViewPosition.htm |
+| Satellite attitude profile used for sensor pointing | OK | Predefined profile **Nadir alignment with ECI velocity constraint** (Z to geocentric nadir, X constrained to the velocity); the ECF-velocity variant "may not be appropriate for satellites in synchronous or highly eccentric orbits" | stk/referenceframesvehicle.htm, stk/attitude/attitudeBasicTypes.htm |
