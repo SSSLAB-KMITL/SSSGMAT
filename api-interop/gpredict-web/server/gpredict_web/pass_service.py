@@ -8,9 +8,13 @@
 
 Sky at a glance ไม่รอ GMAT: sky() สั่ง block รายวันของทุกดาวใน module ภายใต้ owner sky:<module> (ถือไว้จนหน้าต่างปิด
 หรือ module ปิด หน้าเว็บถามซ้ำระหว่าง computing) แล้วตอบ status ทันที เมื่อ ok จึงหา pass ของทุกดวง
+
+find_passes ของทั้งสองทางผ่าน PassMemo: วาดใหม่หรือขอซ้ำในช่วงวันเดิมใช้ pass ที่หาไว้แล้ว **(ของเรา)**
 """
 
+import threading
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -18,7 +22,8 @@ from datetime import date, datetime, timedelta, timezone
 from gnss_predict.errors import Message
 
 from .clock import parse_clock_time
-from .ephem import EphemManager, SatEphem, SatSpec
+from .config import PASS_MEMO_SIZE
+from .ephem import EphemManager, SatEphem, SatSpec, tle_key
 from .errors import ApiError
 from .observe import QthGeo, TleElements, qth_geo
 from .pass_predict import NEXT_PASS_OFFSET, describe, get_pass, get_passes, has_aos, pass_to_dict
@@ -168,16 +173,46 @@ def _data_missing(plan: PassPlan, messages: Sequence[Message]) -> ApiError:
                     "ลองใหม่อีกครั้ง", str(plan.norad))
 
 
+# ---------------------------------------------------------------- pass ที่หาไว้แล้ว
+
+class PassMemo:
+    """**(ของเรา)** ผลของ find_passes ต่อ (TLE, วันแรก, วันสุดท้าย, ตำแหน่งสถานี) จำไว้แบบ LRU ไม่เกิน size รายการ
+    block รายวันของ TLE หนึ่งไม่เปลี่ยน ข้อมูลของช่วงวันเดียวกันจึงให้ pass ชุดเดิมเสมอ Sky at a glance ที่วาดใหม่ในช่วงวันเดิม
+    จึงไม่หา pass ของทุกดวงใหม่ (find_passes ราว 40–65 ms ต่อดวงต่อ 3 วัน) ใช้จากหลาย thread พร้อมกันได้"""
+
+    def __init__(self, size: int = PASS_MEMO_SIZE):
+        self._size = size
+        self._lock = threading.Lock()
+        self._found: OrderedDict[tuple, tuple[Pass, ...]] = OrderedDict()
+
+    def passes(self, spec: SatSpec, first: date, last: date, q: QthGeo, eph: SatEphem) -> tuple[Pass, ...]:
+        """pass ของ eph ซึ่งต้องเป็น get_days(spec, first, last) ที่สถานี q: ที่จำไว้ หรือ find_passes แล้วจำไว้"""
+        key = (tle_key(spec.tle_lines), first, last, q.lat_deg, q.lon_deg, q.alt_m)
+        with self._lock:
+            found = self._found.get(key)
+            if found is not None:
+                self._found.move_to_end(key)
+                return found
+        found = tuple(find_passes(eph, q))                     # นอก lock: thread อื่นไม่ต้องรอ (หาซ้ำพร้อมกันได้ผลเท่ากัน)
+        with self._lock:
+            self._found[key] = found
+            self._found.move_to_end(key)
+            while len(self._found) > self._size:
+                self._found.popitem(last=False)
+        return found
+
+
 # ---------------------------------------------------------------- service
 
 class PassService:
-    """คำขอ pass ของทุก module (ไม่มีสถานะของตัวเอง ใช้ Hub, EphemManager และ Prefs ร่วมกับส่วนอื่น)"""
+    """คำขอ pass ของทุก module ใช้ Hub, EphemManager และ Prefs ร่วมกับส่วนอื่น สถานะของตัวเองมีแค่ PassMemo"""
 
     def __init__(self, hub: Hub, ephem: EphemManager, prefs: Prefs, now: Callable[[], datetime]):
         self._hub = hub
         self._ephem = ephem
         self._prefs = prefs
         self._now = now
+        self._memo = PassMemo()
 
     def plan(self, module: str, body: dict) -> PassPlan | dict:
         """ตรวจ body (422 PASS_INVALID) → หา module (ไม่ได้เปิด: ModuleClosedError) → หาดาว (404 NOT_FOUND)
@@ -215,7 +250,7 @@ class PassService:
         if eph is None:
             raise _data_missing(plan, messages)
         q = qth_geo(plan.qth)
-        passes = find_passes(eph, q)
+        passes = self._memo.passes(plan.spec, plan.first, plan.last, q, eph)
         get = self._prefs.get                                     # อ่านครั้งเดียว: ทุก pass ในคำตอบใช้ค่าชุดเดียวกัน
         min_el, look_ahead = float(get("PREDICT/MINIMUM_ELEV")), int(get("PREDICT/LOOK_AHEAD"))
         n_entries, resolution_s = int(get("PREDICT/NUMBER_OF_ENTRIES")), int(get("PREDICT/TIME_RESOLUTION"))
@@ -304,7 +339,7 @@ class PassService:
                                 "GMAT_FAILED", "warning", f"ไม่มีตำแหน่งของ {name} (NORAD {norad}) จาก GMAT ในช่วงที่ต้องใช้ "
                                 "จึงไม่แสดง pass ใน Sky at a glance ลองปิดแล้วเปิดหน้าต่างใหม่", str(norad)))
                     else:
-                        chosen = get_passes(find_passes(eph, q), t0, hours / 24.0, SKY_PASSES, min_el)
+                        chosen = get_passes(self._memo.passes(spec, first, last, q, eph), t0, hours / 24.0, SKY_PASSES, min_el)
                         passes = [pass_to_dict(describe(p, eph, q, elements, n_entries, resolution_s, twilight_deg),
                                                rows=False) for p in chosen]
                 except ValueError as exc:                         # วงโคจรไม่ปิดหรือตำแหน่งที่ต้องใช้อยู่นอกข้อมูล: ข้ามเฉพาะดวงนี้

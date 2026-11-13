@@ -20,6 +20,8 @@ GMAT_TIMEOUT_S = 600
 # block ephemeris รายวันสำหรับ pass (spec §3.1 ของงานย่อย 2)
 DAY_LRU_BLOCKS = 400                  # block ที่เก็บในหน่วยความจำ (ราว 55 MB) ที่เหลืออ่านจากดิสก์
 DAY_KEEP_DAYS = 7                     # prune ลบโฟลเดอร์วันที่เก่ากว่าวันนี้เท่านี้วัน
+PASS_MEMO_SIZE = 2 * MAX_SATS         # (ของเรา) ผลของ find_passes ที่จำไว้ (ดาว × ช่วงวัน × สถานี ราว 20 KB ต่อรายการ)
+                                      # ไม่น้อยกว่า MAX_SATS: Sky at a glance ของ module เต็มวนครบทุกดวงโดยไม่ไล่ของตัวเองออก
 
 TLE_OLD_DAYS = 7                      # TLE เก่ากว่า T เท่านี้ขึ้นคำเตือน TLE_OLD
 

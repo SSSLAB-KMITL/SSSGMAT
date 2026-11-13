@@ -11,18 +11,20 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from gpredict_web.ephem import EphemManager
+from gpredict_web.config import MAX_SATS
+from gpredict_web.ephem import EphemManager, SatSpec
 from gpredict_web.errors import ApiError
 from gpredict_web.module import module_from_dict
 from gpredict_web.observe import parse_tle
 from gpredict_web.pass_predict import NEXT_PASS_OFFSET, PASS_GAP
-from gpredict_web.pass_service import PassPlan, PassService, day_range, name_sort_key
+from gpredict_web.pass_service import PASS_MEMO_SIZE, PassMemo, PassPlan, PassService, day_range, name_sort_key
+from gpredict_web.passes import find_passes
 from gpredict_web.prefs import Prefs
 from gpredict_web.runtime import Hub, ModuleClosedError, iso_ms
 from gpredict_web.satdb import SatDb, SatRecord
 from gpredict_web.store import Store
 from gnss_predict.errors import GmatRunError
-from tests.helpers import PERIOD_S, FakeNow, circular_state, half_pass_s, temp_config
+from tests.helpers import PERIOD_S, FakeNow, circular_state, half_pass_s, origin_qth, temp_config
 from tests.test_runtime import NORADS, ORIGIN, T0, OrbitPropagate, iso, parse_iso, peak, record
 
 UTC = timezone.utc
@@ -512,12 +514,71 @@ class SkyTest(PassServiceTestBase):
         self.service.sky("M", T0 + timedelta(hours=1))
         self.assertEqual([o for o in self.ephem._day_pairs if o.startswith("sky:")], ["sky:M"])
 
+    def test_sky_redraw_in_the_same_days_reuses_the_passes(self):
+        # block รายวันของ TLE หนึ่งไม่เปลี่ยน: วาดใหม่ในช่วงวันเดิมไม่ต้อง find_passes ใหม่ (ราว 40–65 ms ต่อดวง) คำตอบเหมือนหาใหม่
+        self.sky_ok()
+        later = T0 + timedelta(minutes=2)
+        with mock.patch("gpredict_web.pass_service.find_passes", wraps=find_passes) as found:
+            out = self.service.sky("M", later)
+        self.assertEqual(found.call_count, 0)
+        self.assertEqual(out, PassService(self.hub, self.ephem, self.prefs, self.wall).sky("M", later))
+
+    def test_sky_finds_passes_again_for_a_new_tle(self):
+        self.sky_ok()
+        n = NORADS[1]
+        records = {r.norad: r for r in pass_records()}
+        records[n] = record(n, epoch=T0 - timedelta(hours=1))
+        with mock.patch.object(self.hub, "_satdb", records):                       # Hub ใช้แค่ satdb.get(norad)
+            self.hub.reload("M")
+        with mock.patch("gpredict_web.pass_service.find_passes", wraps=find_passes) as found:
+            self.sky_ok()
+        self.assertEqual(found.call_count, 1)                                       # เฉพาะดวงที่ TLE เปลี่ยน
+
+    def test_sky_finds_passes_again_for_a_moved_station(self):
+        rising = [s for s in self.sky_ok()["sats"] if s["norad"] != GEO]           # ดวงที่ has_aos (GEO ไม่ขึ้น)
+        for moved in (dataclasses.replace(ORIGIN, lon_deg=1.0), dataclasses.replace(ORIGIN, alt_m=500.0)):
+            with self.subTest(qth=moved):
+                Store(self.cfg.data_dir).put_qth(moved)
+                self.hub.reload("M")
+                with mock.patch("gpredict_web.pass_service.find_passes", wraps=find_passes) as found:
+                    self.assertEqual(self.service.sky("M", T0)["status"], "ok")    # ช่วงวันเดิม: ไม่ต้องรอ GMAT
+                self.assertEqual(found.call_count, len(rising))
+
+    def test_pass_request_reuses_the_passes_of_its_days(self):
+        plan = self.plan("future", T0)
+        first = self.answer(plan)
+        with mock.patch("gpredict_web.pass_service.find_passes", wraps=find_passes) as found:
+            self.assertEqual(self.answer(self.plan("future", T0)), first)
+        self.assertEqual(found.call_count, 0)
+
     def test_close_module_releases_sky_owner(self):
         self.service.sky("M", T0)
         self.assertIn("sky:M", self.ephem._day_pairs)
         self.hub.close("M")
         self.assertNotIn("sky:M", self.ephem._day_pairs)
         self.hub.close("M")                                                          # ปิดซ้ำไม่เป็นไร
+
+
+class PassMemoTest(unittest.TestCase):
+    def test_least_recently_used_goes_first(self):
+        memo = PassMemo(size=2)
+        a, b, c = (SatSpec(n, f"SAT{n}", tuple(record(n).tle_lines)) for n in NORADS)
+        day, q, eph = date(2026, 11, 12), origin_qth(), mock.sentinel.eph
+        with mock.patch("gpredict_web.pass_service.find_passes", side_effect=lambda e, g: [object()]) as found:
+            first = memo.passes(a, day, day, q, eph)
+            memo.passes(b, day, day, q, eph)
+            self.assertIs(memo.passes(a, day, day, q, eph), first)                 # ใช้ a ล่าสุด: b เก่าสุด
+            memo.passes(c, day, day, q, eph)                                        # เกิน 2: b ออก
+            self.assertEqual(found.call_count, 3)
+            self.assertIs(memo.passes(a, day, day, q, eph), first)
+            memo.passes(b, day, day, q, eph)
+            self.assertEqual(found.call_count, 4)
+            memo.passes(b, day, day + timedelta(days=1), q, eph)                    # วันสุดท้ายต่าง: หาใหม่
+            memo.passes(b, day - timedelta(days=1), day, q, eph)                    # วันแรกต่าง: หาใหม่
+            self.assertEqual(found.call_count, 6)
+
+    def test_size_fits_a_full_module(self):
+        self.assertGreaterEqual(PASS_MEMO_SIZE, MAX_SATS)                            # Sky at a glance วนครบทุกดวงไม่ไล่กันเอง
 
 
 if __name__ == "__main__":
