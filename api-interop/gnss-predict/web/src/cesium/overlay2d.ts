@@ -1,8 +1,9 @@
-// ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (spec §9.3): Swath, เส้นแบ่งกลางวันกลางคืน (Show Outline), จุดและเส้นทาง IPP
+// ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (spec §9.3): Swath, เส้นแบ่งกลางวันกลางคืน (Show Outline), จุดและเส้นทาง IPP, รอยของ sensor (sensor spec §5.3)
 // (Shading ใช้แสงของ globe ของ Cesium: scene2d.ts applyProps)
 //
 // - swathInputs เลือกดาวที่วาด Swath จากหน้าตาของ entity (ดาวที่แสดงอยู่ ตั้ง Edge/Filled Limits และมีตำแหน่ง ณ ตอนนี้)
-// - ตัวสร้าง (swathItems, terminatorItem, ippItems) แปลงผลของ swath.ts / night.ts / ipp.ts เป็นรายการเส้น จุด และพื้นที่ของ Cesium พร้อมสีและขนาดจาก theme
+// - ตัวสร้าง (swathItems, terminatorItem, ippItems, sensorItems) แปลงผลของ swath.ts / night.ts / ipp.ts / sensorDraw.ts เป็นรายการเส้น จุด
+//   และพื้นที่ของ Cesium พร้อมสีและขนาดจาก theme (รอยของ sensor ใช้ความหนาเส้นของ Swath, พื้นที่ใช้ความทึบจาก % Translucency ของ sensor)
 // - fillStates / fillMoved: พื้นที่ Filled Limits สร้าง primitive ใหม่เฉพาะเมื่อชุดดาว สี มุมเงย หรือจุดใต้ดาว/รัศมีของรอยเท้าดวงใดเปลี่ยนเกิน 0.5°
 //   (จุดใต้ดาว MEO เลื่อนราว 0.006–0.013° ต่อวินาทีของภาพ: ที่ Real Time หรือเดินทีละ step สั้น ๆ แทบไม่สร้างใหม่ แต่ที่ความเร็วตั้งต้น
 //   (1,800 วินาทีของภาพต่อวินาที วาด 10 ครั้งต่อวินาที) เลื่อน 1–2° ต่อการวาด จึงยังสร้างใหม่ทุกครั้งเพื่อให้ภาพตามดาว)
@@ -12,7 +13,7 @@
 //   - จุด: PointPrimitiveCollection ต่อชั้น เก็บตาม key เช่นกัน
 //   - พื้นที่: Primitive แบบ synchronous หนึ่งตัวต่อชั้น (หลาย instance) สร้างใหม่ทุกรอบ จากตาข่ายตามคอลัมน์ของ lonlat.ts ซึ่งไม่มีสามเหลี่ยมพาดขั้ว
 //     หรือพาดเส้น 180° (เหตุที่ไม่ใช้ PolygonGeometry อยู่ใน lonlat.ts)
-//   ลำดับชั้น (ล่างขึ้นบน): Swath แบบเติม, เส้นแบ่งกลางวันกลางคืน, ขอบ Swath, เส้นทาง IPP, จุด IPP
+//   ลำดับชั้น (ล่างขึ้นบน): Swath แบบเติม, Fill ของ sensor, เส้นแบ่งกลางวันกลางคืน, ขอบ Swath, วงรอยของ sensor, เส้นทาง IPP, จุด IPP
 
 import {
   BoundingSphere, Cartesian3, Color, ColorGeometryInstanceAttribute, ComponentDatatype, Geometry, GeometryAttribute, GeometryAttributes, GeometryInstance,
@@ -21,8 +22,9 @@ import {
 } from "cesium";
 import { cssColor, type EntityLook, type SceneStyle } from "./graphics";
 import type { IppPoint, IppTrack } from "./ipp";
-import { columnsMesh, type Column } from "./lonlat";
+import { capColumns, columnsMesh, type Column } from "./lonlat";
 import { terminator } from "./night";
+import { sensorColor, sensorFillAlpha, type SensorDrawState } from "./sensorDraw";
 import { footprintCentralAngleRad, subSatellite, swathShape } from "./swath";
 
 /** ละติจูดสูงสุดของจุดที่วาด: ที่ขั้วพอดีทุกลองจิจูดเป็นจุดเดียวกัน Cesium จะหาลองจิจูดคืนไม่ได้เมื่อฉายลง 2D */
@@ -171,6 +173,49 @@ export function swathItems(sats: readonly SwathInput[], style: SceneStyle): { ed
   return { edges, fills };
 }
 
+/** key ของเส้นและพื้นที่ของ sensor ชื่อ name ในหน้าต่าง 2D */
+export const sensorKey = (name: string): string => `sensor/${name}`;
+
+/** พื้นที่ของ sensor หนึ่งตัว: Fill เปิด, boresight ชี้ลงศูนย์กลางโลก (P2) มีรอย และความทึบ > 0 ไม่งั้น null */
+function sensorFillOf(st: SensorDrawState): { key: string; lat: number; lon: number; angleRad: number; color: Color } | null {
+  const angle = st.centralAngleRad;
+  if (st.sensor.graphics2d?.fill !== true || !st.nadir || angle === null || !(angle > 0)) return null;
+  const alpha = sensorFillAlpha(st.sensor);
+  if (!(alpha > 0)) return null;
+  const sub = subSatellite(st.pos);
+  return { key: sensorKey(st.sensor.name), lat: sub.lat, lon: sub.lon, angleRad: angle, color: cssColor(sensorColor(st.sensor, "2d")).withAlpha(alpha) };
+}
+
+/** สถานะของพื้นที่ sensor ที่มี Fill (ใช้กับ fillMoved แบบ Filled Limits: สีรวมความทึบ จึงเปลี่ยน % Translucency แล้วสร้างใหม่) */
+export function sensorFillStates(states: readonly SensorDrawState[]): FillState[] {
+  const out: FillState[] = [];
+  for (const st of states) {
+    const f = sensorFillOf(st);
+    if (f !== null) out.push({ key: f.key, lat: f.lat, lon: f.lon, angleDeg: (f.angleRad * 180) / Math.PI, color: f.color.toCssHexString() });
+  }
+  return out;
+}
+
+/**
+ * รอยของ sensor ในหน้าต่าง 2D (sensor spec §5.3): วงรอยบนพื้นโลกในสี graphics2d.color ทุกตัวที่ boresight โดนโลก (ไม่โดน = ไม่วาดรอย: spec §3.3)
+ * Fill = พื้นที่แบบ Filled Limits ของ Swath (capColumns รอบจุดใต้ดาวที่มุมศูนย์กลางของรอย) เฉพาะ boresight ที่ชี้ลงศูนย์กลางโลก (P2)
+ * ความทึบ 1 − % Translucency / 100 (100% = ไม่สร้าง) withFills = false: ไม่สร้างพื้นที่ (ผู้เรียกไม่ต้องสร้างใหม่รอบนี้)
+ * ผู้เรียกเลือก sensor ที่วาดเอง (drawableSensors) ที่นี่จัดรูปอย่างเดียว
+ */
+export function sensorItems(states: readonly SensorDrawState[], style: SceneStyle, withFills = true): { lines: LineItem[]; fills: FillItem[] } {
+  const lines: LineItem[] = [];
+  const fills: FillItem[] = [];
+  for (const st of states) {
+    if (st.footprint.boresightHit === null) continue;
+    const key = sensorKey(st.sensor.name);
+    lines.push({ key, positions: lonLatPositions(st.footprint.ring), color: cssColor(sensorColor(st.sensor, "2d")), width: style.swathEdgeWidth });
+    const f = withFills ? sensorFillOf(st) : null;
+    const geometry = f === null ? null : meshGeometry(capColumns(f.lat, f.lon, f.angleRad));
+    if (f !== null && geometry !== null) fills.push({ key, geometry, color: f.color });
+  }
+  return { lines, fills };
+}
+
 /** Lighting → Show Outline ณ เวลา d: เส้นแบ่งกลางวันกลางคืน (181 จุด) สีและความหนาจาก theme */
 export function terminatorItem(d: Date, style: SceneStyle): LineItem {
   return { key: "terminator", positions: lonLatPositions(terminator(d)), color: cssColor(style.terminatorLine), width: style.terminatorWidth };
@@ -200,12 +245,13 @@ export function ippItems(
 
 // ---------- ชั้นของ primitive ----------
 
-export type FillLayer = "swath";
-export type LineLayer = "terminator" | "swathEdge" | "ippTrack";
+export type FillLayer = "swath" | "sensor";
+export type LineLayer = "terminator" | "swathEdge" | "sensorEdge" | "ippTrack";
 export type PointLayer = "ipp";
 export type OverlayLayer = FillLayer | LineLayer | PointLayer;
 
-const ORDER: OverlayLayer[] = ["swath", "terminator", "swathEdge", "ippTrack", "ipp"];
+const ORDER: OverlayLayer[] = ["swath", "sensor", "terminator", "swathEdge", "sensorEdge", "ippTrack", "ipp"];
+const isFill = (layer: OverlayLayer): layer is FillLayer => layer === "swath" || layer === "sensor";
 
 export class Overlays2D {
   private readonly root: PrimitiveCollection;
@@ -217,7 +263,7 @@ export class Overlays2D {
   constructor(private readonly parent: PrimitiveCollection) {
     this.root = parent.add(new PrimitiveCollection()) as PrimitiveCollection;
     for (const layer of ORDER) {
-      if (layer === "swath") this.fills.set(layer, this.root.add(new PrimitiveCollection()) as PrimitiveCollection);
+      if (isFill(layer)) this.fills.set(layer, this.root.add(new PrimitiveCollection()) as PrimitiveCollection);
       else if (layer === "ipp") this.points.set(layer, { collection: this.root.add(new PointPrimitiveCollection()) as PointPrimitiveCollection, byKey: new Map() });
       else this.lines.set(layer, { collection: this.root.add(new PolylineCollection()) as PolylineCollection, byKey: new Map() });
     }
@@ -284,11 +330,16 @@ export class Overlays2D {
     }
   }
 
+  /** จำนวนจุดของเส้น key ในชั้นนั้นที่วาดอยู่ ไม่มีเส้นนั้น = null (window.__gnssStudioTest.sensorFootprint) */
+  linePoints(layer: LineLayer, key: string): number | null {
+    return this.lines.get(layer)!.byKey.get(key)?.positions.length ?? null;
+  }
+
   /** จำนวนสิ่งที่วาดอยู่ในแต่ละชั้น (พื้นที่นับเป็น instance) */
   counts(): Record<OverlayLayer, number> {
     const out = {} as Record<OverlayLayer, number>;
     for (const layer of ORDER) {
-      if (layer === "swath") out[layer] = this.fillCounts.get(layer) ?? 0;
+      if (isFill(layer)) out[layer] = this.fillCounts.get(layer) ?? 0;
       else if (layer === "ipp") out[layer] = this.points.get(layer)!.byKey.size;
       else out[layer] = this.lines.get(layer)!.byKey.size;
     }

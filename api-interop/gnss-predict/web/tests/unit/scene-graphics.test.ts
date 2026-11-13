@@ -1,15 +1,17 @@
 // กราฟิกบน entity จริงของ Cesium (CzmlDataSource ที่ process CZML ในหน่วยความจำ ไม่ต่อเครือข่าย ไม่วาดภาพ):
-// applyGraphics (src/cesium/graphics.ts), ensureFacilities และ loadScene (src/cesium/czml.ts)
+// applyGraphics และสถานะของ sensor จากตำแหน่งของ entity ดาวแม่ (src/cesium/graphics.ts), ensureFacilities และ loadScene (src/cesium/czml.ts)
 
 import {
   Cartesian3, Cartographic, Color, CzmlDataSource, JulianDate, Math as CMath, NearFarScalar, TimeIntervalCollectionProperty, type Entity, type Viewer,
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, sceneStyleFrom, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { applyGraphics, sceneStyleFrom, sensorStatesAt, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import { orbitPeriodS } from "../../src/cesium/passes";
+import { bodyFrame, type Vec3 } from "../../src/cesium/sensorGeometry";
 import type { ScenarioDoc } from "../../src/stores/scenario";
 import { makeDoc } from "./helpers/chrome";
+import { sensorObj } from "./helpers/objects";
 
 const TOKENS: ColorTokens = {
   gps: "#ffd23f", glonass: "#ff6b6b", galileo: "#4fd47e", beidou: "#45c8ff", other: "#c8c8c8", facility: "#ff79e6", access: "#9dff6b",
@@ -378,5 +380,61 @@ describe("View From/To ends (scene3d.fromToResult)", () => {
     expect(fromToResult(thbk, byId(ds, "sat/E05"))).toBe("notFound"); // ถูกซ่อนตามธง
     expect(fromToResult(undefined, g01)).toBe("notFound");
     expect(fromToResult(thbk, undefined)).toBe("notFound");
+  });
+});
+
+describe("sensor states from the parent satellite's entity (sensorStatesAt)", () => {
+  const fixed = (e: Entity, t: JulianDate): Vec3 => {
+    const p = e.position!.getValue(t)!; // ตัวอย่างใน CZML เป็น FIXED
+    return { x: p.x, y: p.y, z: p.z };
+  };
+  const sub = (a: Vec3, b: Vec3, s: number): Vec3 => ({ x: (a.x - b.x) / s, y: (a.y - b.y) / s, z: (a.z - b.z) / s });
+  const plus = (t: JulianDate, s: number): JulianDate => JulianDate.addSeconds(t, s, new JulianDate());
+  const sensor = (name: string, parent: string, over: object = {}) => ({ ...sensorObj(name, parent), ...over }) as unknown as SceneObject;
+  const doc = docOf([
+    sat("G01", 62339),
+    sat("E05", 40128, { graphics3d: { show: false } }),
+    sat("X99", 99999), // ไม่มีใน manifest: ไม่มี entity
+    sensor("S1", "G01"),
+    sensor("S2", "E05"),
+    sensor("S3", "G01", { graphics3d: { show: false, color: "#e8c547", show_radial_lines: true, show_boresight_marker: false } }),
+    sensor("S4", "X99"),
+  ]);
+
+  test("shown sensors of shown satellites, with the frame from the position one second either side", async () => {
+    const ds = await scene(false);
+    applyGraphics(ds, doc, baseCtx);
+    const states = sensorStatesAt(doc, ds.entities, baseCtx, time);
+    expect(states.map((s) => s.sensor.name)).toEqual(["S1"]);
+    const g01 = byId(ds, "sat/G01");
+    const p = fixed(g01, time);
+    expect(states[0].pos.x).toBeCloseTo(p.x, 3);
+    expect(states[0].pos.z).toBeCloseTo(p.z, 3);
+    const want = bodyFrame(p, sub(fixed(g01, plus(time, 1)), fixed(g01, plus(time, -1)), 2))!;
+    expect(states[0].frame.x.x).toBeCloseTo(want.x.x, 9);
+    expect(states[0].frame.x.y).toBeCloseTo(want.x.y, 9);
+    expect(states[0].frame.x.z).toBeCloseTo(want.x.z, 9);
+
+    // หน้าต่าง 2D ใช้ธงของหน้า 2D: E05 และ S3 แสดงอยู่
+    const ds2 = await scene(false);
+    applyGraphics(ds2, doc, { ...baseCtx, mode: "2d" });
+    expect(sensorStatesAt(doc, ds2.entities, { ...baseCtx, mode: "2d" }, time).map((s) => s.sensor.name)).toEqual(["S1", "S2", "S3"]);
+  });
+
+  test("a hidden parent, no doc, or no position at that time draws nothing; the start of the data uses the one-sided difference", async () => {
+    const ds = await scene(false);
+    const hidden = { ...baseCtx, isHidden: (n: number) => n === 62339 };
+    applyGraphics(ds, doc, hidden);
+    expect(sensorStatesAt(doc, ds.entities, hidden, time)).toEqual([]);
+    applyGraphics(ds, doc, baseCtx);
+    expect(sensorStatesAt(null, ds.entities, baseCtx, time)).toEqual([]);
+    expect(sensorStatesAt(doc, ds.entities, baseCtx, JulianDate.fromIso8601("2026-11-12T00:00:01Z"))).toEqual([]); // หลังช่วงของข้อมูล
+    const start = JulianDate.fromIso8601(T0);
+    const g01 = byId(ds, "sat/G01");
+    const [first] = sensorStatesAt(doc, ds.entities, baseCtx, start);
+    const want = bodyFrame(fixed(g01, start), sub(fixed(g01, plus(start, 1)), fixed(g01, start), 1))!;
+    expect(first.frame.x.x).toBeCloseTo(want.x.x, 9);
+    expect(first.frame.x.y).toBeCloseTo(want.x.y, 9);
+    expect(first.frame.x.z).toBeCloseTo(want.x.z, 9);
   });
 });

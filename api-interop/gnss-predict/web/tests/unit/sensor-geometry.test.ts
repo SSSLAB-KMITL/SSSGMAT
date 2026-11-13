@@ -6,6 +6,7 @@ import {
   bodyFrame,
   boresightOf,
   cameraOrientation,
+  coneRays,
   defaultConeHalfAngleDeg,
   earthDiscHalfAngleDeg,
   EARTH_ROTATION_RAD_S,
@@ -148,4 +149,22 @@ test("fov: square view equals the cone, wide view widens, capped at 120 on the s
   expect(sensorViewFovDeg(10, 1)).toBeCloseTo(21, 6);
   expect(sensorViewFovDeg(80, 1)).toBeCloseTo(120, 6);
   expect(sensorViewFovDeg(10, 2)).toBeCloseTo((2 * Math.atan(Math.tan(10.5 * D) * 2)) / D, 6);
+});
+
+test("cone rays are equally spaced at the half angle; every ninth of 72 is one of 8 (radial lines)", () => {
+  const b = { x: -1, y: 0, z: 0 };
+  const rays = coneRays(b, 10);
+  expect(rays).toHaveLength(72);
+  for (const r of rays) {
+    expect(Math.hypot(r.x, r.y, r.z)).toBeCloseTo(1, 12);
+    expect(Math.acos(-r.x) / D).toBeCloseTo(10, 9);
+  }
+  // เส้นแรกเอียงไปทาง +X ที่ฉายลงระนาบตั้งฉาก b (ขนานกับ b ที่นี่ จึงใช้ทิศเหนือ +Z)
+  expect(rays[0].z).toBeGreaterThan(0);
+  const eight = coneRays(b, 10, 8);
+  eight.forEach((r, k) => {
+    expect(r.x).toBeCloseTo(rays[9 * k].x, 12);
+    expect(r.y).toBeCloseTo(rays[9 * k].y, 12);
+    expect(r.z).toBeCloseTo(rays[9 * k].z, 12);
+  });
 });

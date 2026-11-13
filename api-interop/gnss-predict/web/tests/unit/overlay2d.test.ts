@@ -1,5 +1,5 @@
 // ภาพที่เปลี่ยนตามเวลาของหน้าต่าง 2D (src/cesium/overlay2d.ts) ด้วยคลาสจริงของ Cesium (ไม่วาด: ไม่มี WebGL ใน jsdom)
-// การเลือกดาวที่มี Swath, วง Swath, พื้นที่ Filled Limits และเมื่อไรต้องสร้างใหม่, เส้นแบ่งกลางวันกลางคืน, จุดและเส้นทาง IPP
+// การเลือกดาวที่มี Swath, วง Swath, พื้นที่ Filled Limits และเมื่อไรต้องสร้างใหม่, เส้นแบ่งกลางวันกลางคืน, จุดและเส้นทาง IPP, รอยของ sensor
 // และตัวจัดการ primitive ที่ตั้งค่าตามรอบ (Shading ใช้แสงของ globe ไม่มีพื้นที่กลางคืนที่วาดเอง)
 
 import { Cartesian3, Cartographic, Color, Math as CMath, PointPrimitiveCollection, PolylineCollection, Primitive, PrimitiveCollection, type Geometry } from "cesium";
@@ -7,11 +7,15 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { capColumns } from "../../src/cesium/lonlat";
 import { subsolarPoint } from "../../src/cesium/night";
 import {
-  FILL_MOVE_DEG, fillMoved, fillStates, ippItems, lonLatPositions, MAX_LAT, meshGeometry, Overlays2D, swathInputs, swathItems, terminatorItem,
-  type FillState, type LineItem, type SwathInput,
+  FILL_MOVE_DEG, fillMoved, fillStates, ippItems, lonLatPositions, MAX_LAT, meshGeometry, Overlays2D, sensorFillStates, sensorItems, swathInputs, swathItems,
+  terminatorItem, type FillState, type LineItem, type SwathInput,
 } from "../../src/cesium/overlay2d";
+import { drawableSensors, sensorDrawState, type SensorDrawState, type SensorObj } from "../../src/cesium/sensorDraw";
+import { nadirCentralAngleRad } from "../../src/cesium/sensorGeometry";
 import { EARTH_RADIUS_KM, footprintCentralAngleRad, WGS84_E2 } from "../../src/cesium/swath";
 import type { EntityLook, SceneStyle } from "../../src/cesium/graphics";
+import { makeDoc } from "./helpers/chrome";
+import { sensorObj } from "./helpers/objects";
 
 // jsdom ไม่มี ImageBitmap และ OffscreenCanvas (Material ของ Cesium ใช้ instanceof ทั้งสองตอนดูชนิดของ uniform) browser มีเสมอ
 beforeAll(() => {
@@ -187,6 +191,82 @@ describe("ippItems", () => {
   });
 });
 
+describe("sensorItems (2D Graphics - Attributes of a sensor)", () => {
+  const GPS_H = 20180;
+  const R = (EARTH_RADIUS_KM + GPS_H) * 1000;
+  /** ดาว GPS เหนือ (0°, 0°) เคลื่อนขึ้นเหนือ: สถานะ ณ t จากตำแหน่ง t − 1 s และ t + 1 s */
+  const at = (s: SensorObj): SensorDrawState => sensorDrawState(s, { x: R, y: 0, z: 0 }, { x: R, y: -2000, z: 0 }, { x: R, y: 0, z: 2000 })!;
+  const pointing = (elevation: number) => ({ pointing: { type: "Fixed", orientation: "Az-El", azimuth: 0, elevation, about_boresight: "Rotate" } });
+  /** Sensor บน G01 กรวย 10° สี 2D แดง สี 3D เขียว (หน้าต่าง 2D ต้องใช้สีของหน้า 2D) */
+  const sensor = (name: string, g2: object = {}, over: object = {}): SensorObj =>
+    ({
+      ...sensorObj(name, "G01", { color: "#ff0000", ...g2 }),
+      definition: { type: "Simple Conic", cone_half_angle: 10 },
+      graphics3d: { show: true, color: "#00ff00", show_radial_lines: true, show_boresight_marker: false },
+      ...over,
+    }) as SensorObj;
+  const θ = nadirCentralAngleRad(GPS_H, 10);
+
+  test("sensor outline is drawn in the sensor color", () => {
+    const { lines, fills } = sensorItems([at(sensor("S1"))], STYLE);
+    expect(fills).toEqual([]);
+    expect(lines).toHaveLength(1);
+    const ring = lines[0];
+    expect(ring.key).toBe("sensor/S1");
+    expect(ring.color.toCssHexString()).toBe("#ff0000");
+    expect(ring.width).toBe(STYLE.swathEdgeWidth);
+    expect(ring.positions).toHaveLength(73);
+    expect(Cartesian3.equals(ring.positions[0], ring.positions.at(-1)!)).toBe(true);
+    // วงอยู่ที่มุมศูนย์กลาง asin(k sin α) − α จากจุดใต้ดาว (ละติจูด geodetic ต่างจาก geocentric ไม่เกิน 0.2°)
+    for (const q of ring.positions) expect(angle(q, dir(0, 0))).toBeCloseTo(θ, 2);
+    // boresight ที่ไม่โดนโลก (ชี้ออกไปทางฟ้า) ไม่มีรอย (spec §3.3)
+    expect(sensorItems([at(sensor("Up", {}, pointing(-90)))], STYLE)).toEqual({ lines: [], fills: [] });
+  });
+
+  test("fill only for a nadir sensor with Fill on and alpha from % Translucency", () => {
+    const nadir = at(sensor("N", { fill: true, fill_translucency: 25 }));
+    const { lines, fills } = sensorItems([nadir], STYLE);
+    expect(lines.map((l) => l.key)).toEqual(["sensor/N"]);
+    expect(fills.map((f) => f.key)).toEqual(["sensor/N"]);
+    expect(fills[0].color.alpha).toBeCloseTo(0.75, 9);
+    expect(fills[0].color.toCssHexString()).toBe("#ff0000c0");
+    // พื้นที่แบบ Filled Limits ของ Swath (capColumns) ถึงขอบรอยพอดี
+    const far = Math.max(...vertices(fills[0].geometry).map((v) => angle(v, dir(0, 0))));
+    expect(far).toBeCloseTo(θ, 2);
+    expect(far).toBeLessThan(θ + 0.004);
+
+    // boresight เอียง (P2): เส้นขอบอย่างเดียว
+    const tilted = at(sensor("T", { fill: true }, pointing(80)));
+    expect(sensorItems([tilted], STYLE).lines).toHaveLength(1);
+    expect(sensorItems([tilted], STYLE).fills).toEqual([]);
+    // Fill ปิด, % Translucency 100 (มองไม่เห็น), หรือผู้เรียกไม่ต้องการพื้นที่รอบนี้: ไม่สร้างพื้นที่
+    expect(sensorItems([at(sensor("F", { fill: false }))], STYLE).fills).toEqual([]);
+    expect(sensorItems([at(sensor("I", { fill: true, fill_translucency: 100 }))], STYLE).fills).toEqual([]);
+    expect(sensorItems([nadir], STYLE, false)).toMatchObject({ fills: [], lines: [{ key: "sensor/N" }] });
+    // ค่าตั้งต้น 50%
+    expect(sensorItems([at(sensor("D", { fill: true, fill_translucency: undefined }))], STYLE).fills[0].color.alpha).toBeCloseTo(0.5, 9);
+
+    // สถานะของพื้นที่ (สร้างใหม่เมื่อเลื่อนเกิน 0.5° หรือสี/ความทึบเปลี่ยน: fillMoved) เฉพาะตัวที่มีพื้นที่
+    const states = sensorFillStates([nadir, tilted]);
+    expect(states.map((x) => [x.key, x.color])).toEqual([["sensor/N", "#ff0000c0"]]);
+    expect(states[0].lat).toBeCloseTo(0, 9);
+    expect(states[0].lon).toBeCloseTo(0, 9);
+    expect(states[0].angleDeg).toBeCloseTo((θ * 180) / Math.PI, 9);
+    expect(fillMoved(states, sensorFillStates([at(sensor("N", { fill: true, fill_translucency: 30 }))]))).toBe(true);
+  });
+
+  test("hidden sensor or hidden parent draws nothing", () => {
+    const sat = (name: string) => ({ class: "Satellite", name, norad: 1 });
+    const doc = makeDoc({
+      objects: [sat("G01"), sat("G02"), sensor("Off", { show: false }), sensor("OnG02", {}, { parent: "*/Satellite/G02" })] as never,
+    });
+    const g01Only = (path: string): boolean => path === "*/Satellite/G01";
+    expect(sensorItems(drawableSensors(doc, "2d", g01Only).map(at), STYLE)).toEqual({ lines: [], fills: [] });
+    // ดาวแม่แสดงอยู่: ตัวที่ไม่ได้ปิด Show ถูกวาด
+    expect(sensorItems(drawableSensors(doc, "2d", () => true).map(at), STYLE).lines.map((l) => l.key)).toEqual(["sensor/OnG02"]);
+  });
+});
+
 describe("Overlays2D", () => {
   const line = (key: string, color = red): LineItem => ({ key, positions: lonLatPositions([[0, 0], [10, 10]]), color, width: 2 });
 
@@ -233,6 +313,18 @@ describe("Overlays2D", () => {
     o.setFills("swath", []);
     expect(layer.length).toBe(0);
     expect(o.counts().swath).toBe(0);
+  });
+
+  test("sensor layers sit with the swath layers and tell how many points a drawn ring has", () => {
+    const o = new Overlays2D(new PrimitiveCollection());
+    o.setLines("sensorEdge", [{ ...line("sensor/S1"), positions: lonLatPositions([[0, 0], [1, 1], [0, 0]]) }]);
+    o.setFills("sensor", [{ key: "sensor/S1", geometry: meshGeometry(capColumns(0, 0, 0.5, 2))!, color: red }]);
+    expect(o.counts()).toMatchObject({ swath: 0, sensor: 1, swathEdge: 0, sensorEdge: 1 });
+    expect(o.linePoints("sensorEdge", "sensor/S1")).toBe(3);
+    expect(o.linePoints("sensorEdge", "sensor/NOPE")).toBeNull();
+    expect(o.linePoints("swathEdge", "sensor/S1")).toBeNull();
+    o.setLines("sensorEdge", []);
+    expect(o.linePoints("sensorEdge", "sensor/S1")).toBeNull();
   });
 
   test("destroy takes everything out of the scene", () => {

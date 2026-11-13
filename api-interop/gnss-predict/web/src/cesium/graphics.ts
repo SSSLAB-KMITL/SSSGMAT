@@ -14,14 +14,18 @@
 //   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
 //   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
 //   และคง `show` ตามช่วงเวลาใน CZML ไว้ (ซ่อนทั้งเส้นด้วย entity.show เมื่อดาวหรือ Facility ปลายทางถูกซ่อน)
+// - Sensor (sensor spec §5.3): ไม่มี entity ใน CZML sensorStatesAt หา sensor ที่วาด (sensorDraw.ts drawableSensors) และสถานะของมันจากตำแหน่ง Earth-fixed
+//   ของ entity ดาวแม่ ณ t และ t ± 1 s (P9) ดาวแม่ "แสดงอยู่" = object ดาวแสดงตามธงของตัวเองในหน้าต่างชนิดนั้น (graphicsFor) และ entity ของมันอยู่ในภาพและแสดงอยู่
 
 import {
-  Cartesian2, Color, ColorMaterialProperty, ConstantProperty, JulianDate, LabelGraphics, LabelStyle, HorizontalOrigin, NearFarScalar, PathGraphics,
-  PointGraphics, PolylineDashMaterialProperty, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
+  Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, JulianDate, LabelGraphics, LabelStyle, HorizontalOrigin, NearFarScalar, PathGraphics,
+  PointGraphics, PolylineDashMaterialProperty, ReferenceFrame, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
-import { effectiveColor, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
+import { effectiveColor, objectPath, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
+import { drawableSensors, sensorDrawState, VELOCITY_STEP_S, type SensorDrawState, type SensorObj } from "./sensorDraw";
+import type { Vec3 } from "./sensorGeometry";
 
 type ScenarioDoc = components["schemas"]["ScenarioDoc"];
 type SatelliteObj = components["schemas"]["SatelliteObj"];
@@ -387,4 +391,54 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
     entities.resumeEvents();
   }
   return looks;
+}
+
+// ---------- Sensor (sensor spec §5.3) ----------
+
+/** สิ่งที่ต้องรู้เพื่อบอกว่าดาวแม่แสดงอยู่ในหน้าต่างไหน (ส่วนหนึ่งของ ApplyCtx) */
+export type SensorCtx = Pick<ApplyCtx, "mode" | "prnByNorad" | "isHidden" | "tokens">;
+
+/** ตำแหน่ง Earth-fixed (เมตร) ของ entity ณ time นอกช่วง availability หรือไม่มีค่า (นอกช่วงของตัวอย่าง) = null */
+export function fixedPositionAt(entity: Entity, time: JulianDate): Vec3 | null {
+  if (entity.availability !== undefined && !entity.availability.contains(time)) return null;
+  const p = entity.position?.getValueInReferenceFrame(time, ReferenceFrame.FIXED, new Cartesian3());
+  return p === undefined ? null : { x: p.x, y: p.y, z: p.z };
+}
+
+/**
+ * entity ของดาวที่ path นี้เมื่อดาวแสดงอยู่ในหน้าต่างชนิด ctx.mode: object ดาวแสดงตามธงของตัวเอง (graphicsFor: Show ของหน้านั้นและธงซ่อน W9)
+ * และ entity ของมัน (ตาม NORAD) อยู่ใน entities และแสดงอยู่ ไม่งั้น undefined
+ */
+export function shownSatelliteEntity(path: string, doc: ScenarioDoc, entities: EntityCollection, ctx: SensorCtx): Entity | undefined {
+  const obj = doc.objects.find((o) => o.class === "Satellite" && objectPath(o) === path);
+  if (obj === undefined) return undefined;
+  const g = graphicsFor(obj, doc, { hidden: ctx.isHidden((obj as SatelliteObj).norad), mode: ctx.mode, prnByNorad: ctx.prnByNorad, tokens: ctx.tokens });
+  const id = entityIdFor(obj, ctx.prnByNorad);
+  const entity = g.show && id !== undefined ? entities.getById(id) : undefined;
+  return entity?.show === true ? entity : undefined;
+}
+
+/** สถานะสำหรับวาดของ sensor จากตำแหน่งของ entity ดาวแม่ ณ time และ time ∓ VELOCITY_STEP_S (P9) ไม่มีตำแหน่ง ณ time = null */
+export function sensorStateAt(sensor: SensorObj, parent: Entity, time: JulianDate): SensorDrawState | null {
+  const at = (dt: number): Vec3 | null => fixedPositionAt(parent, dt === 0 ? time : JulianDate.addSeconds(time, dt, new JulianDate()));
+  return sensorDrawState(sensor, at(0), at(-VELOCITY_STEP_S), at(VELOCITY_STEP_S));
+}
+
+/**
+ * สถานะของทุก sensor ที่วาดในหน้าต่างชนิด ctx.mode ณ time (ตามลำดับใน doc): Show ของหน้านั้นเปิดอยู่ ดาวแม่แสดงอยู่ (shownSatelliteEntity)
+ * และดาวแม่มีตำแหน่ง ณ เวลานั้น (spec §5.3) ไม่มี doc = ไม่มี
+ */
+export function sensorStatesAt(doc: ScenarioDoc | null, entities: EntityCollection, ctx: SensorCtx, time: JulianDate): SensorDrawState[] {
+  if (doc === null) return [];
+  const parents = new Map<string, Entity | undefined>();
+  const parentOf = (path: string): Entity | undefined => {
+    if (!parents.has(path)) parents.set(path, shownSatelliteEntity(path, doc, entities, ctx));
+    return parents.get(path);
+  };
+  const out: SensorDrawState[] = [];
+  for (const sensor of drawableSensors(doc, ctx.mode, (path) => parentOf(path) !== undefined)) {
+    const state = sensorStateAt(sensor, parentOf(sensor.parent)!, time);
+    if (state !== null) out.push(state);
+  }
+  return out;
 }

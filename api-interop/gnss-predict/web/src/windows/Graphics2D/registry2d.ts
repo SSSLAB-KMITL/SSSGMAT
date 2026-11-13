@@ -19,6 +19,8 @@ export interface Scene2DHandle extends MountedScene {
   viewRectangle(): ViewRect | null;
   /** จำนวนสิ่งที่วาดในแต่ละชั้น (window.__gnssStudioTest) */
   overlayCounts(): Record<string, number>;
+  /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null (window.__gnssStudioTest) */
+  sensorFootprintPoints(name: string): number | null;
 }
 
 const registry = createSceneRegistry<Scene2DHandle>();

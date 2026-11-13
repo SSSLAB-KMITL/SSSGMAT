@@ -10,22 +10,28 @@
 // - กล้อง: Home View (ความสูง 4.5 รัศมีโลกเหนือ Facility แรก หรือ 0°,0°), Zoom To (trackedEntity + viewFrom),
 //   View From/To (lookAtTransform ทุกครั้งที่เวลาเปลี่ยน; Inertial ใช้แกน ICRF เป็นกรอบของกล้อง) สถานะกล้องถูกตั้งกลับหลังโหลด data source ใหม่
 // - Inertial by Window: polyline จาก toInertial ของตัวอย่างครึ่งคาบทั้งสองข้าง คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (แสดงผลเท่านั้น)
+// - Sensor (sensor spec §5.3): entity ของเราเองใน viewer.entities (`sensor/<ชื่อ>/ring`, `/radial/<i>`, `/marker`) ค่าคงที่ที่คำนวณใหม่แบบเดียวกับ
+//   Inertial by Window (ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน และทันทีใน restyle) จากตำแหน่ง FIXED ของ entity ดาวแม่ ณ t และ t ± 1 s (graphics.ts sensorStatesAt)
+//   วงรอยเป็น polyline ตามผิวทรงรี (GEODESIC) ที่ความสูง 0, Radial Lines เป็นเส้นตรงจากดาว (sensorDraw.ts radialLineEnds), Boresight Marker เป็นจุด
+//   สี graphics3d.color ความหนาเส้นเท่าขอบ Swath ขนาดจุดเท่าจุด IPP (theme)
 // - 3D Graphics Window Properties (useLayout.windowProps[panelId]) → แสง, เส้น Lat/Lon, Label Declutter (ดู applyProps)
 // - Grab Globe / Zoom In: โหมดเมาส์ของปุ่มซ้าย (Zoom In: ลากกรอบแล้วบินไปที่กรอบ คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง จบแล้วกลับเป็น Grab Globe)
 
 import {
-  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantProperty, JulianDate, Matrix3, Matrix4,
-  PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
+  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, JulianDate, Matrix3, Matrix4,
+  PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
   TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import {
-  applyGraphics, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, type SceneObject,
+  applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, sensorStatesAt, type SceneObject,
+  type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
+import { sensor3dParts } from "../../cesium/sensorDraw";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import { useLayout } from "../../stores/layout";
@@ -58,6 +64,15 @@ const FACILITY_VIEW_FROM = new Cartesian3(0, -1_500_000, 1_500_000);
 const INERTIAL_STEP_S = 300;
 const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
+/** Sensor: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
+const SENSOR_INTERVAL_MS = 250;
+
+/** entity หนึ่งชิ้นของ sensor ในหน้าต่าง 3D: เส้น (วงรอย / Radial Line) หรือจุด (Boresight Marker) */
+type SensorPart =
+  | { kind: "line"; positions: Cartesian3[]; arcType: ArcType; color: Color; width: number }
+  | { kind: "point"; position: Cartesian3; color: Color; pixelSize: number; outline: Color };
+
+const groundPoint = ([lon, lat]: [number, number]): Cartesian3 => Cartesian3.fromDegrees(lon, lat, 0);
 
 type View = { kind: "free" } | { kind: "track"; path: string } | { kind: "fromTo"; req: ViewFromToRequest };
 
@@ -101,6 +116,9 @@ class Scene3D implements Scene3DHandle {
   private readonly offs: (() => void)[] = [];
   private readonly inertialPaths = new Map<string, Entity>();
   private readonly inertialThrottle = new Throttle(INERTIAL_INTERVAL_MS, () => this.drawInertial());
+  /** entity ของ sensor ที่วาดอยู่ใน viewer.entities ตาม id */
+  private readonly sensorEntities = new Map<string, Entity>();
+  private readonly sensorThrottle = new Throttle(SENSOR_INTERVAL_MS, () => this.drawSensors());
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
   private icrfPreloaded = false;
@@ -178,19 +196,20 @@ class Scene3D implements Scene3DHandle {
     return this.czml.failed();
   }
 
-  /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) */
+  /** ชนิดหน้าต่าง ดาวที่ซ่อนตามธง (W9) และ NORAD → PRN: ใช้ตั้งกราฟิก (applyGraphics) และหาดาวแม่ของ sensor (sensorStatesAt) */
+  private sceneCtx(): SensorCtx {
+    return { mode: "3d", prnByNorad: useResults.getState().prnByNorad, isHidden: (norad) => satelliteInfo(norad)?.hidden ?? false };
+  }
+
+  /** Facility ที่ขาด + กราฟิกตาม doc ทั้งหมด (ไม่โหลด CZML ใหม่) แล้ววาดเส้นทาง Inertial by Window และ sensor ใหม่ทันที (ตาม entity.show ที่เพิ่งตั้ง) */
   private restyle(): void {
     const ds = this.ds;
     if (ds === null || this.destroyed) return;
     const { doc } = useScenario.getState();
     ensureFacilities(ds.entities, doc);
-    applyGraphics(ds, doc, {
-      mode: "3d",
-      prnByNorad: useResults.getState().prnByNorad,
-      isHidden: (norad) => satelliteInfo(norad)?.hidden ?? false,
-      declutter: this.props.labelDeclutter,
-    });
+    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter });
     this.updateInertial(true);
+    this.updateSensors(true);
     this.viewer.scene.requestRender();
   }
 
@@ -210,6 +229,7 @@ class Scene3D implements Scene3DHandle {
   private onTime(): void {
     if (this.view.kind === "fromTo") this.updateFromTo();
     this.updateInertial(false);
+    this.updateSensors(false);
   }
 
   // ---------- Inertial by Window ----------
@@ -297,6 +317,82 @@ class Scene3D implements Scene3DHandle {
         polyline.width = new ConstantProperty(g.lineWidth);
         polyline.material =
           dash === null ? new ColorMaterialProperty(color) : new PolylineDashMaterialProperty({ color, dashPattern: dash.pattern, dashLength: dash.length });
+      }
+    } finally {
+      entities.resumeEvents();
+    }
+    this.viewer.scene.requestRender();
+  }
+
+  // ---------- Sensor ----------
+
+  /** วาด sensor ใหม่ (force = ทันที, ไม่งั้นไม่เกิน 4 ครั้งต่อวินาทีโดยรอบสุดท้ายตามมาเสมอ) */
+  private updateSensors(force: boolean): void {
+    if (this.destroyed) return;
+    if (force) this.sensorThrottle.flush();
+    else this.sensorThrottle.request();
+  }
+
+  /**
+   * ชิ้นที่ต้องวาดของทุก sensor ณ เวลาปัจจุบัน ตาม id ของ entity (sensor ที่ซ่อน ดาวแม่ที่ซ่อนหรือไม่มีตำแหน่ง ไม่มีชิ้นใด: sensorStatesAt)
+   * วงรอยตามผิวทรงรี, Radial Lines เป็นเส้นตรงจากตำแหน่งดาว, Boresight Marker เป็นจุดขนาดเท่าจุด IPP
+   */
+  private sensorParts(): Map<string, SensorPart> {
+    const out = new Map<string, SensorPart>();
+    const ds = this.ds;
+    if (ds === null) return out;
+    const style = sceneStyle();
+    const states = sensorStatesAt(useScenario.getState().doc, ds.entities, this.sceneCtx(), this.viewer.clock.currentTime);
+    for (const st of states) {
+      const parts = sensor3dParts(st);
+      const color = cssColor(parts.color);
+      const id = `sensor/${st.sensor.name}`;
+      const sat = new Cartesian3(st.pos.x, st.pos.y, st.pos.z);
+      if (parts.ring !== null) {
+        out.set(`${id}/ring`, { kind: "line", positions: parts.ring.map(groundPoint), arcType: ArcType.GEODESIC, color, width: style.swathEdgeWidth });
+      }
+      parts.radials.forEach((end, i) => {
+        out.set(`${id}/radial/${i}`, { kind: "line", positions: [sat, new Cartesian3(end.x, end.y, end.z)], arcType: ArcType.NONE, color, width: style.swathEdgeWidth });
+      });
+      if (parts.marker !== null) {
+        out.set(`${id}/marker`, { kind: "point", position: groundPoint(parts.marker), color, pixelSize: style.ippPointSize, outline: cssColor(style.pointOutline) });
+      }
+    }
+    return out;
+  }
+
+  private drawSensors(): void {
+    if (this.destroyed) return;
+    const parts = this.sensorParts();
+    if (parts.size === 0 && this.sensorEntities.size === 0) return; // scenario ที่ไม่มี sensor (หรือไม่มีตัวที่วาด) ไม่มีอะไรเปลี่ยน
+    const entities = this.viewer.entities;
+    entities.suspendEvents();
+    try {
+      for (const [id, entity] of this.sensorEntities) {
+        if (parts.has(id)) continue;
+        entities.remove(entity);
+        this.sensorEntities.delete(id);
+      }
+      for (const [id, part] of parts) {
+        let entity = this.sensorEntities.get(id); // id บอกชนิดของชิ้นอยู่แล้ว: entity เดิมเป็นชนิดเดียวกันเสมอ
+        if (entity === undefined) {
+          entity = entities.add(part.kind === "line" ? { id, polyline: new PolylineGraphics() } : { id, point: new PointGraphics() });
+          this.sensorEntities.set(id, entity);
+        }
+        if (part.kind === "line") {
+          const polyline = entity.polyline!;
+          polyline.positions = new ConstantProperty(part.positions);
+          polyline.arcType = new ConstantProperty(part.arcType);
+          polyline.width = new ConstantProperty(part.width);
+          polyline.material = new ColorMaterialProperty(part.color);
+        } else {
+          const point = entity.point!;
+          entity.position = new ConstantPositionProperty(part.position);
+          point.pixelSize = new ConstantProperty(part.pixelSize);
+          point.color = new ConstantProperty(part.color);
+          point.outlineColor = new ConstantProperty(part.outline);
+          point.outlineWidth = new ConstantProperty(1);
+        }
       }
     } finally {
       entities.resumeEvents();
@@ -490,9 +586,11 @@ class Scene3D implements Scene3DHandle {
     this.czml.dispose();
     for (const off of this.offs) off();
     this.inertialThrottle.dispose();
+    this.sensorThrottle.dispose();
     this.handler.destroy();
     this.zoom.destroy();
     this.inertialPaths.clear();
+    this.sensorEntities.clear();
     destroyViewer(this.viewer); // ทำลาย data source, entity, primitive และคืน WebGL context ของหน้าต่างนี้ทันที
   }
 
@@ -520,5 +618,11 @@ class Scene3D implements Scene3DHandle {
 
   frameCount(): number {
     return this.frames;
+  }
+
+  sensorFootprintPoints(name: string): number | null {
+    const ring = this.sensorEntities.get(`sensor/${name}/ring`);
+    const positions = ring?.polyline?.positions?.getValue(this.viewer.clock.currentTime) as Cartesian3[] | undefined;
+    return ring === undefined || !ring.isShowing || positions === undefined ? null : positions.length;
   }
 }

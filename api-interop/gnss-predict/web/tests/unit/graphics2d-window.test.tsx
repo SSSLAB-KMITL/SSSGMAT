@@ -49,6 +49,7 @@ function fakeScene(panelId: string, view: [number, number, number, number] | nul
     destroy: () => void calls.push(["destroy"]),
     viewRectangle: () => view,
     overlayCounts: () => ({}),
+    sensorFootprintPoints: () => null,
   };
 }
 

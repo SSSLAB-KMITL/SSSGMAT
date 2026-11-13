@@ -136,22 +136,32 @@ const lonLat = (p: Vec3): [number, number] => {
 };
 
 /**
- * รอยบนพื้นโลกของกรวยครึ่งมุม halfAngleDeg แกน b ที่ดาวตำแหน่ง pos (Earth-fixed, เมตร, สูงกว่าพื้น) (spec §3.3)
- * ยิงเส้น n (≥ 1) เส้นรอบกรวยไปตัดทรงกลม เส้นที่ไม่โดนใช้จุดสัมผัสขอบฟ้าในระนาบของ pos กับเส้นนั้น (horizon = true)
+ * ทิศหนึ่งหน่วยของ n (≥ 1) เส้นรอบกรวยครึ่งมุม halfAngleDeg แกน b ห่างกันเท่า ๆ กัน
  * เส้นแรกอยู่ทางทิศ +X (Earth-fixed) ที่ฉายลงระนาบตั้งฉาก b (ขนานกับ b ใช้ทิศเหนือ) แล้ววนตามเข็มนาฬิกาเมื่อมองตาม b
+ * (เส้นที่ k·(72/n) ของ 72 เส้นคือเส้นที่ k ของ n เส้น: Radial Lines 8 เส้นตรงกับจุด 0, 9, 18, … ของวงรอย)
  */
-export function sensorFootprint(pos: Vec3, b: Vec3, halfAngleDeg: number, n = 72): SensorFootprint {
+export function coneRays(b: Vec3, halfAngleDeg: number, n = 72): Vec3[] {
   const axis = unit(b);
   const α = halfAngleDeg * RAD;
   const e1 = unitPerp(EARTH_X, axis) ?? unitPerp(EARTH_AXIS, axis) ?? anyPerp(axis);
   // หมุนตามกฎมือขวารอบ b = ตามเข็มนาฬิกาเมื่อมองตาม b
   const e2 = cross(axis, e1);
-  const ring: [number, number][] = [];
-  const horizon: boolean[] = [];
-  for (let i = 0; i < n; i++) {
+  return Array.from({ length: n }, (_, i) => {
     const φ = (2 * Math.PI * i) / n;
     const side = add(scale(e1, Math.cos(φ)), scale(e2, Math.sin(φ)));
-    const d = unit(add(scale(axis, Math.cos(α)), scale(side, Math.sin(α))));
+    return unit(add(scale(axis, Math.cos(α)), scale(side, Math.sin(α))));
+  });
+}
+
+/**
+ * รอยบนพื้นโลกของกรวยครึ่งมุม halfAngleDeg แกน b ที่ดาวตำแหน่ง pos (Earth-fixed, เมตร, สูงกว่าพื้น) (spec §3.3)
+ * ยิงเส้น n (≥ 1) เส้นรอบกรวย (coneRays) ไปตัดทรงกลม เส้นที่ไม่โดนใช้จุดสัมผัสขอบฟ้าในระนาบของ pos กับเส้นนั้น (horizon = true)
+ */
+export function sensorFootprint(pos: Vec3, b: Vec3, halfAngleDeg: number, n = 72): SensorFootprint {
+  const axis = unit(b);
+  const ring: [number, number][] = [];
+  const horizon: boolean[] = [];
+  for (const d of coneRays(axis, halfAngleDeg, n)) {
     const hit = hitEarth(pos, d);
     horizon.push(hit === null);
     ring.push(lonLat(hit ?? horizonPoint(pos, d)));

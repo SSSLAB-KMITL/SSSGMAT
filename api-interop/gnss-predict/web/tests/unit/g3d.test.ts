@@ -14,6 +14,7 @@ import { DEFAULT_PROPS_3D, props3d } from "../../src/windows/Graphics3D/props";
 import {
   activeScene, firstScene, markActive, noteSceneLoaded, registerScene, resetScenes, sceneLoadedAt, type MouseMode, type Scene3DHandle,
 } from "../../src/windows/Graphics3D/registry";
+import { registerScene2D, resetScenes2D, type Scene2DHandle } from "../../src/windows/Graphics2D/registry2d";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 
 type Fake = Scene3DHandle & { calls: unknown[][] };
@@ -37,16 +38,35 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     entityColor: (name: string) => (name === "G01" ? "#ffd23f" : null),
     labelShown: (name: string) => (name === "G01" ? true : null),
     frameCount: () => 7,
+    sensorFootprintPoints: () => null,
     ...over,
+  };
+}
+
+/** หน้าต่าง 2D ปลอม (เฉพาะส่วนที่ test hook ใช้) */
+function fakeScene2D(panelId: string, sensorFootprintPoints: (name: string) => number | null): Scene2DHandle {
+  return {
+    panelId,
+    sceneFailed: () => false,
+    resize: () => undefined,
+    destroy: () => undefined,
+    mouseMode: () => "grab",
+    setMouseMode: () => undefined,
+    zoomOut: () => undefined,
+    viewRectangle: () => null,
+    overlayCounts: () => ({}),
+    sensorFootprintPoints,
   };
 }
 
 beforeEach(() => {
   resetAll();
   resetScenes();
+  resetScenes2D();
 });
 afterEach(() => {
   resetScenes();
+  resetScenes2D();
   delete window.__gnssStudioTest;
 });
 
@@ -248,6 +268,21 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.sceneLoadedAt()).toBeNull();
     noteSceneLoaded(1234);
     expect(hooks.sceneLoadedAt()).toBe(1234);
+  });
+
+  test("sensorFootprint asks the first 3D or 2D window how many ring points it draws", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.sensorFootprint("Sensor1", "3d")).toBeNull(); // ยังไม่มีหน้าต่าง
+    expect(hooks.sensorFootprint("Sensor1", "2d")).toBeNull();
+    registerScene(fakeScene("graphics3d-2", { sensorFootprintPoints: () => 1 }));
+    registerScene(fakeScene("graphics3d", { sensorFootprintPoints: (name) => (name === "Sensor1" ? 73 : null) }));
+    registerScene2D(fakeScene2D("graphics2d-2", () => 2));
+    registerScene2D(fakeScene2D("graphics2d", (name) => (name === "Sensor1" ? 37 : null)));
+    expect(hooks.sensorFootprint("Sensor1", "3d")).toBe(73);
+    expect(hooks.sensorFootprint("Sensor2", "3d")).toBeNull();
+    expect(hooks.sensorFootprint("Sensor1", "2d")).toBe(37);
+    expect(hooks.sensorFootprint("Sensor2", "2d")).toBeNull();
   });
 
   test("installing twice keeps the first object", () => {

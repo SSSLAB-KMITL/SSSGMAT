@@ -52,6 +52,7 @@ function fakeScene(panelId: string): Fake {
     entityColor: () => null,
     labelShown: () => null,
     frameCount: () => 0,
+    sensorFootprintPoints: () => null,
   };
 }
 

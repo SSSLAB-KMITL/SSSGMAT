@@ -45,6 +45,8 @@ export interface Scene3DHandle {
   entityColor(name: string): string | null;
   labelShown(name: string): boolean | null;
   frameCount(): number;
+  /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null */
+  sensorFootprintPoints(name: string): number | null;
 }
 
 const registry = createSceneRegistry<Scene3DHandle>();

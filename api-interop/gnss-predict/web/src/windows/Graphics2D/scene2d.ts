@@ -15,6 +15,8 @@
 //   เมื่อ doc / ผลลัพธ์ / ช่วงวิเคราะห์ / ค่าตั้งของหน้าต่างเปลี่ยน (restyle และ refreshIpp ไม่วาดเอง ผู้ฟังเหตุการณ์เรียก redraw ครั้งเดียวตอนท้าย):
 //   - Swath ของดาวที่ตั้ง Edge Limits / Filled Limits (overlay2d.ts swathInputs): ศูนย์กลางคือจุดใต้ดาว ณ เวลาปัจจุบัน (ละติจูด geodetic)
 //     ความสูง = รัศมีของตำแหน่ง − EARTH_RADIUS_KM พื้นที่ Filled Limits สร้างใหม่เฉพาะเมื่อรอยเท้าดวงใดเลื่อนเกิน 0.5° (fillMoved)
+//   - รอยของ sensor (sensor spec §5.3) ในรอบเดียวกับ Swath: sensor ที่วาดและสถานะจากตำแหน่งของ entity ดาวแม่ ณ t และ t ± 1 s (graphics.ts sensorStatesAt)
+//     วงรอยตั้งใหม่ทุกรอบ พื้นที่ Fill (boresight ชี้ลงศูนย์กลางโลกเท่านั้น) สร้างใหม่ด้วยกติกา fillMoved เดียวกับ Filled Limits (sensorFillStates)
 //   - Show Outline: เส้นแบ่งกลางวันกลางคืน คำนวณใหม่เมื่อเวลาของภาพเลื่อนไปอย่างน้อย 1 วินาที
 //   - IPP (ของเราเอง): aer.csv ของ Facility จาก ipp.ts ippSource โหลดเมื่อเปิดตัวเลือกเท่านั้น ผลไม่ current = ไม่แสดง
 //     โหลดไม่สำเร็จ = แจ้งเตือนแล้วลืมกุญแจ: การ refresh ผลลัพธ์ครั้งถัดไปโหลดใหม่
@@ -28,10 +30,12 @@ import {
 import { errorText } from "../../api/client";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
-import { applyGraphics, cssColor, entityLooks, sceneStyle, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
+import { applyGraphics, cssColor, entityLooks, sceneStyle, sensorStatesAt, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../../cesium/ipp";
-import { fillMoved, fillStates, ippItems, Overlays2D, swathInputs, swathItems, terminatorItem, type FillState } from "../../cesium/overlay2d";
+import {
+  fillMoved, fillStates, ippItems, Overlays2D, sensorFillStates, sensorItems, sensorKey, swathInputs, swathItems, terminatorItem, type FillState,
+} from "../../cesium/overlay2d";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import type { AerRow } from "../../data/files";
@@ -103,6 +107,8 @@ class Scene2D implements Scene2DHandle {
   private outlineAt: JulianDate | null = null;
   /** สถานะของพื้นที่ Filled Limits ที่วาดอยู่ (null = ต้องสร้างใหม่) */
   private fills: FillState[] | null = null;
+  /** สถานะของพื้นที่ Fill ของ sensor ที่วาดอยู่ (null = ต้องสร้างใหม่) */
+  private sensorFills: FillState[] | null = null;
   /** aer.csv ที่ใช้อยู่: key = scenario/Facility/hash, seq กันคำตอบที่มาช้า */
   private ipp: { key: string | null; index: IppIndex | null; seq: number } = { key: null, index: null, seq: 0 };
   private readonly offs: (() => void)[] = [];
@@ -237,6 +243,7 @@ class Scene2D implements Scene2DHandle {
       this.looks = doc === null ? new Map() : entityLooks(doc, ctx);
     }
     this.fills = null; // สีหรือดาวอาจเปลี่ยน
+    this.sensorFills = null;
   }
 
   // ---------- ค่าตั้งของหน้าต่าง ----------
@@ -331,6 +338,17 @@ class Scene2D implements Scene2DHandle {
       this.fillBuilds++;
     }
 
+    // Sensor: วงรอยตั้งใหม่ทุกครั้ง พื้นที่ Fill สร้างใหม่เมื่อรอยดวงใดเลื่อนเกิน 0.5° หรือสี/ความทึบเปลี่ยน
+    const sensorStates = ds === null ? [] : sensorStatesAt(useScenario.getState().doc, ds.entities, this.applyCtx(), time);
+    const sensorFills = sensorFillStates(sensorStates);
+    const rebuildSensorFills = fillMoved(this.sensorFills, sensorFills);
+    const sensor = sensorItems(sensorStates, style, rebuildSensorFills);
+    this.overlays.setLines("sensorEdge", sensor.lines);
+    if (rebuildSensorFills) {
+      this.overlays.setFills("sensor", sensor.fills);
+      this.sensorFills = sensorFills;
+    }
+
     if (this.outlineAt === null || Math.abs(JulianDate.secondsDifference(time, this.outlineAt)) >= OUTLINE_MIN_STEP_S) {
       this.overlays.setLines("terminator", this.props.showOutline ? [terminatorItem(JulianDate.toDate(time), style)] : []);
       this.outlineAt = JulianDate.clone(time);
@@ -417,6 +435,10 @@ class Scene2D implements Scene2DHandle {
     if (this.destroyed) return;
     this.viewer.resize();
     this.viewer.scene.requestRender();
+  }
+
+  sensorFootprintPoints(name: string): number | null {
+    return this.destroyed ? null : this.overlays.linePoints("sensorEdge", sensorKey(name));
   }
 
   overlayCounts(): Record<string, number> {
