@@ -1,7 +1,7 @@
 """FastAPI app ของ Gpredict Web: REST /api, WebSocket /ws/modules/{name} และไฟล์หน้าเว็บที่ build แล้ว (หัวข้อ 3 และ 7 ของ spec)
 
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
-  + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว)
+  + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
@@ -14,6 +14,7 @@ import json
 import logging
 import math
 import threading
+import uuid
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -35,10 +36,11 @@ from gnss_predict.errors import Message
 from . import module as M
 from . import store as S
 from .bootstrap import bootstrap
-from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock
+from .clock import CLOCK_END, CLOCK_MIN, STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
 from .ephem import EphemManager
 from .errors import ApiError
+from .pass_service import PassService, gmat_failed
 from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms
 from .satdb import SatDb, SatRecord, update_from_network
@@ -47,8 +49,6 @@ from .store import Store, qth_from_dict
 SATDB_FILE = "satdb.json"
 SEARCH_LIMIT = 500                     # GET /api/satellites สูงสุด 500 แถว (หัวข้อ 7.3)
 SEARCH_Q_MAX = 64                      # q ยาวกว่านี้ไม่ใช่ชื่อหรือ NORAD (และ int ยาวเกิน 4300 หลักทำให้ search ล้ม)
-CLOCK_MIN = datetime(1957, 10, 4, tzinfo=timezone.utc)      # นาฬิการับเวลาตั้งแต่ Sputnik 1
-CLOCK_END = datetime(2101, 1, 1, tzinfo=timezone.utc)       # ถึงสิ้นปี 2100 (ไม่รวมค่านี้)
 SEND_TIMEOUT_S = 10.0                  # socket ที่รับ tick ไม่ทันนานกว่านี้ถูกตัด (ไม่ให้ขวาง tab อื่นของ module เดียวกัน)
 WS_NOT_OPEN = 1008                     # close code: module ไม่ได้เปิดอยู่ (policy violation)
 WS_MODULE_CLOSED = 1000                # close code: module ถูกปิดหรือลบ (ใช้กับกรณีนี้เท่านั้น หน้าเว็บไม่ต่อใหม่)
@@ -56,6 +56,8 @@ WS_SERVER_STOP = 1001                  # close code: server กำลังป�
 WS_INTERNAL_ERROR = 1011               # close code: producer หยุดเพราะ error ภายใน (หน้าเว็บต่อใหม่)
 WS_SEND_FAILED = 1013                  # close code: ส่ง tick ให้ socket นี้ไม่ทันหรือไม่สำเร็จ (Try Again Later)
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")     # ชื่อของเครื่องตัวเองที่ browser ใช้เปิด server
+PASS_POLL_S = 0.2                      # คำขอ pass: ถาม days_status และตรวจว่า browser ตัดการเชื่อมต่อหรือยังทุกเท่านี้วินาที
+CLIENT_CLOSED = 499                    # status ของคำขอที่ browser ตัดไปแล้ว (ไม่มีใครอ่าน แค่ให้ log เห็น)
 LICENSE_FILE = REPO_ROOT / "License.txt"
 README_FILE = REPO_ROOT / "api-interop" / "gpredict-web" / "README.md"      # คู่มือที่ Help → Online help แสดงในหน้าเว็บ
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
@@ -464,6 +466,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
     prefs = Prefs(cfg.data_dir)
     hub = Hub(store, satdb, ephem, now, prefs=prefs)
+    pass_service = PassService(hub, ephem, prefs, now)
     ticks = Ticks(hub)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine ไม่มี lock)
@@ -529,6 +532,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.satdb = satdb
     app.state.ephem = ephem
     app.state.hub = hub
+    app.state.pass_service = pass_service
     app.state.ticks = ticks
     app.state.tle_lock = tle_lock
     app.state.on_quit = on_quit
@@ -750,6 +754,35 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                            f"ดาว NORAD {norad} อยู่ใต้ขอบฟ้า (หรือยังไม่มีค่าจาก GMAT) จึงไม่มี sky track ของ pass ปัจจุบัน",
                            str(norad))
         return {"points": points}
+
+    # ---------------- Pass predictions
+
+    @app.post("/api/modules/{name}/passes")
+    async def predict_passes(name: str, request: Request, body: dict = Body(...)):
+        """Show next pass / Show current pass / Future passes และ pass ที่รู้ AOS (kind "at") ของดาวหนึ่งดวง (spec §9)
+        รอ block รายวันจาก GMAT โดยถาม days_status ทุก PASS_POLL_S วินาที browser ตัดการเชื่อมต่อ (Cancel) -> หยุดรอ
+        owner pass:<uuid4> ถูกปล่อยใน finally เสมอ งาน GMAT ที่ไม่มีคำขอไหนต้องการแล้วจึงถูกตัดหรือ kill"""
+        try:
+            plan = await asyncio.to_thread(pass_service.plan, name, body)
+        except ModuleClosedError:
+            raise _not_open(name) from None
+        if isinstance(plan, dict):                       # PASS_NO_AOS: ตอบทันทีโดยไม่สั่ง GMAT
+            return plan
+        owner = f"pass:{uuid.uuid4()}"
+        try:
+            ephem.ensure_days(owner, [plan.spec], plan.first, plan.last)
+            while True:
+                status, messages = await asyncio.to_thread(ephem.days_status, owner)
+                if status == "ok":
+                    break
+                if status == "failed":
+                    raise gmat_failed(plan, messages)
+                if await request.is_disconnected():
+                    return Response(status_code=CLIENT_CLOSED)
+                await asyncio.sleep(PASS_POLL_S)
+            return _finite(await asyncio.to_thread(pass_service.answer, plan, messages))
+        finally:
+            ephem.release_days(owner)
 
     # ---------------- Preferences
 

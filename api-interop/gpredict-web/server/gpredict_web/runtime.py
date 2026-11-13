@@ -123,6 +123,22 @@ class ModuleRuntime:
         with self._lock:
             return self._closed
 
+    @property
+    def qth(self) -> Qth:
+        """สถานีที่ module ใช้อยู่ (หลัง update เป็นสถานีใหม่)"""
+        with self._lock:
+            return self._qth
+
+    def sat_orbit(self, norad: int) -> tuple[str, SatSpec, TleElements] | None:
+        """(ชื่อ, SatSpec, element) ของ TLE ปัจจุบันของดาว None ถ้าดาวไม่อยู่ใน module
+        pass ใช้ TLE ปัจจุบันเสมอ (ไม่ใช้ TLE ก่อนหน้าที่ tick แสดงระหว่างรอค่าใหม่) module ที่ปิดแล้ว -> ModuleClosedError"""
+        with self._lock:
+            self._check_open()
+            s = self._sats.get(norad)
+            if s is None:
+                return None
+            return s.record.name, s.cur.spec, s.cur.elements
+
     def tick(self) -> dict:
         """tick ของ WebSocket ตามหัวข้อ 7.3 ของ spec (ไม่มี sats เมื่อ status ไม่ใช่ ok, ไม่ส่งดาวที่ decayed)"""
         with self._lock:

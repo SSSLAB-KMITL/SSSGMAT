@@ -1,9 +1,12 @@
 """REST API (หัวข้อ 7.3 และ 7.4 ของ spec) ด้วย TestClient: EphemManager จริงกับ propagate ปลอม (start_worker=False แล้ว drain()),
 นาฬิกาเครื่องปลอม, opener ปลอม (ห้ามใช้เน็ต) และ data dir ชั่วคราว"""
 
+import asyncio
 import json
+import threading
+import time
 import unittest
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 from urllib.error import URLError
@@ -17,13 +20,16 @@ from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
 from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, POLAR_CONTENTS,
                                  POLAR_ORIENTATIONS, SINGLE_FIELDS, SINGLE_HINTS, module_from_dict, module_to_dict)
+from gpredict_web.observe import qth_geo
+from gpredict_web.passes import find_passes
 from gpredict_web.prefs import PREFS
 from gpredict_web.store import Store
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
-from tests.helpers import TEST_HOSTS, FakeNow, temp_config
+from tests.helpers import TEST_HOSTS, FakeNow, half_pass_s, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
-from tests.test_runtime import NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
+from tests.test_pass_service import GEO, HIDDEN, WOBBLE, PassPropagate, is_day_job, pass_records
+from tests.test_runtime import ISO_MS, NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
 
 ERROR_KEYS = ["code", "level", "text", "object"]
 
@@ -50,23 +56,30 @@ class ApiTestBase(unittest.TestCase):
     """app ที่มี QTH ORIGIN (สถานีตั้งต้น) และ OTHER, ดาวสังเคราะห์ NORADS ในดัชนี, ยังไม่มี module"""
 
     start_background = False
+    ephem_worker = False                  # True: EphemManager มี worker thread ของคิว GMAT (ห้าม drain)
 
     def setUp(self):
         self.cfg = temp_config(self)
-        self.fake = OrbitPropagate()
+        self.fake = self.make_propagate()
         self.ephem = EphemManager(self.cfg, propagate_fn=self.fake, find_console=lambda: Path("/fake/GmatConsole"),
-                                  start_worker=False)
+                                  start_worker=self.ephem_worker)
         self.addCleanup(self.ephem.close)
         self.wall = FakeNow(T0)
         self.store = Store(self.cfg.data_dir)
         self.store.put_qth(ORIGIN)
         self.store.put_qth(OTHER)
         self.store.set_default_qth("ORIGIN")
-        self.write_satdb([record(n) for n in NORADS])
+        self.write_satdb(self.satdb_records())
         self.opener = GroupOpener()
         self.quits = 0
         self.app = self.make_app()
         self.client = self.enter(self.app)
+
+    def make_propagate(self):
+        return OrbitPropagate()
+
+    def satdb_records(self) -> list:
+        return [record(n) for n in NORADS]
 
     def make_app(self, **kw):
         def on_quit():
@@ -741,6 +754,215 @@ class PrefsApiTest(ApiTestBase):
         body = client.get("/api/prefs").json()
         self.assertEqual((body["values"]["PREDICT/MINIMUM_ELEV"], body["values"]["PREDICT/LOOK_AHEAD"]), (5, 7))
         self.assertEqual(body["user"], ["PREDICT/LOOK_AHEAD"])
+
+
+# ---------------------------------------------------------------- Pass predictions
+
+PASS_KEYS = ["orbit", "aos", "tca", "los", "max_el", "aos_az", "max_el_az", "los_az", "vis", "rows"]
+PASS_ROW_KEYS = ["t", "az", "el", "ra", "dec", "range_km", "rate_kms", "lat_deg", "lon_deg", "ssp", "footprint_km",
+                 "alt_km", "vel_kms", "doppler_hz", "loss_db", "delay_ms", "ma", "phase_deg", "vis"]
+ORIGIN_DICT = {"name": "ORIGIN", "location": "Gulf of Guinea", "lat_deg": 0.0, "lon_deg": 0.0, "alt_m": 0.0}
+NO_AOS_LONG = ("Satellite SAT-40001 has no passes for\nthe current ground station!\n\n"
+               "This can be because the satellite\nis geostationary, decayed or simply\nnever comes above the horizon")
+NO_AOS_SHORT = "Satellite SAT-40001 has no passes for\nthe current ground station!"
+
+
+class DisconnectingRequest:
+    """Request ปลอมของ route: is_disconnected() ครั้งแรกรอจน GMAT (ปลอม) เริ่มงาน block แล้วตอบ False ครั้งต่อไปตอบ True"""
+
+    def __init__(self, started: threading.Event):
+        self.started = started
+        self.calls = 0
+
+    async def is_disconnected(self) -> bool:
+        self.calls += 1
+        if self.calls == 1:
+            await asyncio.to_thread(self.started.wait, 5)
+            return False
+        return True
+
+
+class PassesApiTest(ApiTestBase):
+    """POST /api/modules/{name}/passes กับ worker thread จริงของ EphemManager (route รอ GMAT แบบ async ทุก 0.2 วินาที)
+    module M มีดาวทุกดวงของ pass_records (NORADS, GEO, HIDDEN, WOBBLE) และใช้สถานี ORIGIN"""
+
+    ephem_worker = True
+
+    def make_propagate(self):
+        return PassPropagate()
+
+    def satdb_records(self) -> list:
+        return pass_records()
+
+    def setUp(self):
+        super().setUp()
+        self.put_module(sats=[r.norad for r in pass_records()])
+        self.open_module(drain=False)
+        self.wait_until(lambda: self.hub.get("M").tick()["status"] == "ok")      # งานช่วงของ module เสร็จก่อน
+        self.addCleanup(self.wait_until, self.worker_idle)                       # ไม่มีงานเขียนลง data dir ที่กำลังถูกลบ
+
+    def wait_until(self, condition, timeout_s: float = 10.0) -> None:
+        deadline = time.monotonic() + timeout_s
+        while not condition():
+            self.assertLess(time.monotonic(), deadline, "รอนานเกินไป")
+            time.sleep(0.01)
+
+    def worker_idle(self) -> bool:
+        with self.ephem._lock:
+            return self.ephem._running is None and not self.ephem._queue
+
+    def passes(self, kind: str, t, norad: int = NORADS[0], aos=None, name: str = "M"):
+        body = {"norad": norad, "kind": kind, "t": iso(t)}
+        if aos is not None:
+            body["aos"] = iso(aos)
+        return self.client.post(f"/api/modules/{name}/passes", json=body)
+
+    def ok(self, r) -> dict:
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def set_prefs(self, values: dict) -> None:
+        r = self.client.put("/api/prefs", json={"set": values})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def pass_owners(self) -> list[str]:
+        with self.ephem._lock:
+            return [o for o in self.ephem._day_pairs if o.startswith("pass:")]
+
+    def test_next_pass_shape(self):
+        n = NORADS[0]
+        body = self.ok(self.passes("next", T0, n))
+        self.assertEqual(list(body), ["sat", "qth", "pass"])
+        self.assertEqual(body["sat"], {"norad": n, "name": f"SAT-{n}"})
+        self.assertEqual(body["qth"], ORIGIN_DICT)
+        p = body["pass"]
+        self.assertEqual(list(p), PASS_KEYS)
+        for key in ("aos", "tca", "los"):
+            self.assertRegex(p[key], ISO_MS)
+        aos = datetime.fromisoformat(p["aos"].replace("Z", "+00:00"))
+        self.assertAlmostEqual((aos - peak(n)).total_seconds(), -half_pass_s(), delta=1.0)     # ใต้ขอบฟ้าที่ T0
+        self.assertGreater(p["max_el"], 89.0)
+        self.assertRegex(p["vis"], r"^[V-][D-][E-]$")
+        self.assertEqual(len(p["rows"]), 21)
+        self.assertEqual(list(p["rows"][0]), PASS_ROW_KEYS)
+        self.assertEqual((p["rows"][0]["t"], p["rows"][-1]["t"]), (p["aos"], p["los"]))
+        self.assertEqual(self.pass_owners(), [])
+
+    def test_future_passes_respect_count_and_min_el(self):
+        self.set_prefs({"PREDICT/NUMBER_OF_PASSES": 5, "PREDICT/MINIMUM_ELEV": 20})
+        body = self.ok(self.passes("future", T0, WOBBLE))
+        self.assertEqual(list(body), ["sat", "qth", "passes"])
+        found = body["passes"]
+        self.assertEqual(len(found), 5)
+        self.assertTrue(all(p["max_el"] >= 20 for p in found), [p["max_el"] for p in found])
+        self.assertTrue(all(list(p) == PASS_KEYS and p["rows"] for p in found))
+        aos = [datetime.fromisoformat(p["aos"].replace("Z", "+00:00")) for p in found]
+        self.assertEqual(aos, sorted(aos))
+        self.assertGreater(aos[0], T0)
+        # pass ที่ต่ำกว่า Minimum elevation ระหว่างนั้นถูกข้ามจริง
+        spec = self.hub.get("M").sat_orbit(WOBBLE)[1]
+        eph = self.ephem.get_days(spec, date(2026, 11, 11), date(2026, 11, 16))
+        between = [p for p in find_passes(eph, qth_geo(ORIGIN)) if p.aos is not None and aos[0] <= p.aos <= aos[-1]]
+        self.assertTrue(any(p.max_el < 20 for p in between))
+
+    def test_no_aos_message_texts(self):
+        for kind, text in (("next", NO_AOS_LONG), ("current", NO_AOS_LONG), ("future", NO_AOS_SHORT)):
+            with self.subTest(kind=kind):
+                body = self.ok(self.passes(kind, T0, GEO))
+                self.assertEqual(list(body), ["sat", "qth", "message"])
+                self.assertEqual(body["sat"], {"norad": GEO, "name": "SAT-40001"})
+                self.assertEqual(body["message"], {"code": "PASS_NO_AOS", "level": "error", "text": text})
+        self.assertFalse([c for c in self.fake.calls if is_day_job(c)])          # ไม่สั่ง GMAT เลย
+
+    def test_no_pass_within_message(self):
+        within3 = {"code": "PASS_NONE_WITHIN", "level": "info",
+                   "text": f"Satellite SAT-{HIDDEN} has no passes\nwithin the next 3 days"}
+        for kind in ("future", "next", "current"):
+            with self.subTest(kind=kind):
+                body = self.ok(self.passes(kind, T0, HIDDEN))
+                self.assertEqual(list(body), ["sat", "qth", "message"])
+                self.assertEqual(body["message"], within3)
+        self.set_prefs({"PREDICT/LOOK_AHEAD": 1})
+        self.assertEqual(self.ok(self.passes("future", T0, HIDDEN))["message"]["text"],
+                         f"Satellite SAT-{HIDDEN} has no passes\nwithin the next 1 days")
+
+    def test_at_finds_pass_by_aos(self):
+        n = NORADS[0]
+        target = self.ok(self.passes("future", T0, n))["passes"][1]
+        aos = datetime.fromisoformat(target["aos"].replace("Z", "+00:00"))
+        for shift in (-0.5, 0.5):
+            with self.subTest(shift=shift):
+                p = self.ok(self.passes("at", T0, n, aos=aos + timedelta(seconds=shift)))["pass"]
+                self.assertEqual((p["aos"], p["los"], p["orbit"]), (target["aos"], target["los"], target["orbit"]))
+                self.assertEqual(p["rows"], target["rows"])
+        for shift in (2.0, 30 * 60.0):
+            with self.subTest(shift=shift):
+                self.assert_error(self.passes("at", T0, n, aos=aos + timedelta(seconds=shift)), 404, "NOT_FOUND",
+                                  str(n))
+        self.assertEqual(self.pass_owners(), [])
+
+    def test_invalid_body_is_422(self):
+        n, t = NORADS[0], iso(T0)
+        cases = [({"norad": n, "kind": "later", "t": t}, "kind"),
+                 ({"norad": n, "t": t}, "kind"),
+                 ({"norad": n, "kind": "next", "t": "garbage"}, "t"),
+                 ({"norad": n, "kind": "next", "t": "2026-11-12T07:20:00"}, "t"),           # ไม่มี timezone
+                 ({"norad": n, "kind": "next", "t": 12345}, "t"),
+                 ({"norad": n, "kind": "next", "t": "0001-01-01T00:00:00Z"}, "t"),
+                 ({"norad": n, "kind": "next"}, "t"),
+                 ({"norad": "25544", "kind": "next", "t": t}, "norad"),
+                 ({"norad": True, "kind": "next", "t": t}, "norad"),
+                 ({"norad": 25544.0, "kind": "next", "t": t}, "norad"),
+                 ({"kind": "next", "t": t}, "norad"),
+                 ({"norad": n, "kind": "at", "t": t}, "aos"),
+                 ({"norad": n, "kind": "at", "t": t, "aos": "x"}, "aos")]
+        for body, field in cases:
+            with self.subTest(body=body):
+                self.assert_error(self.client.post("/api/modules/M/passes", json=body), 422, "PASS_INVALID", field)
+        self.assert_error(self.client.post("/api/modules/Nope/passes", json={"norad": n, "kind": "soon", "t": t}),
+                          422, "PASS_INVALID", "kind")                                # ตรวจ body ก่อน module
+        self.assert_error(self.client.post("/api/modules/M/passes", json=[1]), 422, "REQUEST_INVALID")
+
+    def test_satellite_not_in_module_is_404(self):
+        self.assert_error(self.passes("next", T0, 11111), 404, "NOT_FOUND", "11111")
+        n = NORADS[0]
+        self.put_module(sats=[r.norad for r in pass_records() if r.norad != n])    # เอาดาวออกขณะ module เปิดอยู่
+        self.assert_error(self.passes("future", T0, n), 404, "NOT_FOUND", str(n))
+
+    def test_module_not_open_is_404(self):
+        self.assert_error(self.passes("next", T0, name="Nope"), 404, "NOT_FOUND", "Nope")
+        self.client.post("/api/modules/M/close")
+        self.assert_error(self.passes("next", T0), 404, "NOT_FOUND", "M")
+
+    def test_gmat_failure_answers_503(self):
+        n = NORADS[0]
+        self.fake.fail = GmatRunError("GMAT ล้ม")
+        body = self.assert_error(self.passes("next", T0, n), 503, "GMAT_FAILED", str(n))
+        self.assertIn("GMAT ล้ม", body["text"])
+        self.assertEqual(self.pass_owners(), [])
+        self.fake.fail = None                                                    # Retry ในกล่องรอส่งคำขอใหม่
+        self.ok(self.passes("next", T0, n))
+
+    def test_satellite_missing_from_gmat_answers_503(self):
+        n = NORADS[0]
+        self.fake.drop = {n}
+        self.assert_error(self.passes("next", T0, n), 503, "SAT_MISSING_FROM_GMAT", str(n))
+        self.assertEqual(self.pass_owners(), [])
+
+    def test_client_disconnect_releases_owner(self):
+        self.fake.gate = threading.Event()
+        self.addCleanup(self.fake.gate.set)
+        route = next(r for r in self.app.routes if getattr(r, "path", None) == "/api/modules/{name}/passes")
+        request = DisconnectingRequest(self.fake.started)
+        response = asyncio.run(route.endpoint(name="M", request=request,
+                                              body={"norad": NORADS[0], "kind": "future", "t": iso(T0)}))
+        self.assertEqual(response.status_code, 499)
+        self.assertTrue(self.fake.started.is_set())                             # GMAT กำลังรันตอน browser ตัด
+        self.assertEqual(request.calls, 2)
+        self.assertEqual(self.pass_owners(), [])
+        with self.ephem._lock:
+            running = self.ephem._running
+        self.assertTrue(running is not None and running.cancelled)              # ไม่มีใครต้องการแล้ว: งานถูกตัด
 
 
 # ---------------------------------------------------------------- Host และ Origin (ของเรา: กันเว็บอื่นสั่ง server)

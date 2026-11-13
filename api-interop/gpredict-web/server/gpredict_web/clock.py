@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 FORWARD, BACKWARD, STOP = "forward", "backward", "stop"
 STATES = (FORWARD, BACKWARD, STOP)
 THROTTLE_MIN, THROTTLE_MAX = 1, 100
+CLOCK_MIN = datetime(1957, 10, 4, tzinfo=timezone.utc)      # นาฬิการับเวลาตั้งแต่ Sputnik 1
+CLOCK_END = datetime(2101, 1, 1, tzinfo=timezone.utc)       # ถึงสิ้นปี 2100 (ไม่รวมค่านี้)
 
 LABEL_REAL_TIME = "Real-Time"                          # ข้อความของ Gpredict ห้ามแก้
 LABEL_SIMULATED = "Simulated Real-Time"
