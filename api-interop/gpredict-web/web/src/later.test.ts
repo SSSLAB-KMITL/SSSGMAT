@@ -22,9 +22,7 @@ const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
   ["Radio Control", 3, "Module menu"],
   ["Antenna Control", 3, "Module menu"],
   ["Satellite info", 4, "popups of List, Map, Polar; the bold name of Single sat and Event list; the double click"],
-  ["Show current pass", 2, "satellite popups"],
-  ["Show next pass", 2, "satellite popups"],
-  ["Future passes", 2, "satellite popups"],
+  // Show current pass, Show next pass and Future passes work since sub-project 2 (Task 13), so they are not here any more
 ];
 
 describe("LATER (spec §8.2)", () => {
@@ -40,9 +38,13 @@ describe("LATER (spec §8.2)", () => {
     expect(LATER).not.toHaveProperty("News");
   });
 
-  it("has no Preferences: Edit → Preferences opens the window (the pass items and Sky at a glance follow in their own tasks)", () => {
+  it("has no Preferences: Edit → Preferences opens the window (Sky at a glance follows in its own task)", () => {
     expect(LATER).not.toHaveProperty("Preferences");
-    for (const label of ["Sky at a glance", "Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).toHaveProperty(label);
+    expect(LATER).toHaveProperty("Sky at a glance");
+  });
+
+  it("has no pass items: Show current pass, Show next pass and Future passes open the pass windows", () => {
+    for (const label of ["Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).not.toHaveProperty(label);
   });
 });
 
@@ -56,5 +58,6 @@ describe("laterOf", () => {
   it("throws for a label that is not in LATER, so that a typo cannot make an item look available", () => {
     expect(() => laterOf("Preference")).toThrow();
     expect(() => laterOf("Preferences")).toThrow(); // it works now
+    expect(() => laterOf("Show next pass")).toThrow(); // so do the pass items
   });
 });

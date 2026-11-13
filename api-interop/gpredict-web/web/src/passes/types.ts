@@ -74,6 +74,9 @@ export interface PassBody {
   aos?: string;
 }
 
+/** The kinds of request the satellite popups make: Show current pass, Show next pass and Future passes ("at" is Sky at a glance's). */
+export type PassKind = Exclude<PassBody["kind"], "at">;
+
 /**
  * Answer of POST /api/modules/{name}/passes: `pass` (next, current, at), `passes` (future), or `message` when there is none
  * (code PASS_NO_AOS or PASS_NONE_WITHIN, the text is Gpredict's, with its line breaks). The server sends a message with

@@ -47,11 +47,12 @@ function useSatNames(satellites: readonly number[], shown: Tick | null): Readonl
  *   it) every value is "-".
  * - It redraws from the tick only every `refresh.single` ticks (the first at once).
  * - The header button (tooltip "Satellite options / shortcuts") opens the popup: the satellite's name in bold (Satellite
- *   info, a later sub-project), the pass items (a later sub-project), and one radio item per satellite sorted by name.
+ *   info, a later sub-project), the pass items (sent through `onPass` with the time of the tick this view shows), and one radio
+ *   item per satellite sorted by name.
  *   Choosing one shows that satellite and saves it as `single.selected` with PUT /api/modules/{name}; if the server refuses,
  *   the Thai text goes to `onError` (the notice strip).
  */
-export function SingleSatView({ config, tick, onSaveConfig, onError }: ViewProps) {
+export function SingleSatView({ config, tick, onSaveConfig, onError, onPass }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.single);
   const names = useSatNames(config.satellites, shown);
@@ -75,7 +76,10 @@ export function SingleSatView({ config, tick, onSaveConfig, onError }: ViewProps
 
   // the satellite's name in bold (Satellite info) and the pass items, as in every satellite popup (satPopup.ts); then one radio item per satellite
   const items: MenuEntry[] = [
-    ...toEntries(satPopup("single", { norad: norad ?? 0, name, el: sat?.el ?? null, dir: sat?.dir ?? "" }, config), () => undefined),
+    ...toEntries(satPopup("single", { norad: norad ?? 0, name, el: sat?.el ?? null, dir: sat?.dir ?? "" }, config), (action) => {
+      // no satellite (an empty module) or no tick yet: there is nothing to ask passes of, or no time to start from
+      if (action.type === "pass" && norad !== null && shown !== null) onPass?.(norad, action.kind, shown.t);
+    }),
     { kind: "separator" },
     ...choices.map((c): MenuEntry => ({ kind: "radio", label: c.name, checked: c.norad === norad, onChoose: () => choose(c.norad) })),
   ];

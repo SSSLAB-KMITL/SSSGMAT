@@ -13,12 +13,12 @@ const lists = (over: Partial<Pick<ModuleConfig, "footprint_off" | "ground_track"
 const sat = (over: Partial<PopupSat> = {}): PopupSat => ({ norad: 25544, name: "ISS", el: -10, dir: "↑", ...over });
 
 describe("satPopup (ref §4-§8, spec §8.2)", () => {
-  it("List: Satellite info (later 4), then Show next pass and Future passes (later 2) while the satellite is below the horizon", () => {
+  it("List: Satellite info (later 4), then Show next pass and Future passes while the satellite is below the horizon (the pass items work since sub-project 2)", () => {
     expect(outline(satPopup("list", sat(), lists()))).toEqual([
       "Satellite info (later 4)",
       "-",
-      "Show next pass (later 2)",
-      "Future passes (later 2)",
+      "Show next pass",
+      "Future passes",
     ]);
   });
 
@@ -26,23 +26,38 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
     expect(outline(satPopup("list", sat({ el: 12.5 }), lists()))).toEqual([
       "Satellite info (later 4)",
       "-",
-      "Show current pass (later 2)",
-      "Show next pass (later 2)",
-      "Future passes (later 2)",
+      "Show current pass",
+      "Show next pass",
+      "Future passes",
     ]);
   });
 
   it("has no Show current pass at El = 0 or without a value", () => {
-    expect(outline(satPopup("list", sat({ el: 0 }), lists()))).not.toContain("Show current pass (later 2)");
-    expect(outline(satPopup("list", sat({ el: null }), lists()))).not.toContain("Show current pass (later 2)");
+    expect(outline(satPopup("list", sat({ el: 0 }), lists()))).not.toContain("Show current pass");
+    expect(outline(satPopup("list", sat({ el: null }), lists()))).not.toContain("Show current pass");
+  });
+
+  it("pass items are enabled in every view", () => {
+    const find = (menu: ReturnType<typeof satPopup>, label: string) => menu.find((e) => e.kind === "item" && e.label === label);
+    for (const view of ["list", "map", "polar", "single", "event"] as const) {
+      const below = satPopup(view, sat({ el: -10 }), lists());
+      // enabled: an action and no `later`, so the menu does not grey them out
+      expect(find(below, "Show next pass"), view).toEqual({ kind: "item", label: "Show next pass", action: { type: "pass", kind: "next" } });
+      expect(find(below, "Future passes"), view).toEqual({ kind: "item", label: "Future passes", action: { type: "pass", kind: "future" } });
+      expect(find(below, "Show current pass"), view).toBeUndefined();
+      const above = satPopup(view, sat({ el: 0.1 }), lists());
+      expect(find(above, "Show current pass"), view).toEqual({ kind: "item", label: "Show current pass", action: { type: "pass", kind: "current" } });
+      expect(find(above, "Show next pass"), view).toBeDefined();
+      expect(find(above, "Future passes"), view).toBeDefined();
+    }
   });
 
   it("Map: adds Highlight footprint (checked unless the satellite is in footprint_off) and Ground Track (checked if in ground_track)", () => {
     expect(outline(satPopup("map", sat(), lists()))).toEqual([
       "Satellite info (later 4)",
       "-",
-      "Show next pass (later 2)",
-      "Future passes (later 2)",
+      "Show next pass",
+      "Future passes",
       "-",
       "[x] Highlight footprint",
       "[ ] Ground Track",
@@ -69,8 +84,8 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
       expect(outline(satPopup(view, sat({ name: "OSCAR 7" }), lists()))).toEqual([
         "OSCAR 7 (bold) (later 4)",
         "-",
-        "Show next pass (later 2)",
-        "Future passes (later 2)",
+        "Show next pass",
+        "Future passes",
       ]);
     }
   });

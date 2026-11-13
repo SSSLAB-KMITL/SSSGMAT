@@ -371,6 +371,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
                 onSelect={select}
                 onSaveConfig={saveConfig}
                 onError={addLocalError}
+                onOpenPassWindow={openPassWindow}
               />
             )}
             <Overlay state={overlayFor(tick, connected, closeCode)} onRetry={() => retry(current)} />

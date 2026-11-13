@@ -1159,6 +1159,47 @@ body {
   overflow: auto;
 }
 
+/* ---------------------------------------------------------------- pass request boxes: waiting for GMAT, no pass (Task 13) */
+
+.pass-wait {
+  min-width: 280px;
+  max-width: 420px;
+}
+.no-pass {
+  min-width: 300px;
+  max-width: 480px;
+}
+.no-pass-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 6px 4px 4px;
+}
+.no-pass-icon {
+  flex: none;
+}
+.no-pass-icon circle {
+  stroke: none;
+}
+.no-pass-icon.error circle {
+  fill: var(--error-border);
+}
+.no-pass-icon.info circle {
+  fill: var(--accent);
+}
+.no-pass-icon path {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.no-pass-icon .dot {
+  fill: #ffffff;
+}
+.no-pass-text {
+  align-self: center;
+}
+
 /* ---------------------------------------------------------------- Preferences window */
 
 .prefs {

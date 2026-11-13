@@ -1,6 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
+import { NoPassMessage } from "../passes/NoPassMessage";
+import { passBody } from "../passes/passRequest";
+import { PassWait } from "../passes/PassWait";
+import type { PassWindow } from "../passes/passWindows";
+import type { PassKind } from "../passes/types";
+import { usePassRequest } from "../passes/usePassRequest";
 import { SatPopup } from "./SatPopup";
 import type { PopupSat, PopupView } from "../satPopup";
 import type { ModuleConfig, Tick } from "../types";
@@ -26,6 +32,11 @@ export interface ViewProps {
   /** double click on a satellite: Satellite info (sub-project 4, nothing yet) */
   onSatDoubleClick?: (norad: number) => void;
   /**
+   * Single sat's popup chose Show current pass, Show next pass or Future passes for `norad`; `t` is the time of the view (the
+   * tick it shows). The other views' popups are opened by ModuleView, which sends the request itself.
+   */
+  onPass?: (norad: number, kind: PassKind, t: string) => void;
+  /**
    * Save a change to the module's configuration (the `save` of useModuleConfig, the one owner of the configuration): `change`
    * gets the newest configuration and returns the new one. Every view gets the new `config` at once; if the server refuses,
    * `config` goes back to what the server holds and the promise rejects with the error. Every write of the configuration goes
@@ -38,9 +49,10 @@ export interface ViewProps {
 
 /**
  * What the page gives ModuleView. The selected satellite is held by the page (App), not here: the Module menu's "Select
- * satellite" and Autotrack change it too.
+ * satellite" and Autotrack change it too. `onOpenPassWindow` opens the Pass details or Upcoming passes window that the answer
+ * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed).
  */
-export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu">;
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onPass"> & { onOpenPassWindow: (w: PassWindow) => void };
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -63,27 +75,44 @@ const POPUP_VIEW: Partial<Record<number, PopupView>> = {
 interface OpenPopup {
   view: PopupView;
   sat: PopupSat;
+  /** the module time of the tick the popup was asked for: the start time the pass items give the server */
+  t: string;
   x: number;
   y: number;
 }
 
 /**
  * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3). It opens
- * the popup menu of a satellite where a view reports a right click (ref §4-§8). A new module starts with no satellite selected.
+ * the popup menu of a satellite where a view reports a right click (ref §4-§8), and sends the pass requests of the pass items of
+ * every satellite popup (also Single sat's) and shows the waiting box and the no-pass message for them. A new module starts with
+ * no satellite selected.
  */
 export function ModuleView(props: ModuleViewProps) {
   return <ModuleViews key={props.module} {...props} />;
 }
 
-function ModuleViews(props: ModuleViewProps) {
+function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
   const [popup, setPopup] = useState<OpenPopup | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
   const { onError } = props;
   const reportError = useCallback((text: string) => onError?.(text), [onError]);
 
+  const pass = usePassRequest(props.module, onOpenPassWindow);
+  const { start: startRequest } = pass;
+  const latestTick = useRef(props.tick);
+  latestTick.current = props.tick;
+  /** A pass item was chosen: Show current pass checks El > 0 again on the newest tick (ref-P §1.1), then the request goes out. */
+  const startPass = useCallback(
+    (norad: number, kind: PassKind, t: string) => {
+      const body = passBody(kind, norad, t, latestTick.current);
+      if (body !== null) startRequest(body);
+    },
+    [startRequest],
+  );
+
   const openPopup = (view: PopupView, norad: number, x: number, y: number) => {
     const sat = props.tick?.sats?.find((s) => s.norad === norad);
-    if (sat !== undefined) setPopup({ view, sat: { norad, name: sat.name, el: sat.el, dir: sat.dir }, x, y });
+    if (sat !== undefined && props.tick !== null) setPopup({ view, sat: { norad, name: sat.name, el: sat.el, dir: sat.dir }, t: props.tick.t, x, y });
   };
 
   let grid;
@@ -120,6 +149,7 @@ function ModuleViews(props: ModuleViewProps) {
                 <View
                   {...props}
                   onSatContextMenu={popupView === undefined ? undefined : (norad, x, y) => openPopup(popupView, norad, x, y)}
+                  onPass={startPass}
                 />
               ) : (
                 <div className="view-placeholder">{label}</div>
@@ -138,9 +168,13 @@ function ModuleViews(props: ModuleViewProps) {
           y={popup.y}
           onSaveConfig={props.onSaveConfig}
           onError={reportError}
+          t={popup.t}
+          onPass={startPass}
           onClose={closePopup}
         />
       )}
+      {pass.box?.box === "wait" && <PassWait state={pass.box.state} onCancel={pass.cancel} onRetry={pass.retry} />}
+      {pass.box?.box === "message" && <NoPassMessage message={pass.box.message} onOk={pass.ok} />}
     </>
   );
 }
