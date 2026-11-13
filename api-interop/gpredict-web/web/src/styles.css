@@ -745,6 +745,18 @@ body {
   font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   user-select: all; /* one click selects the whole path, to copy it */
 }
+/* Save Pass Details and Save Passes: a two-column grid with 10 px spacing (ref-P §8.1) */
+.save-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 400px;
+  max-width: 100%;
+}
+.save-folder {
+  color: var(--text-dim);
+}
 .license-text {
   height: 60vh;
   margin: 0;
