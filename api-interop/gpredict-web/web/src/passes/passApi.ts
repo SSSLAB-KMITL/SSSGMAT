@@ -22,3 +22,11 @@ export function getSkyGlance(module: string, t?: string): Promise<SkyGlanceAnswe
 
 /** Closing the Sky at a glance window: lets the server drop the ephemeris it holds for it. */
 export const releaseSkyGlance = (module: string) => request<void>("DELETE", `${moduleUrl(module)}/skyglance`);
+
+/**
+ * (ของเรา) `releaseSkyGlance` for a page that is going away (reload, closed browser tab): a keepalive request, which the browser
+ * still sends after the page is gone. Nobody is left to hear the answer, so a failure is dropped.
+ */
+export function releaseSkyGlanceAtUnload(module: string): void {
+  fetch(`${moduleUrl(module)}/skyglance`, { method: "DELETE", keepalive: true }).catch(() => undefined);
+}

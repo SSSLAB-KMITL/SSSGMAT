@@ -4,7 +4,7 @@ import type { Tick } from "../types";
 import { prepareCanvas, useElementSize } from "../views/canvasHooks";
 import { NoPassMessage } from "./NoPassMessage";
 import { PassWait } from "./PassWait";
-import { getSkyGlance, releaseSkyGlance } from "./passApi";
+import { getSkyGlance, releaseSkyGlance, releaseSkyGlanceAtUnload } from "./passApi";
 import { beginPlot, canvasPosition, fillText, strokeSegments, WHITE } from "./plotCommon";
 import type { PassWindow } from "./passWindows";
 import {
@@ -19,7 +19,7 @@ import {
   SKY_WAITING_TEXT,
 } from "./skyGlance";
 import type { SkyBuild, SkyCursor, SkyHit, SkyScene } from "./skyGlance";
-import { SkyGlanceFeed } from "./skyGlanceFeed";
+import { releaseOnPageHide, SkyGlanceFeed } from "./skyGlanceFeed";
 import type { SkyView } from "./skyGlanceFeed";
 import type { SkyGlanceAnswer } from "./types";
 import { usePassRequest } from "./usePassRequest";
@@ -182,7 +182,8 @@ interface Props {
  *   is there.
  * - A left click on a bar opens Pass details for that pass (`kind: "at"` with its AOS and LOS, no parent window). If the
  *   answer is late the waiting box shows, as for the satellite popups' pass items.
- * - A module with no satellites is the text `NO_SATELLITES` and no request. Closing the window releases what the server holds for it.
+ * - A module with no satellites is the text `NO_SATELLITES` and no request. Closing the window releases what the server holds for it,
+ *   and so does the page going away (reload, closed browser tab: `releaseOnPageHide`).
  */
 export function SkyGlanceWindow({ module, satellites, tick, raiseToken, onOpenPassWindow, onClose }: Props) {
   const count = satellites.length;
@@ -193,13 +194,15 @@ export function SkyGlanceWindow({ module, satellites, tick, raiseToken, onOpenPa
   const pass = usePassRequest(module, onOpenPassWindow);
   const { start: startPass } = pass;
 
-  // the conversation with the server lasts as long as the window and the satellites it was made for
+  // the conversation with the server lasts as long as the window and the satellites it was made for, or until the page goes away
   useEffect(() => {
     if (count === 0) return; // Gpredict only has the label then
     const f = new SkyGlanceFeed({ get: (t) => getSkyGlance(module, t), release: () => releaseSkyGlance(module) }, setView);
+    const unlisten = releaseOnPageHide(window, () => releaseSkyGlanceAtUnload(module));
     feed.current = f;
     built.current = null;
     return () => {
+      unlisten();
       f.stop();
       feed.current = null;
     };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
-import { getSkyGlance, releaseSkyGlance, requestPass } from "./passApi";
+import { getSkyGlance, releaseSkyGlance, releaseSkyGlanceAtUnload, requestPass } from "./passApi";
 import type { PassBody } from "./types";
 
 type Call = { url: string; init: RequestInit | undefined };
@@ -93,5 +93,19 @@ describe("releaseSkyGlance", () => {
     await expect(releaseSkyGlance("A b")).resolves.toBeUndefined();
     expect(calls[0]!.url).toBe("/api/modules/A%20b/skyglance");
     expect(calls[0]!.init?.method).toBe("DELETE");
+  });
+});
+
+describe("releaseSkyGlanceAtUnload (the page is going away)", () => {
+  it("DELETEs the route with keepalive, so the request outlives the page", () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }));
+    releaseSkyGlanceAtUnload("A b");
+    expect(calls).toEqual([{ url: "/api/modules/A%20b/skyglance", init: { method: "DELETE", keepalive: true } }]);
+  });
+
+  it("a request that fails is nobody's business: no unhandled rejection", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+    expect(() => releaseSkyGlanceAtUnload("A")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // an unhandled rejection would fail the run here
   });
 });

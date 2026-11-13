@@ -172,3 +172,17 @@ export class SkyGlanceFeed {
     this.onView(view);
   }
 }
+
+/** Where `releaseOnPageHide` listens: `window` in the browser. */
+export type PageEvents = Pick<EventTarget, "addEventListener" | "removeEventListener">;
+
+/**
+ * (ของเรา) A reload or a closed browser tab unmounts nothing, so the window's `stop` never runs and the server would hold the
+ * window's ephemeris until the module closes. This calls `send` (a keepalive DELETE, passApi.ts) at every "pagehide" of `page`.
+ * Returns the function that stops listening (the window was closed: `stop` released it already).
+ */
+export function releaseOnPageHide(page: PageEvents, send: () => void): () => void {
+  const listener = () => send();
+  page.addEventListener("pagehide", listener);
+  return () => page.removeEventListener("pagehide", listener);
+}

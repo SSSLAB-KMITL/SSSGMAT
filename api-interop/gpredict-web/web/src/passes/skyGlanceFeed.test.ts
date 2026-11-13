@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api";
 import type { Timer } from "../useModuleSocket";
-import { SKY_POLL_MS, SkyGlanceFeed } from "./skyGlanceFeed";
+import { releaseOnPageHide, SKY_POLL_MS, SkyGlanceFeed } from "./skyGlanceFeed";
 import type { SkyApi, SkyView } from "./skyGlanceFeed";
 import type { SkyGlanceAnswer } from "./types";
 
@@ -405,5 +405,32 @@ describe("stop (closing the window)", () => {
     feed.retry();
     await flush();
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe("releaseOnPageHide (a reload or a closed browser tab: the window's stop never runs)", () => {
+  it("sends at pagehide, every time, and nothing after it stops listening", () => {
+    const page = new EventTarget();
+    let sent = 0;
+    const unlisten = releaseOnPageHide(page, () => sent++);
+    page.dispatchEvent(new Event("visibilitychange"));
+    expect(sent).toBe(0);
+    page.dispatchEvent(new Event("pagehide"));
+    expect(sent).toBe(1);
+    page.dispatchEvent(new Event("pagehide")); // the page came back from the back/forward cache and goes again
+    expect(sent).toBe(2);
+    unlisten();
+    page.dispatchEvent(new Event("pagehide"));
+    expect(sent).toBe(2);
+  });
+
+  it("two windows listen apart: one that closes leaves the other", () => {
+    const page = new EventTarget();
+    const sent: string[] = [];
+    const stopA = releaseOnPageHide(page, () => sent.push("A"));
+    releaseOnPageHide(page, () => sent.push("B"));
+    stopA();
+    page.dispatchEvent(new Event("pagehide"));
+    expect(sent).toEqual(["B"]);
   });
 });
