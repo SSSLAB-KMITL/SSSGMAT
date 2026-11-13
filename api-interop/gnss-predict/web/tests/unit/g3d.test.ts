@@ -10,12 +10,16 @@ import { useLayout } from "../../src/stores/layout";
 import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
 import { registerGraphics3DCommands } from "../../src/windows/Graphics3D/commands3d";
+import { isClick, markersNear, PICK_RADIUS_PX, selectOnClick, selectScenePath } from "../../src/windows/Graphics3D/pick";
 import { DEFAULT_PROPS_3D, props3d } from "../../src/windows/Graphics3D/props";
 import {
   activeScene, firstScene, markActive, noteSceneLoaded, registerScene, resetScenes, sceneLoadedAt, type MouseMode, type Scene3DHandle,
 } from "../../src/windows/Graphics3D/registry";
 import { registerScene2D, resetScenes2D, type Scene2DHandle } from "../../src/windows/Graphics2D/registry2d";
+import { groupKey } from "../../src/windows/ObjectBrowser/tree";
+import { useObjectBrowser } from "../../src/windows/ObjectBrowser/state";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
+import { loadObjects, satPath } from "./helpers/objects";
 
 type Fake = Scene3DHandle & { calls: unknown[][] };
 
@@ -39,6 +43,8 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     labelShown: (name: string) => (name === "G01" ? true : null),
     frameCount: () => 7,
     sensorFootprintPoints: () => null,
+    pathAt: () => null,
+    entityScreenPosition: (name: string) => (name === "G01" ? [320, 240] : null),
     ...over,
   };
 }
@@ -241,6 +247,75 @@ describe("commands", () => {
   });
 });
 
+describe("picking in the 3D window", () => {
+  const G01 = satPath("G01");
+  const at = (x: number, y: number) => ({ x, y });
+  const pathAt = (path: string | null) => vi.fn((_x: number, _y: number): string | null => path);
+
+  test("a drag is not a click", () => {
+    expect(isClick(at(10, 10), at(15, 10))).toBe(false); // เลื่อน 5 px
+    expect(isClick(at(10, 10), at(10, 5))).toBe(false);
+    expect(isClick(at(10, 10), at(13, 13))).toBe(false); // ระยะ 4.2 px: วัดระยะจริง ไม่ใช่แยกแกน
+    expect(isClick(at(10, 10), at(10, 10))).toBe(true);
+    expect(isClick(at(10, 10), at(14, 10))).toBe(true); // ไม่เกิน 4 px ยังเป็นคลิก (spec S4)
+    expect(isClick(at(10, 10), at(20, 10), 12)).toBe(true); // ค่าเผื่อกำหนดเองได้
+  });
+
+  test("the markers under the mouse are those within 8 px, nearest first; ones that are not in the picture are skipped", () => {
+    expect(PICK_RADIUS_PX).toBe(8);
+    const markers = [
+      { id: "sat/far", at: at(100, 100) },
+      { id: "sat/edge", at: at(58, 50) }, // 8 px: ยังชี้อยู่
+      { id: "sat/near", at: at(52, 51) },
+      { id: "sat/justOut", at: at(50, 58.1) },
+      { id: "sat/hidden", at: null },
+      { id: "fac/under", at: at(50, 50) },
+    ];
+    expect(markersNear(markers, at(50, 50))).toEqual(["fac/under", "sat/near", "sat/edge"]);
+    expect(markersNear(markers, at(50, 50), 1)).toEqual(["fac/under"]);
+    expect(markersNear(markers, at(300, 300))).toEqual([]);
+    expect(markersNear([], at(0, 0))).toEqual([]);
+  });
+
+  test("a drag that ends over a satellite does not pick it (rotating the globe still works)", () => {
+    const pick = pathAt(G01);
+    selectOnClick(at(10, 10), at(60, 12), pick);
+    expect(pick).not.toHaveBeenCalled();
+    expect(useSelection.getState().activePath).toBeNull();
+  });
+
+  test("click selects the picked satellite", () => {
+    loadObjects();
+    const pick = pathAt(G01);
+    selectOnClick(at(100, 80), at(102, 81), pick);
+    expect(pick).toHaveBeenCalledWith(102, 81); // ที่ที่ปล่อยเมาส์
+    expect(useSelection.getState().activePath).toBe(G01);
+  });
+
+  test("click on empty space keeps the selection", () => {
+    loadObjects();
+    useSelection.getState().select("*/Facility/THBK");
+    const pick = pathAt(null);
+    selectOnClick(at(100, 80), at(100, 80), pick);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(useSelection.getState().activePath).toBe("*/Facility/THBK");
+  });
+
+  test("selecting from the picture is like selecting from elsewhere: the folder that hides the row opens, a selected folder is dropped, the row is scrolled to", () => {
+    loadObjects();
+    useObjectBrowser.setState({ collapsed: new Set([groupKey("GPS sats")]), groupSelected: groupKey("Mine") });
+    selectScenePath(G01);
+    expect(useSelection.getState().activePath).toBe(G01);
+    expect(useObjectBrowser.getState().groupSelected).toBeNull();
+    expect(useObjectBrowser.getState().collapsed.has(groupKey("GPS sats"))).toBe(false);
+    expect(useObjectBrowser.getState().scrollTarget).toBe(G01);
+    // เลือกดาวเดิมซ้ำหลังพับโฟลเดอร์: เปิดให้เห็นอีกครั้ง
+    useObjectBrowser.setState({ collapsed: new Set([groupKey("GPS sats")]) });
+    selectScenePath(G01);
+    expect(useObjectBrowser.getState().collapsed.has(groupKey("GPS sats"))).toBe(false);
+  });
+});
+
 describe("window.__gnssStudioTest (W19)", () => {
   test("is wanted only when the URL has ?test", () => {
     expect(testModeRequested("?sc=E2E&test")).toBe(true);
@@ -283,6 +358,16 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.sensorFootprint("Sensor2", "3d")).toBeNull();
     expect(hooks.sensorFootprint("Sensor1", "2d")).toBe(37);
     expect(hooks.sensorFootprint("Sensor2", "2d")).toBeNull();
+  });
+
+  test("entityScreenPosition asks the first 3D window where an object is in its picture", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.entityScreenPosition("G01")).toBeNull(); // ยังไม่มีหน้าต่าง 3D
+    registerScene(fakeScene("graphics3d-2", { entityScreenPosition: () => [1, 2] }));
+    registerScene(fakeScene("graphics3d"));
+    expect(hooks.entityScreenPosition("G01")).toEqual([320, 240]);
+    expect(hooks.entityScreenPosition("NOPE")).toBeNull(); // ไม่อยู่ในภาพ (ซ่อน อยู่หลังโลก หรือนอกภาพ)
   });
 
   test("installing twice keeps the first object", () => {

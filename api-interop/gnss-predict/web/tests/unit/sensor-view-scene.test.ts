@@ -12,7 +12,7 @@ import {
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SensorViewPose } from "../../src/cesium/sensorDraw";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
-import { mountScene3D, mountSensorView, placeSensorCamera } from "../../src/windows/Graphics3D/scene3d";
+import { mountScene3D, mountSensorView, placeSensorCamera, releaseContextMenu } from "../../src/windows/Graphics3D/scene3d";
 
 vi.mock("../../src/cesium/viewer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/cesium/viewer")>()),
@@ -87,13 +87,16 @@ describe("placeSensorCamera", () => {
   });
 });
 
+/** ตัวที่ CesiumWidget ตั้งไว้ที่ canvas (canvas.oncontextmenu = () => false) */
+const cesiumOwn = (): boolean => false;
+
 describe("Cesium's own click and double-click picking", () => {
   /** viewer ปลอมที่มี handler จริงพร้อมคลิกและดับเบิลคลิกแบบที่ Viewer ใส่ไว้ (scene ว่าง: ภาพหยุดสร้างที่บรรทัดแรก ไม่มี WebGL) */
   function viewerWithPicking() {
     const handler = new ScreenSpaceEventHandler(document.createElement("canvas"));
     handler.setInputAction(() => undefined, ScreenSpaceEventType.LEFT_CLICK);
     handler.setInputAction(() => undefined, ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-    return { screenSpaceEventHandler: handler, scene: {} };
+    return { screenSpaceEventHandler: handler, scene: { canvas: { oncontextmenu: cesiumOwn } } };
   }
   const picking = (v: ReturnType<typeof viewerWithPicking>) => [
     typeof v.screenSpaceEventHandler.getInputAction(ScreenSpaceEventType.LEFT_CLICK),
@@ -111,5 +114,29 @@ describe("Cesium's own click and double-click picking", () => {
     vi.mocked(createViewer).mockReturnValueOnce(window3d as never);
     expect(() => mountScene3D("graphics3d", document.createElement("div"))).toThrow();
     expect(picking(window3d)).toEqual(["function", "function"]);
+  });
+});
+
+describe("the right-click menu of a 3D window", () => {
+  // Cesium ยกเลิกเมนูของ browser ที่ canvas ก่อน event ถึง React และ Radix ไม่เปิดเมนูของ object เมื่อ event ถูกยกเลิกไปแล้ว
+  const canvasOf = (v: ReturnType<typeof viewerWith>) => v.scene.canvas;
+  const viewerWith = () => ({ screenSpaceEventHandler: new ScreenSpaceEventHandler(document.createElement("canvas")), scene: { canvas: { oncontextmenu: cesiumOwn } } });
+
+  test("releaseContextMenu takes Cesium's handler off the canvas", () => {
+    const viewer = viewerWith();
+    releaseContextMenu(viewer as never);
+    expect(canvasOf(viewer).oncontextmenu).toBeNull();
+  });
+
+  test("a 3D window's canvas is released before its scene is built; a Sensor View's keeps Cesium's handler (it has no menu)", () => {
+    const window3d = viewerWith();
+    vi.mocked(createViewer).mockReturnValueOnce(window3d as never);
+    expect(() => mountScene3D("graphics3d", document.createElement("div"))).toThrow();
+    expect(canvasOf(window3d).oncontextmenu).toBeNull();
+
+    const sensor = viewerWith();
+    vi.mocked(createViewer).mockReturnValueOnce(sensor as never);
+    expect(() => mountSensorView("sensorView", document.createElement("div"))).toThrow();
+    expect(canvasOf(sensor).oncontextmenu).toBe(cesiumOwn);
   });
 });

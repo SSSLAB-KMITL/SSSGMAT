@@ -6,7 +6,7 @@ import {
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, sceneStyleFrom, sensorStatesAt, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { applyGraphics, pathForEntityId, sceneStyleFrom, sensorStatesAt, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import { orbitPeriodS } from "../../src/cesium/passes";
 import { bodyFrame, type Vec3 } from "../../src/cesium/sensorGeometry";
 import type { ScenarioDoc } from "../../src/stores/scenario";
@@ -380,6 +380,41 @@ describe("View From/To ends (scene3d.fromToResult)", () => {
     expect(fromToResult(thbk, byId(ds, "sat/E05"))).toBe("notFound"); // ถูกซ่อนตามธง
     expect(fromToResult(undefined, g01)).toBe("notFound");
     expect(fromToResult(thbk, undefined)).toBe("notFound");
+  });
+});
+
+describe("pathForEntityId (the object an entity stands for)", () => {
+  test("a facility entity is the facility of that name; a satellite entity is the satellite with its NORAD", () => {
+    const doc = docOf([fac("THBK"), sat("G01", 62339), sat("E05", 40128)]);
+    expect(pathForEntityId("fac/THBK", doc, prnByNorad)).toBe("*/Facility/THBK");
+    expect(pathForEntityId("sat/G01", doc, prnByNorad)).toBe("*/Satellite/G01");
+    expect(pathForEntityId("sat/E05", doc, prnByNorad)).toBe("*/Satellite/E05");
+  });
+
+  test("pathForEntityId maps a renamed satellite by NORAD", () => {
+    // ชื่อใน scenario ไม่ตรง PRN ของ entity: จับคู่ด้วย NORAD ผ่าน manifest (Review Focus 5)
+    const doc = docOf([sat("MySat", 62339), sat("Other", 40128)]);
+    expect(pathForEntityId("sat/G01", doc, prnByNorad)).toBe("*/Satellite/MySat");
+    expect(pathForEntityId("sat/E05", doc, prnByNorad)).toBe("*/Satellite/Other");
+  });
+
+  test("copies of one satellite share the entity: the first one shown in 3D, else the first", () => {
+    const shown = docOf([sat("G01", 62339, { graphics3d: { show: false } }), sat("G01_1", 62339), sat("G01_2", 62339)]);
+    expect(pathForEntityId("sat/G01", shown, prnByNorad)).toBe("*/Satellite/G01_1");
+    const none = docOf([sat("G01", 62339, { graphics3d: { show: false } }), sat("G01_1", 62339, { graphics3d: { show: false } })]);
+    expect(pathForEntityId("sat/G01", none, prnByNorad)).toBe("*/Satellite/G01");
+  });
+
+  test("sensors, access lines, satellites outside the manifest and objects the scenario does not have cannot be picked", () => {
+    const doc = docOf([fac("THBK"), sat("G01", 62339), sat("X99", 99999), sensorObj("S1", "G01") as unknown as SceneObject]);
+    expect(pathForEntityId("sensor/S1/ring", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("sensor/S1/radial/0", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("sensor/S1/marker", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("access/THBK/G01", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("sat/R07", doc, prnByNorad)).toBeNull(); // ไม่มีดาวนี้ใน scenario
+    expect(pathForEntityId("fac/NOPE", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("document", doc, prnByNorad)).toBeNull();
+    expect(pathForEntityId("sat/G01", null, prnByNorad)).toBeNull(); // ไม่มี doc
   });
 });
 

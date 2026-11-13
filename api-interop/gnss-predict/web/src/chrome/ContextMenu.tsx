@@ -9,6 +9,7 @@ import type { MenuEntry } from "./menus";
 import { TipProvider } from "./Tip";
 
 export interface CommandContextMenuProps {
+  /** ไม่มีรายการ = ไม่วาดเมนู (กล่องว่างแย่กว่าไม่มีเมนู) */
   entries: readonly MenuEntry[];
   /** element เดียวที่คลิกขวาแล้วเปิดเมนู (รับ ref และ event ได้) */
   children: ReactElement;
@@ -22,11 +23,13 @@ export function CommandContextMenu({ entries, children, onOpenChange }: CommandC
     <TipProvider>
       <ContextMenu.Root onOpenChange={onOpenChange}>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
-        <ContextMenu.Portal>
-          <ContextMenu.Content className="menu-content">
-            <MenuEntries entries={entries} kit={CONTEXT_MENU_KIT} />
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
+        {entries.length > 0 && (
+          <ContextMenu.Portal>
+            <ContextMenu.Content className="menu-content">
+              <MenuEntries entries={entries} kit={CONTEXT_MENU_KIT} />
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        )}
       </ContextMenu.Root>
     </TipProvider>
   );

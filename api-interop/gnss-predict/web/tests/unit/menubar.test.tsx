@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CommandContextMenu } from "../../src/chrome/ContextMenu";
 import { MenuBar } from "../../src/chrome/MenuBar";
-import { OBJECT_MENU, SATELLITE_MENU, SENSOR_MENU, objectMenuFor } from "../../src/chrome/menus";
+import { OBJECT_MENU, SATELLITE_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
 import { registerCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -122,6 +122,15 @@ describe("menu contents", () => {
       expect(objectMenuFor(cls), String(cls)).toBe(OBJECT_MENU);
     }
     expect(commands("Facility")).not.toContain("object.sensorView");
+  });
+
+  test("sceneMenuFor (right-click in a 3D window) is short: a satellite and a facility have one, nothing else does", () => {
+    const commands = (path: string | null) => sceneMenuFor(path).map((e) => ("command" in e ? e.command : ""));
+    expect(sceneMenuFor("*/Satellite/G01")).toBe(SCENE_SATELLITE_MENU);
+    expect(commands("*/Satellite/G01")).toEqual(["object.properties", "object.sensorView", "object.zoomTo"]);
+    expect(sceneMenuFor("*/Facility/THBK")).toBe(SCENE_FACILITY_MENU);
+    expect(commands("*/Facility/THBK")).toEqual(["object.properties", "object.zoomTo"]);
+    for (const path of [null, "*", "*/Sensor/S1", "*/Constellation/GPS", "not a path"]) expect(sceneMenuFor(path), String(path)).toEqual([]);
   });
 
   test("each of the other menus lists its items in the spec order", async () => {
@@ -410,6 +419,17 @@ describe("context menu", () => {
     await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("target") });
     const menu = await screen.findByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Sensor View", "Access...", "Zoom To", "Rename", "Delete"]);
+  });
+
+  test("a menu with no entries is not drawn (an empty box would be worse than none)", async () => {
+    const user = userEvent.setup();
+    render(
+      <CommandContextMenu entries={[]}>
+        <div data-testid="target" tabIndex={0}>target</div>
+      </CommandContextMenu>,
+    );
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("target") });
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   test("runs the command of the chosen item", async () => {

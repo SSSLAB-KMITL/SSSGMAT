@@ -90,6 +90,21 @@ export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
   return cls === "Satellite" ? SATELLITE_MENU : OBJECT_MENU;
 }
 
+/** เมนูคลิกขวาบนดาวในหน้าต่าง 3D (sensor spec §5.5): คำสั่งชุดเดียวกับเมนูของ object ทำกับดาวที่ชี้ (คลิกขวาเลือกดาวก่อน) */
+export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.zoomTo")];
+
+/** เมนูคลิกขวาบน Facility ในหน้าต่าง 3D */
+export const SCENE_FACILITY_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.zoomTo")];
+
+const NO_MENU: readonly MenuEntry[] = [];
+
+/** เมนูคลิกขวาบน object ที่ path ในหน้าต่าง 3D: ดาวและ Facility มีเมนู อย่างอื่น (ไม่ได้ชี้ object) = ไม่มีเมนู (อาร์เรย์ว่างตัวเดียวกันเสมอ) */
+export function sceneMenuFor(path: string | null): readonly MenuEntry[] {
+  const cls = objectClassOf(path);
+  if (cls === "Satellite") return SCENE_SATELLITE_MENU;
+  return cls === "Facility" ? SCENE_FACILITY_MENU : NO_MENU;
+}
+
 export const UTILITIES_MENU: readonly MenuEntry[] = [cmd("utilities.fetchOrbitData"), cmd("utilities.dailyForecastSettings")];
 
 export const WINDOW_MENU: readonly MenuEntry[] = [

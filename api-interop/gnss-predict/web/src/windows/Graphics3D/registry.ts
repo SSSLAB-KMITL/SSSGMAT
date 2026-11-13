@@ -47,6 +47,13 @@ export interface Scene3DHandle {
   frameCount(): number;
   /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null */
   sensorFootprintPoints(name: string): number | null;
+  /**
+   * Facility หรือดาว (path ของ object) ที่จุดอยู่ใกล้จุด (x, y) ของภาพที่สุด และห่างไม่เกิน 8 px (พิกเซลใน canvas ของหน้าต่างนี้ มุมซ้ายบน = 0, 0)
+   * ไม่มี = null; ที่ซ่อนอยู่ อยู่หลังโลก หรืออยู่นอกภาพไม่นับ sensor เส้น access และพื้นโลกไม่ใช่ object ที่เลือกได้ (คลิกซ้ายเลือก คลิกขวาเปิดเมนู)
+   */
+  pathAt(x: number, y: number): string | null;
+  /** ตำแหน่ง (พิกเซลใน canvas) ของ object ชื่อ name ในภาพตอนนี้ ไม่แสดง อยู่หลังโลก หรืออยู่นอกภาพ = null */
+  entityScreenPosition(name: string): [number, number] | null;
 }
 
 const registry = createSceneRegistry<Scene3DHandle>();

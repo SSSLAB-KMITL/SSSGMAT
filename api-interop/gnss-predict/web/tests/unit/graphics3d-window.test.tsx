@@ -10,6 +10,7 @@ import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
+import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
 import { registerGraphics3DCommands } from "../../src/windows/Graphics3D/commands3d";
 import { Graphics3D } from "../../src/windows/Graphics3D/Graphics3D";
@@ -19,11 +20,12 @@ import { WindowProperties3D } from "../../src/windows/Graphics3D/WindowPropertie
 import { ViewFromTo } from "../../src/windows/ViewFromTo/ViewFromTo";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
 import { stubFetch } from "./helpers/fake-fetch";
+import { loadObjects, satPath } from "./helpers/objects";
 
 vi.mock("../../src/windows/Graphics3D/scene3d", () => ({ mountScene3D: vi.fn() }));
 
 type Fake = Scene3DHandle & { calls: unknown[][]; setFailed(v: boolean): void };
-function fakeScene(panelId: string): Fake {
+function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
   const calls: unknown[][] = [];
   let mode: MouseMode = "grab";
   let failed = false;
@@ -36,7 +38,10 @@ function fakeScene(panelId: string): Fake {
       notifyScenes(); // เหมือนของจริง (SceneSource.changed)
     },
     homeView: () => void calls.push(["homeView"]),
-    zoomTo: () => true,
+    zoomTo: (path) => {
+      calls.push(["zoomTo", path]);
+      return true;
+    },
     viewFromTo: (req) => {
       calls.push(["viewFromTo", req]);
       return "ok";
@@ -53,6 +58,9 @@ function fakeScene(panelId: string): Fake {
     labelShown: () => null,
     frameCount: () => 0,
     sensorFootprintPoints: () => null,
+    pathAt: () => null,
+    entityScreenPosition: () => null,
+    ...over,
   };
 }
 
@@ -316,6 +324,70 @@ describe("Graphics3D", () => {
       act(() => resized?.({ width: 300, height: 200 }));
       expect(scene.calls).toContainEqual(["resize"]);
     });
+  });
+});
+
+describe("right-click menu on a satellite or a facility", () => {
+  const G01 = satPath("G01");
+  const THBK = "*/Facility/THBK";
+
+  /** หน้าต่าง 3D ที่ pathAt ตอบตาม path (คืนตัวปลอมไว้ดู calls) */
+  async function mountPicking(path: string | null): Promise<{ scene: Fake; pathAt: ReturnType<typeof vi.fn> }> {
+    withWebGL();
+    loadObjects();
+    const pathAt = vi.fn((_x: number, _y: number): string | null => path);
+    const scene = fakeScene("graphics3d", { pathAt });
+    vi.mocked(mountScene3D).mockReturnValue(scene);
+    render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene()).toBe(scene));
+    return { scene, pathAt };
+  }
+  const menuTexts = async () => within(await screen.findByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent);
+
+  test("right-click on a satellite shows Properties, Sensor View, Zoom To, and selects the satellite first", async () => {
+    const { pathAt } = await mountPicking(G01);
+    const view = screen.getByTestId("g3d-view");
+    vi.spyOn(view, "getBoundingClientRect").mockReturnValue({ left: 30, top: 20, x: 30, y: 20, width: 400, height: 300, right: 430, bottom: 320, toJSON: () => ({}) });
+    fireEvent.contextMenu(view, { clientX: 120, clientY: 80 });
+    expect(await menuTexts()).toEqual(["Properties", "Sensor View", "Zoom To"]);
+    expect(pathAt).toHaveBeenCalledWith(90, 60); // พิกัดในภาพ ไม่ใช่ของหน้าจอ
+    expect(useSelection.getState().activePath).toBe(G01); // คำสั่งในเมนูทำกับ object ที่ชี้
+  });
+
+  test("right-click on a facility shows Properties, Zoom To", async () => {
+    await mountPicking(THBK);
+    fireEvent.contextMenu(screen.getByTestId("g3d-view"), { clientX: 10, clientY: 10 });
+    expect(await menuTexts()).toEqual(["Properties", "Zoom To"]);
+    expect(useSelection.getState().activePath).toBe(THBK);
+  });
+
+  test("right-click on empty space shows no menu, keeps the selection and keeps the browser's own menu away", async () => {
+    await mountPicking(null);
+    useSelection.getState().select(G01);
+    const notPrevented = fireEvent.contextMenu(screen.getByTestId("g3d-view"), { clientX: 10, clientY: 10 });
+    expect(notPrevented).toBe(false); // preventDefault
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(useSelection.getState().activePath).toBe(G01);
+  });
+
+  test("a satellite's menu does not come back when the next right-click finds nothing", async () => {
+    const { pathAt } = await mountPicking(G01);
+    const view = screen.getByTestId("g3d-view");
+    fireEvent.contextMenu(view, { clientX: 10, clientY: 10 });
+    await menuTexts();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    pathAt.mockReturnValue(null);
+    fireEvent.contextMenu(view, { clientX: 50, clientY: 50 });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  test("Zoom To in the menu zooms this window to the satellite that was pointed at", async () => {
+    const { scene } = await mountPicking(G01);
+    fireEvent.contextMenu(screen.getByTestId("g3d-view"), { clientX: 10, clientY: 10 });
+    const menu = await screen.findByRole("menu");
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Zoom To" }));
+    expect(scene.calls).toContainEqual(["zoomTo", G01]);
   });
 });
 

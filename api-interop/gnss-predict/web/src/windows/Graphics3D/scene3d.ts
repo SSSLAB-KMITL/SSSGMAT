@@ -16,6 +16,11 @@
 //   สี graphics3d.color ความหนาเส้นเท่าขอบ Swath ขนาดจุดเท่าจุด IPP (theme)
 // - 3D Graphics Window Properties (useLayout.windowProps[panelId]) → แสง, เส้น Lat/Lon, Label Declutter (ดู applyProps)
 // - Grab Globe / Zoom In: โหมดเมาส์ของปุ่มซ้าย (Zoom In: ลากกรอบแล้วบินไปที่กรอบ คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง จบแล้วกลับเป็น Grab Globe)
+// - คลิกเลือก object (sensor spec §5.5, หน้าต่าง 3D หลักเท่านั้น: opts.pick): กดและปล่อยซ้ายในโหมด Grab Globe โดยเมาส์เลื่อนไม่เกิน 4 px = คลิก
+//   (pick.ts) เลือกดาวหรือ Facility ที่จุดอยู่ใกล้เมาส์ที่สุดไม่เกิน 8 px (pathAt) ไม่ใช้ scene.pick: เส้น access ทุกเส้นมาบรรจบที่จุดของ Facility
+//   และเส้นวงโคจรของดาวทุกดวงผ่านใกล้จุดของดาวอื่น เส้นซ้อนทับจุดอยู่หลายสิบชิ้น (ที่ Facility drillPick 40 ชั้นยังไม่ถึงจุด) จึงคำนวณจากตำแหน่งบนจอแทน
+//   (windowPosition: ซ่อนอยู่ อยู่หลังโลก หรือนอกภาพไม่นับ)
+//   โหมด Zoom In ไม่เลือก; คลิกซ้ายและดับเบิลคลิกตั้งต้นของ Viewer (pickAndSelectObject / pickAndTrackObject) ยังอยู่ตามเดิม
 // - Sensor View (sensor spec §5.4, mountSensorView): scene เดียวกันนี้ใน viewer ของหน้าต่าง Sensor View ลงทะเบียนในทะเบียนของ Sensor View (P3)
 //   กล้องโหมด sensor (viewFromSensor): ตำแหน่ง = ตำแหน่ง Earth-fixed ของดาวแม่, ทิศ = boresight, ด้านบน = North หรือ Velocity
 //   fov ด้านสั้น = min(2α × 1.05, 120°) (sensorDraw.ts sensorViewPose) near = 1 m ตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน doc เปลี่ยน หรือหน้าต่างเปลี่ยนขนาด
@@ -26,16 +31,17 @@
 //   และทุกครั้งที่วางกล้องจะเลิกตาม entity ยกเลิกการบิน และคืน transform เป็น identity ก่อน (placeSensorCamera)
 
 import {
-  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, JulianDate, Math as CesiumMath, Matrix3,
-  Matrix4, PerspectiveFrustum, PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler,
-  ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Camera, type Entity, type ImageryLayer, type Viewer,
+  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, EllipsoidalOccluder, JulianDate,
+  Math as CesiumMath, Matrix3, Matrix4, PerspectiveFrustum, PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame,
+  SceneTransforms, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Camera, type Entity, type ImageryLayer,
+  type Viewer,
 } from "cesium";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import {
-  applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, sensorStateAt, sensorStatesAt,
-  type SceneObject, type SensorCtx,
+  applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
+  sensorStateAt, sensorStatesAt, type SceneObject, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
@@ -49,6 +55,7 @@ import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useTime } from "../../stores/time";
 import { parseIsoUtc } from "../../time/parse";
+import { markersNear, selectOnClick } from "./pick";
 import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
 import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
@@ -101,6 +108,8 @@ type View =
 interface SceneOptions {
   notify(): void;
   props?: Readonly<Props3D>;
+  /** คลิกซ้ายบนดาวหรือ Facility เลือก object นั้น (หน้าต่าง 3D หลัก; Sensor View ไม่เลือก) */
+  pick?: boolean;
 }
 
 /** สิ่งที่กล้องของ Sensor View ใช้ ณ เวลาปัจจุบัน */
@@ -133,7 +142,7 @@ export function fromToResult(from: Entity | undefined, to: Entity | undefined): 
  * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
  */
 export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): Scene3DHandle {
-  return mount(panelId, el, onRenderStopped, { notify: notifyScenes });
+  return mount(panelId, el, onRenderStopped, { notify: notifyScenes, pick: true }, releaseContextMenu);
 }
 
 /**
@@ -144,7 +153,7 @@ export function mountSensorView(panelId: string, el: HTMLElement, onRenderStoppe
   return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS }, removeViewerPicking);
 }
 
-/** prepare: ปรับ viewer ก่อนสร้างภาพ (Sensor View: ถอดคลิกและดับเบิลคลิกตั้งต้นของ Viewer) */
+/** prepare: ปรับ viewer ก่อนสร้างภาพ (หน้าต่าง 3D หลัก: คืนเมนูคลิกขวาให้ React, Sensor View: ถอดคลิกและดับเบิลคลิกตั้งต้นของ Viewer) */
 function mount(
   panelId: string,
   el: HTMLElement,
@@ -160,6 +169,15 @@ function mount(
     destroyViewer(viewer);
     throw e;
   }
+}
+
+/**
+ * หน้าต่าง 3D หลัก: Cesium ตั้ง canvas.oncontextmenu = () => false (ไม่ให้ browser เปิดเมนูของมันเอง) ตัวนี้ทำงานที่ canvas ก่อนที่ event จะขึ้นไปถึงตัวฟังของ React
+ * และ Radix ContextMenu ไม่เปิดเมนูเมื่อ event ถูก preventDefault ไปแล้ว เมนูคลิกขวาของดาว (Graphics3D.tsx) จึงไม่เคยเปิดบน canvas จริง ต้องถอดตัวนี้ออก
+ * Graphics3D.tsx ยกเลิกเมนูของ browser เองเมื่อคลิกขวาไม่โดน object (Sensor View ไม่มีเมนูคลิกขวา ยังใช้ตัวของ Cesium)
+ */
+export function releaseContextMenu(viewer: { readonly scene: { readonly canvas: Pick<HTMLCanvasElement, "oncontextmenu"> } }): void {
+  viewer.scene.canvas.oncontextmenu = null;
 }
 
 /**
@@ -209,6 +227,8 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   private readonly sensorThrottle = new Throttle(SENSOR_INTERVAL_MS, () => this.drawSensors());
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
+  /** ตำแหน่งที่กดปุ่มซ้ายในโหมด Grab Globe ค้างอยู่ (null = ไม่ได้กดอยู่) ไว้ดูว่าตอนปล่อยเป็นคลิกหรือลาก */
+  private pressAt: Cartesian2 | null = null;
   private icrfPreloaded = false;
   /** Sensor View: กล้องตั้งตาม sensor ณ เวลาปัจจุบันแล้ว (false = ไม่มีตำแหน่ง) */
   private sensorCameraSet = false;
@@ -747,6 +767,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   private dragStart(at: Cartesian2): void {
     if (this.mode === "zoomIn") this.zoom.start(at);
+    else this.pressAt = Cartesian2.clone(at);
   }
 
   private dragMove(at: Cartesian2): void {
@@ -755,9 +776,20 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   private dragEnd(at: Cartesian2): void {
     const box = this.zoom.end(at);
-    if (box === null) return;
+    if (box === null) {
+      this.clicked(at);
+      return;
+    }
+    this.pressAt = null;
     this.zoomBox(box.a, box.b);
     this.setMouseMode("grab");
+  }
+
+  /** ปล่อยปุ่มซ้ายโดยไม่ได้ลากกรอบ Zoom In: ถ้าเป็นคลิก (เมาส์เลื่อนไม่เกิน 4 px) เลือก object ใต้เมาส์ */
+  private clicked(at: Cartesian2): void {
+    const down = this.pressAt;
+    this.pressAt = null;
+    if (down !== null && this.opts.pick === true && this.mode === "grab") selectOnClick(down, at, (x, y) => this.pathAt(x, y));
   }
 
   /** กรอบเล็กกว่า 4 px = คลิก: ซูมเข้าครึ่งหนึ่งของความสูงกล้อง ไม่งั้นบินไปที่พื้นที่บนโลกในกรอบ (มุมที่ไม่ตกบนโลกถูกข้าม) */
@@ -768,6 +800,45 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (rect !== null) camera.flyTo({ destination: rect, duration: 0.8 });
     else camera.zoomIn(camera.positionCartographic.height / 2);
     this.viewer.scene.requestRender();
+  }
+
+  // ---------- เลือก object ด้วยเมาส์ ----------
+
+  pathAt(x: number, y: number): string | null {
+    const doc = useScenario.getState().doc;
+    const entities = this.ds?.entities.values;
+    if (this.destroyed || doc === null || entities === undefined) return null;
+    const prnByNorad = useResults.getState().prnByNorad;
+    const occluder = this.occluder();
+    // เส้น access และ sensor ไม่ใช่ object ที่เลือกได้ (ดาวหรือ Facility เท่านั้น)
+    const markers = entities
+      .filter((entity) => entity.id.startsWith("sat/") || entity.id.startsWith("fac/"))
+      .map((entity) => ({ id: entity.id, at: this.windowPosition(entity, occluder) }));
+    for (const id of markersNear(markers, { x, y })) {
+      const path = pathForEntityId(id, doc, prnByNorad);
+      if (path !== null) return path;
+    }
+    return null;
+  }
+
+  /** ขอบฟ้าของโลกจากตำแหน่งกล้องตอนนี้ (ของที่อยู่หลังโลกมองไม่เห็น) */
+  private occluder(): EllipsoidalOccluder {
+    return new EllipsoidalOccluder(this.viewer.scene.globe.ellipsoid, this.viewer.camera.positionWC);
+  }
+
+  /** ตำแหน่ง (พิกเซลใน canvas) ของ entity ในภาพตอนนี้ ไม่แสดง ไม่มีตำแหน่ง อยู่หลังกล้อง อยู่หลังโลก (ขอบฟ้า) หรือนอกภาพ = null */
+  private windowPosition(entity: Entity, occluder: EllipsoidalOccluder = this.occluder()): Cartesian2 | null {
+    if (!entity.isShowing) return null;
+    const scene = this.viewer.scene;
+    const camera = this.viewer.camera;
+    const fixed = fixedPositionAt(entity, this.viewer.clock.currentTime);
+    if (fixed === null) return null;
+    const p = cartesian(fixed);
+    const ahead = Cartesian3.dot(camera.directionWC, Cartesian3.subtract(p, camera.positionWC, new Cartesian3())) > 0;
+    if (!ahead || !occluder.isPointVisible(p)) return null;
+    const at = SceneTransforms.worldToWindowCoordinates(scene, p);
+    const { clientWidth: width, clientHeight: height } = scene.canvas;
+    return at === undefined || at.x < 0 || at.y < 0 || at.x > width || at.y > height ? null : at;
   }
 
   // ---------- อื่น ๆ ----------
@@ -813,6 +884,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (entity === undefined) return null;
     const label = entity.label;
     return entity.isShowing && label !== undefined && (label.show?.getValue(this.viewer.clock.currentTime) ?? true) === true;
+  }
+
+  entityScreenPosition(name: string): [number, number] | null {
+    const entity = this.entityByName(name);
+    const at = entity === undefined ? null : this.windowPosition(entity);
+    return at === null ? null : [at.x, at.y];
   }
 
   frameCount(): number {

@@ -3,6 +3,8 @@
 // name = ชื่อ object ใน scenario (หน้าต่าง 3D แปลงเป็น id ของ entity ผ่าน entityIdFor) ทุกฟังก์ชันอ่านจาก viewer 3D ตัวแรก (registry.firstScene)
 // ยกเว้น overlays2d: จำนวนสิ่งที่หน้าต่าง 2D ตัวแรกวาดในแต่ละชั้น (ground track, Swath, กลางวันกลางคืน, IPP, sensor) ไม่มีหน้าต่าง 2D = null
 // และ sensorFootprint(ชื่อ sensor, "3d" | "2d"): จำนวนจุดของวงรอยที่หน้าต่าง 3D หรือ 2D ตัวแรกวาดอยู่ ไม่ได้วาดหรือไม่มีหน้าต่าง = null
+// และ entityScreenPosition(ชื่อ object): ตำแหน่ง [x, y] ในพิกเซลของ canvas (มุมซ้ายบน = 0, 0) ของ object ในหน้าต่าง 3D ตัวแรก ไว้ให้ e2e คลิกที่ดาว
+// ไม่แสดง อยู่หลังโลก หรืออยู่นอกภาพ = null
 // และ sensorViewCamera(ชื่อ sensor): กล้องของ Sensor View ของ sensor นั้น (ทะเบียนของ Sensor View แยกจากหน้าต่าง 3D: P3) ไม่มีหน้าต่างหรือไม่มีตำแหน่ง = null
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
@@ -17,6 +19,7 @@ export interface GnssStudioTestHooks {
   entityPositionEcef(name: string, iso?: string): [number, number, number] | null;
   entityColor(name: string): string | null;
   labelShown(name: string): boolean | null;
+  entityScreenPosition(name: string): [number, number] | null;
   sceneLoadedAt(): number | null;
   frameCount(): number;
   overlays2d(): Record<string, number> | null;
@@ -47,6 +50,7 @@ export function installTestHooks(): void {
     entityPositionEcef: (name, iso) => firstScene()?.entityPositionEcef(name, iso) ?? null,
     entityColor: (name) => firstScene()?.entityColor(name) ?? null,
     labelShown: (name) => firstScene()?.labelShown(name) ?? null,
+    entityScreenPosition: (name) => firstScene()?.entityScreenPosition(name) ?? null,
     sceneLoadedAt: () => sceneLoadedAt(),
     frameCount: () => firstScene()?.frameCount() ?? 0,
     overlays2d: () => firstScene2D()?.overlayCounts() ?? null,

@@ -279,6 +279,17 @@ function objectsByEntity(doc: ScenarioDoc, prnByNorad: ReadonlyMap<number, strin
   return out;
 }
 
+/**
+ * path ของ object ที่ entity id นี้แทน (ย้อนของ entityIdFor) ใช้เมื่อคลิกบน entity ในหน้าต่าง 3D: `fac/<ชื่อ>` = Facility ชื่อนั้น,
+ * `sat/<PRN>` = ดาวที่ NORAD ตรงกับ PRN ใน manifest (ดาวที่เปลี่ยนชื่อจึงยังเลือกได้) ดาวที่คัดลอกมีหลายตัวต่อ entity เดียว: ตัวแรกที่เปิด Show
+ * ของหน้า 3D ไม่มีก็ตัวแรก entity อื่น (sensor/…, access/…, ดาวนอก manifest, ไม่มีใน doc) = null: เลือกไม่ได้
+ */
+export function pathForEntityId(id: string, doc: ScenarioDoc | null, prnByNorad: ReadonlyMap<number, string>): string | null {
+  const objs = doc === null ? undefined : objectsByEntity(doc, prnByNorad).get(id);
+  if (objs === undefined) return null;
+  return objectPath(objs.find((o) => graphics3dOf(o).show ?? true) ?? objs[0]);
+}
+
 /** หลาย object ต่อ entity เดียว (ดาวที่คัดลอก): ใช้ตัวแรกที่แสดงอยู่ ไม่มีตัวที่แสดง = ตัวแรก */
 function pick(objs: SceneObject[], doc: ScenarioDoc, ctxOf: (o: SceneObject) => GraphicsCtx): EntityLook {
   const all = objs.map((obj) => ({ obj, g: graphicsFor(obj, doc, ctxOf(obj)) }));
