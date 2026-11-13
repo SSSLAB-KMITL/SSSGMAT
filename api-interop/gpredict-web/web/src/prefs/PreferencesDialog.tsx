@@ -26,10 +26,10 @@ function GroupPage({ page, api }: { page: (api: PrefsPageApi) => ReactNode; api:
  * its left, the page of the group beside them, and the buttons Cancel and OK (no Apply).
  *
  * The pages change a draft that belongs to the window. OK sends what differs from the server's values (PUT /api/prefs through
- * `savePrefs`), then runs the `onCommit` functions the pages registered, in the order they were registered, then closes. If any of
- * that fails the window stays open and shows the Thai error. Cancel and Escape close it and save nothing. The page of a group that
- * has been shown stays in the window (hidden) until it closes, so switching groups loses nothing; the window reads the server's
- * values again when it opens, and a page is built from them.
+ * `savePrefs`), then runs the latest `onCommit` function of each page and key, in the order they were first registered, then
+ * closes. If any of that fails the window stays open and shows the Thai error. Cancel and Escape close it and save nothing. The
+ * page of a group that has been shown stays in the window (hidden) until it closes, so switching groups loses nothing; the window
+ * reads the server's values again when it opens, and a page is built from them.
  */
 export function PreferencesDialog({ onClose }: Props) {
   const answer = usePrefs();
@@ -72,7 +72,7 @@ export function PreferencesDialog({ onClose }: Props) {
                 value: <T extends PrefValue>(key: string) => draftValue(answer, draft, key) as T,
                 set: setValue,
                 reset: resetKeys,
-                onCommit: (fn) => commits.add(g.id, fn),
+                onCommit: (key, fn) => commits.add(g.id, key, fn),
               },
             ]),
           ),

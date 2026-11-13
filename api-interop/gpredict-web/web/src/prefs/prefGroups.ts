@@ -14,10 +14,12 @@ export interface PrefsPageApi {
   /** the keys go back to their defaults (saved by OK, like every change) */
   reset(keys: readonly string[]): void;
   /**
-   * `fn` is run after OK has saved the preferences, for data that is not a key of Preferences (the radio list, say). Registering
-   * the same function again does nothing. If it rejects, the window stays open and shows the error.
+   * `fn` is run after OK has saved the preferences, for data that is not a key of Preferences (the radio list, say). `key` names
+   * what it saves within the page: the latest registration runs, so a page can register an inline closure on every render and the
+   * one OK runs sees the newest state. OK runs each key of each page once, in the order of its first registration. If one rejects,
+   * the window stays open and shows the error.
    */
-  onCommit(fn: () => Promise<void>): void;
+  onCommit(key: string, fn: () => Promise<void>): void;
 }
 
 export interface PrefGroup {

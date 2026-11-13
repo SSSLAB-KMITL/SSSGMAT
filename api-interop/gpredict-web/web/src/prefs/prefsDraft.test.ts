@@ -106,24 +106,40 @@ describe("the draft is immutable", () => {
   });
 });
 
-describe("CommitList (onCommit of the pages)", () => {
+describe("CommitList (onCommit of the pages): keyed, the latest registration runs", () => {
   const fn = () => Promise.resolve();
   const other = () => Promise.resolve();
 
-  it("keeps a function registered again by the same page once", () => {
+  it("a page that registers the same key again replaces what it registered before", () => {
     const list = new CommitList();
-    list.add("predict", fn);
-    list.add("predict", fn);
-    list.add("predict", fn);
+    list.add("predict", "radios", other);
+    list.add("predict", "radios", fn);
     expect(list.all).toEqual([fn]);
   });
 
-  it("keeps the order of registration and the same function of two pages twice", () => {
+  it("keeps the order of the first registration of each page and key", () => {
     const list = new CommitList();
-    list.add("predict", other);
-    list.add("modules", fn);
-    list.add("predict", fn);
-    list.add("predict", other);
-    expect(list.all).toEqual([other, fn, fn]);
+    list.add("predict", "radios", other);
+    list.add("modules", "layout", fn);
+    list.add("predict", "rotators", fn);
+    list.add("predict", "radios", fn); // replaced in its first place
+    expect(list.all).toEqual([fn, fn, fn]);
+    list.add("modules", "layout", other);
+    expect(list.all).toEqual([fn, other, fn]);
+  });
+
+  it("the same key of two pages is two entries", () => {
+    const list = new CommitList();
+    list.add("predict", "save", fn);
+    list.add("modules", "save", other);
+    expect(list.all).toEqual([fn, other]);
+  });
+
+  it("a closure made at every render runs once, and it is the newest (it sees the newest state)", async () => {
+    const list = new CommitList();
+    const seen: number[] = [];
+    for (let render = 1; render <= 3; render++) list.add("predict", "save", async () => void seen.push(render));
+    for (const commit of list.all) await commit();
+    expect(seen).toEqual([3]);
   });
 });

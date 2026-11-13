@@ -58,14 +58,17 @@ export function draftToRequest(answer: PrefsAnswer, draft: Draft): { set: Record
 export type Commit = () => Promise<void>;
 
 /**
- * The onCommit functions of one Preferences window, in the order they were registered. A page registers on every render, so the
- * same function from the same page is kept once.
+ * The onCommit functions of one Preferences window, one per page and key: the latest registration of a (page, key) replaces the
+ * one before (a page registers on every render, so the newest closure, which sees the newest state, is the one that runs). OK runs
+ * each (page, key) once, in the order of its first registration.
  */
 export class CommitList {
-  private readonly entries: { page: string; fn: Commit }[] = [];
+  private readonly entries: { page: string; key: string; fn: Commit }[] = [];
 
-  add(page: string, fn: Commit): void {
-    if (!this.entries.some((e) => e.page === page && e.fn === fn)) this.entries.push({ page, fn });
+  add(page: string, key: string, fn: Commit): void {
+    const entry = this.entries.find((e) => e.page === page && e.key === key);
+    if (entry === undefined) this.entries.push({ page, key, fn });
+    else entry.fn = fn;
   }
 
   get all(): readonly Commit[] {
