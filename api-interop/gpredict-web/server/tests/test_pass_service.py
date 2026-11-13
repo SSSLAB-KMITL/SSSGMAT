@@ -304,6 +304,23 @@ class AnswerTest(PassServiceTestBase):
         p = self.answer(plan)["pass"]
         self.assertEqual((p["aos"], p["los"], p["rows"]), (target["aos"], target["los"], target["rows"]))
 
+    def test_answer_uses_the_look_ahead_the_plan_sized_the_data_with(self):
+        # Passes should occur within อ่านครั้งเดียวตอน plan: เปลี่ยนระหว่างรอ GMAT ไม่ตัดผลเงียบๆ และข้อความบอกจำนวนวันเดิม
+        for kind in ("future", "next"):
+            with self.subTest(kind=kind):
+                self.prefs.update({"PREDICT/LOOK_AHEAD": 3}, [])
+                plan = self.plan(kind, T0, HIDDEN)
+                self.assertEqual((plan.look_ahead, plan.last), (3, date(2026, 11, 16)))
+                self.prefs.update({"PREDICT/LOOK_AHEAD": 1}, [])
+                self.assertEqual(self.answer(plan)["message"]["text"],
+                                 f"Satellite SAT-{HIDDEN} has no passes\nwithin the next 3 days")
+        self.prefs.update({"PREDICT/LOOK_AHEAD": 1, "PREDICT/NUMBER_OF_PASSES": 50}, [])
+        plan = self.plan("future", T0)
+        self.prefs.update({"PREDICT/LOOK_AHEAD": 3}, [])
+        aos = [parse_iso(p["aos"]) for p in self.answer(plan)["passes"]]
+        self.assertLessEqual(aos[-1], T0 + timedelta(days=1, hours=2))            # ช่วง 1 วันของ plan (เกินได้ 1 pass)
+        self.assertGreater(len(aos), 10)
+
     def test_lost_block_answers_gmat_failed(self):
         # days_status เป็น ok แต่ block หาย (เขียนลงดิสก์ไม่ได้และหลุดจาก LRU) → 503 GMAT_FAILED
         plan = self.plan("next", T0)

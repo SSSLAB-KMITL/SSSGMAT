@@ -58,7 +58,9 @@ def day_range(start: datetime, end: datetime) -> tuple[date, date]:
 @dataclass(frozen=True)
 class PassPlan:
     """คำขอ pass ที่ตรวจแล้ว t คือเวลาเริ่มที่ใช้จริง (เวลาเครื่องเมื่อเปิด Always use real time) aos มีเฉพาะ kind "at"
-    first..last คือวันของ block ที่ต้องใช้ real_t0: เปิด Always use real time ตอน plan (Show next pass จึงไม่ข้าม pass ปัจจุบัน)"""
+    first..last คือวันของ block ที่ต้องใช้ look_ahead คือ Passes should occur within (วัน) ที่ใช้กำหนด first..last
+    answer ใช้ค่านี้ ไม่อ่านใหม่ ผลจึงไม่ถูกตัดเงียบๆ เมื่อค่าเปลี่ยนระหว่างรอ GMAT
+    real_t0: เปิด Always use real time ตอน plan (Show next pass จึงไม่ข้าม pass ปัจจุบัน)"""
     module: str
     norad: int
     name: str
@@ -70,6 +72,7 @@ class PassPlan:
     aos: datetime | None
     first: date
     last: date
+    look_ahead: int
     real_t0: bool = False
 
 
@@ -240,6 +243,7 @@ class PassService:
         name, spec, elements = found
         qth = rt.qth
         real_t0 = bool(self._prefs.get("PREDICT/USE_REAL_T0"))
+        look_ahead = int(self._prefs.get("PREDICT/LOOK_AHEAD"))
         if real_t0:
             t = self._now().astimezone(_UTC)                    # ref-P §1.3: ไม่ใช้เวลาของ module และกติกาเวลาเริ่ม
         if not has_aos(elements, qth.lat_deg, aos if kind == "at" else t):
@@ -253,20 +257,20 @@ class PassService:
         elif kind == "at":
             first, last = day_range(aos, aos + DATA_PAD)
         else:
-            look_ahead = int(self._prefs.get("PREDICT/LOOK_AHEAD"))
             first, last = day_range(t, t + timedelta(days=look_ahead) + DATA_PAD)
-        return PassPlan(module, norad, name, spec, elements, qth, kind, t, aos, first, last, real_t0)
+        return PassPlan(module, norad, name, spec, elements, qth, kind, t, aos, first, last, look_ahead, real_t0)
 
     def answer(self, plan: PassPlan, messages: Sequence[Message] = ()) -> dict:
         """คำตอบของ plan หลัง days_status ของ owner เป็น ok (messages คือข้อความของ days_status นั้น)
-        ค่า Preferences อ่าน ณ ตอนนี้ ไม่มีตำแหน่งที่ต้องใช้ -> 503 (_data_missing) kind "at" ที่ไม่เจอ pass -> 404"""
+        ค่า Preferences อ่าน ณ ตอนนี้ ยกเว้น Passes should occur within ที่ใช้ของ plan (ช่วงข้อมูลกำหนดจากค่านั้น)
+        ไม่มีตำแหน่งที่ต้องใช้ -> 503 (_data_missing) kind "at" ที่ไม่เจอ pass -> 404"""
         eph = self._ephem.get_days(plan.spec, plan.first, plan.last)
         if eph is None:
             raise _data_missing(plan, messages)
         q = qth_geo(plan.qth)
         passes = self._memo.passes(plan.spec, plan.first, plan.last, q, eph)
         get = self._prefs.get                                     # อ่านครั้งเดียว: ทุก pass ในคำตอบใช้ค่าชุดเดียวกัน
-        min_el, look_ahead = float(get("PREDICT/MINIMUM_ELEV")), int(get("PREDICT/LOOK_AHEAD"))
+        min_el, look_ahead = float(get("PREDICT/MINIMUM_ELEV")), plan.look_ahead
         n_entries, resolution_s = int(get("PREDICT/NUMBER_OF_ENTRIES")), int(get("PREDICT/TIME_RESOLUTION"))
         twilight_deg, count = float(get("PREDICT/TWILIGHT_THRESHOLD")), int(get("PREDICT/NUMBER_OF_PASSES"))
         out = {"sat": _sat_dict(plan.norad, plan.name), "qth": _qth_dict(plan.qth)}
