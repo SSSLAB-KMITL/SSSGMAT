@@ -829,10 +829,12 @@ class PassApiTestBase(ApiTestBase):
 class PassesApiTest(PassApiTestBase):
     """POST /api/modules/{name}/passes (route รอ GMAT แบบ async ทุก 0.2 วินาที)"""
 
-    def passes(self, kind: str, t, norad: int = NORADS[0], aos=None, name: str = "M"):
+    def passes(self, kind: str, t, norad: int = NORADS[0], aos=None, name: str = "M", los=None):
         body = {"norad": norad, "kind": kind, "t": iso(t)}
         if aos is not None:
             body["aos"] = iso(aos)
+        if los is not None:
+            body["los"] = iso(los)
         return self.client.post(f"/api/modules/{name}/passes", json=body)
 
     def pass_owners(self) -> list[str]:
@@ -911,6 +913,20 @@ class PassesApiTest(PassApiTestBase):
                                   str(n))
         self.assertEqual(self.pass_owners(), [])
 
+    def test_at_with_los_reads_only_the_days_of_the_pass(self):
+        # Sky at a glance ส่ง LOS ของแท่งที่คลิกมาด้วย: ข้อมูลวันของ AOS ถึงวันของ LOS (spec §3.2) ไม่ใช่ ±1 วัน
+        n = NORADS[0]
+        target = self.ok(self.passes("future", T0, n))["passes"][1]
+        aos, los = (datetime.fromisoformat(target[k].replace("Z", "+00:00")) for k in ("aos", "los"))
+        self.assertEqual((aos.date(), los.date()), (date(2026, 11, 12), date(2026, 11, 12)))
+        calls = len(self.fake.calls)
+        with mock.patch.object(self.ephem, "ensure_days", wraps=self.ephem.ensure_days) as ensure:
+            p = self.ok(self.passes("at", T0, n, aos=aos + timedelta(seconds=0.5), los=los))["pass"]
+        self.assertEqual((p["aos"], p["los"], p["rows"]), (target["aos"], target["los"], target["rows"]))
+        self.assertEqual([c.args[2:] for c in ensure.call_args_list], [(date(2026, 11, 12), date(2026, 11, 12))])
+        self.assertEqual(len(self.fake.calls), calls)                     # วันนั้นมีอยู่แล้วจาก Future passes: ไม่สั่ง GMAT
+        self.assertEqual(self.pass_owners(), [])
+
     def test_invalid_body_is_422(self):
         n, t = NORADS[0], iso(T0)
         cases = [({"norad": n, "kind": "later", "t": t}, "kind"),
@@ -925,13 +941,26 @@ class PassesApiTest(PassApiTestBase):
                  ({"norad": 25544.0, "kind": "next", "t": t}, "norad"),
                  ({"kind": "next", "t": t}, "norad"),
                  ({"norad": n, "kind": "at", "t": t}, "aos"),
-                 ({"norad": n, "kind": "at", "t": t, "aos": "x"}, "aos")]
+                 ({"norad": n, "kind": "at", "t": t, "aos": "x"}, "aos"),
+                 ({"norad": n, "kind": "at", "t": t, "aos": t, "los": "x"}, "los"),
+                 ({"norad": n, "kind": "at", "t": t, "aos": t, "los": 12345}, "los"),
+                 ({"norad": n, "kind": "at", "t": t, "aos": t, "los": "0001-01-01T00:00:00Z"}, "los")]
         for body, field in cases:
             with self.subTest(body=body):
                 err = self.assert_error(self.client.post("/api/modules/M/passes", json=body), 422, "PASS_INVALID",
                                         field)
-                if field in ("t", "aos"):                                # ช่วงเวลาเดียวกับนาฬิกาของ module
+                if field in ("t", "aos", "los"):                         # ช่วงเวลาเดียวกับนาฬิกาของ module
                     self.assertTrue(err["text"].endswith(f"({field}) ต้องเป็น {CLOCK_TIME_TEXT}"), err["text"])
+        # LOS ก่อน AOS หรือหลัง AOS เกิน 1 วัน (ไม่ใช่ pass ที่ Sky at a glance แสดงได้ และจะสั่ง GMAT หลายวันโดยไม่จำเป็น)
+        for los in (T0 - timedelta(seconds=1), T0 + timedelta(days=1, seconds=1)):
+            with self.subTest(los=los):
+                body = {"norad": n, "kind": "at", "t": t, "aos": t, "los": iso(los)}
+                err = self.assert_error(self.client.post("/api/modules/M/passes", json=body), 422, "PASS_INVALID", "los")
+                self.assertRegex(err["text"], r"[ก-๙]")
+        for body in ({"norad": n, "kind": "at", "t": t, "aos": t, "los": None},       # null = ไม่ส่ง
+                     {"norad": n, "kind": "next", "t": t, "los": "x"}):                # kind อื่นไม่อ่าน los
+            with self.subTest(body=body):
+                self.assertNotEqual(self.client.post("/api/modules/M/passes", json=body).status_code, 422)
         self.assert_error(self.client.post("/api/modules/Nope/passes", json={"norad": n, "kind": "soon", "t": t}),
                           422, "PASS_INVALID", "kind")                                # ตรวจ body ก่อน module
         self.assert_error(self.client.post("/api/modules/M/passes", json=[1]), 422, "REQUEST_INVALID")

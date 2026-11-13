@@ -10,6 +10,7 @@ import {
   SKY_REDRAW_D,
   skyCursor,
   skyLayout,
+  skyPassBody,
   skyScene,
   skyTimeAt,
   skyTitle,
@@ -269,9 +270,10 @@ describe("skyTimeAt and skyCursor (ref-P §7.5, §7.6)", () => {
 describe("hitPass (ref-P §7.6)", () => {
   const scene = skyScene(THREE, SIZE_3, true); // A: x 300..312.5, y 20..30; B: x 75..87.5, y 50..60
 
-  it("hit test: a point in a bar gives its satellite and the AOS of its pass", () => {
-    expect(hitPass(scene, 305, 25)).toEqual({ norad: 1, aos: THREE.sats[0]!.passes[0]!.aos });
-    expect(hitPass(scene, 80, 55)).toEqual({ norad: 2, aos: THREE.sats[1]!.passes[0]!.aos });
+  it("hit test: a point in a bar gives its satellite and the AOS and LOS of its pass", () => {
+    const [a, b] = [THREE.sats[0]!.passes[0]!, THREE.sats[1]!.passes[0]!];
+    expect(hitPass(scene, 305, 25)).toEqual({ norad: 1, aos: a.aos, los: a.los });
+    expect(hitPass(scene, 80, 55)).toEqual({ norad: 2, aos: b.aos, los: b.los });
   });
 
   it("the edges of the box count as in", () => {
@@ -295,7 +297,13 @@ describe("hitPass (ref-P §7.6)", () => {
   it("the first of overlapping boxes, in creation order, wins", () => {
     const a = answer([sat(1, "A", BLUE, [pass(200, 60), pass(220, 60)])]);
     const s = skyScene(a, skyLayout(1), true);
-    expect(hitPass(s, 300, 25)).toEqual({ norad: 1, aos: a.sats[0]!.passes[0]!.aos }); // x 250..325 and 275..350: both have 300
+    const first = a.sats[0]!.passes[0]!;
+    expect(hitPass(s, 300, 25)).toEqual({ norad: 1, aos: first.aos, los: first.los }); // x 250..325 and 275..350: both have 300
+  });
+
+  it("the request of a click: kind at, from the chart's t0, with the AOS and the LOS (spec §3.2: the days of AOS to LOS)", () => {
+    const hit = hitPass(scene, 305, 25)!;
+    expect(skyPassBody(hit, THREE.t0)).toEqual({ norad: 1, kind: "at", t: THREE.t0, aos: hit.aos, los: hit.los });
   });
 
   it("an empty scene hits nothing", () => {

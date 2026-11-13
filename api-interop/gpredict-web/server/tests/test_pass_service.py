@@ -124,10 +124,13 @@ class PassServiceTestBase(unittest.TestCase):
         self.service = PassService(self.hub, self.ephem, self.prefs, self.wall)
 
     @staticmethod
-    def body(kind: str, t: datetime, norad: int = NORADS[0], aos: datetime | None = None) -> dict:
+    def body(kind: str, t: datetime, norad: int = NORADS[0], aos: datetime | None = None,
+             los: datetime | None = None) -> dict:
         out = {"norad": norad, "kind": kind, "t": iso(t)}
         if aos is not None:
             out["aos"] = iso(aos)
+        if los is not None:
+            out["los"] = iso(los)
         return out
 
     def plan(self, *args, **kw) -> PassPlan:
@@ -204,6 +207,20 @@ class PlanTest(PassServiceTestBase):
         plan = self.plan("at", T0, aos=aos)
         self.assertEqual((plan.aos, plan.first, plan.last), (aos, date(2026, 11, 12), date(2026, 11, 14)))
 
+    def test_plan_range_of_at_with_los_is_day_of_aos_to_day_of_los(self):
+        # spec §3.2: Pass details ของ pass ที่รู้ AOS แล้ว ใช้วันของ AOS ถึงวันของ LOS (Sky at a glance ถือวันเหล่านั้นอยู่แล้ว)
+        day = lambda h, m, s=0: datetime(2026, 11, 13, h, m, s, tzinfo=UTC)
+        for aos, los, want in ((day(10, 0), day(10, 12), (date(2026, 11, 13), date(2026, 11, 13))),
+                               (day(23, 50), day(23, 50) + timedelta(minutes=20), (date(2026, 11, 13), date(2026, 11, 14))),
+                               # GMAT ให้ค่าที่ interpolate ได้ห่างจากต้นและท้ายช่วงเกิน 150 วินาที: AOS/LOS ที่ชิดเที่ยงคืน
+                               # ไม่ถึง 181 วินาทีใช้วันข้างเคียงด้วย ไม่งั้นหา pass นั้นไม่เจอ
+                               (day(0, 2), day(0, 14), (date(2026, 11, 12), date(2026, 11, 13))),
+                               (day(23, 45), day(23, 58), (date(2026, 11, 13), date(2026, 11, 14))),
+                               (day(0, 3, 2), day(23, 56, 58), (date(2026, 11, 13), date(2026, 11, 13)))):
+            with self.subTest(aos=aos, los=los):
+                plan = self.plan("at", T0, aos=aos, los=los)
+                self.assertEqual((plan.aos, plan.first, plan.last), (aos, *want))
+
     def test_use_real_t0_replaces_t(self):
         self.wall.t = T0 + timedelta(days=2, hours=20)                     # 2026-11-15 03:20Z
         self.assertEqual(self.plan("future", T0).t, T0)
@@ -276,6 +293,16 @@ class AnswerTest(PassServiceTestBase):
         self.assertEqual(len(self.answer(plan)["pass"]["rows"]), 21)                # Number of entries 20 → 21 แถว
         self.prefs.update({"PREDICT/NUMBER_OF_ENTRIES": 10}, [])
         self.assertEqual(len(self.answer(plan)["pass"]["rows"]), 11)
+
+    def test_at_with_los_finds_a_pass_that_ends_just_before_midnight(self):
+        n = NORADS[2]                                                   # LOS 2026-11-21 23:59:28Z ราว 31 วินาทีก่อนเที่ยงคืน
+        found = self.answer(self.plan("future", datetime(2026, 11, 21, 22, 0, tzinfo=UTC), n))["passes"]
+        target = next(p for p in found if p["los"].startswith("2026-11-21T23:59"))
+        aos, los = parse_iso(target["aos"]), parse_iso(target["los"])
+        plan = self.plan("at", T0, n, aos=aos, los=los)
+        self.assertEqual((plan.first, plan.last), (date(2026, 11, 21), date(2026, 11, 22)))
+        p = self.answer(plan)["pass"]
+        self.assertEqual((p["aos"], p["los"], p["rows"]), (target["aos"], target["los"], target["rows"]))
 
     def test_lost_block_answers_gmat_failed(self):
         # days_status เป็น ok แต่ block หาย (เขียนลงดิสก์ไม่ได้และหลุดจาก LRU) → 503 GMAT_FAILED

@@ -22,8 +22,8 @@ from datetime import date, datetime, timedelta, timezone
 from gnss_predict.errors import Message
 
 from .clock import parse_clock_time
-from .config import PASS_MEMO_SIZE
-from .ephem import EphemManager, SatEphem, SatSpec, tle_key
+from .config import PASS_MEMO_SIZE, STEP_S
+from .ephem import HALF_WINDOW, EphemManager, SatEphem, SatSpec, tle_key
 from .errors import ApiError
 from .observe import QthGeo, TleElements, qth_geo
 from .pass_predict import NEXT_PASS_OFFSET, describe, get_pass, get_passes, has_aos, pass_to_dict
@@ -35,6 +35,9 @@ from .store import Qth
 KINDS = ("next", "current", "future", "at")
 AT_TOLERANCE = timedelta(seconds=1)              # kind "at": pass ที่ |AOS − aos| ไม่เกินค่านี้ (ของเรา)
 DATA_PAD = timedelta(days=1)                     # ข้อมูลเริ่มก่อนเวลาเริ่ม 1 วันให้ pass ที่กำลังผ่านมี AOS (spec §3.2)
+# kind "at" ที่ส่ง los: วันของ AOS ถึงวันของ LOS (spec §3.2) แต่ค่าที่ interpolate ได้เริ่มหลังต้นช่วงและจบก่อนท้ายช่วง
+# HALF_WINDOW epoch (passes.usable_span) AOS/LOS ที่ห่างเที่ยงคืนไม่ถึงค่านี้จึงใช้วันข้างเคียงด้วย (ของเรา)
+AT_EDGE = timedelta(seconds=(HALF_WINDOW + 1) * STEP_S) + AT_TOLERANCE
 SKY_PASSES = 10                                  # pass ต่อดาวใน Sky at a glance (ref-P §7.2 ไม่ใช้ Number of passes to predict)
 SKY_COLOUR_KEYS = tuple(f"SKY_AT_GLANCE/COLOUR_{i:02d}" for i in range(1, 11))
 _UTC = timezone.utc
@@ -119,9 +122,10 @@ def _parse_time(value, field: str, what: str) -> datetime:
         raise _invalid(field, f"{what} ({field}) ต้องเป็น {exc}") from None
 
 
-def parse_body(body: dict) -> tuple[int, str, datetime, datetime | None]:
-    """(norad, kind, t, aos) จาก body ของคำขอ ผิดตัวแรกที่เจอ -> 422 PASS_INVALID ที่ object เป็นชื่อช่อง
-    aos ใช้เฉพาะ kind "at" (kind อื่นไม่อ่าน)"""
+def parse_body(body: dict) -> tuple[int, str, datetime, datetime | None, datetime | None]:
+    """(norad, kind, t, aos, los) จาก body ของคำขอ ผิดตัวแรกที่เจอ -> 422 PASS_INVALID ที่ object เป็นชื่อช่อง
+    aos และ los ใช้เฉพาะ kind "at" (kind อื่นไม่อ่าน) aos ต้องมี los ไม่บังคับ (ไม่ส่งหรือ null = None)
+    los ต้องไม่ก่อน aos และไม่หลัง aos เกิน DATA_PAD (kind "at" ที่ไม่ส่ง los ก็หาได้แค่ pass ที่ยาวราวนี้)"""
     norad = body.get("norad")
     if isinstance(norad, bool) or not isinstance(norad, int):
         raise _invalid("norad", "เลข NORAD ของดาว (norad) ต้องเป็นจำนวนเต็ม")
@@ -129,8 +133,15 @@ def parse_body(body: dict) -> tuple[int, str, datetime, datetime | None]:
     if not isinstance(kind, str) or kind not in KINDS:
         raise _invalid("kind", "ชนิดคำขอ (kind) ต้องเป็น next, current, future หรือ at")
     t = _parse_time(body.get("t"), "t", "เวลาเริ่ม")
-    aos = _parse_time(body.get("aos"), "aos", "AOS ของ pass ที่ต้องการ") if kind == "at" else None
-    return norad, kind, t, aos
+    if kind != "at":
+        return norad, kind, t, None, None
+    aos = _parse_time(body.get("aos"), "aos", "AOS ของ pass ที่ต้องการ")
+    if body.get("los") is None:
+        return norad, kind, t, aos, None
+    los = _parse_time(body.get("los"), "los", "LOS ของ pass ที่ต้องการ")
+    if not aos <= los <= aos + DATA_PAD:
+        raise _invalid("los", "LOS ของ pass ที่ต้องการ (los) ต้องไม่ก่อน AOS (aos) และไม่หลัง AOS เกิน 1 วัน")
+    return norad, kind, t, aos, los
 
 
 def parse_sky_t(value: str | None) -> datetime | None:
@@ -217,8 +228,9 @@ class PassService:
     def plan(self, module: str, body: dict) -> PassPlan | dict:
         """ตรวจ body (422 PASS_INVALID) → หา module (ไม่ได้เปิด: ModuleClosedError) → หาดาว (404 NOT_FOUND)
         → has_aos เป็นเท็จ: คืน dict คำตอบ PASS_NO_AOS ทันที (kind "at": 404 เพราะไม่มี pass ที่ AOS นั้นแน่นอน)
-        นอกนั้นคืน PassPlan ที่มีช่วงวันตาม spec §3.2 และ plan-context ข้อ 5"""
-        norad, kind, t, aos = parse_body(body)
+        นอกนั้นคืน PassPlan ที่มีช่วงวันตาม spec §3.2: kind "at" ที่ส่ง los ใช้วันของ AOS ถึงวันของ LOS (ขยายด้วย AT_EDGE)
+        ที่ไม่ส่ง los ใช้วันของ (aos − 1 วัน) ถึงวันของ (aos + 1 วัน) ตาม plan-context ข้อ 5"""
+        norad, kind, t, aos, los = parse_body(body)
         rt = self._hub.get(module)
         if rt is None:
             raise ModuleClosedError(f"module {module} ไม่ได้เปิดอยู่")
@@ -236,7 +248,9 @@ class PassService:
             text = (NO_AOS_SHORT if kind == "future" else NO_AOS_LONG) % name
             return {"sat": _sat_dict(norad, name), "qth": _qth_dict(qth),
                     "message": _message("PASS_NO_AOS", "error", text)}
-        if kind == "at":
+        if kind == "at" and los is not None:                     # Sky at a glance: วันของ AOS ถึงวันของ LOS
+            first, last = (aos - AT_EDGE).astimezone(_UTC).date(), (los + AT_EDGE).astimezone(_UTC).date()
+        elif kind == "at":
             first, last = day_range(aos, aos + DATA_PAD)
         else:
             look_ahead = int(self._prefs.get("PREDICT/LOOK_AHEAD"))

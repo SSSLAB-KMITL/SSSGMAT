@@ -65,13 +65,16 @@ export interface PassQth {
 
 /**
  * Body of POST /api/modules/{name}/passes. `t` is the time to start from (the module time of the tick, ISO 8601 UTC).
- * `aos` only with kind "at": the AOS of the pass wanted (Sky at a glance), found within one second.
+ * `aos` only with kind "at": the AOS of the pass wanted (Sky at a glance), found within one second. `los`, also only with kind
+ * "at" and not needed: the LOS of that pass, so the server reads the days of AOS to LOS rather than a day either side of the AOS
+ * (no later than one day after `aos`).
  */
 export interface PassBody {
   norad: number;
   kind: "next" | "current" | "future" | "at";
   t: string;
   aos?: string;
+  los?: string;
 }
 
 /** The kinds of request the satellite popups make: Show current pass, Show next pass and Future passes ("at" is Sky at a glance's). */

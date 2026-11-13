@@ -66,7 +66,7 @@ pass ทุกรอบหาจากตำแหน่งที่ GMAT คำ
 |---|---|---|
 | GET | `/api/prefs` | `{values, defaults, user}`: ค่าที่ใช้อยู่ ค่าตั้งต้น และรายชื่อ key ที่ผู้ใช้ตั้งเอง |
 | PUT | `/api/prefs` | `{"set": {...}, "remove": [...]}` ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย |
-| POST | `/api/modules/{name}/passes` | `{"norad", "kind": "next" \| "current" \| "future" \| "at", "t", "aos"}` รอ GMAT แล้วตอบ `pass`, `passes` หรือ `message` |
+| POST | `/api/modules/{name}/passes` | `{"norad", "kind": "next" \| "current" \| "future" \| "at", "t", "aos", "los"}` รอ GMAT แล้วตอบ `pass`, `passes` หรือ `message` (`aos` และ `los` ใช้กับ `at` เท่านั้น `los` ไม่บังคับ: ส่งมาแล้วใช้ข้อมูลวันของ AOS ถึงวันของ LOS ไม่ส่งใช้ 1 วันก่อนถึง 1 วันหลัง AOS) |
 | GET | `/api/modules/{name}/skyglance?t=` | Sky at a glance ตอบทันที `status` เป็น `computing`, `ok` หรือ `failed` (หน้าเว็บถามซ้ำทุก 1 วินาที) |
 | DELETE | `/api/modules/{name}/skyglance` | ปิดหน้าต่าง Sky at a glance: ปล่อยงาน GMAT ที่ค้างของหน้าต่างนั้น |
 
@@ -261,7 +261,7 @@ spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหน�
 | รหัส | HTTP / ที่แสดง | ความหมาย |
 |---|---|---|
 | `PREFS_INVALID` | 422, `object` = key | `PUT /api/prefs` ที่มี key ที่ไม่รู้จัก ค่าผิดชนิดหรือนอกช่วง (เช่น "Minimum elevation ต้องเป็นจำนวนเต็ม 1–90") key ที่อยู่ทั้งใน `set` และ `remove` หรือ `set`/`remove` ผิดรูปแบบ ผิดตัวเดียวไม่เขียนอะไรเลย หน้าต่าง Preferences แสดงข้อความนี้และไม่ปิด |
-| `PASS_INVALID` | 422, `object` = ชื่อช่อง | body ของ `POST /api/modules/{name}/passes` หรือ `t` ของ `GET …/skyglance` ผิด: `norad` ไม่ใช่จำนวนเต็ม, `kind` ไม่ใช่ `next`, `current`, `future`, `at`, เวลาไม่ใช่ ISO 8601 ที่มี timezone หรืออยู่นอกช่วงของนาฬิกา module |
+| `PASS_INVALID` | 422, `object` = ชื่อช่อง | body ของ `POST /api/modules/{name}/passes` หรือ `t` ของ `GET …/skyglance` ผิด: `norad` ไม่ใช่จำนวนเต็ม, `kind` ไม่ใช่ `next`, `current`, `future`, `at`, เวลาไม่ใช่ ISO 8601 ที่มี timezone หรืออยู่นอกช่วงของนาฬิกา module, `los` ก่อน `aos` หรือหลัง `aos` เกิน 1 วัน |
 | `PASS_NO_AOS` | `message` ระดับ error ในคำตอบ 200 ของ passes | ดาวขึ้นเหนือขอบฟ้าของสถานีไม่ได้ (GEO, decayed, mean motion 0, วงโคจรไปไม่ถึงละติจูดของสถานี) ตัดสินจาก TLE โดยไม่สั่ง GMAT |
 | `PASS_NONE_WITHIN` | `message` ระดับ info ในคำตอบ 200 ของ passes | ดาวขึ้นได้แต่ไม่มี pass ที่ Max El ถึง Minimum elevation ภายใน "Passes should occur within" |
 

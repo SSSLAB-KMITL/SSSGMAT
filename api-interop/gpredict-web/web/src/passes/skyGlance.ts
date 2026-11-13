@@ -5,7 +5,7 @@
 import { cssRgba } from "../colors";
 import { WHITE } from "./plotCommon";
 import type { PlotSize, Segment, TextMark } from "./plotCommon";
-import type { SkyGlanceAnswer } from "./types";
+import type { PassBody, SkyGlanceAnswer } from "./types";
 
 /** Width of the window as it opens (`SKG_DEFAULT_WIDTH`). */
 export const SKY_WIDTH = 600;
@@ -64,6 +64,7 @@ export function skyLayout(n: number): { width: 600; height: number } {
 export interface SkyBar {
   norad: number;
   aos: string;
+  los: string;
   x: number;
   y: number;
   w: number;
@@ -155,7 +156,7 @@ export function skyScene(a: SkyGlanceAnswer, size: PlotSize, utc: boolean): SkyS
       const x = toX(Date.parse(p.aos));
       const w = toX(Date.parse(p.los)) - x;
       if (!Number.isFinite(x) || !Number.isFinite(w)) continue; // times we cannot read
-      bars.push({ norad: sat.norad, aos: p.aos, x, y, w, h: pps, fill, border });
+      bars.push({ norad: sat.norad, aos: p.aos, los: p.los, x, y, w, h: pps, fill, border });
       if (first) {
         first = false;
         const left = x > NAME_SIDE_X;
@@ -224,11 +225,26 @@ export function skyCursor(scene: SkyScene, x: number): SkyCursor | null {
   };
 }
 
+/** The pass of a box: its satellite, AOS and LOS. */
+export type SkyHit = Pick<SkyBar, "norad" | "aos" | "los">;
+
 /** The pass whose box is at (x, y): the first in the order of creation, the edges of the box counting as in (ref-P §7.6). Null if there is none. */
-export function hitPass(scene: SkyScene, x: number, y: number): { norad: number; aos: string } | null {
+export function hitPass(scene: SkyScene, x: number, y: number): SkyHit | null {
   const bar = scene.bars.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-  return bar === undefined ? null : { norad: bar.norad, aos: bar.aos };
+  return bar === undefined ? null : { norad: bar.norad, aos: bar.aos, los: bar.los };
 }
+
+/**
+ * The request that a click on the box of `hit` makes (Pass details of that pass, `t0` is the chart's). The LOS goes too, so the
+ * server reads the days of AOS to LOS (spec §3.2), which the chart holds already, instead of a day either side of the AOS.
+ */
+export const skyPassBody = (hit: SkyHit, t0: string): PassBody => ({
+  norad: hit.norad,
+  kind: "at",
+  t: t0,
+  aos: hit.aos,
+  los: hit.los,
+});
 
 // ---------------------------------------------------------------- drawing it again (ref-P §7.7)
 

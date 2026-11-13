@@ -7,8 +7,18 @@ import { PassWait } from "./PassWait";
 import { getSkyGlance, releaseSkyGlance } from "./passApi";
 import { beginPlot, canvasPosition, fillText, strokeSegments, WHITE } from "./plotCommon";
 import type { PassWindow } from "./passWindows";
-import { hitPass, needsRedraw, NO_SATELLITES, skyCursor, skyLayout, skyScene, skyTitle, SKY_WAITING_TEXT } from "./skyGlance";
-import type { SkyBuild, SkyCursor, SkyScene } from "./skyGlance";
+import {
+  hitPass,
+  needsRedraw,
+  NO_SATELLITES,
+  skyCursor,
+  skyLayout,
+  skyPassBody,
+  skyScene,
+  skyTitle,
+  SKY_WAITING_TEXT,
+} from "./skyGlance";
+import type { SkyBuild, SkyCursor, SkyHit, SkyScene } from "./skyGlance";
 import { SkyGlanceFeed } from "./skyGlanceFeed";
 import type { SkyView } from "./skyGlanceFeed";
 import type { SkyGlanceAnswer } from "./types";
@@ -55,8 +65,8 @@ interface ChartProps {
   /** the number of satellites of the module: the chart opens with the size that fits them (and is not made smaller than that) */
   count: number;
   onRetry: () => void;
-  /** a click on a pass box: its satellite and AOS, and the `t0` of the chart it is in */
-  onPass: (norad: number, aos: string, t0: string) => void;
+  /** a click on a pass box: its pass (satellite, AOS and LOS), and the `t0` of the chart it is in */
+  onPass: (hit: SkyHit, t0: string) => void;
 }
 
 /**
@@ -120,7 +130,7 @@ function SkyChart({ view, count, onRetry, onPass }: ChartProps) {
           if (e.button !== 0 || scene === null) return; // Gpredict acts on the release of the left button; nothing else does anything
           const { x, y } = canvasPosition(e.currentTarget, e);
           const hit = hitPass(scene, x, y);
-          if (hit !== null) onPass(hit.norad, hit.aos, answer.t0);
+          if (hit !== null) onPass(hit, answer.t0);
         }}
       />
     );
@@ -170,8 +180,8 @@ interface Props {
  *   `SKY_WAITING_TEXT` until GMAT has it, then the chart. After that every tick is checked with `needsRedraw` against the time and
  *   place of the last build; when it says so the chart is built again from the module time, and the old one stays until the new one
  *   is there.
- * - A left click on a bar opens Pass details for that pass (`kind: "at"`, no parent window). If the answer is late the waiting box
- *   shows, as for the satellite popups' pass items.
+ * - A left click on a bar opens Pass details for that pass (`kind: "at"` with its AOS and LOS, no parent window). If the
+ *   answer is late the waiting box shows, as for the satellite popups' pass items.
  * - A module with no satellites is the text `NO_SATELLITES` and no request. Closing the window releases what the server holds for it.
  */
 export function SkyGlanceWindow({ module, satellites, tick, raiseToken, onOpenPassWindow, onClose }: Props) {
@@ -209,7 +219,7 @@ export function SkyGlanceWindow({ module, satellites, tick, raiseToken, onOpenPa
     }
   }, [tick, module, satKey, count]);
 
-  const openPass = (norad: number, aos: string, t0: string) => startPass({ norad, kind: "at", t: t0, aos });
+  const openPass = (hit: SkyHit, t0: string) => startPass(skyPassBody(hit, t0));
 
   return (
     <>
