@@ -11,7 +11,7 @@
 // test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
 //
 // การตั้งชื่อคีย์: `<กลุ่ม>.<ที่ใช้>.<ชื่อ>` แบบ camelCase กลุ่มที่ใช้: menu anim toolbar window page field option ob
-// timeline mv status dialog help คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
+// timeline mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View) คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
 //   - เมนูย่อย View → Toolbars ใช้ toolbar.* เป็นชื่อแถบ
 //   - เมนูคลิกขวาของ Object Browser ใช้ menu.object.* ชุดเดียวกับเมนูที่ตั้งชื่อตามชนิด object
 //   - ช่อง Time Step และ X Real Time Multiplier ในหน้า Basic - Time ใช้ anim.timeStep / anim.xRealTimeMultiplier
@@ -23,7 +23,7 @@
 import { ENUMS } from "../api/enums.gen";
 
 export type Label = { text: string; source: "stk" | "ours"; ref?: string };
-type Section = "A" | "B" | "C" | "D" | "E" | "F";
+type Section = "A" | "B" | "C" | "D" | "E" | "F" | "G";
 
 const stk = (text: string, section: Section): Label => ({ text, source: "stk", ref: `STK ref §${section}` });
 const ours = (text: string): Label => ({ text, source: "ours" });
@@ -64,6 +64,8 @@ const LABELS = {
   "menu.insert.new": ours("New..."),
   "menu.insert.facility": ours("Facility..."),
   "menu.insert.satellite": ours("Satellite..."),
+  // reference ไม่มีชื่อ "Sensor..." (Insert menu มีแค่ "New..." กับ "Default Object...") จึงเป็น ours เหมือน Satellite...
+  "menu.insert.sensor": ours("Sensor..."),
   "menu.insert.constellation": ours("Constellation..."),
 
   "menu.analysis.access": stk("Access...", "B"),
@@ -77,6 +79,8 @@ const LABELS = {
   "menu.object.zoomTo": stk("Zoom To", "B"),
   "menu.object.rename": stk("Rename", "B"),
   "menu.object.delete": stk("Delete", "B"),
+  // STK ไม่มีคำสั่งมองผ่าน sensor (§G "View through a sensor" = NF; ใกล้สุดคือ Obscuration...) จึงเป็น ours
+  "menu.object.sensorView": ours("Sensor View"),
 
   "menu.utilities.fetchOrbitData": ours("Fetch Orbit Data..."),
   "menu.utilities.dailyForecastSettings": ours("Daily Forecast Settings..."),
@@ -147,6 +151,10 @@ const LABELS = {
   "window.propertiesBrowser": stk("Properties Browser", "C"),
   "window.propertiesBrowserFor": ours("{name} Properties"),
   "window.insertObjects": stk("Insert STK Objects", "A"),
+  // หลัง Insert Default ของ Sensor เลือกดาวแม่ในหน้าต่างนี้ (STK ref §G "Insert")
+  "window.selectObject": stk("Select Object", "G"),
+  // หน้าต่าง Sensor View ของ sensor หนึ่งตัว {sensor} = ชื่อ sensor, {satellite} = ชื่อดาวแม่ (แบบเดียวกับ window.propertiesBrowserFor)
+  "window.sensorView": ours("Sensor View - {sensor} ({satellite})"),
   "window.satelliteCatalog": ours("Search Satellite Catalog"),
   "window.newScenarioWizard": ours("New Scenario Wizard"),
   "window.welcome": ours("Welcome to GNSS Studio"),
@@ -223,6 +231,14 @@ const LABELS = {
   "page.satellite.graphics2dPass": stk("2D Graphics - Pass", "C"),
   "page.satellite.graphics2dSwath": stk("2D Graphics - Swath", "C"),
   "page.satellite.graphics3dOrbitSystem": stk("3D Graphics - Orbit System", "C"),
+
+  // Sensor (STK ref §G): "Basic - Description" ใช้คีย์ page.*.basicDescription เดิมของ object อื่น (ข้อความเดียวกัน ไม่สร้างซ้ำ)
+  "page.sensor.definition": stk("Basic - Definition", "G"),
+  "page.sensor.pointing": stk("Basic - Pointing", "G"),
+  // §G เขียนแค่ "Attributes" ใต้ "2D Graphics pages" 2D ใช้ชื่อ "กลุ่ม - หน้า" เดียวกับของ Satellite และ Facility (§C "Page naming", อ้างตรงตัวใน PROSE_EVIDENCE ของ test)
+  "page.sensor.attributes2d": stk("2D Graphics - Attributes", "C"),
+  // "3D Graphics - Attributes" ไม่มีตรงตัวใน reference (§G มี "3D Graphics pages" กับ "Attributes (...)" แยกกัน) จึงเป็น ours
+  "page.sensor.attributes3d": ours("3D Graphics - Attributes"),
 
   "page.constellation.basicDefinition": stk("Basic - Definition", "B"),
   "page.constellation.basicDescription": ours("Basic - Description"),
@@ -311,6 +327,19 @@ const LABELS = {
   "field.availableObjects": stk("Available Objects", "B"),
   "field.assignedObjects": stk("Assigned Objects", "B"),
   "field.selectionFilter": ours("Selection Filter"),
+  // Sensor (STK ref §G): Basic - Definition / Basic - Pointing / 2D, 3D Graphics - Attributes (Color, Show ใช้คีย์เดิม)
+  "field.parentObject": ours("Parent"),
+  "field.sensorType": stk("Sensor Type", "G"),
+  "field.coneHalfAngle": stk("Cone Half Angle", "G"),
+  "field.pointingType": stk("Pointing Type", "G"),
+  "field.orientationMethod": stk("Orientation Method", "G"),
+  "field.azimuth": stk("Azimuth", "G"),
+  "field.elevation": stk("Elevation", "G"),
+  "field.aboutBoresight": stk("About Boresight", "G"),
+  "field.fill": stk("Fill", "G"),
+  "field.translucency": stk("% Translucency", "G"),
+  "field.showRadialLines": stk("Show Radial Lines", "G"),
+  "field.showBoresightMarker": stk("Show Boresight Marker", "G"),
   // View From/To (spec §9.2)
   "field.mode": ours("Mode"),
   "field.fromPosition": stk("From Position", "E"),
@@ -415,6 +444,11 @@ const LABELS = {
   "option.lineStyle.dashDotDot": ours("Dash Dot Dot"),
   "option.lineStyle.mediumDashed": ours("Medium Dashed"),
   "option.lineStyle.shortDashed": ours("Short Dashed"),
+  // Sensor (STK ref §G) ค่าที่เก็บ = คำที่แสดง (ENUMS.SensorDefinitionType / SensorPointingType / SensorOrientation / SensorAboutBoresight)
+  "option.sensorType.simpleConic": stk("Simple Conic", "G"),
+  "option.pointingType.fixed": stk("Fixed", "G"),
+  "option.orientation.azEl": stk("Az-El", "G"),
+  "option.aboutBoresight.rotate": stk("Rotate", "G"),
   // View From/To
   "option.viewMode.fromPositionToPosition": ours("From Position to Position"),
   "option.referenceFrame.fixed": ours("Fixed"),
@@ -455,12 +489,19 @@ const LABELS = {
   "ob.class.scenario": stk("Scenario", "B"),
   "ob.class.facility": stk("Facility", "C"),
   "ob.class.satellite": stk("Satellite", "B"),
+  "ob.class.sensor": stk("Sensor", "G"),
   "ob.class.constellation": stk("Constellation", "B"),
   "ob.class.group": ours("Group"),
   "ob.show": ours("Show"),
   "ob.findWhat": ours("Find what"),
   "ob.findNext": ours("Find Next"),
   "ob.findPrevious": ours("Find Previous"),
+
+  // ---------- หน้าต่าง Sensor View (ours: STK ไม่มีคำสั่งนี้) ----------
+  // ตัวเลือก Up ของหน้าต่าง Sensor View: North / Velocity
+  "sensorView.up": ours("Up"),
+  "sensorView.up.north": ours("North"),
+  "sensorView.up.velocity": ours("Velocity"),
 
   // ---------- Timeline View (spec §10, STK ref §D) ----------
   "timeline.globalTimeBar": stk("Global Time Bar", "D"),
@@ -532,7 +573,8 @@ export function oursLabels(): { key: LabelKey; text: string }[] {
 // ชื่อกลุ่มตัวเลือก (field ของ optionLabel) = snake_case ของ property ที่เก็บค่านั้นใน schema (ดู tools/enum-sources.mjs):
 //   update_mode = Animation.update_mode, cycle = Animation.cycle, date_format = Units.date_format,
 //   lead_type / trail_type / visible_sides = PassSettings.*, marker_style / line_style = Graphics2DSat.*, orbit_system = Graphics3DSat.orbit_system
-//   ข้อยกเว้นเดียวคือ swath_options = SwathSettings.options (property ชื่อ `options` เฉยๆ กำกวมเมื่อแยกจาก model จึงเติม swath_)
+//   ข้อยกเว้นคือ property ชื่อกำกวมเมื่อแยกจาก model จึงเติมคำนำหน้า: swath_options = SwathSettings.options,
+//   sensor_type = SensorDefinition.type, pointing_type = SensorPointing.type (orientation / about_boresight = SensorPointing.* ตามชื่อ property)
 type Code<K extends keyof typeof ENUMS> = (typeof ENUMS)[K][number];
 
 const PASS_KEYS = {
@@ -566,6 +608,10 @@ const OPTION_KEYS = {
   orbit_system: {
     "Fixed by Window": "option.orbitSystem.fixedByWindow", "Inertial by Window": "option.orbitSystem.inertialByWindow",
   } satisfies Record<Code<"OrbitSystem">, LabelKey>,
+  sensor_type: { "Simple Conic": "option.sensorType.simpleConic" } satisfies Record<Code<"SensorDefinitionType">, LabelKey>,
+  pointing_type: { Fixed: "option.pointingType.fixed" } satisfies Record<Code<"SensorPointingType">, LabelKey>,
+  orientation: { "Az-El": "option.orientation.azEl" } satisfies Record<Code<"SensorOrientation">, LabelKey>,
+  about_boresight: { Rotate: "option.aboutBoresight.rotate" } satisfies Record<Code<"SensorAboutBoresight">, LabelKey>,
 };
 
 /** กลุ่มตัวเลือกที่มีคำที่แสดง (ชื่อกลุ่มตามคอมเมนต์เหนือ OPTION_KEYS ไม่ใช่ path ของ API); สามตัวแรก (ค่าที่เก็บเป็นโค้ด) คือที่ต้องแปลง ที่เหลือค่าที่เก็บก็คือคำที่แสดงอยู่แล้ว */

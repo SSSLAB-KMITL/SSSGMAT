@@ -49,7 +49,7 @@ function parseSections(doc: string): Map<string, RefSection> {
   const out = new Map<string, RefSection>();
   let cur: RefSection | undefined;
   for (const line of doc.split("\n")) {
-    const h = /^## ([A-F])\. (.+)$/.exec(line);
+    const h = /^## ([A-G])\. (.+)$/.exec(line);
     if (h) { cur = { heading: h[2].trim(), sources: [] }; out.set(h[1], cur); continue; }
     if (!cur || !line.startsWith("|")) continue;
     const cells = line.split("|").slice(1, -1).map((c) => c.trim());
@@ -113,10 +113,14 @@ describe("the reference matcher", () => {
     expect(hasTerm(withHeading, "Browser", true)).toBe(false);
   });
 
-  test("the real reference parses into sections A to F, every row with 4 cells", () => {
-    expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F"]);
+  test("the real reference parses into sections A to G, every row with 4 cells", () => {
+    expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
     for (const [k, sec] of sections) expect(sec.sources.length, k).toBeGreaterThan(0);
     expect(sections.get("C")!.heading).toBe("Properties Browser");
+    expect(sections.get("G")!.heading).toMatch(/^Sensor\b/);
+    // แถวของ §G ต้องไม่ถูกนับรวมใน §F เงียบ ๆ
+    expect(sections.get("F")!.sources.some((c) => c.includes("Simple Conic"))).toBe(false);
+    expect(sections.get("G")!.sources.some((c) => c.includes("Simple Conic"))).toBe(true);
   });
 });
 
@@ -172,6 +176,12 @@ const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "field.ambientLevel": "Sun Lighting Ambient Level",
   "mv.tab.all": "Tabs All Messages / Errors",
   "status.stop": "progress bar with Stop",
+  // Sensor (STK ref §G): reference เขียนชื่อเหล่านี้กลางประโยคหรือต่อท้ายคำอื่น ตัวคั่นยืนยันเดี่ยวๆ ไม่ได้
+  "ob.class.sensor": "Sensor object",
+  "field.azimuth": "Az-El fields Azimuth, Elevation",
+  "option.aboutBoresight.rotate": "About Boresight (Rotate default)",
+  // หน้า 2D Graphics ของ Sensor ใช้ชื่อ "กลุ่ม - หน้า" เดียวกับของ Satellite และ Facility (§C "Page naming"); §G เขียนแค่ "Attributes" ใต้ "2D Graphics pages"
+  "page.sensor.attributes2d": "Satellite 2D Graphics - Attributes",
 };
 
 describe("stk labels are real STK terms", () => {
@@ -179,7 +189,7 @@ describe("stk labels are real STK terms", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
       if (l.source !== "stk") continue;
-      const m = /^STK ref §([A-F])$/.exec(l.ref ?? "");
+      const m = /^STK ref §([A-G])$/.exec(l.ref ?? "");
       if (!m) { bad.push(`${k}: ref ${JSON.stringify(l.ref)}`); continue; }
       const sec = sections.get(m[1])!;
       // ชื่อหัวข้อนับได้เฉพาะป้ายชื่อหน้าต่าง (window.*) เช่น "Properties Browser" ที่ reference เขียนไว้ที่หัวข้อ C เท่านั้น
@@ -231,6 +241,74 @@ describe("stk labels are real STK terms", () => {
     expect(t("field.sscNumber")).toBe("SSC number");
     expect(labels["field.sscNumber"].source).toBe("stk");
     expect(Object.values(labels).some((l) => l.text === "SSC Number")).toBe(false);
+  });
+});
+
+// ---- Sensor (STK ref §G, ตรวจ 2026-11-13) ----
+
+describe("sensor labels", () => {
+  /** ป้าย stk ที่ติด §G: ข้อความต้องอยู่ตรงตัวในเซลล์ Item หรือ "STK term / behavior" ของ §G */
+  const G_LABELS: [LabelKey, string][] = [
+    ["ob.class.sensor", "Sensor"],
+    ["window.selectObject", "Select Object"],
+    ["page.sensor.definition", "Basic - Definition"],
+    ["page.sensor.pointing", "Basic - Pointing"],
+    ["field.sensorType", "Sensor Type"],
+    ["field.coneHalfAngle", "Cone Half Angle"],
+    ["field.pointingType", "Pointing Type"],
+    ["field.orientationMethod", "Orientation Method"],
+    ["field.azimuth", "Azimuth"],
+    ["field.elevation", "Elevation"],
+    ["field.aboutBoresight", "About Boresight"],
+    ["field.fill", "Fill"],
+    ["field.translucency", "% Translucency"],
+    ["field.showRadialLines", "Show Radial Lines"],
+    ["field.showBoresightMarker", "Show Boresight Marker"],
+    ["option.sensorType.simpleConic", "Simple Conic"],
+    ["option.pointingType.fixed", "Fixed"],
+    ["option.orientation.azEl", "Az-El"],
+    ["option.aboutBoresight.rotate", "Rotate"],
+  ];
+
+  test("sensor labels exist verbatim in STK ref §G", () => {
+    const g = sections.get("G")!;
+    for (const [k, text] of G_LABELS) {
+      expect(labels[k], k).toEqual({ text, source: "stk", ref: "STK ref §G" });
+      expect(g.sources.some((c) => c.includes(text)), `${k}: "${text}" not in an Item/STK term cell of §G`).toBe(true);
+    }
+  });
+
+  test("the sensor menu and pages the reference does not spell out in full are tagged like their nearest existing key", () => {
+    // "Sensor..." ไม่มีใน reference (มีแค่ Insert menu "New..." กับ "Default Object...") จึงเป็น ours เหมือน menu.insert.satellite
+    expect(labels["menu.insert.sensor"]).toEqual({ text: "Sensor...", source: "ours" });
+    expect(labels["menu.insert.satellite"].source).toBe("ours");
+    // §G เขียนแค่ "Attributes" ใต้ "2D Graphics pages" / "3D Graphics pages": 2D ใช้ชื่อเดียวกับหน้า 2D Graphics - Attributes ของ Satellite (§C)
+    expect(labels["page.sensor.attributes2d"]).toEqual({ text: "2D Graphics - Attributes", source: "stk", ref: "STK ref §C" });
+    expect(labels["page.sensor.attributes2d"]).toEqual(labels["page.satellite.graphics2dAttributes"]);
+    // "3D Graphics - Attributes" ไม่มีตรงตัวใน reference ส่วนไหนเลย (ทดสอบข้อแรกของไฟล์นี้จะจับถ้าเป็น stk)
+    expect(ref.includes("3D Graphics - Attributes")).toBe(false);
+    expect(labels["page.sensor.attributes3d"]).toEqual({ text: "3D Graphics - Attributes", source: "ours" });
+  });
+
+  test("our sensor additions are ours, with the agreed texts and no STK reference", () => {
+    for (const [k, text] of [["menu.object.sensorView", "Sensor View"], ["window.sensorView", "Sensor View - {sensor} ({satellite})"],
+        ["field.parentObject", "Parent"], ["sensorView.up", "Up"], ["sensorView.up.north", "North"], ["sensorView.up.velocity", "Velocity"]] as const)
+      expect(labels[k], k).toEqual({ text, source: "ours" });
+    // reference บอกชัดว่าไม่มีคำสั่ง "Sensor View" ใน STK (ใกล้สุดคือ Obscuration...) จึงต้องไม่อ้างเป็น stk
+    expect(sections.get("G")!.sources.some((c) => c.includes("No \"Sensor View\""))).toBe(true);
+  });
+
+  test("window.sensorView fills the sensor and the satellite like window.propertiesBrowserFor", () => {
+    expect(t("window.sensorView", { sensor: "Sensor1", satellite: "G01" })).toBe("Sensor View - Sensor1 (G01)");
+    expect(t("window.propertiesBrowserFor", { name: "G01" })).toBe("G01 Properties");
+    expect(t("window.sensorView")).toBe("Sensor View - {sensor} ({satellite})");
+  });
+
+  test("texts the sensor tasks reuse are not duplicated under new keys", () => {
+    for (const text of ["Color", "Show", "Basic - Description"]) {
+      const sensorKeys = Object.entries(labels).filter(([k, l]) => l.text === text && /sensor/i.test(k)).map(([k]) => k);
+      expect(sensorKeys, text).toEqual([]);
+    }
   });
 });
 
@@ -308,7 +386,7 @@ describe("every name in spec §4-§13 has a key", () => {
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|mv|status|dialog|help)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 
@@ -367,8 +445,20 @@ describe("optionLabel", () => {
     const optionTexts = textsUnder("option.");
     for (const [field, enumName] of [["update_mode", "UpdateMode"], ["cycle", "Cycle"], ["date_format", "DateFormat"],
         ["lead_type", "LeadType"], ["trail_type", "TrailType"], ["marker_style", "MarkerStyle"], ["line_style", "LineStyle"],
-        ["visible_sides", "VisibleSides"], ["swath_options", "SwathOptions"], ["orbit_system", "OrbitSystem"]] as const)
+        ["visible_sides", "VisibleSides"], ["swath_options", "SwathOptions"], ["orbit_system", "OrbitSystem"],
+        ["sensor_type", "SensorDefinitionType"], ["pointing_type", "SensorPointingType"], ["orientation", "SensorOrientation"],
+        ["about_boresight", "SensorAboutBoresight"]] as const)
       for (const code of ENUMS[enumName]) expect(optionTexts.has(optionLabel(field, code)), `${field}:${code}`).toBe(true);
+  });
+
+  test("the sensor option values are stk labels of §G, shown as the stored value", () => {
+    for (const [field, enumName] of [["sensor_type", "SensorDefinitionType"], ["pointing_type", "SensorPointingType"],
+        ["orientation", "SensorOrientation"], ["about_boresight", "SensorAboutBoresight"]] as const)
+      for (const code of ENUMS[enumName]) {
+        expect(optionLabel(field, code), `${field}:${code}`).toBe(code);
+        const hit = Object.values(labels).find((l) => l.text === code && l.source === "stk" && l.ref === "STK ref §G");
+        expect(hit, `${field}:${code}`).toBeDefined();
+      }
   });
 
   test("an unknown code is shown as it is", () => {
@@ -381,6 +471,8 @@ describe("optionLabel", () => {
 
 describe("Thai messages", () => {
   const THAI = /[\u0E00-\u0E7F]/;
+  /** ข้อความที่ตกลงไว้ว่าเป็นศัพท์ STK ล้วนๆ ตามด้วยค่า ("Cone Half Angle {angle}°" ในแผ่นข้อมูลของ Sensor View) ไม่มีภาษาไทยโดยตั้งใจ */
+  const NO_THAI = new Set<MsgKey>(["sensorView.hudCone"]);
 
   test("the stale and missing results banners are exactly the agreed text", () => {
     expect(msg("banner.stale")).toBe("ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบัน — กด Apply เพื่อคำนวณใหม่");
@@ -425,9 +517,32 @@ describe("Thai messages", () => {
     for (const k of keys) expect(msg(k, { name: "G01", seconds: 4, free_mb: 120, time: "x", example: "e", message: "m" }), k).toMatch(THAI);
   });
 
+  test("the sensor messages are exactly the agreed text", () => {
+    const vars = { satellite: "G01", sensor: "Sensor1", angle: 45, lat: "13.7", lon: "100.5", alt: "20200" };
+    const expected: [MsgKey, string][] = [
+      ["sensorView.noPosition", "ดาว G01 ยังไม่มีตำแหน่ง ณ เวลานี้ (ยังไม่มีผลการคำนวณวงโคจร หรือเวลาอยู่นอกช่วงวิเคราะห์)"],
+      ["sensorView.limit", "เปิด Sensor View พร้อมกันได้ไม่เกิน 4 หน้าต่าง ปิดบานใดบานหนึ่งก่อน"],
+      ["sensorView.closedMissing", "ปิด Sensor View ของ Sensor1 เพราะไม่มี sensor นี้ใน scenario แล้ว"],
+      ["sensorView.created", "สร้าง Sensor1 บน G01 (Cone Half Angle 45°)"],
+      ["insert.noSatellite", "ต้องมีดาวใน scenario ก่อนจึงเพิ่ม Sensor ได้"],
+      ["ob.sensorCopyUnsupported", "ยังคัดลอก Sensor ไม่ได้ในรุ่นนี้"],
+      ["sensorView.hudSubPoint", "จุดใต้ดาว 13.7, 100.5"],
+      ["sensorView.hudAltitude", "ความสูง 20200 km"],
+      ["sensorView.hudCone", "Cone Half Angle 45°"],
+    ];
+    for (const [k, text] of expected) { expect(msg(k, vars), k).toBe(text); if (!NO_THAI.has(k)) expect(msg(k, vars), k).toMatch(THAI); }
+    // ไม่ส่งค่า = ช่อง {var} ยังเห็นอยู่
+    expect(msg("sensorView.noPosition")).toContain("{satellite}");
+    expect(msg("sensorView.created")).toMatch(/\{sensor\}.*\{satellite\}.*\{angle\}/);
+  });
+
   test("every message contains Thai text", () => {
     // เข้าถึงทุกคีย์ผ่าน type: คีย์ที่ลืมใส่ภาษาไทยจะหลุดตรงนี้
-    for (const k of MSG_KEYS) expect(msg(k), k).toMatch(THAI);
+    for (const k of MSG_KEYS) if (!NO_THAI.has(k)) expect(msg(k), k).toMatch(THAI);
+  });
+
+  test("the Thai exemption list holds only messages that really have no Thai", () => {
+    for (const k of NO_THAI) expect(msg(k), k).not.toMatch(THAI);
   });
 
   test("msg substitutes {var} and leaves unknown ones visible", () => {

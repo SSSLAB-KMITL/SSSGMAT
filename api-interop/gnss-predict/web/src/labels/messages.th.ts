@@ -241,6 +241,18 @@ const MESSAGES = {
   "note.visibleSidesBoth": "v1 วาดเส้นทางแบบ Both เสมอ ค่า Visible Sides ที่ตั้งจะถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
   "note.passLabelsStored": "v1 ยังไม่วาดป้ายของ Show Pass Labels และ Show Path Labels ค่าที่ตั้งจะถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
   "about.disclaimer": "ชื่อเมนู หน้าต่าง และหน้าตั้งค่าอ้างอิงคู่มือ STK 13.1.0 รายการที่ติดป้าย Added by GNSS Studio เป็นส่วนที่เพิ่มเอง GNSS Studio ไม่ใช่ผลิตภัณฑ์ของผู้พัฒนา STK",
+
+  // Sensor และหน้าต่าง Sensor View ({satellite} = ชื่อดาว, {sensor} = ชื่อ sensor, {angle} = Cone Half Angle เป็นองศา)
+  "sensorView.noPosition": "ดาว {satellite} ยังไม่มีตำแหน่ง ณ เวลานี้ (ยังไม่มีผลการคำนวณวงโคจร หรือเวลาอยู่นอกช่วงวิเคราะห์)",
+  "sensorView.limit": "เปิด Sensor View พร้อมกันได้ไม่เกิน 4 หน้าต่าง ปิดบานใดบานหนึ่งก่อน",
+  "sensorView.closedMissing": "ปิด Sensor View ของ {sensor} เพราะไม่มี sensor นี้ใน scenario แล้ว",
+  "sensorView.created": "สร้าง {sensor} บน {satellite} (Cone Half Angle {angle}°)",
+  "insert.noSatellite": "ต้องมีดาวใน scenario ก่อนจึงเพิ่ม Sensor ได้",
+  "ob.sensorCopyUnsupported": "ยังคัดลอก Sensor ไม่ได้ในรุ่นนี้",
+  // ข้อความบนแผ่นข้อมูล (HUD) ของ Sensor View: {lat}, {lon} = ละติจูด/ลองจิจูดจุดใต้ดาว, {alt} = ความสูงของดาว (km)
+  "sensorView.hudSubPoint": "จุดใต้ดาว {lat}, {lon}",
+  "sensorView.hudAltitude": "ความสูง {alt} km",
+  "sensorView.hudCone": "Cone Half Angle {angle}°",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;
