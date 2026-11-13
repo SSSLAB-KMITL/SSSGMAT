@@ -25,6 +25,7 @@ import { OBJECT_BROWSER_SCOPE } from "../../shortcuts";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
+import { sensorViewRenamed } from "../SensorView/track";
 import { observeViewportWithFallback } from "../virtualList";
 import { find, objectRows, openProperties, requestFocus, requestScroll, reveal, selectKey, setColor, setOpen, setShow } from "./actions";
 import { FindDialog } from "./FindDialog";
@@ -400,8 +401,9 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
           onClose={() => useObjectBrowser.setState({ renaming: null })}
           onRenamed={(target, newName) => {
             const oldPath = `*/${target.cls}/${target.name}`;
-            if (useSelection.getState().activePath !== oldPath) return;
             const newPath = `*/${target.cls}/${newName}`;
+            if (target.cls === "Sensor") sensorViewRenamed(oldPath, newPath); // Sensor View ของมันตามชื่อใหม่ (sensor spec §5.4)
+            if (useSelection.getState().activePath !== oldPath) return;
             useSelection.getState().select(newPath);
             requestScroll(newPath);
             requestFocus(newPath); // แถวเดิมหายไปแล้ว (แถวผูกกับ path) กล่อง Rename จึงคืนโฟกัสให้มันไม่ได้

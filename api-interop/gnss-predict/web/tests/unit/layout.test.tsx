@@ -91,19 +91,19 @@ describe("registry", () => {
   test("every panel kind has a placeholder with the spec §4.1 window type", () => {
     for (const kind of PANEL_KINDS) expect(getPanelDef(kind), kind).toBeDefined();
     for (const kind of ["objectBrowser", "timelineView", "messageViewer"] as const) expect(getPanelDef(kind)?.type, kind).toBe("dockable");
-    for (const kind of ["graphics3d", "graphics2d"] as const) expect(getPanelDef(kind)?.type, kind).toBe("integrated");
+    for (const kind of ["graphics3d", "graphics2d", "sensorView"] as const) expect(getPanelDef(kind)?.type, kind).toBe("integrated");
     for (const kind of FLOATING) expect(getPanelDef(kind)?.type, kind).toBe("floating");
   });
 
-  test("only the five workspace windows are saved in the workbook (persist)", () => {
+  test("only the five workspace windows and the Sensor Views are saved in the workbook (persist)", () => {
     const persisted = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.persist === true).sort();
-    expect(persisted).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "timelineView"]);
+    expect(persisted).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "sensorView", "timelineView"]);
     for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.persist, kind).toBe("boolean");
   });
 
   test("the windows that depend on the open scenario are the ones closed with it (scenarioBound)", () => {
     const bound = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.scenarioBound === true).sort();
-    expect(bound).toEqual(["insertObjects", "propertiesBrowser", "satelliteCatalog", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
+    expect(bound).toEqual(["insertObjects", "propertiesBrowser", "satelliteCatalog", "sensorView", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
     for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.scenarioBound, kind).toBe("boolean");
   });
 
@@ -118,6 +118,18 @@ describe("registry", () => {
     expect(getPanelDef("graphics3d")?.title(undefined)).toBe("3D Graphics 1 - Earth");
     expect(getPanelDef("windowProperties3d")?.title({})).toBe(t("window.properties3d"));
     expect(getPanelDef("about")?.title({})).toBe(t("help.about"));
+  });
+
+  test("a Sensor View is one window per sensor, titled with the sensor and the satellite it is on now", () => {
+    useScenario.setState({
+      name: "S1",
+      doc: { objects: [{ class: "Satellite", name: "NAV1" }, { class: "Sensor", name: "Cam", parent: "*/Satellite/NAV1" }] } as never,
+    });
+    const def = getPanelDef("sensorView")!;
+    expect(def.singleton).toBe(true);
+    expect(def.instanceKey?.({ path: "*/Sensor/Cam", up: "north" })).toBe("*/Sensor/Cam");
+    expect(def.instanceKey?.({ path: "*/Sensor/Cam", up: "velocity" })).toBe("*/Sensor/Cam");
+    expect(def.title({ path: "*/Sensor/Cam", up: "north" })).toBe(t("window.sensorView", { sensor: "Cam", satellite: "NAV1" }));
   });
 
   test("the placeholder shows the window title and the muted not-yet-built note", async () => {

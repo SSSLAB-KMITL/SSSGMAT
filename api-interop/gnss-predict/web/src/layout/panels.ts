@@ -7,11 +7,12 @@
 import { createElement, type FC } from "react";
 import { labels, t, type LabelKey } from "../labels/labels";
 import { msg } from "../labels/messages.th";
+import { parentOf } from "../stores/scenario";
 
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference",
+  "stkReference", "sensorView",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -132,8 +133,8 @@ interface Base {
 }
 
 /**
- * ชนิดตั้งต้นตาม spec §4.1: Object Browser / Timeline View / Message Viewer = Dockable, 3D/2D = Integrated, ที่เหลือ = Floating
- * persist: เฉพาะห้าหน้าต่างของพื้นที่ทำงานบันทึกลง workbook; หน้าต่างลอยและชั่วคราวไม่บันทึก
+ * ชนิดตั้งต้นตาม spec §4.1: Object Browser / Timeline View / Message Viewer = Dockable, 3D/2D และ Sensor View = Integrated, ที่เหลือ = Floating
+ * persist: เฉพาะห้าหน้าต่างของพื้นที่ทำงานและ Sensor View บันทึกลง workbook; หน้าต่างลอยและชั่วคราวไม่บันทึก
  * scenarioBound: หน้าต่างที่อ้าง object หรือผลของ scenario ที่เปิดอยู่ ปิดพร้อม scenario; หน้าต่างอื่น (Welcome, About, Fetch Orbit Data ฯลฯ) ไม่ปิด
  * หน้าต่างชนิดใหม่ต้องตัดสินใจสองค่านี้เอง (ฟิลด์บังคับ)
  */
@@ -163,6 +164,13 @@ const BASE: Record<PanelKind, Base> = {
   dailyForecastSettings: { label: "window.dailyForecastSettings", type: "floating", size: { width: 520, height: 360 }, persist: false, scenarioBound: false },
   about: { label: "help.about", type: "floating", size: { width: 480, height: 320 }, persist: false, scenarioBound: false },
   stkReference: { label: "help.stkReference", type: "floating", size: { width: 760, height: 520 }, persist: false, scenarioBound: false },
+  // Sensor View (sensor spec §5.4): หนึ่งบานต่อ sensor (กุญแจ = params.path) บันทึกใน workbook และปิดพร้อม scenario
+  // ชื่อ "Sensor View - Sensor1 (G01)" ใช้ชื่อดาวแม่ปัจจุบันจาก doc (ดาวเปลี่ยนชื่อ = windows/SensorView/track.ts ตั้งชื่อใหม่)
+  sensorView: {
+    label: "window.sensorView", type: "integrated", size: { width: 640, height: 480 }, persist: true, scenarioBound: true,
+    title: sensorViewTitle,
+    instanceKey: (params) => (typeof params?.path === "string" ? params.path : ""),
+  },
 };
 
 // ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")
@@ -172,6 +180,13 @@ function objectName(params: { name?: unknown; path?: unknown } | undefined): str
   if (typeof params?.path !== "string") return null;
   const last = params.path.split("/").at(-1) ?? "";
   return last === "" || last === "*" ? null : last;
+}
+
+/** ชื่อของ Sensor View: ชื่อ sensor จาก params.path และชื่อดาวที่มันติดอยู่ตอนนี้ (ยังหาดาวไม่ได้ เช่น sensor ไม่อยู่ใน doc = "?") */
+function sensorViewTitle(params: { path?: unknown } | undefined): string {
+  const path = typeof params?.path === "string" ? params.path : "";
+  const parent = path === "" ? null : parentOf(path);
+  return t("window.sensorView", { sensor: objectName({ path }) ?? "?", satellite: parent === null ? "?" : (objectName({ path: parent }) ?? "?") });
 }
 
 function titleFor(label: LabelKey): PanelDef["title"] {

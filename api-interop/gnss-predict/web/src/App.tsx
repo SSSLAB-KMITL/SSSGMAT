@@ -29,6 +29,9 @@ import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowse
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
 import { registerSatelliteCatalogPanel } from "./windows/SatelliteCatalog/SatelliteCatalog";
+import { registerSensorViewCommands } from "./windows/SensorView/commands";
+import { registerSensorViewPanel } from "./windows/SensorView/SensorView";
+import { startSensorViewTracking } from "./windows/SensorView/track";
 import { registerTimelineViewPanel } from "./windows/TimelineView/TimelineView";
 import { registerViewFromToPanel } from "./windows/ViewFromTo/ViewFromTo";
 import { Workspace } from "./Workspace";
@@ -39,6 +42,7 @@ export function App() {
   // Insert STK Objects / Search Satellite Catalog / Fetch Orbit Data / Daily Forecast Settings (คำสั่ง insert.* และ utilities.* ลงทะเบียนระดับแอปเช่นกัน),
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
+  // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -50,6 +54,7 @@ export function App() {
     const unregisterDataCommands = registerDataCommands();
     const unregisterGraphics3DCommands = registerGraphics3DCommands();
     const unregisterGraphics2DCommands = registerGraphics2DCommands();
+    const unregisterSensorViewCommands = registerSensorViewCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerTimelineViewPanel();
@@ -64,12 +69,16 @@ export function App() {
     registerWindowProperties3DPanel();
     registerGraphics2DPanel();
     registerWindowProperties2DPanel();
+    registerSensorViewPanel();
+    const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
     return () => {
       stopFlow();
       stopShortcuts();
+      stopSensorViewTracking();
+      unregisterSensorViewCommands();
       unregisterGraphics2DCommands();
       unregisterGraphics3DCommands();
       unregisterDataCommands();

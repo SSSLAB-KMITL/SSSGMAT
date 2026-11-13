@@ -3,7 +3,8 @@
 // - CommandId ครบทุกรายการของ spec §5.1-§5.2 และ §7; COMMAND_LABELS คือชื่อตั้งต้นของแต่ละคำสั่ง (เมนูต้องมีชื่อแม้คำสั่งยังไม่ลงทะเบียน)
 // - คำสั่งที่ยังไม่ลงทะเบียน = ปิดใช้ (isEnabled false, runCommand ไม่ทำอะไร) งานที่ทำหน้าต่างนั้นลงทะเบียนเอง:
 //   งาน 6: view.* window.* anim.* (chrome/coreCommands.ts), งาน 7: file.* help.*, งาน 8: edit.* object.properties/rename/delete ob.*,
-//   งาน 10: insert.* utilities.*, งาน 11: g3d.* object.zoomTo, งาน 12: g2d.*, งานย่อยที่ 4: analysis.* object.access object.reportGraphManager
+//   งาน 10: insert.* utilities.*, งาน 11: g3d.* object.zoomTo, งาน 12: g2d.*, งานย่อยที่ 4: analysis.* object.access object.reportGraphManager,
+//   งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
 // - ทะเบียนเป็น observable: registerCommand / invalidateCommands แจ้งผู้ฟัง (subscribeCommands) เพื่อให้เมนูและแถบเครื่องมือวาดสถานะ enabled ใหม่
 //   คำสั่งที่ enabled() ขึ้นกับ store ต้องเรียก invalidateCommands() เองเมื่อค่านั้นเปลี่ยน (เช่น ฟัง store แล้วเรียก) เพราะทะเบียนไม่รู้ว่าอ่านอะไร
 // - ไฟล์นี้ไม่รู้จัก React และ store ใด ๆ
@@ -54,6 +55,7 @@ export const COMMAND_LABELS = {
   "analysis.validation": "menu.analysis.validation",
 
   "object.properties": "menu.object.properties",
+  "object.sensorView": "menu.object.sensorView",
   "object.access": "menu.object.access",
   "object.reportGraphManager": "menu.object.reportGraphManager",
   "object.zoomTo": "menu.object.zoomTo",

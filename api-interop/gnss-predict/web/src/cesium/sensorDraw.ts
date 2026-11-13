@@ -9,13 +9,15 @@
 //   จุดสัมผัสขอบฟ้าของวง), Show Boresight Marker = จุดที่ boresight ตัดผิวโลก
 //   boresight ไม่โดนโลกเลย (spec §3.3): ไม่วาดรอยและ marker วาดกรวยอย่างเดียว = Radial Lines ตามทิศของเส้นขอบกรวยจริง (coneRays เส้นเดียวกับจุด 0, 9, …)
 //   ยาวเท่าระยะถึงขอบฟ้า √(|p|² − Re²) (จุดสัมผัสขอบฟ้าของวงอยู่คนละทิศกับกรวย ลากไปที่นั่นจะดูเหมือนกรวยชี้ลงโลก)
+// - Sensor View (sensorViewPose, spec §5.4): กล้องที่ตำแหน่งดาว ทิศ boresight ด้านบน North / Velocity (cameraOrientation) fov จากกรวยและสัดส่วนภาพ
 // - สี: หน้าต่าง 3D ใช้ graphics3d.color หน้าต่าง 2D ใช้ graphics2d.color ไม่มี = SENSOR_COLOR, ความทึบของ Fill = 1 − % Translucency / 100 (ไม่มี = 50%)
 //   ช่องที่ไม่มีใช้ค่าตั้งต้นของ server: Cone Half Angle 45°, Azimuth 0°, Elevation 90°
 
 import type { components } from "../api/types.gen";
 import { SENSOR_COLOR } from "./colors";
 import {
-  bodyFrame, boresightOf, coneRays, isNadir, nadirCentralAngleRad, sensorFootprint, type BodyFrame, type SensorFootprint, type Vec3,
+  bodyFrame, boresightOf, cameraOrientation, coneRays, isNadir, nadirCentralAngleRad, sensorFootprint, sensorViewFovDeg, type BodyFrame,
+  type SensorFootprint, type Vec3,
 } from "./sensorGeometry";
 import { EARTH_RADIUS_KM, subSatellite, WGS84_E2 } from "./swath";
 
@@ -159,4 +161,23 @@ export function sensor3dParts(st: SensorDrawState): Sensor3DParts {
     marker: (g3?.show_boresight_marker ?? false) ? hit : null,
     color: sensorColor(st.sensor, "3d"),
   };
+}
+
+/** กล้องของ Sensor View: ตำแหน่ง Earth-fixed (เมตร) ทิศหนึ่งหน่วย และ fov (องศา) ของ PerspectiveFrustum.fov (ด้านยาวของภาพ) */
+export interface SensorViewPose {
+  position: Vec3;
+  direction: Vec3;
+  up: Vec3;
+  /** ภาพไม่มีขนาด (aspect เป็น 0, ∞, NaN หรือติดลบ เช่นแท็บที่ยุบ) = null: ผู้เรียกคง fov เดิมไว้ ไม่ตั้ง fov 180° หรือ NaN */
+  fovDeg: number | null;
+}
+
+/**
+ * กล้องของ Sensor View (spec §5.4) จากสถานะของ sensor: ตำแหน่ง = ตำแหน่งดาว, ทิศ = boresight, ด้านบน = up (cameraOrientation)
+ * fov ด้านสั้น = min(2α × 1.05, 120°) แปลงเป็นด้านยาวตาม aspect = กว้าง / สูง (sensorViewFovDeg)
+ */
+export function sensorViewPose(st: SensorDrawState, up: "north" | "velocity", aspect: number): SensorViewPose {
+  const o = cameraOrientation(st.pos, st.boresight, st.frame, up);
+  const sized = Number.isFinite(aspect) && aspect > 0;
+  return { position: st.pos, direction: o.direction, up: o.up, fovDeg: sized ? sensorViewFovDeg(coneHalfAngleOf(st.sensor), aspect) : null };
 }

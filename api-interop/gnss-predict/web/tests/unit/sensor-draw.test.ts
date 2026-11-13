@@ -8,9 +8,11 @@ import { Cartesian3 } from "cesium";
 import { describe, expect, test } from "vitest";
 import {
   coneHalfAngleOf, drawableSensors, groundPointEcef, radialLineEnds, radialLinePoints, sensor3dParts, sensorColor, sensorDrawState, sensorFillAlpha,
-  VELOCITY_STEP_S, type SensorObj,
+  sensorViewPose, VELOCITY_STEP_S, type SensorObj,
 } from "../../src/cesium/sensorDraw";
-import { bodyFrame, earthDiscHalfAngleDeg, nadirCentralAngleRad, type BodyFrame, type Vec3 } from "../../src/cesium/sensorGeometry";
+import {
+  bodyFrame, cameraOrientation, earthDiscHalfAngleDeg, nadirCentralAngleRad, sensorViewFovDeg, type BodyFrame, type Vec3,
+} from "../../src/cesium/sensorGeometry";
 import { EARTH_RADIUS_KM } from "../../src/cesium/swath";
 import { makeDoc } from "./helpers/chrome";
 import { sensorObj } from "./helpers/objects";
@@ -197,6 +199,35 @@ test("drawableSensors keeps sensors shown in that window whose parent is shown",
   expect(asked).toContain("*/Satellite/G02");
   expect(drawableSensors(doc, "3d", () => false)).toEqual([]);
   expect(drawableSensors(makeDoc(), "3d", () => true)).toEqual([]);
+});
+
+describe("sensorViewPose (Sensor View camera, spec §5.4)", () => {
+  test("sits on the satellite, looks along the boresight, up per the Up choice, fov from the cone and the picture's aspect", () => {
+    const st = sensorDrawState(sensor(), P, PREV, NEXT)!; // nadir 10°
+    for (const up of ["north", "velocity"] as const) {
+      const pose = sensorViewPose(st, up, 16 / 9);
+      expect(pose.position).toEqual(P);
+      expectVec(pose.direction, { x: -1, y: 0, z: 0 });
+      const o = cameraOrientation(P, st.boresight, st.frame, up);
+      expectVec(pose.up, o.up);
+      expect(dot(pose.up, pose.direction)).toBeCloseTo(0, 12);
+      expect(pose.fovDeg).toBeCloseTo(sensorViewFovDeg(10, 16 / 9), 12);
+    }
+    expectVec(sensorViewPose(st, "north", 1).up, { x: 0, y: 0, z: 1 }); // เหนือ (0°, 0°): ทิศเหนือของโลกตั้งฉากกับทิศลงพอดี
+    expectVec(sensorViewPose(st, "velocity", 1).up, st.frame.x);
+    // ด้านสั้นพอดีกรวยขยาย 5%: ภาพจัตุรัสได้ 21° ภาพตั้งก็คิดจากด้านสั้นเหมือนกัน
+    expect(sensorViewPose(st, "north", 1).fovDeg).toBeCloseTo(21, 12);
+    expect(sensorViewPose(st, "north", 9 / 16).fovDeg).toBeCloseTo(sensorViewFovDeg(10, 16 / 9), 12);
+  });
+
+  test("a picture without a size (collapsed panel: aspect 0, ∞ or NaN) gives no fov, so the last good one is kept", () => {
+    const st = sensorDrawState(sensor(), P, PREV, NEXT)!;
+    for (const aspect of [0, Number.POSITIVE_INFINITY, Number.NaN, -1]) {
+      const pose = sensorViewPose(st, "north", aspect);
+      expect(pose.fovDeg, String(aspect)).toBeNull();
+      expect(pose.position).toEqual(P); // ตำแหน่งและทิศยังตามดาว
+    }
+  });
 });
 
 test("sensorDraw.ts and everything it imports stay free of Cesium", () => {

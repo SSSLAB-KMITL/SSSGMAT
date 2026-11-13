@@ -3,12 +3,14 @@
 // name = ชื่อ object ใน scenario (หน้าต่าง 3D แปลงเป็น id ของ entity ผ่าน entityIdFor) ทุกฟังก์ชันอ่านจาก viewer 3D ตัวแรก (registry.firstScene)
 // ยกเว้น overlays2d: จำนวนสิ่งที่หน้าต่าง 2D ตัวแรกวาดในแต่ละชั้น (ground track, Swath, กลางวันกลางคืน, IPP, sensor) ไม่มีหน้าต่าง 2D = null
 // และ sensorFootprint(ชื่อ sensor, "3d" | "2d"): จำนวนจุดของวงรอยที่หน้าต่าง 3D หรือ 2D ตัวแรกวาดอยู่ ไม่ได้วาดหรือไม่มีหน้าต่าง = null
+// และ sensorViewCamera(ชื่อ sensor): กล้องของ Sensor View ของ sensor นั้น (ทะเบียนของ Sensor View แยกจากหน้าต่าง 3D: P3) ไม่มีหน้าต่างหรือไม่มีตำแหน่ง = null
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useTime } from "../stores/time";
 import { parseIsoUtc } from "../time/parse";
 import { firstScene2D } from "../windows/Graphics2D/registry2d";
 import { firstScene, sceneLoadedAt } from "../windows/Graphics3D/registry";
+import { sensorViewFor, type SensorCamera } from "../windows/SensorView/registry";
 
 export interface GnssStudioTestHooks {
   setTime(iso: string): void;
@@ -19,6 +21,7 @@ export interface GnssStudioTestHooks {
   frameCount(): number;
   overlays2d(): Record<string, number> | null;
   sensorFootprint(name: string, view: "3d" | "2d"): number | null;
+  sensorViewCamera(sensorName: string): SensorCamera | null;
 }
 
 declare global {
@@ -48,5 +51,6 @@ export function installTestHooks(): void {
     frameCount: () => firstScene()?.frameCount() ?? 0,
     overlays2d: () => firstScene2D()?.overlayCounts() ?? null,
     sensorFootprint: (name, view) => (view === "3d" ? firstScene()?.sensorFootprintPoints(name) : firstScene2D()?.sensorFootprintPoints(name)) ?? null,
+    sensorViewCamera: (sensorName) => sensorViewFor(sensorName)?.sensorCamera() ?? null,
   };
 }

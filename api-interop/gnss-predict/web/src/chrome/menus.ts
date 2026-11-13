@@ -54,7 +54,7 @@ export const INSERT_MENU: readonly MenuEntry[] = [
 
 export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];
 
-/** เมนูของ object ชนิดทั่วไป (Scenario, Facility, Satellite, Constellation) */
+/** เมนูของ object ชนิดทั่วไป (Scenario, Facility, Constellation) */
 export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.properties"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
@@ -63,9 +63,18 @@ export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.rename"), cmd("object.delete"),
 ];
 
-/** เมนูของ Sensor: ไม่มี Report & Graph Manager; Zoom To ไปที่ดาวแม่ (commands3d.ts) */
+/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties */
+export const SATELLITE_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.access"), cmd("object.reportGraphManager"),
+  SEPARATOR,
+  cmd("object.zoomTo"),
+  SEPARATOR,
+  cmd("object.rename"), cmd("object.delete"),
+];
+
+/** เมนูของ Sensor: Sensor View (เพิ่มเอง) ต่อจาก Properties ไม่มี Report & Graph Manager; Zoom To ไปที่ดาวแม่ (commands3d.ts) */
 export const SENSOR_MENU: readonly MenuEntry[] = [
-  cmd("object.properties"), cmd("object.access"),
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.access"),
   SEPARATOR,
   cmd("object.zoomTo"),
   SEPARATOR,
@@ -77,7 +86,8 @@ export const SENSOR_MENU: readonly MenuEntry[] = [
  * ชนิดที่ไม่มีเมนูของตัวเอง (และไม่เลือกอะไร) ใช้ OBJECT_MENU
  */
 export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
-  return cls === "Sensor" ? SENSOR_MENU : OBJECT_MENU;
+  if (cls === "Sensor") return SENSOR_MENU;
+  return cls === "Satellite" ? SATELLITE_MENU : OBJECT_MENU;
 }
 
 export const UTILITIES_MENU: readonly MenuEntry[] = [cmd("utilities.fetchOrbitData"), cmd("utilities.dailyForecastSettings")];

@@ -115,7 +115,7 @@ describe("workbookBytes", () => {
 test("every panel kind of the contract is known", () => {
   expect([...PANEL_KINDS].sort()).toEqual([
     "about", "dailyForecastSettings", "fetchOrbitData", "graphics2d", "graphics3d", "insertObjects", "messageViewer", "newScenarioWizard",
-    "objectBrowser", "propertiesBrowser", "satelliteCatalog", "stkReference", "timelineView", "viewFromTo", "welcome", "windowProperties2d",
+    "objectBrowser", "propertiesBrowser", "satelliteCatalog", "sensorView", "stkReference", "timelineView", "viewFromTo", "welcome", "windowProperties2d",
     "windowProperties3d",
   ]);
 });

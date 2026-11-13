@@ -16,22 +16,30 @@
 //   สี graphics3d.color ความหนาเส้นเท่าขอบ Swath ขนาดจุดเท่าจุด IPP (theme)
 // - 3D Graphics Window Properties (useLayout.windowProps[panelId]) → แสง, เส้น Lat/Lon, Label Declutter (ดู applyProps)
 // - Grab Globe / Zoom In: โหมดเมาส์ของปุ่มซ้าย (Zoom In: ลากกรอบแล้วบินไปที่กรอบ คลิกเฉย ๆ ซูมเข้าครึ่งหนึ่ง จบแล้วกลับเป็น Grab Globe)
+// - Sensor View (sensor spec §5.4, mountSensorView): scene เดียวกันนี้ใน viewer ของหน้าต่าง Sensor View ลงทะเบียนในทะเบียนของ Sensor View (P3)
+//   กล้องโหมด sensor (viewFromSensor): ตำแหน่ง = ตำแหน่ง Earth-fixed ของดาวแม่, ทิศ = boresight, ด้านบน = North หรือ Velocity
+//   fov ด้านสั้น = min(2α × 1.05, 120°) (sensorDraw.ts sensorViewPose) near = 1 m ตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน doc เปลี่ยน หรือหน้าต่างเปลี่ยนขนาด
+//   (ภาพขนาดศูนย์ เช่นแท็บที่ยุบอยู่ ไม่ตั้ง fov: คงค่าเดิมไว้) ปิดการลาก หมุน ซูมด้วยเมาส์ (enableInputs = false)
+//   ไม่วาด Radial Lines ของ sensor ตัวนี้ และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงตำแหน่งกล้อง วงรอยยังวาด (P7) แสงกลางวัน/กลางคืนเปิดเสมอ
+//   ไม่อ่าน 3D Graphics Window Properties (P8)
 
 import {
-  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, JulianDate, Matrix3, Matrix4,
-  PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval,
-  TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
+  ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, JulianDate, Math as CesiumMath, Matrix3,
+  Matrix4, PerspectiveFrustum, PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler,
+  ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import {
-  applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, sensorStatesAt, type SceneObject,
-  type SensorCtx,
+  applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, graphicsFor, objectPath, sceneStyle, sensorStateAt, sensorStatesAt,
+  type SceneObject, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
-import { sensor3dParts } from "../../cesium/sensorDraw";
+import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj } from "../../cesium/sensorDraw";
+import type { Vec3 } from "../../cesium/sensorGeometry";
+import { subSatellite } from "../../cesium/swath";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import { useLayout } from "../../stores/layout";
@@ -39,10 +47,13 @@ import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
 import { useTime } from "../../stores/time";
 import { parseIsoUtc } from "../../time/parse";
-import { props3d, type Props3D } from "./props";
+import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
 import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
+import {
+  notifySensorViews, type SensorCamera, type SensorHud, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
+} from "../SensorView/registry";
 import { currentSceneUrls, CzmlScene } from "../graphics/sceneSource";
 import { Throttle } from "../graphics/throttle";
 import { boxRectangle, ZoomBox } from "../graphics/zoomBox";
@@ -66,6 +77,10 @@ const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
 /** Sensor: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
 const SENSOR_INTERVAL_MS = 250;
+/** Sensor View: near ของ frustum (เมตร) กล้องอยู่ที่ดาวพอดี (ความเสี่ยง S3) */
+const SENSOR_VIEW_NEAR_M = 1;
+/** Sensor View: แสงกลางวัน/กลางคืนเปิดเสมอ ค่าอื่นตามค่าตั้งต้นของหน้าต่าง 3D (P8: ไม่มี 3D Graphics Window Properties ของตัวเอง) */
+const SENSOR_VIEW_PROPS: Readonly<Props3D> = { ...DEFAULT_PROPS_3D, enableLighting: true };
 
 /** entity หนึ่งชิ้นของ sensor ในหน้าต่าง 3D: เส้น (วงรอย / Radial Line) หรือจุด (Boresight Marker) */
 type SensorPart =
@@ -74,7 +89,27 @@ type SensorPart =
 
 const groundPoint = ([lon, lat]: [number, number]): Cartesian3 => Cartesian3.fromDegrees(lon, lat, 0);
 
-type View = { kind: "free" } | { kind: "track"; path: string } | { kind: "fromTo"; req: ViewFromToRequest };
+type View =
+  | { kind: "free" }
+  | { kind: "track"; path: string }
+  | { kind: "fromTo"; req: ViewFromToRequest }
+  | { kind: "sensor"; path: string; up: SensorViewUp };
+
+/** หน้าต่างที่ใช้ scene นี้: ทะเบียนที่ต้องแจ้งเมื่อสถานะเปลี่ยน และค่าตั้งคงที่ (ไม่ระบุ = อ่าน 3D Graphics Window Properties ของ panel) */
+interface SceneOptions {
+  notify(): void;
+  props?: Readonly<Props3D>;
+}
+
+/** สิ่งที่กล้องของ Sensor View ใช้ ณ เวลาปัจจุบัน */
+interface SensorTarget {
+  sensor: SensorObj;
+  satellite: string;
+  state: SensorDrawState;
+}
+
+const cartesian = (v: Vec3): Cartesian3 => new Cartesian3(v.x, v.y, v.z);
+const tuple = (c: Cartesian3): [number, number, number] => [c.x, c.y, c.z];
 
 const hexOf = (c: Color): string => `#${[c.red, c.green, c.blue].map((v) => Color.floatToByte(v).toString(16).padStart(2, "0")).join("")}`;
 
@@ -96,16 +131,28 @@ export function fromToResult(from: Entity | undefined, to: Entity | undefined): 
  * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
  */
 export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): Scene3DHandle {
+  return mount(panelId, el, onRenderStopped, { notify: notifyScenes });
+}
+
+/**
+ * viewer ของหน้าต่าง Sensor View (sensor spec §5.4): scene เดียวกับหน้าต่าง 3D แสงกลางวัน/กลางคืนเปิดเสมอ ไม่อ่าน windowProps
+ * แจ้งทะเบียนของ Sensor View (P3) กล้องตาม sensor เมื่อหน้าต่างเรียก viewFromSensor ไม่มี WebGL = โยน
+ */
+export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): SensorViewHandle {
+  return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS });
+}
+
+function mount(panelId: string, el: HTMLElement, onRenderStopped: ((reason: RenderFailure, error?: unknown) => void) | undefined, opts: SceneOptions): Scene3D {
   const viewer = createViewer(el, "3d");
   try {
-    return new Scene3D(panelId, el, viewer, onRenderStopped);
+    return new Scene3D(panelId, el, viewer, opts, onRenderStopped);
   } catch (e) {
     destroyViewer(viewer);
     throw e;
   }
 }
 
-class Scene3D implements Scene3DHandle {
+class Scene3D implements Scene3DHandle, SensorViewHandle {
   private readonly czml: CzmlScene;
   private destroyed = false;
   private frames = 0;
@@ -122,20 +169,25 @@ class Scene3D implements Scene3DHandle {
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
   private icrfPreloaded = false;
+  /** Sensor View: กล้องตั้งตาม sensor ณ เวลาปัจจุบันแล้ว (false = ไม่มีตำแหน่ง) */
+  private sensorCameraSet = false;
+  /** Sensor View: fov และ near ของ frustum ก่อนเข้าโหมด sensor (คืนตอนออก) */
+  private savedFrustum: { fov: number | undefined; near: number } | null = null;
 
   constructor(
     readonly panelId: string,
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
+    private readonly opts: SceneOptions,
     onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
-    this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: notifyScenes });
+    this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: opts.notify });
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
-    this.props = props3d(useLayout.getState().windowProps[panelId]);
+    this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
 
     this.zoom = new ZoomBox(el);
@@ -147,7 +199,8 @@ class Scene3D implements Scene3DHandle {
     this.offs.push(bindClock(viewer, () => this.onTime()));
     this.offs.push(
       useScenario.subscribe((s, prev) => {
-        if (s.name !== prev.name) this.homeView(); // เปิด scenario ใหม่ = มุมมองตั้งต้นเหนือ Facility ของมัน
+        // เปิด scenario ใหม่ = มุมมองตั้งต้นเหนือ Facility ของมัน (Sensor View คงล็อกที่ sensor: หน้าต่างถูกแทนด้วย workbook ของ scenario ใหม่)
+        if (s.name !== prev.name && this.view.kind !== "sensor") this.homeView();
         if (s.doc !== prev.doc || s.catalog !== prev.catalog) this.restyle();
       }),
     );
@@ -158,7 +211,7 @@ class Scene3D implements Scene3DHandle {
     );
     this.offs.push(
       useLayout.subscribe((s, prev) => {
-        if (s.windowProps[panelId] === prev.windowProps[panelId]) return;
+        if (opts.props !== undefined || s.windowProps[panelId] === prev.windowProps[panelId]) return;
         const before = this.props;
         this.props = props3d(s.windowProps[panelId]);
         this.applyProps();
@@ -208,9 +261,12 @@ class Scene3D implements Scene3DHandle {
     const { doc } = useScenario.getState();
     ensureFacilities(ds.entities, doc);
     applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter });
+    this.hideCameraSatellite();
     this.updateInertial(true);
     this.updateSensors(true);
+    this.updateSensorCamera();
     this.viewer.scene.requestRender();
+    if (this.view.kind === "sensor") this.opts.notify(); // ข้อความบนภาพอ่านใหม่ (doc หรือ entity เปลี่ยนโดยที่เวลาไม่เปลี่ยน)
   }
 
   private entityForPath(path: string): Entity | undefined {
@@ -228,6 +284,7 @@ class Scene3D implements Scene3DHandle {
 
   private onTime(): void {
     if (this.view.kind === "fromTo") this.updateFromTo();
+    this.updateSensorCamera();
     this.updateInertial(false);
     this.updateSensors(false);
   }
@@ -343,8 +400,10 @@ class Scene3D implements Scene3DHandle {
     if (ds === null) return out;
     const style = sceneStyle();
     const states = sensorStatesAt(useScenario.getState().doc, ds.entities, this.sceneCtx(), this.viewer.clock.currentTime);
+    const own = this.view.kind === "sensor" ? this.view.path : null; // P7: Radial Lines ของ sensor ที่กล้องมองผ่านไม่วาด
     for (const st of states) {
       const parts = sensor3dParts(st);
+      if (objectPath(st.sensor) === own) parts.radials = [];
       const color = cssColor(parts.color);
       const id = `sensor/${st.sensor.name}`;
       const sat = new Cartesian3(st.pos.x, st.pos.y, st.pos.z);
@@ -435,11 +494,16 @@ class Scene3D implements Scene3DHandle {
 
   // ---------- กล้อง ----------
 
-  /** ปล่อยกล้องจากการตาม object และจาก transform ของ View From/To */
+  /** ปล่อยกล้องจากการตาม object, จาก transform ของ View From/To และจากโหมด sensor (คืนการลาก/หมุน/ซูม fov, near, จุดและป้ายของดาวแม่) */
   private release(): void {
+    const wasSensor = this.view.kind === "sensor";
     this.viewer.trackedEntity = undefined;
     this.view = { kind: "free" };
     this.viewer.camera.lookAtTransform(Matrix4.IDENTITY);
+    if (wasSensor) {
+      this.lockCamera(false);
+      this.restyle();
+    }
   }
 
   homeView(): void {
@@ -524,7 +588,110 @@ class Scene3D implements Scene3DHandle {
       else this.release();
     } else if (view.kind === "fromTo") {
       this.updateFromTo();
+    } else if (view.kind === "sensor") {
+      this.updateSensorCamera();
     }
+  }
+
+  // ---------- Sensor View ----------
+
+  viewFromSensor(path: string, up: SensorViewUp): SensorViewResult {
+    if (this.destroyed) return "notFound";
+    if (this.view.kind !== "sensor") {
+      this.release();
+      this.lockCamera(true);
+    }
+    // จำ path ไว้แม้ doc ยังไม่มี sensor นี้ (เช่น Rename ที่มาถึงก่อน doc ใหม่): กล้องตามเองเมื่อ doc มี
+    this.view = { kind: "sensor", path, up };
+    this.restyle();
+    if (this.ds === null) this.updateSensorCamera(); // ยังไม่มี data source (restyle ไม่ทำงาน): กล้องรอ adopted
+    return this.sensorObj(path) === undefined ? "notFound" : "ok";
+  }
+
+  /** ล็อกกล้อง (โหมด sensor: ปิดเมาส์ near = 1 m) หรือคืนค่าเดิม */
+  private lockCamera(lock: boolean): void {
+    const frustum = this.viewer.camera.frustum;
+    this.viewer.scene.screenSpaceCameraController.enableInputs = !lock;
+    if (lock) {
+      if (frustum instanceof PerspectiveFrustum && this.savedFrustum === null) {
+        this.savedFrustum = { fov: frustum.fov, near: frustum.near };
+        frustum.near = SENSOR_VIEW_NEAR_M;
+      }
+    } else {
+      if (frustum instanceof PerspectiveFrustum && this.savedFrustum !== null) {
+        frustum.fov = this.savedFrustum.fov;
+        frustum.near = this.savedFrustum.near;
+      }
+      this.savedFrustum = null;
+      this.sensorCameraSet = false;
+    }
+  }
+
+  private sensorObj(path: string): SensorObj | undefined {
+    return useScenario.getState().doc?.objects.find((o): o is SensorObj & SceneObject => o.class === "Sensor" && objectPath(o) === path);
+  }
+
+  /**
+   * sensor ของโหมด sensor และสถานะของมัน ณ เวลาปัจจุบันจากตำแหน่งของ entity ดาวแม่ (ดาวที่ซ่อนอยู่ก็ใช้ได้: กล้องไม่ขึ้นกับการแสดงของดาว)
+   * ไม่มี sensor, ไม่มี entity ของดาวแม่ (ไม่มีผล) หรือไม่มีตำแหน่ง ณ เวลานี้ (นอกช่วง) = null
+   */
+  private sensorTarget(): SensorTarget | null {
+    if (this.view.kind !== "sensor") return null;
+    const sensor = this.sensorObj(this.view.path);
+    if (sensor === undefined) return null;
+    const entity = this.entityForPath(sensor.parent);
+    const state = entity === undefined ? null : sensorStateAt(sensor, entity, this.viewer.clock.currentTime);
+    return state === null ? null : { sensor, satellite: sensor.parent.split("/").at(-1) ?? "", state };
+  }
+
+  /** P7: ดาวแม่อยู่ตรงตำแหน่งกล้อง ซ่อนจุดและป้ายของมัน (เส้นวงโคจรยังอยู่) applyGraphics สร้างจุดและป้ายใหม่ทุกครั้ง จึงเรียกต่อจากมันเสมอ */
+  private hideCameraSatellite(): void {
+    if (this.view.kind !== "sensor") return;
+    const parent = this.sensorObj(this.view.path)?.parent;
+    const entity = parent === undefined ? undefined : this.entityForPath(parent);
+    if (entity?.point !== undefined) entity.point.show = new ConstantProperty(false);
+    if (entity?.label !== undefined) entity.label.show = new ConstantProperty(false);
+  }
+
+  /** กล้องของโหมด sensor ณ เวลาปัจจุบัน (spec §5.4) ไม่มีตำแหน่ง = ไม่ขยับกล้อง (หน้าต่างแสดงข้อความแทนภาพ) */
+  private updateSensorCamera(): void {
+    if (this.destroyed || this.view.kind !== "sensor") return;
+    const target = this.sensorTarget();
+    this.sensorCameraSet = target !== null;
+    if (target === null) {
+      this.viewer.scene.requestRender();
+      return;
+    }
+    const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
+    const pose = sensorViewPose(target.state, this.view.up, width / height);
+    const camera = this.viewer.camera;
+    camera.position = cartesian(pose.position);
+    camera.direction = cartesian(pose.direction);
+    camera.up = cartesian(pose.up);
+    camera.right = Cartesian3.cross(camera.direction, camera.up, new Cartesian3());
+    const frustum = camera.frustum;
+    if (frustum instanceof PerspectiveFrustum) {
+      frustum.near = SENSOR_VIEW_NEAR_M;
+      // ภาพขนาดศูนย์ (แท็บที่ยุบ หรือยังไม่ได้วางในหน้า): ไม่ตั้ง fov จนกว่าภาพจะมีขนาด (คงค่าเดิมไว้)
+      if (pose.fovDeg !== null) frustum.fov = CesiumMath.toRadians(pose.fovDeg);
+    }
+    this.viewer.scene.requestRender();
+  }
+
+  sensorHud(): SensorHud | null {
+    if (this.destroyed) return null;
+    const target = this.sensorTarget();
+    if (target === null) return null;
+    const sub = subSatellite(target.state.pos);
+    return { sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle: coneHalfAngleOf(target.sensor) };
+  }
+
+  sensorCamera(): SensorCamera | null {
+    if (this.destroyed || this.view.kind !== "sensor" || !this.sensorCameraSet) return null;
+    const camera = this.viewer.camera;
+    const frustum = camera.frustum;
+    if (!(frustum instanceof PerspectiveFrustum) || frustum.fov === undefined) return null;
+    return { position: tuple(camera.positionWC), direction: tuple(camera.directionWC), up: tuple(camera.upWC), fovDeg: CesiumMath.toDegrees(frustum.fov) };
   }
 
   // ---------- Grab Globe / Zoom In ----------
@@ -544,7 +711,7 @@ class Scene3D implements Scene3DHandle {
     c.enableLook = grab;
     this.el.classList.toggle("gfx-zoom-mode", !grab);
     if (grab) this.zoom.cancel();
-    notifyScenes();
+    this.opts.notify();
   }
 
   private dragStart(at: Cartesian2): void {
@@ -577,6 +744,7 @@ class Scene3D implements Scene3DHandle {
   resize(): void {
     if (this.destroyed) return;
     this.viewer.resize();
+    this.updateSensorCamera(); // Sensor View: fov ตามสัดส่วนใหม่ของภาพ
     this.viewer.scene.requestRender();
   }
 

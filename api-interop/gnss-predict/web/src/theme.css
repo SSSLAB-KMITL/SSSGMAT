@@ -1704,6 +1704,50 @@ body {
   pointer-events: none;
 }
 
+/* Sensor View (sensor spec §5.4): แถบ Up (North / Velocity) ของหน้าต่าง ข้อความบนภาพ และวงขอบกรวย
+   วงขอบกรวยเป็น SVG ที่ viewBox [-1, 1] พอดีด้านสั้นของภาพ (preserveAspectRatio meet) สีเส้นเป็นสีของ sensor ที่หน้าต่างส่งมา */
+.sensor-view-up {
+  gap: 4px;
+}
+
+.sensor-view-up-label {
+  color: var(--menu-text);
+}
+
+.sensor-view-up-btn {
+  width: auto;
+  padding: 0 6px;
+}
+
+.sensor-view-hud {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  background: var(--scene-overlay-bg);
+  color: var(--scene-overlay-text);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.sensor-view-cone {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sensor-view-cone circle {
+  fill: none;
+  stroke: var(--scene-overlay-text);
+  stroke-width: var(--scene-swath-edge-width);
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
 /* View From/To */
 .vft .form-row {
   grid-template-columns: 120px minmax(0, 1fr);
