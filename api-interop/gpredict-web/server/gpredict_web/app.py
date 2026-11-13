@@ -2,6 +2,7 @@
 
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
+  + GET/PUT /api/hwconf (Preferences → Interfaces: วิทยุและ rotator ตรวจและเก็บที่ hwconf.py)
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
@@ -41,6 +42,7 @@ from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
 from .ephem import EphemManager
 from .errors import ApiError
+from .hwconf import HwConf, radio_to_dict, rot_to_dict
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
@@ -384,6 +386,11 @@ def _prefs_dict(prefs: Prefs) -> dict:
     return {"values": prefs.values(), "defaults": prefs.defaults(), "user": prefs.user_keys()}
 
 
+def _hwconf_dict(hwconf: HwConf) -> dict:
+    """GET และ PUT /api/hwconf: วิทยุและ rotator ที่อ่านได้ เรียงตามชื่อ (key ของ Gpredict บวก name)"""
+    return {"radios": [radio_to_dict(r) for r in hwconf.radios()], "rotators": [rot_to_dict(r) for r in hwconf.rotators()]}
+
+
 def _meta() -> dict:
     """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)"""
     defaults = M.module_to_dict(M.ModuleConfig(name=""))
@@ -456,6 +463,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
     prefs = Prefs(cfg.data_dir)
+    hwconf = HwConf(cfg.data_dir)
     hub = Hub(store, satdb, ephem, now, prefs=prefs)
     pass_service = PassService(hub, ephem, prefs, now)
     ticks = Ticks(hub)
@@ -520,6 +528,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.config = cfg
     app.state.store = store
     app.state.prefs = prefs
+    app.state.hwconf = hwconf
     app.state.satdb = satdb
     app.state.ephem = ephem
     app.state.hub = hub
@@ -811,6 +820,23 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             raise ApiError("PREFS_INVALID", 422, "รายการที่จะลบ (remove) ต้องเป็นรายการชื่อ key ของ Preferences", "remove")
         prefs.update(set_, remove)
         return _prefs_dict(prefs)
+
+    # ---------------- Preferences → Interfaces
+
+    @app.get("/api/hwconf")
+    def get_hwconf():
+        return _hwconf_dict(hwconf)
+
+    @app.put("/api/hwconf")
+    def put_hwconf(body: dict = Body(...)):
+        """{"radios": [...], "rotators": [...]} แทนทั้งชุด (ต้องมีทั้งสอง key ไม่งั้นการลืมส่งฝั่งหนึ่งจะลบอุปกรณ์ทั้งฝั่ง)
+        ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย"""
+        radios, rotators = body.get("radios"), body.get("rotators")
+        for key, value in (("radios", radios), ("rotators", rotators)):
+            if not isinstance(value, list):
+                raise ApiError("HWCONF_INVALID", 422, f"รายการ {key} ต้องเป็นรายการของ object (ส่งมาทั้งชุดที่จะเก็บ)", key)
+        hwconf.replace(radios, rotators)
+        return _hwconf_dict(hwconf)
 
     # ---------------- อื่นๆ
 

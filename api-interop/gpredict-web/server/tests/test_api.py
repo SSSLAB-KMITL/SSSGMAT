@@ -762,6 +762,97 @@ class PrefsApiTest(ApiTestBase):
         self.assertEqual(body["user"], ["PREDICT/LOOK_AHEAD"])
 
 
+# ---------------------------------------------------------------- Radio และ Rotator (งานย่อย 3: หัวข้อ 6 และ 8 ของ spec)
+
+HW_RADIO = {"name": "DUMMY", "Host": "localhost", "Port": 4532, "Cycle": 1000, "LO": 0.0, "LO_UP": 0.0,
+            "DefaultUplinkFreqHz": 145_890_000.0, "DefaultDownlinkFreqHz": 145_890_000.0, "Type": 3, "PTT": 0,
+            "VFO_UP": 3, "VFO_DOWN": 4, "SIGNAL_AOS": False, "SIGNAL_LOS": False, "SIGNAL_AOIQ": False, "SIGNAL_LOIQ": False}
+HW_ROTATOR = {"name": "ROT", "Host": "localhost", "Port": 4533, "Cycle": 1000, "Threshold": 5.0, "AzType": 0,
+              "MinAz": 0.0, "MaxAz": 360.0, "MinEl": 0.0, "MaxEl": 90.0, "AzStopPos": 0.0}
+
+
+class HwconfApiTest(ApiTestBase):
+    @property
+    def hwconf_dir(self) -> Path:
+        return self.cfg.data_dir / "hwconf"
+
+    def hwconf_files(self) -> dict[str, bytes]:
+        return {p.name: p.read_bytes() for p in sorted(self.hwconf_dir.iterdir())} if self.hwconf_dir.is_dir() else {}
+
+    def test_get_hwconf_empty(self):
+        r = self.client.get("/api/hwconf")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"radios": [], "rotators": []})
+        self.assertFalse(self.hwconf_dir.exists())
+
+    def test_put_hwconf_replaces(self):
+        r = self.client.put("/api/hwconf", json={"radios": [HW_RADIO, {**HW_RADIO, "name": "AAA", "Type": 0, "PTT": 2}],
+                                                 "rotators": [HW_ROTATOR]})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), ["radios", "rotators"])
+        self.assertEqual([x["name"] for x in body["radios"]], ["AAA", "DUMMY"])          # เรียงตามชื่อ
+        self.assertEqual(body["radios"][1], HW_RADIO)
+        self.assertNotIn("VFO_UP", body["radios"][0])                                      # VFO_* มีเฉพาะ Full-duplex
+        self.assertEqual(body["rotators"], [HW_ROTATOR])
+        self.assertEqual(self.client.get("/api/hwconf").json(), body)
+        self.assertEqual(sorted(self.hwconf_files()), ["AAA.rig.json", "DUMMY.rig.json", "ROT.rot.json"])
+        self.assertEqual(self.app.state.hwconf.radio("DUMMY").port, 4532)
+        # PUT ใหม่แทนทั้งชุด: ของที่ไม่อยู่ในชุดหายไป
+        r = self.client.put("/api/hwconf", json={"radios": [{**HW_RADIO, "Port": 4600}], "rotators": []})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"radios": [{**HW_RADIO, "Port": 4600}], "rotators": []})
+        self.assertEqual(sorted(self.hwconf_files()), ["DUMMY.rig.json"])
+        client = self.enter(self.make_app())                                               # อยู่รอดหลังเริ่ม server ใหม่
+        self.assertEqual(client.get("/api/hwconf").json(), r.json())
+
+    def test_put_hwconf_keeps_cycle_and_threshold(self):
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        self.app.state.hwconf.save_radio_cycle("DUMMY", 500)
+        self.app.state.hwconf.save_rotator_runtime("ROT", 200, 2.5)
+        body = self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]}).json()
+        self.assertEqual(body["radios"][0]["Cycle"], 500)
+        self.assertEqual((body["rotators"][0]["Cycle"], body["rotators"][0]["Threshold"]), (200, 2.5))
+
+    def test_put_hwconf_invalid_is_422_and_unchanged(self):
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        before, files = self.client.get("/api/hwconf").json(), self.hwconf_files()
+        body = self.assert_error(self.client.put("/api/hwconf", json={"radios": [{**HW_RADIO, "name": "NEW"},
+                                                                                {**HW_RADIO, "Port": 80}], "rotators": []}),
+                                 422, "HWCONF_INVALID", "Port")
+        self.assertEqual(body["text"], "Port ต้องเป็นจำนวนเต็ม 1024–65535")
+        self.assert_error(self.client.put("/api/hwconf", json={"radios": [], "rotators": [{**HW_ROTATOR, "MinAz": -201}]}),
+                          422, "HWCONF_INVALID", "MinAz")
+        self.assert_error(self.client.put("/api/hwconf", json={"radios": [HW_RADIO, {**HW_RADIO, "name": "dummy"}],
+                                                               "rotators": []}), 422, "HWCONF_INVALID", "name")
+        self.assertEqual(self.client.get("/api/hwconf").json(), before)
+        self.assertEqual(self.hwconf_files(), files)
+
+    def test_put_hwconf_bad_shape_is_422_and_unchanged(self):
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": []})
+        files = self.hwconf_files()
+        for bad, obj in (({}, "radios"), ({"radios": []}, "rotators"), ({"rotators": []}, "radios"),
+                         ({"radios": {}, "rotators": []}, "radios"), ({"radios": [], "rotators": "x"}, "rotators"),
+                         ({"radios": None, "rotators": []}, "radios"), ({"radios": [5], "rotators": []}, None),
+                         ({"radios": [], "rotators": [None]}, None)):
+            with self.subTest(body=bad):
+                self.assert_error(self.client.put("/api/hwconf", json=bad), 422, "HWCONF_INVALID", obj)
+        for bad in ([1], "x", None):
+            with self.subTest(body=bad):
+                self.assert_error(self.client.put("/api/hwconf", json=bad), 422, "REQUEST_INVALID", None)
+        self.assertEqual(self.hwconf_files(), files)
+
+    def test_get_hwconf_skips_a_broken_file(self):
+        """แก้ไฟล์ด้วยมือจนพัง: GET ยังตอบได้ ข้ามไฟล์นั้นพร้อม log (ไม่ใช่ 500)"""
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        (self.hwconf_dir / "BROKEN.rig.json").write_text("{not json", encoding="utf-8")
+        with self.assertLogs("gpredict_web.hwconf", "WARNING") as logs:
+            r = self.client.get("/api/hwconf")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        self.assertIn("BROKEN.rig.json", "\n".join(logs.output))
+
+
 # ---------------------------------------------------------------- Pass predictions
 
 PASS_KEYS = ["orbit", "aos", "tca", "los", "max_el", "aos_az", "max_el_az", "los_az", "vis", "rows"]
