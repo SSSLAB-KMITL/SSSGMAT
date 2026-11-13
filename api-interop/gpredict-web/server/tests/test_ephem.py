@@ -5,7 +5,7 @@ import threading
 import time
 import unittest
 from array import array
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -587,6 +587,212 @@ class ManagerTest(ManagerTestBase):
             self.m.drain()
             killpg.assert_not_called()
         self.assertIsNotNone(self.m.get(s1, self.w))               # ค่าที่เสร็จแล้วยังอยู่บนดิสก์
+
+
+D1, D12, D13, D14, D15, D16 = (date(2026, 11, d) for d in (1, 12, 13, 14, 15, 16))
+DAY_EPOCHS = 2881                                    # 00:00Z..24:00Z ทุก 30 วินาที
+
+
+def midnight(d: date) -> datetime:
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
+
+
+class DayBlockTest(ManagerTestBase):
+    """block ephemeris รายวันในคิว GMAT เดียวกับช่วงของ module (spec §3.1 ของงานย่อย 2)"""
+
+    def day_file(self, d: date, s: SatSpec) -> Path:
+        return self.ephem_dir() / "day" / f"{d:%Y%m%d}" / f"{tle_key(s.tle_lines)}.f64"
+
+    def spans(self) -> list[tuple[datetime, datetime]]:
+        return [(c["start"], c["stop"]) for c in self.fake.calls]
+
+    def test_one_gmat_run_covers_missing_days(self):
+        s1 = spec(25544)
+        self.m.ensure_days("pass:A", [s1], D12, D14)
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("computing", []))
+        self.assertIsNone(self.m.get_days(s1, D12, D14))
+        self.m.drain()
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("ok", []))
+        self.assertEqual(len(self.fake.calls), 1)
+        call = self.fake.calls[0]
+        self.assertEqual((call["start"], call["stop"], call["step"]), (midnight(D12), midnight(D15), 30))
+        self.assertTrue(call["with_velocity"])
+        self.assertEqual(call["prns"], ["S25544"])
+        self.assertFalse(call["work_dir"].exists())
+        for d in (D12, D13, D14):
+            self.assertEqual(self.day_file(d, s1).stat().st_size, DAY_EPOCHS * 6 * 8)
+        # block ของวันที่ 13 เริ่มที่ epoch เที่ยงคืน = ค่าของ GMAT ที่ 1 วันหลังจุดเริ่มงาน
+        data = array("d")
+        data.frombytes(self.day_file(D13, s1).read_bytes())
+        if sys.byteorder == "big":
+            data.byteswap()
+        want_pos, want_vel = fake_orbit("S25544", 0, 86400.0)
+        self.assertEqual(tuple(data[:6]), want_pos + want_vel)
+        folder = self.day_file(D13, s1).parent
+        self.assertEqual([p.name for p in folder.iterdir()], [self.day_file(D13, s1).name])   # ไม่มีไฟล์ชั่วคราวค้าง
+
+    def test_cached_days_are_not_recomputed(self):
+        s1 = spec(25544)
+        self.m.ensure_days("pass:A", [s1], D12, D14)
+        self.m.drain()
+        self.m.ensure_days("pass:B", [s1], D12, D15)
+        self.assertEqual(codes(self.m.days_status("pass:B")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(self.spans(), [(midnight(D12), midnight(D15)), (midnight(D15), midnight(D16))])
+        self.assertEqual(codes(self.m.days_status("pass:B")), ("ok", []))
+        m2 = self.manager()                                    # เปิด server ใหม่: block บนดิสก์ใช้ได้เลย
+        m2.ensure_days("pass:C", [s1], D12, D15)
+        self.assertEqual(codes(m2.days_status("pass:C")), ("ok", []))
+        m2.drain()
+        self.assertEqual(len(self.fake.calls), 2)
+        self.assertEqual(len(m2.get_days(s1, D12, D15).times), 4 * 2880 + 1)
+
+    def test_cached_day_between_missing_days_still_one_run(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.m.ensure_days("pass:A", [s1], D13, D13)
+        self.m.drain()
+        self.m.ensure_days("pass:B", [s1, s2], D12, D14)       # s1 ขาดวัน 12 และ 14 (13 มีแล้ว) s2 ขาดทุกวัน
+        self.m.drain()
+        self.assertEqual(self.spans()[1:], [(midnight(D12), midnight(D15))])
+        self.assertEqual(sorted(self.fake.calls[1]["prns"]), ["S25544", "S43013"])
+        self.assertEqual(codes(self.m.days_status("pass:B")), ("ok", []))
+
+    def test_overlapping_day_requests_share_one_job(self):
+        s1 = spec(25544)
+        self.m.ensure_days("pass:A", [s1], D12, D14)
+        self.m.ensure_days("pass:B", [s1], D12, D14)           # block เดียวกันก่อน drain: ไม่มีงานใหม่
+        self.assertEqual(codes(self.m.days_status("pass:B")), ("computing", []))
+        self.m.ensure_days("sky:M", [s1], D13, D15)            # ซ้อนบางส่วน: งานใหม่เฉพาะวันที่ 15
+        self.m.release_days("pass:A")                          # B ยังรองานเดิมอยู่: งานไม่ถูกตัด
+        self.m.drain()
+        self.assertEqual(self.spans(), [(midnight(D12), midnight(D15)), (midnight(D15), midnight(D16))])
+        self.assertEqual(codes(self.m.days_status("pass:B")), ("ok", []))
+        self.assertEqual(codes(self.m.days_status("sky:M")), ("ok", []))
+
+    def test_window_jobs_run_before_day_jobs(self):
+        s1, s2, s3 = spec(25544), spec(43013), spec(100744)
+        self.m.ensure_days("pass:A", [s1], D12, D12)
+        self.m.ensure_days("pass:B", [s2], D12, D12)
+        self.m.ensure("M", [s3], self.w)                       # เข้าคิวทีหลังแต่ได้ทำก่อน
+        self.m.drain()
+        self.assertEqual([c["prns"] for c in self.fake.calls], [["SA0744"], ["S25544"], ["S43013"]])
+        self.assertEqual((self.fake.calls[0]["start"], self.fake.calls[0]["stop"]), self.w)
+        self.assertEqual(codes(self.m.status("M")), ("ok", []))
+
+    def test_release_cancels_queued_and_kills_running(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.m.ensure_days("pass:A", [s1], D12, D13)
+        self.m.ensure_days("pass:B", [s2], D12, D13)
+
+        def cancel_while_running():                            # Cancel ในกล่องรอระหว่าง GMAT ของ A รัน
+            self.m.release_days("pass:A")
+            raise GmatRunError("GMAT จบด้วย exit code -9")     # GMAT ที่โดน SIGKILL
+        self.fake.during = cancel_while_running
+        with mock.patch("gpredict_web.ephem.os.killpg") as killpg:
+            self.m.release_days("pass:B")                      # งานของ B ยังอยู่ในคิว -> ตัดออก
+            self.m.drain()
+            killpg.assert_called_once_with(4242, signal.SIGKILL)
+        self.assertEqual([c["prns"] for c in self.fake.calls], [["S25544"]])
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("ok", []))
+        self.assertFalse(self.fake.calls[0]["work_dir"].exists())
+        self.fake.during = None
+        self.m.ensure_days("pass:A", [s1], D12, D13)           # ขอใหม่: ไม่ค้างสถานะ failed
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("ok", []))
+
+    def test_failure_reports_failed_and_retry_days(self):
+        s1 = spec(25544)
+        self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
+        self.m.ensure_days("pass:A", [s1], D12, D13)
+        self.m.drain()
+        st = self.m.days_status("pass:A")
+        self.assertEqual(codes(st), ("failed", ["GMAT_FAILED"]))
+        self.assertEqual(st[1][0].level, "error")
+        self.assertIn("exit code 3", st[1][0].text)
+        self.assertTrue(self.fake.calls[0]["work_dir"].exists())   # เก็บ work dir ไว้ดูสาเหตุ
+        self.m.ensure_days("pass:A", [s1], D12, D13)               # คำขอเดิม: ไม่ลองใหม่เอง
+        self.m.drain()
+        self.assertEqual(len(self.fake.calls), 1)
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("failed", ["GMAT_FAILED"]))
+        self.fake.fail = None
+        self.m.retry_days("pass:A")
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.days_status("pass:A")), ("ok", []))
+        self.assertEqual(len(self.fake.calls), 2)
+        self.assertIsNotNone(self.m.get_days(s1, D12, D13))
+
+    def test_changed_day_request_clears_the_failure(self):
+        s1 = spec(25544)
+        self.fake.fail = GmatRunError("boom")
+        self.m.ensure_days("sky:M", [s1], D12, D13)
+        self.m.drain()
+        self.fake.fail = None
+        self.assertEqual(codes(self.m.days_status("sky:M")), ("failed", ["GMAT_FAILED"]))
+        self.m.ensure_days("sky:M", [s1], D13, D14)                # T0 ของ module ย้าย: ช่วงวันต่างจากเดิม
+        self.assertEqual(codes(self.m.days_status("sky:M")), ("computing", []))
+        self.m.drain()
+        self.assertEqual(codes(self.m.days_status("sky:M")), ("ok", []))
+
+    def test_get_days_stitches_and_lru_limit(self):
+        s1 = spec(25544)
+        self.m.ensure_days("pass:A", [s1], D12, D14)
+        self.m.drain()
+        self.assertIsNone(self.m.get_days(s1, D12, D15))           # ขาด block วันที่ 15
+        e = self.m.get_days(s1, D12, D13)
+        self.assertEqual(len(e.times), 5761)
+        self.assertEqual((e.times[0], e.times[-1]), (midnight(D12), midnight(D14)))
+        t = midnight(D13) - timedelta(seconds=17.5)                 # Lagrange ใช้จุดของทั้งสอง block
+        pos, vel = e.state_at(t)
+        want_pos, want_vel = fake_orbit("S25544", 0, (t - midnight(D12)).total_seconds())
+        for got, want in zip(pos + vel, want_pos + want_vel):
+            self.assertAlmostEqual(got, want, delta=1e-6)
+        with mock.patch("gpredict_web.ephem.DAY_LRU_BLOCKS", 2):
+            m2 = self.manager()
+            self.assertEqual(len(m2.get_days(s1, D12, D14).times), 8641)
+            self.assertEqual(len(m2._day_mem), 2)
+            for d in (D12, D13, D14):
+                self.day_file(d, s1).unlink()
+            self.assertIsNotNone(m2.get_days(s1, D13, D14))         # สอง block ล่าสุดยังอยู่ในหน่วยความจำ
+            self.assertIsNone(m2.get_days(s1, D12, D12))            # ตัวเก่าสุดถูกตัดออก
+
+    def test_prune_removes_old_day_dirs(self):
+        now = T("2026-11-20T12:00Z")
+        root = self.ephem_dir() / "day"
+        old = root / "20261112"                                     # เก่ากว่า 20 − 7 = 13
+        edge = root / "20261113"
+        recent = root / "20261119"
+        in_use = root / "20261101"
+        other = root / "notes"
+        for d in (old, edge, recent, in_use, other):
+            d.mkdir(parents=True)
+            (d / "x.f64").write_bytes(b"1")
+        self.m.ensure_days("sky:M", [spec(25544)], D1, D1)
+        self.m.prune(now)
+        self.assertFalse(old.exists())
+        for d in (edge, recent, in_use, other):
+            self.assertTrue(d.exists(), d)
+        self.m.release_days("sky:M")
+        self.m.prune(now)
+        self.assertFalse(in_use.exists())
+
+    def test_missing_satellite_in_day_job(self):
+        s1, s2 = spec(25544), spec(43013)
+        self.fake.drop = {"S43013"}
+        self.m.ensure_days("pass:A", [s1, s2], D12, D13)
+        self.m.drain()
+        st = self.m.days_status("pass:A")
+        self.assertEqual(codes(st), ("ok", ["SAT_MISSING_FROM_GMAT"]))
+        self.assertEqual((st[1][0].level, st[1][0].object), ("warning", "S43013"))
+        self.assertIsNone(self.m.get_days(s2, D12, D13))
+        self.assertIsNotNone(self.m.get_days(s1, D12, D13))
+        self.m.ensure_days("pass:A", [s1, s2], D12, D13)            # ไม่สั่ง GMAT ซ้ำ
+        self.m.drain()
+        self.assertEqual(len(self.fake.calls), 1)
+
+    def test_days_status_of_unknown_owner_is_ok(self):
+        self.assertEqual(self.m.days_status("pass:nobody"), ("ok", []))
 
 
 class WorkerThreadTest(ManagerTestBase):

@@ -17,6 +17,10 @@ REFRESH_MARGIN_H = 3
 MAX_SATS = 200
 GMAT_TIMEOUT_S = 600
 
+# block ephemeris รายวันสำหรับ pass (spec §3.1 ของงานย่อย 2)
+DAY_LRU_BLOCKS = 400                  # block ที่เก็บในหน่วยความจำ (ราว 55 MB) ที่เหลืออ่านจากดิสก์
+DAY_KEEP_DAYS = 7                     # prune ลบโฟลเดอร์วันที่เก่ากว่าวันนี้เท่านี้วัน
+
 TLE_OLD_DAYS = 7                      # TLE เก่ากว่า T เท่านี้ขึ้นคำเตือน TLE_OLD
 
 # ชื่อ QTH และ module (กติกาเดียวกับ Gpredict) ใช้ fullmatch เพราะ $ ยอมให้มี \n ต่อท้าย
