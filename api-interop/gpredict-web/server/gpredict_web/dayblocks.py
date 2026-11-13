@@ -7,6 +7,8 @@
   stitch ต่อ block ของวันติดกันกลับเป็น SatEphem เส้นเดียว ใช้ epoch เที่ยงคืนจุดเดียว
 """
 
+from __future__ import annotations                   # Window/SatEphem นำเข้าแค่ใต้ TYPE_CHECKING: Python ก่อน 3.14 ต้องไม่ประเมิน
+
 from array import array
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path

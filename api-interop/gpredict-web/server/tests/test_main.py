@@ -1,13 +1,17 @@
 """python -m gpredict_web: ค่าตั้งต้น, คำเตือนเมื่อ --host ไม่ใช่เครื่องตัวเอง และ POST /api/quit ตั้ง server.should_exit
 (ไม่รัน server จริง ไม่เปิด lifespan จึงไม่ bootstrap และไม่ใช้เน็ต)"""
 
+import importlib
+import inspect
 import io
 import os
+import pkgutil
 import unittest
 from unittest import mock
 
 from fastapi.testclient import TestClient
 
+import gpredict_web
 from gpredict_web.__main__ import build_server, parse_args
 from gpredict_web.config import DATA_ENV, PORT
 from tests.helpers import temp_config
@@ -77,6 +81,24 @@ class MainTest(unittest.TestCase):
         r = TestClient(server.config.app, base_url="http://127.0.0.1:8740").post("/api/quit")   # ไม่ใช้ with: ไม่เปิด lifespan
         self.assertEqual(r.status_code, 204)
         self.assertTrue(server.should_exit)
+
+
+class OlderPythonTest(unittest.TestCase):
+    def test_every_annotation_resolves_at_import(self):
+        """Python ก่อน 3.14 ประเมิน annotation ตอนนิยามฟังก์ชัน: ชื่อที่ import ไว้แค่ใต้ TYPE_CHECKING ทำให้ import ล้ม
+        (server เปิดไม่ได้) ที่นี่อ่าน __annotations__ ของทุกฟังก์ชันและคลาสใน package ซึ่งประเมินแบบเดียวกัน"""
+        for info in pkgutil.iter_modules(gpredict_web.__path__):
+            mod = importlib.import_module(f"gpredict_web.{info.name}")
+            for name, obj in vars(mod).items():
+                if getattr(obj, "__module__", None) != mod.__name__:
+                    continue
+                members = {name: obj}
+                if inspect.isclass(obj):
+                    members |= {f"{name}.{k}": v for k, v in vars(obj).items() if inspect.isfunction(v)}
+                for label, m in members.items():
+                    if inspect.isfunction(m) or inspect.isclass(m):
+                        with self.subTest(module=mod.__name__, name=label):
+                            m.__annotations__                                       # NameError = Python เก่าเปิดไม่ได้
 
 
 if __name__ == "__main__":
