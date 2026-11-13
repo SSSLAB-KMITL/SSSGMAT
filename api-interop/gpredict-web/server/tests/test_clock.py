@@ -4,7 +4,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from gpredict_web.clock import ModuleClock
+from gpredict_web.clock import CLOCK_TIME_TEXT, ModuleClock, parse_clock_time
 from tests.helpers import FakeNow
 
 UTC = timezone.utc
@@ -273,6 +273,29 @@ class ModuleClockTest(unittest.TestCase):
             t.join()
         self.assertEqual(errors, [])
         self.assertTrue(1 <= clock.throttle <= 100)
+
+
+class ParseClockTimeTest(unittest.TestCase):
+    """เวลาที่ API รับ (PUT clock และคำขอ pass) ใช้ตัวอ่านเดียวกัน ผิด -> ValueError ที่ข้อความเป็น CLOCK_TIME_TEXT"""
+
+    def test_range_text(self):
+        self.assertEqual(CLOCK_TIME_TEXT, "ISO 8601 ที่มี timezone (เช่น 2026-11-12T07:00:00.000Z) "
+                                          "ระหว่าง 1957-10-04 ถึง 2100-12-31 UTC")
+
+    def test_valid_times_become_utc(self):
+        self.assertEqual(parse_clock_time("2026-11-20T01:02:03+07:00"), datetime(2026, 11, 19, 18, 2, 3, tzinfo=UTC))
+        self.assertEqual(parse_clock_time("1957-10-04T00:00:00.000Z"), datetime(1957, 10, 4, tzinfo=UTC))
+        self.assertEqual(parse_clock_time("2100-12-31T23:59:59.999Z"),
+                         datetime(2100, 12, 31, 23, 59, 59, 999000, tzinfo=UTC))
+        self.assertIs(parse_clock_time("2026-11-12T07:00:00Z").tzinfo, UTC)
+
+    def test_invalid_times_raise_value_error(self):
+        for value in (None, 12345, "garbage", "2026-11-12T00:00:00",                        # ไม่มี timezone
+                      "1957-10-03T23:59:59.999Z", "2101-01-01T00:00:00Z",
+                      "0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"):            # เลยปี 1 หรือ 9999
+            with self.subTest(value=value), self.assertRaises(ValueError) as cm:
+                parse_clock_time(value)
+            self.assertEqual(str(cm.exception), CLOCK_TIME_TEXT)
 
 
 if __name__ == "__main__":

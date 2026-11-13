@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from gnss_predict.errors import Message
 
-from .clock import CLOCK_END, CLOCK_MIN
+from .clock import parse_clock_time
 from .ephem import EphemManager, SatEphem, SatSpec
 from .errors import ApiError
 from .observe import QthGeo, TleElements, qth_geo
@@ -65,20 +65,11 @@ def _invalid(field: str, text: str) -> ApiError:
 
 
 def _parse_time(value, field: str, what: str) -> datetime:
-    text = (f"{what} ({field}) ต้องเป็นเวลา ISO 8601 ที่มี timezone (เช่น 2026-11-12T07:00:00.000Z) "
-            f"ระหว่าง {CLOCK_MIN:%Y-%m-%d} ถึง 2100-12-31 UTC")
-    if not isinstance(value, str):
-        raise _invalid(field, text)
+    """เวลาในช่วงเดียวกับนาฬิกาของ module (clock.parse_clock_time) ผิด -> 422 PASS_INVALID"""
     try:
-        t = datetime.fromisoformat(value)
-        if t.tzinfo is None or t.utcoffset() is None:
-            raise ValueError("ไม่มี timezone")
-        t = t.astimezone(_UTC)
-    except (ValueError, OverflowError):                   # OverflowError: offset ดันเวลาเลยปี 1 หรือ 9999
-        raise _invalid(field, text) from None
-    if not CLOCK_MIN <= t < CLOCK_END:
-        raise _invalid(field, text)
-    return t
+        return parse_clock_time(value)
+    except ValueError as exc:
+        raise _invalid(field, f"{what} ({field}) ต้องเป็น {exc}") from None
 
 
 def parse_body(body: dict) -> tuple[int, str, datetime, datetime | None]:

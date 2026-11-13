@@ -29,6 +29,27 @@ REAL_TIME_TOLERANCE = timedelta(seconds=1)             # forward ที่ throt
 _UTC = timezone.utc
 _DIRECTION = {FORWARD: 1, BACKWARD: -1, STOP: 0}
 
+# รูปแบบและช่วงของเวลาที่ API รับ (PUT clock และคำขอ pass) ผู้เรียกเติมชื่อช่องข้างหน้า เช่น "เวลา (time) ต้องเป็น " + ค่านี้
+CLOCK_TIME_TEXT = (f"ISO 8601 ที่มี timezone (เช่น 2026-11-12T07:00:00.000Z) "
+                   f"ระหว่าง {CLOCK_MIN:%Y-%m-%d} ถึง {CLOCK_END - timedelta(days=1):%Y-%m-%d} UTC")
+
+
+def parse_clock_time(value: object) -> datetime:
+    """เวลา ISO 8601 ที่มี timezone ในช่วง [CLOCK_MIN, CLOCK_END) แปลงเป็น UTC
+    ไม่ใช่ข้อความ อ่านไม่ได้ ไม่มี timezone หรืออยู่นอกช่วง -> ValueError ที่ข้อความเป็น CLOCK_TIME_TEXT"""
+    if not isinstance(value, str):
+        raise ValueError(CLOCK_TIME_TEXT)
+    try:
+        t = datetime.fromisoformat(value)
+        if t.tzinfo is None or t.utcoffset() is None:
+            raise ValueError("ไม่มี timezone")
+        t = t.astimezone(_UTC)
+    except (ValueError, OverflowError):                   # OverflowError: offset ดันเวลาเลยปี 1 หรือ 9999
+        raise ValueError(CLOCK_TIME_TEXT) from None
+    if not CLOCK_MIN <= t < CLOCK_END:
+        raise ValueError(CLOCK_TIME_TEXT)
+    return t
+
 
 def _check_state(state: object) -> str:
     if not isinstance(state, str) or state not in STATES:

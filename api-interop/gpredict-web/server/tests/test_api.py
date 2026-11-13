@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from gpredict_web import app as app_module
 from gpredict_web.app import create_app, host_allow_list
+from gpredict_web.clock import CLOCK_TIME_TEXT
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
 from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, POLAR_CONTENTS,
@@ -487,10 +488,15 @@ class RuntimeApiTest(ApiTestBase):
                  ({"time": "2026-11-12T00:00:00"}, "time"),                                # ไม่มี timezone
                  ({"time": "1957-10-03T23:59:59.999Z"}, "time"), ({"time": "2101-01-01T00:00:00Z"}, "time"),
                  ({"state": "stop", "time": "0001-01-01T00:00:00Z"}, "time")]
+        time_text = ("เวลา (time) ต้องเป็น ISO 8601 ที่มี timezone (เช่น 2026-11-12T07:00:00.000Z) "
+                     "ระหว่าง 1957-10-04 ถึง 2100-12-31 UTC")
         for body, field in cases:
             with self.subTest(body=body):
-                self.assert_error(self.client.put("/api/modules/M/clock", json=body), 422, "CLOCK_INVALID", field)
+                err = self.assert_error(self.client.put("/api/modules/M/clock", json=body), 422, "CLOCK_INVALID",
+                                        field)
                 self.assertEqual(self.clock(), before)                     # ผิดแล้วไม่เปลี่ยนอะไรเลย
+                if field == "time":
+                    self.assertEqual(err["text"], time_text)
         for edge in ("1957-10-04T00:00:00.000Z", "2100-12-31T23:59:59.999Z"):
             r = self.client.put("/api/modules/M/clock", json={"state": "stop", "time": edge})
             self.assertEqual((r.status_code, r.json().get("time")), (200, edge))
@@ -918,7 +924,10 @@ class PassesApiTest(ApiTestBase):
                  ({"norad": n, "kind": "at", "t": t, "aos": "x"}, "aos")]
         for body, field in cases:
             with self.subTest(body=body):
-                self.assert_error(self.client.post("/api/modules/M/passes", json=body), 422, "PASS_INVALID", field)
+                err = self.assert_error(self.client.post("/api/modules/M/passes", json=body), 422, "PASS_INVALID",
+                                        field)
+                if field in ("t", "aos"):                                # ช่วงเวลาเดียวกับนาฬิกาของ module
+                    self.assertTrue(err["text"].endswith(f"({field}) ต้องเป็น {CLOCK_TIME_TEXT}"), err["text"])
         self.assert_error(self.client.post("/api/modules/Nope/passes", json={"norad": n, "kind": "soon", "t": t}),
                           422, "PASS_INVALID", "kind")                                # ตรวจ body ก่อน module
         self.assert_error(self.client.post("/api/modules/M/passes", json=[1]), 422, "REQUEST_INVALID")

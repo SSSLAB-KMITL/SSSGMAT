@@ -36,7 +36,7 @@ from gnss_predict.errors import Message
 from . import module as M
 from . import store as S
 from .bootstrap import bootstrap
-from .clock import CLOCK_END, CLOCK_MIN, STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock
+from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_time
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
 from .ephem import EphemManager
 from .errors import ApiError
@@ -425,20 +425,10 @@ def _clock_invalid(field: str | None, text: str) -> ApiError:
 
 
 def _parse_clock_time(value) -> datetime:
-    text = (f"เวลา (time) ต้องเป็น ISO 8601 ที่มี timezone (เช่น 2026-11-12T07:00:00.000Z) "
-            f"ระหว่าง {CLOCK_MIN:%Y-%m-%d} ถึง 2100-12-31 UTC")
-    if not isinstance(value, str):
-        raise _clock_invalid("time", text)
     try:
-        t = datetime.fromisoformat(value)
-        if t.tzinfo is None or t.utcoffset() is None:
-            raise ValueError("ไม่มี timezone")
-        t = t.astimezone(_UTC)
-    except (ValueError, OverflowError):
-        raise _clock_invalid("time", text) from None
-    if not CLOCK_MIN <= t < CLOCK_END:
-        raise _clock_invalid("time", text)
-    return t
+        return parse_clock_time(value)
+    except ValueError as exc:
+        raise _clock_invalid("time", f"เวลา (time) ต้องเป็น {exc}") from None
 
 
 def _clock_args(body: dict) -> dict:
