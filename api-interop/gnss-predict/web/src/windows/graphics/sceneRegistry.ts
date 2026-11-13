@@ -15,6 +15,8 @@ export interface SceneRegistry<H extends { readonly panelId: string }> {
   /** ลงทะเบียน คืนตัวถอนที่ถอนเฉพาะเมื่อยังเป็น handle ตัวนี้ */
   register(handle: H): () => void;
   get(panelId: string): H | undefined;
+  /** ทุกหน้าต่างที่ลงทะเบียนอยู่ ตามลำดับที่เปิด */
+  all(): H[];
   /** ผู้ใช้แตะหน้าต่างนี้ (คลิก โฟกัส) */
   markActive(panelId: string): void;
   active(): H | undefined;
@@ -51,6 +53,7 @@ export function createSceneRegistry<H extends { readonly panelId: string }>(): S
       };
     },
     get: (panelId) => scenes.get(panelId),
+    all: () => [...scenes.values()],
     markActive: (panelId) => {
       if (lastActive === panelId) return;
       lastActive = panelId;

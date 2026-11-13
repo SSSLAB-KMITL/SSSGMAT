@@ -2,15 +2,16 @@
 //
 // - ใช้ได้เมื่อมี scenario, พื้นที่ทำงาน mount แล้ว และ object ที่เลือกเป็น Satellite หรือ Sensor ที่มีอยู่ใน doc
 // - Sensor = เปิด (หรือเรียกขึ้นมา) หน้าต่างของมัน; Satellite = หน้าต่างของ sensor ตัวแรกของดาวในต้นไม้
-//   ดาวยังไม่มี sensor = สร้างด้วย Define Properties ชื่อ Sensor<n> ตัวแรกที่ว่าง Cone Half Angle = ρ + 0.5° จากตำแหน่งดาวในหน้าต่าง 3D ตัวแรก
-//   ณ เวลาปัจจุบัน (ไม่มีหน้าต่าง 3D หรือดาวยังไม่มีตำแหน่ง = 45°) แล้วเลือก sensor ใหม่ แจ้งใน Message Viewer และเปิดหน้าต่าง
+//   ดาวยังไม่มี sensor = สร้างด้วย Define Properties ชื่อ Sensor<n> ตัวแรกที่ว่าง Cone Half Angle = ρ + 0.5° จากตำแหน่งดาว ณ เวลาปัจจุบัน
+//   ในหน้าต่าง 3D ตัวแรก ไม่มีก็จาก Sensor View บานใดที่เปิดอยู่ (ภาพของมันมีดาวทุกดวง) ไม่มีทั้งสองหรือดาวยังไม่มีตำแหน่ง = 45°
+//   แล้วเลือก sensor ใหม่ แจ้งใน Message Viewer และเปิดหน้าต่าง
 // - เปิดได้ไม่เกิน SENSOR_VIEW_LIMIT บาน: บานใหม่เกินนั้นไม่เปิด (และไม่สร้าง sensor) พร้อมข้อความไทย บานที่เปิดอยู่แล้วเรียกขึ้นมาได้เสมอ
 // - enabled() อ่าน selection, doc และพื้นที่ทำงาน: ฟังทั้งสามแล้ว invalidateCommands ให้เมนูวาดใหม่
 
 import { firstFreeName } from "../../api/names";
 import { attempt } from "../../api/writes";
 import { objectPath } from "../../cesium/colors";
-import { defaultConeHalfAngleDeg } from "../../cesium/sensorGeometry";
+import { defaultConeHalfAngleDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { COMMAND_LABELS, invalidateCommands, registerCommand } from "../../commands";
 import { msg } from "../../labels/messages.th";
 import { useLayout } from "../../stores/layout";
@@ -19,7 +20,7 @@ import { useScenario, type TreeNode, type TreeObject } from "../../stores/scenar
 import { useSelection } from "../../stores/selection";
 import { firstScene } from "../Graphics3D/registry";
 import { insertObjects } from "../InsertObjects/insert";
-import { SENSOR_VIEW_KIND, SENSOR_VIEW_LIMIT, sensorViewPanels, sensorViewParams } from "./registry";
+import { SENSOR_VIEW_KIND, SENSOR_VIEW_LIMIT, sensorViewPanels, sensorViewParams, sensorViewScenes } from "./registry";
 
 const SATELLITE = /^\*\/Satellite\/[^/]+$/;
 const SENSOR = /^\*\/Sensor\/[^/]+$/;
@@ -53,6 +54,18 @@ function firstSensorOf(satellitePath: string): string | null {
   const tree = useScenario.getState().tree;
   const node = tree === null ? undefined : treeNode(tree.children, satellitePath);
   return node?.children?.find((c) => c.class === "Sensor")?.path ?? null;
+}
+
+/**
+ * ตำแหน่ง Earth-fixed ของดาวชื่อ name ณ เวลาปัจจุบันจากภาพที่เปิดอยู่: หน้าต่าง 3D ตัวแรก แล้ว Sensor View ตามลำดับที่เปิด
+ * (ภาพใดไม่มีตำแหน่งของดาวนี้ก็ถามภาพถัดไป) ไม่มีภาพใดมี = null
+ */
+function satellitePosition(name: string): Vec3 | null {
+  for (const scene of [firstScene(), ...sensorViewScenes.all()]) {
+    const p = scene?.entityPositionEcef(name) ?? null;
+    if (p !== null) return { x: p[0], y: p[1], z: p[2] };
+  }
+  return null;
 }
 
 /** เปิดหน้าต่างใหม่ไม่ได้เพราะครบ SENSOR_VIEW_LIMIT บานแล้ว (path ที่เปิดอยู่แล้วไม่นับ: เรียกขึ้นมาได้) */
@@ -90,8 +103,7 @@ async function createAndOpen(satellitePath: string): Promise<void> {
   if (doc === null) return;
   const satellite = nameOf(satellitePath);
   const name = firstFreeName("Sensor", doc.objects.map((o) => o.name));
-  const ecef = firstScene()?.entityPositionEcef(satellite) ?? null;
-  const angle = defaultConeHalfAngleDeg(ecef === null ? null : { x: ecef[0], y: ecef[1], z: ecef[2] });
+  const angle = defaultConeHalfAngleDeg(satellitePosition(satellite));
   const created = await attempt(
     () => insertObjects({ class: "Sensor", method: "Define Properties", name, parent: satellitePath, definition: { type: "Simple Conic", cone_half_angle: angle } }),
     satellitePath,

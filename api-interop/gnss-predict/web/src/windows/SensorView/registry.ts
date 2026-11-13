@@ -55,6 +55,8 @@ export interface SensorViewHandle {
   sensorHud(): SensorHud | null;
   /** กล้องที่ตั้งอยู่ ยังไม่ได้ตั้ง (ไม่มีตำแหน่ง) = null */
   sensorCamera(): SensorCamera | null;
+  /** ตำแหน่ง Earth-fixed (เมตร) ของ object ชื่อ name ในภาพนี้ ณ เวลาปัจจุบัน (ภาพมีดาวทุกดวงแบบหน้าต่าง 3D) ไม่มี = null */
+  entityPositionEcef(name: string): [number, number, number] | null;
   sceneFailed(): boolean;
   resize(): void;
   destroy(): void;

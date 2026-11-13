@@ -22,11 +22,13 @@
 //   (ภาพขนาดศูนย์ เช่นแท็บที่ยุบอยู่ ไม่ตั้ง fov: คงค่าเดิมไว้) ปิดการลาก หมุน ซูมด้วยเมาส์ (enableInputs = false)
 //   ไม่วาด Radial Lines ของ sensor ตัวนี้ และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงตำแหน่งกล้อง วงรอยยังวาด (P7) แสงกลางวัน/กลางคืนเปิดเสมอ
 //   ไม่อ่าน 3D Graphics Window Properties (P8)
+//   คลิกและดับเบิลคลิกตั้งต้นของ Viewer (เลือก entity / ตามหรือบินไปหา entity) ถูกถอดจาก viewer ของ Sensor View (enableInputs ไม่ได้ปิดสองอย่างนี้)
+//   และทุกครั้งที่วางกล้องจะเลิกตาม entity ยกเลิกการบิน และคืน transform เป็น identity ก่อน (placeSensorCamera)
 
 import {
   ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, JulianDate, Math as CesiumMath, Matrix3,
   Matrix4, PerspectiveFrustum, PointGraphics, PolylineDashMaterialProperty, PolylineGraphics, ReferenceFrame, ScreenSpaceEventHandler,
-  ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Entity, type ImageryLayer, type Viewer,
+  ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Camera, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
@@ -37,7 +39,7 @@ import {
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
-import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj } from "../../cesium/sensorDraw";
+import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
 import type { Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
@@ -139,16 +141,55 @@ export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?:
  * แจ้งทะเบียนของ Sensor View (P3) กล้องตาม sensor เมื่อหน้าต่างเรียก viewFromSensor ไม่มี WebGL = โยน
  */
 export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): SensorViewHandle {
-  return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS });
+  return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS }, removeViewerPicking);
 }
 
-function mount(panelId: string, el: HTMLElement, onRenderStopped: ((reason: RenderFailure, error?: unknown) => void) | undefined, opts: SceneOptions): Scene3D {
+/** prepare: ปรับ viewer ก่อนสร้างภาพ (Sensor View: ถอดคลิกและดับเบิลคลิกตั้งต้นของ Viewer) */
+function mount(
+  panelId: string,
+  el: HTMLElement,
+  onRenderStopped: ((reason: RenderFailure, error?: unknown) => void) | undefined,
+  opts: SceneOptions,
+  prepare?: (viewer: Viewer) => void,
+): Scene3D {
   const viewer = createViewer(el, "3d");
   try {
+    prepare?.(viewer);
     return new Scene3D(panelId, el, viewer, opts, onRenderStopped);
   } catch (e) {
     destroyViewer(viewer);
     throw e;
+  }
+}
+
+/**
+ * Sensor View: ถอดคลิกซ้าย (เลือก entity) และดับเบิลคลิก (pickAndTrackObject: ตั้ง trackedEntity หรือ zoomTo บินไปหา entity) ที่ Viewer ของ Cesium
+ * ใส่ไว้ใน handler ของมันเอง screenSpaceCameraController.enableInputs = false ไม่ได้ปิดสองอย่างนี้ ดับเบิลคลิกจึงพากล้องหลุดจาก sensor
+ * ใช้กับ viewer ของ Sensor View เท่านั้น (หน้าต่าง 3D ยังดับเบิลคลิกตาม object ได้ตามเดิม)
+ */
+export function removeViewerPicking(viewer: { readonly screenSpaceEventHandler: ScreenSpaceEventHandler }): void {
+  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_CLICK);
+  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+}
+
+/**
+ * วางกล้องของ Sensor View ที่ pose (Earth-fixed): เลิกตาม entity ยกเลิกการบินที่ค้าง และคืน transform เป็น identity ก่อนเสมอ
+ * (ไม่งั้น EntityView ตั้งกล้องทับทุกเฟรม หรือการบินดึงกล้องไปที่อื่น และตำแหน่ง Earth-fixed ถูกตีความในกรอบของ entity ที่ตามอยู่)
+ * แล้วตั้งตำแหน่ง ทิศ ด้านบน near และ fov (fov null = ภาพไม่มีขนาด: คงค่าเดิม)
+ */
+export function placeSensorCamera(viewer: { trackedEntity: Entity | undefined; readonly camera: Camera }, pose: SensorViewPose, near: number): void {
+  if (viewer.trackedEntity !== undefined) viewer.trackedEntity = undefined;
+  const camera = viewer.camera;
+  camera.cancelFlight();
+  if (!Matrix4.equals(camera.transform, Matrix4.IDENTITY)) camera.lookAtTransform(Matrix4.IDENTITY);
+  camera.position = cartesian(pose.position);
+  camera.direction = cartesian(pose.direction);
+  camera.up = cartesian(pose.up);
+  camera.right = Cartesian3.cross(camera.direction, camera.up, new Cartesian3());
+  const frustum = camera.frustum;
+  if (frustum instanceof PerspectiveFrustum) {
+    frustum.near = near;
+    if (pose.fovDeg !== null) frustum.fov = CesiumMath.toRadians(pose.fovDeg);
   }
 }
 
@@ -662,19 +703,9 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
       this.viewer.scene.requestRender();
       return;
     }
+    // ภาพขนาดศูนย์ (แท็บที่ยุบ หรือยังไม่ได้วางในหน้า): pose ไม่มี fov จนกว่าภาพจะมีขนาด (คงค่าเดิมไว้)
     const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
-    const pose = sensorViewPose(target.state, this.view.up, width / height);
-    const camera = this.viewer.camera;
-    camera.position = cartesian(pose.position);
-    camera.direction = cartesian(pose.direction);
-    camera.up = cartesian(pose.up);
-    camera.right = Cartesian3.cross(camera.direction, camera.up, new Cartesian3());
-    const frustum = camera.frustum;
-    if (frustum instanceof PerspectiveFrustum) {
-      frustum.near = SENSOR_VIEW_NEAR_M;
-      // ภาพขนาดศูนย์ (แท็บที่ยุบ หรือยังไม่ได้วางในหน้า): ไม่ตั้ง fov จนกว่าภาพจะมีขนาด (คงค่าเดิมไว้)
-      if (pose.fovDeg !== null) frustum.fov = CesiumMath.toRadians(pose.fovDeg);
-    }
+    placeSensorCamera(this.viewer, sensorViewPose(target.state, this.view.up, width / height), SENSOR_VIEW_NEAR_M);
     this.viewer.scene.requestRender();
   }
 

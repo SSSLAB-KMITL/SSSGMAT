@@ -49,6 +49,7 @@ function fakeView(panelId: string): Fake {
     },
     sensorHud: () => fake.hud,
     sensorCamera: () => fake.camera,
+    entityPositionEcef: () => null,
     sceneFailed: () => false,
     resize: () => void calls.push(["resize"]),
     destroy: () => void calls.push(["destroy"]),

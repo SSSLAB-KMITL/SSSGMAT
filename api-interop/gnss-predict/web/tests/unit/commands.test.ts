@@ -12,6 +12,7 @@ import { useScenario, type InsertBody } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { registerScene, resetScenes, type Scene3DHandle } from "../../src/windows/Graphics3D/registry";
 import { registerSensorViewCommands } from "../../src/windows/SensorView/commands";
+import { sensorViewScenes, type SensorViewHandle } from "../../src/windows/SensorView/registry";
 import { resetAll } from "./helpers/chrome";
 import { loadSensors, makeScenarioDoc, makeTree, satPath, sensorPath, type SensorsOf } from "./helpers/objects";
 
@@ -168,6 +169,9 @@ describe("object.sensorView (sensor spec §5.1)", () => {
   /** หน้าต่าง 3D ปลอม (เฉพาะส่วนที่คำสั่งนี้ใช้: ตำแหน่งของดาวสำหรับ Cone Half Angle ตั้งต้น) */
   const scene3d = (positions: Record<string, [number, number, number]>): Scene3DHandle =>
     ({ panelId: "graphics3d", entityPositionEcef: (name: string) => positions[name] ?? null }) as unknown as Scene3DHandle;
+  /** Sensor View ปลอมที่เปิดอยู่ (ของ sensor บนดาวอื่น) ภาพของมันมีตำแหน่งของดาวทุกดวงแบบหน้าต่าง 3D */
+  const sensorScene = (panelId: string, positions: Record<string, [number, number, number]>): SensorViewHandle =>
+    ({ panelId, entityPositionEcef: (name: string) => positions[name] ?? null }) as unknown as SensorViewHandle;
 
   /** พื้นที่ทำงานปลอมที่มี Sensor View ของ sensor เหล่านี้เปิดอยู่ */
   const workspaceWith = (open: string[]) => {
@@ -187,6 +191,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
   beforeEach(() => {
     resetAll();
     resetScenes();
+    sensorViewScenes.reset();
     openPanel.mockClear();
     workspaceWith([]);
     dispose = registerSensorViewCommands();
@@ -194,6 +199,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
   afterEach(() => {
     dispose();
     resetScenes();
+    sensorViewScenes.reset();
   });
 
   const info = () => useMessages.getState().items.filter((m) => m.level === "info").map((m) => m.text);
@@ -227,10 +233,34 @@ describe("object.sensorView (sensor spec §5.1)", () => {
     expect(info()).toEqual([msg("sensorView.created", { sensor: "Sensor1", satellite: "G01", angle: "45.0" })]);
   });
 
-  test("without any 3D window the new sensor gets 45 too", async () => {
-    loadSensors({});
-    const insert = insertSpy({});
+  test("without a 3D window the position comes from an open Sensor View; with neither the new sensor gets 45", async () => {
+    // ไม่มีหน้าต่าง 3D แต่มี Sensor View (ของ sensor บน G02) เปิดอยู่ซึ่งภาพของมันมี G01: ρ + 0.5
+    loadSensors({ G02: ["Cam"] });
+    workspaceWith([sensorPath("Cam")]);
+    sensorViewScenes.register(sensorScene("sensorView-0", { G01: GPS_ECEF }));
+    const insert = insertSpy({ G02: ["Cam"] });
     useScenario.setState({ insert } as never);
+    useSelection.getState().select(satPath("G01"));
+    runCommand("object.sensorView");
+    await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
+    expect(insert.mock.calls[0][0]).toMatchObject({ name: "Sensor1", definition: { cone_half_angle: 14.4 } });
+
+    // หน้าต่าง 3D ที่ไม่มีตำแหน่งของ G01 ไม่บังตำแหน่งจาก Sensor View
+    openPanel.mockClear();
+    insert.mockClear();
+    loadSensors({ G02: ["Cam"] });
+    registerScene(scene3d({}));
+    useSelection.getState().select(satPath("G01"));
+    runCommand("object.sensorView");
+    await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
+    expect(insert.mock.calls[0][0]).toMatchObject({ definition: { cone_half_angle: 14.4 } });
+
+    // ไม่มีทั้งหน้าต่าง 3D และ Sensor View = 45
+    openPanel.mockClear();
+    insert.mockClear();
+    resetScenes();
+    sensorViewScenes.reset();
+    loadSensors({ G02: ["Cam"] });
     useSelection.getState().select(satPath("G01"));
     runCommand("object.sensorView");
     await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
