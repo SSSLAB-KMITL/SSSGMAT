@@ -1,6 +1,7 @@
 """FastAPI app ของ Gpredict Web: REST /api, WebSocket /ws/modules/{name} และไฟล์หน้าเว็บที่ build แล้ว (หัวข้อ 3 และ 7 ของ spec)
 
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
+  + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
@@ -38,6 +39,7 @@ from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
 from .ephem import EphemManager
 from .errors import ApiError
+from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms
 from .satdb import SatDb, SatRecord, update_from_network
 from .store import Store, qth_from_dict
@@ -374,6 +376,11 @@ def _clock_dict(clock: ModuleClock) -> dict:
     return {"state": state, "throttle": throttle, "time": iso_ms(t), "label": label}
 
 
+def _prefs_dict(prefs: Prefs) -> dict:
+    """GET และ PUT /api/prefs: ค่าที่ใช้อยู่ทุก key, ค่าตั้งต้น (ให้ปุ่ม Reset ของหน้าเว็บไม่ต้องมีสำเนา) และ key ที่ผู้ใช้ตั้งเอง"""
+    return {"values": prefs.values(), "defaults": prefs.defaults(), "user": prefs.user_keys()}
+
+
 def _meta() -> dict:
     """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)"""
     defaults = M.module_to_dict(M.ModuleConfig(name=""))
@@ -455,6 +462,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     store = Store(cfg.data_dir)
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
+    prefs = Prefs(cfg.data_dir)
     hub = Hub(store, satdb, ephem, now)
     ticks = Ticks(hub)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
@@ -517,6 +525,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                   redoc_url=None)
     app.state.config = cfg
     app.state.store = store
+    app.state.prefs = prefs
     app.state.satdb = satdb
     app.state.ephem = ephem
     app.state.hub = hub
@@ -741,6 +750,24 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                            f"ดาว NORAD {norad} อยู่ใต้ขอบฟ้า (หรือยังไม่มีค่าจาก GMAT) จึงไม่มี sky track ของ pass ปัจจุบัน",
                            str(norad))
         return {"points": points}
+
+    # ---------------- Preferences
+
+    @app.get("/api/prefs")
+    def get_prefs():
+        return _prefs_dict(prefs)
+
+    @app.put("/api/prefs")
+    def put_prefs(body: dict = Body(...)):
+        """{"set": {key: ค่า}, "remove": [key]} (ไม่ใส่ = ว่าง) ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย"""
+        set_ = body.get("set", {})
+        remove = body.get("remove", [])
+        if not isinstance(set_, dict):
+            raise ApiError("PREFS_INVALID", 422, "ค่าที่จะตั้ง (set) ต้องเป็น object ที่มี key ของ Preferences เป็นชื่อ", "set")
+        if not isinstance(remove, list) or not all(isinstance(k, str) for k in remove):
+            raise ApiError("PREFS_INVALID", 422, "รายการที่จะลบ (remove) ต้องเป็นรายการชื่อ key ของ Preferences", "remove")
+        prefs.update(set_, remove)
+        return _prefs_dict(prefs)
 
     # ---------------- อื่นๆ
 

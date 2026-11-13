@@ -17,6 +17,7 @@ from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
 from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, POLAR_CONTENTS,
                                  POLAR_ORIENTATIONS, SINGLE_FIELDS, SINGLE_HINTS, module_from_dict, module_to_dict)
+from gpredict_web.prefs import PREFS
 from gpredict_web.store import Store
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
@@ -623,6 +624,111 @@ class MiscApiTest(ApiTestBase):
         r = self.client.post("/api/qth")
         self.assertEqual(r.status_code, 405)
         self.assertEqual(list(r.json()), ERROR_KEYS)
+
+
+# ---------------------------------------------------------------- Preferences (งานย่อย 2: หัวข้อ 8.2 และ 9 ของ spec)
+
+class PrefsApiTest(ApiTestBase):
+    @property
+    def prefs_file(self) -> Path:
+        return self.cfg.data_dir / "preferences.json"
+
+    def test_get_prefs_shape(self):
+        r = self.client.get("/api/prefs")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), ["values", "defaults", "user"])
+        self.assertEqual(list(body["values"]), list(PREFS))
+        self.assertEqual(body["values"], body["defaults"])
+        self.assertEqual(body["user"], [])
+        self.assertEqual(body["values"]["PREDICT/MINIMUM_ELEV"], 5)
+        self.assertEqual(body["values"]["PREDICT/SINGLE_PASS_COL"], ["Time", "Az", "El", "Range", "Footp"])
+        self.assertEqual(body["values"]["SKY_AT_GLANCE/COLOUR_01"], "#3c46c8")
+        self.assertIs(body["values"]["PREDICT/USE_REAL_T0"], False)
+        self.assertIs(self.app.state.prefs.get("PREDICT/USE_REAL_T0"), False)
+        self.assertFalse(self.prefs_file.exists())
+
+    def test_put_prefs_set_and_remove(self):
+        r = self.client.put("/api/prefs", json={"set": {"PREDICT/MINIMUM_ELEV": 30, "SKY_AT_GLANCE/COLOUR_01": "#ABCDEF",
+                                                        "PREDICT/SINGLE_PASS_COL": ["El", "Time"]}, "remove": []})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), ["values", "defaults", "user"])
+        self.assertEqual(body["values"]["PREDICT/MINIMUM_ELEV"], 30)
+        self.assertEqual(body["values"]["SKY_AT_GLANCE/COLOUR_01"], "#abcdef")
+        self.assertEqual(body["values"]["PREDICT/SINGLE_PASS_COL"], ["Time", "El"])
+        self.assertEqual(body["defaults"]["PREDICT/MINIMUM_ELEV"], 5)
+        self.assertEqual(body["user"], ["PREDICT/MINIMUM_ELEV", "PREDICT/SINGLE_PASS_COL", "SKY_AT_GLANCE/COLOUR_01"])
+        self.assertEqual(json.loads(self.prefs_file.read_text(encoding="utf-8")),
+                         {"version": 1, "values": {"PREDICT/MINIMUM_ELEV": 30, "PREDICT/SINGLE_PASS_COL": ["Time", "El"],
+                                                   "SKY_AT_GLANCE/COLOUR_01": "#abcdef"}})
+        self.assertEqual(self.client.get("/api/prefs").json(), body)
+        self.assertEqual(self.app.state.prefs.get("PREDICT/MINIMUM_ELEV"), 30)
+        r = self.client.put("/api/prefs", json={"set": {"PREDICT/LOOK_AHEAD": 7},
+                                                "remove": ["PREDICT/MINIMUM_ELEV", "PREDICT/SINGLE_PASS_COL"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["values"]["PREDICT/MINIMUM_ELEV"], 5)
+        self.assertEqual(body["values"]["PREDICT/SINGLE_PASS_COL"], ["Time", "Az", "El", "Range", "Footp"])
+        self.assertEqual(body["values"]["PREDICT/LOOK_AHEAD"], 7)
+        self.assertEqual(body["user"], ["PREDICT/LOOK_AHEAD", "SKY_AT_GLANCE/COLOUR_01"])
+        self.assertEqual(self.client.get("/api/prefs").json(), body)
+
+    def test_put_prefs_set_and_remove_are_optional(self):
+        self.assertEqual(self.client.put("/api/prefs", json={"set": {"PREDICT/LOOK_AHEAD": 7}}).status_code, 200)
+        r = self.client.put("/api/prefs", json={"remove": ["PREDICT/LOOK_AHEAD"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["user"], [])
+        self.assertEqual(self.client.put("/api/prefs", json={}).status_code, 200)
+
+    def test_prefs_survive_a_restart(self):
+        self.client.put("/api/prefs", json={"set": {"PREDICT/NUMBER_OF_PASSES": 25}})
+        client = self.enter(self.make_app())
+        self.assertEqual(client.get("/api/prefs").json()["values"]["PREDICT/NUMBER_OF_PASSES"], 25)
+
+    def test_put_prefs_invalid_is_422_and_unchanged(self):
+        self.client.put("/api/prefs", json={"set": {"PREDICT/MINIMUM_ELEV": 30}})
+        before = self.client.get("/api/prefs").json()
+        file_before = self.prefs_file.read_text(encoding="utf-8")
+        r = self.client.put("/api/prefs", json={"set": {"PREDICT/NUMBER_OF_PASSES": 20, "PREDICT/LOOK_AHEAD": 15}})
+        body = self.assert_error(r, 422, "PREFS_INVALID", "PREDICT/LOOK_AHEAD")
+        self.assertEqual(body["text"], "Passes should occur within ต้องเป็นจำนวนเต็ม 1–14")
+        for bad in ({"set": {"PREDICT/NOPE": 1}}, {"set": {"PREDICT/USE_REAL_T0": 1}},
+                    {"set": {"SKY_AT_GLANCE/COLOUR_01": "red"}}, {"set": {"PREDICT/MULTI_PASS_COL": ["Bogus"]}},
+                    {"remove": ["PREDICT/NOPE"]}, {"set": {"PREDICT/LOOK_AHEAD": 3}, "remove": ["PREDICT/LOOK_AHEAD"]}):
+            with self.subTest(bad=bad):
+                self.assert_error(self.client.put("/api/prefs", json=bad), 422, "PREFS_INVALID")
+        self.assertEqual(self.client.get("/api/prefs").json(), before)
+        self.assertEqual(self.prefs_file.read_text(encoding="utf-8"), file_before)
+
+    def test_put_prefs_invalid_on_a_fresh_install_creates_no_file(self):
+        self.assert_error(self.client.put("/api/prefs", json={"set": {"PREDICT/MINIMUM_ELEV": 0}}), 422, "PREFS_INVALID",
+                          "PREDICT/MINIMUM_ELEV")
+        self.assertFalse(self.prefs_file.exists())
+
+    def test_put_prefs_body_not_object_is_422(self):
+        for bad in ([1], "x", 5, None):
+            with self.subTest(body=bad):
+                self.assert_error(self.client.put("/api/prefs", json=bad), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.client.put("/api/prefs", content=b"{not json", headers={"content-type": "application/json"}),
+                          422, "REQUEST_INVALID", None)
+        for bad, obj in (({"set": [1]}, "set"), ({"set": "PREDICT/MINIMUM_ELEV"}, "set"), ({"set": None}, "set"),
+                         ({"set": {}, "remove": "PREDICT/MINIMUM_ELEV"}, "remove"), ({"remove": [1]}, "remove"),
+                         ({"remove": ["PREDICT/LOOK_AHEAD", None]}, "remove"), ({"remove": {"PREDICT/LOOK_AHEAD": 1}}, "remove"),
+                         ({"remove": None}, "remove")):
+            with self.subTest(body=bad):
+                self.assert_error(self.client.put("/api/prefs", json=bad), 422, "PREFS_INVALID", obj)
+        self.assertFalse(self.prefs_file.exists())
+
+    def test_prefs_file_with_bad_value_does_not_stop_the_server(self):
+        """แก้ preferences.json ด้วยมือจนค่าผิด: server เปิดได้ ใช้ค่าตั้งต้นของ key นั้นและบันทึก log"""
+        self.prefs_file.write_text(json.dumps({"version": 1, "values": {"PREDICT/MINIMUM_ELEV": 500,
+                                                                       "PREDICT/LOOK_AHEAD": 7}}), encoding="utf-8")
+        with self.assertLogs("gpredict_web.prefs", "WARNING"):
+            client = self.enter(self.make_app())
+        body = client.get("/api/prefs").json()
+        self.assertEqual((body["values"]["PREDICT/MINIMUM_ELEV"], body["values"]["PREDICT/LOOK_AHEAD"]), (5, 7))
+        self.assertEqual(body["user"], ["PREDICT/LOOK_AHEAD"])
 
 
 # ---------------------------------------------------------------- Host และ Origin (ของเรา: กันเว็บอื่นสั่ง server)
