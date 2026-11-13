@@ -18,6 +18,9 @@ import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice, SatNameMap } from "./notices";
 import { overlayFor } from "./overlay";
+import { PassWindows } from "./passes/PassWindowsHost";
+import { closeWindow, openWindow } from "./passes/passWindows";
+import type { PassWindow } from "./passes/passWindows";
 import { runQuit } from "./quit";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
@@ -69,6 +72,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [loaded, setLoaded] = useState(false); // GET /api/modules has answered at least once
   const [timeController, setTimeController] = useState<string | null>(null); // module whose Time Controller is open
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]); // the floating dialogs that are open
+  const [passWindows, setPassWindows] = useState<readonly PassWindow[]>([]); // the Pass details and Upcoming passes windows that are open
   const [moduleMenu, setModuleMenu] = useState<{ x: number; y: number } | null>(null); // the Module menu, where it is open
   const [selections, setSelections] = useState<Selections>({}); // the selected satellite of each module (not saved)
   const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
@@ -214,6 +218,11 @@ function Main({ onStopped }: { onStopped: () => void }) {
 
   const show = useCallback((d: Dialog) => setDialogs((l) => showDialog(l, d)), []);
   const hide = useCallback((d: Dialog) => setDialogs((l) => closeDialog(l, d)), []);
+
+  // A pass window keeps the answer it was opened with and belongs to no module: closing the module or taking the satellite out leaves it as it is.
+  /** Open a Pass details or an Upcoming passes window; the pass items of the satellite popup and the Module menu call it with the server's answer (Task 13). */
+  const openPassWindow = useCallback((w: PassWindow) => setPassWindows((l) => openWindow(l, w)), []);
+  const closePassWindow = useCallback((id: string) => setPassWindows((l) => closeWindow(l, id)), []);
 
   /** File → New module (Ctrl+N): the Create new module dialog */
   const newModule = useCallback(() => show({ kind: "newModule" }), [show]);
@@ -395,6 +404,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
         onDeleted={deleted}
         onTleUpdated={tleUpdated}
       />
+      <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
       {current !== null && timeController === current && (
         <TimeController
           key={current}

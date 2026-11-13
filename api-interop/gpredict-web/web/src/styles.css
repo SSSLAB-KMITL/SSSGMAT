@@ -1253,6 +1253,80 @@ body {
   border-radius: 3px;
 }
 
+/* ---------------------------------------------------------------- Pass details and Upcoming passes (ref-P §2, §3) */
+
+/*
+ * Gpredict gives both windows a default height of 300 px for the whole window. Upcoming passes is a list and two rows of
+ * chrome, so it is 300 px here: the 51 px are the title bar (29), the padding of .float-body (20) and its border (2).
+ * Pass details cannot be: its Az/El plot is 300 x 300 px at least, so (as in GTK, whose notebook is as big as its biggest page)
+ * the window opens taller than 300 px, and it is the tab area that is 300 px high.
+ */
+.pass-window {
+  gap: 0;
+  min-width: 280px;
+}
+.pass-window.upcoming {
+  height: calc(300px - 51px);
+}
+.pass-window .dialog-buttons {
+  margin-top: 8px;
+}
+.pass-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pass-tab-icon {
+  flex: none;
+}
+.pass-panels {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 301px; /* the 300 px of the tab area and the 1 px border below it */
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+/* the tabs lie one on top of the other, so that the window keeps its size when the tab changes */
+.pass-panel {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden; /* Gpredict's list has a vertical scroll bar only */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.pass-panel[aria-hidden="true"] {
+  visibility: hidden;
+}
+/* the sizes Gpredict requests for the plots (ref-P §5, §6) */
+.pass-panel.polar {
+  min-width: 200px;
+  min-height: 200px;
+  overflow: hidden;
+}
+.pass-panel.azel {
+  min-width: 300px;
+  min-height: 300px;
+  overflow: hidden;
+}
+/* a plot fills its tab without making the tab bigger: it is drawn at the size the tab has */
+.pass-plot {
+  position: absolute;
+  inset: 0;
+}
+.pass-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scroll-padding-top: 26px; /* the sticky header */
+  background: var(--view);
+  border: 1px solid var(--border);
+}
+
 /* ---------------------------------------------------------------- after File → Quit (ของเรา) */
 
 .stopped {
