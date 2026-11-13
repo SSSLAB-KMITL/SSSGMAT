@@ -1,8 +1,8 @@
 // The groups of the Preferences window (ref-D §1): the four icons at its left and the page of each. Pure but for the pages.
 
-import { createElement } from "react";
 import type { ReactNode } from "react";
 import type { PrefValue } from "../types";
+import { PredictPages } from "./PredictPages";
 
 export type PrefGroupId = "general" | "modules" | "interfaces" | "predict";
 
@@ -31,15 +31,12 @@ export interface PrefGroup {
   later?: 2 | 3 | 4;
 }
 
-/** (ของเรา) until Predict's pages are there */
-const predictPage = (): ReactNode => createElement("p", { className: "dialog-text" }, "หน้าของกลุ่ม Predict ยังไม่พร้อมใช้");
-
 /** In Gpredict's order. The icons are `gpredict-sat-pref.png`, `gpredict-sat-list.png`, `gpredict-oscilloscope.png` and `gpredict-calendar.png` there. */
 export const PREF_GROUPS: readonly PrefGroup[] = [
   { id: "general", label: "General", icon: "⚙", page: null, later: 4 },
   { id: "modules", label: "Modules", icon: "☰", page: null, later: 4 },
   { id: "interfaces", label: "Interfaces", icon: "∿", page: null, later: 3 },
-  { id: "predict", label: "Predict", icon: "▦", page: predictPage },
+  { id: "predict", label: "Predict", icon: "▦", page: PredictPages },
 ];
 
 /** The group the window opens at: Gpredict opens at General, which has no page yet (sub-project 4 changes this to "general"). */

@@ -1195,6 +1195,52 @@ body {
   display: none;
 }
 
+/* Preferences → Predict: the notebook, its pages and the Reset button at the bottom right of each */
+.predict-panel {
+  min-height: 400px;
+}
+.predict-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 400px;
+  padding: 12px 14px 6px;
+}
+.predict-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 10px;
+}
+.conditions-grid {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.conditions-grid > .props-header,
+.conditions-check {
+  grid-column: 1 / -1;
+}
+.check-grid.bordered {
+  padding: 20px;
+}
+.sky-colours {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: start;
+}
+.colour-input {
+  width: 52px;
+  height: 24px;
+  padding: 1px 2px;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
 /* ---------------------------------------------------------------- after File → Quit (ของเรา) */
 
 .stopped {
