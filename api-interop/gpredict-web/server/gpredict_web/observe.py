@@ -231,8 +231,10 @@ def _unit_sun(t: datetime) -> Vec3:
     return s[0] / n, s[1] / n, s[2] / n
 
 
-def visibility(r: Vec3, t: datetime, q_lat: float, q_lon: float, el_deg: float) -> str:
-    """Visibility: ดาวอยู่ในเงาทรงกระบอกของโลก -> 'E'; โดนแสง, El >= 0 และดวงอาทิตย์ที่ QTH <= -6° -> 'V'; นอกนั้น 'D'
+def visibility(r: Vec3, t: datetime, q_lat: float, q_lon: float, el_deg: float,
+               twilight_deg: float = TWILIGHT_SUN_EL_DEG) -> str:
+    """Visibility: ดาวอยู่ในเงาทรงกระบอกของโลก -> 'E'; โดนแสง, El >= 0 และดวงอาทิตย์ที่ QTH <= twilight_deg -> 'V'; นอกนั้น 'D'
+    twilight_deg คือ Twilight threshold ของ Preferences (ตั้งต้น -6°, Gpredict รับ -18..0)
     เงาคือครึ่งหลังโลกที่ระยะตั้งฉากกับแกนโลก-ดวงอาทิตย์ < รัศมีเส้นศูนย์สูตร WGS84 ส่วนระดับดวงอาทิตย์ที่ QTH วัดจากเส้นตั้งฉากกับ ellipsoid"""
     s = _unit_sun(t)
     along = r[0] * s[0] + r[1] * s[1] + r[2] * s[2]
@@ -243,7 +245,7 @@ def visibility(r: Vec3, t: datetime, q_lat: float, q_lon: float, el_deg: float) 
     lat, lon = math.radians(q_lat), math.radians(q_lon)
     sin_sun_el = (s[0] * math.cos(lat) * math.cos(lon) + s[1] * math.cos(lat) * math.sin(lon) + s[2] * math.sin(lat))
     sun_el = math.degrees(math.asin(max(-1.0, min(1.0, sin_sun_el))))
-    return "V" if sun_el <= TWILIGHT_SUN_EL_DEG else "D"
+    return "V" if sun_el <= twilight_deg else "D"
 
 
 def direction(rate: float, prev_rate: float | None, geo: bool, decayed: bool) -> str:
@@ -277,10 +279,12 @@ def qth_geo(q: Qth) -> QthGeo:
     return QthGeo(q.name, q.location, q.lat_deg, q.lon_deg, q.alt_m, geodetic_to_ecef(q.lat_deg, q.lon_deg, q.alt_m))
 
 
-def observe(r: Vec3, v: Vec3, t: datetime, q: QthGeo, el: TleElements, prev_rate: float | None) -> dict:
+def observe(r: Vec3, v: Vec3, t: datetime, q: QthGeo, el: TleElements, prev_rate: float | None,
+            twilight_deg: float = TWILIGHT_SUN_EL_DEG) -> dict:
     """ค่าของดาวหนึ่งดวง ณ เวลา T ครบทุกช่องของ OBSERVE_KEYS (ช่องในตัวอย่าง tick ของหัวข้อ 7.3 ยกเว้น norad, name, next_aos, next_los, always)
 
     r, v: EarthFixed จาก GMAT (v เทียบกับโลกที่หมุน) prev_rate: range rate ของ tick ก่อน (None ถ้าไม่มี)
+    twilight_deg: Twilight threshold ที่ใช้ตัดสิน vis ('V' เมื่อดวงอาทิตย์ที่ QTH <= ค่านี้)
     """
     az, elev, rng = ecef_to_aer(r, q.ecef_km, q.lat_deg, q.lon_deg)
     d = (r[0] - q.ecef_km[0], r[1] - q.ecef_km[1], r[2] - q.ecef_km[2])
@@ -299,5 +303,5 @@ def observe(r: Vec3, v: Vec3, t: datetime, q: QthGeo, el: TleElements, prev_rate
         "doppler_hz": doppler_hz(rate), "loss_db": loss_db(rng), "delay_ms": delay_ms(rng),
         "ma": phase * 256.0 / 360.0, "phase_deg": phase,
         "orbit": orbit_number(el, t),
-        "vis": visibility(r, t, q.lat_deg, q.lon_deg, elev),
+        "vis": visibility(r, t, q.lat_deg, q.lon_deg, elev, twilight_deg),
     }

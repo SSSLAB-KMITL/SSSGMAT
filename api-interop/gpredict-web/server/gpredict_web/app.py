@@ -463,7 +463,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
     prefs = Prefs(cfg.data_dir)
-    hub = Hub(store, satdb, ephem, now)
+    hub = Hub(store, satdb, ephem, now, prefs=prefs)
     ticks = Ticks(hub)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine ไม่มี lock)

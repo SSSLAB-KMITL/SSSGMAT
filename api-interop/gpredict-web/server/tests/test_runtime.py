@@ -2,6 +2,7 @@
 (ระนาบศูนย์สูตร ผ่านเหนือ QTH ที่ (0°, 0°) ทุกรอบ จึงมีคำตอบ AOS/LOS แบบปิด) ใช้ start_worker=False แล้ว drain()"""
 
 import json
+import math
 import threading
 import time
 import unittest
@@ -15,6 +16,7 @@ from gpredict_web.ephem import EphemManager, window_for
 from gpredict_web.errors import ApiError
 from gpredict_web.module import module_from_dict
 from gpredict_web.observe import is_decayed, parse_tle
+from gpredict_web.prefs import Prefs
 from gpredict_web.runtime import Hub, ModuleClosedError, ModuleRuntime
 from gpredict_web.satdb import SatDb, SatRecord
 from gpredict_web.store import Qth, Store
@@ -71,6 +73,19 @@ def started(fn, *args) -> threading.Thread:
 def peak(norad: int) -> datetime:
     """เวลาที่ดาวดวงนี้อยู่เหนือ QTH พอดี (El 90°) ที่ใกล้ T0"""
     return PEAK_REF + timedelta(seconds=60 * (norad % 97))
+
+
+def dusk_station(norad: int, sun_el_deg: float) -> tuple[Qth, datetime]:
+    """เวลาที่ดาวสังเคราะห์ผ่านเหนือ (0°, 0°) ใกล้ 18:18 UTC กับ QTH "DUSK" บนเส้นศูนย์สูตรที่ดวงอาทิตย์อยู่ที่ sun_el_deg ณ เวลานั้น
+    ลองจิจูดของ QTH ห่างดาวไม่เกิน 15° จึงเห็นดาวเหนือขอบฟ้า (El > 0)"""
+    evening = datetime(2026, 11, 12, 18, 18, tzinfo=UTC)
+    k = round((evening - peak(norad)).total_seconds() / PERIOD_S)
+    t = peak(norad) + timedelta(seconds=k * PERIOD_S)
+    dec, sun_lon = subpoint(sun_ecef_km(t))
+    h = math.degrees(math.acos(math.sin(math.radians(sun_el_deg)) / math.cos(math.radians(dec))))
+    lon = min(((sun_lon + h + 180.0) % 360.0 - 180.0, (sun_lon - h + 180.0) % 360.0 - 180.0), key=abs)
+    assert abs(lon) < 15.0, lon
+    return Qth(name="DUSK", location="Equator", lat_deg=0.0, lon_deg=lon, alt_m=0.0), t
 
 
 class OrbitPropagate:
@@ -527,8 +542,8 @@ class HubTest(unittest.TestCase):
     def put_module(self, name="M", qth=None, sats=NORADS, **extra):
         self.store.put_module(module_from_dict({"name": name, "qth": qth, "satellites": list(sats), **extra}, None, None))
 
-    def hub(self, satdb=None) -> Hub:
-        return Hub(self.store, self.satdb if satdb is None else satdb, self.ephem, self.wall)
+    def hub(self, satdb=None, prefs=None) -> Hub:
+        return Hub(self.store, self.satdb if satdb is None else satdb, self.ephem, self.wall, prefs=prefs)
 
     def test_open_get_close(self):
         self.put_module()
@@ -546,6 +561,29 @@ class HubTest(unittest.TestCase):
         self.ephem.drain()
         self.assertEqual(self.fake.calls, [])                           # ปิดแล้วงานที่รออยู่ถูกตัด
         hub.close("M")                                                  # ปิดซ้ำไม่เป็นไร
+
+    def test_tick_vis_follows_twilight_pref(self):
+        norad = NORADS[0]
+        dusk, t = dusk_station(norad, -8.0)                    # ดวงอาทิตย์ที่ QTH อยู่ที่ −8°
+        self.store.put_qth(dusk)
+        self.put_module(qth="DUSK", sats=[norad])
+        self.wall.t = t
+        prefs = Prefs(self.cfg.data_dir)
+        rt = self.hub(prefs=prefs).open("M")
+        self.ephem.drain()
+
+        def vis() -> str:
+            sat = rt.tick()["sats"][0]
+            self.assertGreater(sat["el"], 5.0)                          # ดาวอยู่เหนือขอบฟ้า: ผลต่างมาจาก twilight อย่างเดียว
+            return sat["vis"]
+
+        self.assertEqual(vis(), "V")                                     # ค่าตั้งต้น −6: −8 <= −6
+        prefs.update({"PREDICT/TWILIGHT_THRESHOLD": -18}, [])
+        self.assertEqual(vis(), "D")                                     # tick ถัดไปใช้ค่าใหม่ทันที: −8 > −18
+        prefs.update({"PREDICT/TWILIGHT_THRESHOLD": -7}, [])
+        self.assertEqual(vis(), "V")                                     # ค่ากลางช่วง −18..0 ก็ใช้ได้: −8 <= −7
+        prefs.update({}, ["PREDICT/TWILIGHT_THRESHOLD"])                 # Reset = กลับไปค่าตั้งต้น −6
+        self.assertEqual(vis(), "V")
 
     def test_open_names_in_open_order(self):
         self.put_module("B")

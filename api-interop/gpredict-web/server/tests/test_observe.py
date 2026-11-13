@@ -297,16 +297,28 @@ class VisibilityTest(unittest.TestCase):
     def test_high_sun_is_daylight(self):
         self.assertEqual(visibility(self.scale(7000.0), T0, *self.day, 60.0), "D")
 
-    def test_civil_twilight_threshold_is_minus_six_degrees(self):
+    def station_with_sun_elevation(self, el_deg):                  # ที่เส้นศูนย์สูตร sin(El) = cos(dec)·cos(H)
         decl = math.asin(self.sun[2])
         sun_lon = math.degrees(math.atan2(self.sun[1], self.sun[0]))
+        h = math.degrees(math.acos(math.sin(math.radians(el_deg)) / math.cos(decl)))
+        return 0.0, sun_lon + h
 
-        def station_with_sun_elevation(el_deg):                    # ที่เส้นศูนย์สูตร sin(El) = cos(dec)·cos(H)
-            h = math.degrees(math.acos(math.sin(math.radians(el_deg)) / math.cos(decl)))
-            return 0.0, sun_lon + h
+    def test_civil_twilight_threshold_is_minus_six_degrees(self):
         sat = self.scale(7000.0)
-        self.assertEqual(visibility(sat, T0, *station_with_sun_elevation(-5.5), 20.0), "D")
-        self.assertEqual(visibility(sat, T0, *station_with_sun_elevation(-6.5), 20.0), "V")
+        self.assertEqual(visibility(sat, T0, *self.station_with_sun_elevation(-5.5), 20.0), "D")
+        self.assertEqual(visibility(sat, T0, *self.station_with_sun_elevation(-6.5), 20.0), "V")
+
+    def test_visibility_uses_twilight_parameter(self):
+        sat = self.scale(7000.0)
+        station = self.station_with_sun_elevation(-8.0)             # ดวงอาทิตย์ −8° ดาวโดนแสงและ El > 0
+        self.assertEqual(visibility(sat, T0, *station, 30.0), "V")                      # −8 <= −6 (ค่าตั้งต้น)
+        self.assertEqual(visibility(sat, T0, *station, 30.0, twilight_deg=-12.0), "D")  # −8 > −12
+        self.assertEqual(visibility(sat, T0, *station, 30.0, twilight_deg=-8.5), "D")
+        self.assertEqual(visibility(sat, T0, *station, 30.0, twilight_deg=-7.5), "V")
+
+    def test_twilight_parameter_does_not_override_eclipse_or_horizon(self):
+        self.assertEqual(visibility(self.scale(-7000.0), T0, *self.night, 30.0, twilight_deg=0.0), "E")
+        self.assertEqual(visibility(self.scale(7000.0), T0, *self.night, -0.5, twilight_deg=0.0), "D")
 
 
 class RaDecTest(unittest.TestCase):
@@ -375,6 +387,11 @@ class ObserveTest(unittest.TestCase):
         self.assertEqual(out["orbit"], 1000)
         self.assertEqual(out["dir"], "↷")
         self.assertIn(out["vis"], "VDE")
+
+    def test_observe_passes_twilight_deg_to_visibility(self):
+        r, v = self.overhead()                                     # กลางวันที่กรุงเทพ (07:00 UTC): ดาวโดนแสง El 90°
+        self.assertEqual(observe(r, v, T0, self.q, elements(), None)["vis"], "D")
+        self.assertEqual(observe(r, v, T0, self.q, elements(), None, twilight_deg=90.0)["vis"], "V")
 
     def test_observe_matches_building_blocks(self):
         t = T0 + timedelta(seconds=37)

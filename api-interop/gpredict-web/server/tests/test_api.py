@@ -23,7 +23,7 @@ from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
 from tests.helpers import TEST_HOSTS, FakeNow, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
-from tests.test_runtime import NORADS, ORIGIN, OTHER, T0, OrbitPropagate, iso, peak, record
+from tests.test_runtime import NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
 
 ERROR_KEYS = ["code", "level", "text", "object"]
 
@@ -719,6 +719,18 @@ class PrefsApiTest(ApiTestBase):
             with self.subTest(body=bad):
                 self.assert_error(self.client.put("/api/prefs", json=bad), 422, "PREFS_INVALID", obj)
         self.assertFalse(self.prefs_file.exists())
+
+    def test_put_prefs_twilight_threshold_changes_the_open_module_tick(self):
+        """Hub ของ app ได้ Prefs ตัวเดียวกับ /api/prefs: ตั้ง Twilight threshold แล้ว tick ถัดไปของ module ที่เปิดอยู่ใช้ค่าใหม่"""
+        dusk, t = dusk_station(NORADS[0], -8.0)                          # ดวงอาทิตย์ที่ QTH −8° ดาวอยู่เหนือขอบฟ้า
+        self.store.put_qth(dusk)
+        self.put_module(qth="DUSK", sats=[NORADS[0]])
+        self.wall.t = t
+        self.open_module()
+        self.assertEqual(self.hub.get("M").tick()["sats"][0]["vis"], "V")        # ค่าตั้งต้น −6
+        r = self.client.put("/api/prefs", json={"set": {"PREDICT/TWILIGHT_THRESHOLD": -18}, "remove": []})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.hub.get("M").tick()["sats"][0]["vis"], "D")        # −8 > −18
 
     def test_prefs_file_with_bad_value_does_not_stop_the_server(self):
         """แก้ preferences.json ด้วยมือจนค่าผิด: server เปิดได้ ใช้ค่าตั้งต้นของ key นั้นและบันทึก log"""

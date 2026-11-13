@@ -27,8 +27,9 @@ from .config import TLE_OLD_DAYS
 from .ephem import EphemManager, SatEphem, SatSpec, Window, needs_next, tle_key, usable, window_for
 from .errors import ApiError
 from .module import ModuleConfig
-from .observe import TleElements, is_decayed, observe, parse_tle, qth_geo
+from .observe import TWILIGHT_SUN_EL_DEG, TleElements, is_decayed, observe, parse_tle, qth_geo
 from .passes import Pass, find_passes, next_events
+from .prefs import Prefs
 from .satdb import SatDb, SatRecord, gmat_name
 from .store import Qth, Store
 from .tracks import ground_track, sky_track
@@ -80,10 +81,13 @@ class _Sat:
 
 class ModuleRuntime:
     """module ที่เปิดอยู่หนึ่งตัว: ถือนาฬิกา ช่วงคำนวณ (ปัจจุบัน + ถัดไป) และ cache ของ pass ทุกเมธอดใช้ lock เดียว
-    owner ของ EphemManager คือชื่อ module"""
+    owner ของ EphemManager คือชื่อ module
+    twilight: คืน Twilight threshold (องศา) ที่ใช้ตอนนี้ เรียกครั้งเดียวต่อ tick เพื่อให้ Preferences มีผลที่ tick ถัดไปโดยไม่ต้องเปิด module ใหม่"""
 
-    def __init__(self, module: ModuleConfig, qth: Qth, sats: list[SatRecord], ephem: EphemManager, clock: ModuleClock):
+    def __init__(self, module: ModuleConfig, qth: Qth, sats: list[SatRecord], ephem: EphemManager, clock: ModuleClock,
+                 twilight: Callable[[], float] = lambda: TWILIGHT_SUN_EL_DEG):
         self._lock = threading.Lock()
+        self._twilight = twilight
         self._ephem = ephem
         self._clock = clock
         self._owner = module.name
@@ -287,6 +291,7 @@ class ModuleRuntime:
                      sat_msgs: list[Message]) -> list[dict]:
         """ค่าของทุกดวงที่มีค่า (observe + next_events จาก pass ใน cache) ดวงที่วงโคจรไม่ปิดถูกข้ามพร้อมคำเตือน"""
         sats = []
+        twilight = self._twilight()                              # ครั้งเดียวต่อ tick: ทุกดวงใน tick เดียวกันใช้ค่าเดียวกัน
         for s, e, orbit in rows:
             norad = s.record.norad
             state = e.state_at(t)
@@ -294,7 +299,7 @@ class ModuleRuntime:
                 s.rate = None
                 continue
             try:
-                obs = observe(state[0], state[1], t, self._q, orbit.elements, s.rate)
+                obs = observe(state[0], state[1], t, self._q, orbit.elements, s.rate, twilight)
             except ValueError as exc:                            # วงโคจรไม่ปิด: ข้ามเฉพาะดวงนี้ (tick ยังทำงาน)
                 s.rate = None
                 sat_msgs.append(Message("SAT_STATE_INVALID", "warning",
@@ -400,11 +405,13 @@ class Hub:
     ลำดับการถือ lock: ประจำชื่อ -> _lock (สั้นๆ) และ ประจำชื่อ -> lock ของ runtime -> lock ของ EphemManager
     """
 
-    def __init__(self, store: Store, satdb: SatDb, ephem: EphemManager, now: Callable[[], datetime]):
+    def __init__(self, store: Store, satdb: SatDb, ephem: EphemManager, now: Callable[[], datetime],
+                 prefs: Prefs | None = None):
         self._store = store
         self._satdb = satdb
         self._ephem = ephem
         self._now = now
+        self._prefs = prefs
         self._lock = threading.Lock()
         self._open: dict[str, ModuleRuntime] = {}
         self._name_locks: dict[str, list] = {}                  # ชื่อ -> [Lock, จำนวนผู้ถือหรือรอ]
@@ -418,7 +425,7 @@ class Hub:
         with self._serial(name):
             rt = self.get(name)                                  # อีก thread อาจเปิดเสร็จระหว่างรอ
             if rt is None:
-                rt = ModuleRuntime(*self._load(name), self._ephem, ModuleClock(self._now))
+                rt = ModuleRuntime(*self._load(name), self._ephem, ModuleClock(self._now), self._twilight)
                 with self._lock:
                     self._open[name] = rt
             return rt
@@ -464,6 +471,12 @@ class Hub:
                 entry[1] -= 1
                 if entry[1] == 0:
                     del self._name_locks[name]
+
+    def _twilight(self) -> float:
+        """Twilight threshold ปัจจุบัน: จาก Preferences ถ้า Hub มี prefs นอกนั้นค่าตั้งต้น −6°"""
+        if self._prefs is None:
+            return TWILIGHT_SUN_EL_DEG
+        return float(self._prefs.get("PREDICT/TWILIGHT_THRESHOLD"))
 
     def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord]]:
         """module, QTH ของมัน และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
