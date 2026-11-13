@@ -2,22 +2,22 @@
 // ไม่เรียก /api/orbits/fetch, /api/daily/run หรือ /validate (ผู้ใช้ห้ามดาวน์โหลดจาก CelesTrak/CDDIS/MGEX): ทุกการเรียกในนี้อ่านหรือแก้ data fixture ในเครื่อง
 
 import { expect, test as base, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
+import { allowedOrigins, E2E_ORIGIN, isLocalRequest } from "./localRequest";
 
-export const ORIGIN = "http://127.0.0.1:8766";
+export const ORIGIN = E2E_ORIGIN;
 /** server ตอบ 403 FORBIDDEN_ORIGIN กับคำขอที่แก้ข้อมูลซึ่ง Origin ไม่ตรง origin ของตัวเอง */
 export const WRITE_HEADERS = { Origin: ORIGIN };
 
 // window.__gnssStudioTest ประกาศไว้ใน src/cesium/testHooks.ts (tsconfig รวม src กับ tests)
 
-/** URL ที่หน้าเว็บขอได้: server ของ e2e เอง, data: และ blob: เท่านั้น (ห้ามต่อเน็ตนอกเครื่อง: งาน Sensor P5) */
-export function isLocalRequest(url: string): boolean {
-  return url.startsWith(`${ORIGIN}/`) || url.startsWith("data:") || url.startsWith("blob:");
-}
+/** origin ที่หน้าเว็บขอได้: server ของ e2e เอง และ origin ของ GNSS_E2E_PERF_URL ตรงตัวเมื่อตั้งไว้ (perf.spec.ts วัดบน server ที่ port 8767) ดู localRequest.ts */
+const LOCAL_ORIGINS = allowedOrigins(process.env.GNSS_E2E_PERF_URL);
 
 /**
  * ทุก spec ใช้ test ตัวนี้ ตรวจตอนจบ test (ทั้งสองข้อล้มแล้ว test fail):
  * - pageerror ที่เกิดระหว่าง test = fail
  * - request ของ browser context (ทุกหน้า รวม frame, worker, ภาพ, font, script) ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` = fail พร้อมรายการ URL
+ *   (ตั้ง GNSS_E2E_PERF_URL = เพิ่มอีกหนึ่ง origin คือของ URL นั้นตรงตัว)
  */
 export const test = base.extend<{ pageErrors: string[]; requestGuard: string[] }>({
   pageErrors: [
@@ -33,10 +33,10 @@ export const test = base.extend<{ pageErrors: string[]; requestGuard: string[] }
     async ({ context }, use) => {
       const outside: string[] = [];
       context.on("request", (r) => {
-        if (!isLocalRequest(r.url())) outside.push(`${r.method()} ${r.url()}`);
+        if (!isLocalRequest(r.url(), LOCAL_ORIGINS)) outside.push(`${r.method()} ${r.url()}`);
       });
       await use(outside);
-      expect(outside, "requests that left the local server (only http://127.0.0.1:8766, data: and blob: are allowed)").toEqual([]);
+      expect(outside, `requests that left the local server (only ${LOCAL_ORIGINS.join(", ")}, data: and blob: are allowed)`).toEqual([]);
     },
     { auto: true },
   ],
