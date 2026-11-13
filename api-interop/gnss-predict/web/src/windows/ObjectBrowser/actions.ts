@@ -190,9 +190,13 @@ export async function setShow(row: Row, show: boolean): Promise<void> {
 export async function setColor(row: Row, color: string): Promise<void> {
   if (!isEditable(row)) return;
   // Constellation มีสีของตัวเอง (สมาชิกที่ inherit ตาม) ส่วน Facility และ Satellite ตั้งสีที่หน้า 2D Graphics และเลิก inherit
-  // Sensor มีสีของตัวเองที่หน้า 2D Graphics อยู่แล้ว (ไม่มี inherit)
+  // Sensor มีสีแยกหน้า 2D และ 3D (Graphics3DSensor.color) และไม่มี inherit: กล่องสีคือสีที่ทั้งสองหน้าต่างวาด จึงตั้งทั้งสองหน้า (เหมือน Show)
   const pages: ObjectPages =
-    row.cls === "Constellation" ? { basic: { color } } : row.cls === "Sensor" ? { graphics2d: { color } } : { graphics2d: { color, inherit: false } };
+    row.cls === "Constellation"
+      ? { basic: { color } }
+      : row.cls === "Sensor"
+        ? { graphics2d: { color }, graphics3d: { color } }
+        : { graphics2d: { color, inherit: false } };
   await attempt(() => useScenario.getState().patchObject(row.cls, row.name, pages), row.path);
 }
 

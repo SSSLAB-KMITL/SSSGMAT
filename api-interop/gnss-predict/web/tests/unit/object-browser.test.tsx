@@ -305,11 +305,23 @@ describe("sensors", () => {
     expect(spies.patchObject).toHaveBeenCalledWith("Sensor", "Sensor1", { graphics2d: { show: false }, graphics3d: { show: false } });
   });
 
-  test("the colour box PATCHes graphics2d.color of the Sensor alone (a sensor has no inherit)", () => {
+  test("the colour box PATCHes graphics2d.color and graphics3d.color of the Sensor (it has a colour on each page, and no inherit)", () => {
     loadSensors(SENSORS);
     renderOb();
     fireEvent.change(colorInput("Nav1"), { target: { value: "#00ff00" } });
-    expect(spies.patchObject).toHaveBeenCalledWith("Sensor", "Nav1", { graphics2d: { color: "#00ff00" } });
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    expect(spies.patchObject).toHaveBeenCalledWith("Sensor", "Nav1", { graphics2d: { color: "#00ff00" }, graphics3d: { color: "#00ff00" } });
+  });
+
+  test("the colour box of a satellite and of a Facility still writes graphics2d only", () => {
+    loadSensors(SENSORS);
+    renderOb();
+    fireEvent.change(colorInput("G01"), { target: { value: "#00ff00" } });
+    fireEvent.change(colorInput("THBK"), { target: { value: "#123456" } });
+    expect(spies.patchObject.mock.calls).toEqual([
+      ["Satellite", "G01", { graphics2d: { color: "#00ff00", inherit: false } }],
+      ["Facility", "THBK", { graphics2d: { color: "#123456", inherit: false } }],
+    ]);
   });
 
   test("the colour box follows the colour in the scenario", () => {
