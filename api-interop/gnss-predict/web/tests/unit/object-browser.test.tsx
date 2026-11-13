@@ -1804,6 +1804,85 @@ describe("writes in quick succession through the real store", () => {
   });
 });
 
+describe("Delete asks about the sensors that go with a satellite", () => {
+  const PLAIN = (name: string) => `ลบ "${name}" หรือไม่? การลบนี้ย้อนกลับไม่ได้`;
+  const WITH_SENSORS = (name: string, count: number) => `ลบ "${name}" หรือไม่? Sensor ของดาวนี้ ${count} ตัวจะถูกลบไปด้วย การลบนี้ย้อนกลับไม่ได้`;
+  const SENSORS_OF = { G01: ["Sensor1", "Sensor2"], G04: ["Nav1"] };
+
+  test("a satellite with 2 sensors says that its 2 sensors are deleted too (Delete button)", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(WITH_SENSORS("G01", 2))).toBeDefined();
+    expect(spies.remove).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+  });
+
+  test("a satellite with 1 sensor names 1", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.click(row("G04"));
+    await user.click(button(t("ob.delete")));
+    expect(within(await screen.findByRole("dialog")).getByText(WITH_SENSORS("G04", 1))).toBeDefined();
+  });
+
+  test("the Delete key asks the same", async () => {
+    loadSensors(SENSORS_OF);
+    stopShortcuts = installShortcuts();
+    renderOb();
+    await user.click(row("G01"));
+    await user.keyboard("{Delete}");
+    expect(await screen.findByText(WITH_SENSORS("G01", 2))).toBeDefined();
+  });
+
+  test("the context menu Delete asks the same", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("G01") });
+    await user.click(item(await screen.findByRole("menu"), "Delete"));
+    expect(await screen.findByText(WITH_SENSORS("G01", 2))).toBeDefined();
+  });
+
+  test("Edit > Delete (object.delete / edit.delete) asks the same even with the window closed", async () => {
+    loadSensors(SENSORS_OF);
+    render(<Dialogs />); // no window
+    act(() => useSelection.getState().select(satPath("G01")));
+    act(() => runCommand("edit.delete"));
+    expect(await screen.findByText(WITH_SENSORS("G01", 2))).toBeDefined();
+    await user.click(screen.getByRole("button", { name: t("dialog.cancel") }));
+    expect(spies.remove).not.toHaveBeenCalled();
+    act(() => runCommand("object.delete"));
+    expect(await screen.findByText(WITH_SENSORS("G01", 2))).toBeDefined();
+  });
+
+  test("a satellite without sensors keeps the plain text", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.click(row("G02"));
+    await user.click(button(t("ob.delete")));
+    expect(within(await screen.findByRole("dialog")).getByText(PLAIN("G02"))).toBeDefined();
+  });
+
+  test("a Facility keeps the plain text", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.click(row("THBK"));
+    await user.click(button(t("ob.delete")));
+    expect(within(await screen.findByRole("dialog")).getByText(PLAIN("THBK"))).toBeDefined();
+  });
+
+  test("a sensor keeps the plain text", async () => {
+    loadSensors(SENSORS_OF);
+    renderOb();
+    await user.click(row("Sensor1"));
+    await user.click(button(t("ob.delete")));
+    expect(within(await screen.findByRole("dialog")).getByText(PLAIN("Sensor1"))).toBeDefined();
+  });
+});
+
 describe("with the Object Browser window closed", () => {
   test("object.delete on the selected satellite still asks and deletes", async () => {
     loadObjects();

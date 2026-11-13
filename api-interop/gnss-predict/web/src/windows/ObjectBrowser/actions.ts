@@ -200,15 +200,23 @@ export async function setColor(row: Row, color: string): Promise<void> {
   await attempt(() => useScenario.getState().patchObject(row.cls, row.name, pages), row.path);
 }
 
+/** จำนวน Sensor ที่ติดกับดาวนี้ (นับจาก doc: parent ของ Sensor คือ path ของดาว) server ลบพวกมันตามดาวไปด้วย */
+function sensorsOf(row: Row & { path: string }): number {
+  return useScenario.getState().doc?.objects.filter((o) => o.class === "Sensor" && (o as { parent?: unknown }).parent === row.path).length ?? 0;
+}
+
 /**
- * ลบหลังยืนยัน: สำเร็จแล้วการเลือกย้ายไปแถวข้างเคียง (ถัดไป ไม่มีก็ก่อนหน้า) ถ้าแถวที่ลบเป็นแถวที่เลือกอยู่
+ * ลบหลังยืนยัน (ดาวที่มี Sensor: ข้อความยืนยันบอกว่า Sensor ของดาวจะถูกลบไปด้วยกี่ตัว; ปุ่ม Delete, เมนู Edit, เมนูคลิกขวาและปุ่มลัดมาที่ฟังก์ชันนี้ทั้งหมด)
+ * สำเร็จแล้วการเลือกย้ายไปแถวข้างเคียง (ถัดไป ไม่มีก็ก่อนหน้า) ถ้าแถวที่ลบเป็นแถวที่เลือกอยู่
  * และโฟกัสตามไปด้วยเมื่อโฟกัสอยู่ในต้นไม้หรือเมนูตอนสั่ง (focusFollowsDelete) ไม่มีแถวข้างเคียง = โฟกัสตัวต้นไม้
  * ล้มเหลว = ไม่ย้ายอะไร (กล่องยืนยันคืนโฟกัสให้แถวเดิม)
  */
 export async function deleteRow(row: Row): Promise<void> {
   if (!isEditable(row)) return;
   const followFocus = focusFollowsDelete();
-  if (!(await confirm(msg("confirm.delete", { name: row.name })))) return;
+  const sensors = isSatellite(row) ? sensorsOf(row) : 0;
+  const question = sensors > 0 ? msg("confirm.deleteWithSensors", { name: row.name, count: sensors }) : msg("confirm.delete", { name: row.name });
+  if (!(await confirm(question))) return;
   const neighbour = neighbourOf(row.key);
   const done = await attempt(() => useScenario.getState().remove(row.cls, row.name), row.path);
   if (!done.ok) return;

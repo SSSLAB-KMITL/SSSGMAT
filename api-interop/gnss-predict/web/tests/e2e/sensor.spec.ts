@@ -307,6 +307,8 @@ test.describe("Sensor and Sensor View", () => {
 
     await treeRow(page, "*/Satellite/G01").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    // ลบดาวลบ sensor ของดาวด้วย: กล่องยืนยันต้องบอกจำนวนก่อน
+    await expect(page.getByRole("dialog")).toContainText("Sensor ของดาวนี้ 1 ตัวจะถูกลบไปด้วย");
     await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
 
     await expect(treeRow(page, "*/Satellite/G01")).toHaveCount(0);

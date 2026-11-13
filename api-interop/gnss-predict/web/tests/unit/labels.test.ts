@@ -511,7 +511,7 @@ describe("Thai messages", () => {
   });
 
   test("the messages later tasks need exist and are Thai", () => {
-    const keys: MsgKey[] = ["confirm.delete", "conflict.title", "conflict.body", "server.disconnected", "server.reconnecting", "server.reconnected",
+    const keys: MsgKey[] = ["confirm.delete", "confirm.deleteWithSensors", "conflict.title", "conflict.body", "server.disconnected", "server.reconnecting", "server.reconnected",
       "webgl.unsupported", "disk.low", "disk.notWritable", "fetch.confirm", "fetch.nextAvailable", "daily.runNowConfirm", "workbook.tooLarge",
       "about.disclaimer", "note.readOnly", "note.visibleSidesBoth", "time.invalid", "job.failed"];
     for (const k of keys) expect(msg(k, { name: "G01", seconds: 4, free_mb: 120, time: "x", example: "e", message: "m" }), k).toMatch(THAI);
@@ -555,6 +555,8 @@ describe("Thai messages", () => {
 
   test("the delete confirmation says it cannot be undone, the 412 dialog names Reload and Cancel", () => {
     expect(msg("confirm.delete", { name: "G01" })).toMatch(/ย้อนกลับ/);
+    expect(msg("confirm.deleteWithSensors", { name: "G01", count: 2 })).toMatch(/ย้อนกลับ/);
+    expect(msg("confirm.deleteWithSensors", { name: "G01", count: 2 })).toContain("2 ตัว");
     expect(msg("conflict.body")).toMatch(/Reload/); expect(msg("conflict.body")).toMatch(/Cancel/);
   });
 

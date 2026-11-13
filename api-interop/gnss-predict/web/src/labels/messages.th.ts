@@ -71,6 +71,8 @@ const MESSAGES = {
 
   // กล่องโต้ตอบ (spec §7, §15)
   "confirm.delete": "ลบ \"{name}\" หรือไม่? การลบนี้ย้อนกลับไม่ได้",
+  // ดาวที่มี Sensor: server ลบ Sensor ของดาวตามไปด้วย จึงบอกจำนวนก่อนยืนยัน (ดาวที่ไม่มี Sensor และ object อื่นใช้ confirm.delete)
+  "confirm.deleteWithSensors": "ลบ \"{name}\" หรือไม่? Sensor ของดาวนี้ {count} ตัวจะถูกลบไปด้วย การลบนี้ย้อนกลับไม่ได้",
   "conflict.title": "scenario ถูกแก้จากที่อื่น",
   "conflict.body": "scenario นี้ถูกแก้จากแท็บหรือหน้าต่างอื่นหลังจากที่คุณเปิดมา กด Reload เพื่อโหลดค่าล่าสุดจาก server (ค่าที่ยังไม่ได้ Apply ในหน้านี้จะหายไป) หรือ Cancel เพื่อปิดกล่องนี้โดยไม่เปลี่ยนอะไร ค่าของอีกแท็บจะไม่ถูกทับ",
   "job.failed": "งานล้มเหลว: {message}",
