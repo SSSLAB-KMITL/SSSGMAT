@@ -14,7 +14,7 @@ import {
 } from "./actions";
 import { useClipboard } from "./clipboard";
 import { useObjectBrowser } from "./state";
-import { isEditable, isSatellite } from "./tree";
+import { isEditable, isSatellite, isSensor } from "./tree";
 
 const noTree = (): string | undefined => (hasTree() ? undefined : msg("tooltip.noScenario"));
 
@@ -26,9 +26,12 @@ function needsEditable(): string | undefined {
   return isEditable(row) ? undefined : msg("ob.rootUnsupported");
 }
 
+/** Cut/Copy ทำได้เฉพาะดาว; Sensor บอกเหตุเฉพาะ (ยังคัดลอกไม่ได้) ไม่ใช่ "ดาวเท่านั้น" */
 const needsSatellite = (): string | undefined => {
   const row = selectedRow();
-  return row === undefined ? msg("ob.selectObject") : isSatellite(row) ? undefined : msg("ob.satelliteOnly");
+  if (row === undefined) return msg("ob.selectObject");
+  if (isSensor(row)) return msg("ob.sensorCopyUnsupported");
+  return isSatellite(row) ? undefined : msg("ob.satelliteOnly");
 };
 
 function pasteBlock(): string | undefined {

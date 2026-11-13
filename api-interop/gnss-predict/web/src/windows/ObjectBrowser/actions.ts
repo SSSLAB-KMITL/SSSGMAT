@@ -95,11 +95,17 @@ function visibleRows(): Row[] {
   return flattenTree(tree, new Set([...objectRows().allKeys].filter((key) => !collapsed.has(key))), { flaggedOnly });
 }
 
-/** แถวข้างเคียงของแถวที่จะหายไป: ถัดไป ไม่มีก็ก่อนหน้า (แถวที่ไม่ได้อยู่ในรายการที่เห็น = null) */
+/**
+ * แถวข้างเคียงของแถวที่จะหายไป: ถัดไป ไม่มีก็ก่อนหน้า (แถวที่ไม่ได้อยู่ในรายการที่เห็น = null)
+ * ลูกของแถวนั้น (Sensor ของดาวที่ขยายอยู่) หายไปพร้อมกัน จึงข้ามไป "ถัดไป" คือแถวแรกที่ไม่ใช่ลูก (ลึกกว่าแถวนั้น)
+ */
 function neighbourOf(key: string): string | null {
   const rows = visibleRows();
   const at = rows.findIndex((row) => row.key === key);
-  return at < 0 ? null : (rows[at + 1]?.key ?? rows[at - 1]?.key ?? null);
+  if (at < 0) return null;
+  let after = at + 1;
+  while (after < rows.length && rows[after].depth > rows[at].depth) after++;
+  return rows[after]?.key ?? rows[at - 1]?.key ?? null;
 }
 
 /**
@@ -113,7 +119,7 @@ function focusFollowsDelete(): boolean {
 }
 
 export const expandAll = (): void => useObjectBrowser.setState({ collapsed: new Set() });
-/** พับทุกโฟลเดอร์ แต่ราก (Scenario) ยังเปิดอยู่ เห็น Facility, Constellation และโฟลเดอร์ */
+/** พับทุกโฟลเดอร์และดาวที่มี Sensor แต่ราก (Scenario) ยังเปิดอยู่ เห็น Facility, Constellation และโฟลเดอร์ */
 export const collapseAll = (): void => useObjectBrowser.setState({ collapsed: new Set([...objectRows().allKeys].filter((key) => key !== ROOT_KEY)) });
 
 /** เปิดหรือโฟกัสหน้าต่าง Object Browser (คำสั่งที่ต้องมีหน้าจอ: Find, New Group, Rename, ตัวกรองธง) ไม่มีพื้นที่ทำงานให้เปิด = ไม่ทำอะไร */
@@ -184,7 +190,9 @@ export async function setShow(row: Row, show: boolean): Promise<void> {
 export async function setColor(row: Row, color: string): Promise<void> {
   if (!isEditable(row)) return;
   // Constellation มีสีของตัวเอง (สมาชิกที่ inherit ตาม) ส่วน Facility และ Satellite ตั้งสีที่หน้า 2D Graphics และเลิก inherit
-  const pages: ObjectPages = row.cls === "Constellation" ? { basic: { color } } : { graphics2d: { color, inherit: false } };
+  // Sensor มีสีของตัวเองที่หน้า 2D Graphics อยู่แล้ว (ไม่มี inherit)
+  const pages: ObjectPages =
+    row.cls === "Constellation" ? { basic: { color } } : row.cls === "Sensor" ? { graphics2d: { color } } : { graphics2d: { color, inherit: false } };
   await attempt(() => useScenario.getState().patchObject(row.cls, row.name, pages), row.path);
 }
 

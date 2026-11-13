@@ -1,5 +1,6 @@
 // Object Browser (spec §7, STK ref §B): หน้าต่างต้นไม้ของ object ใน scenario ที่เปิดอยู่
 // - แต่ละแถว: ลูกศรพับ, ช่องติ๊ก Show, กล่องสี, ไอคอนชนิด (Lucide), ชื่อ, ⚠ เมื่อดาวมีธง (W9); tooltip ของดาวบอก PRN SVN NORAD Block ชื่อ CelesTrak อายุข้อมูล และธงเป็นภาษาไทย
+//   Sensor ซ้อนใต้ดาวของมัน (ดาวที่มี Sensor พับ/ขยายได้) เมนูคลิกขวาเป็นของชนิดของแถวที่คลิก (objectMenuFor)
 //   โฟลเดอร์กลุ่มไม่มีช่องติ๊กและกล่องสี เลือกได้ (ไว้วางดาวที่ตัด) แต่เปิด Properties ไม่ได้
 // - วาดแบบ virtual list (TanStack Virtual) ต้นไม้ 130+ แถวมีใน DOM เฉพาะที่อยู่ใกล้พื้นที่เห็น + แถวที่เป็นตัวหยุดแท็บ (rangeExtractor) เพื่อให้โฟกัสและ Tab ไม่หายไปกับการเลื่อน
 // - ไฟล์นี้เป็นหน้าจอล้วน: สถานะ (พับ ตัวกรอง ตัวค้น กล่อง ฯลฯ) อยู่ใน state.ts, สิ่งที่ทำอยู่ใน actions.ts, คำสั่งทั้งหมดลงทะเบียนระดับแอปใน objectCommands.ts
@@ -9,12 +10,12 @@
 
 import { defaultRangeExtractor, useVirtualizer, type Range, type Rect } from "@tanstack/react-virtual";
 import {
-  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Folder, FolderOpen, FolderPlus, Globe, MapPin, Orbit, Palette, Satellite,
-  Scissors, Search, SlidersHorizontal, SquareCheck, Trash2, TriangleAlert, X, type LucideIcon,
+  ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Folder, FolderOpen, FolderPlus, Globe, MapPin, Orbit, Palette, Radar,
+  Satellite, Scissors, Search, SlidersHorizontal, SquareCheck, Trash2, TriangleAlert, X, type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { CommandContextMenu } from "../../chrome/ContextMenu";
-import { OBJECT_MENU } from "../../chrome/menus";
+import { objectMenuFor } from "../../chrome/menus";
 import { Tip, TipProvider } from "../../chrome/Tip";
 import { ToolButton } from "../../chrome/ToolButton";
 import { t } from "../../labels/labels";
@@ -40,7 +41,7 @@ const FALLBACK_RECT: Rect = { width: 320, height: 520 };
 
 const observeViewport = observeViewportWithFallback(FALLBACK_RECT);
 
-const CLASS_ICONS: Record<RowClass, LucideIcon> = { Scenario: Globe, Facility: MapPin, Constellation: Orbit, Satellite };
+const CLASS_ICONS: Record<RowClass, LucideIcon> = { Scenario: Globe, Facility: MapPin, Constellation: Orbit, Satellite, Sensor: Radar };
 
 const stop = (e: MouseEvent): void => e.stopPropagation();
 
@@ -347,7 +348,7 @@ export function ObjectBrowser(_props: Partial<PanelProps>) {
           </div>
         )}
         <div className="ob-body">
-          <CommandContextMenu entries={OBJECT_MENU}>
+          <CommandContextMenu entries={objectMenuFor(selectedKey === null ? undefined : rowByKey.get(selectedKey)?.cls)}>
             <div
               ref={scrollRef}
               className="ob-scroll"

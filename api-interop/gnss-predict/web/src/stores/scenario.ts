@@ -29,17 +29,19 @@ export type ScenarioDoc = components["schemas"]["ScenarioDoc"];
 
 export interface TreeObject {
   path: string;
-  class: "Facility" | "Constellation" | "Satellite";
+  class: "Facility" | "Constellation" | "Satellite" | "Sensor";
   name: string;
   color: string;
   show: boolean;
+  /** Sensor ของดาว (เฉพาะโหนดดาวที่มี Sensor ตามลำดับใน objects; ดาวที่ไม่มี Sensor ไม่มีคีย์นี้) */
+  children?: TreeObject[];
 }
 export interface TreeGroup {
   group: string;
   children: TreeObject[];
 }
 export type TreeNode = TreeObject | TreeGroup;
-/** ต้นไม้ของ Object Browser: Facility, Constellation, โฟลเดอร์กลุ่ม แล้วดาวที่ไม่อยู่ในกลุ่มใด (ตามลำดับที่ server ส่ง) */
+/** ต้นไม้ของ Object Browser: Facility, Constellation, โฟลเดอร์กลุ่ม แล้วดาวที่ไม่อยู่ในกลุ่มใด (ตามลำดับที่ server ส่ง) ดาวมี Sensor เป็นลูก */
 export interface ObjectTree {
   path: "*";
   class: "Scenario";
@@ -466,3 +468,13 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     },
   };
 });
+
+/**
+ * path ของดาวที่ Sensor ติดอยู่ ("*\/Sensor/S1" -> "*\/Satellite/G01") อ่านจาก doc ของ scenario ที่เปิดอยู่
+ * ไม่ใช่ path ของ Sensor, ไม่พบ Sensor นั้น หรือ parent ที่เก็บไว้ใช้ไม่ได้ = null
+ */
+export function parentOf(path: string): string | null {
+  const obj = useScenario.getState().doc?.objects.find((o) => o.class === "Sensor" && `*/Sensor/${o.name}` === path);
+  const parent = (obj as { parent?: unknown } | undefined)?.parent;
+  return typeof parent === "string" && parent !== "" ? parent : null;
+}

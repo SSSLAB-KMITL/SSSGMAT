@@ -31,11 +31,21 @@ export const CATALOG: CatalogEntry[] = [
 ];
 
 export const satPath = (name: string) => `*/Satellite/${name}`;
-const sat = (name: string, color = "#ffd23f", show = true): TreeObject => ({ path: satPath(name), class: "Satellite", name, color, show });
+export const sensorPath = (name: string) => `*/Sensor/${name}`;
+export const SENSOR_COLOR = "#e8c547";
+/** ดาวหนึ่งโหนดในต้นไม้: ดาวที่มี Sensor มี children ตามที่ server ส่ง (ไม่มี Sensor = ไม่มีคีย์ children) */
+const sat = (name: string, color = "#ffd23f", show = true, sensors: string[] = []): TreeObject => ({
+  path: satPath(name), class: "Satellite", name, color, show,
+  ...(sensors.length > 0 ? { children: sensors.map((s): TreeObject => ({ path: sensorPath(s), class: "Sensor", name: s, color: SENSOR_COLOR, show: true })) } : {}),
+});
 
-export function makeTree(over: { sats?: string[]; groups?: { group: string; children: string[] }[]; loose?: string[] } = {}): ObjectTree {
+/** Sensor ตามชื่อดาวแม่: { G01: ["Sensor1", "Sensor2"] } (ชื่อ Sensor ห้ามซ้ำกับชื่อ scenario "S1" เพราะ test หาแถวด้วยชื่อ) */
+export type SensorsOf = Record<string, string[]>;
+
+export function makeTree(over: { sats?: string[]; groups?: { group: string; children: string[] }[]; loose?: string[]; sensors?: SensorsOf } = {}): ObjectTree {
   const groups = over.groups ?? [{ group: "GPS sats", children: ["G01", "G02"] }, { group: "Mine", children: [] }];
   const loose = over.loose ?? ["G03", "G04", "G05"];
+  const node = (name: string): TreeObject => sat(name, "#ffd23f", true, over.sensors?.[name]);
   return {
     path: "*",
     class: "Scenario",
@@ -43,13 +53,22 @@ export function makeTree(over: { sats?: string[]; groups?: { group: string; chil
     children: [
       { path: "*/Facility/THBK", class: "Facility", name: "THBK", color: "#ff79e6", show: true },
       { path: "*/Constellation/GPS", class: "Constellation", name: "GPS", color: "#ffd23f", show: true },
-      ...groups.map((g) => ({ group: g.group, children: g.children.map((n) => sat(n)) })),
-      ...loose.map((n) => sat(n)),
+      ...groups.map((g) => ({ group: g.group, children: g.children.map(node) })),
+      ...loose.map(node),
     ],
   };
 }
 
-export function makeScenarioDoc(extra: Partial<ScenarioDoc> = {}): ScenarioDoc {
+/** Sensor ใน doc ตามสคีมา (ค่าตั้งต้นของ STK: Simple Conic 45°, ชี้ Az 0 El 90, สี #e8c547) */
+export const sensorObj = (name: string, parent: string, graphics2d: Record<string, unknown> = {}) => ({
+  class: "Sensor", name, parent: satPath(parent), description: "", long_description: "",
+  definition: { type: "Simple Conic", cone_half_angle: 45 },
+  pointing: { type: "Fixed", orientation: "Az-El", azimuth: 0, elevation: 90, about_boresight: "Rotate" },
+  graphics2d: { show: true, color: SENSOR_COLOR, fill: false, fill_translucency: 50, ...graphics2d },
+  graphics3d: { show: true, color: SENSOR_COLOR, show_radial_lines: true, show_boresight_marker: false },
+});
+
+export function makeScenarioDoc(extra: Partial<ScenarioDoc> = {}, sensors: SensorsOf = {}): ScenarioDoc {
   const sats = ["G01", "G02", "G03", "G04", "G05"];
   return makeDoc({
     name: "S1",
@@ -57,6 +76,7 @@ export function makeScenarioDoc(extra: Partial<ScenarioDoc> = {}): ScenarioDoc {
       { class: "Facility", name: "THBK", position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 0 } },
       { class: "Constellation", name: "GPS", system: "G", assigned_objects: [satPath("G01"), satPath("G02")] },
       ...sats.map((name, i) => ({ class: "Satellite", name, norad: 40101 + i })),
+      ...Object.entries(sensors).flatMap(([parent, names]) => names.map((name) => sensorObj(name, parent))),
     ] as never,
     groups: [{ name: "GPS sats", members: [satPath("G01"), satPath("G02")] }, { name: "Mine", members: [] }],
     satellite_filter: { show_too_old: false, show_no_broadcast: false },
@@ -85,4 +105,9 @@ export function loadObjects(opts: { tree?: ObjectTree; doc?: ScenarioDoc; catalo
   const doc = opts.doc ?? makeScenarioDoc();
   useScenario.setState({ name: "S1", doc, etag: '"e1"', tree, catalog: new Map((opts.catalog ?? CATALOG).map((e) => [e.norad, e])) });
   return { tree, doc };
+}
+
+/** เปิด scenario ปลอมที่ดาวบางดวงมี Sensor (ต้นไม้และ doc ตรงกัน) */
+export function loadSensors(sensors: SensorsOf, opts: { catalog?: CatalogEntry[] } = {}): { tree: ObjectTree; doc: ScenarioDoc } {
+  return loadObjects({ tree: makeTree({ sensors }), doc: makeScenarioDoc({}, sensors), catalog: opts.catalog });
 }

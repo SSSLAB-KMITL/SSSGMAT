@@ -3,6 +3,7 @@
 
 import type { CommandId } from "../commands";
 import type { LabelKey } from "../labels/labels";
+import type { RowClass } from "../windows/ObjectBrowser/tree";
 
 export type MenuEntry =
   /** optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน) */
@@ -53,7 +54,7 @@ export const INSERT_MENU: readonly MenuEntry[] = [
 
 export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];
 
-/** เมนูตามชนิดของ object ที่เลือก และเมนูคลิกขวาของ Object Browser ใช้ชุดเดียวกัน */
+/** เมนูของ object ชนิดทั่วไป (Scenario, Facility, Satellite, Constellation) */
 export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.properties"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
@@ -61,6 +62,23 @@ export const OBJECT_MENU: readonly MenuEntry[] = [
   SEPARATOR,
   cmd("object.rename"), cmd("object.delete"),
 ];
+
+/** เมนูของ Sensor: ไม่มี Report & Graph Manager; Zoom To ไปที่ดาวแม่ (commands3d.ts) */
+export const SENSOR_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.access"),
+  SEPARATOR,
+  cmd("object.zoomTo"),
+  SEPARATOR,
+  cmd("object.rename"), cmd("object.delete"),
+];
+
+/**
+ * เมนูตามชนิดของ object ที่เลือก: แถบเมนู (ชื่อเมนูที่ 6) และเมนูคลิกขวาของ Object Browser ใช้ชุดเดียวกันตามชนิดนี้
+ * ชนิดที่ไม่มีเมนูของตัวเอง (และไม่เลือกอะไร) ใช้ OBJECT_MENU
+ */
+export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
+  return cls === "Sensor" ? SENSOR_MENU : OBJECT_MENU;
+}
 
 export const UTILITIES_MENU: readonly MenuEntry[] = [cmd("utilities.fetchOrbitData"), cmd("utilities.dailyForecastSettings")];
 
@@ -79,15 +97,21 @@ export const SHORTCUT_LABELS: Partial<Record<CommandId, LabelKey>> = {
   "edit.find": "menu.shortcut.find",
 };
 
-const CLASS_LABELS: Record<string, LabelKey> = {
+const CLASS_LABELS: Record<RowClass, LabelKey> = {
   Scenario: "ob.class.scenario",
   Facility: "ob.class.facility",
   Satellite: "ob.class.satellite",
   Constellation: "ob.class.constellation",
+  Sensor: "ob.class.sensor",
 };
 
-// ชื่อเมนูที่ 6: ชนิดของ object ที่เลือก (path "*/Satellite/G01" -> Satellite) ไม่เลือกหรือไม่ใช่ object = Scenario
+/** ชนิดของ object จาก path ("*\/Satellite/G01" -> Satellite) ไม่เลือก, ราก หรือไม่ใช่ object (โฟลเดอร์, path เพี้ยน) = undefined */
+export function objectClassOf(activePath: string | null): RowClass | undefined {
+  const cls = activePath === null ? "" : (activePath.split("/")[1] ?? "");
+  return Object.hasOwn(CLASS_LABELS, cls) ? (cls as RowClass) : undefined;
+}
+
+// ชื่อเมนูที่ 6: ชนิดของ object ที่เลือก ไม่เลือกหรือไม่ใช่ object = Scenario
 export function objectClassLabel(activePath: string | null): LabelKey {
-  const cls = activePath === null || activePath === "*" ? "Scenario" : (activePath.split("/")[1] ?? "");
-  return Object.hasOwn(CLASS_LABELS, cls) ? CLASS_LABELS[cls] : CLASS_LABELS.Scenario;
+  return CLASS_LABELS[objectClassOf(activePath) ?? "Scenario"];
 }

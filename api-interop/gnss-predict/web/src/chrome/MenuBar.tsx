@@ -8,7 +8,7 @@ import { useSelection } from "../stores/selection";
 import { useCommands } from "./hooks";
 import { MENUBAR_KIT, MenuEntries } from "./menuItems";
 import {
-  ANALYSIS_MENU, EDIT_MENU, FILE_MENU, HELP_MENU, INSERT_MENU, OBJECT_MENU, UTILITIES_MENU, VIEW_MENU, WINDOW_MENU, objectClassLabel,
+  ANALYSIS_MENU, EDIT_MENU, FILE_MENU, HELP_MENU, INSERT_MENU, UTILITIES_MENU, VIEW_MENU, WINDOW_MENU, objectClassLabel, objectClassOf, objectMenuFor,
   type MenuEntry,
 } from "./menus";
 import { TipProvider } from "./Tip";
@@ -22,7 +22,7 @@ export function MenuBar() {
     { id: "view", label: "menu.view", entries: VIEW_MENU },
     { id: "insert", label: "menu.insert", entries: INSERT_MENU },
     { id: "analysis", label: "menu.analysis", entries: ANALYSIS_MENU },
-    { id: "object", label: objectClassLabel(activePath), entries: OBJECT_MENU },
+    { id: "object", label: objectClassLabel(activePath), entries: objectMenuFor(objectClassOf(activePath)) },
     { id: "utilities", label: "menu.utilities", entries: UTILITIES_MENU },
     { id: "window", label: "menu.window", entries: WINDOW_MENU },
     { id: "help", label: "menu.help", entries: HELP_MENU },

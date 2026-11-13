@@ -1,4 +1,4 @@
-// เมนูคลิกขวาจากข้อมูลชุดเดียวกับเมนูบาร์ (W3): ใช้กับ Object Browser (OBJECT_MENU) และหน้าต่างอื่นที่ต้องการ
+// เมนูคลิกขวาจากข้อมูลชุดเดียวกับเมนูบาร์ (W3): ใช้กับ Object Browser (objectMenuFor ของ menus.ts) และหน้าต่างอื่นที่ต้องการ
 // เลือกรายการ = runCommand; รายการที่ปิดใช้แสดงเหตุผลแบบเดียวกับเมนูบาร์
 
 import * as ContextMenu from "@radix-ui/react-context-menu";

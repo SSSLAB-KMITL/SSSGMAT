@@ -21,7 +21,7 @@ import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/o
 import { useObjectBrowser } from "../../src/windows/ObjectBrowser/state";
 import { resetAll } from "./helpers/chrome";
 import { deferred, stubFetch } from "./helpers/fake-fetch";
-import { CATALOG, entry, loadObjects, makeScenarioDoc, makeTree, satPath } from "./helpers/objects";
+import { CATALOG, SENSOR_COLOR, entry, loadObjects, loadSensors, makeScenarioDoc, makeTree, satPath, sensorPath } from "./helpers/objects";
 
 const written = { stale: false };
 const spies = {
@@ -190,6 +190,207 @@ describe("rows", () => {
     renderOb();
     expect(screen.getByText(msg("tooltip.noScenario"))).toBeDefined();
     expect(screen.queryAllByRole("treeitem")).toEqual([]);
+  });
+});
+
+describe("sensors", () => {
+  // G01 is inside the "GPS sats" folder, G04 is loose
+  const SENSORS = { G01: ["Sensor1", "Sensor2"], G04: ["Nav1"] };
+  const iconClass = (name: string) => row(name).querySelector("svg.ob-icon")?.getAttribute("class") ?? "";
+
+  test("sensor rows sit one level under their satellite; the satellite has an arrow, the sensor has none", () => {
+    loadSensors(SENSORS);
+    renderOb();
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "Sensor1", "Sensor2", "G02", "Mine", "G03", "G04", "Nav1", "G05"]);
+    expect(row("Sensor1").getAttribute("aria-level")).toBe("4");
+    expect(row("Nav1").getAttribute("aria-level")).toBe("3");
+    expect(row("G01").getAttribute("aria-expanded")).toBe("true");
+    expect(row("Sensor1").getAttribute("aria-expanded")).toBeNull();
+    expect(row("G02").getAttribute("aria-expanded")).toBeNull(); // no sensors: nothing to open
+    expect(row("Sensor1").querySelector("svg.ob-arrow, .ob-arrow svg")).toBeNull();
+    expect(row("G01").querySelector(".ob-arrow svg")).not.toBeNull();
+  });
+
+  test("a sensor row has a checkbox, a colour box in the colour of the sensor and an icon of its own", () => {
+    loadSensors(SENSORS);
+    renderOb();
+    expect((checkbox("Sensor1") as HTMLInputElement).checked).toBe(true);
+    expect(swatch("Sensor1").style.background).toMatch(/rgb\(232, 197, 71\)|#e8c547/i);
+    expect(colorInput("Sensor1").defaultValue).toBe(SENSOR_COLOR);
+    expect(iconClass("Sensor1")).not.toBe("");
+    expect(iconClass("Sensor1")).not.toBe(iconClass("G01"));
+    expect(iconClass("Sensor1")).not.toBe(iconClass("THBK"));
+    expect(iconClass("Sensor1")).not.toBe(iconClass("GPS"));
+    expect(iconClass("Sensor1")).toBe(iconClass("Nav1")); // one icon for the class
+  });
+
+  test("hovering a sensor shows its class and name", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.hover(row("Sensor1"));
+    expect((await screen.findByRole("tooltip")).textContent).toBe(`${t("ob.class.sensor")}: Sensor1`);
+  });
+
+  test("the arrow of a satellite hides and shows its sensors", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("G01").querySelector(".ob-arrow")!);
+    expect(hasRow("Sensor1")).toBe(false);
+    expect(hasRow("Sensor2")).toBe(false);
+    expect(hasRow("Nav1")).toBe(true);
+    expect(row("G01").getAttribute("aria-expanded")).toBe("false");
+    await user.click(row("G01").querySelector(".ob-arrow")!);
+    expect(hasRow("Sensor1")).toBe(true);
+  });
+
+  test("Collapse All folds the satellites too, and Expand All brings the sensors back", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(button(t("ob.collapseAll")));
+    expect(names()).toEqual(["S1", "THBK", "GPS", "GPS sats", "Mine", "G03", "G04", "G05"]);
+    expect(row("G04").getAttribute("aria-expanded")).toBe("false");
+    await user.click(button(t("ob.expandAll")));
+    expect(names()).toContain("Nav1");
+    expect(names()).toContain("Sensor2");
+  });
+
+  test("ArrowRight opens a closed satellite and then goes to its first sensor; ArrowLeft climbs back to the satellite and then closes it", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("G04"));
+    await user.keyboard("{ArrowLeft}");
+    expect(hasRow("Nav1")).toBe(false);
+    expect(selected()).toEqual(["G04"]);
+    await user.keyboard("{ArrowRight}");
+    expect(hasRow("Nav1")).toBe(true);
+    expect(selected()).toEqual(["G04"]);
+    await user.keyboard("{ArrowRight}");
+    expect(selected()).toEqual(["Nav1"]);
+    await user.keyboard("{ArrowRight}");
+    expect(selected()).toEqual(["Nav1"]); // a sensor has nothing below it
+    await user.keyboard("{ArrowLeft}");
+    expect(selected()).toEqual(["G04"]);
+  });
+
+  test("clicking a sensor makes it the active object", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("Sensor2"));
+    expect(useSelection.getState().activePath).toBe(sensorPath("Sensor2"));
+    expect(selected()).toEqual(["Sensor2"]);
+  });
+
+  test("selecting a sensor from elsewhere opens the satellite that was folded", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("G04").querySelector(".ob-arrow")!);
+    expect(hasRow("Nav1")).toBe(false);
+    act(() => useSelection.getState().select(sensorPath("Nav1")));
+    expect(hasRow("Nav1")).toBe(true);
+    expect(selected()).toEqual(["Nav1"]);
+  });
+
+  test("double-click opens the Properties Browser of the sensor", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.dblClick(row("Sensor1"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: sensorPath("Sensor1"), name: "Sensor1" });
+  });
+
+  test("the Show checkbox PATCHes graphics2d.show and graphics3d.show of that Sensor", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(checkbox("Sensor1"));
+    expect(spies.patchObject).toHaveBeenCalledTimes(1);
+    expect(spies.patchObject).toHaveBeenCalledWith("Sensor", "Sensor1", { graphics2d: { show: false }, graphics3d: { show: false } });
+  });
+
+  test("the colour box PATCHes graphics2d.color of the Sensor alone (a sensor has no inherit)", () => {
+    loadSensors(SENSORS);
+    renderOb();
+    fireEvent.change(colorInput("Nav1"), { target: { value: "#00ff00" } });
+    expect(spies.patchObject).toHaveBeenCalledWith("Sensor", "Nav1", { graphics2d: { color: "#00ff00" } });
+  });
+
+  test("the colour box follows the colour in the scenario", () => {
+    const doc = makeScenarioDoc({}, SENSORS);
+    (doc.objects.find((o) => o.name === "Sensor2") as { graphics2d: { color: string } }).graphics2d.color = "#112233";
+    loadObjects({ tree: makeTree({ sensors: SENSORS }), doc });
+    renderOb();
+    expect(swatch("Sensor2").style.background).toMatch(/rgb\(17, 34, 51\)|#112233/i);
+    expect(swatch("Sensor1").style.background).toMatch(/rgb\(232, 197, 71\)|#e8c547/i);
+  });
+
+  test("Delete asks first, then removes the Sensor and moves the selection to the next row", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("Sensor1"));
+    await user.click(button(t("ob.delete")));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(msg("confirm.delete", { name: "Sensor1" }))).toBeDefined();
+    expect(spies.remove).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Sensor", "Sensor1"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(sensorPath("Sensor2")));
+  });
+
+  test("deleting a satellite that has sensors moves the selection past its sensors (they go with it), to the next satellite", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("G01"));
+    await user.click(button(t("ob.delete")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G01"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("G02")));
+  });
+
+  test("deleting the last satellite of the tree, with sensors, moves the selection to the row before it", async () => {
+    loadSensors({ G05: ["Sensor1"] });
+    renderOb();
+    await user.click(row("G05"));
+    await user.click(button(t("ob.delete")));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Satellite", "G05"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(satPath("G04")));
+  });
+
+  test("Rename renames the Sensor", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("Nav1"));
+    act(() => runCommand("object.rename"));
+    const dialog = await screen.findByRole("dialog", { name: t("menu.object.rename") });
+    const field = within(dialog).getByRole("textbox", { name: t("field.name") }) as HTMLInputElement;
+    expect(field.value).toBe("Nav1");
+    await user.clear(field);
+    await user.type(field, "Cam");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.rename).toHaveBeenCalledWith("Sensor", "Nav1", "Cam"));
+    await waitFor(() => expect(useSelection.getState().activePath).toBe(sensorPath("Cam")));
+  });
+
+  test("Cut and Copy are disabled on a sensor and say in Thai that sensors cannot be copied yet", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("Sensor1"));
+    const { commandTooltip } = await import("../../src/commands");
+    for (const id of ["edit.cut", "edit.copy"] as const) {
+      expect(isEnabled(id), id).toBe(false);
+      expect(commandTooltip(id), id).toBe(msg("ob.sensorCopyUnsupported"));
+    }
+    expect(button(t("ob.copy")).getAttribute("aria-disabled")).toBe("true");
+    await user.click(row("G01")); // the satellite still copies
+    expect(isEnabled("edit.copy")).toBe(true);
+  });
+
+  test("a sensor can be found by name; Find opens the folded satellite above it", async () => {
+    loadSensors(SENSORS);
+    renderOb();
+    await user.click(row("G04").querySelector(".ob-arrow")!);
+    act(() => runCommand("edit.find"));
+    await user.type(await screen.findByRole("textbox"), "nav");
+    await user.click(screen.getByRole("button", { name: t("ob.findNext") }));
+    expect(selected()).toEqual(["Nav1"]);
   });
 });
 
@@ -527,6 +728,48 @@ describe("context menu", () => {
     expect(item(menu, "Rename").getAttribute("aria-disabled")).toBeNull();
     expect(item(menu, "Delete").getAttribute("aria-disabled")).toBeNull();
     expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  test("right-click on a sensor selects it and lists Properties, Access..., Zoom To, Rename, Delete", async () => {
+    loadSensors({ G01: ["Sensor1"] });
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("Sensor1") });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Access...", "Zoom To", "Rename", "Delete"]);
+    expect(selected()).toEqual(["Sensor1"]);
+    for (const name of ["Properties", "Rename", "Delete"]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBeNull();
+    expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true"); // like the satellite's
+  });
+
+  test("the menu follows the row that is right-clicked: sensor, then satellite, then folder, then sensor again", async () => {
+    loadSensors({ G01: ["Sensor1"] });
+    renderOb();
+    const labels = async (target: string) => {
+      await user.pointer({ keys: "[MouseRight]", target: row(target) });
+      const got = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent);
+      await user.keyboard("{Escape}");
+      return got;
+    };
+    const SENSOR = ["Properties", "Access...", "Zoom To", "Rename", "Delete"];
+    const OTHER = ["Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
+    expect(await labels("Sensor1")).toEqual(SENSOR);
+    expect(await labels("G01")).toEqual(OTHER);
+    expect(await labels("Mine")).toEqual(OTHER);
+    expect(await labels("Sensor1")).toEqual(SENSOR);
+    expect(await labels("THBK")).toEqual(OTHER);
+  });
+
+  test("Properties, Rename and Delete from a sensor's menu act on that sensor", async () => {
+    loadSensors({ G01: ["Sensor1"] });
+    renderOb();
+    await user.click(row("THBK"));
+    await user.pointer({ keys: "[MouseRight]", target: row("Sensor1") });
+    await user.click(item(await screen.findByRole("menu"), "Properties"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: sensorPath("Sensor1"), name: "Sensor1" });
+    await user.pointer({ keys: "[MouseRight]", target: row("Sensor1") });
+    await user.click(item(await screen.findByRole("menu"), "Delete"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(spies.remove).toHaveBeenCalledWith("Sensor", "Sensor1"));
   });
 
   test("Zoom To follows whoever registers object.zoomTo", async () => {

@@ -5,6 +5,7 @@
 //   (ตัวแรกตามลำดับใน doc ที่มีสี; ตัวที่เป็นสมาชิกแต่ไม่มีสีข้ามไป) → สีนั้น; อื่น ๆ → ตัวแปร CSS ของระบบ (--color-gps/glonass/galileo/beidou,
 //   ระบบที่รู้ไม่ได้ = --color-other, Facility = --color-facility) สีของระบบอ่านจาก theme.css ครั้งเดียวแล้วจำไว้ (themeTokens) test ส่ง tokens เข้ามาเอง
 //   ระบบของดาว: ctx.system ถ้าผู้เรียกบอก ไม่งั้นอักษรนำของ PRN (ctx.prnByNorad) ไม่งั้น system ของ Constellation แรกที่มีดาวนี้
+//   Sensor ไม่ inherit: สี graphics2d.color ของมันเอง ไม่มี = SENSOR_COLOR (#e8c547)
 // - ไฟล์นี้ห้าม import Cesium (หรือไฟล์ที่ import Cesium) test ตรวจ
 
 import type { components } from "../api/types.gen";
@@ -98,11 +99,15 @@ function systemOfSatellite(obj: SceneObject, doc: ScenarioDoc, prnByNorad: Reado
   return null;
 }
 
-/** สีของ object ที่ใช้จริง (#rrggbb ตัวพิมพ์เล็ก) ลำดับตามหัวไฟล์ */
+/** สีตั้งต้นของ Sensor (ตรงกับ Graphics2DSensor.color ของ server) */
+export const SENSOR_COLOR = "#e8c547";
+
+/** สีของ object ที่ใช้จริง (#rrggbb ตัวพิมพ์เล็ก) ลำดับตามหัวไฟล์ Sensor ไม่ inherit: สี graphics2d ของมันเอง ไม่มี = SENSOR_COLOR */
 export function effectiveColor(obj: SceneObject, doc: ScenarioDoc, ctx: ColorCtx = {}): string {
   const tokens = ctx.tokens ?? themeTokens();
   const g2 = (obj as { graphics2d?: { inherit?: boolean; color?: string | null } | null }).graphics2d ?? {};
   const own = typeof g2.color === "string" && g2.color !== "" ? g2.color : null;
+  if (obj.class === "Sensor") return (own ?? SENSOR_COLOR).toLowerCase();
   const system = ctx.system ?? systemOfSatellite(obj, doc, ctx.prnByNorad);
   const fallback = obj.class === "Facility" ? tokens.facility : tokens[systemTokenOf(system) ?? "other"];
   const color = g2.inherit === false ? (own ?? fallback) : (constellationColor(objectPath(obj), doc) ?? fallback);
@@ -110,7 +115,7 @@ export function effectiveColor(obj: SceneObject, doc: ScenarioDoc, ctx: ColorCtx
 }
 
 /**
- * สีของกล่องสีใน Object Browser: Facility และ Satellite = effectiveColor (สีที่หน้าต่าง 3D, 2D และ Timeline วาดจริง ไม่ใช่สีสำรองที่ server เก็บ)
+ * สีของกล่องสีใน Object Browser: Facility, Satellite และ Sensor = effectiveColor (สีที่หน้าต่าง 3D, 2D และ Timeline วาดจริง ไม่ใช่สีสำรองที่ server เก็บ)
  * Constellation (ไม่ถูกวาดเอง) = สีของตัวเองที่สมาชิกที่ inherit ใช้ ไม่มีก็สีของระบบที่ระบุ ระบุไม่ได้ = --color-other
  */
 export function objectBoxColor(obj: SceneObject, doc: ScenarioDoc, ctx: ColorCtx = {}): string {

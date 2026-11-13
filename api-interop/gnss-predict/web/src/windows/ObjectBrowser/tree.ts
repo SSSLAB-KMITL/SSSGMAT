@@ -1,6 +1,7 @@
 // ต้นไม้ของ Object Browser (spec §7) เป็นแถวแบนสำหรับวาดแบบ virtual list
 // - ต้นไม้จาก GET /objects: ราก (Scenario), Facility, Constellation, โฟลเดอร์กลุ่ม {group, children}, แล้วดาวที่ไม่อยู่ในกลุ่มใด
 //   Constellation ไม่มีลูกในต้นไม้ (สมาชิกของมันแสดงในโฟลเดอร์/ดาวที่ไม่อยู่ในกลุ่ม)
+//   ดาวที่มี Sensor มี children = Sensor ของมัน แสดงซ้อนใต้ดาว (ลึกกว่าดาวหนึ่งระดับ) ดาวพับ/ขยายได้ด้วย key = path ของดาว
 // - ต้นไม้ไม่มี NORAD ของดาว: ธง (ซ่อน/⚠) และ tooltip มาจาก catalog ผ่าน NORAD ที่อยู่ใน doc.objects (W9) จึงจับคู่ได้แม้ดาวเปลี่ยนชื่อหรือถูกคัดลอก
 // - กล่องสี = สีที่หน้าต่าง 3D, 2D และ Timeline วาด (objectBoxColor ของ cesium/colors.ts กับ NORAD → PRN ของผลลัพธ์ ไม่มีก็ของ catalog)
 //   ไม่ใช่ `color` ของต้นไม้: server ใช้ graphics2d.color ที่เก็บไว้ (#cccccc ของดาวที่วางหรือสร้างจาก Define Properties) เมื่อดาวไม่อยู่ใน Constellation ที่มีสี
@@ -23,7 +24,7 @@ export interface Row {
   path?: string;
   cls?: RowClass;
   name: string;
-  /** object ที่มีกล่องสีเท่านั้น (Facility, Constellation, Satellite) */
+  /** object ที่มีกล่องสีเท่านั้น (Facility, Constellation, Satellite, Sensor) */
   color?: string;
   /** object ที่มีช่องติ๊กเท่านั้น; Constellation = ทุกดาวสมาชิกแสดงอยู่ */
   show?: boolean;
@@ -43,20 +44,30 @@ export interface Row {
 
 export type EditableRow = Row & { cls: Exclude<RowClass, "Scenario">; path: string };
 
-/** แถวที่มีช่องติ๊ก Show และกล่องสี: Facility, Constellation, Satellite */
+/** แถวที่มีช่องติ๊ก Show และกล่องสี: Facility, Constellation, Satellite, Sensor */
 export const hasToggle = (row: Row): boolean => row.kind === "object" && row.cls !== undefined && row.cls !== "Scenario";
-/** Facility, Constellation, Satellite: เปลี่ยนชื่อ ลบ และเลือกสีได้ */
+/** Facility, Constellation, Satellite, Sensor: เปลี่ยนชื่อ ลบ และเลือกสีได้ */
 export const isEditable = (row: Row | undefined): row is EditableRow => row !== undefined && hasToggle(row);
 export const isSatellite = (row: Row | undefined): row is Row & { path: string } => row?.kind === "object" && row.cls === "Satellite";
+export const isSensor = (row: Row | undefined): row is Row & { path: string } => row?.kind === "object" && row.cls === "Sensor";
 
 export const ROOT_KEY = "*";
 export const groupKey = (name: string): string => `group:${name}`;
 const isGroup = (node: TreeNode): node is TreeGroup => "group" in node;
 
-/** key ของโหนดที่พับ/ขยายได้: ราก (ถ้ามีลูก) และโฟลเดอร์ที่มีสมาชิก */
+const hasSensors = (node: TreeObject): boolean => (node.children?.length ?? 0) > 0;
+
+/** key ของโหนดที่พับ/ขยายได้ตามลำดับที่เห็น: ราก (ถ้ามีลูก), โฟลเดอร์ที่มีสมาชิก และดาวที่มี Sensor (key = path ของดาว) */
 export function expandableKeys(tree: ObjectTree): string[] {
   const keys = tree.children.length > 0 ? [ROOT_KEY] : [];
-  for (const child of tree.children) if (isGroup(child) && child.children.length > 0) keys.push(groupKey(child.group));
+  for (const child of tree.children) {
+    if (!isGroup(child)) {
+      if (hasSensors(child)) keys.push(child.path);
+    } else if (child.children.length > 0) {
+      keys.push(groupKey(child.group));
+      for (const member of child.children) if (hasSensors(member)) keys.push(member.path);
+    }
+  }
   return keys;
 }
 
@@ -103,6 +114,11 @@ export function storeContext(): TreeContext {
 }
 
 // ---------- tooltip ----------
+
+/** ชื่อชนิดใน tooltip ของ object ที่ไม่ใช่ดาว (ดาวมี tooltip ของตัวเอง) */
+const CLASS_LABEL: Record<Exclude<TreeObject["class"], "Satellite">, LabelKey> = {
+  Facility: "ob.class.facility", Constellation: "ob.class.constellation", Sensor: "ob.class.sensor",
+};
 
 const FLAG_LABELS: Record<string, LabelKey> = {
   stale: "option.flag.stale",
@@ -198,9 +214,18 @@ export function flattenTree(tree: ObjectTree, expanded: ReadonlySet<string>, opt
         row.members = members;
         if (known.length > 0) row.show = known.every((path) => shows.get(path) === true);
       }
-      row.tooltip = `${t(node.class === "Facility" ? "ob.class.facility" : "ob.class.constellation")}: ${node.name}`;
+      row.tooltip = `${t(CLASS_LABEL[node.class])}: ${node.name}`;
     }
     return row;
+  };
+  /** แถวของ object แล้วตามด้วยแถวของลูก (Sensor ของดาว) ที่ลึกกว่าหนึ่งระดับ ถ้าโหนดนั้นขยายอยู่ */
+  const pushObject = (node: TreeObject, depth: number, parentKey: string): void => {
+    const row = objectRow(node, depth, parentKey);
+    const parent = hasSensors(node);
+    row.expandable = parent;
+    row.expanded = parent && expanded.has(node.path);
+    rows.push(row);
+    if (row.expanded) for (const child of node.children ?? []) pushObject(child, depth + 1, node.path);
   };
 
   rows.push({
@@ -211,7 +236,7 @@ export function flattenTree(tree: ObjectTree, expanded: ReadonlySet<string>, opt
 
   for (const child of children) {
     if (!isGroup(child)) {
-      rows.push(objectRow(child, 1, ROOT_KEY));
+      pushObject(child, 1, ROOT_KEY);
       continue;
     }
     const key = groupKey(child.group);
@@ -220,7 +245,7 @@ export function flattenTree(tree: ObjectTree, expanded: ReadonlySet<string>, opt
       key, depth: 1, kind: "group", name: child.group, hidden: false, warn: false, tooltip: `${t("ob.class.group")}: ${child.group}`,
       parentKey: ROOT_KEY, expandable: child.children.length > 0, expanded: expanded.has(key), members: child.children.map((m) => m.path),
     });
-    if (open) for (const member of child.children) rows.push(objectRow(member, 2, key));
+    if (open) for (const member of child.children) pushObject(member, 2, key);
   }
   return rows;
 }

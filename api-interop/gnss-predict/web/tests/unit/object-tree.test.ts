@@ -7,9 +7,9 @@ import { useResults } from "../../src/stores/results";
 import type { ObjectTree, ScenarioDoc } from "../../src/stores/scenario";
 import { msg } from "../../src/labels/messages.th";
 import { useClipboard, copyName } from "../../src/windows/ObjectBrowser/clipboard";
-import { expandableKeys, findMatches, flattenTree, groupKey, type Row } from "../../src/windows/ObjectBrowser/tree";
+import { expandableKeys, findMatches, flattenTree, groupKey, isEditable, isSensor, type Row } from "../../src/windows/ObjectBrowser/tree";
 import { resetAll } from "./helpers/chrome";
-import { CATALOG, entry, loadObjects, makeScenarioDoc, makeTree, satPath } from "./helpers/objects";
+import { CATALOG, SENSOR_COLOR, entry, loadObjects, loadSensors, makeScenarioDoc, makeTree, satPath, sensorObj, sensorPath } from "./helpers/objects";
 
 beforeEach(() => {
   resetAll();
@@ -17,6 +17,7 @@ beforeEach(() => {
 });
 
 const names = (rows: Row[]) => rows.map((r) => r.name);
+const tokensOf = (c: string) => ({ gps: c, glonass: c, galileo: c, beidou: c, other: c, facility: c, access: c });
 const byName = (rows: Row[], name: string) => rows.find((r) => r.name === name)!;
 const everything = (tree = loadObjects().tree) => new Set(expandableKeys(tree));
 
@@ -138,6 +139,117 @@ describe("flattenTree", () => {
     const tree = makeTree({ groups: [], loose });
     loadObjects({ tree, catalog: [] });
     expect(flattenTree(tree, everything(tree))).toHaveLength(1 + 2 + 150);
+  });
+});
+
+describe("sensors", () => {
+  // G01 is inside a folder (depth 2), G04 is not (depth 1)
+  const SENSORS = { G01: ["Sensor1", "Sensor2"], G04: ["Nav1"] };
+
+  test("sensor rows nest under their satellite", () => {
+    const { tree } = loadSensors(SENSORS);
+    const rows = flattenTree(tree, everything(tree));
+    expect(names(rows)).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "Sensor1", "Sensor2", "G02", "Mine", "G03", "G04", "Nav1", "G05"]);
+    expect(rows.map((r) => r.depth)).toEqual([0, 1, 1, 1, 2, 3, 3, 2, 1, 1, 1, 2, 1]);
+    expect(byName(rows, "Sensor1")).toMatchObject({ key: sensorPath("Sensor1"), kind: "object", path: sensorPath("Sensor1"), cls: "Sensor", parentKey: satPath("G01"), show: true });
+    expect(byName(rows, "Sensor2").parentKey).toBe(satPath("G01"));
+    expect(byName(rows, "Nav1")).toMatchObject({ depth: 2, parentKey: satPath("G04") });
+    expect(rows.filter(isSensor).map((r) => r.name)).toEqual(["Sensor1", "Sensor2", "Nav1"]);
+    expect(isSensor(byName(rows, "G01"))).toBe(false);
+  });
+
+  test("a sensor row is editable like the other objects and has no catalog flags of its own", () => {
+    const { tree } = loadSensors(SENSORS);
+    const sensor = byName(flattenTree(tree, everything(tree)), "Sensor1");
+    expect(isEditable(sensor)).toBe(true);
+    expect(sensor).toMatchObject({ hidden: false, warn: false });
+    expect(sensor.prn).toBeUndefined();
+  });
+
+  test("a satellite that has sensors can be opened and closed; one without cannot", () => {
+    const { tree } = loadSensors(SENSORS);
+    const rows = flattenTree(tree, everything(tree));
+    expect(byName(rows, "G01")).toMatchObject({ expandable: true, expanded: true });
+    expect(byName(rows, "G04")).toMatchObject({ expandable: true, expanded: true });
+    expect(byName(rows, "Sensor1").expandable).toBe(false);
+  });
+
+  test("satellite without sensors is not expandable", () => {
+    const { tree } = loadSensors(SENSORS);
+    const rows = flattenTree(tree, everything(tree));
+    for (const name of ["G02", "G03", "G05"]) expect(byName(rows, name), name).toMatchObject({ expandable: false, expanded: false });
+    expect(flattenTree(loadObjects().tree, new Set(["*"])).some((r) => r.expandable && r.cls === "Satellite")).toBe(false);
+  });
+
+  test("collapsing a satellite hides its sensors", () => {
+    const { tree } = loadSensors(SENSORS);
+    const open = everything(tree);
+    open.delete(satPath("G01"));
+    const rows = flattenTree(tree, open);
+    expect(names(rows)).toEqual(["S1", "THBK", "GPS", "GPS sats", "G01", "G02", "Mine", "G03", "G04", "Nav1", "G05"]);
+    expect(byName(rows, "G01")).toMatchObject({ expandable: true, expanded: false });
+    expect(byName(rows, "Nav1").depth).toBe(2); // G04 is still open
+  });
+
+  test("collapsing the folder or the root hides the sensors of its satellites too", () => {
+    const { tree } = loadSensors(SENSORS);
+    const open = everything(tree);
+    open.delete(groupKey("GPS sats"));
+    expect(names(flattenTree(tree, open))).not.toContain("Sensor1");
+    expect(names(flattenTree(tree, new Set(["*"])))).toEqual(["S1", "THBK", "GPS", "GPS sats", "Mine", "G03", "G04", "G05"]);
+    expect(names(flattenTree(tree, new Set()))).toEqual(["S1"]);
+  });
+
+  test("expandableKeys lists the satellites that have sensors, in the order they appear", () => {
+    const { tree } = loadSensors(SENSORS);
+    expect(expandableKeys(tree)).toEqual(["*", groupKey("GPS sats"), satPath("G01"), satPath("G04")]);
+    expect(expandableKeys(loadSensors({}).tree)).toEqual(["*", groupKey("GPS sats")]);
+  });
+
+  test("a satellite with an empty children list is not expandable", () => {
+    const tree = makeTree();
+    (tree.children[tree.children.length - 1] as { children?: unknown[] }).children = [];
+    loadObjects({ tree });
+    expect(expandableKeys(tree)).toEqual(["*", groupKey("GPS sats")]);
+    expect(byName(flattenTree(tree, everything(tree)), "G05").expandable).toBe(false);
+  });
+
+  test("flaggedOnly keeps the sensors of the flagged satellites it keeps and drops the others", () => {
+    const { tree } = loadSensors({ G01: ["Sensor1"], G04: ["Nav1"] });
+    expect(names(flattenTree(tree, everything(tree), { flaggedOnly: true }))).toEqual(["S1", "G03", "G04", "Nav1"]);
+  });
+
+  test("findMatches finds a sensor by its name", () => {
+    const { tree } = loadSensors(SENSORS);
+    expect(findMatches(flattenTree(tree, everything(tree)), "NAV").map((r) => r.path)).toEqual([sensorPath("Nav1")]);
+  });
+
+  test("the tooltip of a sensor names the class and the sensor", () => {
+    const { tree } = loadSensors(SENSORS);
+    expect(byName(flattenTree(tree, everything(tree)), "Sensor1").tooltip).toBe(`${t("ob.class.sensor")}: Sensor1`);
+  });
+
+  test("the colour box is graphics2d.color of the sensor, #e8c547 when it has none, and never the satellite's colour", () => {
+    const doc = makeScenarioDoc({}, SENSORS);
+    (doc.objects.find((o) => o.name === "Sensor1") as { graphics2d: { color: string } }).graphics2d.color = "#123456";
+    delete (doc.objects.find((o) => o.name === "Nav1") as { graphics2d?: { color?: string } }).graphics2d!.color;
+    const tree = makeTree({ sensors: SENSORS });
+    for (const n of tree.children) if ("path" in n && n.children !== undefined) for (const s of n.children) s.color = "#cccccc"; // stale colour in the tree
+    loadObjects({ tree, doc });
+    const rows = flattenTree(tree, everything(tree));
+    expect(byName(rows, "Sensor1").color).toBe("#123456");
+    expect(byName(rows, "Sensor2").color).toBe(SENSOR_COLOR);
+    expect(byName(rows, "Nav1").color).toBe(SENSOR_COLOR);
+    expect(byName(rows, "G01").color).not.toBe("#123456");
+  });
+
+  test("effectiveColor of a sensor is its own colour too (the 3D and 2D windows draw with it)", () => {
+    const doc = makeScenarioDoc({}, { G01: ["Sensor1"] });
+    const sensor = doc.objects.find((o) => o.name === "Sensor1") as SceneObject;
+    expect(effectiveColor(sensor, doc, { tokens: tokensOf("#fff") })).toBe(SENSOR_COLOR);
+    (sensor as unknown as { graphics2d: { color: string } }).graphics2d.color = "#ABCDEF";
+    expect(effectiveColor(sensor, doc, { tokens: tokensOf("#fff") })).toBe("#abcdef");
+    expect(effectiveColor(sensorObj("X", "G01", { color: "" }) as unknown as SceneObject, doc, { tokens: tokensOf("#fff") })).toBe(SENSOR_COLOR);
   });
 });
 

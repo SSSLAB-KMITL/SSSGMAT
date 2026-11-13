@@ -14,7 +14,7 @@ import { DEFAULT_PROPS_3D, props3d } from "../../src/windows/Graphics3D/props";
 import {
   activeScene, firstScene, markActive, noteSceneLoaded, registerScene, resetScenes, sceneLoadedAt, type MouseMode, type Scene3DHandle,
 } from "../../src/windows/Graphics3D/registry";
-import { openScenario, resetAll } from "./helpers/chrome";
+import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 
 type Fake = Scene3DHandle & { calls: unknown[][] };
 
@@ -172,6 +172,52 @@ describe("commands", () => {
       useSelection.getState().select(path);
       expect(isEnabled("object.zoomTo"), String(path)).toBe(false);
     }
+  });
+
+  describe("Zoom To on a sensor goes to the satellite it is on", () => {
+    const sensor = (name: string, parent: string) => ({ class: "Sensor", name, parent });
+    const open = (...objects: object[]) => openScenario(makeDoc({ objects: [{ class: "Satellite", name: "G01", norad: 40101 }, { class: "Satellite", name: "G02", norad: 40102 }, ...objects] as never }));
+
+    test("is enabled and zooms to the parent satellite", () => {
+      open(sensor("S1", "*/Satellite/G01"));
+      const a = fakeScene("graphics3d");
+      registerScene(a);
+      useSelection.getState().select("*/Sensor/S1");
+      expect(isEnabled("object.zoomTo")).toBe(true);
+      runCommand("object.zoomTo");
+      expect(a.calls).toEqual([["zoomTo", "*/Satellite/G01"]]);
+    });
+
+    test("follows the parent of each sensor", () => {
+      open(sensor("S1", "*/Satellite/G01"), sensor("Nav", "*/Satellite/G02"));
+      const a = fakeScene("graphics3d");
+      registerScene(a);
+      useSelection.getState().select("*/Sensor/Nav");
+      runCommand("object.zoomTo");
+      expect(a.calls).toEqual([["zoomTo", "*/Satellite/G02"]]);
+    });
+
+    test("needs a 3D window, like the other objects", () => {
+      open(sensor("S1", "*/Satellite/G01"));
+      useSelection.getState().select("*/Sensor/S1");
+      expect(isEnabled("object.zoomTo")).toBe(false);
+    });
+
+    test("a sensor the scenario does not have has no satellite to go to: disabled, and running it does nothing", () => {
+      open(sensor("S1", "*/Satellite/G01"));
+      const a = fakeScene("graphics3d");
+      registerScene(a);
+      useSelection.getState().select("*/Sensor/Gone");
+      expect(isEnabled("object.zoomTo")).toBe(false);
+      runCommand("object.zoomTo");
+      expect(a.calls).toEqual([]);
+    });
+
+    test("no scenario open: disabled", () => {
+      registerScene(fakeScene("graphics3d"));
+      useSelection.getState().select("*/Sensor/S1");
+      expect(isEnabled("object.zoomTo")).toBe(false);
+    });
   });
 });
 

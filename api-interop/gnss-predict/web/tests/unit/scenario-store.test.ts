@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../../src/api/client";
 import { useMessages } from "../../src/stores/messages";
 import { useResults } from "../../src/stores/results";
-import { useScenario } from "../../src/stores/scenario";
+import { parentOf, useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
 import { deferred, stubFetch, type Handler } from "./helpers/fake-fetch";
@@ -844,5 +844,37 @@ describe("onScenarioEvent", () => {
     await st().onScenarioEvent({ name: "E2E", etag: "2222222222222222", results_stale: false });
     expect(f.calls.find((c) => c.path === "/api/catalog")?.query.get("snapshot")).toBe("20261112T0000Z");
     expect(st().catalog.size).toBe(1);
+  });
+});
+
+describe("parentOf", () => {
+  const doc = (objects: object[]) => useScenario.setState({ name: "E2E", doc: { ...DOC, objects } as never });
+  const sensor = (name: string, parent: unknown) => ({ class: "Sensor", name, parent });
+
+  test("is the satellite a sensor is on, read from the open scenario", () => {
+    doc([{ class: "Satellite", name: "G01", norad: 1 }, { class: "Satellite", name: "G02", norad: 2 }, sensor("S1", "*/Satellite/G01"), sensor("S2", "*/Satellite/G02")]);
+    expect(parentOf("*/Sensor/S1")).toBe("*/Satellite/G01");
+    expect(parentOf("*/Sensor/S2")).toBe("*/Satellite/G02");
+  });
+
+  test("is null for a sensor the scenario does not have, for other classes, for the root and with no scenario open", () => {
+    doc([{ class: "Satellite", name: "G01", norad: 1 }, sensor("S1", "*/Satellite/G01")]);
+    expect(parentOf("*/Sensor/Gone")).toBeNull();
+    expect(parentOf("*/Satellite/G01")).toBeNull();
+    expect(parentOf("*")).toBeNull();
+    expect(parentOf("")).toBeNull();
+    useScenario.setState({ doc: null });
+    expect(parentOf("*/Sensor/S1")).toBeNull();
+  });
+
+  test("is null when the stored parent is not a path", () => {
+    doc([sensor("S1", undefined), sensor("S2", 7), sensor("S3", "")]);
+    for (const name of ["S1", "S2", "S3"]) expect(parentOf(`*/Sensor/${name}`), name).toBeNull();
+  });
+
+  test("a satellite and a sensor of the same name are different objects", () => {
+    doc([{ class: "Satellite", name: "X", norad: 1 }, sensor("X", "*/Satellite/X")]);
+    expect(parentOf("*/Sensor/X")).toBe("*/Satellite/X");
+    expect(parentOf("*/Satellite/X")).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CommandContextMenu } from "../../src/chrome/ContextMenu";
 import { MenuBar } from "../../src/chrome/MenuBar";
-import { OBJECT_MENU } from "../../src/chrome/menus";
+import { OBJECT_MENU, objectMenuFor } from "../../src/chrome/menus";
 import { registerCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -50,6 +50,8 @@ describe("top-level menus", () => {
     expect(topLevel()[5]).toBe("Facility");
     act(() => useSelection.getState().select("*/Constellation/GPS"));
     expect(topLevel()[5]).toBe("Constellation");
+    act(() => useSelection.getState().select("*/Sensor/Sensor1"));
+    expect(topLevel()[5]).toBe("Sensor");
     act(() => useSelection.getState().select("*"));
     expect(topLevel()[5]).toBe("Scenario");
     act(() => useSelection.getState().select(null));
@@ -73,6 +75,47 @@ describe("menu contents", () => {
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
       "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
+  });
+
+  test("the Sensor menu lists Properties, Access..., Zoom To, Rename, Delete; Access... is disabled like the satellite's", async () => {
+    const user = userEvent.setup();
+    render(<MenuBar />);
+    act(() => useSelection.getState().select("*/Sensor/Sensor1"));
+    const menu = await openMenu(user, "Sensor");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Access...", "Zoom To", "Rename", "Delete"]);
+    expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  test("the Facility, Constellation and Scenario menus keep their items", async () => {
+    const user = userEvent.setup();
+    render(<MenuBar />);
+    for (const [path, label] of [["*/Facility/THBK", "Facility"], ["*/Constellation/GPS", "Constellation"], ["*", "Scenario"]] as const) {
+      act(() => useSelection.getState().select(path));
+      const menu = await openMenu(user, label);
+      expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent), label).toEqual([
+        "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      ]);
+      await user.keyboard("{Escape}");
+    }
+  });
+
+  test("the menu changes back to the satellite's when the selection leaves the sensor", async () => {
+    const user = userEvent.setup();
+    render(<MenuBar />);
+    act(() => useSelection.getState().select("*/Sensor/Sensor1"));
+    act(() => useSelection.getState().select("*/Satellite/G01"));
+    const menu = await openMenu(user, "Satellite");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
+      "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+    ]);
+  });
+
+  test("objectMenuFor gives the Sensor its own entries and every other class (or none) the common ones", () => {
+    const commands = (cls: Parameters<typeof objectMenuFor>[0]) => objectMenuFor(cls).filter((e) => "command" in e).map((e) => ("command" in e ? e.command : ""));
+    expect(commands("Sensor")).toEqual(["object.properties", "object.access", "object.zoomTo", "object.rename", "object.delete"]);
+    for (const cls of ["Satellite", "Facility", "Constellation", "Scenario", undefined] as const) {
+      expect(objectMenuFor(cls), String(cls)).toBe(OBJECT_MENU);
+    }
   });
 
   test("each of the other menus lists its items in the spec order", async () => {
@@ -349,6 +392,18 @@ describe("context menu", () => {
       "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
     expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
+  });
+
+  test("the Sensor menu is the same data in a context menu", async () => {
+    const user = userEvent.setup();
+    render(
+      <CommandContextMenu entries={objectMenuFor("Sensor")}>
+        <div data-testid="target" tabIndex={0}>target</div>
+      </CommandContextMenu>,
+    );
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("target") });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Access...", "Zoom To", "Rename", "Delete"]);
   });
 
   test("runs the command of the chosen item", async () => {
