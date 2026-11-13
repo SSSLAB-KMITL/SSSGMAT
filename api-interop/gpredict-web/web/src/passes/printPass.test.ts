@@ -103,6 +103,14 @@ describe("the printed document", () => {
     expect(html).toMatch(/12pt\/12pt\s+monospace/);
   });
 
+  it("keeps the grey band when the print dialog has Background graphics off (its default): the band asks for exact colours", () => {
+    // without print-color-adjust the browser leaves out the grey fill of the band (ref-P §8.5 has it light grey, 0.8)
+    const band = /\.band\s*\{[^}]*\}/.exec(html)?.[0] ?? "";
+    expect(band).toContain("background: #cccccc");
+    expect(band).toContain("print-color-adjust: exact");
+    expect(band).toContain("-webkit-print-color-adjust: exact");
+  });
+
   it("writes every line once", () => {
     for (const l of lines) expect(html.match(new RegExp(`${l}(\\n|<)`, "g"))).toHaveLength(1);
   });

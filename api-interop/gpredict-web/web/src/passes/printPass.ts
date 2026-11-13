@@ -28,13 +28,14 @@ const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace
 
 // The band is 10 mm high, light grey (0.8) with a black 1 px outline; the title is "sans 14" centred and cut at its start if too wide
 // (the inner span keeps the title's own order in the right-to-left box that puts the cut at the left); the counter is right
-// aligned 4 px from the edge; 3 mm below it come the lines, one to every 12 pt (`print-pass.c:42-43`, `:220-297`).
+// aligned 4 px from the edge; 3 mm below it come the lines, one to every 12 pt (`print-pass.c:42-43`, `:220-297`). `print-color-adjust:
+// exact` keeps the grey fill when the print dialog has "Background graphics" off, which is its default in every browser.
 const STYLE = `
 @page { size: A4; margin: 10mm; }
 html, body { margin: 0; padding: 0; }
 .page { break-after: page; }
 .page:last-child { break-after: auto; }
-.band { position: relative; box-sizing: border-box; height: 10mm; border: 1px solid #000; background: #cccccc; color: #000; font: 14pt sans-serif; line-height: calc(10mm - 2px); }
+.band { position: relative; box-sizing: border-box; height: 10mm; border: 1px solid #000; background: #cccccc; -webkit-print-color-adjust: exact; print-color-adjust: exact; color: #000; font: 14pt sans-serif; line-height: calc(10mm - 2px); }
 .title { display: block; margin: 0 4em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center; direction: rtl; }
 .title > span { direction: ltr; unicode-bidi: isolate; }
 .count { position: absolute; top: 0; right: 4px; }
