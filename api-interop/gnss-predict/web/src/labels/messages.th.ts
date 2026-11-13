@@ -227,6 +227,8 @@ const MESSAGES = {
   "props.rangeBetween": "ต้องอยู่ระหว่าง {min} ถึง {max}",
   "props.rangeGreater": "ต้องมากกว่า {min}",
   "props.rangeAtLeast": "ต้องไม่น้อยกว่า {min}",
+  "props.rangeOverUpTo": "ต้องมากกว่า {min} และไม่เกิน {max}",
+  "props.rangeUnder": "ต้องไม่น้อยกว่า {min} และน้อยกว่า {max}",
   "props.maxBelowMin": "Max ต้องไม่น้อยกว่า Min",
   "props.notOption": "ค่านี้ไม่อยู่ในตัวเลือกที่กำหนด",
   "props.offsetInvalid": "offset ต้องอยู่ในรูป ±hh:mm เช่น +07:00 (ชั่วโมง 00 ถึง 23 นาที 00 ถึง 59)",

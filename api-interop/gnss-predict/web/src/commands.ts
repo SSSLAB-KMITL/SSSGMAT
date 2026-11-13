@@ -46,6 +46,7 @@ export const COMMAND_LABELS = {
   "insert.new": "menu.insert.new",
   "insert.facility": "menu.insert.facility",
   "insert.satellite": "menu.insert.satellite",
+  "insert.sensor": "menu.insert.sensor",
   "insert.constellation": "menu.insert.constellation",
 
   "analysis.access": "menu.analysis.access",

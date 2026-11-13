@@ -131,7 +131,7 @@ describe("command ids", () => {
       "edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.find",
       "view.objectBrowser", "view.timelineView", "view.messageViewer", "view.new3d", "view.new2d",
       ...TOOLBAR_NAMES.map((n) => `view.toolbar.${n}`), "view.fullScreen",
-      "insert.new", "insert.facility", "insert.satellite", "insert.constellation",
+      "insert.new", "insert.facility", "insert.satellite", "insert.sensor", "insert.constellation",
       "analysis.access", "analysis.reportGraphManager", "analysis.validation",
       "object.properties", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
       "utilities.fetchOrbitData", "utilities.dailyForecastSettings",

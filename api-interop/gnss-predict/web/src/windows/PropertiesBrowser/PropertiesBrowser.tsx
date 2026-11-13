@@ -20,14 +20,15 @@ import { CONSTELLATION_PAGES } from "./pages/ConstellationPages";
 import { FACILITY_PAGES } from "./pages/FacilityPages";
 import { SATELLITE_PAGES } from "./pages/SatellitePages";
 import { SCENARIO_PAGES } from "./pages/ScenarioPages";
+import { SENSOR_PAGES } from "./pages/SensorPages";
 import { useEditor, type EditorConfig } from "./useEditor";
 
 const enc = encodeURIComponent;
 
 type Target = { kind: "scenario"; name: string } | { kind: "object"; cls: ObjectClass; name: string; path: string };
 
-const OBJECT_PAGES: Record<ObjectClass, readonly PageDef[]> = { Facility: FACILITY_PAGES, Satellite: SATELLITE_PAGES, Constellation: CONSTELLATION_PAGES };
-const isObjectClass = (x: string | undefined): x is ObjectClass => x === "Facility" || x === "Satellite" || x === "Constellation";
+const OBJECT_PAGES: Record<ObjectClass, readonly PageDef[]> = { Facility: FACILITY_PAGES, Satellite: SATELLITE_PAGES, Constellation: CONSTELLATION_PAGES, Sensor: SENSOR_PAGES };
+const isObjectClass = (x: string | undefined): x is ObjectClass => x === "Facility" || x === "Satellite" || x === "Constellation" || x === "Sensor";
 
 function targetOf(params: { path?: unknown; name?: unknown } | undefined): Target | null {
   const path = typeof params?.path === "string" ? params.path : null;

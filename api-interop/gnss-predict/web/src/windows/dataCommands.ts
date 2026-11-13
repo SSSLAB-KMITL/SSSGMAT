@@ -1,4 +1,4 @@
-// คำสั่งเมนู Insert และ Utilities ของงานที่ 10 (W3): insert.new/facility/satellite/constellation, utilities.fetchOrbitData, utilities.dailyForecastSettings
+// คำสั่งเมนู Insert และ Utilities ของงานที่ 10 (W3): insert.new/facility/satellite/sensor/constellation, utilities.fetchOrbitData, utilities.dailyForecastSettings
 // ลงทะเบียนครั้งเดียวตอนแอปเริ่ม (เหมือน registerCoreCommands / registerFileCommands) คืนฟังก์ชันถอน
 //
 // - insert.* เปิด Insert STK Objects พร้อม params { cls, seq } (cls = object ที่เลือกให้ New... = null; seq ใหม่ทุกครั้งเพื่อให้หน้าต่างที่เปิดค้างอยู่ย้ายตาม)
@@ -36,6 +36,7 @@ export function registerDataCommands(): () => void {
   insert("insert.new", null);
   insert("insert.facility", "Facility");
   insert("insert.satellite", "Satellite");
+  insert("insert.sensor", "Sensor");
   insert("insert.constellation", "Constellation");
   openWindow("utilities.fetchOrbitData", "fetchOrbitData");
   openWindow("utilities.dailyForecastSettings", "dailyForecastSettings");

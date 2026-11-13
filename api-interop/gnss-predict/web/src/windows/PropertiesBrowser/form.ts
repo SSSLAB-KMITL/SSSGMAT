@@ -10,14 +10,15 @@
 // - diffPages ส่งเฉพาะกลุ่มหน้าที่เปลี่ยน และในกลุ่มนั้นเฉพาะใบที่เปลี่ยน (server ผสมแบบ deep-merge): ค่าที่อีกแท็บเพิ่งแก้ในช่องอื่นของกลุ่มเดียวกันไม่ถูกเขียนทับ
 
 import { ENUMS } from "../../api/enums.gen";
+import { SENSOR_COLOR } from "../../cesium/colors";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import type { ObjectPages, ScenarioDoc } from "../../stores/scenario";
 import { formatTime, parseOffset, type DateFormat } from "../../time/format";
 import { parseIsoUtc, parseTime } from "../../time/parse";
-import { fail, parseDecimal, pass, type Parsed as FieldParsed } from "../fieldRules";
+import { fail, parseDecimal, parseInteger, pass, type Parsed as FieldParsed } from "../fieldRules";
 
-export type ObjectClass = "Facility" | "Satellite" | "Constellation";
+export type ObjectClass = "Facility" | "Satellite" | "Constellation" | "Sensor";
 export type Tree = Record<string, unknown>;
 
 // ---------- path ในต้นไม้ ----------
@@ -107,25 +108,25 @@ export interface TimeContext {
 export type Spec =
   | { kind: "text"; key: string; fallback: string }
   /**
-   * gt = มากกว่า (ไม่รวมค่านั้น), min/max = รวมค่านั้น; fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ (null = ว่างได้);
-   * notBelow = key ของช่องตัวเลขอีกช่องที่ช่องนี้ต้องไม่น้อยกว่า (Max ไม่ต่ำกว่า Min) ข้ามเมื่อช่องนี้ว่าง
+   * gt = มากกว่า (ไม่รวมค่านั้น), lt = น้อยกว่า (ไม่รวมค่านั้น; ใช้คู่กับ min), min/max = รวมค่านั้น; fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ (null = ว่างได้);
+   * notBelow = key ของช่องตัวเลขอีกช่องที่ช่องนี้ต้องไม่น้อยกว่า (Max ไม่ต่ำกว่า Min) ข้ามเมื่อช่องนี้ว่าง; integer = ต้องเป็นจำนวนเต็ม (ใช้คู่กับ min/max)
    */
-  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number; notBelow?: string }
+  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean }
   /** fallback null = ว่างได้ (null) และแสดงเป็นข้อความว่าง */
   | { kind: "choice"; key: string; options: readonly string[]; fallback: string | null }
   | { kind: "bool"; key: string; fallback: boolean }
-  /** ข้อความว่าง = null */
-  | { kind: "color"; key: string }
+  /** ข้อความว่าง = null; fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ และช่องที่มี fallback ล้างเป็น null ไม่ได้ (สีของ Sensor) */
+  | { kind: "color"; key: string; fallback?: string }
   | { kind: "list"; key: string }
   /** เวลา ISO ใน API <-> ข้อความตาม DateFormat; fallbackKey = ช่องที่ใช้แทนเมื่อไม่มีช่องนี้; after = ต้องอยู่หลังเวลาของช่องนั้น */
   | { kind: "time"; key: string; fallbackKey?: string; after?: string }
   | { kind: "offset"; key: string; fallback: string };
 
 const text = (key: string, fallback = ""): Spec => ({ kind: "text", key, fallback });
-const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number; notBelow?: string } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
+const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
 const choice = (key: string, options: readonly string[], fallback: string | null): Spec => ({ kind: "choice", key, options, fallback });
 const bool = (key: string, fallback: boolean): Spec => ({ kind: "bool", key, fallback });
-const color = (key: string): Spec => ({ kind: "color", key });
+const color = (key: string, fallback?: string): Spec => ({ kind: "color", key, ...(fallback === undefined ? {} : { fallback }) });
 
 const DESCRIPTION: Spec[] = [text("basic.description"), text("basic.long_description")];
 
@@ -165,6 +166,21 @@ export const OBJECT_SPECS: Record<ObjectClass, readonly Spec[]> = {
     choice("graphics3d.orbit_system", ENUMS.OrbitSystem, "Fixed by Window"),
   ],
   Constellation: [...DESCRIPTION, color("basic.color"), { kind: "list", key: "basic.assigned_objects" }],
+  // Sensor: ไม่มีช่องของ parent, type, orientation และ about_boresight (อ่านอย่างเดียว: หน้าแสดงด้วย ReadOnlyRow ไม่ส่งกลับ)
+  Sensor: [
+    ...DESCRIPTION,
+    num("basic.definition.cone_half_angle", 45, { gt: 0, max: 90 }),
+    num("basic.pointing.azimuth", 0, { min: 0, lt: 360 }),
+    num("basic.pointing.elevation", 90, { min: -90, max: 90 }),
+    bool("graphics2d.show", true),
+    color("graphics2d.color", SENSOR_COLOR),
+    bool("graphics2d.fill", false),
+    num("graphics2d.fill_translucency", 50, { min: 0, max: 100, integer: true }),
+    bool("graphics3d.show", true),
+    color("graphics3d.color", SENSOR_COLOR),
+    bool("graphics3d.show_radial_lines", true),
+    bool("graphics3d.show_boresight_marker", false),
+  ],
 };
 
 /** ช่องของ Scenario: key = path ในเอกสาร scenario.json ค่าตั้งต้นตรงกับของ server (schema.py) */
@@ -225,7 +241,7 @@ function valueOf(root: Tree, spec: Spec, ctx: TimeContext): Value {
     case "bool":
       return typeof raw === "boolean" ? raw : spec.fallback;
     case "color":
-      return typeof raw === "string" ? raw : "";
+      return typeof raw === "string" ? raw : (spec.fallback ?? "");
     case "list":
       return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
     case "time":
@@ -263,7 +279,8 @@ type Parsed = FieldParsed<unknown>;
 function parseNumber(spec: Extract<Spec, { kind: "number" }>, input: string): Parsed {
   const trimmed = input.trim();
   if (trimmed === "") return spec.fallback === null ? pass(null) : fail(msg("props.notNumber"));
-  return parseDecimal(trimmed, { gt: spec.gt, min: spec.min, max: spec.max });
+  if (spec.integer === true) return parseInteger(trimmed, { min: spec.min ?? Number.MIN_SAFE_INTEGER, max: spec.max }, msg("form.notInteger"));
+  return parseDecimal(trimmed, { gt: spec.gt, lt: spec.lt, min: spec.min, max: spec.max });
 }
 
 /** เวลา ISO ที่ API ใช้: ลงท้าย Z วินาทีเต็ม (มีมิลลิวินาทีเมื่อไม่ใช่ศูนย์) */
@@ -284,7 +301,7 @@ function parseSpec(spec: Spec, input: Value, ctx: TimeContext, example: string):
       return pass(input === true);
     case "color": {
       const c = String(input);
-      if (c === "") return pass(null);
+      if (c === "") return spec.fallback === undefined ? pass(null) : fail(msg("props.notOption"));
       return COLOR_RE.test(c) ? pass(c) : fail(msg("props.notOption"));
     }
     case "list":

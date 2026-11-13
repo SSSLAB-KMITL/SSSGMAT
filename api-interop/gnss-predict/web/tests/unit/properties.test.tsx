@@ -41,6 +41,17 @@ const GPS_PAGES = {
   constraints: {},
 };
 
+const SENSOR1_PAGES = {
+  basic: {
+    description: "", long_description: "", parent: "*/Satellite/G01",
+    definition: { type: "Simple Conic", cone_half_angle: 45 },
+    pointing: { type: "Fixed", orientation: "Az-El", azimuth: 0, elevation: 90, about_boresight: "Rotate" },
+  },
+  graphics2d: { show: true, color: "#e8c547", fill: false, fill_translucency: 50 },
+  graphics3d: { show: true, color: "#e8c547", show_radial_lines: true, show_boresight_marker: false },
+  constraints: {},
+};
+
 const API = "/api/scenarios/S1";
 const PATCH_OK: Handler = { json: { etag: "e2", results_stale: false }, headers: { ETag: '"e2"' } };
 
@@ -54,9 +65,11 @@ function server(over: Record<string, Handler> = {}) {
     [`GET ${API}/objects/Facility/THBK`]: () => ({ json: pages, headers: { ETag: '"e1"' } }),
     [`GET ${API}/objects/Satellite/G01`]: () => ({ json: pages, headers: { ETag: '"e1"' } }),
     [`GET ${API}/objects/Constellation/GPS`]: () => ({ json: pages, headers: { ETag: '"e1"' } }),
+    [`GET ${API}/objects/Sensor/Sensor1`]: () => ({ json: pages, headers: { ETag: '"e1"' } }),
     [`PATCH ${API}/objects/Facility/THBK`]: PATCH_OK,
     [`PATCH ${API}/objects/Satellite/G01`]: PATCH_OK,
     [`PATCH ${API}/objects/Constellation/GPS`]: PATCH_OK,
+    [`PATCH ${API}/objects/Sensor/Sensor1`]: PATCH_OK,
     [`GET ${API}`]: () => ({ json: makeScenarioDoc(), headers: { ETag: '"e3"' } }),
     [`GET ${API}/objects`]: () => ({ json: makeTree() }),
     "GET /api/catalog": { json: [] },
@@ -98,6 +111,7 @@ async function mount(path: string, name: string) {
 const mountFacility = () => mount("*/Facility/THBK", "THBK");
 const mountSatellite = () => mount("*/Satellite/G01", "G01");
 const mountConstellation = () => mount("*/Constellation/GPS", "GPS");
+const mountSensor = () => mount("*/Sensor/Sensor1", "Sensor1");
 const mountScenario = () => mount("*", "S1");
 
 const tabs = () => screen.getAllByRole("tab").map((el) => el.textContent);
@@ -149,6 +163,15 @@ describe("the page list", () => {
     await mountConstellation();
     await screen.findByRole("tab", { name: "Basic - Definition" });
     expect(tabs()).toEqual(["Basic - Definition", "Basic - Description"]);
+  });
+
+  test("Sensor", async () => {
+    pages = structuredClone(SENSOR1_PAGES);
+    server();
+    await mountSensor();
+    await screen.findByRole("tab", { name: "Basic - Definition" });
+    expect(tabs()).toEqual(["Basic - Definition", "Basic - Pointing", "Basic - Description", "2D Graphics - Attributes", "3D Graphics - Attributes"]);
+    expect(tab("Basic - Definition").getAttribute("aria-selected")).toBe("true");
   });
 
   test("the first page is selected and the others are one click away", async () => {
@@ -1774,5 +1797,225 @@ describe("colour and choice controls", () => {
     await user.click(button(t("dialog.apply")));
     expect(errorOf(input(t("field.max")))).toBe(msg("props.maxBelowMin"));
     expect(patches(f, "Facility/THBK")).toHaveLength(0);
+  });
+});
+
+// ---------- Sensor ----------
+
+describe("Sensor pages", () => {
+  const sensorPatches = (f: ReturnType<typeof stubFetch>) => patches(f, "Sensor/Sensor1");
+  const check = (label: string) => input(label).checked;
+  const rejected = (field: string, text: string): Handler => ({ status: 422, json: { code: "SCENARIO_INVALID", text, field } });
+
+  beforeEach(() => {
+    pages = structuredClone(SENSOR1_PAGES);
+  });
+
+  test("sensor pages render the STK fields", async () => {
+    const f = server();
+    await mountSensor();
+    await screen.findByRole("tab", { name: "Basic - Definition" });
+    expect(f.calls.filter((c) => c.method === "GET" && c.path === `${API}/objects/Sensor/Sensor1`)).toHaveLength(1);
+
+    // Basic - Definition: Sensor Type (Simple Conic, read only), Cone Half Angle (deg)
+    expect(input(t("field.sensorType")).value).toBe("Simple Conic");
+    expect(input(t("field.sensorType")).readOnly).toBe(true);
+    expect(input(t("field.coneHalfAngle")).value).toBe("45");
+    expect(input(t("field.coneHalfAngle")).readOnly).toBe(false);
+    expect(screen.getByText(t("field.unit.deg"))).toBeDefined();
+
+    // Basic - Pointing: Pointing Type, Orientation Method (read only), Azimuth, Elevation (deg), About Boresight (read only)
+    await openPage("Basic - Pointing");
+    expect(input(t("field.pointingType")).value).toBe("Fixed");
+    expect(input(t("field.pointingType")).readOnly).toBe(true);
+    expect(input(t("field.orientationMethod")).value).toBe("Az-El");
+    expect(input(t("field.orientationMethod")).readOnly).toBe(true);
+    expect(input(t("field.azimuth")).value).toBe("0");
+    expect(input(t("field.elevation")).value).toBe("90");
+    expect(input(t("field.aboutBoresight")).value).toBe("Rotate");
+    expect(input(t("field.aboutBoresight")).readOnly).toBe(true);
+
+    // Basic - Description: Short Description, Long Description, the parent satellite (read only)
+    await openPage("Basic - Description");
+    expect(input(t("field.shortDescription")).value).toBe("");
+    expect(screen.getByLabelText(t("field.longDescription"))).toBeDefined();
+    expect(input(t("field.parentObject")).value).toBe("*/Satellite/G01");
+
+    // 2D Graphics - Attributes: Show, Color, Fill, % Translucency
+    await openPage("2D Graphics - Attributes");
+    expect(check(t("ob.show"))).toBe(true);
+    expect(input(t("field.color")).value).toBe("#e8c547");
+    expect(check(t("field.fill"))).toBe(false);
+    expect(input(t("field.translucency")).value).toBe("50");
+
+    // 3D Graphics - Attributes: Show, Color, Show Radial Lines, Show Boresight Marker
+    await openPage("3D Graphics - Attributes");
+    expect(check(t("ob.show"))).toBe(true);
+    expect(input(t("field.color")).value).toBe("#e8c547");
+    expect(check(t("field.showRadialLines"))).toBe(true);
+    expect(check(t("field.showBoresightMarker"))).toBe(false);
+    expect(sensorPatches(f)).toHaveLength(0);
+  });
+
+  test("Apply is off until something changes", async () => {
+    server();
+    await mountSensor();
+    await screen.findByRole("tab", { name: "Basic - Definition" });
+    expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true);
+    await type(t("field.coneHalfAngle"), "30");
+    expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(false);
+    await type(t("field.coneHalfAngle"), "45");
+    expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("apply sends the edited cone half angle", async () => {
+    const f = server();
+    await mountSensor();
+    await type(t("field.coneHalfAngle"), "13.9");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { definition: { cone_half_angle: 13.9 } } });
+    expect(sensorPatches(f)[0].headers.get("If-Match")).toBe('"e1"');
+  });
+
+  test("cone half angle 91 is rejected in red with a Thai message", async () => {
+    const f = server();
+    await mountSensor();
+    await type(t("field.coneHalfAngle"), "91");
+    await user.click(button(t("dialog.apply")));
+    const cone = input(t("field.coneHalfAngle"));
+    expect(cone.getAttribute("aria-invalid")).toBe("true");
+    expect(cone.className).toContain("field-invalid");
+    expect(errorOf(cone)).toBe(msg("props.rangeOverUpTo", { min: 0, max: 90 }));
+    expect(errorOf(cone)).toMatch(/[\u0E00-\u0E7F]/);
+    expect(sensorPatches(f)).toHaveLength(0);
+    await type(t("field.coneHalfAngle"), "0");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.coneHalfAngle")))).toBe(msg("props.rangeOverUpTo", { min: 0, max: 90 }));
+    await type(t("field.coneHalfAngle"), "90");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { definition: { cone_half_angle: 90 } } });
+  });
+
+  test("an error on another page selects that page", async () => {
+    const f = server();
+    await mountSensor();
+    await type(t("field.coneHalfAngle"), "100");
+    await openPage("3D Graphics - Attributes");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(tab("Basic - Definition").getAttribute("aria-selected")).toBe("true"));
+    expect(errorOf(input(t("field.coneHalfAngle")))).toBe(msg("props.rangeOverUpTo", { min: 0, max: 90 }));
+    expect(sensorPatches(f)).toHaveLength(0);
+  });
+
+  test("a server 422 on the cone half angle lands on the field of its page", async () => {
+    server({ [`PATCH ${API}/objects/Sensor/Sensor1`]: rejected("basic.definition.cone_half_angle", "ช่อง basic.definition.cone_half_angle: ต้องมากกว่า 0") });
+    await mountSensor();
+    await type(t("field.coneHalfAngle"), "30");
+    await openPage("2D Graphics - Attributes");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(tab("Basic - Definition").getAttribute("aria-selected")).toBe("true"));
+    expect(input(t("field.coneHalfAngle")).getAttribute("aria-invalid")).toBe("true");
+    expect(errorOf(input(t("field.coneHalfAngle")))).toBe("ช่อง basic.definition.cone_half_angle: ต้องมากกว่า 0");
+  });
+
+  test("pointing: azimuth below 360 and elevation within 90 are checked, and the edited pointing is sent", async () => {
+    const f = server();
+    await mountSensor();
+    await openPage("Basic - Pointing");
+    await type(t("field.azimuth"), "360");
+    await type(t("field.elevation"), "91");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.azimuth")))).toBe(msg("props.rangeUnder", { min: 0, max: 360 }));
+    expect(errorOf(input(t("field.elevation")))).toBe(msg("props.rangeBetween", { min: -90, max: 90 }));
+    expect(sensorPatches(f)).toHaveLength(0);
+    await type(t("field.azimuth"), "359.5");
+    await type(t("field.elevation"), "-90");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { pointing: { azimuth: 359.5, elevation: -90 } } });
+  });
+
+  test("parent is read only", async () => {
+    const f = server();
+    await mountSensor();
+    await openPage("Basic - Description");
+    const parent = input(t("field.parentObject"));
+    expect(parent.readOnly).toBe(true);
+    expect(parent.value).toBe("*/Satellite/G01");
+    await user.type(parent, "X");
+    expect(parent.value).toBe("*/Satellite/G01");
+    expect((button(t("dialog.apply")) as HTMLButtonElement).disabled).toBe(true);
+    // an edit of the description does not send the parent back
+    await user.type(input(t("field.shortDescription")), "ตัวรับสัญญาณ");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { description: "ตัวรับสัญญาณ" } });
+  });
+
+  test("2D Graphics: Show, Fill and % Translucency are sent, and the translucency must be a whole number from 0 to 100", async () => {
+    const f = server();
+    await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    await user.click(input(t("field.fill")));
+    await type(t("field.translucency"), "50.5");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.translucency")))).toBe(msg("form.notInteger"));
+    await type(t("field.translucency"), "101");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.translucency")))).toBe(msg("props.rangeBetween", { min: 0, max: 100 }));
+    expect(sensorPatches(f)).toHaveLength(0);
+    await type(t("field.translucency"), "80");
+    await user.click(input(t("ob.show")));
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ graphics2d: { show: false, fill: true, fill_translucency: 80 } });
+  });
+
+  test("3D Graphics: Show Radial Lines and Show Boresight Marker are sent", async () => {
+    const f = server();
+    await mountSensor();
+    await openPage("3D Graphics - Attributes");
+    await user.click(input(t("field.showRadialLines")));
+    await user.click(input(t("field.showBoresightMarker")));
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ graphics3d: { show_radial_lines: false, show_boresight_marker: true } });
+  });
+
+  test("each graphics page has its own colour, and a colour has no Clear button", async () => {
+    const f = server();
+    await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    expect(screen.queryByRole("button", { name: t("dialog.clear") })).toBeNull();
+    fireEvent.change(input(t("field.color")), { target: { value: "#112233" } });
+    await openPage("3D Graphics - Attributes");
+    expect(screen.queryByRole("button", { name: t("dialog.clear") })).toBeNull();
+    expect(input(t("field.color")).value).toBe("#e8c547"); // the 3D colour is its own
+    fireEvent.change(input(t("field.color")), { target: { value: "#445566" } });
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ graphics2d: { color: "#112233" }, graphics3d: { color: "#445566" } });
+  });
+
+  test("a Sensor stored without its optional fields shows the schema defaults", async () => {
+    pages = { basic: { parent: "*/Satellite/G01", definition: {}, pointing: {} }, graphics2d: {}, graphics3d: {}, constraints: {} };
+    server();
+    await mountSensor();
+    expect(input(t("field.coneHalfAngle")).value).toBe("45");
+    await openPage("Basic - Pointing");
+    expect(input(t("field.azimuth")).value).toBe("0");
+    expect(input(t("field.elevation")).value).toBe("90");
+    await openPage("2D Graphics - Attributes");
+    expect(input(t("field.translucency")).value).toBe("50");
+    expect(input(t("field.color")).value).toBe("#e8c547");
+  });
+
+  test("a sensor path opens the pages instead of the unknown object error", async () => {
+    server();
+    await mountSensor();
+    expect(screen.queryByText(msg("props.unknownObject", { path: "*/Sensor/Sensor1" }))).toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
   });
 });

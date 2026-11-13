@@ -49,7 +49,7 @@ export const VIEW_MENU: readonly MenuEntry[] = [
 ];
 
 export const INSERT_MENU: readonly MenuEntry[] = [
-  cmd("insert.new"), cmd("insert.facility"), cmd("insert.satellite"), cmd("insert.constellation"),
+  cmd("insert.new"), cmd("insert.facility"), cmd("insert.satellite"), cmd("insert.sensor"), cmd("insert.constellation"),
 ];
 
 export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];

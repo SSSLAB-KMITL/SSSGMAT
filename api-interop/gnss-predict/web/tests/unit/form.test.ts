@@ -366,3 +366,113 @@ describe("locateField", () => {
     expect(locateField(pages, "")).toBeNull();
   });
 });
+
+describe("the Sensor field table follows the server schema", () => {
+  const sensor = OBJECT_SPECS.Sensor;
+  const stored = {
+    basic: {
+      description: "", long_description: "", parent: "*/Satellite/G01",
+      definition: { type: "Simple Conic", cone_half_angle: 45 },
+      pointing: { type: "Fixed", orientation: "Az-El", azimuth: 0, elevation: 90, about_boresight: "Rotate" },
+    },
+    graphics2d: { show: true, color: "#e8c547", fill: false, fill_translucency: 50 },
+    graphics3d: { show: true, color: "#e8c547", show_radial_lines: true, show_boresight_marker: false },
+    constraints: {},
+  };
+  const run = (key: string, text: string) => applyValues(stored, { ...valuesFrom(stored, sensor), [key]: text }, sensor).errors[key];
+
+  test("reads what the server stores", () => {
+    const v = valuesFrom(stored, sensor);
+    expect(v["basic.definition.cone_half_angle"]).toBe("45");
+    expect(v["basic.pointing.azimuth"]).toBe("0");
+    expect(v["basic.pointing.elevation"]).toBe("90");
+    expect(v["graphics2d.color"]).toBe("#e8c547");
+    expect(v["graphics2d.fill"]).toBe(false);
+    expect(v["graphics2d.fill_translucency"]).toBe("50");
+    expect(v["graphics3d.show_radial_lines"]).toBe(true);
+    expect(v["graphics3d.show_boresight_marker"]).toBe(false);
+  });
+
+  test("a Sensor that the server has not stored in full gets the schema defaults", () => {
+    const v = valuesFrom({ basic: {}, graphics2d: {}, graphics3d: {}, constraints: {} }, sensor);
+    expect(v["basic.definition.cone_half_angle"]).toBe("45");
+    expect(v["basic.pointing.azimuth"]).toBe("0");
+    expect(v["basic.pointing.elevation"]).toBe("90");
+    expect(v["graphics2d.show"]).toBe(true);
+    expect(v["graphics2d.color"]).toBe("#e8c547");
+    expect(v["graphics2d.fill"]).toBe(false);
+    expect(v["graphics2d.fill_translucency"]).toBe("50");
+    expect(v["graphics3d.show"]).toBe(true);
+    expect(v["graphics3d.color"]).toBe("#e8c547");
+    expect(v["graphics3d.show_radial_lines"]).toBe(true);
+    expect(v["graphics3d.show_boresight_marker"]).toBe(false);
+  });
+
+  test("Cone Half Angle is greater than 0 and at most 90", () => {
+    const key = "basic.definition.cone_half_angle";
+    const message = msg("props.rangeOverUpTo", { min: 0, max: 90 });
+    expect(run(key, "0")).toBe(message);
+    expect(run(key, "-1")).toBe(message);
+    expect(run(key, "90.1")).toBe(message);
+    expect(run(key, "91")).toBe(message);
+    expect(run(key, "0.001")).toBeUndefined();
+    expect(run(key, "90")).toBeUndefined();
+    expect(run(key, "13.9")).toBeUndefined();
+    expect(run(key, "wide")).toBe(msg("props.notNumber"));
+    expect(run(key, "")).toBe(msg("props.notNumber")); // the schema has a default, but a cleared box is not a number
+  });
+
+  test("Azimuth is at least 0 and below 360", () => {
+    const key = "basic.pointing.azimuth";
+    const message = msg("props.rangeUnder", { min: 0, max: 360 });
+    expect(run(key, "-0.1")).toBe(message);
+    expect(run(key, "360")).toBe(message);
+    expect(run(key, "720")).toBe(message);
+    expect(run(key, "0")).toBeUndefined();
+    expect(run(key, "359.99")).toBeUndefined();
+  });
+
+  test("Elevation is within -90 and 90", () => {
+    const key = "basic.pointing.elevation";
+    const message = msg("props.rangeBetween", { min: -90, max: 90 });
+    expect(run(key, "90.5")).toBe(message);
+    expect(run(key, "-91")).toBe(message);
+    expect(run(key, "-90")).toBeUndefined();
+    expect(run(key, "90")).toBeUndefined();
+    expect(run(key, "0")).toBeUndefined();
+  });
+
+  test("% Translucency is a whole number from 0 to 100", () => {
+    const key = "graphics2d.fill_translucency";
+    expect(run(key, "-1")).toBe(msg("props.rangeBetween", { min: 0, max: 100 }));
+    expect(run(key, "101")).toBe(msg("props.rangeBetween", { min: 0, max: 100 }));
+    expect(run(key, "50.5")).toBe(msg("form.notInteger"));
+    expect(run(key, "1e1")).toBe(msg("form.notInteger"));
+    expect(run(key, "half")).toBe(msg("form.notInteger"));
+    expect(run(key, "0")).toBeUndefined();
+    expect(run(key, "100")).toBeUndefined();
+    const sent = applyValues(stored, { ...valuesFrom(stored, sensor), [key]: "80" }, sensor).edited;
+    expect(diffPages(stored, sent)).toEqual({ graphics2d: { fill_translucency: 80 } });
+  });
+
+  test("the cone half angle is sent as a number under basic.definition", () => {
+    const values = { ...valuesFrom(stored, sensor), "basic.definition.cone_half_angle": "13.9" };
+    expect(diffPages(stored, applyValues(stored, values, sensor).edited)).toEqual({ basic: { definition: { cone_half_angle: 13.9 } } });
+  });
+
+  test("a colour of a Sensor cannot be cleared (the schema has no null)", () => {
+    expect(run("graphics2d.color", "")).toBe(msg("props.notOption"));
+    expect(run("graphics3d.color", "")).toBe(msg("props.notOption"));
+    expect(run("graphics2d.color", "#112233")).toBeUndefined();
+    expect(run("graphics3d.color", "red")).toBe(msg("props.notOption"));
+  });
+
+  test("the page never writes the parent or the single-valued choices", () => {
+    for (const word of ["parent", ".type", "orientation", "about_boresight"]) expect(sensor.find((s) => s.key.includes(word)), word).toBeUndefined();
+  });
+
+  test("a Sensor 422 on the cone half angle is found on the field", () => {
+    expect(fieldFromServer("basic.definition.cone_half_angle")).toBe("basic.definition.cone_half_angle");
+    expect(sensor.some((s) => s.key === "basic.definition.cone_half_angle")).toBe(true);
+  });
+});

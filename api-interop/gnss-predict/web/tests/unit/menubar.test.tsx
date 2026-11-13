@@ -129,7 +129,7 @@ describe("menu contents", () => {
     };
     expect(await names("File")).toEqual(["New...", "Open...", "Save", "Save As...", "Close", "Exit"]);
     expect(await names("Edit")).toEqual(["Cut", "Copy", "Paste", "Delete", "Find..."]);
-    expect(await names("Insert")).toEqual(["New...", "Facility...", "Satellite...", "Constellation..."]);
+    expect(await names("Insert")).toEqual(["New...", "Facility...", "Satellite...", "Sensor...", "Constellation..."]);
     expect(await names("Utilities")).toEqual(["Fetch Orbit Data...", "Daily Forecast Settings..."]);
     expect(await names("Help")).toEqual(["Welcome...", "STK UI Reference", "About GNSS Studio"]);
   });

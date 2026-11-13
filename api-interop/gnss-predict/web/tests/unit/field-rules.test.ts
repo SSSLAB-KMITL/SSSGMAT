@@ -68,3 +68,29 @@ describe("the Properties Browser number fields", () => {
     expect(apply("basic.position.lat_deg", "45")).toBeUndefined();
   });
 });
+
+describe("parseDecimal with a half-open range", () => {
+  test("gt with max is (gt, max]", () => {
+    const range = { gt: 0, max: 90 };
+    const message = msg("props.rangeOverUpTo", { min: 0, max: 90 });
+    expect(parseDecimal("90", range)).toEqual(ok(90));
+    expect(parseDecimal("0.5", range)).toEqual(ok(0.5));
+    expect(parseDecimal("0", range)).toEqual(bad(message));
+    expect(parseDecimal("90.1", range)).toEqual(bad(message));
+    expect(parseDecimal("-3", range)).toEqual(bad(message));
+  });
+
+  test("min with lt is [min, lt)", () => {
+    const range = { min: 0, lt: 360 };
+    const message = msg("props.rangeUnder", { min: 0, max: 360 });
+    expect(parseDecimal("0", range)).toEqual(ok(0));
+    expect(parseDecimal("359.999", range)).toEqual(ok(359.999));
+    expect(parseDecimal("360", range)).toEqual(bad(message));
+    expect(parseDecimal("-0.001", range)).toEqual(bad(message));
+  });
+
+  test("a bad number is reported as a bad number before the range", () => {
+    expect(parseDecimal("abc", { gt: 0, max: 90 })).toEqual(bad(msg("props.notNumber")));
+    expect(parseDecimal("abc", { min: 0, lt: 360 })).toEqual(bad(msg("props.notNumber")));
+  });
+});

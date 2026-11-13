@@ -1,5 +1,5 @@
 // อ่านตัวเลขจากข้อความในช่องกรอก (Insert STK Objects, Daily Forecast Settings) ตามกติกาเดียวกับ schema ของ server
-// ผลเป็นค่า หรือข้อความไทยของช่อง; ช่วงเป็นแบบปิด (min และ max รวมอยู่ด้วย)
+// ผลเป็นค่า หรือข้อความไทยของช่อง; ช่วงเป็นแบบปิด (min และ max รวมอยู่ด้วย) เว้นแต่ขอบที่ระบุด้วย gt / lt ซึ่งไม่รวมค่านั้น
 
 import { msg } from "../labels/messages.th";
 
@@ -11,9 +11,13 @@ export const fail = (error: string): Parsed<never> => ({ ok: false, error });
 const DECIMAL_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const INTEGER_RE = /^[+-]?\d+$/;
 
-/** ขอบเขตของเลขทศนิยม: gt = มากกว่า (ไม่รวมค่านั้น), min/max = ช่วงปิด (min อย่างเดียว = ไม่ต่ำกว่า; max อย่างเดียวไม่มีผล) */
+/**
+ * ขอบเขตของเลขทศนิยม: gt = มากกว่า (ไม่รวมค่านั้น), min/max = ช่วงปิด (min อย่างเดียว = ไม่ต่ำกว่า; max อย่างเดียวไม่มีผล)
+ * gt คู่กับ max = (gt, max] (Cone Half Angle) และ min คู่กับ lt = [min, lt) (Azimuth) lt อย่างเดียวไม่มีผล
+ */
 export interface DecimalRange {
   gt?: number;
+  lt?: number;
   min?: number;
   max?: number;
 }
@@ -27,7 +31,9 @@ export function parseDecimal(text: string, range: DecimalRange = {}): Parsed<num
   if (!DECIMAL_RE.test(trimmed)) return fail(msg("props.notNumber"));
   const n = Number(trimmed);
   if (!Number.isFinite(n)) return fail(msg("props.notFinite"));
-  const { gt, min, max } = range;
+  const { gt, lt, min, max } = range;
+  if (gt !== undefined && max !== undefined) return n > gt && n <= max ? pass(n) : fail(msg("props.rangeOverUpTo", { min: gt, max }));
+  if (min !== undefined && lt !== undefined) return n >= min && n < lt ? pass(n) : fail(msg("props.rangeUnder", { min, max: lt }));
   if (gt !== undefined && !(n > gt)) return fail(msg("props.rangeGreater", { min: gt }));
   if (min !== undefined && max !== undefined && (n < min || n > max)) return fail(msg("props.rangeBetween", { min, max }));
   if (min !== undefined && max === undefined && n < min) return fail(msg("props.rangeAtLeast", { min }));

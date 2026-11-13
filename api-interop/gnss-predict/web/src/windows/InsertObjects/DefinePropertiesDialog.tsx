@@ -1,6 +1,7 @@
 // Define Properties ของ Insert STK Objects: กล่องเล็กถามค่าที่ object ต้องมี แล้วสร้างด้วย POST /objects (method "Define Properties")
 // - Facility: ชื่อ + ตำแหน่ง (Latitude -90..90, Longitude -180..180, Altitude ตัวเลขใดก็ได้) ตามกติกาของ schema ที่ server
 //   Satellite: ชื่อ + NORAD (จำนวนเต็มบวก) Constellation: ชื่ออย่างเดียว (สมาชิกเพิ่มทีหลังที่หน้า Basic - Definition)
+//   Sensor: ชื่อ (ตั้งต้น Sensor<n> ตัวแรกที่ว่าง) + ดาวแม่ (อ่านอย่างเดียว: เลือกมาแล้วที่ Select Object) + Cone Half Angle (ตั้งต้น 45, ช่วง (0, 90])
 // - ตรวจก่อนส่ง ข้อความไทยขึ้นที่ช่อง; ค่าที่ server ปฏิเสธ (409 ชื่อซ้ำ, 422) ขึ้นที่ช่องที่ field ชี้ (ชื่อ field ตามที่ server ใช้: position.lat_deg ฯลฯ)
 //   ข้อผิดพลาดอื่นลง Message Viewer (ยกเว้น 412: กล่อง Reload / Cancel ของ store ขึ้นเอง) และขึ้นเหนือปุ่ม
 // - ระหว่างส่ง ปิดกล่องไม่ได้; กล่องถูกวาดเฉพาะตอนเปิด จึงเริ่มจากช่องว่างทุกครั้ง
@@ -8,18 +9,20 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState, type FormEvent } from "react";
 import { errorText } from "../../api/client";
-import { isObjectName } from "../../api/names";
+import { firstFreeName, isObjectName } from "../../api/names";
 import { isConflict, isFieldError, reportWriteError } from "../../api/writes";
 import { FormField } from "../../chrome/FormField";
 import { useReturnFocus } from "../../chrome/returnFocus";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
-import { parseDecimal, parseInteger, type Parsed } from "../fieldRules";
+import { useScenario } from "../../stores/scenario";
+import { parseDecimal, parseInteger, pass, type Parsed } from "../fieldRules";
 import { insertObjects, type InsertClass } from "./insert";
 
 export const CLASS_LABEL: Record<InsertClass, LabelKey> = {
   Facility: "ob.class.facility",
   Satellite: "ob.class.satellite",
+  Sensor: "ob.class.sensor",
   Constellation: "ob.class.constellation",
 };
 
@@ -30,6 +33,8 @@ interface FieldDef {
   /** ชื่อ field ที่ server ใช้ใน 409/422 ของช่องนี้ */
   server: string;
   numeric?: boolean;
+  /** ช่องที่แก้ไม่ได้ (ดาวแม่ของ Sensor) */
+  readOnly?: boolean;
   parse(text: string): Parsed<unknown>;
 }
 
@@ -44,6 +49,8 @@ interface FormDef {
   fields: readonly FieldDef[];
   /** ส่วนของ body ต่อจาก class และ method */
   body(values: Record<string, unknown>): Record<string, unknown>;
+  /** ข้อความตั้งต้นของช่อง (ช่องที่ไม่ระบุ = ว่าง); parent = ดาวแม่ที่เลือกมา (เฉพาะ Sensor), names = ชื่อ object ที่มีอยู่ใน scenario */
+  initial?(context: { parent: string; names: readonly string[] }): Record<string, string>;
 }
 
 const FORMS: Record<InsertClass, FormDef> = {
@@ -63,20 +70,34 @@ const FORMS: Record<InsertClass, FormDef> = {
     ],
     body: (v) => ({ name: v.name, norad: v.norad }),
   },
+  Sensor: {
+    fields: [
+      NAME,
+      { key: "parent", label: "field.parentObject", server: "parent", readOnly: true, parse: (s) => pass(s) },
+      { key: "cone", label: "field.coneHalfAngle", unit: "field.unit.deg", server: "definition.cone_half_angle", numeric: true, parse: (s) => parseDecimal(s, { gt: 0, max: 90 }) },
+    ],
+    body: (v) => ({ name: v.name, parent: v.parent, definition: { cone_half_angle: v.cone } }),
+    initial: ({ parent, names }) => ({ name: firstFreeName("Sensor", names), parent, cone: "45" }),
+  },
   Constellation: { fields: [NAME], body: (v) => ({ name: v.name }) },
 };
 
 export interface DefinePropertiesDialogProps {
   cls: InsertClass;
+  /** ดาวแม่ที่เลือกแล้ว (path) เฉพาะ Sensor */
+  parent?: string;
   /** Cancel / Esc (ไม่เรียกระหว่างส่ง) */
   onClose(): void;
   /** สร้างสำเร็จ (object แรกถูกเลือกแล้ว) */
   onInserted(created: string[]): void;
 }
 
-export function DefinePropertiesDialog({ cls, onClose, onInserted }: DefinePropertiesDialogProps) {
+export function DefinePropertiesDialog({ cls, parent = "", onClose, onInserted }: DefinePropertiesDialogProps) {
   const form = FORMS[cls];
-  const [texts, setTexts] = useState<Record<string, string>>(() => Object.fromEntries(form.fields.map((f) => [f.key, ""])));
+  const [texts, setTexts] = useState<Record<string, string>>(() => {
+    const names = (useScenario.getState().doc?.objects ?? []).map((o) => o.name);
+    return { ...Object.fromEntries(form.fields.map((f) => [f.key, ""])), ...form.initial?.({ parent, names }) };
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -138,6 +159,7 @@ export function DefinePropertiesDialog({ cls, onClose, onInserted }: DefinePrope
                     type="text"
                     inputMode={field.numeric === true ? "decimal" : undefined}
                     value={texts[field.key]}
+                    readOnly={field.readOnly}
                     disabled={busy}
                     spellCheck={false}
                     autoComplete="off"
