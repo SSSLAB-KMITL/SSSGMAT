@@ -3,6 +3,7 @@
 เป็น HamlibError ข้อความไทยมี host:port ค่า timeout ใน test เล็กเสมอ (patch ค่าคงที่ของ module)"""
 
 import asyncio
+import errno
 import time
 import unittest
 from unittest import mock
@@ -142,8 +143,62 @@ class HamlibConnectTest(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(f"{host}:{port}", str(raised.exception))
                     self.assertFalse(client.connected)
 
+    async def test_connect_failure_text_is_thai(self):
+        # ข้อความที่เพิ่มเองเป็นภาษาไทยทั้งหมด ไม่มีข้อความดิบของระบบหรือ asyncio (Connect call failed, Multiple exceptions)
+        # รวมกรณี localhost ที่ asyncio ลองหลาย address (::1 แล้ว 127.0.0.1)
+        fake = FakeHamlib()
+        port = await fake.start()
+        await fake.stop()
+        with mock.patch.object(hamlib, "CONNECT_TIMEOUT_S", 2.0):
+            for host in ("127.0.0.1", "localhost", "no-such-host.invalid"):
+                client = HamlibClient(host, port, LABEL)
+                with self.subTest(host=host):
+                    with self.assertRaises(HamlibError) as raised:
+                        await client.connect()
+                    self.assertThai(str(raised.exception), f"{LABEL} {host}:{port}")
+        for host in ("127.0.0.1", "localhost"):                          # เหตุผลของการถูกปฏิเสธต้องบอกตรงๆ ไม่ใช่เหตุผลกลาง
+            with self.subTest(refused=host):
+                with self.assertRaises(HamlibError) as raised:
+                    await HamlibClient(host, port, LABEL).connect()
+                self.assertIn("ปฏิเสธ", str(raised.exception))
+
+    async def test_connect_error_reasons(self):
+        refused = ConnectionRefusedError(errno.ECONNREFUSED, "Connect call failed ('::1', 4532, 0, 0)")
+        cases = {
+            # OSError(ETIMEDOUT) คือ TimeoutError จึงต้องมาในกลุ่มของ all_errors (กรณีจริง) ไม่ปนกับ timeout ของเราเอง
+            "timed out": (ExceptionGroup("create_connection failed", [OSError(errno.ETIMEDOUT, "Operation timed out")]),
+                          "หมดเวลารอ"),
+            "host unreachable": (OSError(errno.EHOSTUNREACH, "No route to host"), "ไปไม่ถึงเครื่อง"),
+            "network unreachable": (OSError(errno.ENETUNREACH, "Network is unreachable"), "ไปไม่ถึงเครือข่าย"),
+            "unknown errno": (OSError(errno.EPERM, "Operation not permitted"), "ข้อผิดพลาดของเครือข่าย (รหัส"),
+            "no errno": (OSError("Multiple exceptions: [Errno 61] ..."), "ข้อผิดพลาดของเครือข่าย"),
+            "all candidates refused": (ExceptionGroup("create_connection failed", [refused, refused]), "ปฏิเสธ"),
+            "mixed candidates": (ExceptionGroup("create_connection failed",
+                                                [refused, OSError(errno.ENETUNREACH, "Network is unreachable")]),
+                                 "ปฏิเสธ"),
+        }
+        for name, (error, expected) in cases.items():
+            async def failing(host, port, **kwargs):
+                raise error
+
+            client = HamlibClient("localhost", 4532, LABEL)
+            with self.subTest(name), mock.patch("asyncio.open_connection", failing):
+                with self.assertRaises(HamlibError) as raised:
+                    await client.connect()
+            message = str(raised.exception)
+            self.assertIn(expected, message)
+            self.assertThai(message, f"{LABEL} localhost:4532")
+            if expected == "ปฏิเสธ":
+                self.assertEqual(message.count("ปฏิเสธ"), 1, name)       # ล้มเหมือนกันทุก address แสดงเหตุผลเดียว
+
+    def assertThai(self, message: str, where: str) -> None:
+        """มี host:port และนอกจากส่วนนั้นไม่มีตัวอักษรละตินเลย"""
+        self.assertIn(where, message)
+        self.assertRegex(message, "[\u0e00-\u0e7f]")
+        self.assertNotRegex(message.replace(where, ""), "[A-Za-z]")
+
     async def test_connect_timeout(self):
-        async def never(host, port):
+        async def never(host, port, **kwargs):
             await asyncio.sleep(10)
 
         client = HamlibClient("127.0.0.1", 4532, LABEL)

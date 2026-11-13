@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import errno
 import socket
 
 CONNECT_TIMEOUT_S = 3.0
@@ -33,8 +34,29 @@ def is_error(reply: list[str]) -> bool:
     return bool(reply) and reply[0].startswith(_RPRT)
 
 
-def _reason(exc: OSError) -> str:
-    return "ถูกปฏิเสธ" if isinstance(exc, ConnectionRefusedError) else (exc.strerror or str(exc))
+# เหตุผลที่ผู้ใช้เห็นเป็นภาษาไทยเสมอ: ข้อความดิบของระบบ (strerror, "Connect call failed (...)") เป็นภาษาอังกฤษและมี address ยาว
+_ERRNO_REASONS = {
+    errno.ECONNREFUSED: "ถูกปฏิเสธ ยังไม่ได้เปิดโปรแกรมหรือพอร์ตผิด",
+    errno.ETIMEDOUT: "หมดเวลารอ",
+    errno.EHOSTUNREACH: "ไปไม่ถึงเครื่องปลายทาง",
+    errno.ENETUNREACH: "ไปไม่ถึงเครือข่ายปลายทาง",
+    errno.ECONNRESET: "การเชื่อมต่อถูกตัด",
+    errno.ECONNABORTED: "การเชื่อมต่อถูกยกเลิก",
+    errno.EPIPE: "การเชื่อมต่อถูกปิด",
+}
+
+
+def _reason(exc: BaseException) -> str:
+    """เหตุผลภาษาไทยของ OSError หรือของ ExceptionGroup จาก open_connection(all_errors=True) (ต่อด้วยชื่อ host ที่ได้หลาย address
+    เช่น localhost = ::1 และ 127.0.0.1) ที่ไม่ใช่ errno ในตาราง ใช้ข้อความกลางพร้อมรหัส ไม่ใช้ข้อความของระบบ"""
+    errors = exc.exceptions if isinstance(exc, BaseExceptionGroup) else (exc,)
+    reasons = []
+    for error in errors:
+        code = getattr(error, "errno", None)
+        reason = _ERRNO_REASONS.get(code) or ("ข้อผิดพลาดของเครือข่าย" + (f" (รหัส {code})" if code else ""))
+        if reason not in reasons:                       # หลาย address ล้มเหมือนกัน (ถูกปฏิเสธทั้ง ::1 และ 127.0.0.1) แสดงครั้งเดียว
+            reasons.append(reason)
+    return ", ".join(reasons)
 
 
 class HamlibClient:
@@ -61,13 +83,14 @@ class HamlibClient:
         async with self._lock:
             self._abort()
             try:
+                # all_errors: ถ้าไม่ใส่ ชื่อ host ที่ได้หลาย address ล้มแล้ว asyncio ยุบเป็น OSError("Multiple exceptions: ...") ที่ไม่มี errno
                 self._reader, self._writer = await asyncio.wait_for(
-                    asyncio.open_connection(self.host, self.port), CONNECT_TIMEOUT_S)
+                    asyncio.open_connection(self.host, self.port, all_errors=True), CONNECT_TIMEOUT_S)
             except TimeoutError:
                 raise HamlibError(f"เชื่อมต่อ {self._where} ไม่ได้ภายใน {CONNECT_TIMEOUT_S:g} วินาที") from None
             except socket.gaierror:
                 raise HamlibError(f"หาที่อยู่ของ {self._where} ไม่พบ") from None
-            except OSError as exc:
+            except (OSError, ExceptionGroup) as exc:
                 raise HamlibError(f"เชื่อมต่อ {self._where} ไม่ได้ ({_reason(exc)})") from None
 
     async def command(self, cmd: str | bytes, lines: int = 1) -> list[str]:
