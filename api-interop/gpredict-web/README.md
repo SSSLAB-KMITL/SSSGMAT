@@ -12,6 +12,9 @@
 - [2026-11-11-gpredict-web-core-design.md](docs/2026-11-11-gpredict-web-core-design.md): spec ของงานย่อยที่ 1 (Tracking core)
 - [2026-11-11-gpredict-web-core-plan.md](docs/2026-11-11-gpredict-web-core-plan.md): แผนการทำงาน
 - [2026-11-11-gpredict-reference.md](docs/2026-11-11-gpredict-reference.md): ชื่อเมนู คอลัมน์ และค่าตั้งต้นของ Gpredict ที่ตรวจกับ source code
+- [2026-11-12-gpredict-web-passes-design.md](docs/2026-11-12-gpredict-web-passes-design.md): spec ของงานย่อยที่ 2 (Pass predictions)
+- [2026-11-12-gpredict-web-passes-plan.md](docs/2026-11-12-gpredict-web-passes-plan.md): แผนการทำงานของงานย่อยที่ 2
+- [2026-11-12-gpredict-reference-passes.md](docs/2026-11-12-gpredict-reference-passes.md): ชื่อหน้าต่าง คอลัมน์ ข้อความ และค่าตั้งต้นของส่วน Pass predictions และ Preferences → Predict ที่ตรวจกับ source code
 
 ## งานย่อยที่ 1 (Tracking core) มีอะไรบ้าง
 
@@ -20,28 +23,72 @@
 - Layout 9 แบบตามที่ Gpredict มี และ Custom (พิมพ์ layout code เอง)
 - Time Controller: ปฏิทิน, Hour/Min/Sec/Msec, Throttle 1 ถึง 100, slider, Reset, Play backwards, Stop, Play forward
 - สร้าง แก้ โคลน ลบ module, Module properties ทั้ง 6 แท็บ, ตั้งค่าสถานี (QTH) ได้หลายสถานี
-- ช่วงคำนวณของ GMAT พร้อม cache รายดวง และ interpolation (ดูผลวัดความแม่นในหัวข้อ "ผลตรวจรับ")
+- ช่วงคำนวณของ GMAT พร้อม cache รายดวง และ interpolation (ดูผลวัดความแม่นในหัวข้อ "ผลตรวจรับงานย่อยที่ 1")
 - เมนูคลิกขวาของดาวใน List, Map, Polar, Event list และปุ่มใน Single sat: Highlight footprint, Ground Track, Sky track, เลือกดาว
 - Edit → Update TLE data from network (ใช้ cache ร่วมกับ GNSS Studio: ขอ CelesTrak ไม่เกิน 1 ครั้งต่อกลุ่มต่อ 2 ชั่วโมง)
 
-### รายการที่กดไม่ได้ (อยู่ในงานย่อยถัดไป)
+## งานย่อยที่ 2 (Pass predictions) มีอะไรบ้าง
+
+pass ทุกรอบหาจากตำแหน่งที่ GMAT คำนวณ (ephemeris รายวันของแต่ละดาว ทุก 30 วินาที) ไม่ใช้ SGP4 ของ Gpredict
+ป้าย ชื่อหน้าต่าง คอลัมน์ และข้อความตรงกับ [รายการอ้างอิงส่วน Pass predictions](docs/2026-11-12-gpredict-reference-passes.md)
+
+### วิธีใช้
+
+- **Show next pass, Show current pass, Future passes**: คลิกขวาที่ดาวใน List, Map, Polar, Event list หรือเมนูของ Single sat
+  - "Show current pass" มีในเมนูเฉพาะเมื่อดาวอยู่เหนือขอบฟ้า (El > 0) และค้นแบบเดียวกับ Show next pass (เหมือน Gpredict)
+  - Show next pass ขณะดาวอยู่เหนือขอบฟ้าได้ pass ถัดจาก pass ที่กำลังผ่าน (เริ่มค้นที่ LOS + 0.007 วัน)
+  - เวลาเริ่มคือเวลาของ module (ตาม Time Controller) หรือเวลาของเครื่องเมื่อเปิด "Always use real time for pass predictions"
+  - ระหว่างรอ GMAT (เกิน 0.5 วินาที) มีกล่อง "กำลังคำนวณวงโคจรด้วย GMAT…" พร้อม Cancel **(ของเรา)** ถ้า GMAT ล้มเหลวกล่องนี้แสดง error พร้อม Retry
+  - ดาวที่ขึ้นเหนือขอบฟ้าของสถานีไม่ได้ (GEO, decayed, วงโคจรไปไม่ถึงละติจูดของสถานี) และดาวที่ไม่มี pass ในช่วง ได้กล่องข้อความของ Gpredict
+- **Pass details** ("Pass details for <ดาว> (orbit <n>)"): แท็บ Data (19 คอลัมน์ เลือกที่แสดงได้ที่ Preferences → Predict → Single Pass), Polar, Az/El
+  และปุ่ม Print, Save, Close
+- **Upcoming passes** ("Upcoming passes for <ดาว>"): สูงสุด "Number of passes to predict" (ตั้งต้น 10) pass ที่ Max El ไม่ต่ำกว่า "Minimum elevation" (5°)
+  ภายใน "Passes should occur within" (3 วัน) ช่วงวันเลื่อนตาม pass แบบ Gpredict pass สุดท้ายจึงเริ่มหลังช่วงได้
+  ดับเบิลคลิกแถว, Enter หรือคลิกขวา → Show details เปิด Pass details ของแถวนั้น ปิด Upcoming passes แล้วหน้าต่าง Pass details ที่เปิดจากมันปิดตาม
+  Print ของหน้าต่างนี้ไม่ทำอะไร (Gpredict ก็ไม่ทำ)
+- **Save**: ได้ไฟล์ `.txt` รูปแบบเดียวกับ Gpredict ทุกช่องว่าง ลงโฟลเดอร์ดาวน์โหลดของ browser (หน้าเว็บเลือกโฟลเดอร์ไม่ได้)
+  ชื่อตั้งต้น `<ดาว>-<orbit>` และ `<ดาว>-passes` (ช่องว่างเป็น `-` เครื่องหมายเป็น `_`)
+  เนื้อหา: "Info+header+data", "Header + data", "Data only" (pass เดียว) หรือ "Complete report", "Summary" (รายการ pass)
+- **Print** ของ Pass details: หน้าต่างพิมพ์ของ browser หน้า A4 มีแถบหัวสีเทา (ชื่อหน้าต่างและเลขหน้า n/N) แล้วตารางของ pass หน้าละ 50 บรรทัด
+- **Sky at a glance** (Module menu): แท่ง pass ของทุกดาวใน module ภายใน 8 ชั่วโมง (ตั้งได้ 1–24) เรียงตามชื่อดาว สีตาม Preferences
+  คลิกแท่งเปิด Pass details ของ pass นั้น เวลาของ module เปลี่ยนเกินราว 1 นาที (เช่นเลื่อนด้วย Time Controller) แล้วกราฟวาดใหม่
+  หน้าต่างนี้ไม่รอ GMAT: ระหว่างคำนวณแสดง "กำลังคำนวณวงโคจรด้วย GMAT…" (module `Amateur` 99 ดวง ครั้งแรกใช้ราว 78 วินาที ครั้งต่อไปใช้ข้อมูลใน cache)
+- **Preferences** (Edit → Preferences): หน้าต่าง "GPREDICT Preferences :: Predict" เปิดที่กลุ่ม Predict มี 4 หน้า Pass Conditions, Multiple Passes,
+  Single Pass, Sky at a Glance แต่ละหน้ามีปุ่ม Reset OK บันทึก Cancel ทิ้ง Reset แล้ว OK ลบ key ของหน้านั้นออกจาก `preferences.json`
+  (กลับไปใช้ค่าตั้งต้นของ Gpredict) ค่าใหม่ใช้กับคำขอ pass ครั้งถัดไปทันที
+
+คำขอ pass หนึ่งครั้งให้ GMAT คำนวณดาวดวงนั้นตั้งแต่ 1 วันก่อนเวลาเริ่มถึง 1 วันหลังช่วงที่ค้น (ตั้งต้นรวม 6 วัน ISS ใช้ราว 1.5 วินาที)
+แล้วเก็บเป็น block รายวันใน `ephem/day/` คำขอต่อไปที่ใช้วันเดียวกันไม่ต้องรอ GMAT
+
+### API ที่เพิ่ม
+
+| Method | Path | ทำอะไร |
+|---|---|---|
+| GET | `/api/prefs` | `{values, defaults, user}`: ค่าที่ใช้อยู่ ค่าตั้งต้น และรายชื่อ key ที่ผู้ใช้ตั้งเอง |
+| PUT | `/api/prefs` | `{"set": {...}, "remove": [...]}` ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย |
+| POST | `/api/modules/{name}/passes` | `{"norad", "kind": "next" \| "current" \| "future" \| "at", "t", "aos"}` รอ GMAT แล้วตอบ `pass`, `passes` หรือ `message` |
+| GET | `/api/modules/{name}/skyglance?t=` | Sky at a glance ตอบทันที `status` เป็น `computing`, `ok` หรือ `failed` (หน้าเว็บถามซ้ำทุก 1 วินาที) |
+| DELETE | `/api/modules/{name}/skyglance` | ปิดหน้าต่าง Sky at a glance: ปล่อยงาน GMAT ที่ค้างของหน้าต่างนั้น |
+
+## รายการที่กดไม่ได้ (อยู่ในงานย่อยถัดไป)
 
 รายการเหล่านี้แสดงตามตำแหน่งของ Gpredict แต่กดไม่ได้ และมี tooltip ภาษาไทยบอกว่าอยู่ในงานย่อยไหน
 
 | ที่อยู่ | รายการ | งานย่อย |
 |---|---|---|
 | File | Log browser | 4 (Data & Preferences) |
-| Edit | Update TLE data from local files, Preferences | 4 (Data & Preferences) |
+| Edit | Update TLE data from local files | 4 (Data & Preferences) |
 | Edit | Update transponder data | 3 (Radio & Rotator) |
+| Edit → Preferences | กลุ่ม General และ Modules | 4 |
+| Edit → Preferences | กลุ่ม Interfaces | 3 |
 | Module menu | Detach module, Full screen | 4 |
-| Module menu | Sky at a glance | 2 (Pass predictions) |
 | Module menu | Radio Control, Antenna Control | 3 |
 | คลิกขวาที่ดาว (List, Map, Polar) และเมนูของ Single sat, Event list | Satellite info (หรือชื่อดาวตัวหนา) | 4 |
-| เหมือนข้างบน | Show current pass, Show next pass, Future passes | 2 |
 | ดับเบิลคลิกที่ดาว (List, Map, Polar, Event list) | Satellite info | 4 |
 | Module properties | สี, Select map, Window Placements | 4 |
 
 Help ไม่มี News (ของเรา) และ "About Gpredict Web" เป็นของเรา
+Preferences เปิดที่กลุ่ม Predict จนกว่างานย่อยที่ 4 จะมีกลุ่ม General (Gpredict เปิดที่ General)
 
 ## สิ่งที่ต้องมี
 
@@ -132,6 +179,8 @@ server กันหน้าเว็บอื่นที่เปิดอย�
 | `settings.json` | สถานีตั้งต้น (`** DEFAULT **`) และธง `bootstrap_done` (สร้าง `Amateur` แล้ว) |
 | `satdb.json` | ดัชนีดาวจาก CelesTrak |
 | `ephem/` | ephemeris cache ของ GMAT รายดวงต่อช่วง (ช่วงที่เก่ากว่า 7 วันถูกลบเอง ช่วง 99 ดวงใช้ราว 9 MB) |
+| `ephem/day/<YYYYMMDD>/` | ephemeris รายวันของ GMAT สำหรับ pass: 1 ไฟล์ต่อดาวต่อวัน (138,288 ไบต์) โฟลเดอร์ของวันที่เก่ากว่า 7 วันถูกลบเอง ตอนตรวจรับ 98 ดวง × 3 วันใช้ราว 40 MB |
+| `preferences.json` | ค่า Preferences ที่ผู้ใช้ตั้ง เก็บเฉพาะ key ที่ตั้งเอง (`{"version": 1, "values": {...}}`) ไม่มีไฟล์หรือ `values` ว่าง = ค่าตั้งต้นของ Gpredict ทั้งหมด ไฟล์ที่แก้ด้วยมือจนบาง key ผิด: server ใช้ค่าตั้งต้นแทน key นั้นและบันทึก log (ไม่แก้ไฟล์) |
 
 เปิดครั้งแรกที่ยังไม่มีข้อมูล: สร้างสถานี THBK, ดึงกลุ่ม `amateur` จาก CelesTrak หนึ่งครั้ง แล้วสร้างและเปิด module `Amateur`
 สร้าง `Amateur` ในการเปิดครั้งแรกที่มีข้อมูล TLE เท่านั้น และไม่สร้างอีกเมื่อสร้างแล้ว (ธง `bootstrap_done` ใน `settings.json`)
@@ -179,6 +228,14 @@ File → Quit ใช้ไม่ได้ในโหมดนี้: server ท
   GMAT_BIN=/path/to/GmatConsole ../.venv/bin/python -m unittest tests.test_integration_gmat -v )
 ```
 
+Pass predictions กับ GMAT จริงผ่าน API ของแอป (งานย่อยที่ 2): Future passes ของ ISS ที่ THBK 3 วันเทียบกับ GMAT ที่รันอีกครั้งทุก 1 วินาที
+(AOS/LOS ไม่เกิน 1 วินาที, Max El ไม่เกิน 0.01°) และ Sky at a glance ของ module 10 ดวง (TLE จริงของกลุ่ม amateur ที่คัดลอกไว้ใน test ไม่ใช้เน็ต)
+
+```bash
+( cd api-interop/gpredict-web/server && \
+  GMAT_BIN=/path/to/GmatConsole ../.venv/bin/python -m unittest tests.test_integration_passes -v )
+```
+
 ## รหัส error ที่เพิ่มจาก spec หัวข้อ 7.4
 
 spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหนึ่ง (`QTH_INVALID`, `MODULE_INVALID`, `NOT_FOUND`, `IN_USE`, `GMAT_FAILED`, `TLE_OLD` ฯลฯ)
@@ -199,6 +256,24 @@ spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหน�
 นอกจากนี้ `QTH_INVALID` ยังใช้เป็น warning ใน `messages` ของ `GET /api/qth` (`object` = ชื่อไฟล์ เช่น `Broken.json`)
 เมื่อไฟล์ใน `qth/` ใช้ไม่ได้: server ข้ามไฟล์นั้นและรายการสถานีที่เหลือยังใช้ได้
 
+### รหัสที่เพิ่มในงานย่อยที่ 2 (spec หัวข้อ 9 ของงานย่อยที่ 2)
+
+| รหัส | HTTP / ที่แสดง | ความหมาย |
+|---|---|---|
+| `PREFS_INVALID` | 422, `object` = key | `PUT /api/prefs` ที่มี key ที่ไม่รู้จัก ค่าผิดชนิดหรือนอกช่วง (เช่น "Minimum elevation ต้องเป็นจำนวนเต็ม 1–90") key ที่อยู่ทั้งใน `set` และ `remove` หรือ `set`/`remove` ผิดรูปแบบ ผิดตัวเดียวไม่เขียนอะไรเลย หน้าต่าง Preferences แสดงข้อความนี้และไม่ปิด |
+| `PASS_INVALID` | 422, `object` = ชื่อช่อง | body ของ `POST /api/modules/{name}/passes` หรือ `t` ของ `GET …/skyglance` ผิด: `norad` ไม่ใช่จำนวนเต็ม, `kind` ไม่ใช่ `next`, `current`, `future`, `at`, เวลาไม่ใช่ ISO 8601 ที่มี timezone หรืออยู่นอกช่วงของนาฬิกา module |
+| `PASS_NO_AOS` | `message` ระดับ error ในคำตอบ 200 ของ passes | ดาวขึ้นเหนือขอบฟ้าของสถานีไม่ได้ (GEO, decayed, mean motion 0, วงโคจรไปไม่ถึงละติจูดของสถานี) ตัดสินจาก TLE โดยไม่สั่ง GMAT |
+| `PASS_NONE_WITHIN` | `message` ระดับ info ในคำตอบ 200 ของ passes | ดาวขึ้นได้แต่ไม่มี pass ที่ Max El ถึง Minimum elevation ภายใน "Passes should occur within" |
+
+`text` ของ `PASS_NO_AOS` และ `PASS_NONE_WITHIN` เป็นข้อความภาษาอังกฤษของ Gpredict ทุกตัวอักษร (หน้าเว็บแสดงในกล่องที่มีไอคอน Error หรือ Info และปุ่ม OK)
+- `Satellite %s has no passes for\nthe current ground station!\n\nThis can be because the satellite\nis geostationary, decayed or simply\nnever comes above the horizon` (Show next pass, Show current pass)
+- `Satellite %s has no passes for\nthe current ground station!` (Future passes)
+- `Satellite %s has no passes\nwithin the next %d days` (ทั้งสามรายการ `%d` คือ Passes should occur within)
+
+คำขอ pass ใช้รหัสเดิมของ spec หัวข้อ 7.4 ด้วย: `NOT_FOUND` 404 (module ไม่ได้เปิด, ดาวไม่อยู่ใน module, `kind: "at"` ที่ไม่มี pass ที่ AOS นั้นภายใน 1 วินาที),
+`GMAT_FAILED` 503 (GMAT ล้มเหลวหรือไม่มีตำแหน่งที่ต้องใช้) และ `SAT_MISSING_FROM_GMAT` 503 (GMAT ไม่คืนค่าของดาวนั้น)
+Sky at a glance ใส่ `EPHEM_COMPUTING` (info) ใน `messages` ระหว่างรอ GMAT
+
 ## ข้อตกลงที่เปลี่ยนพฤติกรรม
 
 ข้อตกลงที่ตัดสินระหว่างทำ ซึ่ง spec ไม่ได้ระบุหรือต่างจาก Gpredict
@@ -214,8 +289,13 @@ spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหน�
 
 ## ข้อจำกัดที่ทราบ
 
-- งานย่อยที่ 1 เท่านั้น: Satellite info, Show current/next pass, Future passes, Sky at a glance, Radio/Antenna Control, Preferences,
+- งานย่อยที่ 1 และ 2 เท่านั้น: Satellite info, Radio/Antenna Control, Preferences กลุ่ม General, Modules และ Interfaces,
   Log browser, Detach/Full screen, สีและภาพแผนที่ที่เปลี่ยนได้ ยังไม่มี (ตารางข้างบน)
+- เวลาใน Pass details, Upcoming passes, ไฟล์ที่ Save, หน้าพิมพ์ และ Sky at a glance เป็น UTC ในรูปแบบตั้งต้นของ Gpredict (`%Y/%m/%d %H:%M:%S`) เสมอ
+  ระยะเป็นกิโลเมตร Lat/Lon มีเครื่องหมาย (Time format, local time, Imperial units และ N/S/E/W อยู่ใน Preferences → General ของงานย่อยที่ 4)
+- Save ลงโฟลเดอร์ดาวน์โหลดของ browser เท่านั้น ถ้ามีไฟล์ชื่อเดิมอยู่แล้ว browser มักตั้งชื่อใหม่ให้ (เช่น Chrome ต่อท้าย ` (1)`) ส่วน Gpredict เขียนทับ
+- pass ที่เริ่มหลังช่วงข้อมูลที่ขอจาก GMAT (1 วันหลังช่วงที่ค้น) ไม่ถูกนับ และ AOS/LOS/Max El เป็นค่าจริงจาก GMAT ไม่ใช่ค่าจากแถวที่สุ่มแบบ Gpredict
+  ข้อที่ตั้งใจให้ต่างจาก Gpredict ทั้งหมดอยู่ใน spec ของงานย่อยที่ 2 หัวข้อ 10.1
 - ไม่มีระบบ login ใช้คนเดียวบนเครื่องตัวเอง (ดูหัวข้อ LAN)
 - ปุ่ม Select ของ Location และ Weather St ใน Edit ground station data กดไม่ได้ (ไม่มีรายชื่อเมืองและสถานีอากาศ) ไม่มีโหมด GPSD
   Module properties แสดง "Window Placements" ในหน้า Layout (กดไม่ได้) ทั้งที่ Gpredict แสดงเฉพาะใน Preferences รวม
@@ -235,7 +315,7 @@ spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหน�
   เมื่อหน้าต่าง browser กว้างน้อยกว่าราว 1530 px จะเห็นคอลัมน์ AOS/LOS ต้องเลื่อนดู
 - ภาพแผนที่คือ Blue Marble ของ NASA (public domain) ขนาด 1024×512 ยืดเต็ม view
 
-## ผลตรวจรับ
+## ผลตรวจรับงานย่อยที่ 1
 
 ตรวจรับตามหัวข้อ 10 ของ spec ด้วย GMAT จริง (`application/bin/GmatConsole`), TLE จริงจาก CelesTrak และ Google Chrome (headless, ขับด้วย puppeteer-core)
 วันที่ 2026-11-12 (เวลาไทย) ตรงกับ 2026-11-11 18:10 ถึง 18:45 UTC ข้อมูลของการตรวจอยู่ใน data dir ใหม่ที่ว่างเปล่า ไม่ใช่ `api-interop/gpredict-web/data`
@@ -362,3 +442,152 @@ Edit ground station data (ทุกช่อง ความยาวสูง�
 | server | `( cd api-interop/gpredict-web/server && GMAT_BIN=… ../.venv/bin/python -m unittest discover -s tests )` | 361 test OK (รวม integration กับ GMAT จริง) |
 | web | `( cd api-interop/gpredict-web/web && npm test )` | 43 ไฟล์ 553 test OK |
 | web | `( cd api-interop/gpredict-web/web && npm run build )` | สำเร็จ (92 modules, JS 298.60 kB) |
+
+## ผลตรวจรับงานย่อยที่ 2
+
+ตรวจรับตามหัวข้อ 12 ของ [spec งานย่อยที่ 2](docs/2026-11-12-gpredict-web-passes-design.md) ด้วย GMAT จริง (`application/bin/GmatConsole`)
+data dir จริงของแอป (`api-interop/gpredict-web/data`: module `Amateur` 99 ดวงที่สถานี THBK, TLE ใน `satdb.json` ที่ดึงไว้เมื่อ 2026-11-12 **ไม่ได้ขอ CelesTrak ใหม่**)
+และ Google Chrome แบบ headless (ขับด้วย Chrome DevTools Protocol) build หน้าเว็บใหม่ เปิด server ด้วย `python -m gpredict_web` แล้วปิดด้วย `POST /api/quit` เมื่อจบ
+วันที่ 2026-11-14 เวลาไทย 01:54 ถึง 02:06 ตรงกับ 2026-11-13 18:54 ถึง 19:06 UTC เวลาทุกค่าข้างล่างเป็น UTC
+ภาพหน้าจอ สคริปต์ที่ขับ browser และไฟล์ที่ Save เก็บไว้ใน scratchpad ของ session ตรวจรับ (ไม่ได้ commit)
+ค่า "GMAT รายวินาที" ได้จากการรัน GMAT อีกครั้งด้วย TLE และสถานีเดียวกับ server ทุก 1 วินาทีช่วง AOS − 120 ถึง LOS + 120 วินาที
+แล้วหาเวลาที่ El ข้าม 0° แบบเชิงเส้นระหว่างวินาที และ Max El จากพาราโบลาผ่าน 3 จุดรอบค่าสูงสุด
+
+| # | เกณฑ์ | ผล |
+|---|---|---|
+| 1 | คลิกขวาที่ ISS ใน Map → Show next pass ได้ Pass details ที่ชื่อ แท็บ คอลัมน์ และค่าตรงตาม ref-P, AOS/LOS ต่างจาก GMAT รายวินาทีไม่เกิน 1 วินาที | ผ่าน (AOS ต่าง 0.0070 วินาที, LOS ต่าง 0.0104 วินาที) |
+| 2 | Future passes ของ ISS ไม่เกิน 10 pass ใน 3 วัน ทุก pass Max El ≥ 5°, ดับเบิลคลิกได้ Pass details, ปิดหน้าต่างแม่แล้วลูกปิดตาม | ผ่าน (10 pass, Max El 8.83° ถึง 86.85°) |
+| 3 | ดาว GEO ได้ข้อความ error ของ ref-P §1.4, ดาวที่ไม่มี pass ได้ "…has no passes\nwithin the next 3 days" | ผ่าน (ข้อหลังใช้ Minimum elevation 90° ดูหัวข้อ 3) |
+| 4 | Save ของทั้งสองหน้าต่างได้ `.txt` ตาม ref-P §8.3/§8.4, Print ได้หน้าพิมพ์ตาม ref-P §8.5 | ผ่าน |
+| 5 | Sky at a glance ของ `Amateur` มีแท่งของทุกดาวที่มี pass ใน 8 ชม., คลิกแท่งได้ Pass details, เลื่อนเวลาเกิน 1 นาทีแล้ววาดใหม่ | ผ่านหลังแก้ข้อบกพร่อง 1 จุด (หน้าต่างถูกสร้างซ้ำเมื่อเปิด Time Controller ดูหัวข้อ 5) |
+| 6 | Minimum elevation 30 แล้ว Future passes เหลือเฉพาะ Max El ≥ 30°, Reset แล้ว OK ได้ค่าตั้งต้นและ key ถูกลบจาก `preferences.json` | ผ่าน |
+| 7 | test ของ engine, server และ web ผ่านทั้งหมด และ GNSS Studio ได้ผลเหมือนเดิมทุกไบต์ | ผ่าน |
+
+ไม่มี error หรือ warning ใน console ของ browser ทุกขั้น และ log ของ server ไม่มี WARNING หรือ ERROR
+
+### 1. Show next pass ของ ISS
+
+18:55:06: ISS อยู่ที่ 5.00°N 52.95°W (El −73.4° จาก THBK) คลิกขวาที่จุดของ ISS ใน Map ได้เมนู "Satellite info" (กดไม่ได้), "Show next pass", "Future passes",
+"Highlight footprint" (ติ๊ก), "Ground Track" (ไม่มี "Show current pass" เพราะ El < 0) กด Show next pass: กล่อง "กำลังคำนวณวงโคจรด้วย GMAT…" ขึ้นหลัง 0.5 วินาที
+(GMAT คำนวณ ISS 6 วัน) และหน้าต่าง **"Pass details for ISS (ZARYA) (orbit 59494)"** ขึ้นหลัง 1.9 วินาที
+แท็บ Data, Polar, Az/El คอลัมน์ตั้งต้น Time, Az, El, Range, Footp ปุ่ม Print, Save, Close มี 21 แถว (Number of entries 20 ทุก (LOS − AOS)/20 = 32.7 วินาที)
+แถวแรก `2026/11/13 19:29:42 | 324.60° | 0.00° | 2356 | 4520` แถวกลาง (TCA) `19:35:09 | 54.43° | 77.58° | 432 | 4520`
+แถวสุดท้าย `19:40:36 | 141.04° | -0.00° | 2361 | 4530` (El ที่ LOS ห่างจาก 0 ไม่ถึง 0.005° รูปแบบ `%.2f°` ของ Gpredict จึงพิมพ์เป็น −0.00 ได้)
+
+| ค่า | Pass details (API) | GMAT รายวินาที | ต่าง |
+|---|---|---|---|
+| AOS | 19:29:42.626 | 19:29:42.619 | 0.0070 วินาที |
+| LOS | 19:40:36.767 | 19:40:36.756 | 0.0104 วินาที |
+| Max El | 77.5883° | 77.5883° | 2.1e-05° |
+
+ภาพ: `01-map.png`, `02-popup.png`, `03-waiting.png`, `04-pass-details-data.png`, `05-pass-details-polar.png`, `05-pass-details-azel.png`
+
+### 2. Future passes ของ ISS
+
+18:56:54: คลิกขวาที่ ISS ใน Map → Future passes ได้หน้าต่าง **"Upcoming passes for ISS (ZARYA)"** ใน 0.1 วินาที (ใช้ block รายวันที่ข้อ 1 คำนวณไว้)
+คอลัมน์ตั้งต้น AOS, LOS, Duration, Max El, AOS Az, LOS Az ปุ่ม Print, Save, Close มี 10 pass (Number of passes to predict) ทุก pass เริ่มก่อน 2026-11-16 18:56 (3 วัน)
+ทุก pass เทียบกับ GMAT รายวินาที:
+
+| # | AOS | LOS | Max El | AOS ต่าง (วินาที) | LOS ต่าง (วินาที) | Max El ต่าง |
+|---|---|---|---|---|---|---|
+| 1 | 2026-11-13 19:29:42.626 | 19:40:36.767 | 77.59° | 0.0070 | 0.0104 | 2.1e-05° |
+| 2 | 2026-11-14 08:48:28.330 | 08:59:15.029 | 86.85° | 0.0061 | 0.0239 | 1.4e-03° |
+| 3 | 2026-11-14 18:42:07.470 | 18:52:40.576 | 31.76° | 0.0257 | 0.0172 | 4.0e-10° |
+| 4 | 2026-11-14 20:19:44.677 | 20:28:04.716 | 8.83° | 0.0277 | 0.0240 | 1.3e-08° |
+| 5 | 2026-11-15 08:00:54.462 | 08:11:22.001 | 34.00° | 0.0056 | 0.0065 | 5.8e-07° |
+| 6 | 2026-11-15 09:38:44.150 | 09:47:03.720 | 8.85° | 0.0092 | 0.0024 | 1.7e-08° |
+| 7 | 2026-11-15 17:54:45.673 | 18:04:23.173 | 15.57° | 0.0037 | 0.0126 | 2.4e-09° |
+| 8 | 2026-11-15 19:31:14.501 | 19:41:10.751 | 19.25° | 0.0091 | 0.0077 | 1.3e-08° |
+| 9 | 2026-11-16 07:13:40.458 | 07:23:10.048 | 15.64° | 0.0206 | 0.0173 | 1.1e-08° |
+| 10 | 2026-11-16 08:50:07.353 | 08:59:54.697 | 18.08° | 0.0189 | 0.0115 | 2.0e-07° |
+
+(pass ที่ 2 ผ่านเกือบตรงหัว Max El จากพาราโบลาของจุดรายวินาทีจึงคลาดจากค่าจริงมากกว่า pass อื่น ยังต่ำกว่าเกณฑ์ 0.01° ของ spec หัวข้อ 11)
+ดับเบิลคลิกแถวที่ 3 ได้ **"Pass details for ISS (ZARYA) (orbit 59509)"** แถวแรก `2026/11/14 18:42:07` (pass เดียวกับแถว ไม่ได้ส่งคำขอใหม่ถึง server)
+ปิด "Upcoming passes for ISS (ZARYA)" แล้วหน้าต่าง Pass details ปิดตาม (ไม่เหลือหน้าต่างใด) ภาพ: `02-upcoming.png`, `04-double-click.png`, `05-parent-closed.png`
+
+### 3. ข้อความเมื่อไม่มี pass
+
+- ES'HAIL 2 (NORAD 43700, GEO, El 6.0° เมนูจึงมี "Show current pass" ด้วย) คลิกขวาใน Map:
+  Show next pass ได้กล่องไอคอน Error ปุ่ม OK ข้อความ `Satellite ES'HAIL 2 has no passes for\nthe current ground station!\n\nThis can be because the satellite\nis geostationary, decayed or simply\nnever comes above the horizon`
+  Future passes ได้ `Satellite ES'HAIL 2 has no passes for\nthe current ground station!` (server ตอบ `PASS_NO_AOS` ทันทีโดยไม่สั่ง GMAT)
+- ดาวที่ไม่มี pass ใน 3 วัน: ดาวใน `satdb.json` ทุกดวงที่ขึ้นได้มี pass ใน 3 วันที่ Minimum elevation 5° (ลองดาวที่น่าจะไม่มีผ่าน API คือ PHASE 3B (AO-10) วงรีสูงและ GREENCUBE (IO-117) วงโคจร MEO
+  ทั้งสองดวงมี pass) จึงตั้ง Edit → Preferences → Pass Conditions → Minimum elevation **90** แล้ว OK (`preferences.json` เป็น `{"PREDICT/MINIMUM_ELEV": 90}`)
+  แล้ว ISS → Future passes และ Show next pass ได้กล่องไอคอน Info ข้อความ `Satellite ISS (ZARYA) has no passes\nwithin the next 3 days` (`PASS_NONE_WITHIN`)
+  จากนั้นกด Reset แล้ว OK (key ถูกลบ ค่ากลับเป็น 5)
+
+ภาพ: `01-geo-next.png`, `02-geo-future.png`, `03-prefs-90.png`, `04-none-future.png`, `05-none-next.png`
+
+### 4. Save และ Print
+
+ไฟล์ที่ได้ในโฟลเดอร์ดาวน์โหลดของ Chrome:
+
+| ไฟล์ | จาก | กล่อง Save | เนื้อหา |
+|---|---|---|---|
+| `ISS-_ZARYA_-59494.txt` (1,274 ไบต์) | Pass details ข้อ 1 | "Save Pass Details" ชื่อตั้งต้น `ISS-_ZARYA_-59494`, Info+header+data | หัว 5 บรรทัด (`Pass details for ISS (ZARYA) (orbit 59494)`, `Observer: THBK, Bangkok`, `LAT:13.73 LON:100.78`, `AOS: 2026/11/13 19:29:42 UTC`, `LOS: 2026/11/13 19:40:36 UTC`) เส้นคั่น 46 ตัว หัวตาราง ` Time                  Az      El  Range Footp` และ 21 แถว |
+| `ISS-_ZARYA_-passes.txt` (12,760 ไบต์) | Upcoming passes ข้อ 2 | "Save Passes" ชื่อตั้งต้น `ISS-_ZARYA_-passes`, Complete report | หัว 3 บรรทัด เส้นคั่น 97 ตัว (ยาวกว่าบรรทัดหัวตาราง 96 ตัว 1 ตัวตาม ref-P §8.4) 10 แถว (AOS, TCA, LOS เสมอ) แล้ว 10 ส่วน ` Orbit <n>` พร้อมตารางของแต่ละ pass |
+| `ISS-passes-summary.txt` (1,340 ไบต์) | Upcoming passes ข้อ 2 | พิมพ์ชื่อเอง, Summary (กล่องเปิดที่ Complete report อีกครั้ง ไม่จำตัวเลือก ตาม Gpredict) | หัว 3 บรรทัดและ 10 แถว |
+
+ตัวเลือก "File contents:" ของ Pass details คือ Info+header+data, Header + data, Data only และของ Upcoming passes คือ Complete report, Summary
+แถว "Save in folder:" บอกว่าบันทึกลงโฟลเดอร์ดาวน์โหลดของ browser (ของเรา)
+
+Print ของ Pass details: หน้าต่างพิมพ์ของ browser ไม่แสดงใน Chrome headless จึงดักการเรียก `print()` ของ frame ที่หน้าเว็บสร้าง แล้วเก็บหน้าที่จะพิมพ์ไว้ (`printed.html`)
+และให้ Chrome พิมพ์เป็น PDF (`print.pdf` 1 หน้า A4): แถบหัวสีเทาขอบดำมี `Pass details for ISS (ZARYA) (orbit 59494)` ตรงกลางและ `1/1` ชิดขวา
+ใต้แถบเป็นหัวตารางกับ 21 แถวของ pass แบบ monospace ไม่มีหัว 5 บรรทัดของไฟล์ (ตาม ref-P §8.5)
+Print ของ Upcoming passes ไม่ทำอะไร: ไม่มี frame สำหรับพิมพ์ ไม่มีกล่องหรือหน้าต่างใหม่
+
+### 5. Sky at a glance
+
+- **เปิดครั้งแรก** 18:59:57: Module menu → Sky at a glance ได้หน้าต่าง **"The sky at a glance (Amateur)"** ที่แสดง "กำลังคำนวณวงโคจรด้วย GMAT…"
+  GMAT คำนวณ block รายวันของ 98 ดวง (ES'HAIL 2 ขึ้นไม่ได้จึงไม่ต้องคำนวณ) 3 วัน ใช้ราว 78 วินาที หน้าเว็บถามซ้ำทุก 1 วินาที (75 ครั้ง) แล้วได้กราฟ
+- **พบข้อบกพร่อง:** เปิด Time Controller ขณะหน้าต่าง Sky at a glance เปิดอยู่ แล้วหน้าต่าง Sky at a glance ถูกสร้างเพิ่มทุก tick (16 หน้าต่างในราว 4 วินาที)
+  และการกดปุ่มใน Time Controller ไปโดนหน้าต่างที่ซ้อนอยู่ สาเหตุ: หน้าต่าง Sky at a glance (Task 14) และ Time Controller เป็นลูกของ element เดียวกันที่ใช้ key ของ React
+  เป็นชื่อ module เหมือนกัน แก้ใน commit `fix(gpredict-web): give the sky at a glance window its own React key` (key เป็น `sky:<module>`)
+  พร้อม test `web/src/appKeys.test.ts` ที่ตรวจ `App.tsx` ด้วย parser ของ TypeScript ว่าลูกของ element เดียวกันไม่มี key ซ้ำ แล้ว build หน้าเว็บใหม่และตรวจข้อนี้ใหม่ทั้งข้อ
+- **หลังแก้** 19:04:33: กราฟขึ้นใน 3.3 วินาที (block อยู่ใน cache แล้ว) ขนาด 600 × 3040 (99 ดวง: 99 × 10 + 100 × 20 + 50 ตาม ref-P §7.3) T0 = เวลาของ module
+  ดาวที่มี pass ใน 8 ชม. 72 ดวงได้ 72 แถวเรียงตามชื่อ (ดาวที่ไม่มี pass 27 ดวงรวม ES'HAIL 2 ไม่มีแถว) จาก 114 pass มี 99 แท่งอยู่ในกราฟ
+  ตรวจสีของพิกเซลกลางทุกแท่งเทียบกับสีของดาวในคำตอบของ server: **ตรงครบ 99 แท่ง** อีก 15 pass เป็น pass สุดท้ายของดาวที่เริ่มหลังขอบขวา (กติกาเลื่อนช่วง) จึงถูกตัดเหมือน Gpredict
+- คลิกแท่งของ ISS (19:29:42 ถึง 19:40:36) ได้ **"Pass details for ISS (ZARYA) (orbit 59494)"** (คำขอ `kind: "at"` AOS 2026-11-13T19:29:42.626Z: pass เดียวกับข้อ 1)
+- เปิด Module menu → Time Controller ("Time Controller / Amateur") กด Stop แล้วกดลูกศรขึ้นที่ช่อง Min 2 ครั้ง: เวลาของ module จาก 19:04:38.676 เป็น 19:06:38.676
+  หน้าเว็บถาม Sky at a glance ใหม่ที่เวลาของ module (T0 = 2026-11-13T19:06:38.676Z) และวาดใหม่: 74 แถว 101 แท่งในกราฟ สีตรงครบ
+  กด Reset ใน Time Controller เวลากลับเป็นเวลาจริง ปิดทุกหน้าต่างแล้วไม่เหลือหน้าต่างค้าง
+
+ภาพ: `01-waiting.png`, `02-chart.png`, `03-bar-details.png`, `04-after-time-move.png`
+
+### 6. Preferences → Predict
+
+19:05:25: ตอนเริ่ม `preferences.json` เป็น `{"version": 1, "values": {}}` (จาก Reset ของข้อ 3) Edit → Preferences ได้ **"GPREDICT Preferences :: Predict"**
+แท็บ Pass Conditions, Multiple Passes, Single Pass, Sky at a Glance ตั้ง Minimum elevation 30 แล้ว OK: ไฟล์เป็น `{"PREDICT/MINIMUM_ELEV": 30}` และ `GET /api/prefs` บอก key นี้ใน `user`
+ISS → Future passes ได้ **5 pass** (Max El 77.59°, 86.85°, 31.76°, 34.00°, 42.90° ต่ำสุด 31.76°) แทน 10 pass ของค่าตั้งต้น
+เปิด Preferences อีกครั้งช่องแสดง 30 กด Reset ช่องเป็น 5 แล้ว OK: ไฟล์เป็น `{"version": 1, "values": {}}` (**key ถูกลบ**) `user` ว่าง และ Future passes กลับเป็น 10 pass ชุดเดิมของข้อ 2 (ต่ำสุด 8.83°)
+ภาพ: `01-prefs-30.png`, `02-future-min30.png`, `03-prefs-reset.png`, `04-future-default.png`
+
+หลังตรวจรับ `preferences.json` ไม่มี key ใดเหลือ (ไฟล์ที่ `values` ว่างมีผลเท่ากับไม่มีไฟล์ ก่อนตรวจรับไม่มีไฟล์นี้)
+`modules/Amateur.json`, `session.json`, `settings.json`, `qth/THBK.json` และ `satdb.json` เหมือนก่อนตรวจรับทุกไบต์ (SHA-1 เดิม) ที่เพิ่มคือ cache `ephem/day/` (6 วัน ราว 40 MB)
+
+### 7. test ครบทุกชุด
+
+| ชุด | คำสั่ง | ผล |
+|---|---|---|
+| engine | `( cd api-interop/gnss-predict && python3 -m unittest discover -s tests )` | 498 test OK (ข้าม 3 ที่ต้องใช้ GMAT เมื่อตั้ง `GMAT_BIN` ไม่ข้ามเลย) |
+| server | `( cd api-interop/gpredict-web/server && GMAT_BIN=… ../.venv/bin/python -m unittest discover -s tests )` | 497 test OK ไม่ข้ามเลย (รวม integration กับ GMAT จริงทั้ง `test_integration_gmat` และ `test_integration_passes`) ใช้ 35.5 วินาที |
+| web | `( cd api-interop/gpredict-web/web && npm test )` | 58 ไฟล์ 838 test OK |
+| web | `( cd api-interop/gpredict-web/web && npm run build )` | สำเร็จ (120 modules, JS 346.66 kB) |
+
+`git diff feature/gpredict-web-core -- api-interop/gnss-predict` ว่าง: งานย่อยที่ 2 ไม่แก้ engine จึงให้ผลกับ GNSS Studio เหมือนเดิมทุกไบต์
+
+integration กับ GMAT จริงของงานย่อยที่ 2 (`tests.test_integration_passes`):
+
+- Future passes ของ ISS (TLE คงที่ `ISS` ของ `test_integration_gmat.py`, epoch 2026-11-09 12:00) ที่ THBK เริ่มที่ epoch: 10 pass (2026-11-09 13:43 ถึง 2026-11-12 04:38)
+  คำขอใช้ 1.5 วินาที เทียบ GMAT รายวินาทีทุก pass: AOS ต่างมากสุด 0.0293 วินาที, LOS ต่างมากสุด 0.0265 วินาที, Max El ต่างมากสุด 3.3e-06°
+- Sky at a glance ของ module 10 ดวง (TLE จริงของ ISS, AO-7, SO-50, FO-29, AO-85, JUGNU, CROCUBE, NO-44, RS-44, CAS-9 epoch 10–11 พ.ย. 2026) เริ่ม 2026-11-11 12:00:
+  คำตอบแรก `computing` แล้ว `ok` หลัง 6.4 วินาที (ถาม 7 ครั้ง) 8 ใน 10 ดวงมี pass ใน 8 ชม. (CROCUBE และ JUGNU ไม่มี pass ที่สูงถึง 5°)
+  มี pass เดียวที่เริ่มหลัง 8 ชม. คือ pass สุดท้ายของ ISS (21:05) ตามกติกาเลื่อนช่วง
+
+### สิ่งที่ไม่ได้ทำหรือทำต่างจากเกณฑ์
+
+- **ดาวที่ไม่มี pass ใน 3 วันที่ค่าตั้งต้น**: ไม่มีดาวแบบนี้ในข้อมูลบนเครื่อง และไม่ได้ดึงข้อมูลใหม่จาก CelesTrak (ต้องได้รับอนุญาตก่อน) จึงใช้ Minimum elevation 90°
+  ซึ่งผ่านโค้ดส่วนเดียวกัน (กรณีดาวจริงที่ขึ้นไม่ถึง Minimum elevation ตลอด 3 วันมี test ของ server ด้วยดาวสังเคราะห์)
+- **หน้าต่างพิมพ์ของ browser** ไม่ได้เปิดจริง (Chrome headless) ตรวจหน้าที่จะพิมพ์และ PDF ที่ Chrome สร้างจากหน้านั้นแทน
+- **"Show current pass"** ไม่ได้กดใน browser (ISS อยู่ใต้ขอบฟ้าตลอดการตรวจรับ) มี test ของ server (`kind: "current"`) และของ web (เมนูมีรายการนี้เฉพาะเมื่อ El > 0)
+- **Enter และคลิกขวา → Show details** ใน Upcoming passes ไม่ได้ลองใน browser (ลองแค่ดับเบิลคลิก) เมนู Show details มี test ของ web ส่วนปุ่ม Enter ยังไม่มี test
+- ตรวจเฉพาะ Google Chrome แบบ headless ไม่ได้ลอง Safari และ Firefox
