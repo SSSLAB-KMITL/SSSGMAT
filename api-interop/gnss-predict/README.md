@@ -694,6 +694,7 @@ content-type: application/json
 ไม่ใช้ Cesium ion, Bing, terrain หรือ CDN) โค้ดอยู่ใต้ `web/` (React 18 + TypeScript + Vite, dockview, CesiumJS)
 
 - Spec: [docs/2026-11-11-gnss-studio-workspace-design.md](docs/2026-11-11-gnss-studio-workspace-design.md) (อ้างว่า "workspace §n")
+- Spec งานเสริม ก (Sensor และ Sensor View): [docs/2026-11-13-gnss-studio-sensor-design.md](docs/2026-11-13-gnss-studio-sensor-design.md) (อ้างว่า "sensor spec §n", หัวข้อ 9.9)
 
 ### 9.1 ติดตั้ง
 
@@ -782,8 +783,10 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 - spec: `layout` (การจัดวางตั้งต้นตามหัวข้อ 4.2; ปิด Timeline View แล้ว Ctrl+S แล้ว reload ได้ layout เดิม), `animation` (Start, Pause, Step Forward ได้ 60 วินาทีพอดี, Reset),
   `position` (ตำแหน่ง G01 ใน 3D ต่างจาก `predicted.sp3` ไม่เกิน 1 ม. หลายเวลา; ที่วัดได้ราว 0.5 มม.), `properties` (สีของดาว, Show Labels), `timeline`
   (Set Animation Time to Here ตรงตำแหน่งที่คลิก), `insert` (Satellite จาก Catalog สองดวง + Constellation), `messages` (ข้อความของ job ขึ้น Message Viewer, Clear this Tab ลบเฉพาะแท็บ),
-  `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
-- ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว
+  `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `sensor` (Sensor View จากเมนู Satellite, ดับเบิลคลิกใน Sensor View, เปลี่ยน Cone Half Angle,
+  คลิกซ้ายและขวาที่ดาวในหน้าต่าง 3D, ลบดาวแล้วหน้าต่างปิด, scenario ที่ไม่มีผลลัพธ์; หัวข้อ 9.9), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+- ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
+  ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
 
 ### 9.6 วัดประสิทธิภาพ (เกณฑ์ข้อ 1 และ 2 ของ spec)
 
@@ -851,3 +854,48 @@ browser ที่ไม่มี WebGL (หรือปิดการเร่�
   (Access tool, Report & Graph Manager และหน้า Validation) แถว Timeline แสดงช่วงเวลาของ access ที่ scenario เปิด Timeline ไว้ (แม่แบบ thbk-gnss มีให้แล้ว)
 - ภาพแสงไฟเมืองตอนกลางคืน (Night Lights Level) ต้องใช้ภาพจาก Cesium ion จึงไม่มีในรุ่นออฟไลน์นี้ (เก็บค่าไว้แต่ไม่มีผลต่อภาพ)
 - Cut, Copy และ Paste ใน Object Browser ใช้ได้เฉพาะดาว ไม่รองรับการเปลี่ยนชื่อหรือลบกลุ่ม ไม่ใช่โปรแกรมหลายผู้ใช้ ไม่มีธีมมืด และไม่รองรับมือถือ
+
+### 9.9 Sensor และ Sensor View
+
+**Sensor** เป็น object ของ scenario ที่ติดกับ Satellite (ดาวละกี่ตัวก็ได้) บันทึกใน `scenario.json` ทำงานออฟไลน์ ไม่กระทบผลการคำนวณ
+(hash ของ ephem เท่าเดิมหลังเพิ่ม แก้ หรือลบ sensor) ลบดาวแล้ว sensor ของดาวนั้นถูกลบตาม เปลี่ยนชื่อดาวแล้ว sensor ตามไปอยู่กับชื่อใหม่
+Object Browser วาด sensor ซ้อนใต้ดาวของมัน (ขยายหรือยุบด้วย +/−) กรวยและรอยบนพื้นโลกเดินตามเวลา Animation
+
+- **Insert**: เมนู Insert → Sensor... หรือ Insert → New... → Sensor แล้วเลือก
+  - *Define Properties*: ต้องมี Name และ Parent (ดาวแม่) ช่องอื่นใช้ค่าตั้งต้น
+  - *Insert Default*: ขึ้นหน้าต่าง Select Object ให้เลือกดาวแม่ (ดาวที่เลือกอยู่ใน Object Browser ถูกเลือกไว้ก่อน) ตั้งชื่อ `Sensor<n>` ตัวแรกที่ว่าง
+    ไม่มีดาวใน scenario เลยจะขึ้นข้อความภาษาไทยและปุ่มปิดใช้
+- **Properties** (คลิกขวาที่ sensor → Properties) หน้าต่าง ๆ ตามชื่อใน STK:
+  Basic - Definition (Sensor Type = Simple Conic อ่านอย่างเดียว, **Cone Half Angle** ช่วง (0, 90] ค่าตั้งต้น 45°),
+  Basic - Pointing (Pointing Type = Fixed และ Orientation Method = Az-El อ่านอย่างเดียว, Azimuth [0, 360), Elevation [−90, 90] ค่าตั้งต้น 0° / 90° = ชี้ลงศูนย์กลางโลก, About Boresight = Rotate อ่านอย่างเดียว),
+  Basic - Description (มีดาวแม่แบบอ่านอย่างเดียว), 2D Graphics - Attributes (Show, Color, Fill, % Translucency) และ 3D Graphics - Attributes (Show, Color, Show Radial Lines, Show Boresight Marker)
+  ค่านอกช่วงถูก server ปฏิเสธ (422) และหน้าแสดงกรอบแดงที่ช่องนั้น
+- **หน้าต่าง 3D และ 2D**: 3D วาดกรวย (เส้นขอบ 8 เส้น) และรอยของกรวยบนพื้นโลก 2D วาดรอยบนพื้นโลก (Fill เติมพื้นที่ตาม % Translucency)
+  คำนวณใหม่ตามเวลา Animation ไม่เกิน 4 ครั้งต่อวินาที ซ่อนเมื่อ Show ปิด ดาวแม่ถูกซ่อน หรือดาวแม่ยังไม่มีตำแหน่ง ณ เวลานั้น
+- **คลิกที่ดาวในหน้าต่าง 3D**: คลิกซ้ายที่ดาวหรือ Facility = เลือก object นั้น (เหมือนเลือกใน Object Browser; ลากเพื่อหมุนโลกยังทำงานเหมือนเดิม)
+  คลิกขวาที่ดาว = เมนู Properties, Sensor View, Zoom To (Facility: Properties, Zoom To)
+
+**Sensor View** คือหน้าต่างที่กล้องอยู่ที่ดาวแม่และมองตามทิศ boresight ของ sensor ด้วยมุมกว้างของกรวย เห็นโลกจากดาวและเดินตามเวลา Animation
+เปิดได้จาก: เลือกดาวใน Object Browser → เมนู Satellite (เมนูบนที่ชื่อตาม object ที่เลือก) → Sensor View, เมนู Sensor → Sensor View ของ sensor, หรือคลิกขวาที่ดาวในหน้าต่าง 3D
+
+- **ดาวที่ยังไม่มี sensor**: Sensor View สร้าง `Sensor<n>` (ตัวแรกที่ว่าง) ให้เอง ด้วย **Cone Half Angle ตั้งต้น = ρ + 0.5°** ปัดทศนิยม 1 ตำแหน่ง
+  เมื่อ ρ = asin(Re / (Re + h)) คือมุมครึ่งหนึ่งของจานโลกที่ดาวเห็น (Re = 6371.0088 km, h = ความสูงของดาว ณ เวลาปัจจุบัน; GPS ราว 14.4°)
+  จึงเห็นโลกทั้งดวงพอดี ดาวที่ยังไม่มีผลวงโคจร (ไม่มีตำแหน่ง) ใช้ **45°** ดาวที่มี sensor แล้วเปิดของตัวแรก
+- ชื่อหน้าต่าง `Sensor View - <sensor> (<ดาว>)` หนึ่งบานต่อ sensor อยู่ใน workbook (File → Save) ปิดพร้อม scenario และตามชื่อเมื่อ Rename
+  ลบ sensor หรือลบดาวแล้วหน้าต่างปิดเอง
+- ด้านบนของภาพเลือกที่แถบ Up ได้: **North** (ตั้งต้น) หรือ **Velocity** (+X ของกรอบตัวดาว) มุมกว้างของด้านสั้นของภาพ = min(2α × 1.05, 120°) เมื่อ α = Cone Half Angle
+  กล้องล็อกอยู่ที่ดาว (ลาก หมุน ซูม และดับเบิลคลิกไม่ขยับกล้อง) บนภาพมีชื่อ sensor และดาว เวลา จุดใต้ดาว ความสูง Cone Half Angle และวงขอบกรวย
+- ดาวแม่ยังไม่มีตำแหน่ง (ไม่มีผลวงโคจร หรืออยู่นอกช่วงเวลา) = ภาพว่างพร้อมข้อความภาษาไทย ไม่ใช่ error
+- เปิดพร้อมกันได้ **ไม่เกิน 4 บาน** (viewer ละหนึ่ง WebGL context) บานที่ 5 ไม่เปิดและขึ้นข้อความไทยใน Message Viewer
+- **Sensor View เป็นของเรา ไม่ใช่คำสั่งของ STK**: STK ไม่มีคำสั่งดูภาพผ่าน sensor โดยตรง (ใกล้ที่สุดคือ Obscuration View และ EOIR Sensor Scene ที่ต้องมี license) จึงติดป้าย "เพิ่มเอง" ใน `labels.ts`
+
+ท่าทางของดาวใช้แบบ Nadir alignment with ECI velocity constraint ของ STK ทุกดวง (+Z ชี้ศูนย์กลางโลก, +X = ส่วนของความเร็วเฉื่อยที่ตั้งฉากกับ Z) ไม่ใช่ท่าทางจริงของดาว GNSS
+
+**ข้อจำกัดของ v1** (sensor spec §2):
+
+- Sensor ติดได้กับ Satellite เท่านั้น (ไม่ติดกับ Facility)
+- Sensor Type มีแต่ **Simple Conic** และ Pointing มีแต่ **Fixed** แบบ **Az-El** ในกรอบตัวดาว (ไม่มี Complex Conic, Rectangular, Targeted, Spinning ฯลฯ และไม่มีช่อง Location, Sensor AzEl Mask, Projection, Pulse)
+- ไม่มี Access และ constraint ของ sensor (งานย่อยที่ 4 ต่อยอดได้)
+- ไม่มีท่าทางจริงของดาว GNSS (yaw steering) ซึ่งจะมากับโมเดล 3 มิติ
+- Copy / Paste ของ sensor ปิดใช้พร้อมคำอธิบาย คัดลอกดาวแล้ว sensor ไม่ถูกคัดลอกตาม
+- Insert From Satellite Catalog ใช้กับ Sensor ไม่ได้

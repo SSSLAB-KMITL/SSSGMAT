@@ -1,4 +1,4 @@
-// ตัวช่วยร่วมของ e2e: test ที่ฟัง pageerror ทุกหน้า (ถ้ามี = fail), เปิด scenario ด้วย ?test, อ่าน/แก้ผ่าน API ด้วย Origin ของ server
+// ตัวช่วยร่วมของ e2e: test ที่ฟัง pageerror และ request ออกนอกเครื่องทุกหน้า (ถ้ามี = fail), เปิด scenario ด้วย ?test, อ่าน/แก้ผ่าน API ด้วย Origin ของ server
 // ไม่เรียก /api/orbits/fetch, /api/daily/run หรือ /validate (ผู้ใช้ห้ามดาวน์โหลดจาก CelesTrak/CDDIS/MGEX): ทุกการเรียกในนี้อ่านหรือแก้ data fixture ในเครื่อง
 
 import { expect, test as base, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
@@ -9,14 +9,34 @@ export const WRITE_HEADERS = { Origin: ORIGIN };
 
 // window.__gnssStudioTest ประกาศไว้ใน src/cesium/testHooks.ts (tsconfig รวม src กับ tests)
 
-/** ทุก spec ใช้ test ตัวนี้: pageerror ที่เกิดระหว่าง test = fail (ตรวจตอนจบ test) */
-export const test = base.extend<{ pageErrors: string[] }>({
+/** URL ที่หน้าเว็บขอได้: server ของ e2e เอง, data: และ blob: เท่านั้น (ห้ามต่อเน็ตนอกเครื่อง: งาน Sensor P5) */
+export function isLocalRequest(url: string): boolean {
+  return url.startsWith(`${ORIGIN}/`) || url.startsWith("data:") || url.startsWith("blob:");
+}
+
+/**
+ * ทุก spec ใช้ test ตัวนี้ ตรวจตอนจบ test (ทั้งสองข้อล้มแล้ว test fail):
+ * - pageerror ที่เกิดระหว่าง test = fail
+ * - request ของ browser context (ทุกหน้า รวม frame, worker, ภาพ, font, script) ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` = fail พร้อมรายการ URL
+ */
+export const test = base.extend<{ pageErrors: string[]; requestGuard: string[] }>({
   pageErrors: [
     async ({ page }, use) => {
       const errors: string[] = [];
       page.on("pageerror", (e) => errors.push(`${e.name}: ${e.message}`));
       await use(errors);
       expect(errors, "uncaught errors in the page").toEqual([]);
+    },
+    { auto: true },
+  ],
+  requestGuard: [
+    async ({ context }, use) => {
+      const outside: string[] = [];
+      context.on("request", (r) => {
+        if (!isLocalRequest(r.url())) outside.push(`${r.method()} ${r.url()}`);
+      });
+      await use(outside);
+      expect(outside, "requests that left the local server (only http://127.0.0.1:8766, data: and blob: are allowed)").toEqual([]);
     },
     { auto: true },
   ],
