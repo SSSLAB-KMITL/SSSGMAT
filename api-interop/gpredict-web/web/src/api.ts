@@ -8,6 +8,8 @@ import type {
   Meta,
   ModuleConfig,
   ModuleList,
+  PrefsAnswer,
+  PrefValue,
   Qth,
   QthList,
   SatRecord,
@@ -122,6 +124,16 @@ export const getTrack = (name: string, norad: number) => request<TrackResult>("G
 /** 404 NOT_FOUND (ApiError) while the satellite is below the horizon */
 export const getSkyTrack = (name: string, norad: number) =>
   request<SkyTrackResult>("GET", `${moduleUrl(name)}/skytrack/${norad}`);
+
+// ---------------------------------------------------------------- preferences
+
+export const getPrefs = () => request<PrefsAnswer>("GET", "/api/prefs");
+/**
+ * Set the keys of `set` and remove (back to the default) the keys of `remove`; 422 PREFS_INVALID (ApiError, Thai text, `object` =
+ * the key) if one is wrong, and then nothing is written. A key must not be in both: the server refuses that too.
+ */
+export const putPrefs = (set: Readonly<Record<string, PrefValue>>, remove: readonly string[]) =>
+  request<PrefsAnswer>("PUT", "/api/prefs", { set, remove });
 
 // ---------------------------------------------------------------- other
 

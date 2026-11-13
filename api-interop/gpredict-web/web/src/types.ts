@@ -204,6 +204,21 @@ export interface SkyTrackResult {
   points: SkyPoint[];
 }
 
+// ---------------------------------------------------------------- preferences
+
+/** One value of Preferences: a number, a flag, a text (a colour "#rrggbb") or a list of names (the columns of a pass table). */
+export type PrefValue = number | boolean | string | string[];
+
+/**
+ * GET and PUT /api/prefs (spec §8.2): `values` holds every key with the value in effect, `defaults` every key's default (so the
+ * page needs no copy of them for its Reset buttons), `user` the keys the user has set (the others are at their default).
+ */
+export interface PrefsAnswer {
+  values: Record<string, PrefValue>;
+  defaults: Record<string, PrefValue>;
+  user: string[];
+}
+
 // ---------------------------------------------------------------- GET /api/meta
 
 export interface Meta {

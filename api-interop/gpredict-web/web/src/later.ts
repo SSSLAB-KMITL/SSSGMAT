@@ -24,7 +24,6 @@ export const LATER: Readonly<Record<string, 2 | 3 | 4>> = {
   // Edit
   "Update TLE data from local files": 4,
   "Update transponder data": 3,
-  Preferences: 4,
   // Module menu
   "Detach module": 4,
   "Full screen": 4,

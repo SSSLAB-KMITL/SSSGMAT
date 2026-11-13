@@ -21,6 +21,13 @@ describe("the list of open dialogs", () => {
     expect(closeDialog(list, cloneA)).toEqual([open, { kind: "tle" }]);
   });
 
+  it("has one Preferences dialog", () => {
+    const list = showDialog([], { kind: "preferences" });
+    expect(showDialog(list, { kind: "preferences" })).toBe(list);
+    expect(dialogKey({ kind: "preferences" })).toBe("preferences");
+    expect(closeDialog(showDialog(list, open), { kind: "preferences" })).toEqual([open]);
+  });
+
   it("has one New module dialog, and an Edit module dialog for each module", () => {
     const list = showDialog(showDialog([], { kind: "newModule" }), { kind: "editModule", module: "A" });
     expect(showDialog(list, { kind: "newModule" })).toBe(list);

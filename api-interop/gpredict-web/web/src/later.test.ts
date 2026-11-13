@@ -14,7 +14,7 @@ const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
   ["Log browser", 4, "File"],
   ["Update TLE data from local files", 4, "Edit"],
   ["Update transponder data", 3, "Edit"],
-  ["Preferences", 4, "Edit"],
+  // Edit → Preferences works since sub-project 2 (the window and its Predict group), so it is not here any more
   // Help: "ไม่มี News" - there is no News item at all
   ["Detach module", 4, "Module menu"],
   ["Full screen", 4, "Module menu"],
@@ -39,16 +39,22 @@ describe("LATER (spec §8.2)", () => {
   it("has no News (Help has none: ref §1 lists it, spec §8.2 leaves it out)", () => {
     expect(LATER).not.toHaveProperty("News");
   });
+
+  it("has no Preferences: Edit → Preferences opens the window (the pass items and Sky at a glance follow in their own tasks)", () => {
+    expect(LATER).not.toHaveProperty("Preferences");
+    for (const label of ["Sky at a glance", "Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).toHaveProperty(label);
+  });
 });
 
 describe("laterOf", () => {
   it("gives the sub-project of a label in LATER", () => {
     expect(laterOf("Sky at a glance")).toBe(2);
     expect(laterOf("Radio Control")).toBe(3);
-    expect(laterOf("Preferences")).toBe(4);
+    expect(laterOf("Update TLE data from local files")).toBe(4);
   });
 
   it("throws for a label that is not in LATER, so that a typo cannot make an item look available", () => {
     expect(() => laterOf("Preference")).toThrow();
+    expect(() => laterOf("Preferences")).toThrow(); // it works now
   });
 });

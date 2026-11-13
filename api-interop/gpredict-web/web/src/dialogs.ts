@@ -5,6 +5,7 @@ export type Dialog =
   | { kind: "editModule"; module: string } // Module menu → Configure: "Edit module"
   | { kind: "open" } // File → Open module: "Select a module"
   | { kind: "tle" } // Edit → Update TLE data from network: "TLE Update"
+  | { kind: "preferences" } // Edit → Preferences: "GPREDICT Preferences :: <group>" (a modal)
   | { kind: "help" } // Help → Online help
   | { kind: "license" } // Help → License
   | { kind: "about" } // Help → About Gpredict Web

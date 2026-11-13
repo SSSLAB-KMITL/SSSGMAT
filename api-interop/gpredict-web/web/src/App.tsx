@@ -242,6 +242,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return void quit();
         case "updateTle":
           return show({ kind: "tle" });
+        case "preferences":
+          return show({ kind: "preferences" });
         case "onlineHelp":
           return show({ kind: "help" });
         case "license":

@@ -5,8 +5,10 @@ import {
   getClock,
   getLicense,
   getModules,
+  getPrefs,
   getReadme,
   putClock,
+  putPrefs,
   putTabs,
   retryModule,
   searchSatellites,
@@ -61,6 +63,23 @@ describe("api", () => {
     expect(calls[1]!.url).toBe("/api/modules/M/clone");
     expect(calls[1]!.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ new_name: "M2", open: true });
+  });
+
+  it("GETs the preferences, and PUTs {set, remove} with both always in the body", async () => {
+    const answer = { values: { "PREDICT/MINIMUM_ELEV": 30 }, defaults: { "PREDICT/MINIMUM_ELEV": 5 }, user: ["PREDICT/MINIMUM_ELEV"] };
+    const calls = stubFetch(() => json(answer));
+    expect(await getPrefs()).toEqual(answer);
+    expect(calls[0]!.url).toBe("/api/prefs");
+    expect(calls[0]!.init?.method ?? "GET").toBe("GET");
+    expect(await putPrefs({ "PREDICT/LOOK_AHEAD": 7 }, ["PREDICT/MINIMUM_ELEV"])).toEqual(answer);
+    expect(calls[1]!.url).toBe("/api/prefs");
+    expect(calls[1]!.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ set: { "PREDICT/LOOK_AHEAD": 7 }, remove: ["PREDICT/MINIMUM_ELEV"] });
+  });
+
+  it("a refused preference is an ApiError with the Thai text and the key", async () => {
+    stubFetch(() => json({ code: "PREFS_INVALID", level: "error", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV" }, 422));
+    await expect(putPrefs({ "PREDICT/MINIMUM_ELEV": 0 }, [])).rejects.toMatchObject({ code: "PREFS_INVALID", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV", status: 422 });
   });
 
   it("builds the satellite search query", async () => {

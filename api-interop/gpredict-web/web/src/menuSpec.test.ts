@@ -4,7 +4,7 @@ import type { MenuSpec } from "./menuSpec";
 
 describe("laterItem", () => {
   it("makes a disabled item from a label of LATER", () => {
-    expect(laterItem("Preferences")).toEqual({ kind: "item", label: "Preferences", later: 4 });
+    expect(laterItem("Update TLE data from local files")).toEqual({ kind: "item", label: "Update TLE data from local files", later: 4 });
     expect(laterItem("Log browser", "Ctrl+L")).toEqual({ kind: "item", label: "Log browser", accel: "Ctrl+L", later: 4 });
   });
 

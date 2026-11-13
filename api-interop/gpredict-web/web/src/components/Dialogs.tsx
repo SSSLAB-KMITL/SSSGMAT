@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { dialogKey } from "../dialogs";
 import type { Dialog } from "../dialogs";
+import { PreferencesDialog } from "../prefs/PreferencesDialog";
 import type { ModuleConfig } from "../types";
 import { CloneDialog, DeleteDialog } from "./CloneDialog";
 import { AboutDialog, LicenseDialog, OnlineHelpDialog } from "./HelpDialogs";
@@ -61,6 +62,8 @@ export const Dialogs = memo(function Dialogs({
             return <OpenModuleDialog key={dialogKey(d)} open={open} onClose={close} onOpened={onOpened} />;
           case "tle":
             return <TleUpdateDialog key={dialogKey(d)} onClose={close} onUpdated={onTleUpdated} />;
+          case "preferences":
+            return <PreferencesDialog key={dialogKey(d)} onClose={close} />;
           case "help":
             return <OnlineHelpDialog key={dialogKey(d)} onClose={close} />;
           case "license":

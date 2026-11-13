@@ -1,0 +1,186 @@
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { errorText } from "../api";
+import { Modal } from "../components/Modal";
+import { laterTooltip } from "../later";
+import type { PrefValue } from "../types";
+import { firstView, PREF_GROUPS, switchGroup } from "./prefGroups";
+import type { PrefGroupId, PrefsPageApi } from "./prefGroups";
+import { CommitList, draftToRequest, draftValue, resetInDraft, setInDraft } from "./prefsDraft";
+import type { Draft } from "./prefsDraft";
+import { reloadPrefs, savePrefs, usePrefs } from "./prefsStore";
+
+interface Props {
+  onClose: () => void;
+}
+
+const NO_CHANGES: Draft = new Map();
+
+/** A page of a group. A component of its own so that the page can use hooks, and keeps them while its group is hidden. */
+function GroupPage({ page, api }: { page: (api: PrefsPageApi) => ReactNode; api: PrefsPageApi }) {
+  return <>{page(api)}</>;
+}
+
+/**
+ * Edit → Preferences (ref-D §1, spec §8.1): a modal window "GPREDICT Preferences :: <group>" with the four groups as icons at
+ * its left, the page of the group beside them, and the buttons Cancel and OK (no Apply).
+ *
+ * The pages change a draft that belongs to the window. OK sends what differs from the server's values (PUT /api/prefs through
+ * `savePrefs`), then runs the `onCommit` functions the pages registered, in the order they were registered, then closes. If any of
+ * that fails the window stays open and shows the Thai error. Cancel and Escape close it and save nothing. The page of a group that
+ * has been shown stays in the window (hidden) until it closes, so switching groups loses nothing; the window reads the server's
+ * values again when it opens, and a page is built from them.
+ */
+export function PreferencesDialog({ onClose }: Props) {
+  const answer = usePrefs();
+  const [draft, setDraft] = useState<Draft>(NO_CHANGES);
+  const [view, setView] = useState(firstView);
+  const [commits] = useState(() => new CommitList());
+  const [settled, setSettled] = useState(false); // the read at opening has ended, with or without an answer
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const id = useId();
+
+  useEffect(() => {
+    let alive = true;
+    reloadPrefs().then(
+      () => alive && setSettled(true),
+      (e: unknown) => {
+        if (!alive) return;
+        setLoadError(errorText(e));
+        setSettled(true);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const setValue = useCallback((key: string, v: PrefValue) => setDraft((d) => setInDraft(d, key, v)), []);
+  const resetKeys = useCallback((keys: readonly string[]) => setDraft((d) => resetInDraft(d, keys)), []);
+
+  /** what each page gets: they differ only in the group that registers an onCommit; new when the values the pages show change */
+  const apis = useMemo(
+    () =>
+      answer === null
+        ? null
+        : new Map<PrefGroupId, PrefsPageApi>(
+            PREF_GROUPS.map((g) => [
+              g.id,
+              {
+                value: <T extends PrefValue>(key: string) => draftValue(answer, draft, key) as T,
+                set: setValue,
+                reset: resetKeys,
+                onCommit: (fn) => commits.add(g.id, fn),
+              },
+            ]),
+          ),
+    [answer, draft, setValue, resetKeys, commits],
+  );
+
+  const ready = apis !== null && settled;
+
+  const ok = async () => {
+    if (answer === null || !settled || busy) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      const { set, remove } = draftToRequest(answer, draft);
+      if (Object.keys(set).length > 0 || remove.length > 0) await savePrefs(set, remove);
+      for (const commit of commits.all) await commit();
+      onClose();
+    } catch (e) {
+      setFailure(errorText(e));
+      setBusy(false);
+    }
+  };
+  const cancel = () => {
+    if (!busy) onClose();
+  };
+
+  const active = PREF_GROUPS.find((g) => g.id === view.active)!;
+  const error = failure ?? loadError;
+
+  return (
+    <Modal title={`GPREDICT Preferences :: ${active.label}`} onEscape={cancel}>
+      <div className="dialog prefs">
+        <div className="prefs-main">
+          <div className="prefs-groups" role="tablist" aria-orientation="vertical" aria-label="Preferences">
+            {PREF_GROUPS.map((g) => {
+              const icon = (
+                <>
+                  <span className="prefs-icon" aria-hidden="true">
+                    {g.icon}
+                  </span>
+                  {g.label}
+                </>
+              );
+              // a group without a page is shown and cannot be chosen: `aria-disabled` and not `disabled`, so that its tooltip shows in every browser
+              return g.page === null ? (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="tab"
+                  className="button flat prefs-group later"
+                  aria-selected="false"
+                  aria-disabled="true"
+                  title={g.later === undefined ? undefined : laterTooltip(g.later)}
+                  onClick={(e) => e.preventDefault()}
+                >
+                  {icon}
+                </button>
+              ) : (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="tab"
+                  id={`${id}-tab-${g.id}`}
+                  aria-controls={`${id}-page-${g.id}`}
+                  aria-selected={g.id === view.active}
+                  data-autofocus={g.id === view.active ? true : undefined}
+                  className={g.id === view.active ? "button flat prefs-group active" : "button flat prefs-group"}
+                  onClick={() => setView((v) => switchGroup(v, g.id))}
+                >
+                  {icon}
+                </button>
+              );
+            })}
+          </div>
+          <div className="prefs-pages">
+            {ready ? (
+              PREF_GROUPS.filter((g) => g.page !== null && view.visited.includes(g.id)).map((g) => (
+                <div
+                  key={g.id}
+                  id={`${id}-page-${g.id}`}
+                  className="prefs-page"
+                  role="tabpanel"
+                  aria-labelledby={`${id}-tab-${g.id}`}
+                  hidden={g.id !== view.active}
+                >
+                  <GroupPage page={g.page!} api={apis.get(g.id)!} />
+                </div>
+              ))
+            ) : (
+              // (ของเรา) Gpredict reads its configuration from a file and has nothing to wait for; a read that failed is told below
+              !settled && <p className="dialog-text">กำลังอ่านค่า Preferences...</p>
+            )}
+          </div>
+        </div>
+        {error !== null && (
+          <p className="dialog-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="dialog-buttons">
+          <button type="button" className="button" disabled={busy} onClick={cancel}>
+            Cancel
+          </button>
+          <button type="button" className="button" disabled={!ready || busy} onClick={() => void ok()}>
+            OK
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}

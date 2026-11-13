@@ -18,14 +18,19 @@ describe("menu bar (ref §1, spec §8.2)", () => {
     ]);
   });
 
-  it("Edit: Update TLE data from network is the only one that works; the others name their sub-project", () => {
+  it("Edit: Update TLE data from network and Preferences work; the others name their sub-project", () => {
     expect(outline(barMenu("Edit"))).toEqual([
       "Update TLE data from network",
       "Update TLE data from local files (later 4)",
       "Update transponder data (later 3)",
       "-",
-      "Preferences (later 4)",
+      "Preferences",
     ]);
+  });
+
+  it("Edit → Preferences is an item that can be chosen, and its action is preferences", () => {
+    const item = barMenu("Edit").find((e) => e.kind === "item" && e.label === "Preferences");
+    expect(item).toEqual({ kind: "item", label: "Preferences", action: "preferences" });
   });
 
   it("Help: Online help (F1), License and About Gpredict Web; no News", () => {
