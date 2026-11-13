@@ -15,12 +15,13 @@ from gpredict_web.ephem import EphemManager
 from gpredict_web.errors import ApiError
 from gpredict_web.module import module_from_dict
 from gpredict_web.observe import parse_tle
-from gpredict_web.pass_predict import NEXT_PASS_OFFSET
-from gpredict_web.pass_service import PassPlan, PassService, day_range
+from gpredict_web.pass_predict import NEXT_PASS_OFFSET, PASS_GAP
+from gpredict_web.pass_service import PassPlan, PassService, day_range, name_sort_key
 from gpredict_web.prefs import Prefs
-from gpredict_web.runtime import Hub, ModuleClosedError
+from gpredict_web.runtime import Hub, ModuleClosedError, iso_ms
 from gpredict_web.satdb import SatDb, SatRecord
 from gpredict_web.store import Store
+from gnss_predict.errors import GmatRunError
 from tests.helpers import PERIOD_S, FakeNow, circular_state, half_pass_s, temp_config
 from tests.test_runtime import NORADS, ORIGIN, T0, OrbitPropagate, iso, parse_iso, peak, record
 
@@ -97,6 +98,9 @@ def secs(a: datetime, b: datetime) -> float:
 class PassServiceTestBase(unittest.TestCase):
     """module M (สถานีตั้งต้น ORIGIN) ที่มีดาวทุกดวงของ pass_records เปิดอยู่ใน Hub"""
 
+    def satdb_records(self) -> list[SatRecord]:
+        return pass_records()
+
     def setUp(self):
         self.cfg = temp_config(self)
         self.fake = PassPropagate()
@@ -107,7 +111,7 @@ class PassServiceTestBase(unittest.TestCase):
         store = Store(self.cfg.data_dir)
         store.put_qth(ORIGIN)
         store.set_default_qth("ORIGIN")
-        records = pass_records()
+        records = self.satdb_records()
         satdb = write_satdb(self.cfg.data_dir / "satdb.json", records)
         store.put_module(module_from_dict({"name": "M", "qth": None, "satellites": [r.norad for r in records]},
                                           None, None))
@@ -141,6 +145,13 @@ class PassServiceTestBase(unittest.TestCase):
         finally:
             self.ephem.release_days(owner)
 
+    def sky_ok(self, t=T0) -> dict:
+        self.service.sky("M", t)                                          # สั่ง GMAT (ครั้งแรก: computing)
+        self.ephem.drain()
+        out = self.service.sky("M", t)
+        self.assertEqual(out["status"], "ok")
+        return out
+
 
 class DayRangeTest(unittest.TestCase):
     def test_day_range(self):
@@ -161,9 +172,14 @@ class PlanTest(PassServiceTestBase):
         self.assertEqual((name, spec.norad, spec.tle_lines), (r.name, r.norad, r.tle_lines))
         self.assertEqual(elements, parse_tle(r.tle_lines))
         self.assertIsNone(rt.sat_orbit(11111))
+        orbits = rt.sat_orbits()                                               # ตามลำดับใน module พร้อม NORAD
+        self.assertEqual([o[0] for o in orbits], [r.norad for r in pass_records()])
+        self.assertEqual(orbits[0], (r.norad, r.name, spec, elements))
         self.hub.close("M")
         with self.assertRaises(ModuleClosedError):
             rt.sat_orbit(NORADS[0])
+        with self.assertRaises(ModuleClosedError):
+            rt.sat_orbits()
 
     def test_plan_fields(self):
         plan = self.plan("next", T0)
@@ -267,6 +283,241 @@ class AnswerTest(PassServiceTestBase):
         self.assertEqual((cm.exception.status, cm.exception.code, cm.exception.object),
                          (503, "GMAT_FAILED", str(NORADS[0])))
         self.assertRegex(cm.exception.text, r"[ก-๙]")
+
+
+class NameSortKeyTest(unittest.TestCase):
+    """name_sort_key ต้องเรียงเหมือน compareNames ของ web (Intl.Collator("en", {numeric: true, sensitivity: "base"}))
+    ลำดับที่คาดคือผลของ collator ตัวนั้นจริง (ตรวจด้วย node ตอนเขียน test)"""
+
+    @staticmethod
+    def ordered(names: list[str]) -> list[str]:
+        return sorted(names, key=name_sort_key)                        # sort เสถียร: ชื่อที่เท่ากันคงลำดับเดิม
+
+    def test_ignores_case(self):
+        self.assertEqual(name_sort_key("iss"), name_sort_key("ISS"))
+        self.assertEqual(self.ordered(["Zeta", "alpha", "Beta", "ALPHA"]), ["alpha", "ALPHA", "Beta", "Zeta"])
+
+    def test_numbers_compare_by_value(self):
+        self.assertEqual(self.ordered(["NOAA 19", "NOAA 5", "noaa 18", "NOAA 100"]),
+                         ["NOAA 5", "noaa 18", "NOAA 19", "NOAA 100"])
+        self.assertEqual(self.ordered(["a10", "a2", "a1", "a01"]), ["a1", "a01", "a2", "a10"])
+        self.assertEqual(name_sort_key("a007"), name_sort_key("a7"))                  # เลข 0 นำหน้าไม่มีผล
+
+    def test_punctuation_before_digits_before_letters(self):
+        self.assertEqual(self.ordered(["Z1", "Z-1", "Z 1", "Z_1", "Z.1", "Z(1)", "Z", "Z A"]),
+                         ["Z", "Z 1", "Z A", "Z_1", "Z-1", "Z.1", "Z(1)", "Z1"])
+        self.assertEqual(self.ordered(["B", "9", "A", "10", "A 1", "A-1"]), ["9", "10", "A", "A 1", "A-1", "B"])
+
+    def test_prefix_comes_first_and_empty_is_first(self):
+        self.assertEqual(self.ordered(["COSMOS 2251 DEB", "COSMOS 2251 [DEB]", "COSMOS 2251", ""]),
+                         ["", "COSMOS 2251", "COSMOS 2251 [DEB]", "COSMOS 2251 DEB"])
+
+    def test_accents_do_not_matter(self):
+        self.assertEqual(name_sort_key("é"), name_sort_key("e"))
+        self.assertEqual(self.ordered(["f", "é", "E", "e"]), ["é", "E", "e", "f"])
+
+    def test_ties_keep_input_order(self):
+        names = ["ISS", "iss", "Iss"]
+        self.assertEqual(self.ordered(names), names)
+        self.assertEqual(self.ordered(list(reversed(names))), list(reversed(names)))
+
+    def test_starlink_like_names(self):
+        self.assertEqual(self.ordered(["STARLINK-1007", "Starlink-1007", "STARLINK-123"]),
+                         ["STARLINK-123", "STARLINK-1007", "Starlink-1007"])
+
+
+SKY_NAMES = ["B", "A", "NOAA 19", "NOAA 5", "noaa 18", "ISS", "iss", "Zeta", "10", "9", "A 1", "A-1"]
+SKY_ORDER = ["9", "10", "A", "A 1", "A-1", "B", "ISS", "iss", "NOAA 5", "noaa 18", "NOAA 19", "Zeta"]
+SKY_KEYS = ["status", "t0", "hours", "sats", "messages"]
+SKY_PASS_KEYS = ["orbit", "aos", "tca", "los", "max_el", "aos_az", "max_el_az", "los_az", "vis"]       # ไม่มี rows
+T_LATE = datetime(2026, 11, 12, 20, 0, tzinfo=UTC)
+
+
+def analytic_aos(norad: int, t0: datetime, hours: int, count: int = 10) -> list[datetime]:
+    """AOS ของ pass ที่ get_passes(t0, hours/24, count) ต้องได้จากวงกลมสังเคราะห์ (ผ่านเหนือที่ peak + k·PERIOD_S)
+    เริ่มที่ pass แรกที่ LOS อยู่หลัง t0 แล้วเอาต่อไปจนถึง pass แรกที่ LOS + PASS_GAP ไม่ก่อนสิ้นช่วง หรือครบ count"""
+    half = timedelta(seconds=half_pass_s())
+    k = math.floor((t0 - peak(norad)).total_seconds() / PERIOD_S)
+    found = []
+    while True:
+        pk = peak(norad) + timedelta(seconds=k * PERIOD_S)
+        k += 1
+        if pk + half <= t0:
+            continue
+        found.append(pk - half)
+        if len(found) == count or pk + half + PASS_GAP >= t0 + timedelta(hours=hours):
+            return found
+
+
+class SkySortTest(PassServiceTestBase):
+    """module M มีดาว 12 ดวงชื่อ SKY_NAMES (NORAD 50001–50012 ตามลำดับใน module)"""
+
+    def satdb_records(self) -> list[SatRecord]:
+        return [dataclasses.replace(record(50001 + i), name=name) for i, name in enumerate(SKY_NAMES)]
+
+    def test_sky_rows_sorted_by_name_and_colour_index(self):
+        self.prefs.update({"SKY_AT_GLANCE/COLOUR_03": "#123456"}, [])
+        out = self.sky_ok()
+        self.assertEqual([s["name"] for s in out["sats"]], SKY_ORDER)
+        self.assertEqual([s["norad"] for s in out["sats"]][6:8], [50006, 50007])                # ISS และ iss เท่ากัน: เรียงตาม NORAD
+        colours = [self.prefs.get(f"SKY_AT_GLANCE/COLOUR_{(k % 10) + 1:02d}") for k in range(12)]
+        self.assertEqual([s["colour"] for s in out["sats"]], colours)
+        self.assertEqual((colours[0], colours[2], colours[10], colours[11]), ("#3c46c8", "#123456", "#3c46c8", "#00500a"))
+        self.assertTrue(all(s["passes"] for s in out["sats"]))
+
+
+class SkyTest(PassServiceTestBase):
+    """PassService.sky (ไม่รอ GMAT): ครั้งแรกตอบ computing แล้ว drain() ค่อยตอบ ok"""
+
+    def test_sky_computing_then_ok(self):
+        first = self.service.sky("M", T0)
+        self.assertEqual(list(first), SKY_KEYS)
+        self.assertEqual((first["status"], first["t0"], first["hours"], first["sats"]), ("computing", iso_ms(T0), 8, []))
+        self.assertEqual([m["code"] for m in first["messages"]], ["EPHEM_COMPUTING"])
+        self.ephem.drain()
+        out = self.service.sky("M", T0)
+        self.assertEqual(list(out), SKY_KEYS)
+        self.assertEqual((out["status"], out["t0"], out["hours"], out["messages"]), ("ok", iso_ms(T0), 8, []))
+        by_norad = {s["norad"]: s for s in out["sats"]}
+        self.assertEqual(set(by_norad), {r.norad for r in pass_records()})
+        for s in out["sats"]:
+            self.assertEqual(list(s), ["norad", "name", "colour", "passes"])
+        self.assertEqual(by_norad[GEO]["passes"], [])                         # has_aos เป็นเท็จ
+        self.assertEqual(by_norad[HIDDEN]["passes"], [])                      # TLE ขึ้นได้ แต่ GMAT ให้วงที่ไม่เคยขึ้น
+        passes = by_norad[NORADS[0]]["passes"]
+        self.assertGreater(len(passes), 3)
+        for p in passes:
+            self.assertEqual(list(p), SKY_PASS_KEYS)
+            self.assertLess(p["aos"], p["tca"])
+            self.assertLess(p["tca"], p["los"])
+
+    def test_sky_colour_counts_satellites_without_passes(self):
+        out = self.sky_ok()
+        # SAT-7530, SAT-25544, SAT-40001 (GEO), SAT-40002 (ไม่เคยขึ้น), SAT-40003, SAT-43017: เลขในชื่อเรียงตามค่า
+        self.assertEqual([s["name"] for s in out["sats"]],
+                         ["SAT-7530", "SAT-25544", "SAT-40001", "SAT-40002", "SAT-40003", "SAT-43017"])
+        self.assertEqual([bool(s["passes"]) for s in out["sats"]], [True, True, False, False, True, True])
+        self.assertEqual([s["colour"] for s in out["sats"]],
+                         [self.prefs.get(f"SKY_AT_GLANCE/COLOUR_{k:02d}") for k in range(1, 7)])
+
+    def test_sky_uses_hours_pref_and_ten_passes(self):
+        n = NORADS[0]
+        self.prefs.update({"SKY_AT_GLANCE/TIME_SPAN_HOURS": 8}, [])
+        out = self.sky_ok()
+        passes = {s["norad"]: s["passes"] for s in out["sats"]}[n]
+        self.assertEqual(out["hours"], 8)
+        want = analytic_aos(n, T0, 8)
+        self.assertEqual(len(passes), len(want))
+        for p, aos in zip(passes, want):
+            self.assertAlmostEqual(secs(parse_iso(p["aos"]), aos), 0.0, delta=1.0)
+        limit = T0 + timedelta(hours=8)
+        self.assertTrue(all(parse_iso(p["aos"]) <= limit for p in passes[:-1]))
+        self.assertLessEqual(parse_iso(passes[-1]["aos"]), limit + timedelta(hours=8))         # เกินได้ 1 pass ตาม get_passes
+        self.prefs.update({"SKY_AT_GLANCE/TIME_SPAN_HOURS": 24}, [])
+        out = self.sky_ok()
+        passes = {s["norad"]: s["passes"] for s in out["sats"]}[n]
+        self.assertEqual((out["hours"], len(passes)), (24, 10))                      # วันละราว 15 pass แต่ไม่เกิน 10
+        for p, aos in zip(passes, analytic_aos(n, T0, 24)):
+            self.assertAlmostEqual(secs(parse_iso(p["aos"]), aos), 0.0, delta=1.0)
+
+    def test_sky_applies_minimum_elevation(self):
+        wobble = lambda out: {s["norad"]: s["passes"] for s in out["sats"]}[WOBBLE]
+        low = wobble(self.sky_ok())
+        self.assertTrue(any(p["max_el"] < 40.0 for p in low))
+        self.prefs.update({"PREDICT/MINIMUM_ELEV": 40}, [])
+        high = wobble(self.sky_ok())
+        self.assertTrue(high)
+        self.assertTrue(all(p["max_el"] >= 40.0 for p in high))
+
+    def test_sky_range_is_twice_span(self):
+        with mock.patch.object(self.ephem, "ensure_days", wraps=self.ephem.ensure_days) as ensure:
+            self.service.sky("M", T0)
+            self.service.sky("M", T_LATE)
+            self.prefs.update({"SKY_AT_GLANCE/TIME_SPAN_HOURS": 21}, [])
+            self.service.sky("M", T0)
+        self.assertEqual(ensure.call_count, 3)
+        ranges = []
+        for call in ensure.call_args_list:
+            owner, specs, first, last = call.args
+            self.assertEqual(owner, "sky:M")
+            self.assertEqual({sp.norad for sp in specs}, {r.norad for r in pass_records()} - {GEO})   # GEO ไม่ขึ้น: ไม่สั่ง GMAT
+            ranges.append((first, last))
+        self.assertEqual(ranges, [(date(2026, 11, 11), date(2026, 11, 12)),        # T0 + 16 ชม. = 11-12 23:20
+                                  (date(2026, 11, 11), date(2026, 11, 13)),        # 20:00 + 16 ชม. = 11-13 12:00
+                                  (date(2026, 11, 11), date(2026, 11, 14))])       # T0 + 42 ชม. = 11-14 01:20
+
+    def test_sky_t0_rules(self):
+        self.hub.get("M").clock.set(state="stop", time=T0 + timedelta(hours=3))
+        self.wall.t = T0 + timedelta(hours=5)
+        self.assertEqual(self.service.sky("M", None)["t0"], iso_ms(T0 + timedelta(hours=3)))      # ไม่ส่ง t: เวลาของ module
+        self.assertEqual(self.service.sky("M", T0 + timedelta(hours=1))["t0"], iso_ms(T0 + timedelta(hours=1)))
+        self.prefs.update({"PREDICT/USE_REAL_T0": True}, [])
+        self.assertEqual(self.service.sky("M", T0 + timedelta(hours=1))["t0"], iso_ms(self.wall.t))   # ref-P §7.1 ครั้งแรก
+        self.assertEqual(self.service.sky("M", None)["t0"], iso_ms(T0 + timedelta(hours=3)))          # ref-P §7.7 วาดใหม่
+
+    def test_sky_no_satellites(self):
+        # ดัชนีดาวไม่เคยลบดาว แต่ module ที่ดาวทั้งหมดไม่อยู่ในดัชนีมีรายการดาวว่างได้
+        Store(self.cfg.data_dir).put_module(module_from_dict({"name": "E", "qth": None, "satellites": [99999]}, None, None))
+        self.hub.open("E")
+        self.addCleanup(self.hub.close, "E")
+        out = self.service.sky("E", T0)
+        self.assertEqual((out["status"], out["hours"], out["sats"], out["messages"]), ("ok", 8, [], []))
+        self.ephem.drain()
+        self.assertFalse([c for c in self.fake.calls if is_day_job(c)])
+        self.assertNotIn("sky:E", self.ephem._day_pairs)
+
+    def test_sky_module_not_open(self):
+        with self.assertRaises(ModuleClosedError):
+            self.service.sky("Nope", T0)
+
+    def test_sky_dropped_satellite_has_no_passes_and_a_message(self):
+        n = NORADS[1]
+        self.fake.drop = {n}
+        out = self.sky_ok()
+        sat = {s["norad"]: s for s in out["sats"]}[n]
+        self.assertEqual(sat["passes"], [])
+        self.assertEqual([(m["code"], m["object"]) for m in out["messages"]], [("SAT_MISSING_FROM_GMAT", str(n))])
+        self.assertTrue(all(s["passes"] for s in out["sats"] if s["norad"] in (NORADS[0], NORADS[2], WOBBLE)))
+
+    def test_sky_lost_block_has_no_passes_and_a_message(self):
+        self.sky_ok()
+        real = self.ephem.get_days
+        n = NORADS[0]
+        with mock.patch.object(self.ephem, "get_days",
+                               side_effect=lambda spec, *a: None if spec.norad == n else real(spec, *a)):
+            out = self.service.sky("M", T0)
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual({s["norad"]: s["passes"] for s in out["sats"]}[n], [])
+        self.assertEqual([(m["code"], m["level"], m["object"]) for m in out["messages"]], [("GMAT_FAILED", "warning", str(n))])
+        self.assertRegex(out["messages"][0]["text"], r"[ก-๙]")
+
+    def test_sky_unbound_orbit_skips_only_that_satellite(self):
+        n = NORADS[1]
+        self.fake.unbound = {n}
+        out = self.sky_ok()
+        self.assertEqual({s["norad"]: s["passes"] for s in out["sats"]}[n], [])
+        self.assertEqual([(m["code"], m["object"]) for m in out["messages"]], [("SAT_STATE_INVALID", str(n))])
+        self.assertTrue({s["norad"]: s["passes"] for s in out["sats"]}[NORADS[0]])
+
+    def test_sky_failed_status(self):
+        self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
+        self.service.sky("M", T0)
+        self.ephem.drain()
+        out = self.service.sky("M", T0)
+        self.assertEqual((out["status"], out["sats"]), ("failed", []))
+        self.assertEqual([(m["code"], m["level"]) for m in out["messages"]], [("GMAT_FAILED", "error")])
+
+    def test_sky_keeps_one_owner_per_module(self):
+        self.service.sky("M", T0)
+        self.service.sky("M", T0 + timedelta(hours=1))
+        self.assertEqual([o for o in self.ephem._day_pairs if o.startswith("sky:")], ["sky:M"])
+
+    def test_close_module_releases_sky_owner(self):
+        self.service.sky("M", T0)
+        self.assertIn("sky:M", self.ephem._day_pairs)
+        self.hub.close("M")
+        self.assertNotIn("sky:M", self.ephem._day_pairs)
+        self.hub.close("M")                                                          # ปิดซ้ำไม่เป็นไร
 
 
 if __name__ == "__main__":

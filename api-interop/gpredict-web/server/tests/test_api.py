@@ -788,9 +788,9 @@ class DisconnectingRequest:
         return True
 
 
-class PassesApiTest(ApiTestBase):
-    """POST /api/modules/{name}/passes กับ worker thread จริงของ EphemManager (route รอ GMAT แบบ async ทุก 0.2 วินาที)
-    module M มีดาวทุกดวงของ pass_records (NORADS, GEO, HIDDEN, WOBBLE) และใช้สถานี ORIGIN"""
+class PassApiTestBase(ApiTestBase):
+    """worker thread จริงของ EphemManager กับ PassPropagate: module M มีดาวทุกดวงของ pass_records
+    (NORADS, GEO, HIDDEN, WOBBLE) ใช้สถานี ORIGIN และเปิดอยู่ โดยงานช่วงของ module เสร็จแล้ว"""
 
     ephem_worker = True
 
@@ -817,12 +817,6 @@ class PassesApiTest(ApiTestBase):
         with self.ephem._lock:
             return self.ephem._running is None and not self.ephem._queue
 
-    def passes(self, kind: str, t, norad: int = NORADS[0], aos=None, name: str = "M"):
-        body = {"norad": norad, "kind": kind, "t": iso(t)}
-        if aos is not None:
-            body["aos"] = iso(aos)
-        return self.client.post(f"/api/modules/{name}/passes", json=body)
-
     def ok(self, r) -> dict:
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()
@@ -830,6 +824,16 @@ class PassesApiTest(ApiTestBase):
     def set_prefs(self, values: dict) -> None:
         r = self.client.put("/api/prefs", json={"set": values})
         self.assertEqual(r.status_code, 200, r.text)
+
+
+class PassesApiTest(PassApiTestBase):
+    """POST /api/modules/{name}/passes (route รอ GMAT แบบ async ทุก 0.2 วินาที)"""
+
+    def passes(self, kind: str, t, norad: int = NORADS[0], aos=None, name: str = "M"):
+        body = {"norad": norad, "kind": kind, "t": iso(t)}
+        if aos is not None:
+            body["aos"] = iso(aos)
+        return self.client.post(f"/api/modules/{name}/passes", json=body)
 
     def pass_owners(self) -> list[str]:
         with self.ephem._lock:
@@ -972,6 +976,99 @@ class PassesApiTest(ApiTestBase):
         with self.ephem._lock:
             running = self.ephem._running
         self.assertTrue(running is not None and running.cancelled)              # ไม่มีใครต้องการแล้ว: งานถูกตัด
+
+
+class SkyGlanceApiTest(PassApiTestBase):
+    """GET/DELETE /api/modules/{name}/skyglance: GET ไม่รอ GMAT (หน้าเว็บถามซ้ำทุก 1 วินาทีระหว่าง computing)
+    owner ของ EphemManager คือ sky:<module> ปล่อยด้วย DELETE หรือเมื่อปิด module"""
+
+    def sky(self, t=None, name: str = "M"):
+        return self.client.get(f"/api/modules/{name}/skyglance", params={} if t is None else {"t": iso(t)})
+
+    def sky_owners(self) -> list[str]:
+        with self.ephem._lock:
+            return [o for o in self.ephem._day_pairs if o.startswith("sky:")]
+
+    def wait_status(self, status: str, t=T0) -> dict:
+        self.wait_until(lambda: self.ok(self.sky(t))["status"] == status)
+        return self.ok(self.sky(t))
+
+    def test_get_does_not_wait_for_gmat_then_ok(self):
+        self.fake.gate = threading.Event()
+        self.addCleanup(self.fake.gate.set)
+        begin = time.monotonic()
+        body = self.ok(self.sky(T0))
+        self.assertEqual(list(body), ["status", "t0", "hours", "sats", "messages"])
+        self.assertEqual((body["status"], body["t0"], body["hours"], body["sats"]), ("computing", iso(T0), 8, []))
+        self.assertTrue(self.fake.started.wait(10))                              # งาน block รายวันกำลังรันและถูกกั้นไว้
+        self.assertEqual(self.ok(self.sky(T0))["status"], "computing")
+        self.assertLess(time.monotonic() - begin, 5.0)                           # ไม่ได้รอ GMAT (gate รอได้สูงสุด 10 วินาที)
+        self.fake.gate.set()
+        body = self.wait_status("ok")
+        self.assertEqual([s["name"] for s in body["sats"]],
+                         ["SAT-7530", "SAT-25544", "SAT-40001", "SAT-40002", "SAT-40003", "SAT-43017"])
+        sat = body["sats"][1]
+        self.assertEqual(list(sat), ["norad", "name", "colour", "passes"])
+        self.assertRegex(sat["colour"], r"^#[0-9a-f]{6}$")
+        self.assertGreater(len(sat["passes"]), 3)
+        self.assertEqual(list(sat["passes"][0]), PASS_KEYS[:-1])                  # สรุป pass ไม่มี rows
+        for key in ("aos", "tca", "los"):
+            self.assertRegex(sat["passes"][0][key], ISO_MS)
+        self.assertEqual(self.sky_owners(), ["sky:M"])
+
+    def test_t_is_optional_and_means_module_time(self):
+        self.assertEqual(self.ok(self.sky())["t0"], iso(T0))
+        self.client.put("/api/modules/M/clock", json={"state": "stop", "time": iso(T0 + timedelta(hours=2))})
+        self.assertEqual(self.ok(self.sky())["t0"], iso(T0 + timedelta(hours=2)))
+        self.assertEqual(self.ok(self.sky(T0 + timedelta(hours=1)))["t0"], iso(T0 + timedelta(hours=1)))
+        self.set_prefs({"PREDICT/USE_REAL_T0": True})
+        self.assertEqual(self.ok(self.sky(T0 + timedelta(hours=1)))["t0"], iso(self.wall.t))
+        self.assertEqual(self.ok(self.sky())["t0"], iso(T0 + timedelta(hours=2)))
+
+    def test_hours_follow_preference(self):
+        self.set_prefs({"SKY_AT_GLANCE/TIME_SPAN_HOURS": 12, "SKY_AT_GLANCE/COLOUR_01": "#010203"})
+        body = self.wait_status("ok")
+        self.assertEqual((body["hours"], body["sats"][0]["colour"]), (12, "#010203"))
+
+    def test_delete_releases_owner(self):
+        self.ok(self.sky(T0))
+        self.assertEqual(self.sky_owners(), ["sky:M"])
+        r = self.client.delete("/api/modules/M/skyglance")
+        self.assertEqual((r.status_code, r.content), (204, b""))
+        self.assertEqual(self.sky_owners(), [])
+        self.assertEqual(self.client.delete("/api/modules/M/skyglance").status_code, 204)        # ปล่อยซ้ำไม่เป็นไร
+        self.assertEqual(self.client.delete("/api/modules/Nope/skyglance").status_code, 204)     # module ปิดไปก่อนแล้ว
+
+    def test_close_module_releases_sky_owner(self):
+        self.ok(self.sky(T0))
+        self.assertEqual(self.sky_owners(), ["sky:M"])
+        self.assertEqual(self.client.post("/api/modules/M/close").status_code, 200)
+        self.assertEqual(self.sky_owners(), [])
+
+    def test_module_not_open_is_404(self):
+        self.assert_error(self.sky(T0, "Nope"), 404, "NOT_FOUND", "Nope")
+        self.client.post("/api/modules/M/close")
+        self.assert_error(self.sky(T0), 404, "NOT_FOUND", "M")
+
+    def test_invalid_t_is_422(self):
+        for value in ("garbage", "2026-11-12T07:20:00", "0001-01-01T00:00:00Z", ""):
+            with self.subTest(t=value):
+                err = self.assert_error(self.client.get("/api/modules/M/skyglance", params={"t": value}), 422,
+                                        "PASS_INVALID", "t")
+                self.assertTrue(err["text"].endswith(f"(t) ต้องเป็น {CLOCK_TIME_TEXT}"), err["text"])
+        self.assertEqual(self.sky_owners(), [])
+
+    def test_gmat_failure_shows_failed_and_reopening_retries(self):
+        self.fake.fail = GmatRunError("GMAT ล้ม")
+        self.ok(self.sky(T0))
+        body = self.wait_status("failed")
+        self.assertEqual(body["sats"], [])
+        self.assertEqual([(m["code"], m["level"]) for m in body["messages"]], [("GMAT_FAILED", "error")])
+        self.assertIn("GMAT ล้ม", body["messages"][0]["text"])
+        self.fake.fail = None
+        self.client.delete("/api/modules/M/skyglance")                           # ปิดหน้าต่างแล้วเปิดใหม่ = ลองใหม่
+        self.ok(self.sky(T0))
+        self.assertEqual(self.wait_status("ok")["status"], "ok")
 
 
 # ---------------------------------------------------------------- Host และ Origin (ของเรา: กันเว็บอื่นสั่ง server)

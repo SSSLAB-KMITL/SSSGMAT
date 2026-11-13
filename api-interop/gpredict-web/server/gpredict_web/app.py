@@ -2,6 +2,7 @@
 
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
+  + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
@@ -40,9 +41,9 @@ from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
 from .ephem import EphemManager
 from .errors import ApiError
-from .pass_service import PassService, gmat_failed
+from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
-from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms
+from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
 from .satdb import SatDb, SatRecord, update_from_network
 from .store import Store, qth_from_dict
 
@@ -773,6 +774,25 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             return _finite(await asyncio.to_thread(pass_service.answer, plan, messages))
         finally:
             ephem.release_days(owner)
+
+    @app.get("/api/modules/{name}/skyglance")
+    async def get_skyglance(name: str, t: str | None = Query(None, max_length=64)):
+        """Sky at a glance (spec §7 และ §9) ไม่รอ GMAT: ตอบ status ของ block รายวันทันที หน้าเว็บถามซ้ำทุก 1 วินาทีระหว่าง computing
+        เมื่อ ok การหา pass ของทุกดาวอยู่ใน thread (ใช้ CPU ได้หลายวินาทีเมื่อ module มีดาวมาก) ไม่ขวาง event loop
+        owner sky:<module> คงอยู่จนหน้าต่างปิด (DELETE) หรือ module ปิด คำขอที่ค้างอยู่ใน thread ขณะ DELETE มาถึงอาจตั้ง owner ซ้ำ
+        owner นั้นหายเมื่อ module ปิดหรือ DELETE ครั้งต่อไป"""
+        t0 = parse_sky_t(t)
+        try:
+            return _finite(await asyncio.to_thread(pass_service.sky, name, t0))
+        except ModuleClosedError:
+            raise _not_open(name) from None
+
+    @app.delete("/api/modules/{name}/skyglance", status_code=204)
+    async def release_skyglance(name: str):
+        """ปล่อย owner sky:<module> เมื่อปิดหน้าต่าง Sky at a glance (module ปิดไปแล้วหรือไม่เคยขอก็ 204) เบาพอจะทำบน event loop
+        เหมือน release_days ของคำขอ pass (ทำใน thread แล้วถูกยกเลิกกลางทางไม่ได้ปล่อยแน่)"""
+        ephem.release_days(sky_owner(name))
+        return Response(status_code=204)
 
     # ---------------- Preferences
 

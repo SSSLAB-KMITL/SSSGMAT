@@ -1,11 +1,16 @@
-"""คำขอ pass ของ POST /api/modules/{name}/passes (spec §3.2, §4 และ §9 ของงานย่อย 2)
+"""คำขอ pass ของ POST /api/modules/{name}/passes และ Sky at a glance ของ GET /api/modules/{name}/skyglance
+(spec §3.2, §4, §7 และ §9 ของงานย่อย 2)
 
-แบ่งเป็นสองขั้นรอบการรอ GMAT ที่ route ทำ (route ถือ owner pass:<uuid4> ของ EphemManager และปล่อยใน finally)
+คำขอ pass แบ่งเป็นสองขั้นรอบการรอ GMAT ที่ route ทำ (route ถือ owner pass:<uuid4> ของ EphemManager และปล่อยใน finally)
 - plan: ตรวจ body, หาดาวใน module, เลือกเวลาเริ่ม (Always use real time) และช่วงวันของ block รายวันที่ต้องใช้
   ดาวที่ has_aos เป็นเท็จได้คำตอบข้อความทันทีโดยไม่สั่ง GMAT (ref-P §1.4: ตรวจก่อนทำนายเสมอ)
 - answer: หลัง days_status เป็น ok ต่อ block → find_passes → get_pass/get_passes ตามค่า Preferences ณ ตอนนั้น → describe
+
+Sky at a glance ไม่รอ GMAT: sky() สั่ง block รายวันของทุกดาวใน module ภายใต้ owner sky:<module> (ถือไว้จนหน้าต่างปิด
+หรือ module ปิด หน้าเว็บถามซ้ำระหว่าง computing) แล้วตอบ status ทันที เมื่อ ok จึงหา pass ของทุกดวง
 """
 
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -19,12 +24,14 @@ from .observe import QthGeo, TleElements, qth_geo
 from .pass_predict import NEXT_PASS_OFFSET, describe, get_pass, get_passes, has_aos, pass_to_dict
 from .passes import Pass, elevation_at, find_passes, pass_containing
 from .prefs import Prefs
-from .runtime import Hub, ModuleClosedError, iso_ms
+from .runtime import COMPUTING_TEXT, Hub, ModuleClosedError, iso_ms, sky_owner
 from .store import Qth
 
 KINDS = ("next", "current", "future", "at")
 AT_TOLERANCE = timedelta(seconds=1)              # kind "at": pass ที่ |AOS − aos| ไม่เกินค่านี้ (ของเรา)
 DATA_PAD = timedelta(days=1)                     # ข้อมูลเริ่มก่อนเวลาเริ่ม 1 วันให้ pass ที่กำลังผ่านมี AOS (spec §3.2)
+SKY_PASSES = 10                                  # pass ต่อดาวใน Sky at a glance (ref-P §7.2 ไม่ใช้ Number of passes to predict)
+SKY_COLOUR_KEYS = tuple(f"SKY_AT_GLANCE/COLOUR_{i:02d}" for i in range(1, 11))
 _UTC = timezone.utc
 _MISSING = "SAT_MISSING_FROM_GMAT"
 
@@ -58,6 +65,41 @@ class PassPlan:
     real_t0: bool = False
 
 
+# ---------------------------------------------------------------- ลำดับชื่อดาว
+
+_PUNCT_ORDER = " _-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"       # เครื่องหมายของ ASCII ตามลำดับของ Intl.Collator("en")
+_PUNCT, _OTHER, _DIGITS, _LETTER = range(4)               # กลุ่มของตัวอักษร: เครื่องหมาย < อื่นๆ ที่ไม่ใช่ตัวอักษรหรือเลข < เลข < ตัวอักษร
+
+
+def name_sort_key(name: str) -> tuple:
+    """key เรียงชื่อดาวให้ได้ลำดับเดียวกับ compareNames ของ web (views/cells.ts) คือ Intl.Collator("en") แบบ numeric และ
+    sensitivity "base": ไม่สนตัวพิมพ์เล็กใหญ่และเครื่องหมายกำกับเสียง เลขที่ติดกันเทียบกันตามค่า (0 นำหน้าไม่มีผล)
+    ช่องว่างและเครื่องหมาย < เลข < ตัวอักษร ชื่อที่เท่ากันได้ key เท่ากัน (ผู้เรียกเสริมด้วย NORAD เมื่อต้องการลำดับตายตัว)
+    ตรงกับ collator ทุกคู่สำหรับ ASCII และตัวอักษรละตินที่ NFKD แยกเครื่องหมายกำกับได้ (ตรวจกับ node ด้วยคู่สุ่ม 240,000 คู่)
+    ตัวอักษรนอกชุดนั้น (เช่น ø, ł, ภาษาอื่น) เรียงตามรหัส Unicode ซึ่งอาจต่างจาก ICU **(ของเรา)**"""
+    key: list[tuple[int, int]] = []
+    digits, in_number = 0, False                          # ค่าของเลขที่กำลังอ่านอยู่ และอยู่กลางเลขหรือไม่
+    for ch in unicodedata.normalize("NFKD", name.casefold()):
+        if ch.isdecimal():
+            digits, in_number = digits * 10 + unicodedata.decimal(ch), True
+            continue
+        if in_number:
+            key.append((_DIGITS, digits))
+            digits, in_number = 0, False
+        category = unicodedata.category(ch)
+        if category in ("Mn", "Cc", "Cf"):               # เครื่องหมายกำกับเสียงและอักขระควบคุมไม่มีผลกับลำดับ
+            continue
+        if ch.isalpha():
+            key.append((_LETTER, ord(ch)))
+        elif ch in _PUNCT_ORDER:
+            key.append((_PUNCT, _PUNCT_ORDER.index(ch)))
+        else:
+            key.append((_OTHER, ord(ch)))
+    if in_number:
+        key.append((_DIGITS, digits))
+    return tuple(key)
+
+
 # ---------------------------------------------------------------- body
 
 def _invalid(field: str, text: str) -> ApiError:
@@ -84,6 +126,11 @@ def parse_body(body: dict) -> tuple[int, str, datetime, datetime | None]:
     t = _parse_time(body.get("t"), "t", "เวลาเริ่ม")
     aos = _parse_time(body.get("aos"), "aos", "AOS ของ pass ที่ต้องการ") if kind == "at" else None
     return norad, kind, t, aos
+
+
+def parse_sky_t(value: str | None) -> datetime | None:
+    """t ของ GET skyglance: ไม่ส่ง -> None (ใช้เวลาของ module) ผิด -> 422 PASS_INVALID ที่ object เป็น t"""
+    return None if value is None else _parse_time(value, "t", "เวลาเริ่ม")
 
 
 # ---------------------------------------------------------------- คำตอบ
@@ -197,6 +244,74 @@ class PassService:
         if p is None:
             return {**out, "message": none_within}
         return {**out, "pass": details(p)}
+
+    def sky(self, module: str, t: datetime | None) -> dict:
+        """Sky at a glance ของ module (spec §7, §9 และ ref-P §7) ไม่รอ GMAT: ตอบ status ของ block รายวันทันที
+        {"status": "ok"|"computing"|"failed", "t0", "hours", "sats": [...], "messages": [...]} sats มีเฉพาะเมื่อ ok
+
+        - T0 (ref-P §7.1, §7.7): ไม่ส่ง t = เวลาของ module (วาดใหม่ทุกครั้งเริ่มที่เวลาของ module) ส่ง t มา = t
+          ยกเว้นเปิด Always use real time ซึ่งใช้เวลาเครื่อง (หน้าเว็บส่ง t เฉพาะการวาดครั้งแรก)
+        - ทุกดาวที่ has_aos ขอใน ensure_days ครั้งเดียวภายใต้ owner sky:<module> วันของ (T0 − 1 วัน) ถึง T0 + 2 × ชั่วโมง
+          (get_passes เลื่อนช่วงตาม pass จึงมี pass ที่ AOS ไม่เกิน T0 + 2 × ชั่วโมง spec §3.2) เรียก sky ซ้ำได้ ช่วงใหม่แทนช่วงเก่า
+          ปล่อย owner ด้วย DELETE หรือเมื่อ module ปิด (Hub.close) ถ้า GMAT ล้ม (failed) ลองใหม่โดยปล่อยแล้วเรียกอีกครั้ง
+        - sats เรียงตามชื่อ (name_sort_key แล้วตาม NORAD) สีของแถวที่ k คือ Satellite (k mod 10)+1 นับรวมดาวที่ไม่มี pass
+          ดาวที่ has_aos เป็นเท็จ หรือ GMAT ไม่คืนค่า ได้ passes [] (กรณีหลังมีข้อความใน messages) หน้าเว็บเป็นผู้ตัดสินว่าแสดงแถวไหม
+        ModuleClosedError เมื่อ module ไม่ได้เปิด"""
+        rt = self._hub.get(module)
+        if rt is None:
+            raise ModuleClosedError(f"module {module} ไม่ได้เปิดอยู่")
+        get = self._prefs.get
+        hours = int(get("SKY_AT_GLANCE/TIME_SPAN_HOURS"))
+        if t is None:
+            t0 = rt.clock.time()
+        elif get("PREDICT/USE_REAL_T0"):
+            t0 = self._now().astimezone(_UTC)
+        else:
+            t0 = t
+        sats = sorted(rt.sat_orbits(), key=lambda s: (name_sort_key(s[1]), s[0]))
+        qth = rt.qth
+        rising = [s for s in sats if has_aos(s[3], qth.lat_deg, t0)]
+        owner = sky_owner(module)
+        first, last = day_range(t0, t0 + timedelta(hours=2 * hours))
+        if rising:
+            self._ephem.ensure_days(owner, [s[2] for s in rising], first, last)
+        else:
+            self._ephem.release_days(owner)                       # module ว่างหรือไม่มีดาวที่ขึ้นได้: ไม่มีอะไรให้ GMAT คำนวณ
+        status, found = self._ephem.days_status(owner)
+        by_prn = {s[2].prn: s[0] for s in rising}
+        messages = [Message(m.code, m.level, m.text, str(by_prn[m.object])) if m.code == _MISSING and m.object in by_prn
+                    else m for m in found]                        # SAT_MISSING_FROM_GMAT: object เป็น NORAD เหมือน tick
+        out = {"status": status, "t0": iso_ms(t0), "hours": hours, "sats": []}
+        if status != "ok":
+            if status == "computing":
+                messages.append(Message("EPHEM_COMPUTING", "info", COMPUTING_TEXT))
+            return {**out, "messages": [m.to_dict() for m in messages]}
+
+        q = qth_geo(qth)
+        min_el, n_entries = float(get("PREDICT/MINIMUM_ELEV")), int(get("PREDICT/NUMBER_OF_ENTRIES"))
+        resolution_s, twilight_deg = int(get("PREDICT/TIME_RESOLUTION")), float(get("PREDICT/TWILIGHT_THRESHOLD"))
+        colours = [get(key) for key in SKY_COLOUR_KEYS]
+        rising_norads = {s[0] for s in rising}
+        dropped = {m.object for m in messages if m.code == _MISSING}
+        for k, (norad, name, spec, elements) in enumerate(sats):
+            passes: list[dict] = []
+            if norad in rising_norads:
+                try:
+                    eph = self._ephem.get_days(spec, first, last)
+                    if eph is None:
+                        if str(norad) not in dropped:             # GMAT ไม่ได้ตัดดาวนี้ แต่ block หาย (หลุดจากทั้งดิสก์และ LRU)
+                            messages.append(Message(
+                                "GMAT_FAILED", "warning", f"ไม่มีตำแหน่งของ {name} (NORAD {norad}) จาก GMAT ในช่วงที่ต้องใช้ "
+                                "จึงไม่แสดง pass ใน Sky at a glance ลองปิดแล้วเปิดหน้าต่างใหม่", str(norad)))
+                    else:
+                        chosen = get_passes(find_passes(eph, q), t0, hours / 24.0, SKY_PASSES, min_el)
+                        passes = [pass_to_dict(describe(p, eph, q, elements, n_entries, resolution_s, twilight_deg),
+                                               rows=False) for p in chosen]
+                except ValueError as exc:                         # วงโคจรไม่ปิดหรือตำแหน่งที่ต้องใช้อยู่นอกข้อมูล: ข้ามเฉพาะดวงนี้
+                    messages.append(Message("SAT_STATE_INVALID", "warning",
+                                            f"ข้ามดาว {name} (NORAD {norad}) ใน Sky at a glance: {exc}", str(norad)))
+            out["sats"].append({"norad": norad, "name": name, "colour": colours[k % len(colours)], "passes": passes})
+        return {**out, "messages": [m.to_dict() for m in messages]}
 
     # ---------------------------------------------------------------- ตัวช่วย
 

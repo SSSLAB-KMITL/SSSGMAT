@@ -47,6 +47,11 @@ class ModuleClosedError(RuntimeError):
     """เรียก tick/update/retry ของ runtime ที่ปิดแล้ว (Hub.close) runtime ที่ปิดแล้วไม่สั่ง GMAT อีก"""
 
 
+def sky_owner(module: str) -> str:
+    """owner ของ EphemManager.ensure_days/release_days สำหรับ Sky at a glance ของ module (Hub.close ปล่อยให้เมื่อปิด module)"""
+    return f"sky:{module}"
+
+
 def iso_ms(t: datetime | None) -> str | None:
     """เวลาใน API: ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z"""
     if t is None:
@@ -138,6 +143,12 @@ class ModuleRuntime:
             if s is None:
                 return None
             return s.record.name, s.cur.spec, s.cur.elements
+
+    def sat_orbits(self) -> list[tuple[int, str, SatSpec, TleElements]]:
+        """(NORAD, ชื่อ, SatSpec, element) ของ TLE ปัจจุบันของทุกดาวตามลำดับใน module (กติกาเดียวกับ sat_orbit)"""
+        with self._lock:
+            self._check_open()
+            return [(norad, s.record.name, s.cur.spec, s.cur.elements) for norad, s in self._sats.items()]
 
     def tick(self) -> dict:
         """tick ของ WebSocket ตามหัวข้อ 7.3 ของ spec (ไม่มี sats เมื่อ status ไม่ใช่ ok, ไม่ส่งดาวที่ decayed)"""
@@ -447,13 +458,15 @@ class Hub:
             return rt
 
     def close(self, name: str) -> None:
-        """ปิด module และปล่อยทุกช่วงคำนวณของมัน (ไม่ได้เปิดอยู่: ไม่ทำอะไร)
-        เอาออกจาก dict ทันที แล้วรอ tick ที่กำลังทำของ module นี้ก่อนปล่อยช่วง (โดยไม่ถือ _lock)"""
+        """ปิด module และปล่อยทุกช่วงคำนวณของมัน รวมถึง block รายวันของ Sky at a glance (owner sky:<name>)
+        เอาออกจาก dict ทันที แล้วรอ tick ที่กำลังทำของ module นี้ก่อนปล่อยช่วง (โดยไม่ถือ _lock)
+        ไม่ได้เปิดอยู่: ปล่อยเฉพาะ owner ของ Sky at a glance ที่อาจค้าง (ไม่มี owner นั้นก็ไม่ทำอะไร)"""
         with self._serial(name):
             with self._lock:
                 rt = self._open.pop(name, None)
             if rt is not None:
                 rt.close()
+            self._ephem.release_days(sky_owner(name))
 
     def get(self, name: str) -> ModuleRuntime | None:
         with self._lock:
