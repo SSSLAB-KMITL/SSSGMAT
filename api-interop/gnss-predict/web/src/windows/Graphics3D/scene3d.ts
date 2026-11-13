@@ -25,7 +25,9 @@
 //   กล้องโหมด sensor (viewFromSensor): ตำแหน่ง = ตำแหน่ง Earth-fixed ของดาวแม่, ทิศ = boresight, ด้านบน = North หรือ Velocity
 //   fov ด้านสั้น = min(2α × 1.05, 120°) (sensorDraw.ts sensorViewPose) near = 1 m ตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน doc เปลี่ยน หรือหน้าต่างเปลี่ยนขนาด
 //   (ภาพขนาดศูนย์ เช่นแท็บที่ยุบอยู่ ไม่ตั้ง fov: คงค่าเดิมไว้) ปิดการลาก หมุน ซูมด้วยเมาส์ (enableInputs = false)
-//   ไม่วาด Radial Lines ของ sensor ตัวนี้ และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงตำแหน่งกล้อง วงรอยยังวาด (P7) แสงกลางวัน/กลางคืนเปิดเสมอ
+//   ไม่วาดกราฟิกของ sensor ตัวนี้เลย (Radial Lines, วงรอย, Boresight Marker: P7 ตามที่ controller ปรับ วงขอบกรวยที่เห็นคือวงบน HUD ซึ่งเป็นภาพที่แน่นอนของขอบกรวย
+//   กราฟิกของ sensor วาดใหม่ช้ากว่ากล้องจึงแกว่งรอบวง HUD ตอน animation) sensor ตัวอื่นยังวาดครบ และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงตำแหน่งกล้อง
+//   แสงกลางวัน/กลางคืนเปิดเสมอ
 //   ไม่อ่าน 3D Graphics Window Properties (P8)
 //   คลิกและดับเบิลคลิกตั้งต้นของ Viewer (เลือก entity / ตามหรือบินไปหา entity) ถูกถอดจาก viewer ของ Sensor View (enableInputs ไม่ได้ปิดสองอย่างนี้)
 //   และทุกครั้งที่วางกล้องจะเลิกตาม entity ยกเลิกการบิน และคืน transform เป็น identity ก่อน (placeSensorCamera)
@@ -41,7 +43,7 @@ import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
-  sensorStateAt, sensorStatesAt, type SceneObject, type SensorCtx,
+  sensorStateAt, sensorStatesAt, type SceneObject, type SceneStyle, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
@@ -92,11 +94,38 @@ const SENSOR_VIEW_NEAR_M = 1;
 const SENSOR_VIEW_PROPS: Readonly<Props3D> = { ...DEFAULT_PROPS_3D, enableLighting: true };
 
 /** entity หนึ่งชิ้นของ sensor ในหน้าต่าง 3D: เส้น (วงรอย / Radial Line) หรือจุด (Boresight Marker) */
-type SensorPart =
+export type SensorPart =
   | { kind: "line"; positions: Cartesian3[]; arcType: ArcType; color: Color; width: number }
   | { kind: "point"; position: Cartesian3; color: Color; pixelSize: number; outline: Color };
 
 const groundPoint = ([lon, lat]: [number, number]): Cartesian3 => Cartesian3.fromDegrees(lon, lat, 0);
+
+/**
+ * ชิ้นที่ต้องวาดของ sensor ตาม id ของ entity: วงรอยตามผิวทรงรี, Radial Lines เป็นเส้นตรงจากตำแหน่งดาว, Boresight Marker เป็นจุดขนาดเท่าจุด IPP
+ * ownPath = sensor ของ Sensor View ที่กล้องมองผ่าน (null = หน้าต่าง 3D หลัก): sensor ตัวนั้นไม่วาดอะไรเลย (Radial Lines, วงรอย, Boresight Marker)
+ * กล้องตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน แต่กราฟิกของ sensor วาดใหม่ไม่เกินทุก 250 ms วงรอยกับจุดจึงแกว่งรอบวงขอบกรวยบน HUD ตอน animation
+ * วงบน HUD คือภาพที่แน่นอนของขอบกรวย (controller ปรับ P7) sensor ตัวอื่นยังวาดครบ
+ */
+export function sensorPartsOf(states: readonly SensorDrawState[], ownPath: string | null, style: SceneStyle): Map<string, SensorPart> {
+  const out = new Map<string, SensorPart>();
+  for (const st of states) {
+    if (objectPath(st.sensor) === ownPath) continue; // ไม่วาดชิ้นใดของ sensor ที่กล้องมองผ่าน
+    const parts = sensor3dParts(st);
+    const color = cssColor(parts.color);
+    const id = `sensor/${st.sensor.name}`;
+    const sat = new Cartesian3(st.pos.x, st.pos.y, st.pos.z);
+    if (parts.ring !== null) {
+      out.set(`${id}/ring`, { kind: "line", positions: parts.ring.map(groundPoint), arcType: ArcType.GEODESIC, color, width: style.swathEdgeWidth });
+    }
+    parts.radials.forEach((end, i) => {
+      out.set(`${id}/radial/${i}`, { kind: "line", positions: [sat, new Cartesian3(end.x, end.y, end.z)], arcType: ArcType.NONE, color, width: style.swathEdgeWidth });
+    });
+    if (parts.marker !== null) {
+      out.set(`${id}/marker`, { kind: "point", position: groundPoint(parts.marker), color, pixelSize: style.ippPointSize, outline: cssColor(style.pointOutline) });
+    }
+  }
+  return out;
+}
 
 type View =
   | { kind: "free" }
@@ -451,34 +480,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     else this.sensorThrottle.request();
   }
 
-  /**
-   * ชิ้นที่ต้องวาดของทุก sensor ณ เวลาปัจจุบัน ตาม id ของ entity (sensor ที่ซ่อน ดาวแม่ที่ซ่อนหรือไม่มีตำแหน่ง ไม่มีชิ้นใด: sensorStatesAt)
-   * วงรอยตามผิวทรงรี, Radial Lines เป็นเส้นตรงจากตำแหน่งดาว, Boresight Marker เป็นจุดขนาดเท่าจุด IPP
-   */
+  /** ชิ้นที่ต้องวาดของทุก sensor ณ เวลาปัจจุบัน ตาม id ของ entity (sensor ที่ซ่อน ดาวแม่ที่ซ่อนหรือไม่มีตำแหน่ง ไม่มีชิ้นใด: sensorStatesAt) */
   private sensorParts(): Map<string, SensorPart> {
-    const out = new Map<string, SensorPart>();
     const ds = this.ds;
-    if (ds === null) return out;
-    const style = sceneStyle();
+    if (ds === null) return new Map();
     const states = sensorStatesAt(useScenario.getState().doc, ds.entities, this.sceneCtx(), this.viewer.clock.currentTime);
-    const own = this.view.kind === "sensor" ? this.view.path : null; // P7: Radial Lines ของ sensor ที่กล้องมองผ่านไม่วาด
-    for (const st of states) {
-      const parts = sensor3dParts(st);
-      if (objectPath(st.sensor) === own) parts.radials = [];
-      const color = cssColor(parts.color);
-      const id = `sensor/${st.sensor.name}`;
-      const sat = new Cartesian3(st.pos.x, st.pos.y, st.pos.z);
-      if (parts.ring !== null) {
-        out.set(`${id}/ring`, { kind: "line", positions: parts.ring.map(groundPoint), arcType: ArcType.GEODESIC, color, width: style.swathEdgeWidth });
-      }
-      parts.radials.forEach((end, i) => {
-        out.set(`${id}/radial/${i}`, { kind: "line", positions: [sat, new Cartesian3(end.x, end.y, end.z)], arcType: ArcType.NONE, color, width: style.swathEdgeWidth });
-      });
-      if (parts.marker !== null) {
-        out.set(`${id}/marker`, { kind: "point", position: groundPoint(parts.marker), color, pixelSize: style.ippPointSize, outline: cssColor(style.pointOutline) });
-      }
-    }
-    return out;
+    return sensorPartsOf(states, this.view.kind === "sensor" ? this.view.path : null, sceneStyle());
   }
 
   private drawSensors(): void {
