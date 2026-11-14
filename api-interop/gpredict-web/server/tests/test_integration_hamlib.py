@@ -89,6 +89,75 @@ class HamlibDaemonTestCase(unittest.IsolatedAsyncioTestCase):
 class DummyRigctldTest(HamlibDaemonTestCase):
     LO = 2_256_000_000.0                         # downconverter 2.4 GHz → 2 m: ความถี่ของวิทยุ = f_sat + dd − LO
     RATE_KMS = 5.0
+    DOWN_HZ = 145_900_000.0                      # ค่าตั้งต้นของปุ่มหมุนดาวในไฟล์ (ไม่มี transponder) LO และ LO_UP เป็น 0
+    UP_HZ = 435_100_000.0
+
+    async def engaged_rig(self, keys: dict) -> tuple[RigController, HamlibClient]:
+        """rigctld dummy, ไฟล์วิทยุ DUMMY (ค่าที่ไม่ได้ให้มาเป็นค่าตั้งต้นข้างบน), controller ที่ Engage และ Track แล้ว และการเชื่อมต่อสำหรับอ่าน"""
+        port = await self.start_daemon(RIGCTLD)
+        self.write_conf("DUMMY.rig.json", {"Host": HOST, "Port": port, "LO": 0.0, "LO_UP": 0.0,
+                                           "DefaultUplinkFreqHz": self.UP_HZ, "DefaultDownlinkFreqHz": self.DOWN_HZ, **keys})
+        ctl = RigController("Amateur", self.hw, [(25544, "ISS")], 25544, lambda norad: [], timer=False)
+        self.addAsyncCleanup(ctl.close)                  # ทำก่อนปิด daemon (cleanup ทำย้อนลำดับ)
+        rig = await self.reader(port, "rigctld")
+        await ctl.act({"action": "engage", "on": True})
+        await ctl.act({"action": "track", "on": True})
+        return ctl, rig
+
+    async def cycle(self, ctl: RigController, k: int) -> tuple[float, float]:
+        """รอบที่ k: range rate เปลี่ยนทุกรอบ (Doppler เปลี่ยนหลายร้อย Hz จึงต้องส่งใหม่) คืนความถี่ของวิทยุตามสูตร (downlink, uplink)
+        และตรวจว่า controller ยัง Engage โดยไม่มีข้อผิดพลาด"""
+        rate = 5.0 - 0.7 * k
+        ctl.on_tick(T0 + timedelta(seconds=k), row(180.0, 10.0, rate))
+        await ctl.run_cycle()
+        self.assertTrue(ctl.engaged)
+        self.assertIsNone(ctl.snapshot()["status"])
+        return self.DOWN_HZ - self.DOWN_HZ * rate / C_KMS, self.UP_HZ + self.UP_HZ * rate / C_KMS
+
+    @staticmethod
+    async def frequencies(rig: HamlibClient) -> tuple[float, float]:
+        """(f, i) ที่ rigctld ถืออยู่: ความถี่ของ VFO ปัจจุบันและความถี่ส่งของ split"""
+        return float((await rig.command("f\n"))[0]), float((await rig.command("i\n"))[0])
+
+    async def test_full_duplex_read_dcd_against_dummy_rigctld(self):
+        """Read DCD กับ VFO option ที่ rigctld จริงรับ (ตรวจรับพบว่า `\\x8b currVFO` ได้คำตอบสองบรรทัด คำตอบเหลื่อม
+        จนส่ง `I VFOA` เป็นค่าที่อ่านค้าง) dummy สลับ DCD ทุกครั้งที่อ่าน: รอบที่ DCD เปิด downlink ไม่ถูกส่งและ rigctld คงค่าเดิม
+        uplink (split) ถูกส่งทุกรอบเพราะ Full-duplex ไม่สน PTT"""
+        ctl, rig = await self.engaged_rig({"Type": 3, "PTT": 2, "VFO_UP": 2, "VFO_DOWN": 1})
+        f_prev, _ = await self.frequencies(rig)
+        sent = 0
+        for k in range(6):
+            down, up = await self.cycle(ctl, k)
+            f, i = await self.frequencies(rig)
+            with self.subTest(cycle=k):
+                self.assertAlmostEqual(i, up, delta=1.0)
+                self.assertTrue(abs(f - down) <= 1.0 or f == f_prev, f"f {f} is neither {down:.0f} nor {f_prev:.0f}")
+            sent += abs(f - down) <= 1.0
+            f_prev = f
+        self.assertGreaterEqual(sent, 1)                 # DCD ปิดอย่างน้อยหนึ่งรอบ downlink จึงถูกส่งจริง
+
+    async def test_full_duplex_read_ptt_against_dummy_rigctld(self):
+        """Read PTT (`t currVFO`) ค่า PTT ตั้งจากการเชื่อมต่ออีกเส้น: PTT ปิดส่ง downlink, เปิดไม่ส่ง uplink (split) ส่งทุกรอบ"""
+        ctl, rig = await self.engaged_rig({"Type": 3, "PTT": 1, "VFO_UP": 2, "VFO_DOWN": 1})
+        f_prev = None
+        for k, ptt in enumerate((0, 1, 1, 0, 1, 0)):
+            self.assertEqual(await rig.command(f"T {ptt}\n"), ["RPRT 0"])
+            down, up = await self.cycle(ctl, k)
+            f, i = await self.frequencies(rig)
+            with self.subTest(cycle=k, ptt=ptt):
+                self.assertAlmostEqual(f, down if ptt == 0 else f_prev, delta=1.0)
+                self.assertAlmostEqual(i, up, delta=1.0)
+            f_prev = f
+
+    async def test_half_duplex_against_dummy_rigctld(self):
+        """Half-duplex กับ Read PTT: VFO เดียวกันได้ downlink เมื่อ PTT ปิด และ uplink เมื่อ PTT เปิด (รวม PTT เปิดสองรอบติดกัน)"""
+        ctl, rig = await self.engaged_rig({"Type": 2, "PTT": 1})
+        for k, ptt in enumerate((0, 1, 0, 1, 1, 0)):
+            self.assertEqual(await rig.command(f"T {ptt}\n"), ["RPRT 0"])
+            down, up = await self.cycle(ctl, k)
+            f, _ = await self.frequencies(rig)
+            with self.subTest(cycle=k, ptt=ptt):
+                self.assertAlmostEqual(f, up if ptt else down, delta=1.0)
 
     async def test_rx_only_against_dummy_rigctld(self):
         port = await self.start_daemon(RIGCTLD)
