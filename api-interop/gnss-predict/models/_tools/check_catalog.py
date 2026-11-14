@@ -20,6 +20,8 @@ BRIEF_BLOCKS = {
     "BDS-3M-CAST", "BDS-3M-SECM-A", "BDS-3M-SECM-B", "BDS-3G", "BDS-3I",
     "BDS-3SM-CAST", "BDS-3SI-CAST", "BDS-3SM-SECM", "BDS-3SI-SECM", "BDS-3S",
 }
+VALID_CELL_NORMALS = ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
+VALID_CONFIDENCES = ("high", "medium", "low")
 
 
 def read_snx_blocks(path):
@@ -85,6 +87,20 @@ def main():
             if nid in seen_norads:
                 errors.append(f"NORAD ID {nid} listed in both {seen_norads[nid]!r} and {mid!r}")
             seen_norads[nid] = mid
+
+        cell_normal = entry.get("cell_normal")
+        if cell_normal not in VALID_CELL_NORMALS:
+            errors.append(
+                f"Model {mid!r} missing or invalid 'cell_normal' {cell_normal!r} "
+                f"(expected one of {VALID_CELL_NORMALS})"
+            )
+
+        confidence = entry.get("confidence")
+        if confidence is not None and confidence not in VALID_CONFIDENCES:
+            errors.append(
+                f"Model {mid!r} invalid 'confidence' {confidence!r} "
+                f"(expected one of {VALID_CONFIDENCES})"
+            )
 
         status = entry.get("status", "pending")
         glb_rel = entry.get("glb", "")
