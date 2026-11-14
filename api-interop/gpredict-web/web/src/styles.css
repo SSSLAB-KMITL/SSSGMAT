@@ -88,6 +88,23 @@ body {
   min-width: 1024px;
 }
 
+/* the page of a module window (spec §8.1): no menu bar and no tabs, and as narrow as its window (the server takes 100 px) */
+body:has(.app.detached),
+body:has(.app.detached) #root,
+.app.detached {
+  min-width: 0;
+}
+/* full screen (spec §8.3): the page's root is full screen, its menu bar, tabs and restore bar are not shown, so the module fills the
+   screen and the Module menu and the windows it opens still show over it */
+.app:fullscreen {
+  background: var(--window);
+}
+.app:fullscreen > .menubar,
+.app:fullscreen > .tabs,
+.app:fullscreen > .restore-bar {
+  display: none;
+}
+
 .menubar {
   display: flex;
   flex: none;
@@ -143,9 +160,10 @@ body {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* ---------------------------------------------------------------- notices (ของเรา) */
+/* ---------------------------------------------------------------- notices and the restore bar (ของเรา) */
 
-.notices {
+.notices,
+.restore-bar {
   flex: none;
   display: flex;
   flex-direction: column;

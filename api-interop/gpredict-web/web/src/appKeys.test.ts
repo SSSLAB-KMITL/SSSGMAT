@@ -1,10 +1,12 @@
 // The windows of App (Sky at a glance, Time Controller, ...) are children of one element. Two children of one element with the same
 // key make React mix them up: while the Time Controller (key = module name) was open, the Sky at a glance window (the same key) was
-// copied again on every tick. The tests run without a DOM, so this is checked on the source of App.tsx with the TypeScript parser.
+// copied again on every tick. The tests run without a DOM, so this is checked on the source of App.tsx with the TypeScript parser, and on
+// the source of DetachedApp.tsx (the page of a module window), which has the same windows.
 
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import appSource from "./App.tsx?raw";
+import detachedSource from "./DetachedApp.tsx?raw";
 
 /** The key of a JSX element as written (`current`, `"x"`, `` `sky:${current}` ``), or null without one. */
 function keyOf(el: ts.JsxElement | ts.JsxSelfClosingElement): string | null {
@@ -65,8 +67,11 @@ describe("keys of the children of App", () => {
     expect(childKeys(sample).map((p) => clashes(p.slots))).toEqual([["current"]]);
   });
 
-  it("gives no two children of one element of App.tsx the same key", () => {
-    const parents = childKeys(appSource);
+  it.each([
+    ["App.tsx", appSource],
+    ["DetachedApp.tsx", detachedSource],
+  ])("gives no two children of one element of %s the same key", (_, source) => {
+    const parents = childKeys(source);
     expect(parents.length).toBeGreaterThan(0);
     for (const p of parents) expect(clashes(p.slots), p.parent).toEqual([]);
   });

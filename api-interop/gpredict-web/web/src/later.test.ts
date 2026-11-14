@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { LATER, laterOf, laterTooltip } from "./later";
+import { laterTooltip } from "./later";
+import type { MenuSpec } from "./menuSpec";
+import { barMenu, MENU_TITLES } from "./menus";
+import { moduleMenu } from "./moduleMenu";
+import { satPopup } from "./satPopup";
 
 describe("laterTooltip", () => {
   it("names the sub-project that has the feature", () => {
@@ -9,77 +13,42 @@ describe("laterTooltip", () => {
   });
 });
 
-/** The column "กดไม่ได้" of the table in spec §8.2, row by row (the sub-project number is the one in brackets there). */
-const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
-  // File → Log browser works since sub-project 4 (Task 20), so it is not here any more
-  // Edit → Update TLE data from local files works since sub-project 4 (Task 18), so it is not here any more
-  // Edit → Preferences works since sub-project 2 (the window and its Predict group), so it is not here any more
-  // Help: "ไม่มี News" - there is no News item at all
-  ["Detach module", 4, "Module menu"],
-  ["Full screen", 4, "Module menu"],
-  // Satellite info (the popups of List, Map and Polar, the bold name of Single sat and Event list, the double click) works since
-  // sub-project 4 (Task 19), so it is not here any more
-  // Show current pass, Show next pass and Future passes work since sub-project 2 (Task 13), and so does Sky at a glance (Task 14);
-  // Radio Control, Antenna Control and Update transponder data work since sub-project 3 (Task 14): they are not here any more
-];
+/** Every item of a menu, those of its submenus too. */
+function items<A>(menu: readonly MenuSpec<A>[]): MenuSpec<A>[] {
+  return menu.flatMap((e) => (e.kind === "submenu" ? [e, ...items(e.items)] : [e]));
+}
 
-describe("LATER (spec §8.2)", () => {
-  it.each(SPEC_8_2)("has %s in sub-project %i (%s)", (label, subProject) => {
-    expect(LATER[label]).toBe(subProject);
+/**
+ * The column "กดไม่ได้" of the table in spec §8.2 is empty after sub-project 4: Detach module and Full screen, its last two rows, work
+ * since Task 23 (Pass predictions came with sub-project 2, Radio & Rotator with 3, the rest of sub-project 4 with Tasks 18-20), so the
+ * table of later items and the helpers that made such items are gone. No menu has a disabled item that names a sub-project.
+ */
+describe("no Gpredict menu item is left for a later sub-project (spec §8.2)", () => {
+  const sat = { norad: 25544, name: "ISS", el: 10, dir: "↑" };
+  const lists = { footprint_off: [], ground_track: [], sky_track: [] };
+  const menus: [string, MenuSpec<unknown>[]][] = [
+    ...MENU_TITLES.map((t): [string, MenuSpec<unknown>[]] => [t, barMenu(t)]),
+    ...(["docked", "window"] as const).flatMap((place) =>
+      [false, true].map((fullscreen): [string, MenuSpec<unknown>[]] => [
+        `Module menu (${place}${fullscreen ? ", full screen" : ""})`,
+        moduleMenu({ autotrack: false, choices: [{ norad: 25544, name: "ISS" }], selected: null, place, fullscreen }),
+      ]),
+    ),
+    ...(["list", "map", "polar", "single", "event"] as const).map((view): [string, MenuSpec<unknown>[]] => [`popup of ${view}`, satPopup(view, sat, lists)]),
+  ];
+
+  it.each(menus)("%s: every item can be chosen and none names a later sub-project", (_, menu) => {
+    for (const e of items(menu)) {
+      if (e.kind === "item") {
+        expect(e.later, e.label).toBeUndefined();
+        expect(e.action, e.label).toBeDefined();
+      }
+      if (e.kind === "check" || e.kind === "submenu") expect(e.disabled ?? false, e.label).toBe(false);
+    }
   });
 
-  it("has every 'กดไม่ได้' item of spec §8.2 and nothing else", () => {
-    expect(Object.keys(LATER).sort()).toEqual(SPEC_8_2.map(([label]) => label).sort());
-  });
-
-  it("has no News (Help has none: ref §1 lists it, spec §8.2 leaves it out)", () => {
-    expect(LATER).not.toHaveProperty("News");
-  });
-
-  it("has no Preferences: Edit → Preferences opens the window", () => {
-    expect(LATER).not.toHaveProperty("Preferences");
-  });
-
-  it("has no Sky at a glance: Module menu → Sky at a glance opens its window", () => {
-    expect(LATER).not.toHaveProperty("Sky at a glance");
-  });
-
-  it("has nothing of sub-project 3: Radio Control, Antenna Control and Update transponder data work", () => {
-    for (const label of ["Radio Control", "Antenna Control", "Update transponder data"]) expect(LATER, label).not.toHaveProperty(label);
-    expect(Object.values(LATER)).not.toContain(3);
-  });
-
-  it("has no Log browser: File → Log browser (Ctrl+L) opens the Log Browser window", () => {
-    expect(LATER).not.toHaveProperty("Log browser");
-  });
-
-  it("has no Update TLE data from local files: Edit → Update TLE data from local files opens its box", () => {
-    expect(LATER).not.toHaveProperty("Update TLE data from local files");
-  });
-
-  it("has no Satellite info: its popup items, the bold satellite name and the double click open the Satellite Info window", () => {
-    expect(LATER).not.toHaveProperty("Satellite info");
-  });
-
-  it("has no pass items: Show current pass, Show next pass and Future passes open the pass windows", () => {
-    for (const label of ["Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).not.toHaveProperty(label);
-  });
-});
-
-describe("laterOf", () => {
-  it("gives the sub-project of a label in LATER", () => {
-    expect(laterOf("Detach module")).toBe(4);
-    expect(laterOf("Full screen")).toBe(4);
-  });
-
-  it("throws for a label that is not in LATER, so that a typo cannot make an item look available", () => {
-    expect(() => laterOf("Preference")).toThrow();
-    expect(() => laterOf("Preferences")).toThrow(); // it works now
-    expect(() => laterOf("Show next pass")).toThrow(); // so do the pass items
-    expect(() => laterOf("Sky at a glance")).toThrow(); // and Sky at a glance
-    expect(() => laterOf("Radio Control")).toThrow(); // and the controllers
-    expect(() => laterOf("Update TLE data from local files")).toThrow(); // and the update from local files
-    expect(() => laterOf("Satellite info")).toThrow(); // and Satellite info
-    expect(() => laterOf("Log browser")).toThrow(); // and the Log browser
+  it("has Detach module and Full screen in the Module menu, and Attach module and Exit full screen in the other states", () => {
+    const labels = menus.flatMap(([, menu]) => items(menu).flatMap((e) => (e.kind === "item" ? [e.label] : [])));
+    for (const label of ["Detach module", "Attach module", "Full screen", "Exit full screen"]) expect(labels, label).toContain(label);
   });
 });

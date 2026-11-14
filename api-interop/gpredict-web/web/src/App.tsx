@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { closeModule, errorText, getModules, putTabs, quit as quitServer, resetClock, retryModule } from "./api";
+import { closeModule, errorText, getModules, putTabs, putWindow, quit as quitServer, resetClock, retryModule } from "./api";
 import { connectAppEvents, keepIfSame } from "./appEvents";
-import { autotrackTarget } from "./autotrack";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
 import { MessageBox } from "./components/MessageBox";
@@ -10,48 +9,36 @@ import { ModuleMenu } from "./components/ModuleMenu";
 import { ModuleView } from "./components/ModuleView";
 import { NoticeStrip } from "./components/NoticeStrip";
 import { Overlay } from "./components/Overlay";
+import { RestoreBar } from "./components/RestoreBar";
 import { SatInfoWindows } from "./components/SatInfoWindow";
 import { Tabs } from "./components/Tabs";
 import { TimeController } from "./components/TimeController";
 import { TleOldNotice } from "./components/TleOldNotice";
+import { DEFAULT_WINDOW_SIZE, detach, popupBlockedText, restoreList, restoreWindow } from "./detach";
+import type { PopupWindow, Size } from "./detach";
 import { closeDialog, showDialog } from "./dialogs";
 import type { Dialog } from "./dialogs";
 import { shortcutAction } from "./menus";
 import type { BarAction } from "./menus";
 import type { ModuleAction } from "./moduleMenu";
-import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
-import type { Notice, SatNameMap } from "./notices";
+import { pruneDismissed, startupNotices, tickNotices, visibleNotices } from "./notices";
+import type { Notice } from "./notices";
 import { overlayFor } from "./overlay";
+import { enterFullscreen, leaveFullscreen, useControllers, useFullscreen, useSeenNames, useSelection } from "./pageHooks";
 import { PassWindows } from "./passes/PassWindowsHost";
 import { closeWindow, openWindow } from "./passes/passWindows";
 import type { PassWindow } from "./passes/passWindows";
 import { closeSky, openSky, pruneSky } from "./passes/skyGlance";
 import type { SkyOpen } from "./passes/skyGlance";
 import { SkyGlanceWindow } from "./passes/SkyGlanceWindow";
-import { reloadPrefs } from "./prefs/prefsStore";
+import { reloadPrefs, savePrefs, usePrefs } from "./prefs/prefsStore";
 import { runQuit } from "./quit";
 import { ControllerWindows } from "./radio/ControllerWindowsHost";
-import {
-  CONFIGURE_BLOCKED_BOX,
-  dropModule,
-  dropRef,
-  hasModule,
-  mergeOpen,
-  openRefusalBox,
-  refKey,
-  sameRef,
-  syncWindows,
-  targetPosts,
-} from "./radio/controllerWindows";
-import type { ControllerBox, ControllerWindow } from "./radio/controllerWindows";
-import { closeController, getControllers, openController, postTarget } from "./radio/radioApi";
-import type { ControllerKind, ControllerRef } from "./radio/types";
+import { CONFIGURE_BLOCKED_BOX, hasModule } from "./radio/controllerWindows";
 import { closeSatInfo, openSatInfo } from "./satInfo";
 import type { SatInfoOpen } from "./satInfo";
-import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
-import type { Selections } from "./selection";
-import { activeTab, windowTitle } from "./tabs";
-import type { ApiMessage, Tick } from "./types";
+import { activeTab, initialTab, pageIndex, tabOrderWithWindows, tabsOf, windowTitle } from "./tabs";
+import type { ApiMessage, ModuleWindow } from "./types";
 import { useModuleConfig } from "./useModuleConfig";
 import { useModuleSocket } from "./useModuleSocket";
 
@@ -74,21 +61,9 @@ function Stopped() {
   );
 }
 
-const NO_NAMES: SatNameMap = new Map();
-
-/**
- * The names of the satellites a module's ticks have shown, so that a notice can name a satellite that has dropped out of the
- * ticks (GMAT returned nothing for it, say). Forgotten when another module is shown.
- */
-function useSeenNames(module: string | null, tick: Tick | null): SatNameMap {
-  const [seen, setSeen] = useState<{ module: string | null; names: SatNameMap }>({ module: null, names: NO_NAMES });
-  const names = rememberNames(seen.module === module ? seen.names : NO_NAMES, tick);
-  if (seen.module !== module || seen.names !== names) setSeen({ module, names }); // derived from the previous render, not an effect
-  return names;
-}
-
 function Main({ onStopped }: { onStopped: () => void }) {
-  const [open, setOpen] = useState<string[]>([]); // open modules in tab order
+  const [open, setOpen] = useState<string[]>([]); // open modules in session order, the windows too
+  const [windows, setWindows] = useState<string[]>([]); // the open modules that are windows of their own: not tabs (spec §8.1)
   const [modules, setModules] = useState<string[]>([]); // all modules, open or not
   const [startup, setStartup] = useState<ApiMessage[]>([]); // messages of GET /api/modules
   const [chosen, setChosen] = useState<string | null>(null);
@@ -102,20 +77,23 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [satInfos, setSatInfos] = useState<readonly SatInfoOpen[]>([]); // the Satellite Info windows that are open (they belong to the page, not to a module)
   const [skyGlance, setSkyGlance] = useState<SkyOpen>(new Map()); // the modules whose "The sky at a glance" window is open (it shows with its module's tab)
   const [moduleMenu, setModuleMenu] = useState<{ x: number; y: number } | null>(null); // the Module menu, where it is open
-  const [selections, setSelections] = useState<Selections>({}); // the selected satellite of each module (not saved)
-  const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
-  const [controllers, setControllers] = useState<readonly ControllerWindow[]>([]); // the Radio Control and Antenna Control windows of every module
-  const [controllerBox, setControllerBox] = useState<ControllerBox | null>(null); // Gpredict's error box of the controllers (no device, Configure blocked)
   const [tleOld, setTleOld] = useState<string | null>(null); // the text of the notice "TLE files are getting out of date", while it is shown
+  const [ownWindows, setOwnWindows] = useState<ReadonlyMap<string, PopupWindow>>(new Map()); // the module windows this page has opened
+  const [savedPage, setSavedPage] = useState<number | null>(null); // GLOBAL/CURRENT_PAGE as read at load or written since; null before
   const modulesAsked = useRef(0); // GET /api/modules sent so far: only the answer of the last one counts
-  const controllersAsked = useRef(0); // GET /api/controllers sent so far: only the answer of the last one counts
-  const closingControllers = useRef(new Set<string>()); // (refKey) the controllers whose window was closed and that the server is still closing
-  const targetsSent = useRef<Selections>({}); // the selections whose targets have been sent
   const moduleButton = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null); // what Full screen makes full screen (spec §8.3)
+  const moduleArea = useRef<HTMLDivElement>(null); // the module of the tab: its size is the size of its window at Detach
   const nextLocalId = useRef(0);
+  const prefs = usePrefs();
+  const fullscreen = useFullscreen();
 
   const addLocalError = useCallback((text: string) => {
     setLocal((l) => [...l, { id: `local:${nextLocalId.current++}`, level: "error", text }]);
+  }, []);
+  /** A warning of the page that replaces the one with the same `id` (the blocked window of a module, asked for again). */
+  const addLocalWarning = useCallback((id: string, text: string) => {
+    setLocal((l) => [...l.filter((n) => n.id !== id), { id, level: "warning", text }]);
   }, []);
 
   /**
@@ -130,6 +108,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
       const r = await getModules();
       if (asked !== modulesAsked.current) return; // a newer read was sent after this one: its answer is the newer
       setOpen((o) => keepIfSame(o, r.open));
+      setWindows((w) => keepIfSame(w, r.windows));
       setModules((m) => keepIfSame(m, r.modules));
       setStartup((s) => keepIfSame(s, r.messages));
       setLoadFailed(false);
@@ -168,24 +147,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [reloadModules],
   );
 
-  /**
-   * Show the windows of the controllers the server has open (GET /api/controllers), at page load and after every open and close
-   * (decision 2 of the plan). Only the answer of the last request counts: an older one can miss a controller this page has just opened.
-   */
-  const syncControllers = useCallback(async () => {
-    const asked = ++controllersAsked.current;
-    try {
-      const open = await getControllers();
-      if (asked === controllersAsked.current) setControllers((l) => syncWindows(l, open, closingControllers.current));
-    } catch (e) {
-      addLocalError(errorText(e));
-    }
-  }, [addLocalError]);
-
-  // the controllers keep running in the server when the browser tab is closed: their windows come back when the page is loaded
-  useEffect(() => {
-    if (loaded) void syncControllers();
-  }, [loaded, syncControllers]);
+  // the Radio Control and Antenna Control windows of every module, the module windows' too (each has its own socket)
+  const ctl = useControllers(loaded, addLocalError);
 
   // the server is not there (yet): keep trying, so the page comes alive when it starts
   useEffect(() => {
@@ -194,68 +157,44 @@ function Main({ onStopped }: { onStopped: () => void }) {
     return () => clearTimeout(id);
   }, [loadFailed, reloadModules]);
 
-  const current = activeTab(open, chosen);
+  const tabs = useMemo(() => tabsOf(open, windows), [open, windows]); // the same array while neither changes: the tab shown is not rendered again
+
+  // the tab of GLOBAL/CURRENT_PAGE when the page loads (spec §8.4, plan decision 8), once the modules and the Preferences are there; a tab
+  // the user has chosen meanwhile stays
+  if (savedPage === null && loaded && prefs !== null) {
+    const page = prefs.values["GLOBAL/CURRENT_PAGE"];
+    const saved = typeof page === "number" ? page : -1;
+    setSavedPage(saved);
+    if (chosen === null) setChosen(initialTab(tabs, saved));
+  }
+
+  const current = activeTab(tabs, chosen);
+  // a chosen tab that went (detached, closed, deleted) leaves the choice to the tab shown instead: a module that comes back as a tab
+  // (Attach module: the last tab, spec §8.2) is not chosen again by it
+  if (chosen !== null && chosen !== current) setChosen(current);
   useEffect(() => {
     document.title = windowTitle(current);
   }, [current]);
+
+  // the place of the tab that is shown is written to GLOBAL/CURRENT_PAGE when it changes (another tab chosen, dragged, opened, detached or closed)
+  const page = pageIndex(tabs, current);
+  useEffect(() => {
+    if (savedPage === null || current === null || page === savedPage) return;
+    setSavedPage(page);
+    // a failure is not told: the place of the tab is a convenience, and a server that is not there says so through the other requests
+    savePrefs({ "GLOBAL/CURRENT_PAGE": page }, []).catch(() => {});
+  }, [savedPage, current, page]);
 
   // only the active tab's module holds a WebSocket (it is closed when the tab changes)
   const { tick, connected, closeCode } = useModuleSocket(current);
   const satNames = useSeenNames(current, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current);
 
-  // the selection, Autotrack and the Sky at a glance window of a module that is not open any more are forgotten
-  useEffect(() => {
-    setSelections((s) => pruneToOpen(s, open));
-    setSkyGlance((s) => pruneSky(s, open));
-    setAutotrack((a) => {
-      const kept = [...a].filter((m) => open.includes(m));
-      return kept.length === a.size ? a : new Set(kept);
-    });
-  }, [open]);
+  // the selection and Autotrack of each module (forgotten when it is not open any more), and the target its controllers follow
+  const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(current, open, tick, config, saveConfig, addLocalError);
 
-  const selected = current === null ? null : (selections[current] ?? null);
-  const select = useCallback(
-    (norad: number | null) => {
-      if (current !== null) setSelections((s) => withSelection(s, current, norad));
-    },
-    [current],
-  );
-
-  /**
-   * Select satellite and Autotrack choose a satellite "in all views" (spec §8.2): the selection of List, Map and Polar, and the
-   * satellite Single sat shows (which the module remembers, so that goes through `save` like every change of the configuration).
-   */
-  const selectEverywhere = useCallback(
-    (norad: number | null) => {
-      select(norad);
-      if (norad === null || config === null || config.single.selected === norad) return;
-      saveConfig(singleSatChange(norad)).catch((e: unknown) => addLocalError(errorText(e)));
-    },
-    [select, config, saveConfig, addLocalError],
-  );
-
-  // the target of a module follows its selection (Select satellite, a click in a view, Autotrack): its controllers follow it (spec §3.3)
-  useEffect(() => {
-    const before = targetsSent.current;
-    targetsSent.current = selections;
-    for (const { module, norad } of targetPosts(before, selections)) {
-      postTarget(module, norad).catch((e: unknown) => addLocalError(errorText(e)));
-    }
-  }, [selections, addLocalError]);
-
-  // Edit module took the selected satellite out of the module
-  useEffect(() => {
-    if (config !== null && selected !== null && !config.satellites.includes(selected)) select(null);
-  }, [config, selected, select]);
-
-  // Autotrack (ref §2): every tick, the target is the satellite above the horizon or else the one with the earliest AOS
-  const autotracking = current !== null && autotrack.has(current);
-  useEffect(() => {
-    if (!autotracking) return;
-    const target = autotrackTarget(tick, selected);
-    if (target !== selected) selectEverywhere(target);
-  }, [autotracking, tick, selected, selectEverywhere]);
+  // the Sky at a glance window of a module that is not open any more is forgotten
+  useEffect(() => setSkyGlance((s) => pruneSky(s, open)), [open]);
 
   // the module was closed or deleted (1000) or is not open (1008): from another browser tab, say. Drop its tab.
   useEffect(() => {
@@ -299,8 +238,9 @@ function Main({ onStopped }: { onStopped: () => void }) {
   );
 
   const reorder = useCallback(
-    async (order: string[]) => {
+    async (tabOrder: string[]) => {
       const before = open;
+      const order = tabOrderWithWindows(open, tabOrder); // the server takes every open module: the windows keep their places
       setOpen(order);
       try {
         setOpen((await putTabs(order)).open);
@@ -339,60 +279,42 @@ function Main({ onStopped }: { onStopped: () => void }) {
     });
   }, [current]);
 
-  // ---------------------------------------------------------------- Radio Control and Antenna Control (ref-R §1)
+  const closeTleOld = useCallback(() => setTleOld(null), []);
+
+  // ---------------------------------------------------------------- module windows (spec §8)
+
+  /** "Restore position of module windows" (Preferences → Modules → Layout, ref-D §10) */
+  const restorePos = prefs?.values["GLOBAL/MOD_WIN_POS"] === true;
 
   /**
-   * Module menu → Radio Control / Antenna Control: the window of the controller of `module`, opened on the server first; one that is
-   * open already comes to the front instead. Without a device of the kind, Gpredict's "ERROR" box.
+   * Detach module (spec §8.1): the page of the module in a window of its own, `fallback` its size when none is stored. A blocked window
+   * leaves the module in its tab and says how to allow it (ของเรา).
    */
-  const openControl = useCallback(
-    async (module: string, kind: ControllerKind) => {
-      const ref = { module, kind };
-      if (controllers.some((w) => sameRef(w, ref))) {
-        setControllers((l) => mergeOpen(l, ref));
-        return;
-      }
-      try {
-        await openController(module, kind);
-      } catch (e) {
-        const box = openRefusalBox(kind, e);
-        if (box === null) addLocalError(errorText(e));
-        else setControllerBox(box);
-        return;
-      }
-      closingControllers.current.delete(refKey(ref)); // opened again while its close was on the way: the server has done the close first
-      setControllers((l) => mergeOpen(l, ref));
-      void syncControllers();
+  const detachTab = (name: string, fallback: Size) => {
+    const win = config?.name === name ? (config.window ?? null) : null;
+    const out = detach({ open: (url, target, features) => window.open(url, target, features), putWindow, host: window.location.host }, name, win, fallback, restorePos);
+    if ("notice" in out) return addLocalWarning(`popup:${name}`, out.notice);
+    setOwnWindows((m) => new Map(m).set(name, out.window));
+    out.saved.then(
+      () => reloadModules(), // it leaves the tabs (the modules_changed of /ws/app says so too)
+      (e: unknown) => addLocalError(errorText(e)),
+    );
+  };
+  /** The size of the module in its tab (header and views): the size of its window when it has none stored (ref-D §9). */
+  const moduleSize = (): Size => {
+    const box = moduleArea.current?.getBoundingClientRect();
+    return box === undefined ? DEFAULT_WINDOW_SIZE : { width: box.width, height: box.height };
+  };
+
+  /** The button เปิด of the restore bar (decision 10): the window of a module the server has as a window, titled as a restored one. */
+  const restore = useCallback(
+    (name: string, win: ModuleWindow | null) => {
+      const opened = restoreWindow((url, target, features) => window.open(url, target, features), name, win, DEFAULT_WINDOW_SIZE, restorePos, window.location.href);
+      if (opened === null) addLocalWarning(`popup:${name}`, popupBlockedText(name, window.location.host));
+      else setOwnWindows((m) => new Map(m).set(name, opened));
     },
-    [controllers, addLocalError, syncControllers],
+    [restorePos, addLocalWarning],
   );
-  /** The user closed a controller window: it goes at once, the server disengages and closes the controller, then the list is read again. */
-  const closeControl = useCallback(
-    async (ref: ControllerRef) => {
-      const key = refKey(ref);
-      closingControllers.current.add(key);
-      setControllers((l) => dropRef(l, ref));
-      try {
-        await closeController(ref.module, ref.kind);
-      } catch (e) {
-        addLocalError(errorText(e));
-      } finally {
-        closingControllers.current.delete(key);
-      }
-      void syncControllers();
-    },
-    [addLocalError, syncControllers],
-  );
-  /** A window went by itself: its controller was closed from another browser tab, or its module was closed or deleted. */
-  const controllerGone = useCallback(
-    (ref: ControllerRef) => {
-      setControllers((l) => dropRef(l, ref));
-      void syncControllers();
-    },
-    [syncControllers],
-  );
-  const closeControllerBox = useCallback(() => setControllerBox(null), []);
-  const closeTleOld = useCallback(() => setTleOld(null), []);
 
   /** File → Quit (Ctrl+Q): stop the server and the page says so; a server that cannot be stopped from here says why instead */
   const quit = useCallback(() => runQuit(quitServer, onStopped, addLocalError), [onStopped, addLocalError]);
@@ -445,8 +367,19 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const moduleAction = (action: ModuleAction) => {
     if (current === null) return;
     switch (action.type) {
+      case "detach":
+        return detachTab(current, moduleSize());
+      case "fullscreen":
+        return enterFullscreen(root.current, addLocalError);
+      case "exitFullscreen":
+        // Gpredict: the module leaves full screen as a window (spec §8.3); the window is opened first, in the click
+        detachTab(current, DEFAULT_WINDOW_SIZE);
+        return leaveFullscreen();
+      case "attach":
+        // full screen in its tab (Gpredict's full screen state, whose Attach docks the module): back to the tab as it was
+        return leaveFullscreen();
       case "autotrack":
-        return setAutotrack((a) => withMember(a, current, action.on));
+        return setAutotracking(action.on);
       case "select":
         return selectEverywhere(action.norad);
       case "skyGlance":
@@ -455,10 +388,10 @@ function Main({ onStopped }: { onStopped: () => void }) {
         return openTimeController(current);
       case "radio":
       case "rotator":
-        return void openControl(current, action.type);
+        return void ctl.open(current, action.type);
       case "configure":
         // not while a controller window of the module is open: Gpredict's box without a title says so (ref-R §1, spec §4.6)
-        return hasModule(controllers, current) ? setControllerBox(CONFIGURE_BLOCKED_BOX) : configureModule(current);
+        return hasModule(ctl.controllers, current) ? ctl.setBox(CONFIGURE_BLOCKED_BOX) : configureModule(current);
       case "clone":
         return show({ kind: "clone", module: current });
       case "delete":
@@ -466,7 +399,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
       case "close":
         return void closeModule(current).then(
           () => {
-            setControllers((l) => dropModule(l, current)); // the server has closed its controllers with it
+            ctl.dropModuleWindows(current); // the server has closed its controllers with it
             return reloadModules();
           },
           (e: unknown) => addLocalError(errorText(e)),
@@ -494,12 +427,13 @@ function Main({ onStopped }: { onStopped: () => void }) {
     },
     [reloadModules],
   );
+  const { dropModuleWindows } = ctl;
   const deleted = useCallback(
     (name: string) => {
-      setControllers((l) => dropModule(l, name)); // the server has closed its controllers with it
+      dropModuleWindows(name); // the server has closed its controllers with it
       void reloadModules();
     },
-    [reloadModules],
+    [dropModuleWindows, reloadModules],
   );
   const moduleSaved = useCallback(() => void reloadModules(), [reloadModules]);
   const tleUpdated = useCallback(() => {
@@ -523,15 +457,22 @@ function Main({ onStopped }: { onStopped: () => void }) {
   }, []);
 
   return (
-    <div className="app">
+    <div className="app" ref={root}>
       <MenuBar onAction={barAction} />
-      <Tabs tabs={open} active={current} onSelect={setChosen} onReorder={reorder} />
+      <Tabs tabs={tabs} active={current} onSelect={setChosen} onReorder={reorder} />
+      <RestoreBar modules={restoreList(windows, ownWindows)} onOpen={restore} />
       <NoticeStrip notices={visibleNotices(notices, dismissed)} onDismiss={dismiss} onRetry={(m) => void retry(m)} />
       {current === null ? (
         // (ของเรา) Gpredict shows an empty notebook here; this is our Thai hint
-        loaded && <div className="empty">ยังไม่มี module ที่เปิดอยู่ เปิดได้จาก File → Open module หรือ File → New module</div>
+        loaded && (
+          <div className="empty">
+            {open.length === 0
+              ? "ยังไม่มี module ที่เปิดอยู่ เปิดได้จาก File → Open module หรือ File → New module"
+              : "module ที่เปิดอยู่ทุกตัวเป็นหน้าต่างแยก"}
+          </div>
+        )
       ) : (
-        <div className="module">
+        <div className="module" ref={moduleArea}>
           <ModuleHeader
             key={current}
             time={tick?.t ?? null}
@@ -562,6 +503,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
           x={moduleMenu.x}
           y={moduleMenu.y}
           anchor={moduleButton}
+          place="docked"
+          fullscreen={fullscreen}
           autotrack={autotracking}
           sats={tick?.sats}
           selected={selected}
@@ -587,7 +530,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
       />
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
       <SatInfoWindows windows={satInfos} onClose={closeSatInfoWindow} />
-      <ControllerWindows refs={controllers} onClosed={closeControl} onGone={controllerGone} />
+      <ControllerWindows refs={ctl.controllers} onClosed={ctl.close} onGone={ctl.gone} />
       {current !== null && config !== null && skyGlance.has(current) && (
         <SkyGlanceWindow
           key={`sky:${current}`} // not the Time Controller's key: siblings with one key are mixed up by React (appKeys.test.ts)
@@ -608,7 +551,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
           onResetFailed={addLocalError}
         />
       )}
-      {controllerBox !== null && <MessageBox title={controllerBox.title} message={controllerBox.message} onOk={closeControllerBox} />}
+      {ctl.box !== null && <MessageBox title={ctl.box.title} message={ctl.box.message} onOk={ctl.closeBox} />}
       {tleOld !== null && <TleOldNotice text={tleOld} onClose={closeTleOld} />}
     </div>
   );

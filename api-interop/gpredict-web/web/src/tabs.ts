@@ -26,3 +26,30 @@ export function reorderTabs(order: readonly string[], dragged: string, target: s
   next.splice(to, 0, dragged);
   return next;
 }
+
+/** The tabs of the main page: the open modules in session order, without the ones that are windows of their own (spec §8.1). */
+export function tabsOf(open: readonly string[], windows: readonly string[]): string[] {
+  return open.filter((m) => !windows.includes(m));
+}
+
+/**
+ * The tab to show when the page loads: the one at GLOBAL/CURRENT_PAGE among the tabs (plan decision 8, spec §8.4), or the first one
+ * for -1 (Gpredict's default: no page) and for a page past the last tab; null without tabs.
+ */
+export function initialTab(tabs: readonly string[], currentPage: number): string | null {
+  return tabs[currentPage] ?? tabs[0] ?? null;
+}
+
+/** What GLOBAL/CURRENT_PAGE stores for the tab that is shown: its place among the tabs, -1 for none (as GTK's notebook gives). */
+export function pageIndex(tabs: readonly string[], tab: string | null): number {
+  return tab === null ? -1 : tabs.indexOf(tab);
+}
+
+/**
+ * The session order (PUT /api/session/tabs takes every open module) after the tabs were dragged into `tabs`: the tabs take the places
+ * the tabs had in `open`, in their new order, and the modules that are windows (not among the tabs) stay where they were.
+ */
+export function tabOrderWithWindows(open: readonly string[], tabs: readonly string[]): string[] {
+  let next = 0;
+  return open.map((m) => (tabs.includes(m) ? tabs[next++]! : m));
+}

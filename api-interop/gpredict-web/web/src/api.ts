@@ -12,6 +12,7 @@ import type {
   ModuleConfig,
   ModuleList,
   ModulePins,
+  ModuleWindow,
   PrefsAnswer,
   PrefValue,
   Qth,
@@ -149,6 +150,18 @@ export const closeModule = (name: string) => request<{ open: string[] }>("POST",
 export const cloneModule = (name: string, newName: string, open: boolean) =>
   request<CloneResult>("POST", `${moduleUrl(name)}/clone`, { new_name: newName, open });
 export const putTabs = (open: string[]) => request<{ open: string[] }>("PUT", "/api/session/tabs", { open });
+/**
+ * Detach (`state` 1), Attach (`state` 0: the module becomes the last tab) and the geometry of a module window; what is not sent stays. The
+ * answer is the module's `window` after the save. 422 MODULE_INVALID for a size outside 100-10000 px or a negative position.
+ */
+export const putWindow = (name: string, body: Partial<ModuleWindow>) => request<ModuleWindow>("PUT", `${moduleUrl(name)}/window`, body);
+/**
+ * Close module from a page that is going away (the pagehide of a module window, spec §8.1): `keepalive` lets the request outlive the
+ * page, whose answer nobody reads, and a failure is not reported (there is no page left to show it).
+ */
+export function closeModuleKeepalive(name: string): void {
+  fetch(`${moduleUrl(name)}/close`, { method: "POST", keepalive: true }).catch(() => {});
+}
 /** Re-run the current GMAT window after a failure (ของเรา: the Retry button). */
 export const retryModule = (name: string) => request<void>("POST", `${moduleUrl(name)}/retry`);
 

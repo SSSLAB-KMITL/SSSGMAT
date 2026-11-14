@@ -152,6 +152,23 @@ export interface ModuleConfig {
   footprint_off: number[];
   ground_track: number[];
   sky_track: number[];
+  /**
+   * The window of the module (ref-D §9: STATE, WIN_POS_X, WIN_POS_Y, WIN_WIDTH, WIN_HEIGHT); only `PUT /api/modules/{name}/window`
+   * changes it (plan decision 4). GET always has it; a configuration made by the page itself may not.
+   */
+  window?: ModuleWindow;
+}
+
+/**
+ * The window of a module: `state` 0 docked (a tab), 1 a window of its own; the position (screen px of the window's corner) and the size
+ * (px of its page) it had last as a window, null while it has had none. The server takes sizes from 100 to 10000 px and positions from 0.
+ */
+export interface ModuleWindow {
+  state: 0 | 1;
+  x: number | null;
+  y: number | null;
+  width: number | null;
+  height: number | null;
 }
 
 /**
@@ -166,8 +183,10 @@ export interface ModulePins {
 
 export interface ModuleList {
   modules: string[];
-  /** open modules in tab order */
+  /** open modules in tab order (the session order), the ones that are windows too */
   open: string[];
+  /** the open modules that are windows of their own (Detach module, spec §8.1), in the order of `open`: they are not tabs */
+  windows: string[];
   /** e.g. the Thai hint after an offline first start; empty once the user has created or edited a module */
   messages: ApiMessage[];
 }
