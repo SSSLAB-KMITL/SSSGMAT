@@ -3,11 +3,13 @@ import { errorText } from "../api";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { FreqKnob } from "../components/FreqKnob";
 import { SpinButton } from "../components/SpinButton";
+import { ToggleButton } from "../components/ToggleButton";
 import {
   beginEdit,
   countdownSize,
   editedValue,
   ellipsize,
+  FILTER_DELAY_MS,
   filterSats,
   finishEdit,
   fmtAngle,
@@ -32,9 +34,6 @@ interface Props {
   /** the window was closed: the caller closes the controller on the server and removes the window */
   onClose: () => void;
 }
-
-/** What GtkSearchEntry waits after the last key before "search-changed". */
-const FILTER_DELAY_MS = 150;
 
 /** The numbers whose steps the window keeps until the server has answered them (see radioView.ts, Edit). */
 type EditKey = "down" | "up" | "cycle";
@@ -173,9 +172,9 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
                   </option>
                 ))}
               </select>
-              <Toggle title={TIPS.track} pressed={shown.track} onToggle={(on) => act({ action: "track", on })}>
+              <ToggleButton title={TIPS.track} pressed={shown.track} onToggle={(on) => act({ action: "track", on })}>
                 Track
-              </Toggle>
+              </ToggleButton>
               <select
                 className="rc-wide rc-trsp"
                 title={TIPS.transponder}
@@ -193,9 +192,9 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
                 <button type="button" className="button" title={TIPS.tune} onClick={() => act({ action: "tune" })}>
                   T
                 </button>
-                <Toggle title={TIPS.lock} pressed={shown.lock} onToggle={(on) => act({ action: "lock", on })}>
+                <ToggleButton title={TIPS.lock} pressed={shown.lock} onToggle={(on) => act({ action: "lock", on })}>
                   L
-                </Toggle>
+                </ToggleButton>
               </div>
               <span className="rc-label right">Az:</span>
               <span className="rc-value">{fmtAngle(shown.az)}</span>
@@ -235,9 +234,9 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
                   </option>
                 ))}
               </select>
-              <Toggle title={TIPS.engage} pressed={shown.engaged} onToggle={(on) => act({ action: "engage", on })}>
+              <ToggleButton title={TIPS.engage} pressed={shown.engaged} onToggle={(on) => act({ action: "engage", on })}>
                 Engage
-              </Toggle>
+              </ToggleButton>
               <label className="rc-label right" htmlFor={`${id}-dev2`}>
                 2. Device:
               </label>
@@ -326,21 +325,5 @@ function LinkFrame({ title, sat, link, tip, onSat }: LinkProps) {
         </div>
       </div>
     </fieldset>
-  );
-}
-
-interface ToggleProps {
-  title: string;
-  pressed: boolean;
-  onToggle: (on: boolean) => void;
-  children: string;
-}
-
-/** A GtkToggleButton: it shows the state the server has, and a press asks for the other one. */
-function Toggle({ title, pressed, onToggle, children }: ToggleProps) {
-  return (
-    <button type="button" className="button rc-toggle" title={title} aria-pressed={pressed} onClick={() => onToggle(!pressed)}>
-      {children}
-    </button>
   );
 }

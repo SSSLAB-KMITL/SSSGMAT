@@ -52,6 +52,9 @@ export function ellipsize(name: string, max: number = TRANSPONDER_CHARS): string
   return chars.length <= max ? name : `${chars.slice(0, Math.max(max - 1, 0)).join("")}…`;
 }
 
+/** What GtkSearchEntry waits after the last key before "search-changed" (the Filter of Radio Control and Antenna Control). */
+export const FILTER_DELAY_MS = 150;
+
 /**
  * The satellites of the combo for the text of the "Filter..." entry: those whose name has the text, ignoring case (`strcasestr`); an empty
  * text keeps all. In the order of the combo, which is the name order of Sky at a glance (plan decision 17: ignoring case, numbers by

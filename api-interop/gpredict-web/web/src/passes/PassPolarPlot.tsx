@@ -11,7 +11,7 @@ const HOLDER = { width: "100%", height: "100%", overflow: "hidden" } as const;
 /**
  * Paints `scene` on `ctx` (whose canvas is round(width * dpr) x round(height * dpr)) in the order of Gpredict's on_draw
  * (ref-P §5.1): background, circles, axes, N/E/S/W, station name, cursor text (`cursorText`, null for none), sky track, time labels.
- * Antenna Control (sub-project 3) paints its markers over this.
+ * Antenna Control (sub-project 3) paints its markers over this (PassPolarPlot's `overlay`).
  */
 export function drawPolarScene(ctx: CanvasRenderingContext2D, scene: PolarScene, dpr: number, cursorText: string | null): void {
   beginPlot(ctx, scene, dpr, scene.background);
@@ -37,6 +37,11 @@ export interface PassPolarPlotProps {
   qthName: string | null;
   /** the Polar View's orientation setting ("N/E/S/W", ...); N/E/S/W when left out */
   orientation?: string;
+  /**
+   * Paints over the plot once the scene is drawn (Antenna Control's markers). `scene` has the size of the plot and the centre and radius
+   * of the circle; `ctx` is in CSS px. It must keep its identity while what it paints is the same (useCallback): the plot is redrawn when it changes.
+   */
+  overlay?: (ctx: CanvasRenderingContext2D, scene: PolarScene) => void;
 }
 
 /**
@@ -45,7 +50,7 @@ export interface PassPolarPlotProps {
  * circle; as in Gpredict it stays where it was when the pointer leaves the plot, and goes when the pointer moves out of the
  * circle (ref-P §5.4). There are no clicks.
  */
-export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[0] }: PassPolarPlotProps) {
+export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[0], overlay }: PassPolarPlotProps) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useElementSize(holder);
@@ -58,8 +63,10 @@ export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[
 
   useEffect(() => {
     const target = prepareCanvas(canvas.current, size);
-    if (target !== null) drawPolarScene(target.ctx, scene, target.dpr, cursorText);
-  }, [size, scene, cursorText]);
+    if (target === null) return;
+    drawPolarScene(target.ctx, scene, target.dpr, cursorText);
+    overlay?.(target.ctx, scene);
+  }, [size, scene, cursorText, overlay]);
 
   return (
     <div ref={holder} style={HOLDER}>
