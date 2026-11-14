@@ -4,6 +4,7 @@
 
 import { cssRgba, POLAR_COLORS } from "../colors";
 import { formatTime } from "../format";
+import type { NumberFormat } from "../numfmt";
 import type { SkyPoint, Tick } from "../types";
 import { FONT, LINE_H, MARKER_HALF } from "./canvasCommon";
 import type { SatPos } from "./canvasCommon";
@@ -43,6 +44,8 @@ export interface PolarScene {
   tracks: ReadonlyMap<number, SkyTrack>;
   /** mouse position over the view, null when it is not there */
   cursor: { x: number; y: number } | null;
+  /** the number format of Preferences: the time labels of a sky track (always `%H:%M`) are in UTC or local time by it (ref-D §2.1) */
+  nf: NumberFormat;
 }
 
 /** Gap in px between the end of the axes and the info texts, each side: twice the extra length of the axes (`2 * POLV_LINE_EXTRA`). */
@@ -123,7 +126,7 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
     // sky track: 1 px, track colour, from AOS to LOS of the current pass, with 4 time labels and no AOS/LOS labels
     const track = scene.tracks.get(sat.norad);
     if (track !== undefined && skyTrackWanted(sat, scene.skyEnabled, scene.auto) && track.key === skyKey(tick.window.start, sat)) {
-      drawSkyTrack(ctx, track.points, cx, cy, r, orientation);
+      drawSkyTrack(ctx, track.points, cx, cy, r, orientation, scene.nf.local);
     }
 
     if (on("Satellite Marker")) {
@@ -138,7 +141,15 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
   return hits;
 }
 
-function drawSkyTrack(ctx: CanvasRenderingContext2D, points: readonly SkyPoint[], cx: number, cy: number, r: number, orientation: Orientation): void {
+function drawSkyTrack(
+  ctx: CanvasRenderingContext2D,
+  points: readonly SkyPoint[],
+  cx: number,
+  cy: number,
+  r: number,
+  orientation: Orientation,
+  local: boolean,
+): void {
   const pixels = points
     .filter((p) => Number.isFinite(p.az) && Number.isFinite(p.el))
     .map((p) => ({ t: p.t, xy: azElToXY(p.az, Math.max(0, p.el), cx, cy, r, orientation) })); // El 0 is the rim: a point cannot be outside it
@@ -150,7 +161,7 @@ function drawSkyTrack(ctx: CanvasRenderingContext2D, points: readonly SkyPoint[]
   pixels.forEach(({ xy: [x, y] }, i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
   ctx.stroke();
   trackTicks(pixels).forEach(({ t, xy: [x, y] }, i) => {
-    const text = formatTime(new Date(t), "%H:%M");
+    const text = formatTime(new Date(t), "%H:%M", local);
     const p = tickLabelPos(x, y, cx, ctx.measureText(text).width, LINE_H, i === 0);
     ctx.fillText(text, p.x, p.y);
   });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { RefObject } from "react";
-import { formatTime, TIME_PLACEHOLDER } from "../format";
+import { TIME_PLACEHOLDER } from "../format";
+import { fmtTimeNf, useNumberFormat } from "../numfmt";
 import { TimeLabel } from "../timeLabel";
 
 interface Props {
@@ -15,18 +16,20 @@ interface Props {
 }
 
 /**
- * Left: the module time as %Y/%m/%d %H:%M:%S (UTC), changing at most once per second but always showing the newest time
- * within a second (TimeLabel; a held-back text is applied by a timer, so a stopped clock or a time jump cannot leave it stale).
+ * Left: the module time in the time format and zone of Preferences > Number Formats (by default %Y/%m/%d %H:%M:%S, UTC), changing
+ * at most once per second but always showing the newest time within a second (TimeLabel; a held-back text is applied by a
+ * timer, so a stopped clock or a time jump cannot leave it stale).
  * Right: a flat "Module menu" button (icon open-menu-symbolic, ref §1). There is no close button: Close is in the menu.
  * Give it `key={module name}` so that a new module shows its first time at once.
  */
 export function ModuleHeader({ time, onModuleMenu, menuButton, menuOpen }: Props) {
   const [shown, setShown] = useState(TIME_PLACEHOLDER);
   const [label] = useState(() => new TimeLabel(1000));
+  const nf = useNumberFormat();
 
   useEffect(() => {
     if (time === null) return;
-    const text = formatTime(new Date(time));
+    const text = fmtTimeNf(time, nf);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const apply = () => {
       const step = label.update(text, Date.now());
@@ -35,7 +38,7 @@ export function ModuleHeader({ time, onModuleMenu, menuButton, menuOpen }: Props
     };
     apply();
     return () => clearTimeout(timer);
-  }, [time, label]);
+  }, [time, label, nf]);
 
   return (
     <div className="module-header">

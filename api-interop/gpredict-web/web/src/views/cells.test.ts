@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
+import { pinTimeZone } from "../pinTimeZone";
 import type { SatState, Tick } from "../types";
 import { directionText, eventRows, inCanonicalOrder, isDecayed, listCell, nextEventOf, singleCell } from "./cells";
 
 const T = new Date("2026-11-12T06:00:00Z");
+const nf = (over: Partial<NumberFormat> = {}): NumberFormat => ({ ...DEFAULT_NF, ...over });
 
 /** A satellite 12 degrees above the horizon, approaching, that sets at 07:06:12 and rises again at 08:40:00. */
 function sat(over: Partial<SatState> = {}): SatState {
@@ -46,8 +50,8 @@ describe("listCell", () => {
     expect(listCell("Dir", s, T)).toBe("↑");
     expect(listCell("Ra", s, T)).toBe("123.46°");
     expect(listCell("Dec", s, T)).toBe("-12.35°");
-    expect(listCell("Lat", s, T)).toBe("-33.46°");
-    expect(listCell("Lon", s, T)).toBe("151.20°");
+    expect(listCell("Lat", s, T)).toBe("-33.46° "); // the sign stays and the suffix is a space (ref-D 2.1)
+    expect(listCell("Lon", s, T)).toBe("151.20° ");
     expect(listCell("SSP", s, T)).toBe("QF56od");
     expect(listCell("MA", s, T)).toBe("100.12°");
     expect(listCell("Phase", s, T)).toBe("45.68°");
@@ -114,6 +118,53 @@ describe("listCell", () => {
   });
 });
 
+describe("list cells follow ref-D 2.1", () => {
+  const miles = nf({ imperial: true });
+  // 1609.344 km is exactly 1000 mi
+  const far = sat({ range_km: 1609.344, range_rate_kms: -1.609344, footprint_km: 3218.688, alt_km: 804.672, vel_kms: 8.04672 });
+
+  it("imperial: Range, Footp and Alt in miles with 0 decimals, Rate and Vel in mi/s with 3, no unit text", () => {
+    expect(listCell("Range", far, T, miles)).toBe("1000");
+    expect(listCell("Footp", far, T, miles)).toBe("2000");
+    expect(listCell("Alt", far, T, miles)).toBe("500");
+    expect(listCell("Rate", far, T, miles)).toBe("-1.000");
+    expect(listCell("Vel", far, T, miles)).toBe("5.000");
+    expect(listCell("Rate", sat(), T, miles)).toBe((-5.91 / 1.609344).toFixed(3));
+  });
+
+  it("metric (the default) keeps kilometres", () => {
+    expect(listCell("Range", far, T)).toBe("1609");
+    expect(listCell("Range", far, T, DEFAULT_NF)).toBe("1609");
+    expect(listCell("Alt", far, T, nf({ nsew: true }))).toBe("805");
+  });
+
+  it("imperial leaves a missing number as -", () => {
+    expect(listCell("Range", sat({ range_km: null, vel_kms: null }), T, miles)).toBe("-");
+    expect(listCell("Vel", sat({ vel_kms: null }), T, miles)).toBe("-");
+  });
+
+  it("Lat and Lon end in a space while N/S/E/W is off, with a suffix instead of a sign when it is on", () => {
+    const s = sat({ lat_deg: -13.75, lon_deg: 100.5 });
+    expect(listCell("Lat", s, T)).toBe("-13.75° ");
+    expect(listCell("Lon", s, T)).toBe("100.50° ");
+    expect(listCell("Lat", s, T, nf({ nsew: true }))).toBe("13.75°S");
+    expect(listCell("Lon", s, T, nf({ nsew: true }))).toBe("100.50°E");
+    expect(listCell("Lon", sat({ lon_deg: -70.25 }), T, nf({ nsew: true }))).toBe("70.25°W");
+  });
+
+  it("a Lat or Lon that is missing is -", () => {
+    expect(listCell("Lat", sat({ lat_deg: null }), T, nf({ nsew: true }))).toBe("-");
+    expect(listCell("Lon", sat({ lon_deg: null }), T)).toBe("-");
+  });
+
+  it("angles and the other columns do not change with the number format", () => {
+    const all = nf({ nsew: true, imperial: true, local: true, timeFormat: "%H" });
+    for (const column of ["Az", "El", "Ra", "Dec", "MA", "Phase", "Dop", "Loss", "Del", "Orbit", "SSP", "Vis", "Dir"]) {
+      expect(listCell(column, sat(), T, all), column).toBe(listCell(column, sat(), T));
+    }
+  });
+});
+
 describe("nextEventOf", () => {
   it("is LOS when LOS comes first, AOS when AOS does or when they are the same moment", () => {
     expect(nextEventOf(sat())).toEqual({ kind: "LOS", at: "2026-11-12T07:06:12.000Z" });
@@ -144,8 +195,8 @@ describe("singleCell", () => {
     expect(singleCell("Orbit Phase", s)).toBe("45.68°");
     expect(singleCell("Orbit Num.", s)).toBe("12345");
     expect(singleCell("SSP Loc.", s)).toBe("QF56od");
-    expect(singleCell("SSP Lat.", s)).toBe("-33.46°");
-    expect(singleCell("SSP Lon.", s)).toBe("151.20°");
+    expect(singleCell("SSP Lat.", s)).toBe("-33.46° ");
+    expect(singleCell("SSP Lon.", s)).toBe("151.20° ");
   });
 
   it("pads angles to six characters like Gpredict's %6.2f", () => {
@@ -230,9 +281,91 @@ describe("singleCell", () => {
     expect(singleCell("Velocity", s)).toBe("-");
   });
 
+  it("single sat units", () => {
+    const far = sat({ range_km: 1609.344, range_rate_kms: -1.609344, footprint_km: 3218.688, alt_km: 804.672, vel_kms: 8.04672 });
+    const miles = nf({ imperial: true });
+    expect(singleCell("Slant Range", far, miles)).toBe("1000 mi");
+    expect(singleCell("Footprint", far, miles)).toBe("2000 mi");
+    expect(singleCell("Altitude", far, miles)).toBe("500 mi");
+    expect(singleCell("Range Rate", far, miles)).toBe("-1.000 mi/sec");
+    expect(singleCell("Velocity", far, miles)).toBe("5.000 mi/sec");
+    expect(singleCell("Velocity", sat(), miles)).toBe(`${(7.5912 / 1.609344).toFixed(3)} mi/sec`);
+    // metric keeps km and km/sec
+    expect(singleCell("Slant Range", far, DEFAULT_NF)).toBe("1609 km");
+    expect(singleCell("Velocity", far, nf({ nsew: true }))).toBe("8.047 km/sec");
+    // the other fields are not distances
+    expect(singleCell("Doppler@100M", sat(), miles)).toBe("1971 Hz");
+  });
+
+  it("single sat shows - without a unit for a distance that is missing, in miles too", () => {
+    expect(singleCell("Slant Range", sat({ range_km: null }), nf({ imperial: true }))).toBe("-");
+    expect(singleCell("Velocity", sat({ vel_kms: null }), nf({ imperial: true }))).toBe("-");
+  });
+
+  it("SSP Lat. and SSP Lon. follow N/S/E/W like the list (%.2f then a suffix or a space)", () => {
+    const s = sat({ lat_deg: -13.75, lon_deg: 100.5 });
+    expect(singleCell("SSP Lat.", s, DEFAULT_NF)).toBe("-13.75° ");
+    expect(singleCell("SSP Lat.", s, nf({ nsew: true }))).toBe("13.75°S");
+    expect(singleCell("SSP Lon.", s, nf({ nsew: true }))).toBe("100.50°E");
+    expect(singleCell("SSP Lon.", sat({ lon_deg: null }), nf({ nsew: true }))).toBe("-");
+  });
+
   it("shows - for an empty locator and a field it does not know", () => {
     expect(singleCell("SSP Loc.", sat({ ssp: "" }))).toBe("-");
     expect(singleCell("Nonsense", sat())).toBe("-");
+  });
+});
+
+describe("next event uses the time format and local time", () => {
+  const next = sat(); // LOS 2026-11-12T07:06:12Z comes before AOS 08:40:00Z
+
+  it("List: the format with ' (AOS)' or ' (LOS)' appended is what is formatted", () => {
+    const f = nf({ timeFormat: "%d %b %H:%M" });
+    expect(listCell("Next Event", next, T, f)).toBe("12 Nov 07:06 (LOS)");
+    expect(listCell("Next AOS", next, T, f)).toBe("12 Nov 08:40");
+    expect(listCell("Next LOS", next, T, f)).toBe("12 Nov 07:06");
+  });
+
+  it("List: the whole text is cut at 49 characters, the suffix with it", () => {
+    const f = nf({ timeFormat: "%Y".repeat(12) }); // 48 characters, then " (LOS)" is cut to a space
+    const text = listCell("Next Event", next, T, f);
+    expect(text).toHaveLength(49);
+    expect(text).toBe("2026".repeat(12) + " ");
+    expect(listCell("Next AOS", next, T, nf({ timeFormat: "%Y".repeat(20) }))).toHaveLength(49);
+  });
+
+  it("Single sat: AOS: or LOS: before the time, which is cut at 49 characters on its own", () => {
+    const f = nf({ timeFormat: "%H:%M %Z" });
+    expect(singleCell("Next Event", next, f)).toBe("LOS: 07:06 UTC");
+    expect(singleCell("Next AOS", next, f)).toBe("08:40 UTC");
+    expect(singleCell("Next LOS", next, f)).toBe("07:06 UTC");
+    expect(singleCell("Next Event", next, nf({ timeFormat: "%Y".repeat(20) }))).toBe(`LOS: ${"2026".repeat(20).slice(0, 49)}`);
+  });
+
+  it("the N/A texts stay when there is no event, whatever the format", () => {
+    const none = sat({ next_aos: null, next_los: null });
+    const f = nf({ timeFormat: "%H", local: true });
+    expect(listCell("Next Event", none, T, f)).toBe("--- N/A ---");
+    expect(listCell("Next AOS", none, T, f)).toBe("--- N/A ---");
+    expect(singleCell("Next Event", none, f)).toBe("N/A");
+    expect(singleCell("Next LOS", none, f)).toBe("N/A");
+  });
+
+  describe("in local time", () => {
+    pinTimeZone("Asia/Bangkok");
+
+    it("shows the time of the machine's zone", () => {
+      const local = nf({ local: true });
+      expect(listCell("Next Event", next, T, local)).toBe("2026/11/12 14:06:12 (LOS)");
+      expect(listCell("Next AOS", next, T, local)).toBe("2026/11/12 15:40:00");
+      expect(listCell("Next LOS", next, T, local)).toBe("2026/11/12 14:06:12");
+      expect(singleCell("Next Event", next, local)).toBe("LOS: 2026/11/12 14:06:12");
+      expect(singleCell("Next AOS", next, nf({ local: true, timeFormat: "%H:%M %z" }))).toBe("15:40 +0700");
+    });
+
+    it("and UTC when local time is off", () => {
+      expect(listCell("Next Event", next, T, DEFAULT_NF)).toBe("2026/11/12 07:06:12 (LOS)");
+    });
   });
 });
 

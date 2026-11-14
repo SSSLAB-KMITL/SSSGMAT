@@ -3,7 +3,8 @@
 //   name), 6 info texts. All the geometry is in mapGeom.ts and the texts in mapText.ts; this file only paints.
 
 import { cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA } from "../colors";
-import { fmtFixed } from "../format";
+import { fmtLatLon } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import type { Tick } from "../types";
 import { FONT, LINE_H, MARKER_HALF } from "./canvasCommon";
 import type { SatPos } from "./canvasCommon";
@@ -45,6 +46,8 @@ export interface MapScene {
   night: readonly (readonly [number, number])[] | null;
   /** mouse position over the map, null when it is not there */
   cursor: { x: number; y: number } | null;
+  /** the number format of Preferences: the grid labels use N/S/E/W or a space after the degree sign (ref-D §2.1) */
+  nf: NumberFormat;
 }
 
 /** Paint `scene` on `ctx` (whose canvas is round(w*dpr) x round(h*dpr)). Returns the position of every satellite drawn. */
@@ -145,9 +148,9 @@ function drawBackground(ctx: CanvasRenderingContext2D, scene: MapScene): void {
   else if (x0 < 0) ctx.drawImage(scene.image, x0 + dw, 0, dw, dh);
 }
 
-/** 2: lines every 30 degrees (0.5 px) and their labels "%.0f°" in the grid colour. */
+/** 2: lines every 30 degrees (0.5 px) and their labels "%.0f°" and N/S/E/W, or a space, in the grid colour. */
 function drawGrid(ctx: CanvasRenderingContext2D, scene: MapScene): void {
-  const { w, h, centerLon } = scene;
+  const { w, h, centerLon, nf } = scene;
   const colour = cssRgba(MAP_COLORS.grid);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
@@ -156,13 +159,13 @@ function drawGrid(ctx: CanvasRenderingContext2D, scene: MapScene): void {
   for (const lat of GRID_LATITUDES) {
     const y = toXY(lat, 0, w, h, centerLon)[1];
     strokePath(ctx, [[0, y], [w, y]]);
-    ctx.fillText(`${fmtFixed(lat, 0)}°`, 15, y - 1);
+    ctx.fillText(fmtLatLon(lat, "lat", 0, nf), 15, y - 1);
   }
   for (const lon of gridLongitudes(centerLon)) {
     const x = lonToX(lon, w, centerLon);
     strokePath(ctx, [[x, 0], [x, h]]);
     const shown = wrapLon(lon) === -180 ? 180 : wrapLon(lon);
-    ctx.fillText(`${fmtFixed(shown, 0)}°`, x + 2, h - 2);
+    ctx.fillText(fmtLatLon(shown, "lon", 0, nf), x + 2, h - 2);
   }
   ctx.textBaseline = "top";
 }

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { errorText, getClock, putClock, resetClock } from "../api";
 import { ClockSender } from "../clockSender";
 import type { ClockOp } from "../clockSender";
+import { useNumberFormat } from "../numfmt";
 import {
   applyEdit,
   changeField,
@@ -62,6 +63,7 @@ function opBody(state: ClockState, throttle: number) {
  *
  * While the clock runs the calendar and the spin buttons show the module time of the live ticks and cannot be changed.
  * While it is stopped they are the time, together with the slider's offset: every change sends {state: "stop", time}.
+ * The calendar and the spin buttons are in UTC, or in the machine's time zone when "Show local time instead of UTC." is on (ref-D §2.1).
  * Moving the slider while the clock runs stops it. Closing the window resets the clock (Reset, throttle 1).
  * Give it `key={module}`: the window follows one module.
  */
@@ -121,7 +123,8 @@ export function TimeController({ module, tick, onClose, onResetFailed }: Props) 
 
   const state = model.clock?.state ?? "forward"; // Play forward is active when the window opens
   const stopped = model.clock?.state === "stop";
-  const fields = displayFields(model, new Date());
+  const { local } = useNumberFormat();
+  const fields = displayFields(model, new Date(), local);
 
   const send = (op: ClockOp) => {
     setError(null);
@@ -130,12 +133,12 @@ export function TimeController({ module, tick, onClose, onResetFailed }: Props) 
 
   /** the user set the fields and/or the slider: the clock stops at the time they compose */
   const commit = (next: TimeFields, slider: number) => {
-    const time = composeTime(next.day, next.h, next.m, next.s, next.ms, slider);
+    const time = composeTime(next.day, next.h, next.m, next.s, next.ms, slider, local);
     if (Number.isNaN(time.getTime())) {
       setError(BAD_TIME);
       return;
     }
-    setModel((m) => applyEdit(m, next, slider));
+    setModel((m) => applyEdit(m, next, slider, local));
     send({ kind: "put", body: { state: "stop", time: time.toISOString() } });
   };
 

@@ -52,7 +52,7 @@ function useSatNames(satellites: readonly number[], shown: Tick | null): Readonl
  *   Choosing one shows that satellite and saves it as `single.selected` with PUT /api/modules/{name}; if the server refuses,
  *   the Thai text goes to `onError` (the notice strip).
  */
-export function SingleSatView({ config, tick, onSaveConfig, onError, onPass }: ViewProps) {
+export function SingleSatView({ config, tick, nf, onSaveConfig, onError, onPass }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.single);
   const names = useSatNames(config.satellites, shown);
@@ -119,7 +119,7 @@ export function SingleSatView({ config, tick, onSaveConfig, onError, onPass }: V
                   {f.name}
                 </th>
                 <td className="single-colon">:</td>
-                <td className="single-value">{singleCell(f.name, sat)}</td>
+                <td className="single-value">{singleCell(f.name, sat, nf)}</td>
               </tr>
             ))}
           </tbody>

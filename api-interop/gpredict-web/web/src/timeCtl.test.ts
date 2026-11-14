@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { pinTimeZone } from "./pinTimeZone";
 import {
   applyEdit,
   changeField,
   composeTime,
+  dayOf,
   displayFields,
   failEdit,
   fieldsFromTime,
@@ -111,6 +113,69 @@ describe("fieldsFromTime", () => {
     const t = utc(2026, 12, 31, 23, 59, 59, 999);
     const f = fieldsFromTime(t);
     expect(composeTime(f.day, f.h, f.m, f.s, f.ms, 0).getTime()).toBe(t.getTime());
+  });
+});
+
+describe("the time controller fields in local time", () => {
+  pinTimeZone("Asia/Bangkok"); // UTC+7 all year, no daylight saving time
+
+  const t = utc(2026, 11, 12, 5, 6, 7, 8); // 12:06:07.008 in Bangkok
+
+  it("time controller fields in local time", () => {
+    const f = fieldsFromTime(t, true);
+    expect(f.h).toBe(12);
+    expect([f.m, f.s, f.ms]).toEqual([6, 7, 8]);
+    expect(iso(f.day)).toBe("2026-11-12T00:00:00.000Z"); // a calendar date, held as UTC midnight
+    expect(composeTime(f.day, f.h, f.m, f.s, f.ms, 0, true).getTime()).toBe(t.getTime());
+  });
+
+  it("the calendar day is the local date: after 17:00 UTC it is already tomorrow", () => {
+    const late = utc(2026, 12, 31, 20, 30);
+    expect(iso(dayOf(late, true))).toBe("2027-01-01T00:00:00.000Z");
+    expect(iso(dayOf(late))).toBe("2026-12-31T00:00:00.000Z");
+    expect(iso(dayOf(late, false))).toBe("2026-12-31T00:00:00.000Z");
+    const f = fieldsFromTime(late, true);
+    expect([f.h, f.m]).toEqual([3, 30]);
+    expect(composeTime(f.day, f.h, f.m, f.s, f.ms, 0, true).getTime()).toBe(late.getTime());
+  });
+
+  it("composes a local time of day and the date of the calendar into the UTC time", () => {
+    expect(iso(composeTime(day(2026, 11, 12), 12, 6, 7, 8, 0, true))).toBe("2026-11-12T05:06:07.008Z");
+    expect(iso(composeTime(day(2026, 11, 12), 3, 0, 0, 0, 0, true))).toBe("2026-11-11T20:00:00.000Z");
+    // UTC when `local` is off, or left out
+    expect(iso(composeTime(day(2026, 11, 12), 12, 6, 7, 8, 0))).toBe("2026-11-12T12:06:07.008Z");
+    expect(iso(composeTime(day(2026, 11, 12), 12, 6, 7, 8, 0, false))).toBe("2026-11-12T12:06:07.008Z");
+  });
+
+  it("the slider is added to the local time as to the UTC one", () => {
+    expect(iso(composeTime(day(2026, 11, 12), 23, 0, 0, 0, 0.1, true))).toBe("2026-11-12T18:24:00.000Z");
+  });
+
+  it("is invalid (NaN) for a day that is not a date", () => {
+    expect(Number.isNaN(composeTime(new Date(NaN), 0, 0, 0, 0, 0, true).getTime())).toBe(true);
+  });
+
+  it("the carry of a spin button crosses the local midnight", () => {
+    const f = changeField(fieldsFromTime(utc(2026, 11, 12, 16, 59, 59, 999), true), "ms", ...wrapStep(1000, 0, 999));
+    expect([iso(f.day), f.h, f.m, f.s, f.ms]).toEqual(["2026-11-13T00:00:00.000Z", 0, 0, 0, 0]);
+    expect(iso(composeTime(f.day, f.h, f.m, f.s, f.ms, 0, true))).toBe("2026-11-12T17:00:00.000Z");
+  });
+
+  it("the fields of a running clock follow the module time in local time", () => {
+    const running: ClockInfo = { state: "forward", throttle: 1, label: "Real-Time" };
+    const m = observeClock(INITIAL_MODEL, running, utc(2026, 11, 12, 5, 6, 7, 456));
+    expect(fieldsString(displayFields(m, utc(2000, 1, 1), true))).toBe("2026-11-12 12:6:7.0");
+    expect(fieldsString(displayFields(m, utc(2000, 1, 1)))).toBe("2026-11-12 5:6:7.0");
+  });
+
+  it("an edit in local time is shown while it composes to the module time, and the time of the server's answer is the same", () => {
+    const stopped: ClockInfo = { state: "stop", throttle: 1, label: "Manual Control" };
+    const edited = { day: day(2026, 11, 12), h: 1, m: 2, s: 3, ms: 4 }; // 01:02:03.004 Bangkok = 18:02:03.004 UTC the day before
+    const m = applyEdit(observeClock(INITIAL_MODEL, stopped, t), edited, 0, true);
+    expect(iso(m.time!)).toBe("2026-11-11T18:02:03.004Z");
+    expect(fieldsString(displayFields(m, t, true))).toBe("2026-11-12 1:2:3.4");
+    // switching to UTC while the window is open: the edit no longer composes to the time, so the fields show the real time in UTC
+    expect(fieldsString(displayFields(m, t, false))).toBe("2026-11-11 18:2:3.4");
   });
 });
 

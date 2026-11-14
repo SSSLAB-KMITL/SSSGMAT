@@ -12,6 +12,7 @@ import { sortChange, sortSaveFailureText, sortSats } from "./listSort";
  * of /api/meta, the header of each with its hint as tooltip.
  *
  * - It redraws from the tick only every `refresh.list` ticks (the first at once); a tick that is not "ok" leaves the last rows.
+ *   A change of the number format (`nf`) rewrites the cells at once, from the same tick.
  * - Rows with El > 0 are bold; the selected satellite's row (the module's, shared with the Map and the Polar) is highlighted.
  *   A click on a row selects its satellite or, on the selected one, unselects it; double click calls `onSatDoubleClick`;
  *   right click calls `onSatContextMenu` (and the browser's own menu is never shown).
@@ -19,7 +20,7 @@ import { sortChange, sortSaveFailureText, sortSats } from "./listSort";
  *   (`list_sort`, saved with PUT /api/modules/{name}; if the server refuses, the Thai text goes to `onError`, the notice strip).
  *   Next AOS, Next LOS and Next Event sort by time, empty ones last.
  */
-export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSatContextMenu, onSatDoubleClick, onError }: ViewProps) {
+export function ListView({ config, tick, nf, selected, onSelect, onSaveConfig, onSatContextMenu, onSatDoubleClick, onError }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.list);
   const { column: sortColumn, ascending } = config.list_sort;
@@ -86,7 +87,7 @@ export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSat
             >
               {columns.map((c) => (
                 <td key={c.name} className={`align-${LIST_ALIGN[c.name] ?? "left"}`}>
-                  {listCell(c.name, s, time)}
+                  {listCell(c.name, s, time, nf)}
                 </td>
               ))}
             </tr>

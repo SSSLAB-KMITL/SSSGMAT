@@ -26,7 +26,7 @@ const TRACK_RETRY_MS = 10_000;
  * - Left click within 10 px of a satellite selects it, or unselects it if it is the selected one (the double click of a
  *   double click does not toggle again); double click calls `onSatDoubleClick`; right click calls `onSatContextMenu`.
  */
-export function MapView({ module, config, tick, selected, onSelect, onSatContextMenu, onSatDoubleClick }: ViewProps) {
+export function MapView({ module, config, tick, nf, selected, onSelect, onSatContextMenu, onSatDoubleClick }: ViewProps) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useElementSize(holder);
@@ -112,8 +112,9 @@ export function MapView({ module, config, tick, selected, onSelect, onSatContext
       tracks,
       night: polygon,
       cursor,
+      nf,
     });
-  }, [size, image, shown, tracks, selected, centerLon, contents, cursor, footprintOff, groundTrack]);
+  }, [size, image, shown, tracks, selected, centerLon, contents, cursor, footprintOff, groundTrack, nf]);
 
   return (
     <div ref={holder} className="map-view">

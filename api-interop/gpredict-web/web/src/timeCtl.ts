@@ -38,22 +38,35 @@ function utc(year: number, month: number, date: number, h = 0, m = 0, s = 0, ms 
   return t;
 }
 
-/** The calendar day (UTC midnight) of a time. */
-export function dayOf(t: Date): Date {
-  return utc(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+/**
+ * The calendar day of a time, in UTC or (`local`) in the time zone of the machine. A calendar day is a date, held as UTC midnight
+ * of that date whichever zone it was read in: the calendar and the month arithmetic only ever read its UTC date.
+ */
+export function dayOf(t: Date, local = false): Date {
+  return local ? utc(t.getFullYear(), t.getMonth(), t.getDate()) : utc(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
 }
 
 function addDays(day: Date, n: number): Date {
   return utc(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + n);
 }
 
+/** A time in the time zone of the machine from its parts; also right for the years below 100. */
+function localTime(year: number, month: number, date: number, h: number, m: number, s: number, ms: number): Date {
+  const t = new Date(0);
+  t.setFullYear(year, month, date);
+  t.setHours(h, m, s, ms);
+  return t;
+}
+
 /**
- * The time the controls stand for (UTC): the calendar day (only its date counts), Hour, Min, Sec, Msec, and the slider's
- * offset in days (Gpredict's `calculate_time` plus `tmgCdnum = jd + slider`). A value outside its range is carried
- * on by Date, so 0.1 day is +8640 s. An invalid `day` gives an invalid Date.
+ * The time the controls stand for: the calendar day (only its date counts), Hour, Min, Sec, Msec, and the slider's
+ * offset in days (Gpredict's `calculate_time` plus `tmgCdnum = jd + slider`), in UTC or, with `local`, in the time zone of the
+ * machine (ref-D §2.1: the controls are shown in, and edits interpreted as, local time or UTC). A value outside its range is
+ * carried on by Date, so 0.1 day is +8640 s. An invalid `day` gives an invalid Date.
  */
-export function composeTime(day: Date, h: number, m: number, s: number, ms: number, sliderDays: number): Date {
-  const base = utc(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m, s, ms);
+export function composeTime(day: Date, h: number, m: number, s: number, ms: number, sliderDays: number, local = false): Date {
+  const [y, mo, d] = [day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()];
+  const base = local ? localTime(y, mo, d, h, m, s, ms) : utc(y, mo, d, h, m, s, ms);
   return new Date(base.getTime() + Math.round(sliderDays * MS_PER_DAY));
 }
 
@@ -65,7 +78,7 @@ export function sliderToDays(value: number): number {
 
 /** The calendar day and the four spin buttons. */
 export interface TimeFields {
-  /** UTC midnight of the calendar's day */
+  /** the calendar's date, held as UTC midnight (see `dayOf`) */
   day: Date;
   h: number;
   m: number;
@@ -73,12 +86,13 @@ export interface TimeFields {
   ms: number;
 }
 
-export function fieldsFromTime(t: Date): TimeFields {
+/** The calendar day and spin buttons of a time, in UTC or (`local`) in the time zone of the machine. */
+export function fieldsFromTime(t: Date, local = false): TimeFields {
   return {
-    day: dayOf(t),
-    h: t.getUTCHours(),
-    m: t.getUTCMinutes(),
-    s: t.getUTCSeconds(),
+    day: dayOf(t, local),
+    h: local ? t.getHours() : t.getUTCHours(),
+    m: local ? t.getMinutes() : t.getUTCMinutes(),
+    s: local ? t.getSeconds() : t.getUTCSeconds(),
     ms: t.getUTCMilliseconds(),
   };
 }
@@ -180,9 +194,9 @@ export function observeClock(m: ClockModel, info: ClockInfo, time: Date, syncThr
   return { ...m, clock: info, time, throttle: syncThrottle && changed ? info.throttle : m.throttle };
 }
 
-/** The user set the fields and the slider (the request {state: "stop", time} is sent): show it at once, as stopped. */
-export function applyEdit(m: ClockModel, fields: TimeFields, slider: number): ClockModel {
-  const time = composeTime(fields.day, fields.h, fields.m, fields.s, fields.ms, slider);
+/** The user set the fields and the slider (the request {state: "stop", time} is sent): show it at once, as stopped. `local`: the fields are local time. */
+export function applyEdit(m: ClockModel, fields: TimeFields, slider: number, local = false): ClockModel {
+  const time = composeTime(fields.day, fields.h, fields.m, fields.s, fields.ms, slider, local);
   const clock: ClockInfo = { state: "stop", throttle: m.clock?.throttle ?? m.throttle, label: LABEL_MANUAL };
   return { ...m, clock, time, edit: fields, slider };
 }
@@ -198,16 +212,18 @@ const SAME_TIME_MS = 2;
 /**
  * The calendar day and spin buttons to show. While the clock runs they follow the module time with the milliseconds
  * cut off (Gpredict: "msec: always 0 in RT and SRT modes"). While it is stopped they show what the user set, as long as
- * that is still the module time, else the module time itself. `fallback` is used before any time is known.
+ * that is still the module time, else the module time itself. `fallback` is used before any time is known. `local`: the fields
+ * are in the time zone of the machine instead of UTC (an edit made in the other one no longer composes to the module time, so
+ * after the setting changes the fields show the module time).
  */
-export function displayFields(m: ClockModel, fallback: Date): TimeFields {
+export function displayFields(m: ClockModel, fallback: Date, local = false): TimeFields {
   const time = m.time ?? fallback;
   if (m.clock?.state === "stop") {
     if (m.edit !== null && m.time !== null) {
-      const composed = composeTime(m.edit.day, m.edit.h, m.edit.m, m.edit.s, m.edit.ms, m.slider);
+      const composed = composeTime(m.edit.day, m.edit.h, m.edit.m, m.edit.s, m.edit.ms, m.slider, local);
       if (Math.abs(composed.getTime() - m.time.getTime()) <= SAME_TIME_MS) return m.edit;
     }
-    return fieldsFromTime(time);
+    return fieldsFromTime(time, local);
   }
-  return fieldsFromTime(new Date(Math.floor(time.getTime() / 1000) * 1000));
+  return fieldsFromTime(new Date(Math.floor(time.getTime() / 1000) * 1000), local);
 }

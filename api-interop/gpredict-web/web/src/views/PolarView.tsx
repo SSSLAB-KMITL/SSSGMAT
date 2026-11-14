@@ -24,7 +24,7 @@ import type { SkyRequest } from "./polarTracks";
  *   The selection is the module's, shared with the Map and the List.
  * - "Extra Az Ticks" draws nothing: Gpredict 2.7 reads the setting and never draws it (ref §6).
  */
-export function PolarView({ module, config, tick, selected, onSelect, onSatContextMenu, onSatDoubleClick }: ViewProps) {
+export function PolarView({ module, config, tick, nf, selected, onSelect, onSatContextMenu, onSatDoubleClick }: ViewProps) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useElementSize(holder);
@@ -93,8 +93,9 @@ export function PolarView({ module, config, tick, selected, onSelect, onSatConte
       auto,
       tracks,
       cursor,
+      nf,
     });
-  }, [size, shown, tracks, selected, orientation, contents, cursor, skyEnabled, auto]);
+  }, [size, shown, tracks, selected, orientation, contents, cursor, skyEnabled, auto, nf]);
 
   return (
     <div ref={holder} className="polar-view">

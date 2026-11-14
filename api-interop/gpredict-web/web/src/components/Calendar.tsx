@@ -1,9 +1,9 @@
 import { DAY_NAMES, MONTH_NAMES, monthGrid, shiftMonth, shiftYear } from "../timeCtl";
 
 interface Props {
-  /** the selected day, UTC midnight; the page shows its month */
+  /** the selected date as UTC midnight, also when the controls are in local time (the calendar reads only the date); the page shows its month */
   value: Date;
-  /** a day was chosen, or a month or year arrow moved the selection (as GtkCalendar does); UTC midnight */
+  /** a day was chosen, or a month or year arrow moved the selection (as GtkCalendar does); a date as UTC midnight */
   onChange: (day: Date) => void;
   /** shows the day but cannot be changed (the clock is running) */
   readOnly?: boolean;
@@ -12,8 +12,9 @@ interface Props {
 const sameDay = (a: Date, b: Date) => a.getTime() === b.getTime();
 
 /**
- * A month page in UTC with a heading (month and year, each with its arrows) and the day names: what GtkCalendar shows with
- * the options SHOW_HEADING and SHOW_DAY_NAMES. The days of the weeks before and after the month are dimmed and can be chosen.
+ * A month page of calendar dates (UTC midnight, so it is the same page in UTC and in local time) with a heading (month and year,
+ * each with its arrows) and the day names: what GtkCalendar shows with the options SHOW_HEADING and SHOW_DAY_NAMES. The days of
+ * the weeks before and after the month are dimmed and can be chosen.
  */
 export function Calendar({ value, onChange, readOnly = false }: Props) {
   const month = value.getUTCMonth();

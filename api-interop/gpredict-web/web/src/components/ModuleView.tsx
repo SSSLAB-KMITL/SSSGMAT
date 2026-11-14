@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
+import { useNumberFormat } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import { NoPassMessage } from "../passes/NoPassMessage";
 import { passBody } from "../passes/passRequest";
 import { PassWait } from "../passes/PassWait";
@@ -25,6 +27,8 @@ export interface ViewProps {
   tick: Tick | null;
   /** NORAD number of the module's selected satellite, null if none (one per module, shared by Map, Polar and List; not saved) */
   selected: number | null;
+  /** the number format of Preferences (time format and zone, N/S/E/W, Imperial units): every time, coordinate and distance a view shows goes through it */
+  nf: NumberFormat;
   /** a view selects a satellite (null: unselects) */
   onSelect: (norad: number | null) => void;
   /** right click on a satellite: the view calls it with the client position; ModuleView opens the satellite's popup menu there */
@@ -50,9 +54,10 @@ export interface ViewProps {
 /**
  * What the page gives ModuleView. The selected satellite is held by the page (App), not here: the Module menu's "Select
  * satellite" and Autotrack change it too. `onOpenPassWindow` opens the Pass details or Upcoming passes window that the answer
- * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed).
+ * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed). The number format is
+ * read from Preferences here, once, and handed to every view.
  */
-export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onPass"> & { onOpenPassWindow: (w: PassWindow) => void };
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onPass" | "nf"> & { onOpenPassWindow: (w: PassWindow) => void };
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -92,6 +97,7 @@ export function ModuleView(props: ModuleViewProps) {
 }
 
 function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
+  const nf = useNumberFormat();
   const [popup, setPopup] = useState<OpenPopup | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
   const { onError } = props;
@@ -148,6 +154,7 @@ function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
               {View ? (
                 <View
                   {...props}
+                  nf={nf}
                   onSatContextMenu={popupView === undefined ? undefined : (norad, x, y) => openPopup(popupView, norad, x, y)}
                   onPass={startPass}
                 />

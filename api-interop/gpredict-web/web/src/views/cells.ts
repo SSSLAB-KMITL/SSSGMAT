@@ -2,6 +2,8 @@
 // Every number comes from the server (SatState); a missing one (null) shows as "-".
 
 import { fmtCountdown, fmtFixed, formatTime } from "../format";
+import { DEFAULT_NF, distance, fmtLatLon, fmtTimeNf } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import type { SatState, Tick } from "../types";
 
 export type Align = "left" | "center" | "right";
@@ -26,15 +28,26 @@ function degrees(x: number | null, width = 0): string {
   return text === "-" ? text : `${text.padStart(width)}°`;
 }
 
-/** A time in the default time format (UTC), `empty` if there is none. */
-function timeOr(iso: string | null, empty: string): string {
-  return iso === null ? empty : formatTime(new Date(iso));
+/** A time in the time format and zone of `nf`, `empty` if there is none. */
+function timeOr(iso: string | null, empty: string, nf: NumberFormat): string {
+  return iso === null ? empty : fmtTimeNf(iso, nf);
 }
 
 /** `text` unless it is missing. */
 function withUnit(value: number | null, decimals: number, unit: string): string {
   const text = fmtFixed(value, decimals);
   return text === "-" ? text : `${text} ${unit}`;
+}
+
+/** A distance of the server (km) in the unit of `nf`, with `decimals` decimals and no unit text ("-" if missing): the List and the pass tables. */
+function lengthText(km: number | null, decimals: number, nf: NumberFormat): string {
+  return fmtFixed(distance(km, nf), decimals);
+}
+
+/** The same with its unit, `km` or `mi` (a speed: `km/sec` or `mi/sec`): the Single sat view. */
+function withLength(km: number | null, decimals: number, nf: NumberFormat, speed = false): string {
+  const unit = speed ? (nf.imperial ? "mi/sec" : "km/sec") : nf.imperial ? "mi" : "km";
+  return withUnit(distance(km, nf), decimals, unit);
 }
 
 export interface NextEvent {
@@ -83,11 +96,13 @@ export const LIST_ALIGN: Readonly<Record<string, Align>> = {
 const NO_EVENT = "--- N/A ---";
 
 /**
- * The text of one cell of the List (ref §4). `column` is the column's title. `t` is the module time of the tick: every time
- * in a cell comes from the server, so it is not needed today. A column this does not know is empty.
+ * The text of one cell of the List (ref §4, ref-D §2.1). `column` is the column's title. `t` is the module time of the tick:
+ * every time in a cell comes from the server, so it is not needed today. A column this does not know is empty.
+ * `nf` is the number format: the time format and zone of the times, N/S/E/W for Lat and Lon (off, they end in a space), miles for
+ * Range, Rate, Footp, Alt and Vel (no unit text in the cell).
  * Status is "Unknown" (no source of operational status yet) and Decayed is empty (decayed satellites are never listed).
  */
-export function listCell(column: string, s: SatState, _t: Date): string {
+export function listCell(column: string, s: SatState, _t: Date, nf: NumberFormat = DEFAULT_NF): string {
   switch (column) {
     case "Satellite":
       return s.name;
@@ -104,29 +119,30 @@ export function listCell(column: string, s: SatState, _t: Date): string {
     case "Dec":
       return degrees(s.dec);
     case "Range":
-      return fmtFixed(s.range_km, 0);
+      return lengthText(s.range_km, 0, nf);
     case "Rate":
-      return fmtFixed(s.range_rate_kms, 3);
+      return lengthText(s.range_rate_kms, 3, nf);
     case "Next Event": {
+      // Gpredict appends " (AOS)" or " (LOS)" to the format before it formats, so the cut at 49 characters includes it
       const next = nextEventOf(s);
-      return next === null ? NO_EVENT : `${formatTime(new Date(next.at))} (${next.kind})`;
+      return next === null ? NO_EVENT : formatTime(new Date(next.at), `${nf.timeFormat} (${next.kind})`, nf.local);
     }
     case "Next AOS":
-      return timeOr(s.next_aos, NO_EVENT);
+      return timeOr(s.next_aos, NO_EVENT, nf);
     case "Next LOS":
-      return timeOr(s.next_los, NO_EVENT);
+      return timeOr(s.next_los, NO_EVENT, nf);
     case "Lat":
-      return degrees(s.lat_deg);
+      return fmtLatLon(s.lat_deg, "lat", 2, nf);
     case "Lon":
-      return degrees(s.lon_deg);
+      return fmtLatLon(s.lon_deg, "lon", 2, nf);
     case "SSP":
       return s.ssp;
     case "Footp":
-      return fmtFixed(s.footprint_km, 0);
+      return lengthText(s.footprint_km, 0, nf);
     case "Alt":
-      return fmtFixed(s.alt_km, 0);
+      return lengthText(s.alt_km, 0, nf);
     case "Vel":
-      return fmtFixed(s.vel_kms, 3);
+      return lengthText(s.vel_kms, 3, nf);
     case "Dop":
       return fmtFixed(s.doppler_hz, 0);
     case "Loss":
@@ -185,10 +201,11 @@ export function directionText(dir: string, rangeRate: number | null): string {
 }
 
 /**
- * The value of one field of the Single sat view (ref §7), with its unit. `field` is the field's title. Undefined `s` is a
- * satellite that is not in the tick (dropped by GMAT): every field is "-", as before the first update.
+ * The value of one field of the Single sat view (ref §7, ref-D §2.1), with its unit (`mi` and `mi/sec` for Imperial). `field` is
+ * the field's title. Undefined `s` is a satellite that is not in the tick (dropped by GMAT): every field is "-", as before the
+ * first update. `nf` is the number format: the time format and zone of the times, N/S/E/W for SSP Lat. and SSP Lon.
  */
-export function singleCell(field: string, s: SatState | undefined): string {
+export function singleCell(field: string, s: SatState | undefined, nf: NumberFormat = DEFAULT_NF): string {
   if (s === undefined) return "-";
   switch (field) {
     case "Azimuth":
@@ -202,29 +219,29 @@ export function singleCell(field: string, s: SatState | undefined): string {
     case "Declination":
       return degrees(s.dec, 6);
     case "Slant Range":
-      return withUnit(s.range_km, 0, "km");
+      return withLength(s.range_km, 0, nf);
     case "Range Rate":
-      return withUnit(s.range_rate_kms, 3, "km/sec");
+      return withLength(s.range_rate_kms, 3, nf, true);
     case "Next Event": {
       const next = nextEventOf(s);
-      return next === null ? "N/A" : `${next.kind}: ${formatTime(new Date(next.at))}`;
+      return next === null ? "N/A" : `${next.kind}: ${fmtTimeNf(next.at, nf)}`;
     }
     case "Next AOS":
-      return timeOr(s.next_aos, "N/A");
+      return timeOr(s.next_aos, "N/A", nf);
     case "Next LOS":
-      return timeOr(s.next_los, "N/A");
+      return timeOr(s.next_los, "N/A", nf);
     case "SSP Lat.":
-      return degrees(s.lat_deg);
+      return fmtLatLon(s.lat_deg, "lat", 2, nf);
     case "SSP Lon.":
-      return degrees(s.lon_deg);
+      return fmtLatLon(s.lon_deg, "lon", 2, nf);
     case "SSP Loc.":
       return s.ssp === "" ? "-" : s.ssp;
     case "Footprint":
-      return withUnit(s.footprint_km, 0, "km");
+      return withLength(s.footprint_km, 0, nf);
     case "Altitude":
-      return withUnit(s.alt_km, 0, "km");
+      return withLength(s.alt_km, 0, nf);
     case "Velocity":
-      return withUnit(s.vel_kms, 3, "km/sec");
+      return withLength(s.vel_kms, 3, nf, true);
     case "Doppler@100M":
       return withUnit(s.doppler_hz, 0, "Hz");
     case "Sig. Loss":
