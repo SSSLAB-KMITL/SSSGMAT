@@ -34,3 +34,8 @@ EXPECTED_SIZE (6.81, 13.03, 5.14) REL_DIFF_PCT (0.01, 0.02, 0.04)
 VERIFY_STATUS PASS
 ```
 
+
+## Solar Blanket Backside Fix (P3-1)
+- In raw `NASA-3D-Resources/Terra.glb`, `Main Panels Hardware` (deployable truss) extends on body `+Z` while `Layer17` solar blanket sits at the nadir face. Both faces previously shared `Main Solar Panels` (`tex_solar_front`).
+- `scripts/build.py` now generates `tex_solar_back` (`Main Solar Panels Back`) via `proc_lib.tex_solar_back` and assigns it to `+Z`/edge polygons (`world_normal.z > -0.5`), reserving `tex_solar_front` strictly for the `-Z` sun-facing cell side (`cell_normal = "-Z"`).
+- Re-verified (`verify.py --single-wing --expected-size 6.811,13.027,5.142`): `1,119,060` bytes (`1.067 MB`), `13,397` triangles, `BBOX_SIZE (6.811, 13.027, 5.142)`, `REL_DIFF_PCT (0.0, 0.0, 0.0)`, `VERIFY_STATUS PASS`.

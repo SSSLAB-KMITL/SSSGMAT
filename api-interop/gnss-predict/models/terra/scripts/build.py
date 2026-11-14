@@ -46,17 +46,29 @@ for im in list(bpy.data.images):
 
 store = pl.MaterialStore()
 sf_img = pl.tex_solar_front(TEXDIR, "tex_solar_front", 9.0, 5.0, cols=40, rows=22, seed=2026511)
+sb_img = pl.tex_solar_back(TEXDIR, "tex_solar_back", 9.0, 5.0, seed=2026512)
 solar_mat = store.make("Main Solar Panels", (0.08, 0.10, 0.24), metallic=0.05, roughness=0.18, image=sf_img)
+solar_back_mat = store.make("Main Solar Panels Back", (0.16, 0.16, 0.18), metallic=0.10, roughness=0.55, image=sb_img)
 side_mat = store.make("Side Panels", (0.76, 0.77, 0.79), metallic=0.80, roughness=0.35)
 
 for ob in objs:
+    has_solar = False
     for i, m in enumerate(ob.data.materials):
         if m is None:
             continue
         if "Solar Panels" in m.name and "Hardware" not in m.name:
             ob.data.materials[i] = solar_mat
+            has_solar = True
         elif m.name == "Side Panels":
             ob.data.materials[i] = side_mat
+    if has_solar:
+        ob.data.materials.append(solar_back_mat)
+        back_idx = len(ob.data.materials) - 1
+        rot3 = ob.matrix_world.to_3x3()
+        for p in ob.data.polygons:
+            cur_m = ob.data.materials[p.material_index] if p.material_index < len(ob.data.materials) else None
+            if cur_m == solar_mat and (rot3 @ p.normal).normalized().z > -0.5:
+                p.material_index = back_idx
 
 # Compute wing-Y SADM pivot from Layer16 inboard bound
 y_sadm = -1.78
