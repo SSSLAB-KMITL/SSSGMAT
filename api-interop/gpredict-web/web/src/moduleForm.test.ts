@@ -186,4 +186,12 @@ describe("editModuleChange (OK of Edit module: a change of the open module's con
     const c = base();
     expect(hasModuleChanges(draftOf(c), { ...draftOf(c), satellites: [3, 2, 1] })).toBe(false);
   });
+
+  it("applies the change of the properties it is given (propsSave's) with the ground station", () => {
+    const c = base();
+    const centre = (config: ModuleConfig): ModuleConfig => ({ ...config, map: { ...config.map, center_lon: 45 } });
+    const next = editModuleChange(draftOf(c), { ...draftOf(c), qth: null }, centre)(c);
+    expect(next.map.center_lon).toBe(45);
+    expect(next.qth).toBeNull();
+  });
 });

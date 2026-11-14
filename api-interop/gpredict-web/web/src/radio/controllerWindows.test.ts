@@ -185,7 +185,7 @@ describe("the target of a module (spec §3.3)", () => {
 });
 
 describe("the plot of Antenna Control (ref-R §5.6)", () => {
-  const polar = (orientation: string, qthInfo: boolean) => ({ orientation, contents: { "QTH Info": qthInfo }, auto_skytrack: false });
+  const polar = (orientation: string, qthInfo: boolean) => ({ orientation, contents: { "QTH Info": qthInfo }, auto_skytrack: false, colours: {} });
 
   it("is drawn the way the module's Polar view is, with the station name only while QTH Info is on", () => {
     expect(rotPlotOf(polar("S/W/N/E", true), "Bangkok")).toEqual({ orientation: "S/W/N/E", qthName: "Bangkok" });

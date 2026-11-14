@@ -1,5 +1,6 @@
-// The pages of the "Module properties" notebook (ref §3-§7). Every control is Gpredict's, with its label, range, unit label and
-// tooltip; the colours, the background map and the window placements belong to sub-project 4 and are shown, not usable.
+// The pages of the "Module properties" notebook (ref §3-§7), which Preferences → Modules shows too (ref-D §10). Every control is
+// Gpredict's, with its label, range, unit label and tooltip; the colours and the background map are shown, not usable yet (task 22).
+// The Window Placements of the Layout page are only in Preferences, which gives them to the page (`extra`).
 
 import { Fragment } from "react";
 import type { ReactNode } from "react";
@@ -12,11 +13,13 @@ import type { Meta } from "../types";
 import { Check, LaterButton } from "./formParts";
 import { SpinButton } from "./SpinButton";
 
-/** What every page gets. `set` replaces the draft; Reset is the page's own button, which the shell handles. */
+/** What every page gets. `set` replaces the draft; Reset is the page's own button, which the shell handles. `uid` makes the ids of the
+ * page's controls its own (Module properties and Preferences → Modules can both be open). */
 export interface PageProps {
   props: ModuleProps;
   meta: Meta;
   set: (props: ModuleProps) => void;
+  uid: string;
 }
 
 const LATER_TIP = laterTooltip(4);
@@ -84,9 +87,11 @@ interface LayoutPageProps extends PageProps {
   setCustom: (custom: boolean) => void;
   onReset: () => void;
   resetTip: string;
+  /** below the layout and above Reset: Preferences' "Window Placements" (sat-pref-layout.c:495-497); none in module mode */
+  extra?: ReactNode;
 }
 
-export function LayoutPage({ props, meta, set, custom, setCustom, onReset, resetTip }: LayoutPageProps) {
+export function LayoutPage({ props, meta, set, uid, custom, setCustom, onReset, resetTip, extra }: LayoutPageProps) {
   const presets = meta.layout_presets;
   const selected = custom ? presets.length : presetIndexOf(props.layout_code, presets);
   const problem = custom ? layoutCodeError(props.layout_code) : null;
@@ -95,6 +100,7 @@ export function LayoutPage({ props, meta, set, custom, setCustom, onReset, reset
     const preset = presets[index];
     if (preset === undefined) {
       setCustom(true); // Custom keeps the code that is there, and lets it be edited
+      set(props); // choosing any entry is a change of the page (sat-pref-layout.c layout_selected_cb: dirty = TRUE)
     } else {
       setCustom(false);
       set({ ...props, layout_code: preset.code });
@@ -104,10 +110,10 @@ export function LayoutPage({ props, meta, set, custom, setCustom, onReset, reset
   return (
     <div className="props-page-body">
       <div className="layout-grid">
-        <label htmlFor="props-layout" className="right">
+        <label htmlFor={`${uid}-layout`} className="right">
           Select layout:
         </label>
-        <select id="props-layout" className="dialog-entry" value={selected} onChange={(e) => choose(Number(e.target.value))}>
+        <select id={`${uid}-layout`} className="dialog-entry" value={selected} onChange={(e) => choose(Number(e.target.value))}>
           {presets.map((p, i) => (
             <option key={p.code} value={i}>
               {p.name}
@@ -117,11 +123,11 @@ export function LayoutPage({ props, meta, set, custom, setCustom, onReset, reset
         </select>
         <span />
         <LayoutThumb code={props.layout_code} />
-        <label htmlFor="props-layout-code" className="right">
+        <label htmlFor={`${uid}-layout-code`} className="right">
           Layout code:
         </label>
         <input
-          id="props-layout-code"
+          id={`${uid}-layout-code`}
           className="dialog-entry"
           type="text"
           value={props.layout_code}
@@ -142,17 +148,12 @@ export function LayoutPage({ props, meta, set, custom, setCustom, onReset, reset
           {problem}
         </p>
       )}
-      <Separator />
-      <Header>Window Placements:</Header>
-      <Check checked={false} onChange={() => undefined} later title={LATER_TIP}>
-        Restore position of main window
-      </Check>
-      <Check checked={false} onChange={() => undefined} later title={LATER_TIP}>
-        Restore position of module windows
-      </Check>
-      <Check checked={false} onChange={() => undefined} later title={LATER_TIP}>
-        Restore the state of modules when reopened (docked or window)
-      </Check>
+      {extra !== undefined && (
+        <>
+          <Separator />
+          {extra}
+        </>
+      )}
       <ResetButton title={resetTip} onReset={onReset} />
     </div>
   );
@@ -168,7 +169,7 @@ const RATE_ROWS: { key: keyof Rates; unit: string }[] = [
   { key: "single", unit: "[cycle]" },
 ];
 
-export function RefreshPage({ props, meta, set, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
+export function RefreshPage({ props, meta, set, uid, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
   return (
     <div className="props-page-body">
       <div className="refresh-grid">
@@ -177,9 +178,9 @@ export function RefreshPage({ props, meta, set, onReset, resetTip }: PageProps &
           return (
             <Fragment key={key}>
               {i === 1 && <hr className="props-separator wide" />}
-              <label htmlFor={`props-refresh-${key}`}>{meta.refresh_labels[key]}</label>
+              <label htmlFor={`${uid}-refresh-${key}`}>{meta.refresh_labels[key]}</label>
               <SpinButton
-                id={`props-refresh-${key}`}
+                id={`${uid}-refresh-${key}`}
                 value={props.refresh[key]}
                 min={min}
                 max={max}
@@ -261,7 +262,7 @@ const MAP_TIPS: Record<string, string> = {
 
 const MAP_IMAGE = `${import.meta.env.BASE_URL}maps/earth_1024.jpg`;
 
-export function MapPage({ props, meta, set, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
+export function MapPage({ props, meta, set, uid, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
   const { map } = props;
   return (
     <div className="props-page-body">
@@ -309,9 +310,9 @@ export function MapPage({ props, meta, set, onReset, resetTip }: PageProps & { o
       </div>
       <Separator />
       <div className="inline-row">
-        <label htmlFor="props-orbits">Display ground track for</label>
+        <label htmlFor={`${uid}-orbits`}>Display ground track for</label>
         <SpinButton
-          id="props-orbits"
+          id={`${uid}-orbits`}
           value={map.track_orbits}
           min={meta.map_track_orbits.min}
           max={meta.map_track_orbits.max}
@@ -321,9 +322,9 @@ export function MapPage({ props, meta, set, onReset, resetTip }: PageProps & { o
         <span>orbit(s)</span>
       </div>
       <div className="inline-row">
-        <label htmlFor="props-center">Center map at longitude</label>
+        <label htmlFor={`${uid}-center`}>Center map at longitude</label>
         <SpinButton
-          id="props-center"
+          id={`${uid}-center`}
           value={map.center_lon}
           min={meta.map_center_lon.min}
           max={meta.map_center_lon.max}
@@ -357,7 +358,7 @@ const ORIENTATION_TIPS: Record<string, string> = {
   "S/W/N/E": "\tS\nE\t\tW\n\tN",
 };
 
-export function PolarPage({ props, meta, set, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
+export function PolarPage({ props, meta, set, uid, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
   const { polar } = props;
   return (
     <div className="props-page-body">
@@ -367,7 +368,7 @@ export function PolarPage({ props, meta, set, onReset, resetTip }: PageProps & {
           <label key={o} className="check" title={ORIENTATION_TIPS[o]}>
             <input
               type="radio"
-              name="props-orientation"
+              name={`${uid}-orientation`}
               checked={polar.orientation === o}
               onChange={() => set({ ...props, polar: { ...polar, orientation: o } })}
             />

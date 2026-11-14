@@ -6,13 +6,17 @@
 // A write that builds its own copy of the configuration and PUTs it would send values that are out of date and silently undo
 // what the user changed through another view.
 
-import type { ModuleConfig } from "./types";
+import type { ModuleConfig, ModulePins } from "./types";
 
-/** Sends the whole configuration to the server (PUT /api/modules/{name}); rejects if the server refuses. */
-export type PutConfig = (config: ModuleConfig) => Promise<unknown>;
+/**
+ * Sends the whole configuration to the server (PUT /api/modules/{name}) with the paths to pin and unpin, if any; rejects if the server
+ * refuses. A value the module inherits is only stored when it is pinned (plan decision 3).
+ */
+export type PutConfig = (config: ModuleConfig, opts?: ModulePins) => Promise<unknown>;
 
 interface Pending {
   change: (config: ModuleConfig) => ModuleConfig;
+  opts: ModulePins | undefined;
   resolve: () => void;
   reject: (error: unknown) => void;
 }
@@ -67,10 +71,13 @@ export class ConfigStore {
    * rejects with the error when it has not (the change is then gone from `config`). `change` gets the newest configuration
    * and must return a new object; it may be applied again to another base if an earlier save is refused, so it should say
    * what to change ("select satellite 25544"), not what the result is.
+   *
+   * `opts` (OK of Module properties only) are sent with this save's request and no other: the paths whose values the module keeps as
+   * its own (`pin`) and those it inherits again (`unpin`). Every other save leaves the module's inheritance as it is.
    */
-  save(change: (config: ModuleConfig) => ModuleConfig): Promise<void> {
+  save(change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      this.pending.push({ change, resolve, reject });
+      this.pending.push({ change, opts, resolve, reject });
       this.show();
       void this.drain();
     });
@@ -112,7 +119,7 @@ export class ConfigStore {
         let failure: { error: unknown } | null = null;
         try {
           const body = head.change(this.confirmed);
-          await this.put(body);
+          await this.put(body, head.opts);
           this.confirmed = body;
         } catch (error) {
           failure = { error };

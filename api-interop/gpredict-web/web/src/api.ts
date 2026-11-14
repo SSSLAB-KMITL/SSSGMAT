@@ -9,6 +9,7 @@ import type {
   Meta,
   ModuleConfig,
   ModuleList,
+  ModulePins,
   PrefsAnswer,
   PrefValue,
   Qth,
@@ -126,7 +127,13 @@ export const updateTleLocal = (body: { files: readonly { name: string; text: str
 
 export const getModules = () => request<ModuleList>("GET", "/api/modules");
 export const getModule = (name: string) => request<ModuleConfig>("GET", moduleUrl(name));
-export const putModule = (m: ModuleConfig) => request<ModuleConfig>("PUT", moduleUrl(m.name), m);
+/**
+ * Saves the whole configuration; the answer is what the module uses then. `opts`: the paths of `Meta.module_keys` to pin (the module keeps
+ * the values sent as its own) and to unpin (it inherits the global values again); a value of a path the module inherits and that is not
+ * pinned is not stored (plan decision 3). 422 MODULE_INVALID for a path that is not one of them.
+ */
+export const putModule = (m: ModuleConfig, opts?: ModulePins) =>
+  request<ModuleConfig>("PUT", moduleUrl(m.name), opts === undefined ? m : { ...m, ...opts });
 export const deleteModule = (name: string) => request<void>("DELETE", moduleUrl(name));
 export const openModule = (name: string) => request<{ open: string[] }>("POST", `${moduleUrl(name)}/open`);
 export const closeModule = (name: string) => request<{ open: string[] }>("POST", `${moduleUrl(name)}/close`);

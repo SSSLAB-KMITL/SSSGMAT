@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConfigStore } from "./configStore";
 import { popupChange } from "./satPopup";
 import { singleSatChange } from "./selection";
-import type { ModuleConfig } from "./types";
+import type { ModuleConfig, ModulePins } from "./types";
 import { sortChange } from "./views/listSort";
 
 function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
@@ -14,8 +14,8 @@ function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
     refresh: { data_ms: 300, list: 1, map: 10, polar: 3, single: 1, event: 1 },
     list_columns: ["Satellite", "Az"],
     list_sort: { column: "Satellite", ascending: true },
-    map: { contents: {}, track_orbits: 3, center_lon: 0 },
-    polar: { orientation: "N/E/S/W", contents: {}, auto_skytrack: false },
+    map: { contents: {}, track_orbits: 3, center_lon: 0, file: "nasa-bmng-07_1024.jpg", colours: {}, shadow_alpha: 221 },
+    polar: { orientation: "N/E/S/W", contents: {}, auto_skytrack: false, colours: {} },
     single: { fields: ["Azimuth"], selected: null },
     footprint_off: [],
     ground_track: [],
@@ -26,8 +26,8 @@ function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
 
 /** A `put` the test settles by hand, one call at a time. */
 function fakePut() {
-  const calls: { body: ModuleConfig; resolve: () => void; reject: (e: unknown) => void }[] = [];
-  const put = (body: ModuleConfig) => new Promise<void>((resolve, reject) => calls.push({ body, resolve, reject }));
+  const calls: { body: ModuleConfig; opts: ModulePins | undefined; resolve: () => void; reject: (e: unknown) => void }[] = [];
+  const put = (body: ModuleConfig, opts?: ModulePins) => new Promise<void>((resolve, reject) => calls.push({ body, opts, resolve, reject }));
   return { put, calls };
 }
 
@@ -245,6 +245,38 @@ describe("ConfigStore", () => {
     unsubscribe();
     void store.save(sortBy("Alt"));
     expect(seen).toBe(1);
+  });
+
+  it("config store sends pin and unpin once", async () => {
+    const { put, calls } = fakePut();
+    const store = new ConfigStore(cfg(), put);
+    const centre = (c: ModuleConfig): ModuleConfig => ({ ...c, map: { ...c.map, center_lon: 30 } });
+    const props = track(store.save(centre, { pin: ["map.center_lon", "map.track_orbits"], unpin: ["list_columns"] }));
+    const sort = track(store.save(sortBy("El")));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.opts).toEqual({ pin: ["map.center_lon", "map.track_orbits"], unpin: ["list_columns"] });
+    expect(calls[0]!.body.map.center_lon).toBe(30);
+    calls[0]!.resolve();
+    await flush();
+    expect(props.state).toBe("saved");
+    // the next request is a save of its own: it pins nothing
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.opts).toBeUndefined();
+    expect(calls[1]!.body.map.center_lon).toBe(30);
+    calls[1]!.resolve();
+    await flush();
+    expect(sort.state).toBe("saved");
+  });
+
+  it("does not hand the pins of a refused save to the next one", async () => {
+    const { put, calls } = fakePut();
+    const store = new ConfigStore(cfg(), put);
+    const refused = track(store.save(sortBy("El"), { unpin: ["layout_code"] }));
+    void store.save(select(2));
+    calls[0]!.reject(new Error("refused"));
+    await flush();
+    expect(refused.state).toBe("failed");
+    expect(calls[1]!.opts).toBeUndefined();
   });
 
   it("keeps the same object while nothing changed", () => {

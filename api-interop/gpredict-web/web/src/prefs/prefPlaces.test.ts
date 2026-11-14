@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api";
+import { META } from "../moduleDefaults.fixture";
+import { PROPS_TABS } from "../moduleProps";
 import { pageFailure, prefPlace, prefsFailure, TabError } from "./prefPlaces";
 import { PAGE_KEYS, PREDICT_TABS } from "./predictPrefs";
 
@@ -37,6 +39,13 @@ describe("prefPlace: the group and tab of a key of Preferences (ref-D §1)", () 
     expect(prefPlace("MODULES/POLAR_CHART_ORIENT")).toEqual({ group: "modules", tab: "Polar View" });
     expect(prefPlace("MODULES/POLAR_BGD_COLOUR")).toEqual({ group: "modules", tab: "Polar View" });
     expect(prefPlace("MODULES/SINGLE_SAT_FIELDS")).toEqual({ group: "modules", tab: "Single Sat View" });
+  });
+
+  it("Modules: every key of a page of the server's (meta.module_keys) is on the tab of that page, by the notebook's own label", () => {
+    for (const t of PROPS_TABS) {
+      for (const key of Object.values(META.module_keys[t.id])) expect(prefPlace(key), key).toEqual({ group: "modules", tab: t.label });
+    }
+    for (const key of META.global_layout_extra) expect(prefPlace(key), key).toEqual({ group: "modules", tab: "Layout" });
   });
 
   it("Predict: the tab that has the key, by its page's keys", () => {

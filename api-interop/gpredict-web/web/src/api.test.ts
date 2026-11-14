@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULTS } from "./moduleDefaults.fixture";
 import {
   ApiError,
   cloneModule,
@@ -11,6 +12,7 @@ import {
   getReadme,
   postLog,
   putClock,
+  putModule,
   putPrefs,
   putQthBatch,
   putTabs,
@@ -51,6 +53,17 @@ describe("api", () => {
     expect(calls[0]!.init?.method).toBe("PUT");
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ open: ["B", "A"] });
     expect(new Headers(calls[0]!.init?.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("PUTs a module with the paths to pin and unpin beside its configuration, and without them when there are none", async () => {
+    const m = { ...structuredClone(DEFAULTS), name: "Amateur", satellites: [25544] };
+    const calls = stubFetch(() => json(m));
+    await putModule(m, { pin: ["map.center_lon"], unpin: ["list_columns"] });
+    expect(calls[0]!.url).toBe("/api/modules/Amateur");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ ...m, pin: ["map.center_lon"], unpin: ["list_columns"] });
+    await putModule(m);
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual(m);
   });
 
   it("encodes names in the path", async () => {

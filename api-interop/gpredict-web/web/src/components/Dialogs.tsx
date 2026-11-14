@@ -4,7 +4,7 @@ import { dialogKey } from "../dialogs";
 import type { Dialog } from "../dialogs";
 import { PreferencesDialog } from "../prefs/PreferencesDialog";
 import { TrspUpdateDialog } from "../radio/TrspUpdateDialog";
-import type { ModuleConfig } from "../types";
+import type { ModuleConfig, ModulePins } from "../types";
 import { CloneDialog, DeleteDialog } from "./CloneDialog";
 import { AboutDialog, LicenseDialog, OnlineHelpDialog } from "./HelpDialogs";
 import { LogBrowser } from "./LogBrowser";
@@ -22,7 +22,7 @@ interface Props {
   /** the module whose tab is shown, its configuration (null until it has arrived) and the page's one `save` of it */
   current: string | null;
   config: ModuleConfig | null;
-  saveConfig: (change: (config: ModuleConfig) => ModuleConfig) => Promise<void>;
+  saveConfig: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
   hide: (d: Dialog) => void;
   /** File → New module made and opened `name` (`open` are the open modules then) */
   onCreated: (name: string, open: string[]) => void;

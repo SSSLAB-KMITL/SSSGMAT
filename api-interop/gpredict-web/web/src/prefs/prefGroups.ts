@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { InterfacesPages } from "../radio/InterfacesPages";
 import type { PrefValue } from "../types";
 import { GeneralPages } from "./GeneralPages";
+import { ModulesPrefsPage } from "./ModulesPrefsPage";
 import { PredictPages } from "./PredictPages";
 
 export type PrefGroupId = "general" | "modules" | "interfaces" | "predict";
@@ -45,7 +46,7 @@ export interface PrefGroup {
 /** In Gpredict's order. The icons are `gpredict-sat-pref.png`, `gpredict-sat-list.png`, `gpredict-oscilloscope.png` and `gpredict-calendar.png` there. */
 export const PREF_GROUPS: readonly PrefGroup[] = [
   { id: "general", label: "General", icon: "⚙", page: GeneralPages },
-  { id: "modules", label: "Modules", icon: "☰", page: null, later: 4 },
+  { id: "modules", label: "Modules", icon: "☰", page: ModulesPrefsPage },
   { id: "interfaces", label: "Interfaces", icon: "∿", page: InterfacesPages },
   { id: "predict", label: "Predict", icon: "▦", page: PredictPages },
 ];
@@ -70,7 +71,7 @@ export interface GroupView {
 
 /**
  * The view when the window opens: at General, or, if General has no page, at the first group that has one, never on one that is
- * disabled (General has its page since sub-project 4; a window built with other groups can still lack it).
+ * disabled (every group has its page since sub-project 4; a window built with other groups can still lack it).
  */
 export function firstView(groups: readonly PrefGroup[] = PREF_GROUPS): GroupView {
   const first = groups.find((g) => g.id === FIRST_GROUP && g.page !== null) ?? groups.find((g) => g.page !== null);

@@ -171,9 +171,13 @@ const keepOnly = (list: readonly number[], keep: ReadonlySet<number>): number[] 
  * (the ground station, the satellites, the properties that differ), not what the result is, so it applies to whatever the
  * newest configuration is. Satellites that leave the module also leave its Highlight footprint / Ground Track / Sky track lists
  * and, if it was the one Single sat shows, `single.selected`, which the server requires to be a satellite of the module.
+ * `props` is the change of the properties (`propsSave`'s, which goes with its pins), by default the properties that differ.
  */
-export function editModuleChange(initial: ModuleDraft, draft: ModuleDraft): (config: ModuleConfig) => ModuleConfig {
-  const props = propsChange(initial.props, draft.props);
+export function editModuleChange(
+  initial: ModuleDraft,
+  draft: ModuleDraft,
+  props: (config: ModuleConfig) => ModuleConfig = propsChange(initial.props, draft.props),
+): (config: ModuleConfig) => ModuleConfig {
   return (config) => {
     let next = props(config);
     if (initial.qth !== draft.qth) next = { ...next, qth: draft.qth };

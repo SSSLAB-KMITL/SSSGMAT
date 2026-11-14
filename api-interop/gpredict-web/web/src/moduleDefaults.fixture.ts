@@ -1,7 +1,50 @@
 // The server's module defaults and constants (GET /api/meta, server/gpredict_web/module.py) as the tests of the dialogs use them.
 // Not part of the page.
 
+import { MAP_COLORS, MAP_SHADOW_ALPHA, POLAR_COLORS } from "./colors";
 import type { Meta } from "./types";
+
+const MAP_CONTENT_KEYS: [string, string][] = [
+  ["Satellite Name", "MAP_SAT_NAME"],
+  ["Satellite Footprint", "MAP_SAT_FOTPRINT"],
+  ["Satellite Marker", "MAP_SAT_MARKER"],
+  ["QTH Info", "MAP_QTH_INFO"],
+  ["Next Event", "MAP_NEXT_EVENT"],
+  ["Cursor Position", "MAP_CURSOR_TRACK"],
+  ["Grid Lines", "MAP_SHOW_GRID"],
+  ["Solar Terminator", "MAP_SHOW_TERMINATOR"],
+];
+const MAP_COLOUR_KEYS: [string, string][] = [
+  ["groundStation", "MAP_QTH_COLOUR"],
+  ["grid", "MAP_GRID_COLOUR"],
+  ["tick", "MAP_TICK_COLOUR"],
+  ["satellite", "MAP_SAT_COLOUR"],
+  ["selected", "MAP_SELECTED_SAT_COLOUR"],
+  ["track", "MAP_TRACK_COLOUR"],
+  ["footprint", "MAP_COV_AREA_COLOUR"],
+  ["infoFg", "MAP_INFO_COLOUR"],
+  ["infoBg", "MAP_INFO_BGD_COLOUR"],
+  ["terminator", "MAP_TERMINATOR_COLOUR"],
+  ["earthShadow", "MAP_EARTH_SHADOW_COLOUR"],
+];
+const POLAR_CONTENT_KEYS: [string, string][] = [
+  ["Satellite Name", "POLAR_SAT_NAME"],
+  ["Satellite Marker", "POLAR_SAT_MARKER"],
+  ["QTH Info", "POLAR_QTH_INFO"],
+  ["Next Event", "POLAR_NEXT_EVENT"],
+  ["Cursor Position", "POLAR_CURSOR_TRACK"],
+  ["Extra Az Ticks", "POLAR_EXTRA_AZ_TICKS"],
+];
+const POLAR_COLOUR_KEYS: [string, string][] = [
+  ["background", "POLAR_BGD_COLOUR"],
+  ["axes", "POLAR_AXIS_COLOUR"],
+  ["tick", "POLAR_TICK_COLOUR"],
+  ["satellite", "POLAR_SAT_COLOUR"],
+  ["selected", "POLAR_SELECTED_SAT_COL"],
+  ["track", "POLAR_TRACK_COLOUR"],
+  ["info", "POLAR_INFO_COLOUR"],
+];
+const keys = (prefix: string, pairs: [string, string][]) => Object.fromEntries(pairs.map(([name, key]) => [`${prefix}.${name}`, `MODULES/${key}`]));
 
 export const META: Meta = {
   list_columns: [
@@ -132,6 +175,9 @@ export const META: Meta = {
       },
       track_orbits: 3,
       center_lon: 0,
+      file: "nasa-bmng-07_1024.jpg",
+      colours: { ...MAP_COLORS },
+      shadow_alpha: MAP_SHADOW_ALPHA,
     },
     polar: {
       orientation: "N/E/S/W",
@@ -144,6 +190,7 @@ export const META: Meta = {
         "Extra Az Ticks": false,
       },
       auto_skytrack: false,
+      colours: { ...POLAR_COLORS },
     },
     single: {
       fields: [
@@ -180,6 +227,35 @@ export const META: Meta = {
     location: 50,
     weather_station: 4,
   },
+  // in the server's order (module.py _PAGES)
+  module_keys: {
+    layout: { layout_code: "MODULES/GRID" },
+    refresh: {
+      "refresh.data_ms": "MODULES/DATA_TIMEOUT",
+      "refresh.list": "MODULES/LIST_REFRESH",
+      "refresh.map": "MODULES/MAP_REFRESH",
+      "refresh.polar": "MODULES/POLAR_REFRESH",
+      "refresh.single": "MODULES/SINGLE_SAT_REFRESH",
+      "refresh.event": "MODULES/EVENT_LIST_REFRESH",
+    },
+    list: { list_columns: "MODULES/LIST_COLUMNS" },
+    map: {
+      ...keys("map.contents", MAP_CONTENT_KEYS),
+      "map.track_orbits": "MODULES/MAP_TRACK_NUM",
+      "map.center_lon": "MODULES/MAP_CENTER",
+      "map.file": "MODULES/MAP_FILE",
+      "map.shadow_alpha": "MODULES/MAP_SHADOW_ALPHA",
+      ...keys("map.colours", MAP_COLOUR_KEYS),
+    },
+    polar: {
+      "polar.orientation": "MODULES/POLAR_CHART_ORIENT",
+      ...keys("polar.contents", POLAR_CONTENT_KEYS),
+      "polar.auto_skytrack": "MODULES/POLAR_SHOW_TRACK_AUTO",
+      ...keys("polar.colours", POLAR_COLOUR_KEYS),
+    },
+    single: { "single.fields": "MODULES/SINGLE_SAT_FIELDS" },
+  },
+  global_layout_extra: ["GLOBAL/MAIN_WIN_POS", "GLOBAL/MOD_WIN_POS", "GLOBAL/MOD_STATE"],
   log_dir: "/x/logs",
 };
 

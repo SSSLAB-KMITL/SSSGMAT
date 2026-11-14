@@ -2,6 +2,8 @@
 // Pure. The window shows it when a check before OK, the save or a page's commit fails, and stays open.
 
 import { ApiError, errorText } from "../api";
+import { propsTabLabel } from "../moduleProps";
+import type { PropsTab } from "../moduleProps";
 import { PAGE_KEYS, PREDICT_TABS } from "./predictPrefs";
 import type { PrefGroupId } from "./prefGroups";
 
@@ -22,17 +24,18 @@ const PREDICT_PLACES = new Map<string, Place>(
 /** The group and tab that show `key`, or null for a key no page of Preferences shows (CURRENT_PAGE, LAST_UPDATE, a key that does not exist). */
 export function prefPlace(key: string): Place | null {
   const general = (tab: string): Place => ({ group: "general", tab });
-  const modules = (tab: string): Place => ({ group: "modules", tab });
+  // the tabs of Modules by the labels of the notebook that shows them (Module properties and Preferences → Modules share it)
+  const modules = (tab: PropsTab): Place => ({ group: "modules", tab: propsTabLabel(tab) });
   if (NUMBER_FORMATS.has(key)) return general("Number Formats");
-  if (LAYOUT.has(key)) return modules("Layout");
+  if (LAYOUT.has(key)) return modules("layout");
   if (key === "TLE/LAST_UPDATE") return null; // kept by Update TLE, not a setting
   if (key.startsWith("TLE/")) return general("TLE Update");
   if (key.startsWith("LOG/")) return general("Message Logs");
-  if (key === "MODULES/DATA_TIMEOUT" || (key.startsWith("MODULES/") && key.endsWith("_REFRESH"))) return modules("Refresh Rates");
-  if (key === "MODULES/LIST_COLUMNS") return modules("List View");
-  if (key.startsWith("MODULES/MAP_")) return modules("Map View");
-  if (key.startsWith("MODULES/POLAR_")) return modules("Polar View");
-  if (key === "MODULES/SINGLE_SAT_FIELDS") return modules("Single Sat View");
+  if (key === "MODULES/DATA_TIMEOUT" || (key.startsWith("MODULES/") && key.endsWith("_REFRESH"))) return modules("refresh");
+  if (key === "MODULES/LIST_COLUMNS") return modules("list");
+  if (key.startsWith("MODULES/MAP_")) return modules("map");
+  if (key.startsWith("MODULES/POLAR_")) return modules("polar");
+  if (key === "MODULES/SINGLE_SAT_FIELDS") return modules("single");
   return PREDICT_PLACES.get(key) ?? null;
 }
 

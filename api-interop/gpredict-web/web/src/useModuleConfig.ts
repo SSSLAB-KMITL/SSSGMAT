@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { errorText, getModule, putModule } from "./api";
 import { ConfigStore } from "./configStore";
-import type { ModuleConfig } from "./types";
+import type { ModuleConfig, ModulePins } from "./types";
 
 interface Held {
   name: string | null;
@@ -17,7 +17,7 @@ const NO_UPDATES = () => () => undefined;
  *
  * Every write of the configuration must go through `save(change)`: it shows the change at once, sends the whole configuration
  * with PUT /api/modules/{name} one request at a time, and on a refusal goes back to the configuration the server holds and
- * rejects with the error (see configStore.ts). The views get it as `onSaveConfig`; the dialogs and popups of Task 18 (Module
+ * rejects with the error (see configStore.ts). OK of Module properties gives `save` the paths to pin and unpin as well (`opts`). The views get it as `onSaveConfig`; the dialogs and popups of Task 18 (Module
  * properties, Configure, the satellite popups' Highlight footprint / Ground Track / Sky track) must use it too, and never
  * PUT a configuration of their own: that would send out-of-date values and undo what another view saved.
  *
@@ -57,8 +57,8 @@ export function useModuleConfig(name: string | null) {
   const store = mine?.store ?? null;
   const config = useSyncExternalStore(store?.subscribe ?? NO_UPDATES, () => store?.config ?? null);
   const save = useCallback(
-    (change: (config: ModuleConfig) => ModuleConfig): Promise<void> =>
-      store === null ? Promise.reject(new Error("the module's configuration has not been loaded")) : store.save(change),
+    (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins): Promise<void> =>
+      store === null ? Promise.reject(new Error("the module's configuration has not been loaded")) : store.save(change, opts),
     [store],
   );
   return { config, error: mine?.error ?? null, reload, save };

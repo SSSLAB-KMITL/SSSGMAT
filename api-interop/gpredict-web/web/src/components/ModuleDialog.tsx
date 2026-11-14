@@ -12,11 +12,13 @@ import {
 } from "../moduleForm";
 import type { ModuleDraft, SelectedSat } from "../moduleForm";
 import { MODULE_NAME_MAX, NAME_TIP, sanitizeModuleName } from "../moduleName";
-import { propsOf } from "../moduleProps";
-import type { ModuleProps } from "../moduleProps";
+import { newModulePins, NO_MARKS, propsOf, propsSave } from "../moduleProps";
+import type { ModuleProps, PropsMarks } from "../moduleProps";
 import { useNumberFormat } from "../numfmt";
+import { globalProps } from "../prefs/modulesPrefs";
+import { usePrefs } from "../prefs/prefsStore";
 import { loadSatNames } from "../satNames";
-import type { ModuleConfig, Qth } from "../types";
+import type { ModuleConfig, ModulePins, Qth } from "../types";
 import { useMeta } from "../useMeta";
 import { FloatingWindow } from "./FloatingWindow";
 import { ModuleProperties } from "./ModuleProperties";
@@ -36,8 +38,8 @@ export type ModuleTarget =
       kind: "edit";
       /** the open module's configuration as it is now */
       config: ModuleConfig;
-      /** the page's one `save` of the open module's configuration (useModuleConfig): the only way to write it */
-      save: (change: (config: ModuleConfig) => ModuleConfig) => Promise<void>;
+      /** the page's one `save` of the open module's configuration (useModuleConfig): the only way to write it, with its pins */
+      save: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
     };
 
 interface Props {
@@ -53,13 +55,18 @@ type Child = "properties" | "qth" | "overwrite" | null;
  * characters, read only when editing), the Ground station combo with its Add button, the satellite selector, and the buttons
  * Properties, Cancel and OK.
  *
+ * Module properties opens with the module's values (a new module: the global values of Preferences → Modules, which it inherits);
+ * the pages its OKs changed are pinned to the module and the pages they Reset inherit again (`propsSave`, ref-D §10).
+ *
  * New: OK needs at least one satellite, asks before it overwrites a closed module of that name (a module that is open is
- * refused, ของเรา), then PUT /api/modules/{name} and POST .../open. Edit: OK changes the open module only through the page's
- * `save` (an instruction that replaces the ground station, the satellites and the properties that differ), never with a PUT
- * of its own. A refusal of the server is shown in Thai in the dialog.
+ * refused, ของเรา), then PUT /api/modules/{name} (only the changed pages pinned: the module starts inheriting everything else) and
+ * POST .../open. Edit: OK changes the open module only through the page's `save` (an instruction that replaces the ground station,
+ * the satellites and the properties that differ, with the pins), never with a PUT of its own. A refusal of the server is shown in
+ * Thai in the dialog.
  */
 export function ModuleDialog({ target, onClose }: Props) {
   const meta = useMeta();
+  const prefs = usePrefs();
   const nf = useNumberFormat(); // the Add button's editor shows the altitude in feet with Imperial on
   const editing = target.kind === "edit";
   const config = target.kind === "edit" ? target.config : null;
@@ -76,6 +83,7 @@ export function ModuleDialog({ target, onClose }: Props) {
   const [sats, setSats] = useState<readonly SelectedSat[]>([]);
   const [namesLoaded, setNamesLoaded] = useState(!editing); // Edit module: the names of the satellites have been read
   const [edited, setEdited] = useState<ModuleProps | null>(null); // the properties after OK of Module properties
+  const [marks, setMarks] = useState<PropsMarks>(NO_MARKS); // what the OKs of Module properties did to its pages
   const [child, setChild] = useState<Child>(null);
   const [question, setQuestion] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -125,7 +133,11 @@ export function ModuleDialog({ target, onClose }: Props) {
   }, []);
 
   const choices = useMemo(() => qthChoices(qth !== null && !qthNames.includes(qth) ? [...qthNames, qth] : qthNames), [qthNames, qth]);
-  const props = edited ?? initial?.props ?? (meta === null ? null : propsOf(meta.module_defaults));
+  // the global values (Preferences → Modules): what a new module inherits, and what Reset in Module properties loads
+  const global = useMemo(() => (meta === null || prefs === null ? null : globalProps(prefs.values, meta)), [meta, prefs]);
+  /** the properties before Module properties changed them: the module's, or for a new module the global ones */
+  const opened = initial?.props ?? global;
+  const props = edited ?? opened;
 
   const finish = async (confirmed: boolean) => {
     setFailure(null);
@@ -147,11 +159,12 @@ export function ModuleDialog({ target, onClose }: Props) {
       return;
     }
     const draft: ModuleDraft = { qth, satellites: sats.map((s) => s.norad), props: props! };
-    if (!hasModuleChanges(initial!, draft)) {
+    const saving = propsSave(initial!.props, draft.props, marks.dirty, marks.reset, meta!);
+    if (!hasModuleChanges(initial!, draft) && saving.pin.length === 0 && saving.unpin.length === 0) {
       onClose();
       return;
     }
-    await t.save(editModuleChange(initial!, draft));
+    await t.save(editModuleChange(initial!, draft, saving.change), { pin: saving.pin, unpin: saving.unpin });
     onClose();
   };
 
@@ -170,7 +183,8 @@ export function ModuleDialog({ target, onClose }: Props) {
         setChild("overwrite");
         return;
       }
-      await putModule(newModuleConfig({ name, qth, satellites: sats }, props!, meta!.module_defaults));
+      const { pin } = propsSave(opened!, props!, marks.dirty, marks.reset, meta!);
+      await putModule(newModuleConfig({ name, qth, satellites: sats }, props!, meta!.module_defaults), newModulePins(pin, meta!));
       setSaved(true);
       t.onSaved();
     }
@@ -189,7 +203,7 @@ export function ModuleDialog({ target, onClose }: Props) {
   };
 
   const locked = child !== null || saved; // a window on top of the dialog, or the module is saved already
-  const canOk = namesLoaded && props !== null && !busy && child === null && (editing || name !== "");
+  const canOk = namesLoaded && props !== null && meta !== null && !busy && child === null && (editing || name !== "");
 
   return (
     <>
@@ -241,7 +255,7 @@ export function ModuleDialog({ target, onClose }: Props) {
             <b className="props-header">Satellites</b>
             <SatSelector groups={groups} selected={sats} onChange={setSats} loading={!namesLoaded} />
           </fieldset>
-          {meta === null && <p className="dialog-text">กำลังโหลดค่าตั้งต้นของ module จาก server...</p>}
+          {(meta === null || global === null) && <p className="dialog-text">กำลังโหลดค่าตั้งต้นของ module จาก server...</p>}
           {failure !== null && (
             <p className="dialog-error" role="alert">
               {failure}
@@ -251,7 +265,7 @@ export function ModuleDialog({ target, onClose }: Props) {
             <button
               type="button"
               className="button"
-              disabled={locked || meta === null || props === null}
+              disabled={locked || meta === null || props === null || global === null}
               onClick={() => setChild("properties")}
             >
               Properties
@@ -266,13 +280,16 @@ export function ModuleDialog({ target, onClose }: Props) {
           </div>
         </form>
       </FloatingWindow>
-      {child === "properties" && meta !== null && props !== null && (
+      {child === "properties" && meta !== null && props !== null && global !== null && (
         <ModuleProperties
           initial={props}
+          marks={marks}
+          global={global}
           meta={meta}
           onCancel={() => setChild(null)}
-          onOK={(p) => {
+          onOK={(p, m) => {
             setEdited(p);
+            setMarks(m);
             setChild(null);
           }}
         />

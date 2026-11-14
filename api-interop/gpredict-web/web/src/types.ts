@@ -129,13 +129,39 @@ export interface ModuleConfig {
   refresh: Refresh;
   list_columns: string[];
   list_sort: { column: string; ascending: boolean };
-  map: { contents: Record<string, boolean>; track_orbits: number; center_lon: number };
-  polar: { orientation: string; contents: Record<string, boolean>; auto_skytrack: boolean };
+  map: {
+    contents: Record<string, boolean>;
+    track_orbits: number;
+    center_lon: number;
+    /** the background map: a file of Gpredict's maps or one uploaded to data/maps/ */
+    file: string;
+    /** the colours of the Map View page by the names of colors.ts' MAP_COLORS, each 0xRRGGBBAA (plan decision 5) */
+    colours: Record<string, number>;
+    /** "Shadow:" under the satellite markers, 0 (transparent) to 255 (opaque) */
+    shadow_alpha: number;
+  };
+  polar: {
+    orientation: string;
+    contents: Record<string, boolean>;
+    auto_skytrack: boolean;
+    /** the colours of the Polar View page by the names of colors.ts' POLAR_COLORS, each 0xRRGGBBAA */
+    colours: Record<string, number>;
+  };
   single: { fields: string[]; selected: number | null };
   /** satellites with Highlight footprint switched off (on by default) */
   footprint_off: number[];
   ground_track: number[];
   sky_track: number[];
+}
+
+/**
+ * What PUT /api/modules/{name} pins and unpins besides the configuration (paths of `Meta.module_keys`, plan decision 3): a pinned path
+ * keeps the value sent as the module's own; an unpinned one is removed from the module, which inherits the global value again. A value
+ * sent for a path that the module inherits and that is not pinned is not stored (the module goes on inheriting).
+ */
+export interface ModulePins {
+  pin?: readonly string[];
+  unpin?: readonly string[];
 }
 
 export interface ModuleList {
@@ -302,6 +328,13 @@ export interface Meta {
     location: number;
     weather_station: number;
   };
+  /**
+   * The pages of Module properties and of Preferences → Modules: for each, the path of every value of a module it holds ("map.colours.grid")
+   * and the key of Preferences the module inherits it from ("MODULES/MAP_GRID_COLOUR"), in the order of the page (spec §9.1)
+   */
+  module_keys: Record<"layout" | "refresh" | "list" | "map" | "polar" | "single", Record<string, string>>;
+  /** the keys the Layout page of Preferences → Modules writes besides MODULES/GRID: the three Window Placements boxes (ref-D §10) */
+  global_layout_extra: string[];
   /** the folder of the log files, which the Message Logs page names where Gpredict writes "<conf dir>/logs/" (plan decision 17) */
   log_dir: string;
 }

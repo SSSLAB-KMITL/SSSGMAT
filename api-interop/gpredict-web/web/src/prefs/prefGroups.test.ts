@@ -13,10 +13,10 @@ describe("PREF_GROUPS (ref-D §1)", () => {
     ]);
   });
 
-  it("General, Interfaces and Predict have a page; Modules names the sub-project that adds it", () => {
+  it("every group has a page (spec §10: General, Modules, Interfaces and Predict can be used)", () => {
     expect(PREF_GROUPS.map((g) => [g.id, g.page === null, g.later])).toEqual([
       ["general", false, undefined],
-      ["modules", true, 4],
+      ["modules", false, undefined],
       ["interfaces", false, undefined],
       ["predict", false, undefined],
     ]);
@@ -57,15 +57,14 @@ describe("firstView", () => {
     expect(firstView(onlyPredict)).toEqual({ active: "predict", visited: ["predict"] });
   });
 
-  it("in the window as it is, General has its page, so it opens at General (Modules has none yet)", () => {
+  it("in the window as it is, General has its page, so it opens at General", () => {
     expect(PREF_GROUPS.find((g) => g.id === FIRST_GROUP)!.page).not.toBeNull();
-    expect(PREF_GROUPS.find((g) => g.id === "modules")!.page).toBeNull();
     expect(firstView()).toEqual({ active: "general", visited: ["general"] });
   });
 });
 
 describe("switchGroup", () => {
-  // the window as it is (General, Interfaces and Predict have a page), shown at Predict
+  // the window as it is (every group has a page), shown at Predict
   const groups = PREF_GROUPS;
   const atPredict = (): GroupView => ({ active: "predict", visited: ["predict"] });
 
@@ -84,7 +83,12 @@ describe("switchGroup", () => {
 
   it("ignores a group without a page: it cannot be pressed", () => {
     const view = atPredict();
-    expect(switchGroup(view, "modules", groups)).toBe(view); // in this sub-project Modules has no page
+    const noModules = groups.map((g) => (g.id === "modules" ? { ...g, page: null, later: 4 as const } : g));
+    expect(switchGroup(view, "modules", noModules)).toBe(view);
+  });
+
+  it("shows Modules, which has its page since sub-project 4", () => {
+    expect(switchGroup(atPredict(), "modules")).toEqual({ active: "modules", visited: ["predict", "modules"] });
   });
 
   it("shows Interfaces, and keeps its page in the window when another group is chosen", () => {

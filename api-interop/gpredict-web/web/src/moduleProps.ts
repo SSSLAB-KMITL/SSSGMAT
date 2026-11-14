@@ -2,10 +2,14 @@
 // station of the module dialog. Pure; ModuleProperties.tsx shows it.
 //
 // The dialog works on a draft (`ModuleProps`): Cancel drops it, OK hands it to the module dialog, which saves it with the
-// module (Create new module: PUT of a new configuration; Edit module: `propsChange` through the page's one `save`).
+// module (Create new module: PUT of a new configuration; Edit module: `propsSave`'s change and pins through the page's one `save`).
+//
+// A module inherits the global values of Preferences → Modules until a page of its Module properties is changed (ref-D §10): OK
+// pins every value of a page the user changed to the module, and a page that was Reset and not changed afterwards inherits again
+// (`propsSave`, plan decision 3). The same pages edit the global values in Preferences → Modules (prefs/modulesPrefs.ts).
 
 import { gridFor, parseLayout } from "./layout";
-import type { ModuleConfig, Refresh } from "./types";
+import type { Meta, ModuleConfig, Refresh } from "./types";
 
 /** The pages of the notebook, in Gpredict's order (sat-pref-modules.c:65-80). There is none for the event list. */
 export type PropsTab = "layout" | "refresh" | "list" | "map" | "polar" | "single";
@@ -19,9 +23,12 @@ export const PROPS_TABS: readonly { id: PropsTab; label: string }[] = [
   { id: "single", label: "Single Sat View" },
 ];
 
+/** The label of a page of the notebook (also the tab Preferences names in a failure). */
+export const propsTabLabel = (tab: PropsTab): string => PROPS_TABS.find((t) => t.id === tab)!.label;
+
 const MODULE_RESET_TIP = "Reset module settings to the global values.";
 
-/** The tooltip of each page's Reset button in module mode; the Map View page has its own wording (ref §3). */
+/** The tooltip of each page's Reset button in module mode; the Map View page has its own wording (ref-D §10). */
 export const RESET_TIP: Readonly<Record<PropsTab, string>> = {
   layout: MODULE_RESET_TIP,
   refresh: MODULE_RESET_TIP,
@@ -38,8 +45,10 @@ export interface ModuleProps {
   layout_code: string;
   refresh: Rates;
   list_columns: string[];
-  map: { contents: Record<string, boolean>; track_orbits: number; center_lon: number };
-  polar: { orientation: string; contents: Record<string, boolean>; auto_skytrack: boolean };
+  /** contents, orbits, centre, and the background map, colours and shadow of the Map View page (sub-project 4, ref-D §11) */
+  map: ModuleConfig["map"];
+  /** orientation, contents, sky tracks, and the colours of the Polar View page (ref-D §12) */
+  polar: ModuleConfig["polar"];
   single_fields: string[];
 }
 
@@ -53,28 +62,28 @@ export function propsOf(c: PropsSource): ModuleProps {
     layout_code: c.layout_code,
     refresh: rates,
     list_columns: c.list_columns,
-    map: { contents: c.map.contents, track_orbits: c.map.track_orbits, center_lon: c.map.center_lon },
-    polar: { orientation: c.polar.orientation, contents: c.polar.contents, auto_skytrack: c.polar.auto_skytrack },
+    map: c.map,
+    polar: c.polar,
     single_fields: c.single.fields,
   });
 }
 
-/** `props` with the page `tab` back at the defaults (Gpredict's global values, which for us are its defaults). */
-export function resetTab(props: ModuleProps, tab: PropsTab, defaults: PropsSource): ModuleProps {
-  const d = propsOf(defaults);
+/** `props` with the page `tab` set to the values of `to` (a copy): in module mode Reset gives the page the global values. */
+export function resetTab(props: ModuleProps, tab: PropsTab, to: ModuleProps): ModuleProps {
+  const v = structuredClone(to);
   switch (tab) {
     case "layout":
-      return { ...props, layout_code: d.layout_code };
+      return { ...props, layout_code: v.layout_code };
     case "refresh":
-      return { ...props, refresh: d.refresh };
+      return { ...props, refresh: v.refresh };
     case "list":
-      return { ...props, list_columns: d.list_columns };
+      return { ...props, list_columns: v.list_columns };
     case "map":
-      return { ...props, map: d.map };
+      return { ...props, map: v.map };
     case "polar":
-      return { ...props, polar: d.polar };
+      return { ...props, polar: v.polar };
     case "single":
-      return { ...props, single_fields: d.single_fields };
+      return { ...props, single_fields: v.single_fields };
   }
 }
 
@@ -98,13 +107,22 @@ export function propsEqual(a: ModuleProps, b: ModuleProps): boolean {
   return same(a, b);
 }
 
-/** `target` with the entries of `draft` that differ from `initial` (an entry the user did not touch keeps the value `target` has). */
-function withChangedEntries<T extends object>(target: T, initial: Partial<T>, draft: Partial<T>): T {
-  let next = target;
-  for (const key of Object.keys(draft) as (keyof T)[]) {
-    if (!same(initial[key], draft[key])) next = { ...next, [key]: draft[key] };
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * `target` with what differs between `initial` and `draft`: objects are followed key by key, anything else (a number, a list of
+ * fields) is taken from `draft` as a whole. What does not differ keeps the value `target` has, and `target` itself comes back when
+ * nothing differs.
+ */
+function withChanges<T>(target: T, initial: T, draft: T): T {
+  if (same(initial, draft)) return target;
+  if (!isRecord(target) || !isRecord(initial) || !isRecord(draft)) return structuredClone(draft);
+  let next: Record<string, unknown> = target;
+  for (const key of Object.keys(draft)) {
+    const v = withChanges(target[key], initial[key], draft[key]);
+    if (v !== target[key]) next = { ...next, [key]: v };
   }
-  return next;
+  return next as T;
 }
 
 /**
@@ -115,36 +133,134 @@ function withChangedEntries<T extends object>(target: T, initial: Partial<T>, dr
  */
 export function propsChange(initial: ModuleProps, draft: ModuleProps): (config: ModuleConfig) => ModuleConfig {
   return (config) => {
-    let next = config;
-    if (initial.layout_code !== draft.layout_code) next = { ...next, layout_code: draft.layout_code };
-    const refresh = withChangedEntries(next.refresh, initial.refresh, draft.refresh);
-    if (refresh !== next.refresh) next = { ...next, refresh };
-    if (!same(initial.list_columns, draft.list_columns)) next = { ...next, list_columns: [...draft.list_columns] };
-    if (!same(initial.map, draft.map)) {
-      const contents = withChangedEntries(next.map.contents, initial.map.contents, draft.map.contents);
-      next = {
-        ...next,
-        map: {
-          ...next.map,
-          contents,
-          track_orbits: initial.map.track_orbits === draft.map.track_orbits ? next.map.track_orbits : draft.map.track_orbits,
-          center_lon: initial.map.center_lon === draft.map.center_lon ? next.map.center_lon : draft.map.center_lon,
-        },
-      };
-    }
-    if (!same(initial.polar, draft.polar)) {
-      next = {
-        ...next,
-        polar: {
-          orientation: initial.polar.orientation === draft.polar.orientation ? next.polar.orientation : draft.polar.orientation,
-          contents: withChangedEntries(next.polar.contents, initial.polar.contents, draft.polar.contents),
-          auto_skytrack: initial.polar.auto_skytrack === draft.polar.auto_skytrack ? next.polar.auto_skytrack : draft.polar.auto_skytrack,
-        },
-      };
-    }
-    if (!same(initial.single_fields, draft.single_fields)) next = { ...next, single: { ...next.single, fields: [...draft.single_fields] } };
-    return next;
+    const parts: Partial<ModuleConfig> = {};
+    const layout_code = withChanges(config.layout_code, initial.layout_code, draft.layout_code);
+    if (layout_code !== config.layout_code) parts.layout_code = layout_code;
+    const rates = withChanges<Rates>(config.refresh, initial.refresh, draft.refresh);
+    if (rates !== config.refresh) parts.refresh = { ...config.refresh, ...rates };
+    const list_columns = withChanges(config.list_columns, initial.list_columns, draft.list_columns);
+    if (list_columns !== config.list_columns) parts.list_columns = list_columns;
+    const map = withChanges(config.map, initial.map, draft.map);
+    if (map !== config.map) parts.map = map;
+    const polar = withChanges(config.polar, initial.polar, draft.polar);
+    if (polar !== config.polar) parts.polar = polar;
+    const fields = withChanges(config.single.fields, initial.single_fields, draft.single_fields);
+    if (fields !== config.single.fields) parts.single = { ...config.single, fields };
+    return Object.keys(parts).length === 0 ? config : { ...config, ...parts };
   };
+}
+
+// ---------------------------------------------------------------- the paths of the server (meta.module_keys)
+
+/** The keys into ModuleProps of a path of the server's ("map.contents.Grid Lines"); Single Sat's fields are `single_fields` here. */
+function propsKeys(path: string): string[] {
+  if (path === "single.fields") return ["single_fields"];
+  const [head, ...rest] = path.split(".");
+  // (the last part is a name, which may have a space; the server's paths have at most three parts)
+  return rest.length <= 1 ? [head!, ...rest] : [head!, rest[0]!, rest.slice(1).join(".")];
+}
+
+/** The value at `path` (a path of `meta.module_keys`) in the properties; undefined for one they do not hold (the event list's refresh). */
+export function propsValue(props: ModuleProps, path: string): unknown {
+  let v: unknown = props;
+  for (const key of propsKeys(path)) {
+    if (!isRecord(v) || !(key in v)) return undefined;
+    v = v[key];
+  }
+  return v;
+}
+
+/** `props` with the value at `path` replaced by `value`: the objects on the path are copies, everything else is shared. */
+export function withPropsValue(props: ModuleProps, path: string, value: unknown): ModuleProps {
+  const put = (obj: unknown, keys: readonly string[]): unknown => {
+    const [key, ...rest] = keys;
+    const o = isRecord(obj) ? obj : {};
+    return { ...o, [key!]: rest.length === 0 ? value : put(o[key!], rest) };
+  };
+  return put(props, propsKeys(path)) as ModuleProps;
+}
+
+/**
+ * The paths of a page that its controls hold, in the server's order: every path of `meta.module_keys[page]` but the event list's
+ * refresh, for which Gpredict's Refresh Rates page has no control and which it neither writes nor resets (sat-pref-refresh.c:52-119).
+ */
+export function pagePaths(page: PropsTab, meta: Meta): string[] {
+  const held = propsOf(meta.module_defaults);
+  return Object.keys(meta.module_keys[page]).filter((path) => propsValue(held, path) !== undefined);
+}
+
+// ---------------------------------------------------------------- OK of Module properties: pin and unpin
+
+/**
+ * What the user did to the pages of one Module properties dialog (sat-pref-*.c `dirty` and `reset`): `dirty` the pages changed since
+ * their last Reset, `reset` the pages whose Reset was pressed. A Reset clears the page's `dirty`; a change after a Reset keeps the
+ * `reset`, and the change wins (ref-D §10).
+ */
+export interface PropsMarks {
+  dirty: ReadonlySet<PropsTab>;
+  reset: ReadonlySet<PropsTab>;
+}
+
+export const NO_MARKS: PropsMarks = { dirty: new Set(), reset: new Set() };
+
+/** The marks after a control of `tab` was changed; the same object if the page is dirty already. */
+export function markEdited(marks: PropsMarks, tab: PropsTab): PropsMarks {
+  return marks.dirty.has(tab) ? marks : { dirty: new Set([...marks.dirty, tab]), reset: marks.reset };
+}
+
+/** The marks after the Reset of `tab`. */
+export function markReset(marks: PropsMarks, tab: PropsTab): PropsMarks {
+  const dirty = new Set(marks.dirty);
+  dirty.delete(tab);
+  return { dirty, reset: new Set([...marks.reset, tab]) };
+}
+
+/** The pages whose dirty mark only counts while the ticked fields differ from the opening (sat-pref-list-view.c:115-124, sat-pref-single-sat.c:90-99). */
+const FIELD_PAGES: Partial<Record<PropsTab, (p: ModuleProps) => unknown>> = {
+  list: (p) => p.list_columns,
+  single: (p) => p.single_fields,
+};
+
+export interface PropsSave {
+  /** the change of the configuration (`propsChange`) */
+  change: (config: ModuleConfig) => ModuleConfig;
+  /** the paths of the pages that were changed: the module keeps all of the page's values as its own */
+  pin: string[];
+  /** the paths of the pages that were Reset and not changed afterwards: the module inherits them again */
+  unpin: string[];
+}
+
+/**
+ * OK of Module properties as a save of the module (ref-D §10 "What OK writes"): the change of the values that differ, and for each
+ * page in the order of the notebook: a dirty page pins all its paths, even the values left as they were; a page that was Reset and
+ * is not dirty unpins them; a page the user did not touch is neither (a value it inherits goes on being inherited). List View and
+ * Single Sat View are dirty only while their fields differ from `initial`, so ticking a box and clearing it again changes nothing.
+ */
+export function propsSave(
+  initial: ModuleProps,
+  draft: ModuleProps,
+  dirty: ReadonlySet<PropsTab>,
+  reset: ReadonlySet<PropsTab>,
+  meta: Meta,
+): PropsSave {
+  const pin: string[] = [];
+  const unpin: string[] = [];
+  for (const { id } of PROPS_TABS) {
+    const fields = FIELD_PAGES[id];
+    if (dirty.has(id) && (fields === undefined || !same(fields(initial), fields(draft)))) pin.push(...pagePaths(id, meta));
+    else if (reset.has(id)) unpin.push(...pagePaths(id, meta));
+  }
+  return { change: propsChange(initial, draft), pin, unpin };
+}
+
+/**
+ * The pins of Create new module, also over a closed module of that name: the paths of `pin` (the pages the user changed) and every
+ * other path unpinned, so that the module has only what it was given, as Gpredict's new .mod file (mod-cfg.c:769-824), and keeps
+ * nothing of the file it replaces.
+ */
+export function newModulePins(pin: readonly string[], meta: Meta): { pin: string[]; unpin: string[] } {
+  const all = PROPS_TABS.flatMap((t) => pagePaths(t.id, meta));
+  return { pin: [...pin], unpin: all.filter((path) => !pin.includes(path)) };
 }
 
 // ---------------------------------------------------------------- the Layout page
