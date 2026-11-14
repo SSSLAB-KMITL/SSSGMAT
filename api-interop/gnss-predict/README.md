@@ -392,7 +392,7 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 | `GMAT_BIN` | `application/bin/GmatConsole` ของ repo | path ของไฟล์ `GmatConsole` |
 | `GNSS_STUDIO_HOST` | `127.0.0.1` | ที่อยู่ที่ฟัง |
 | `GNSS_STUDIO_PORT` | `8000` | port ที่ฟัง (1–65535) |
-| `CESIUM_ION_TOKEN` | ว่าง | token ของ Cesium ion สำหรับหน้าเว็บ server อ่านเก็บไว้ในค่าตั้ง ยังไม่มี endpoint ใดใช้ในรุ่นนี้ |
+| `CESIUM_ION_TOKEN` | ว่าง | server อ่านเก็บไว้ในค่าตั้งของ process แต่ยังไม่มี endpoint ใดใช้ **ชั้นภาพ Cesium ion ใช้ token ใน `settings.json` (`cesium_ion_token`) ไม่ใช่ตัวแปรนี้** (หัวข้อ 8.3 และ 9.10) |
 
 ทุกอย่างที่ server เขียนอยู่ใต้ `GNSS_STUDIO_DATA` และ log หมุนไฟล์ที่ 10 MB เก็บ 5 ไฟล์ ข้อผิดพลาดตอบเป็น JSON `{"code", "text", "field", "detail"}`
 (รหัสตาม server §10, `text` เป็นภาษาไทย)
@@ -425,7 +425,7 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 > ```json
 > {"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
 >            "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "",
->  "online_imagery": {"enabled": false}}
+>  "online_imagery": {"enabled": false, "eox": false, "osm": false, "ion": false}}
 > ```
 >
 > หรือปิดตอน server รันอยู่ด้วย `PUT /api/settings` (ต้องส่งทั้งเอกสาร ช่องที่หายได้ 422) ตัวตั้งเวลาอ่านค่าใหม่ทันที และทุกรอบ
@@ -433,7 +433,7 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 >
 > ```bash
 > curl -s -X PUT http://127.0.0.1:8000/api/settings -H 'Content-Type: application/json' \
->   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "", "online_imagery": {"enabled": false}}'
+>   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "", "online_imagery": {"enabled": false, "eox": false, "osm": false, "ion": false}}'
 > ```
 >
 > การปิดไม่หยุด job `daily` หรือ `validate` ที่สั่งไปแล้ว ถ้ามี job ที่รออยู่หรือกำลังรัน ให้หา id แล้วยกเลิก (Stop ฆ่า GMAT และ process ลูก):
@@ -475,11 +475,15 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | `daily.retention_days` | `30` | 1–3650 | อายุของ `ephem/` และ `access/` ของ scenario รายวัน |
 | `daily.validation_retry_hours` | `3` | 1–168 | ระยะห่างของการลองตรวจย้อนหลังซ้ำ |
 | `daily.validation_give_up_days` | `14` | 1–365 | เลิกตรวจหลังจากวัน D ผ่านไปกี่วัน |
-| `cesium_ion_token` | `""` | ข้อความ | token ของ Cesium ion ที่หน้าเว็บอ่าน |
-| `online_imagery.enabled` | `false` | true/false | สวิตช์ภาพออนไลน์ของ NASA GIBS **ปิดเสมอจนกว่าผู้ใช้เปิดเอง** (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์ที่รุ่นเก่าเขียนซึ่งไม่มีช่องนี้ = ปิด และ server ไม่เขียนไฟล์ตอนโหลด) |
+| `cesium_ion_token` | `""` | ข้อความ | token ของบัญชี ion.cesium.com ที่หน้าเว็บอ่านไปใช้กับชั้นภาพ Cesium ion (หัวข้อ 9.10) เก็บเป็นข้อความธรรมดาใน `settings.json` ไม่เข้ารหัส (`data/` ถูก git ละเว้น ห้ามนำเข้า repo) ตั้งได้ที่ Globe Manager หรือ Daily Forecast Settings |
+| `online_imagery.enabled` | `false` | true/false | สวิตช์ภาพออนไลน์ของ **NASA GIBS** (server ดึงให้) **ปิดเสมอจนกว่าผู้ใช้เปิดเอง** (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์ที่รุ่นเก่าเขียนซึ่งไม่มีช่องนี้ = ปิด และ server ไม่เขียนไฟล์ตอนโหลด) |
+| `online_imagery.eox` | `false` | true/false | สวิตช์ **Sentinel-2 cloudless (EOX)** (server ดึงให้) ปิดเสมอจนกว่าผู้ใช้เปิดเอง ช่องที่หายในไฟล์เก่า = ปิด |
+| `online_imagery.osm` | `false` | true/false | สวิตช์ **OpenStreetMap** browser ดึงตรง server เก็บค่านี้ให้หน้าเว็บอ่านเท่านั้น ไม่ต่อเน็ตให้ ปิดเสมอจนกว่าผู้ใช้เปิดเอง |
+| `online_imagery.ion` | `false` | true/false | สวิตช์ **Cesium ion** browser ดึงตรงด้วย `cesium_ion_token` เช่นเดียวกัน ปิดเสมอจนกว่าผู้ใช้เปิดเอง |
 
-`PUT /api/settings` ต้องส่งทั้งเอกสารรวม `online_imagery.enabled` (ขาด = 422 ที่ field `online_imagery` หรือ `online_imagery.enabled`
-ค่าต้องเป็น true/false จริง ไม่รับ `"true"`) หน้าต่าง Daily Forecast Settings ส่ง `online_imagery` ที่โหลดมาคืนไปตามเดิม ไม่เปลี่ยนค่านี้
+`PUT /api/settings` ต้องส่งทั้งเอกสารรวมทั้งสี่ช่องของ `online_imagery` (ขาดช่องใด = 422 ที่ field `online_imagery` หรือ `online_imagery.<ช่อง>`
+ค่าต้องเป็น true/false จริง ไม่รับ `"true"`) หน้าต่าง Daily Forecast Settings ส่ง `online_imagery` ที่โหลดมาคืนไปทั้งก้อน ไม่เปลี่ยนค่าเหล่านี้
+(`cesium_ion_token` ก็ต้องส่งทั้งก้อนเช่นกัน: ขาด = 422 ส่ง `""` = ลบ token ที่เก็บไว้)
 
 ### 8.4 สรุป endpoint
 
@@ -497,7 +501,7 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | Job | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` | §6.8, §7 |
 | งานประจำวัน | `POST /daily/run` (ดึงจากเน็ต) `{for_date?}` สั่งพยากรณ์ของวันนั้นเอง | §6.8, §9.3 |
 | ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/{sc}/{day}` | §6.8 |
-| ภาพออนไลน์ | `GET /imagery/layers`, `GET /imagery/tiles/{layer}/{time}/{z}/{y}/{x}` (ดึงจาก NASA GIBS เมื่อเปิดสวิตช์เท่านั้น ดู 8.8) | ภาพออนไลน์ §4 |
+| ภาพออนไลน์ | `GET /imagery/layers`, `GET /imagery/tiles/{layer}/{time}/{z}/{y}/{x}` (ดึงจาก NASA GIBS หรือ EOX เมื่อเปิดสวิตช์ของแหล่งนั้นเท่านั้น ดู 8.8; OpenStreetMap และ Cesium ion browser ดึงเอง ไม่ผ่าน server) | ภาพออนไลน์ §4, ภาพละเอียด §3 |
 
 ยังไม่มีในรุ่นนี้: data provider, style และรายงาน (server §6.7) ซึ่งอยู่ในแผนของงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine
 
@@ -693,53 +697,65 @@ content-type: application/json
 **9. หยุด server**: `kill <pid>` (SIGTERM) ได้ `Shutting down` / `Application shutdown complete` / `Finished server process` ภายในไม่ถึง 5 วินาที
 ตรวจแล้วไม่มี process ของ server หรือ `GmatConsole` ค้าง และ port 8765 ปิด
 
-### 8.8 ภาพถ่ายออนไลน์ (NASA GIBS)
+### 8.8 ภาพถ่ายออนไลน์ (NASA GIBS และ Sentinel-2 cloudless)
 
-server ดึงภาพถ่ายจริงจาก NASA GIBS (`gibs.earthdata.nasa.gov`) มาให้หน้าเว็บ **เฉพาะเมื่อผู้ใช้เปิดสวิตช์ `online_imagery.enabled`**
-(ตั้งต้นปิดเสมอ ดูตารางค่าตั้งใน 8.3: ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์รุ่นเก่าที่ไม่มีช่องนี้ = ปิด) สวิตช์ปิด = server ไม่ส่ง request ใดไป GIBS เลย
-และ `GET /api/imagery/tiles/...` ตอบ 403 `IMAGERY_DISABLED` **แม้ชิ้นนั้นอยู่ใน cache แล้ว** server อ่านสวิตช์จาก `settings.json` ทุกคำขอ
+server ดึงภาพถ่ายจริงมาให้หน้าเว็บได้จาก **สองแหล่ง**: NASA GIBS (`gibs.earthdata.nasa.gov` สวิตช์ `online_imagery.enabled`) และ Sentinel-2 cloudless ของ EOX
+(`tiles.maps.eox.at` สวิตช์ `online_imagery.eox`) **เฉพาะเมื่อผู้ใช้เปิดสวิตช์ของแหล่งนั้น** (ตั้งต้นปิดเสมอ ดูตารางค่าตั้งใน 8.3: ไม่มีไฟล์ ไฟล์เสีย
+หรือไฟล์รุ่นเก่าที่ไม่มีช่องนั้น = ปิด และเปิดแหล่งหนึ่งไม่เปิดแหล่งอื่น) สวิตช์ของแหล่งใดปิด = server ไม่ส่ง request ใดไปโฮสต์นั้นเลย
+และ `GET /api/imagery/tiles/...` ของชั้นภาพในแหล่งนั้นตอบ 403 `IMAGERY_DISABLED` (ข้อความไทยบอกชื่อแหล่ง) **แม้ชิ้นนั้นอยู่ใน cache แล้ว** server อ่านสวิตช์จาก `settings.json` ทุกคำขอ
 `PUT /api/settings` จึงมีผลทันทีโดยไม่ต้องเปิด server ใหม่ ส่วน `GET /api/imagery/layers` ใช้ได้เสมอ (ไม่ต่อเน็ต)
 
-**สิ่งที่ส่งออกจากเครื่อง**: คำขอ HTTPS ไป `gibs.earthdata.nasa.gov` เท่านั้น เนื้อคำขอมีชื่อชั้นภาพ เวลาของภาพ พิกัดชิ้นภาพ (`z/y/x`)
-และ `User-Agent: gnss-studio/0.1` ไม่ส่ง scenario ตำแหน่งผู้ใช้ หรือข้อมูลอื่นของโปรแกรม แต่ NASA (และเครือข่ายระหว่างทาง) เห็น**หมายเลข IP ของเครื่องนี้**
-(หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) และ User-Agent นั้นเหมือนการเปิดเว็บทั่วไป กล่องยืนยันของ Globe Manager บอกเรื่องนี้ก่อนเปิดสวิตช์ URL ประกอบจากตารางชั้นภาพใน `imagery.py` กับค่าที่ตรวจแล้วเท่านั้น
-server ไม่รับ URL, host หรือ path จากผู้ใช้ และไม่ตาม redirect เลย (3xx นับเป็นดึงไม่สำเร็จ) browser ไม่ติดต่อ GIBS ตรง: ทุกคำขอไปที่ server ในเครื่อง
+| แหล่งที่ server ต่อ | สวิตช์ | แม่แบบ URL (ประกอบใน `imagery.py` เท่านั้น) | ดึงพร้อมกัน |
+|---|---|---|---|
+| GIBS | `online_imagery.enabled` | `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/{layer}/default/{time}/{tms}/{z}/{y}/{x}.{ext}` | ไม่เกิน 4 ชิ้น |
+| EOX (Sentinel-2 cloudless) | `online_imagery.eox` | `https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/g/{z}/{y}/{x}.jpg` | ไม่เกิน 2 ชิ้น |
 
-**ชั้นภาพ** (ตารางเดียวใน `server/gnss_studio_server/imagery.py` ลำดับในตาราง = ลำดับวาด ชั้นหลังทับชั้นก่อน):
-`BlueMarble_NextGeneration` (คงที่), `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`,
+**OpenStreetMap และ Cesium ion ไม่ผ่าน server**: browser ดึงเองโดยตรงเมื่อผู้ใช้เปิดสวิตช์ (`online_imagery.osm`, `online_imagery.ion`)
+server แค่เก็บค่าสวิตช์และ Cesium ion token (`cesium_ion_token`) ใน `settings.json` ให้หน้าเว็บอ่าน ไม่มี endpoint ไม่ต่อเน็ตให้ และไม่เก็บชิ้นภาพของสองแหล่งนี้ ดูหัวข้อ 9.10
+
+**สิ่งที่ส่งออกจากเครื่อง (ส่วนที่ server เป็นผู้ต่อ)**: คำขอ HTTPS ไป `gibs.earthdata.nasa.gov` หรือ `tiles.maps.eox.at` เท่านั้น เนื้อคำขอมีชื่อชั้นภาพ พิกัดชิ้นภาพ (`z/y/x`)
+(GIBS เพิ่มเวลาของภาพ) และ `User-Agent: gnss-studio/0.1` ไม่ส่ง scenario ตำแหน่งผู้ใช้ หรือข้อมูลอื่นของโปรแกรม แต่โฮสต์นั้น (และเครือข่ายระหว่างทาง) เห็น**หมายเลข IP ของเครื่องนี้**
+(หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) และ User-Agent นั้นเหมือนการเปิดเว็บทั่วไป กล่องยืนยันของ Globe Manager บอกเรื่องนี้ก่อนเปิดสวิตช์ของแต่ละแหล่ง URL ประกอบจากตารางชั้นภาพใน `imagery.py` กับค่าที่ตรวจแล้วเท่านั้น
+server ไม่รับ URL, host หรือ path จากผู้ใช้ และไม่ตาม redirect เลย (3xx นับเป็นดึงไม่สำเร็จ) browser ไม่ติดต่อ GIBS หรือ EOX ตรง: ทุกคำขอไปที่ server ในเครื่อง
+
+**ชั้นภาพ** (ตารางเดียวใน `server/gnss_studio_server/imagery.py` ลำดับในตาราง = ลำดับวาด ชั้นหลังทับชั้นก่อน แต่ละแถวบอกแหล่ง `source`):
+GIBS 8 ชั้น `BlueMarble_NextGeneration` (คงที่), `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`,
 `MODIS_Terra_CorrectedReflectance_TrueColor` (รายวัน), `Himawari_AHI_Band3_Red_Visible_1km`, `Himawari_AHI_Band13_Clean_Infrared`,
-`GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor` (ทุก 10 นาที) ค่า TileMatrixSet, นามสกุลไฟล์และรูปแบบเวลาของแต่ละชั้นเป็นค่าที่คาดไว้ตาม spec
-และ **ยังไม่ได้ยืนยันกับ GIBS จริง** (ขั้น B0 ต้องได้รับอนุญาตก่อน ไม่มี test หรือโค้ดใดต่อเน็ตจริง) ถ้า GIBS ตอบต่างไปแก้ที่ตารางนั้นที่เดียว
+`GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor` (ทุก 10 นาที) และ EOX 1 ชั้น `s2cloudless-2024_3857` (ภาพคงที่รายปี ชื่อบนจอ Sentinel-2 cloudless 2024,
+TileMatrixSet `g`, ระดับสูงสุด 15, jpg, เวลาใน route ใช้ `default`) ค่า TileMatrixSet, นามสกุลไฟล์และรูปแบบเวลาของแต่ละชั้นเป็นค่าที่คาดไว้ตาม spec
+**ส่วนใหญ่ยังไม่ได้ยืนยันกับของจริง** (ที่ตรวจแล้วและที่ยังไม่ตรวจ: หัวข้อ 9.10 ไม่มี test หรือโค้ดใดต่อเน็ตจริง) ถ้าโฮสต์ตอบต่างไปแก้ที่ตารางนั้นที่เดียว
 
 **Endpoint**
 
-- `GET /api/imagery/layers` -> `{"enabled", "layers": [{"id", "title", "period", "max_level", "format", "credit"}]}`
+- `GET /api/imagery/layers` -> `{"enabled", "sources": {"gibs", "eox", "osm", "ion"}, "layers": [{"id", "title", "period", "max_level", "format", "credit", "source"}]}`
+  (`sources` = สวิตช์ครบสี่แหล่ง, `enabled` = สวิตช์ GIBS คงไว้เพื่อเข้ากันได้, `layers` มีเฉพาะชั้นของ GIBS และ EOX: OSM และ ion ไม่อยู่ใน catalog ของ server)
 - `GET /api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}` -> ไบต์ JPEG/PNG พร้อม `Content-Type` ที่ server กำหนดจากชนิดภาพที่ตรวจได้, `X-Content-Type-Options: nosniff`,
-  `Cache-Control: private, max-age=86400` (ชิ้นที่ยังไม่นิ่ง = `no-store` ดูหัวข้อ cache ด้านล่าง) ตรวจตามลำดับและไม่ต่อเน็ตเมื่อไม่ผ่าน: สวิตช์ปิด 403 `IMAGERY_DISABLED` -> ไม่รู้จักชั้นภาพ 404 `IMAGERY_UNKNOWN_LAYER`
-  (id ต้องตรงทุกตัวอักษร รวมตัวพิมพ์) -> เวลาผิดรูปแบบของรอบภาพ 422 field `time` (คงที่ `default`, รายวัน `YYYY-MM-DD`, 10 นาที `YYYY-MM-DDTHH:MM:00Z` นาที 00-50 ทีละ 10
-  และต้องเป็นวันเวลาที่มีจริง) -> `z` ไม่ใช่เลขทศนิยม 0-999 ในช่วง 0..ระดับสูงสุดของชั้น หรือ `y`/`x` ไม่อยู่ใน 0..2^z-1 422 field `z`/`y`/`x`
-  หลังจากนั้น: ไม่มีภาพ (GIBS ตอบ 400/404) 404 `IMAGERY_NOT_AVAILABLE`, ดึงไม่สำเร็จ 502 `IMAGERY_FETCH_FAILED`, คำขอค้างมาก 503 `IMAGERY_BUSY`,
+  `Cache-Control: private, max-age=86400` (ชิ้นที่ยังไม่นิ่ง = `no-store` ดูหัวข้อ cache ด้านล่าง) ตรวจตามลำดับและไม่ต่อเน็ตเมื่อไม่ผ่าน: สวิตช์ของแหล่งที่ชั้นนั้นสังกัดปิด 403 `IMAGERY_DISABLED` -> ไม่รู้จักชั้นภาพ 404 `IMAGERY_UNKNOWN_LAYER`
+  (id ต้องตรงทุกตัวอักษร รวมตัวพิมพ์ ชั้นที่ไม่รู้จักไม่มีแหล่งให้ดูสวิตช์: ตอบ 403 ถ้า GIBS และ EOX ปิดทั้งคู่ ไม่งั้นตอบ 404; สวิตช์ osm และ ion ไม่เกี่ยวกับ route นี้)
+  -> เวลาผิดรูปแบบของรอบภาพ 422 field `time` (คงที่ `default`, รายวัน `YYYY-MM-DD`, 10 นาที `YYYY-MM-DDTHH:MM:00Z` นาที 00-50 ทีละ 10
+  และต้องเป็นวันเวลาที่มีจริง) -> `z`, `y`, `x` ไม่ใช่เลขทศนิยม 1-5 หลัก หรือ `z` ไม่อยู่ใน 0..ระดับสูงสุดของชั้น หรือ `y`/`x` ไม่อยู่ใน 0..2^z-1 (ระดับ 15 ของ EOX ถึง 32767) 422 field `z`/`y`/`x`
+  หลังจากนั้น: ไม่มีภาพ (โฮสต์ตอบ 400/404) 404 `IMAGERY_NOT_AVAILABLE`, ดึงไม่สำเร็จ 502 `IMAGERY_FETCH_FAILED`, คำขอค้างมาก 503 `IMAGERY_BUSY`,
   กำลังพักการดึง 503 `IMAGERY_PAUSED` (`detail` = เวลา UTC ที่ลองได้อีก)
 
-**ขีดจำกัดการดึง** (ปกป้อง GIBS และเครื่องของผู้ใช้ ไม่ลองซ้ำเองใน server):
+**ขีดจำกัดการดึง** (ปกป้องโฮสต์ภาพและเครื่องของผู้ใช้ ไม่ลองซ้ำเองใน server; การพัก ตัวนับความผิดพลาด และคิวแยกต่อแหล่ง: แหล่งหนึ่งโดนบล็อกหรือล่ม อีกแหล่งยังใช้ได้):
 
 | เรื่อง | ค่า |
 |---|---|
 | timeout ต่อชิ้น | 20 วินาที |
-| ดึงพร้อมกัน | ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที ตอบ 503 `IMAGERY_BUSY` |
-| ขนาดชิ้น | อ่านไม่เกิน 2 MB (เกินตอบ 502 ไม่เก็บ) ไบต์แรกต้องเป็น JPEG (`FF D8 FF`) หรือ PNG (`89 50 4E 47 0D 0A 1A 0A`) ตรงกับชนิดของชั้น ไม่ถอดรหัสภาพ ไม่เชื่อ Content-Type ของ GIBS |
-| GIBS ตอบ 400/404 | จำไว้ในหน่วยความจำ 1 ชั่วโมง (ชิ้นที่ยังไม่นิ่ง 10 นาที; สูงสุด 10,000 ชิ้น) ไม่ถามซ้ำ |
-| GIBS ตอบ 403 หรือ 429 | พักการดึงทุกชั้นภาพ 15 นาที (log ครั้งเดียว) |
-| ผิดพลาดติดกัน 20 ครั้ง (เครือข่าย, timeout, 5xx, ตอบผิดรูป) | พัก 5 นาที ได้ภาพที่ใช้ได้หนึ่งชิ้นตัวนับกลับเป็น 0 |
+| ดึงพร้อมกัน | GIBS ไม่เกิน 4 ชิ้น, EOX ไม่เกิน 2 ชิ้น รอคิวเกิน 15 วินาที ตอบ 503 `IMAGERY_BUSY` |
+| ขนาดชิ้น | อ่านไม่เกิน 2 MB (เกินตอบ 502 ไม่เก็บ) ไบต์แรกต้องเป็น JPEG (`FF D8 FF`) หรือ PNG (`89 50 4E 47 0D 0A 1A 0A`) ตรงกับชนิดของชั้น ไม่ถอดรหัสภาพ ไม่เชื่อ Content-Type ของโฮสต์ |
+| โฮสต์ตอบ 400/404 | จำไว้ในหน่วยความจำ 1 ชั่วโมง (ชิ้นที่ยังไม่นิ่ง 10 นาที; สูงสุด 10,000 ชิ้น) ไม่ถามซ้ำ |
+| โฮสต์ตอบ 403 หรือ 429 | พักการดึงทุกชั้นภาพของแหล่งนั้น 15 นาที (log ครั้งเดียว) |
+| ผิดพลาดติดกัน 20 ครั้ง (เครือข่าย, timeout, 5xx, ตอบผิดรูป) | พักแหล่งนั้น 5 นาที ได้ภาพที่ใช้ได้หนึ่งชิ้นจากแหล่งนั้นตัวนับกลับเป็น 0 |
 
 ระหว่างพัก ชิ้นที่อยู่ใน cache ยังส่งได้ ชิ้นที่ไม่มีตอบ 503 `IMAGERY_PAUSED` โดยไม่ต่อเน็ต
 
 **Cache**: `data/imagery/tiles/<ชั้น>/<เวลา>/<z>/<y>/<x>.<jpg|png>` (`:` ในเวลาเป็น `-`) เขียนแบบ atomic ทุกชิ้นที่ผ่านการตรวจ
-ขนาดรวมไม่เกิน **2 GB** (2 × 1024³ ไบต์): เกินแล้วลบไฟล์ที่ mtime เก่าสุดจนเหลือ 90% (ส่งจาก cache = แตะ mtime) server นับขนาดครั้งแรกด้วยการสแกนแล้วจำยอดไว้
-ชั้นคงที่เก็บถาวรภายใต้เพดานเดียวกัน **ชิ้นที่ GIBS อาจยังเติมไม่ครบไม่เก็บลงดิสก์**: ชั้นรายวันของวันนี้และเมื่อวาน (วันที่ UTC รวมอนาคต)
+ขนาดรวมของ**ทุกแหล่ง**ไม่เกิน **2 GB** (2 × 1024³ ไบต์): เกินแล้วลบไฟล์ที่ mtime เก่าสุดจนเหลือ 90% (ส่งจาก cache = แตะ mtime) server นับขนาดครั้งแรกด้วยการสแกนแล้วจำยอดไว้
+ชั้นคงที่ (Blue Marble และ Sentinel-2 cloudless 2024 ของ EOX) เก็บถาวรภายใต้เพดานเดียวกัน **ชิ้นที่ GIBS อาจยังเติมไม่ครบไม่เก็บลงดิสก์**: ชั้นรายวันของวันนี้และเมื่อวาน (วันที่ UTC รวมอนาคต)
 และชั้น 10 นาทีของ 3 ชั่วโมงล่าสุด (รวมอนาคต) ดึงใหม่ทุกครั้งที่ขอ ไม่อ่านจาก cache ตอบพร้อม `Cache-Control: no-store` และ "ไม่มีภาพ" ของชิ้นเหล่านี้จำแค่ 10 นาที
 ภาพจึงสดขึ้นเองเมื่อ GIBS ประมวลผลเสร็จ โฟลเดอร์ `data/imagery/` อยู่นอก `orbits/` และไม่ขึ้นต้นด้วย `_` จึงไม่ปนกับ snapshot ลบทิ้งทั้งโฟลเดอร์ได้เสมอ
-(ชิ้นที่ต้องใช้จะถูกดึงใหม่ถ้าสวิตช์เปิดอยู่) ถ้าเก็บลงดิสก์ไม่ได้ server ยังส่งภาพให้และเตือนใน `data/logs/server.log` หนึ่งครั้ง
+(ชิ้นที่ต้องใช้จะถูกดึงใหม่ถ้าสวิตช์ของแหล่งนั้นเปิดอยู่) ถ้าเก็บลงดิสก์ไม่ได้ server ยังส่งภาพให้และเตือนใน `data/logs/server.log` หนึ่งครั้ง
 
 test: `server/tests/test_imagery.py` ใช้ opener ปลอมและกัน `urlopen`/`OpenerDirector.open`/`socket.create_connection` ทั้งโมดูล จึงไม่มีการต่อเน็ตจริง
 
@@ -747,13 +763,16 @@ test: `server/tests/test_imagery.py` ใช้ opener ปลอมและก�
 
 หน้าเว็บของ GNSS Studio (งานย่อยที่ 3) ใช้งานเหมือน STK: เมนู แถบเครื่องมือ Object Browser, Properties Browser, Animation, Timeline View,
 หน้าต่าง 3D (Cesium) และ 2D, Message Viewer และแถบสถานะ ทำงานบน server ในหัวข้อ 8 โดยไม่ต่อเน็ตเอง (ภาพโลกคือ NaturalEarthII ที่มากับ Cesium
-ไม่ใช้ Cesium ion, Bing, terrain หรือ CDN) ยกเว้นเมื่อผู้ใช้เปิดภาพถ่ายจริงจาก NASA GIBS ใน Globe Manager เอง: ชั้นภาพ GIBS วางทับ NaturalEarthII
-บนหน้าต่าง 3D และ Sensor View โดย server เป็นผู้ดึง (หัวข้อ 8.8 และ 9.10) โค้ดอยู่ใต้ `web/` (React 18 + TypeScript + Vite, dockview, CesiumJS)
+ไม่ใช้ Cesium ion, Bing, terrain หรือ CDN) ยกเว้นเมื่อผู้ใช้เปิดภาพจริงใน Globe Manager เอง (สี่แหล่ง แต่ละแหล่งปิดไว้ก่อนและมีกล่องยืนยันของตัวเอง): ชั้นภาพวางทับ NaturalEarthII
+บนหน้าต่าง 3D และ Sensor View ภาพของ NASA GIBS และ Sentinel-2 cloudless (EOX) server เป็นผู้ดึง ส่วน OpenStreetMap และ Cesium ion browser ดึงเองโดยตรง (หัวข้อ 8.8 และ 9.10)
+โค้ดอยู่ใต้ `web/` (React 18 + TypeScript + Vite, dockview, CesiumJS)
 
 - Spec: [docs/2026-11-11-gnss-studio-workspace-design.md](docs/2026-11-11-gnss-studio-workspace-design.md) (อ้างว่า "workspace §n")
 - Spec งานเสริม ก (Sensor และ Sensor View): [docs/2026-11-13-gnss-studio-sensor-design.md](docs/2026-11-13-gnss-studio-sensor-design.md) (อ้างว่า "sensor spec §n", หัวข้อ 9.9)
 - Spec งานเสริม ข (โหมด Camera ของ Sensor View, ภาพ NASA GIBS, Globe Manager): [docs/2026-11-14-gnss-studio-imagery-design.md](docs/2026-11-14-gnss-studio-imagery-design.md)
   (อ้างว่า "imagery spec §n", หัวข้อ 8.8, 9.9 และ 9.10)
+- Spec งานเสริม ข1.5 (ภาพละเอียด: Sentinel-2 cloudless, OpenStreetMap, Cesium ion และซูม Sensor View ถึง ×8192): [docs/2026-11-14-gnss-studio-hires-imagery-design.md](docs/2026-11-14-gnss-studio-hires-imagery-design.md)
+  (อ้างว่า "ภาพละเอียด spec §n", หัวข้อ 8.8, 9.9 และ 9.10) การตัดสินใจระหว่างลงมือของ ข และ ข1.5: [docs/2026-11-14-gnss-studio-imagery-decisions.md](docs/2026-11-14-gnss-studio-imagery-decisions.md)
 
 ### 9.1 ติดตั้ง
 
@@ -844,13 +863,14 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
   (Set Animation Time to Here ตรงตำแหน่งที่คลิก), `insert` (Satellite จาก Catalog สองดวง + Constellation), `messages` (ข้อความของ job ขึ้น Message Viewer, Clear this Tab ลบเฉพาะแท็บ),
   `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `sensor` (Sensor View จากเมนู Satellite, ดับเบิลคลิกใน Sensor View, เปลี่ยน Cone Half Angle,
   คลิกซ้ายและขวาที่ดาวในหน้าต่าง 3D, ลบดาวแล้วหน้าต่างปิด, scenario ที่ไม่มีผลลัพธ์; หัวข้อ 9.9), `imagery` (Sensor View เปิดเป็นโหมด Camera ไม่มี entity แสดง,
-  Zoom In สองครั้งได้มุมกว้างด้านสั้น 1/4 ของ ×1 คลาดไม่เกิน 1% และกล้องยังอยู่ที่ดาว, สลับ Camera/Sensor, ล้อเมาส์ซูมทีละขั้น, Globe Manager แสดง 9 แถว
-  และติ๊กสวิตช์ภาพออนไลน์แล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+  Zoom In สองครั้งได้มุมกว้างด้านสั้น 1/4 ของ ×1 คลาดไม่เกิน 1% และกล้องยังอยู่ที่ดาว, Zoom In 13 ครั้งถึง ×8192 (มุมกว้างด้านสั้น 1/8192 ของ ×1, ทิศกล้องคลาดไม่เกิน 0.01°, HUD แสดงความกว้างพื้นที่),
+  สลับ Camera/Sensor, ล้อเมาส์ซูมทีละขั้น, Globe Manager แสดง 4 กลุ่มแหล่ง (11 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
 - ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
   ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
   เมื่อตั้ง `GNSS_E2E_PERF_URL` (หัวข้อ 9.6) ตัวตรวจอนุญาต origin ของ URL นั้นเพิ่มอีกหนึ่ง origin ตรงตัว (เช่น `http://127.0.0.1:8767/`) ไม่กว้างกว่านั้น (ตรรกะอยู่ใน `tests/e2e/localRequest.ts`)
-- **e2e ไม่ต่อ NASA GIBS**: `settings.json` ของข้อมูล e2e มี `"online_imagery":{"enabled":false}` (สวิตช์ภาพออนไลน์ปิด) `imagery.spec.ts` บันทึกทุก request ของ browser
-  และล้มเหลวถ้ามี request ไป `/api/imagery/tiles` แม้สักครั้ง (และไม่เรียกชิ้นภาพจาก test เอง) ตัวกัน request นอกเครื่องข้างบนยังใช้ต่อ
+- **e2e ไม่ต่อภาพออนไลน์แหล่งใดเลย**: `settings.json` ของข้อมูล e2e มี `"online_imagery":{"enabled":false,"eox":false,"osm":false,"ion":false}` (ปิดทุกแหล่ง) และ `cesium_ion_token` ว่าง (ไม่มี test ใดใส่ token)
+  `imagery.spec.ts` บันทึกทุก request ของ browser และล้มเหลวถ้ามี request ไป `/api/imagery/tiles` หรือไป host ใดนอก server ของ e2e แม้สักครั้ง (และไม่เรียกชิ้นภาพจาก test เอง)
+  ตัวกัน request นอกเครื่องข้างบนยังใช้ต่อ ตรวจกล่องยืนยันของทั้งสี่แหล่งโดยกด Cancel เท่านั้น
 
 ### 9.6 วัดประสิทธิภาพ (เกณฑ์ข้อ 1 และ 2 ของ spec)
 
@@ -907,7 +927,7 @@ scenario `acc_20261111`: วัตถุ 132 ชิ้น, `scene.czml` 2.1 MB, 
 
 ต้องมี WebGL (Cesium วาด 3D และ 2D ด้วย WebGL) ทดสอบเฉพาะ Chromium รุ่นล่าสุด (Chrome, Edge ที่ใช้แกน Chromium) ส่วน Firefox และ Safari ยังไม่ได้ทดสอบ
 browser ที่ไม่มี WebGL (หรือปิดการเร่งด้วยฮาร์ดแวร์) แสดงข้อความไทยแทนภาพ 3D และ 2D ส่วน Object Browser, Properties และเมนูยังใช้ได้
-โปรแกรมทำงานกับ server ในเครื่องเท่านั้น ไม่โหลดฟอนต์หรือ script จากเน็ต (ภาพถ่ายออนไลน์จาก NASA GIBS เป็นข้อยกเว้นเดียวที่ปิดไว้ก่อนและ server เป็นผู้ต่อให้ ดูหัวข้อ 9.10) เมนู ปุ่ม และหน้าตั้งค่าเป็นภาษาอังกฤษตามชื่อใน STK ส่วนข้อความอธิบายและข้อผิดพลาดเป็นภาษาไทย
+โปรแกรมทำงานกับ server ในเครื่องเท่านั้น ไม่โหลดฟอนต์หรือ script จากเน็ต (ภาพออนไลน์เป็นข้อยกเว้นเดียว ปิดไว้ก่อนและต้องผ่านกล่องยืนยัน: NASA GIBS กับ Sentinel-2 cloudless server เป็นผู้ต่อให้ ส่วน OpenStreetMap กับ Cesium ion browser ต่อเอง ดูหัวข้อ 9.10) เมนู ปุ่ม และหน้าตั้งค่าเป็นภาษาอังกฤษตามชื่อใน STK ส่วนข้อความอธิบายและข้อผิดพลาดเป็นภาษาไทย
 คีย์ลัดที่ใช้ได้คือ Ctrl+S, Delete, Ctrl+F เท่านั้น (Ctrl+N, Ctrl+O, Ctrl+Q เป็นของ browser)
 
 ### 9.8 ข้อจำกัดของ v1
@@ -961,17 +981,21 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
   - **Sensor**: แบบเดิมก่อนมีโหมด Camera บนภาพมีวงขอบกรวย (วงนี้เป็นของภาพซ้อน ตรงกับขอบกรวยพอดี จึงไม่วาดวงรอย Radial Lines และ Boresight Marker ของ sensor ตัวนี้ในภาพของมันเอง
     และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงกล้อง sensor ตัวอื่นของดาวเดียวกันยังวาดครบ)
   - สลับ Camera แล้วกลับเป็น Sensor ได้ทุกอย่างตามที่เคยแสดงอยู่เดิม รวมถึง object ที่ผู้ใช้ซ่อนไว้ก็ยังซ่อนอยู่
-- **Zoom**: ปุ่ม **Zoom In / Zoom Out** พร้อมค่า "×n" ใช้ได้ทั้งสองโหมด n ∈ {1, 2, 4, 8, 16, 32, 64, 128} (ตั้งต้น ×1)
-  มุมกว้างของด้านสั้นของภาพ = min(2α × 1.05, 120°) / n เมื่อ α = Cone Half Angle (ดาว GPS ที่ ×128 แคบสุดราว 0.236° ≈ 83 km บนพื้น) วงขอบกรวยของโหมด Sensor ใช้ค่าเดียวกัน
-  ซูมเปลี่ยนแต่มุมกว้าง ตำแหน่งและทิศของกล้องไม่เปลี่ยน (ยังอยู่ที่ดาวและมองตาม boresight) ล้อเมาส์ (ไม่กด Shift) บนภาพ = Zoom In/Out ทีละขั้น (เลื่อนขึ้น = เข้า)
-  trackpad และ pinch นับตามระยะที่เลื่อนรวมกัน (100 px ต่อขั้น ไม่เกินหนึ่งขั้นต่อ 150 ms) ปัดนิ้วครั้งเดียวจึงไม่กระโดดจาก ×1 ไป ×128
+- **Zoom**: ปุ่ม **Zoom In / Zoom Out** พร้อมค่า "×n" ใช้ได้ทั้งสองโหมด n ∈ {1, 2, 4, …, 8192} (14 ขั้น คูณสองทุกขั้น ตั้งต้น ×1)
+  มุมกว้างของด้านสั้นของภาพ = min(2α × 1.05, 120°) / n เมื่อ α = Cone Half Angle (ดาว GPS: ×128 ราว 0.236° ≈ 83 km, ×1024 ราว 0.030° ≈ 10 km และ **×8192 แคบสุดราว 0.0037° ≈ 1.3 km** บนพื้น) วงขอบกรวยของโหมด Sensor ใช้ค่าเดียวกัน
+  ซูมเปลี่ยนแต่มุมกว้าง ตำแหน่งและทิศของกล้องไม่เปลี่ยน (ยังอยู่ที่ดาวและมองตาม boresight ทิศกล้องที่ ×8192 คลาดจากที่ ×1 ไม่เกิน 0.01°) ล้อเมาส์ (ไม่กด Shift) บนภาพ = Zoom In/Out ทีละขั้น (เลื่อนขึ้น = เข้า)
+  trackpad และ pinch นับตามระยะที่เลื่อนรวมกัน (100 px ต่อขั้น ไม่เกินหนึ่งขั้นต่อ 150 ms) ปัดนิ้วครั้งเดียวจึงไม่กระโดดจาก ×1 ไป ×8192
   ส่วน Shift + ล้อ ยังเป็น Step Forward / Backward เหมือนเดิม โหมด Display และ zoom เก็บกับหน้าต่างใน workbook (ค่าที่ไม่รู้จักหรือค่าเสีย = Camera ×1)
-- **ข้อความบนภาพ (HUD)**: ชื่อ sensor และดาว เวลา จุดใต้ดาว ความสูง Cone Half Angle (เดิม) กับ 2 บรรทัดใหม่
-  - มุมกว้างพร้อม zoom เช่น `มุมกว้าง FOV 3.6° ×8`
+- **ข้อความบนภาพ (HUD)**: ชื่อ sensor และดาว เวลา จุดใต้ดาว ความสูง Cone Half Angle (เดิม) กับบรรทัดที่เพิ่ม
+  - มุมกว้างพร้อม zoom เช่น `มุมกว้าง FOV 3.6° ×8` (ต่ำกว่า 0.1° แสดง 4 ทศนิยม เช่น `FOV 0.0037° ×8192`)
+  - ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณตามด้านสั้นของภาพ เช่น `ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณ 1.30 km` (หน่วย km เมื่อตั้งแต่ 1 km ขึ้นไป ไม่งั้นเป็น m)
+    คิดเป็นความยาวส่วนโค้งบนผิวโลกทรงกลมจากความสูงของดาวและมุมกว้าง (ภาพกว้างกว่าจานโลก = กว้างถึงขอบฟ้า) ไม่มีบรรทัดนี้เมื่อภาพไม่เห็นพื้นที่
   - แหล่งภาพพื้นโลก: `ภาพพื้นโลก: VIIRS NOAA-20 True Color 2026-11-11` (ชั้นภาพออนไลน์บนสุดที่แสดงอยู่ พร้อมเวลาของภาพ) หรือ `ภาพพื้นโลก: Natural Earth II (ออฟไลน์)`
     ถ้าชั้นบนสุดไม่มีภาพเกินครึ่งของชิ้นที่ได้ผลแล้ว (โหลดสำเร็จ ไม่มีภาพ หรือผิดพลาด ไม่นับชิ้นที่ยังโหลดอยู่) ต่อท้ายว่า `— ไม่มีภาพเวลานี้`
     ระหว่างที่ภาพของเวลาใหม่ยังไม่ได้ชิ้นแรก HUD บอกชั้นและเวลาของภาพเดิมที่ยังอยู่บนจอ
-  - สวิตช์ภาพออนไลน์ปิดอยู่ โหมด Camera และซูม ×8 ขึ้นไป: เพิ่มบรรทัดแนะนำ `เปิดภาพจริงได้ที่ View → Globe Manager` (หัวข้อ 9.10)
+  - `ภาพละเอียดสุดของแหล่งนี้แล้ว (ระดับ n) ภาพจะขยายจนเบลอ`: ขึ้นเมื่อชั้นบนสุดที่แสดงอยู่เป็น GIBS, EOX หรือ OpenStreetMap ที่ระดับซูมสูงสุดของชั้น (ตารางในหัวข้อ 9.10)
+    ต่ำกว่าระดับที่ภาพกว้างขนาดนั้นต้องการ (ชิ้น 256 px แบบ Web Mercator คิดที่เส้นศูนย์สูตร จึงเตือนเร็วไว้ก่อนเล็กน้อย) ชั้น Cesium ion ไม่เตือน เพราะระดับสูงสุดของ asset ไม่รู้ล่วงหน้า
+  - สวิตช์ภาพออนไลน์ปิดทุกแหล่ง โหมด Camera และซูม ×8 ขึ้นไป: เพิ่มบรรทัดแนะนำ `เปิดภาพจริงได้ที่ View → Globe Manager` (หัวข้อ 9.10)
 - ดาวแม่ยังไม่มีตำแหน่ง (ไม่มีผลวงโคจร หรืออยู่นอกช่วงเวลา) = ภาพว่างพร้อมข้อความภาษาไทย ไม่ใช่ error
 - เปิดพร้อมกันได้ **ไม่เกิน 4 บาน** (viewer ละหนึ่ง WebGL context) บานที่ 5 ไม่เปิดและขึ้นข้อความไทยใน Message Viewer
 - **Sensor View เป็นของเรา ไม่ใช่คำสั่งของ STK**: STK ไม่มีคำสั่งดูภาพผ่าน sensor โดยตรง (ใกล้ที่สุดคือ Obscuration View และ EOIR Sensor Scene ที่ต้องมี license) จึงติดป้าย "เพิ่มเอง" ใน `labels.ts`
@@ -987,63 +1011,115 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 - Copy / Paste ของ sensor ปิดใช้พร้อมคำอธิบาย คัดลอกดาวแล้ว sensor ไม่ถูกคัดลอกตาม
 - Insert From Satellite Catalog ใช้กับ Sensor ไม่ได้
 
-### 9.10 ภาพถ่ายจริง (NASA GIBS)
+### 9.10 ภาพถ่ายจริงและแผนที่ (NASA GIBS, Sentinel-2 cloudless, OpenStreetMap, Cesium ion)
 
-ภาพพื้นโลกที่มากับโปรแกรม (Natural Earth II ราว 0.176°/พิกเซล ≈ 20 km) หยาบเกินกว่าจะซูมดูพื้นดิน งานเสริมนี้ให้วางภาพถ่ายจริงจาก **NASA GIBS** (Global Imagery Browse Services)
-บนลูกโลกของ **หน้าต่าง 3D และ Sensor View** ภาพเปลี่ยนตามเวลา Animation ส่วนหน้าต่าง 2D ใช้ภาพเดิม ทุกอย่างผ่าน server ในเครื่อง
-(การดึง การเก็บ cache และขีดจำกัดอยู่ในหัวข้อ [8.8](#88-ภาพถ่ายออนไลน์-nasa-gibs) หัวข้อนี้เล่าเฉพาะฝั่งผู้ใช้ จึงไม่ซ้ำรายละเอียดของ server)
+ภาพพื้นโลกที่มากับโปรแกรม (Natural Earth II ราว 0.176°/พิกเซล ≈ 20 km) หยาบเกินกว่าจะซูมดูพื้นดิน งานเสริมนี้ให้วางภาพถ่ายจริงและแผนที่จาก **สี่แหล่ง** บนลูกโลกของ **หน้าต่าง 3D และ Sensor View**
+(Sensor View โหมด Camera ซูมได้ถึง ×8192 จึงเห็นเมืองและถนนใต้ดาวได้ ภาพนี้เป็นภาพจำลองแบบแผนที่ ไม่ใช่สิ่งที่ดาว GNSS ถ่ายได้จริง) ส่วนหน้าต่าง 2D ใช้ภาพเดิม
+**ทุกแหล่งปิดอยู่เสมอจนกว่าจะเปิดเอง** แต่ละแหล่งมีสวิตช์และกล่องยืนยันภาษาไทยของตัวเอง ภาพ GIBS เปลี่ยนตามเวลา Animation (EOX, OpenStreetMap และ Cesium ion ไม่ผูกกับเวลา)
+สองแหล่งแรกผ่าน server ในเครื่อง (การดึง การเก็บ cache และขีดจำกัดอยู่ในหัวข้อ [8.8](#88-ภาพถ่ายออนไลน์-nasa-gibs-และ-sentinel-2-cloudless)) สองแหล่งหลัง **browser ดึงเองโดยตรง**
+จึงเป็นข้อยกเว้นของหลัก "browser คุยกับ server ในเครื่องเท่านั้น" และเป็นข้อยกเว้นเฉพาะเมื่อผู้ใช้เปิดสวิตช์ของแหล่งนั้น (กล่องยืนยันบอกเรื่องนี้ก่อนเปิด) หัวข้อนี้เล่าเฉพาะฝั่งผู้ใช้
+
+**สี่แหล่ง**
+
+| แหล่ง (ป้ายสวิตช์ใน Globe Manager, ช่องใน `online_imagery`) | โฮสต์ | ทาง | สิ่งที่ส่งออก | cache | เครดิตบนจอ | เงื่อนไขการใช้ |
+|---|---|---|---|---|---|---|
+| **NASA GIBS** (`Online imagery (NASA GIBS)`, `enabled`) | `gibs.earthdata.nasa.gov` | server ในเครื่องดึงให้ (proxy) browser ไม่ติดต่อตรง | ชื่อชั้น เวลา พิกัดชิ้นภาพ กับ IP ของเครื่องและ User-Agent `gnss-studio/0.1` | `data/imagery/tiles/` ในเครื่อง (รวมทุกแหล่งไม่เกิน 2 GB) | NASA GIBS / EOSDIS (เพิ่ม JMA หรือ NOAA ตามชั้น) | ข้อมูล NASA EOSDIS ควรคงเครดิตไว้ เงื่อนไขอื่นเป็นของ NASA |
+| **Sentinel-2 cloudless** (`Online imagery (Sentinel-2 cloudless)`, `eox`) | `tiles.maps.eox.at` | server ในเครื่องดึงให้ (proxy) ดึงพร้อมกันไม่เกิน 2 ชิ้น | ชื่อชั้น พิกัดชิ้นภาพ กับ IP ของเครื่องและ User-Agent `gnss-studio/0.1` | เหมือน GIBS (ภาพคงที่ เก็บถาวรใต้เพดานเดียวกัน) | Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024) | **ใช้ได้เฉพาะงานไม่เชิงพาณิชย์** และต้องแสดงเครดิตตามเงื่อนไขของ EOX |
+| **OpenStreetMap** (`Online imagery (OpenStreetMap)`, `osm`) | `tile.openstreetmap.org` | browser ดึงตรง ไม่ผ่าน server | พิกัดชิ้นภาพ กับ IP ของเครื่อง User-Agent ของ browser และ Referer `http://127.0.0.1:<port>/` | ไม่มีที่เก็บของโปรแกรม (มีแต่แคช HTTP ของ browser เอง) | © OpenStreetMap contributors | Tile Usage Policy ของ OpenStreetMap (ข้อผูกพันด้านล่าง) |
+| **Cesium ion** (`Online imagery (Cesium ion)`, `ion`) | `api.cesium.com` แล้วโฮสต์ภาพที่ ion ส่งต่อไป (Bing Maps หรือ Google Maps ตาม asset) | browser ดึงตรง ไม่ผ่าน server | **token ของผู้ใช้** รหัส asset พิกัดชิ้นภาพ กับ IP ของเครื่อง User-Agent ของ browser และ Referer `http://127.0.0.1:<port>/` (ผู้ให้บริการภาพเห็นสามอย่างหลังด้วย) | ไม่มีที่เก็บของโปรแกรม | เครดิตของ ion และผู้ให้ภาพ ที่ Cesium แสดงเองที่มุมล่างของภาพ | บัญชี Community (ฟรี) ใช้ได้เฉพาะงานไม่เชิงพาณิชย์ตามเงื่อนไขของ Cesium; **ห้ามซ้อนกับภาพแหล่งอื่น** (หัวข้อ ion ด้านล่าง) |
 
 **เปิดใช้ (ปิดอยู่เสมอจนกว่าจะเปิดเอง)**
 
-1. เมนู **View → Globe Manager** (หน้าต่างลอย ไม่ผูกกับ scenario)
-2. ติ๊ก **Online imagery (NASA GIBS)** แล้วกล่องยืนยันภาษาไทยขึ้นบอกว่าจะเชื่อมต่อ `gibs.earthdata.nasa.gov` ผ่าน server ในเครื่อง สิ่งที่ส่งออก
-   (รวมว่า NASA เห็นหมายเลข IP ของเครื่องและ User-Agent `gnss-studio/0.1`) ที่เก็บภาพ และเพดาน 2 GB
-3. กด **OK** เพื่อเปิด (**Cancel** หรือ Esc = ไม่เปลี่ยนอะไร) ปิดเมื่อไรก็ได้โดยเอาติ๊กออก: ปิดทันทีไม่ต้องยืนยัน และหน้าต่าง 3D กับ Sensor View เอาชั้นภาพ GIBS ออก
+1. เมนู **View → Globe Manager** (หน้าต่างลอย ไม่ผูกกับ scenario) มี 4 กลุ่มตามตารางข้างบน กลุ่มละหนึ่งสวิตช์
+2. ติ๊กสวิตช์ของแหล่งที่ต้องการ แล้วกล่องยืนยันภาษาไทยของแหล่งนั้นขึ้นบอกว่าจะเชื่อมต่อโฮสต์ไหน **ใครเป็นผู้เชื่อมต่อ** (server ในเครื่อง หรือ browser ของคุณโดยตรง) สิ่งที่ส่งออก
+   (IP, User-Agent, Referer หรือ token แล้วแต่แหล่ง) ที่เก็บภาพ (เฉพาะสองแหล่งที่ผ่าน server: `data/imagery`, เพดาน 2 GB) และเงื่อนไขการใช้ของแหล่งนั้น
+3. กด **OK** เพื่อเปิด (**Cancel** หรือ Esc = ไม่เปลี่ยนอะไร ค่าตั้งใน `settings.json` ไม่ถูกแตะ) ปิดเมื่อไรก็ได้โดยเอาติ๊กออก: ปิดทันทีไม่ต้องยืนยัน และหน้าต่าง 3D กับ Sensor View เอาชั้นภาพของแหล่งนั้นออก
+   การเปิดแหล่งหนึ่งไม่เปิดแหล่งอื่น และสวิตช์ปิดเท่ากับไม่มี request ไปโฮสต์นั้นเลย ทั้งจาก server และจาก browser
 
-- สวิตช์เก็บใน `settings.json` ของ server (`online_imagery.enabled`) ไม่ใช่ใน workbook: มีผลทุก scenario และทุกหน้าเว็บของ server นั้น `settings.json` เก่าที่ไม่มีช่องนี้ = ปิด
-  หน้าต่าง Daily Forecast Settings ส่งค่า `online_imagery` ที่โหลดมาคืนไปตามเดิม จึงไม่เปิดหรือปิดสวิตช์ให้โดยไม่ตั้งใจ
-- **สิ่งที่ส่งออกจากเครื่อง** เมื่อเปิดแล้ว: คำขอที่มีชื่อชั้นภาพ เวลาของภาพ และพิกัดชิ้นภาพ (tile) ไปที่ `gibs.earthdata.nasa.gov` โดย server เท่านั้น browser ไม่ติดต่อ GIBS ตรง
-  ไม่ส่ง scenario ตำแหน่งผู้ใช้ หรือข้อมูลอื่น แต่ NASA เห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่าย) และ User-Agent `gnss-studio/0.1` เหมือนการเปิดเว็บทั่วไป (รายละเอียดหัวข้อ 8.8)
-- **ที่เก็บภาพ**: `data/imagery/tiles/...` เพดานรวม **2 GB** เกินแล้ว server ลบไฟล์เก่าสุดจนเหลือ 90% ลบทั้งโฟลเดอร์ `data/imagery` ทิ้งได้เสมอ
-- **ขีดจำกัด**: ดึงพร้อมกันไม่เกิน 4 ชิ้น timeout 20 วินาที ชิ้นละไม่เกิน 2 MB GIBS ตอบ 403/429 พักการดึง 15 นาที ผิดพลาดติดกัน 20 ครั้งพัก 5 นาที (ตารางในหัวข้อ 8.8)
-  ระหว่างพัก ชิ้นที่อยู่ใน cache ยังแสดงได้ ชิ้นรายวันของวันนี้/เมื่อวานและชิ้น 10 นาทีของ 3 ชั่วโมงล่าสุดไม่เก็บลงดิสก์ ดึงใหม่ให้ภาพสดขึ้นเอง (หัวข้อ 8.8)
+- สวิตช์เก็บใน `settings.json` ของ server (`online_imagery.enabled`, `eox`, `osm`, `ion`) ไม่ใช่ใน workbook: มีผลทุก scenario และทุกหน้าเว็บของ server นั้น
+  `settings.json` เก่าที่ไม่มีช่องใหม่ (มีแต่ `enabled`) โหลดแล้วช่องที่หายเป็นปิด ส่วน `PUT /api/settings` ต้องส่งครบทุกช่อง (ขาดช่องใด = 422)
+  หน้าต่าง Daily Forecast Settings ส่งค่า `online_imagery` ที่โหลดมาคืนไปทั้งก้อน จึงไม่เปิดหรือปิดสวิตช์ให้โดยไม่ตั้งใจ
+- **GIBS และ EOX (ผ่าน server)**: ส่วนที่เก็บภาพ ขีดจำกัด (ดึงพร้อมกัน GIBS 4 ชิ้น EOX 2 ชิ้น, timeout 20 วินาที, ชิ้นละไม่เกิน 2 MB, โฮสต์ตอบ 403/429 พักแหล่งนั้น 15 นาที, ผิดพลาดติดกัน 20 ครั้งพัก 5 นาที) และ cache เพดาน 2 GB ตามตารางในหัวข้อ 8.8
+  ลบทั้งโฟลเดอร์ `data/imagery` ทิ้งได้เสมอ ระหว่างพัก ชิ้นที่อยู่ใน cache ยังแสดงได้ ชิ้นรายวันของวันนี้/เมื่อวานและชิ้น 10 นาทีของ 3 ชั่วโมงล่าสุดของ GIBS ไม่เก็บลงดิสก์ ดึงใหม่ให้ภาพสดขึ้นเอง
 - หน้าเว็บให้ Cesium ขอชิ้นภาพจาก server ในเครื่องพร้อมกันไม่เกิน 4 คำขอ (`RequestScheduler.requestsByServer` ตั้งใน `web/src/cesium/viewer.ts`; ค่าตั้งต้นของ Cesium 18)
-  browser ใช้ HTTP/1.1 ได้ 6 connection ต่อ server และหนึ่งถูก SSE ถือไว้ ชิ้นภาพที่รอ NASA นานจึงไม่กันคำขอ API ของหน้าเว็บ
+  browser ใช้ HTTP/1.1 ได้ 6 connection ต่อ server และหนึ่งถูก SSE ถือไว้ ชิ้นภาพที่รอโฮสต์ปลายทางนานจึงไม่กันคำขอ API ของหน้าเว็บ
 
-**เลือกชั้นภาพใน Globe Manager**: ตาราง 9 แถว คือ Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้) กับอีก 8 ชั้นของ GIBS แต่ละชั้นมีช่อง **Show** และ **% Translucency** (จำนวนเต็ม 0-100)
-ชั้นที่อยู่แถวล่างทับชั้นแถวบน เส้น Lat/Lon อยู่บนสุดเสมอ เมื่อสวิตช์ปิด แถวของ GIBS ปิดใช้ (เทา) พร้อมคำอธิบาย ค่าตั้งต้นเมื่อเปิดครั้งแรก: **Blue Marble** กับ **VIIRS NOAA-20 True Color** แสดง ชั้นอื่นซ่อน
+**OpenStreetMap: ข้อผูกพันการใช้งาน** (Tile Usage Policy ของ OpenStreetMap Foundation; ที่มาของข้อบังคับเหล่านี้อยู่ใน spec ภาพละเอียด §1)
+
+- แสดงเครดิต **© OpenStreetMap contributors** บนจอ (โปรแกรมแสดงให้ที่มุมล่างของภาพทั้งหน้าต่าง 3D และ Sensor View เป็นข้อความ ยังไม่เป็นลิงก์ไปหน้า copyright ของ OSM) ห้ามซ่อน
+- ขอเฉพาะชิ้นที่กำลังแสดงอยู่: ใช้นโยบายเดิมของ Cesium (ขอเฉพาะชิ้นที่มองเห็น) **ไม่โหลดล่วงหน้า ไม่ดึงจำนวนมาก และไม่เก็บไว้ใช้ออฟไลน์** โปรแกรมไม่เขียนชิ้นภาพ OSM ลงดิสก์
+  (ห้ามนำไปทำ prefetch หรือ cache ถาวรเอง)
+- **ไม่ส่งหัว no-cache** (โปรแกรมไม่เพิ่ม header ใดให้คำขอ OSM และไม่ปิดแคชของ browser)
+- **ไม่ตั้ง `Referrer-Policy` ที่ตัด Referer**: ทั้ง `index.html` และ header ของ server ไม่ตั้งค่านี้ browser จึงส่ง Referer ตามค่าปกติ (origin ของหน้านี้ `http://127.0.0.1:<port>/`) ซึ่ง OSM ใช้ระบุผู้ใช้งาน
+- ไม่ผ่าน proxy ที่ cache เอง: OSM ไม่แนะนำ จึงให้ browser ดึงตรงจาก `tile.openstreetmap.org` (ใช้ระดับซูมสูงสุด 19)
+- OpenStreetMap ให้บริการแบบไม่มีข้อตกลงระดับบริการ และบล็อกผู้ใช้ได้โดยไม่แจ้ง ถ้าถูกบล็อก ชิ้นภาพจะโหลดไม่ขึ้นและแสดงโปร่งใส (เห็นชั้นข้างล่างแทน)
+
+**Cesium ion: token, asset และการซ้อนภาพ**
+
+- **ที่เก็บ token**: ช่อง `cesium_ion_token` ใน `settings.json` ของ server (เก็บเป็นข้อความธรรมดา ไม่เข้ารหัส; โฟลเดอร์ `data/` ถูก git ละเว้น **ห้ามนำไฟล์นี้หรือ token เข้า repo หรือ test**)
+  ตั้งได้สองที่ที่ใช้ค่าเดียวกัน: กลุ่ม Cesium ion ใน **Globe Manager** (ช่อง "Cesium Ion Token" แบบซ่อนตัวอักษร แล้วกด Apply) หรือช่อง token ในหน้าต่าง **Daily Forecast Settings** (บันทึกด้วย `PUT /api/settings` ทั้งเอกสาร)
+  ที่ใดที่หนึ่งเปลี่ยนแล้วอีกที่ตามค่าที่บันทึกล่าสุด จอไม่แสดงค่าที่บันทึกไว้ บอกแค่ว่ามีหรือยัง ตัวแปรสภาพแวดล้อม `CESIUM_ION_TOKEN` (หัวข้อ 8.2) **ไม่ใช้กับชั้นภาพนี้**
+- **token ไปที่ไหน**: browser ส่งให้ `api.cesium.com` ตอนขอข้อมูลของ asset (ผ่านตัว Cesium เอง) โปรแกรมไม่ตั้ง `Ion.defaultAccessToken` ทั่วแอป (ตั้งเป็นค่าว่าง) แต่ส่ง token เข้า `IonImageryProvider.fromAssetId(id, { accessToken })` ของแต่ละชั้น
+  โค้ดของโปรแกรมไม่ใส่ token ลงใน URL ใด ไม่เขียนลง log หรือ Message Viewer และไม่ส่งให้ server ของเรา ยกเว้นการบันทึกค่าตั้งด้วย `PUT /api/settings`
+- **asset**: ตัวเลือกแบบ radio ของ asset ตั้งต้น 6 ตัว (Google Maps Satellite 3830182, Google Maps Satellite with Labels 3830183, Google Maps Roadmap 3830184,
+  Bing Maps Aerial 2, Bing Maps Aerial with Labels 3, Bing Maps Roads 4) หรือเลือก "ไม่เลือก" หรือกรอก **Asset ID** (จำนวนเต็มบวก) เองได้ ค่านี้เก็บใน workbook ของ scenario (File → Save)
+  เปิดสวิตช์ ion ครั้งแรกโปรแกรมเลือก Google Maps Satellite ให้ ID ตั้งต้นตรวจจากต้นฉบับ CesiumJS ไม่ใช่จากบัญชีของผู้ใช้ (หัวข้อสถานะการตรวจด้านล่าง) Bing บน ion มีประกาศว่าให้ใช้ถึง ก.ย. 2026 อาจถูกถอดแล้ว จึงวาง Google ไว้ก่อน
+- **ion แสดงภาพ = ชั้นอื่นทั้งหมดถูกซ่อน** (ไม่มีทางซ้อน): ภาพ Bing และ Google ห้ามนำมาซ้อนกับภาพแหล่งอื่น จึงขณะที่ชั้น ion แสดงอยู่ (สวิตช์ ion เปิด + เลือก asset + มี token) ชั้นอื่นทั้งหมด (GIBS, EOX, OpenStreetMap
+  และ Natural Earth II) ถูกซ่อนในทุก viewer (หน้าต่าง 3D และ Sensor View ทุกบาน) และไม่มี request ไปแหล่งอื่น จนกว่าจะปิด ion (ปิดสวิตช์ หรือเลือก "ไม่เลือก") แล้วโปรแกรมคืนชั้นเดิมและความโปร่งใสเดิมของ Natural Earth II
+  Globe Manager แสดง "ถูกซ่อนเพราะเปิด Cesium ion อยู่" ที่แถวของชั้นอื่น
+- **ion ไม่ทำงาน**: token ว่าง = ไม่แสดงชั้น ion พร้อมคำแนะนำภาษาไทย (ชั้นอื่นแสดงตามเดิม) ion ตอบ 401 (token ไม่ถูกต้องหรือหมดอายุ) หรือ 404 (บัญชีไม่มี asset นั้น) หรือเครือข่ายล้ม =
+  ถอดชั้น ion ออกพร้อมข้อความไทยใน Message Viewer (ไม่มี token) แล้วชั้นอื่นกลับมา และไม่ลองซ้ำกับ asset และ token เดิม จนกว่าจะเปลี่ยน asset หรือ token หรือปิดแล้วเปิด ion ใหม่
+- **เงื่อนไขของบัญชี**: บัญชี Community (ฟรี) ของ Cesium ion ใช้ได้เฉพาะงานไม่เชิงพาณิชย์ตามเงื่อนไขของ Cesium (กล่องยืนยันบอกข้อนี้) ภาพ Bing และ Google มีเงื่อนไขของผู้ให้ภาพเองด้วย
+
+**เลือกชั้นภาพใน Globe Manager**: ตารางมี 11 แถวใน 4 กลุ่ม: Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) + GIBS 8 ชั้น + Sentinel-2 cloudless 2024 + OpenStreetMap
+แต่ละชั้นมีช่อง **Show** และ **% Translucency** (จำนวนเต็ม 0-100) กลุ่ม Cesium ion ไม่มีตาราง (มีช่อง token และตัวเลือก asset)
+ลำดับวาด (ชั้นที่อยู่ล่างทับชั้นบน): Natural Earth II → GIBS ตามตาราง → Sentinel-2 cloudless → OpenStreetMap → เส้น Lat/Lon อยู่บนสุดเสมอ (ยกเว้นเมื่อ ion แสดง: ion ชั้นเดียว)
+เมื่อสวิตช์ของแหล่งใดปิด แถวของแหล่งนั้นปิดใช้ (เทา) พร้อมคำอธิบาย ค่าตั้งต้นเมื่อเปิดสวิตช์ครั้งแรก: **Blue Marble** กับ **VIIRS NOAA-20 True Color** แสดง ชั้นอื่นของ GIBS ซ่อน
+ส่วนแถว Sentinel-2 cloudless และ OpenStreetMap ของ workbook ใหม่ตั้งเป็นแสดงไว้แล้ว (สวิตช์ของแหล่งยังปิดอยู่จึงยังไม่มีภาพ) workbook เก่าที่ไม่มีค่านี้ซ่อนไว้
 ค่า Show และ Translucency เก็บใน workbook ของ scenario (File → Save) และใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View
-เมื่อเปิดแสง (Enable Lighting) ด้านกลางคืนของชั้น GIBS จางตาม Ambient Level ของหน้าต่างเท่ากับภาพฐาน (Sensor View เปิดแสงเสมอและใช้ค่าตั้งต้น)
+เมื่อเปิดแสง (Enable Lighting) ด้านกลางคืนของชั้นภาพออนไลน์ทุกชั้นจางตาม Ambient Level ของหน้าต่างเท่ากับภาพฐาน (Sensor View เปิดแสงเสมอและใช้ค่าตั้งต้น)
 
-| ชั้น (ชื่อบนจอ) | รอบภาพ | ระดับซูมสูงสุด | เครดิต |
-|---|---|---|---|
-| Blue Marble | คงที่ | 8 | NASA GIBS / EOSDIS |
-| VIIRS NOAA-20 True Color | รายวัน | 9 | NASA GIBS / EOSDIS |
-| VIIRS Suomi NPP True Color | รายวัน | 9 | NASA GIBS / EOSDIS |
-| MODIS Terra True Color | รายวัน | 9 | NASA GIBS / EOSDIS |
-| Himawari-9 Red Visible | 10 นาที | 7 | NASA GIBS / EOSDIS, JMA |
-| Himawari-9 Clean Infrared | 10 นาที | 6 | NASA GIBS / EOSDIS, JMA |
-| GOES-East GeoColor | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
-| GOES-West GeoColor | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
+| ชั้น (ชื่อบนจอ) | แหล่ง | รอบภาพ | ระดับซูมสูงสุด | เครดิต |
+|---|---|---|---|---|
+| Blue Marble | GIBS | คงที่ | 8 | NASA GIBS / EOSDIS |
+| VIIRS NOAA-20 True Color | GIBS | รายวัน | 9 | NASA GIBS / EOSDIS |
+| VIIRS Suomi NPP True Color | GIBS | รายวัน | 9 | NASA GIBS / EOSDIS |
+| MODIS Terra True Color | GIBS | รายวัน | 9 | NASA GIBS / EOSDIS |
+| Himawari-9 Red Visible | GIBS | 10 นาที | 7 | NASA GIBS / EOSDIS, JMA |
+| Himawari-9 Clean Infrared | GIBS | 10 นาที | 6 | NASA GIBS / EOSDIS, JMA |
+| GOES-East GeoColor | GIBS | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
+| GOES-West GeoColor | GIBS | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
+| Sentinel-2 cloudless 2024 | EOX | คงที่ | 15 | Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024) |
+| OpenStreetMap | OSM | คงที่ | 19 | © OpenStreetMap contributors |
 
-เครดิตของชั้นที่แสดงอยู่ (NASA GIBS / EOSDIS และ JMA หรือ NOAA ตามตาราง) แสดงบนภาพที่มุมล่างของหน้าต่าง 3D และ Sensor View (ไม่ได้ซ่อนในกล่อง Data attribution ของ Cesium)
-ควรคงเครดิตนี้ไว้เมื่อนำภาพไปใช้ต่อ ซูมลึกกว่าระดับสูงสุดของชั้น Cesium ขยายภาพจากระดับสูงสุด (ภาพจึงไม่คมขึ้นอีก)
+เครดิตของชั้นที่แสดงอยู่แสดงบนภาพที่มุมล่างของหน้าต่าง 3D และ Sensor View (ไม่ได้ซ่อนในกล่อง Data attribution ของ Cesium) ควรคงเครดิตนี้ไว้เมื่อนำภาพไปใช้ต่อ
+ซูมลึกกว่าระดับสูงสุดของชั้น Cesium ขยายภาพจากระดับสูงสุด (ภาพจึงไม่คมขึ้นอีก HUD ของ Sensor View บอกเมื่อถึงจุดนี้ หัวข้อ 9.9) ชั้น ion ไม่มีในตารางนี้เพราะระดับสูงสุดขึ้นกับ asset
 
-**เวลาของภาพ**: ตามเวลา Animation ปัดตามรอบของแต่ละชั้น (UTC เสมอ ไม่ขึ้นกับเขตเวลาของเครื่อง): ชั้นรายวันใช้วันที่ UTC, ชั้น 10 นาทีปัดลงเป็นช่วง 10 นาที
-(เช่น 02:37 UTC ใช้ภาพ 02:30) ชั้นคงที่ไม่ผูกเวลา เวลาเดินไปแต่ภาพยังเป็นรอบเดิม = ไม่ทำอะไร พอข้ามรอบจึงเปลี่ยนชั้นนั้น (ไม่เกินวินาทีละครั้งต่อหน้าต่าง
+**เวลาของภาพ** (เฉพาะ GIBS): ตามเวลา Animation ปัดตามรอบของแต่ละชั้น (UTC เสมอ ไม่ขึ้นกับเขตเวลาของเครื่อง): ชั้นรายวันใช้วันที่ UTC, ชั้น 10 นาทีปัดลงเป็นช่วง 10 นาที
+(เช่น 02:37 UTC ใช้ภาพ 02:30) ชั้นคงที่ (Blue Marble, Sentinel-2 cloudless, OpenStreetMap, ion) ไม่ผูกเวลา เวลาเดินไปแต่ภาพยังเป็นรอบเดิม = ไม่ทำอะไร พอข้ามรอบจึงเปลี่ยนชั้นนั้น (ไม่เกินวินาทีละครั้งต่อหน้าต่าง
 แม้เร่งเวลา 3600×) ภาพเดิมอยู่จนภาพใหม่เริ่มโหลด จอจึงไม่กะพริบเป็นสีดำ Sensor View บอกเวลาของภาพที่ใช้ใน HUD (หัวข้อ 9.9)
 
 **เวลาที่ไม่มีภาพ**: ชิ้นที่ GIBS ไม่มีภาพของเวลานั้น (อนาคต เก่าเกินที่ GIBS เก็บไว้ หรือกลางคืนของภาพช่วงตามองเห็น) แสดงโปร่งใส เห็นชั้นข้างล่างแทน ไม่มีกรอบ error สีแดง
 (server ตอบ 404 `IMAGERY_NOT_AVAILABLE` และจำไว้ 1 ชั่วโมง หรือ 10 นาทีสำหรับวันนี้/เมื่อวานและ 3 ชั่วโมงล่าสุด) HUD ของ Sensor View ต่อท้าย "— ไม่มีภาพเวลานี้" เมื่อชั้นบนสุดไม่มีภาพเกินครึ่งของชิ้นที่ได้ผลแล้ว
-**scenario ที่พยากรณ์ล่วงหน้าจึงไม่มีภาพจริงของเวลาในอนาคต ยกเว้น Blue Marble** (คงที่ ไม่ผูกเวลา) และ Natural Earth II ที่เป็นฐาน ภาพรายวันของ VIIRS/MODIS
-เป็นภาพประกอบหลายรอบโคจร อาจมีช่องว่างแถบดำใกล้ศูนย์สูตร Blue Marble ที่อยู่ล่างสุดช่วยรองรับ
+**scenario ที่พยากรณ์ล่วงหน้าจึงไม่มีภาพ GIBS จริงของเวลาในอนาคต ยกเว้น Blue Marble** (คงที่ ไม่ผูกเวลา) และ Natural Earth II ที่เป็นฐาน ส่วน Sentinel-2 cloudless, OpenStreetMap และ Cesium ion เป็นภาพคงที่
+ใช้ได้กับทุกเวลา ภาพรายวันของ VIIRS/MODIS เป็นภาพประกอบหลายรอบโคจร อาจมีช่องว่างแถบดำใกล้ศูนย์สูตร Blue Marble ที่อยู่ล่างสุดของ GIBS ช่วยรองรับ
 
-**ทดสอบโดยไม่ต่อเน็ต**: test ฝั่ง server ใช้ opener ปลอม (หัวข้อ 8.8) test ของหน้าเว็บ (Vitest) ไม่เรียกเครือข่าย และ e2e ใช้ข้อมูลที่ตั้ง `online_imagery.enabled: false`
-`imagery.spec.ts` ตรวจว่า browser ไม่ขอ `/api/imagery/tiles` เลยสักครั้ง และกล่องยืนยันของ Globe Manager ที่กด Cancel ไม่เปลี่ยนค่าตั้ง (หัวข้อ 9.5)
+**ทดสอบโดยไม่ต่อเน็ต**: test ฝั่ง server ใช้ opener ปลอม (หัวข้อ 8.8) test ของหน้าเว็บ (Vitest) ไม่เรียกเครือข่าย และ e2e ใช้ข้อมูลที่ตั้ง `online_imagery` ครบสี่ช่องเป็น false และ `cesium_ion_token` ว่าง
+(ไม่มี test ใดใส่ token) `imagery.spec.ts` ตรวจว่า browser ไม่ขอ `/api/imagery/tiles` เลยสักครั้งและไม่มี request ไป host อื่นนอก server ของ e2e (ไม่มี OSM, Cesium ion, GIBS, EOX), Globe Manager มี 4 กลุ่ม
+และกล่องยืนยันของทุกสวิตช์ที่กด Cancel หรือ Esc ไม่เปลี่ยนเอกสารที่ `GET /api/settings` ตอบ (สี่ช่องยังเป็น false และ token ไม่เปลี่ยน) และ Zoom In 13 ครั้งถึง ×8192
+(มุมกว้างด้านสั้น = 1/8192 ของ ×1, ทิศกล้องคลาดไม่เกิน 0.01°, HUD แสดงความกว้างพื้นที่ที่จุดใต้ดาว) (หัวข้อ 9.5)
 
-**สถานะการตรวจกับ GIBS จริง (ขั้น B0): ยังไม่ได้ทำ รอผู้ใช้อนุญาต** งานทั้งหมดพัฒนาและทดสอบกับ GIBS ปลอม ค่าต่อไปนี้ในตารางชั้นภาพ (`imagery.py`) ยังเป็นค่าที่คาดไว้
-และต้องยืนยันก่อนใช้งานจริง: TileMatrixSet และนามสกุลไฟล์ของแต่ละชั้น รูปแบบเวลา (โดยเฉพาะชั้น 10 นาที) URL ของ Blue Marble (ที่ใช้ `default` เป็นส่วนเวลา)
-ผลตอบเมื่อไม่มีภาพ (HTTP 400/404 หรือภาพว่าง) และระยะเวลาที่ GIBS เก็บภาพ 10 นาที ถ้า GIBS ตอบต่างไป แก้ที่ตารางนั้นที่เดียว
+**สถานะการตรวจกับของจริง**: งานทั้งหมดพัฒนาและทดสอบกับโฮสต์ปลอม ไม่มี test หรือโค้ดใดต่อเน็ตจริง ค่าในตารางชั้นภาพ (`imagery.py`) ที่ตรวจกับของจริงแล้วและที่ยังไม่ได้ตรวจ:
 
-**ยังไม่ทำ** (งานเสริม ข2): ดาวถ่ายภาพ (Himawari-9, GOES, Terra, Suomi NPP, NOAA-20/21) เป็น object ใน scenario และแถบ swath ของมัน, อ่านรายการช่วงเวลาที่มีภาพล่วงหน้าจาก GetCapabilities
-(ตอนนี้ใช้ผลตอบ 4xx ของแต่ละชิ้นแทน), ภาพบนหน้าต่าง 2D, ชั้นภาพจากแหล่งอื่นนอก GIBS และการดาวน์โหลดภาพเก็บล่วงหน้าทั้งพื้นที่
+- **ตรวจแล้ว (GIBS)**: ผู้ใช้เปิดสวิตช์ GIBS ใช้งานเองเมื่อ 2026-11-14 และ log ของ server แสดงว่า **Blue Marble** (เวลา `default`) กับ **VIIRS NOAA-20 รายวัน** (วันที่ 2026-11-11) ได้ชิ้นภาพตอบ HTTP 200
+  จึงยืนยันแม่แบบ URL ของ GIBS, เวลา `default` ของชั้นคงที่ และชุดชิ้นภาพ Level8 (Blue Marble) / Level9 (VIIRS NOAA-20) แบบ jpg แล้ว
+- **ยังไม่ได้ตรวจ** (รอผู้ใช้อนุญาตให้ต่อเน็ต แก้ที่ตารางเดียวถ้าผิด):
+  - **EOX**: ชื่อชั้น `s2cloudless-2024_3857`, TileMatrixSet `g`, ระดับสูงสุด 15 และ URL (`.../default/g/{z}/{y}/{x}.jpg`)
+  - **Cesium ion**: Asset ID ของ preset (ตรวจจากต้นฉบับ CesiumJS 1.147 ในโปรแกรม ไม่ใช่จากบัญชีของผู้ใช้) และว่าบัญชีของผู้ใช้เข้าถึง asset เหล่านั้นได้จริงหรือไม่ (รวมสถานะของ Bing บน ion)
+  - **Himawari-9 และ GOES** ของ GIBS: TileMatrixSet นามสกุลไฟล์และรูปแบบเวลา 10 นาที ผลตอบเมื่อไม่มีภาพ (HTTP 400/404 หรือภาพว่าง) และระยะเวลาที่ GIBS เก็บภาพ 10 นาที
+    (ชั้น VIIRS Suomi NPP และ MODIS Terra ใช้รูปแบบเดียวกับ NOAA-20 แต่ยังไม่มีบันทึกว่าตรวจแยกต่างหาก)
+  - **OpenStreetMap**: URL และระดับ 19 มาจากเอกสารของ OSM ยังไม่มีบันทึกว่าเปิดทดสอบกับของจริง
+
+**ยังไม่ทำ**: ข้อความภาษาไทยเมื่อชิ้นภาพ OpenStreetMap ล้มเหลวต่อเนื่อง และเมื่อชิ้นภาพ ion ล้มเหลวเกินเกณฑ์ (ตอนนี้ชิ้นที่ล้มเหลวแสดงโปร่งใส ดูบันทึกการตัดสินใจ ข1.5), งานเสริม ข2: ดาวถ่ายภาพ
+(Himawari-9, GOES, Terra, Suomi NPP, NOAA-20/21) เป็น object ใน scenario และแถบ swath ของมัน, อ่านรายการช่วงเวลาที่มีภาพล่วงหน้าจาก GetCapabilities (ตอนนี้ใช้ผลตอบ 4xx ของแต่ละชิ้นแทน), ภาพบนหน้าต่าง 2D
+และการดาวน์โหลดภาพเก็บล่วงหน้าทั้งพื้นที่ (OpenStreetMap ห้ามโดยนโยบายของเขา)

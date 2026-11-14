@@ -1,29 +1,36 @@
-// โหมด Camera ของ Sensor View และ Globe Manager (imagery spec §5.1, §5.3, §7): e2e ไม่ต่อเน็ตเลย
-// - server ของ e2e ตั้ง online_imagery ทั้งสี่ช่อง (enabled = GIBS, eox, osm, ion) เป็น false (build_fixture.py) จึงไม่มี request ไป /api/imagery/tiles จากหน้าเว็บ
-//   และ server ไม่ส่งอะไรไป GIBS หรือ EOX ; osm กับ ion ปิด = browser ไม่ต่อ tile.openstreetmap.org / api.cesium.com (spec นี้ไม่เปิดแหล่งใดและไม่ยืนยันกล่องใด)
-//   ทุก test ตรวจตอนจบว่าไม่มี request ใดของ browser ไปที่ /api/imagery/tiles (ตัวกัน request นอกเครื่องของ fixtures.ts ยังทำงานด้วย)
+// โหมด Camera ของ Sensor View และ Globe Manager (imagery spec §5.1, §5.3, §7 และ spec ภาพละเอียด §4.3, §4.4): e2e ไม่ต่อเน็ตเลย
+// - server ของ e2e ตั้ง online_imagery ทั้งสี่ช่อง (enabled = GIBS, eox, osm, ion) เป็น false และ cesium_ion_token ว่าง (build_fixture.py)
+//   จึงไม่มี request ไป /api/imagery/tiles จากหน้าเว็บ และ server ไม่ส่งอะไรไป GIBS หรือ EOX ; osm กับ ion ปิด = browser ไม่ต่อ tile.openstreetmap.org / api.cesium.com
+//   spec นี้ไม่เปิดแหล่งใด ไม่ยืนยันกล่องใด และไม่ใส่ token ใด ๆ (ไม่ว่าจริงหรือปลอม)
+//   ทุก test ตรวจตอนจบ (fixture `guards` ข้างล่าง) ว่าไม่มี request ของ browser ไปที่ /api/imagery/tiles และไม่มี request ไป origin ที่ไม่ใช่ server ของ e2e เลย
+//   (ตัวกัน request นอกเครื่องของ fixtures.ts ทำงานซ้อนอีกชั้นกับทุก spec)
 // - spec นี้เปิด Sensor View (สร้าง sensor ใน scenario E2E) แล้วคืนเอกสารเดิมทุก test เหมือน sensor.spec.ts (spec อื่นใช้ E2E ด้วย)
 //   ไม่เรียก tile ของ server เอง (ไม่มี request ไปที่ /api/imagery/tiles ทั้งจากหน้าเว็บและจาก test)
 
 import type { Page } from "@playwright/test";
 import { ephemHash, expect, openScenario, saveScenario, test as base, treeRow, waitForScene } from "./fixtures";
+import { E2E_ORIGIN, isLocalRequest } from "./localRequest";
 import { msg } from "../../src/labels/messages.th";
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
 
-/** request ของ browser (ทุกหน้า) ที่ไปที่ชิ้นภาพของ server: ต้องว่างเสมอ (สวิตช์ภาพออนไลน์ปิด) */
+/** request ของ browser (ทุกหน้า) ที่ไปที่ชิ้นภาพของ server: ต้องว่างเสมอ (สวิตช์ภาพออนไลน์ปิดทุกแหล่ง) */
 const TILES_PATH = "/api/imagery/tiles";
 
-const test = base.extend<{ tileRequests: string[] }>({
-  tileRequests: [
+const test = base.extend<{ guards: { tiles: string[]; outside: string[] } }>({
+  guards: [
     async ({ context }, use) => {
-      const seen: string[] = [];
+      const tiles: string[] = [];
+      const outside: string[] = [];
       context.on("request", (r) => {
-        if (new URL(r.url()).pathname.startsWith(TILES_PATH)) seen.push(`${r.method()} ${r.url()}`);
+        const url = r.url();
+        if (new URL(url).pathname.startsWith(TILES_PATH)) tiles.push(`${r.method()} ${url}`);
+        if (!isLocalRequest(url, [`${E2E_ORIGIN}/`])) outside.push(`${r.method()} ${url}`);
       });
-      await use(seen);
-      expect(seen, `browser requests to ${TILES_PATH} (online imagery is off in the e2e data)`).toEqual([]);
+      await use({ tiles, outside });
+      expect.soft(tiles, `browser requests to ${TILES_PATH} (every online imagery switch is off in the e2e data)`).toEqual([]);
+      expect(outside, "browser requests to any host other than the local e2e server (OSM, Cesium ion, GIBS and EOX included)").toEqual([]);
     },
     { auto: true },
   ],
@@ -84,6 +91,33 @@ async function shortSideFovDeg(page: Page): Promise<number | null> {
   if (camera === null || size === null || size.width === 0 || size.height === 0) return null;
   const ratio = Math.max(size.width / size.height, size.height / size.width);
   return 2 * Math.atan(Math.tan((camera.fovDeg * RAD) / 2) / ratio) * DEG;
+}
+
+/** รัศมีโลกเฉลี่ย (กม.) ที่ HUD และสูตรของแอปใช้ (README 9.9) */
+const EARTH_RADIUS_KM = 6371.0088;
+
+/**
+ * ความกว้างพื้นที่ (km) ที่จุดใต้ดาวตามด้านสั้น ประมาณจากความสูงของกล้องเหนือทรงกลมกับ fov ด้านสั้น: 2·h·tan(fov / 2)
+ * ไม่ใช้สูตรของแอป (ส่วนโค้ง 2·Re·θ) เพื่อให้เป็นการวัดอิสระ: ที่ fov ≤ 2° สองสูตรต่างกันไม่ถึง 1%
+ */
+function expectedGroundWidthKm(cameraEcefM: readonly number[], shortFovDeg: number): number {
+  const heightKm = Math.hypot(cameraEcefM[0], cameraEcefM[1], cameraEcefM[2]) / 1000 - EARTH_RADIUS_KM;
+  return 2 * heightKm * Math.tan((shortFovDeg * RAD) / 2);
+}
+
+/** ความกว้างพื้นที่ที่ HUD แสดง (km: หน่วย m หารด้วย 1000) ไม่มีบรรทัดนี้ = null */
+async function groundWidthKm(page: Page): Promise<number | null> {
+  const text = await hud(page).innerText();
+  for (const [key, scale] of [["sensorView.hudGroundWidthKm", 1], ["sensorView.hudGroundWidthM", 0.001]] as const) {
+    const [before, after] = msg(key, { width: "\u0000" }).split("\u0000");
+    const start = text.indexOf(before);
+    if (start < 0) continue;
+    const rest = text.slice(start + before.length);
+    const end = after === "" ? rest.length : rest.indexOf(after);
+    const value = Number(rest.slice(0, end < 0 ? rest.length : end).trim());
+    if (Number.isFinite(value) && value > 0) return value * scale;
+  }
+  return null;
 }
 
 /** รอจน fov ด้านสั้นเท่า `expected` คลาดไม่เกิน 1% (เทียบเป็นสัดส่วน) */
@@ -208,6 +242,69 @@ test.describe("Sensor View Camera mode", () => {
     await displayButton(page, "Sensor").click();
     await expect(hud(page)).not.toContainText(msg("sensorView.hintGlobeManager"));
   });
+
+  test("zooms to ×8192 with 13 clicks of Zoom In: the short-side fov is 1/8192 of ×1, the boresight does not move and the HUD shows the ground width", async ({ page }) => {
+    await openScenario(page, "E2E");
+    await waitForScene(page);
+    await openSensorView(page);
+    await waitForCameraOnSatellite(page, "at ×1");
+
+    const start = (await sensorCamera(page))!;
+    const fovAt1 = (await shortSideFovDeg(page))!;
+    expect(fovAt1, "short-side fov at ×1").not.toBeNull();
+    // ×1 มีบรรทัดความกว้างพื้นที่แล้ว (ภาพกว้างกว่าจานโลก = กว้างถึงขอบฟ้า) ยังไม่ต่ำกว่า 1 km
+    expect(await groundWidthKm(page), "ground width at ×1 (km)").toBeGreaterThan(1000);
+
+    // ZOOM_STEPS มี 14 ค่า (1, 2, 4, ..., 8192) จึงกด Zoom In 13 ครั้งถึงปลายทาง ทีละขั้นเป็นเลขยกกำลังสองตามลำดับ
+    for (let i = 1; i <= 13; i++) {
+      await expect(zoomIn(page)).toBeEnabled();
+      await zoomIn(page).click();
+      await expect(zoomValue(page)).toHaveText(`×${2 ** i}`);
+    }
+    await expect(zoomValue(page)).toHaveText("×8192");
+    await expect(zoomIn(page), "Zoom In at the top step").toBeDisabled();
+    await expect(zoomOut(page)).toBeEnabled();
+
+    // มุมกว้างด้านสั้น = 1/8192 ของ ×1 (คลาดไม่เกิน 1%) กล้องยังอยู่ที่ดาว และทิศกล้องคลาดจาก ×1 ไม่เกิน 0.01° (global constraint ข้อ ซูม ×8192)
+    await expectShortSideFov(page, fovAt1 / 8192, "at ×8192");
+    await waitForCameraOnSatellite(page, "at ×8192");
+    const zoomed = (await sensorCamera(page))!;
+    expect(zoomed.zoom).toBe(8192);
+    expect(zoomed.display).toBe("camera");
+    expect(zoomed.visibleEntityCount).toBe(0);
+    const dot = zoomed.direction[0] * start.direction[0] + zoomed.direction[1] * start.direction[1] + zoomed.direction[2] * start.direction[2];
+    expect(Math.acos(Math.min(1, dot)) * DEG, "angle between the ×1 and ×8192 view directions (deg)").toBeLessThan(0.01);
+
+    // HUD: มุมกว้างมี 4 ทศนิยม (0.00xx ไม่ปัดเป็น 0.00) และ ×8192 ; บรรทัดความกว้างพื้นที่ที่จุดใต้ดาวเป็น km ตรงกับ 2·h·tan(fov ด้านสั้น / 2) (h จากตำแหน่งกล้อง, คลาดไม่เกิน 3%)
+    await expect(hud(page)).toContainText(/FOV 0\.00[0-9]{2}° ×8192/);
+    const expectedKm = expectedGroundWidthKm(zoomed.position, (await shortSideFovDeg(page))!);
+    expect(expectedKm, "expected ground width at ×8192 (km, from the camera height)").toBeGreaterThan(0.5);
+    expect(expectedKm).toBeLessThan(3);
+    await expect
+      .poll(async () => {
+        const km = await groundWidthKm(page);
+        return km === null ? Number.POSITIVE_INFINITY : Math.abs(km - expectedKm) / expectedKm;
+      }, { message: `HUD ground width at ×8192 (expected about ${expectedKm.toFixed(2)} km)` })
+      .toBeLessThanOrEqual(0.03);
+    // สวิตช์ภาพออนไลน์ปิด: HUD ยังบอกภาพ Natural Earth II ออฟไลน์ ไม่มีข้อความ "ภาพละเอียดสุดของแหล่งนี้แล้ว" (ไม่มีชั้นออนไลน์) และยังแนะนำ Globe Manager
+    await expect(hud(page)).toContainText(msg("sensorView.hudImageryOffline"));
+    await expect(hud(page)).not.toContainText("ภาพละเอียดสุดของแหล่งนี้แล้ว");
+    await expect(hud(page)).toContainText(msg("sensorView.hintGlobeManager"));
+
+    // ×1024 (ขั้นที่ 11) ตามที่ spec บอก ≈ 10 km ที่ความสูงของดาว GPS: ถอยหลังสามขั้นแล้วบรรทัดความกว้างตรงกับสูตรเดียวกัน (กว้างกว่า ×8192 แปดเท่า)
+    for (let i = 0; i < 3; i++) await zoomOut(page).click();
+    await expect(zoomValue(page)).toHaveText("×1024");
+    await expectShortSideFov(page, fovAt1 / 1024, "at ×1024");
+    const expectedKm1024 = expectedGroundWidthKm((await sensorCamera(page))!.position, (await shortSideFovDeg(page))!);
+    expect(expectedKm1024 / expectedKm, "ground width ratio ×1024 / ×8192").toBeCloseTo(8, 1);
+    await expect
+      .poll(async () => {
+        const km = await groundWidthKm(page);
+        return km === null ? Number.POSITIVE_INFINITY : Math.abs(km - expectedKm1024) / expectedKm1024;
+      }, { message: `HUD ground width at ×1024 (expected about ${expectedKm1024.toFixed(2)} km)` })
+      .toBeLessThanOrEqual(0.03);
+    await waitForCameraOnSatellite(page, "at ×1024");
+  });
 });
 
 // ---------- Globe Manager ----------
@@ -240,21 +337,27 @@ const globeRows = (page: Page) => page.locator(".globe-table tbody tr");
 const globeGroups = (page: Page) => page.locator(".globe-group");
 
 interface SettingsDoc {
+  daily: Record<string, unknown>;
+  cesium_ion_token: string;
   online_imagery: { enabled: boolean; eox: boolean; osm: boolean; ion: boolean };
 }
 
 const ALL_OFF = { enabled: false, eox: false, osm: false, ion: false };
 
-async function onlineImageryOnServer(page: Page): Promise<SettingsDoc["online_imagery"]> {
+/** เอกสารค่าตั้งทั้งก้อนจาก server (GET /api/settings: ใช้ page.request จึงไม่ผ่านตัวนับ request ของ browser) */
+async function settingsOnServer(page: Page): Promise<SettingsDoc> {
   const reply = await page.request.get("/api/settings");
   expect(reply.ok()).toBe(true);
-  return ((await reply.json()) as SettingsDoc).online_imagery;
+  return (await reply.json()) as SettingsDoc;
 }
 
 test.describe("Globe Manager", () => {
   test("has four source groups (GIBS, Sentinel-2 cloudless, OpenStreetMap, Cesium ion); every switch asks for its own consent and Cancel changes nothing", async ({ page }) => {
     await openScenario(page, "E2E");
-    expect(await onlineImageryOnServer(page), "online_imagery in the e2e data").toEqual(ALL_OFF);
+    // ข้อมูลของ e2e: สี่สวิตช์ปิดและไม่มี token (ไม่ใส่ token ใด ๆ ใน test) ทุกครั้งที่ Cancel ต้องได้เอกสารเดิมทั้งก้อน
+    const settingsBefore = await settingsOnServer(page);
+    expect(settingsBefore.online_imagery, "online_imagery in the e2e data").toEqual(ALL_OFF);
+    expect(settingsBefore.cesium_ion_token, "cesium_ion_token in the e2e data").toBe("");
     // รายการชั้นของ server ตรงกับที่หน้าต่างแสดง (GET /api/imagery/layers ไม่ต่อเน็ต: ใช้ได้เสมอแม้สวิตช์ปิด)
     const layersReply = await page.request.get("/api/imagery/layers");
     expect(layersReply.ok()).toBe(true);
@@ -308,7 +411,7 @@ test.describe("Globe Manager", () => {
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(dialog).toBeHidden();
       await expect(onlineSwitch(page, source.label)).not.toBeChecked();
-      expect(await onlineImageryOnServer(page), `online_imagery after Cancel of ${source.host}`).toEqual(ALL_OFF);
+      expect(await settingsOnServer(page), `GET /api/settings after Cancel of ${source.host}`).toEqual(settingsBefore);
     }
     // GIBS: บอกที่เก็บ data/imagery ; OpenStreetMap และ Cesium ion: browser ต่อเอง (ไม่มีที่เก็บของ server)
     await onlineSwitch(page, SOURCES[0].label).click();
@@ -322,11 +425,11 @@ test.describe("Globe Manager", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     for (const source of SOURCES) await expect(onlineSwitch(page, source.label)).not.toBeChecked();
-    expect(await onlineImageryOnServer(page), "online_imagery after Escape").toEqual(ALL_OFF);
+    expect(await settingsOnServer(page), "GET /api/settings after Escape").toEqual(settingsBefore);
     const after = await page.request.get("/api/imagery/layers");
     const afterDoc = (await after.json()) as { enabled: boolean; sources: Record<string, boolean> };
     expect(afterDoc.enabled).toBe(false);
     expect(afterDoc.sources).toEqual({ gibs: false, eox: false, osm: false, ion: false });
-    // ทุกอย่างข้างบนเกิดโดยไม่มี request ใดไป /api/imagery/tiles (ตรวจตอนจบ test ด้วย fixture tileRequests)
+    // ทุกอย่างข้างบนเกิดโดยไม่มี request ใดไป /api/imagery/tiles (ตรวจตอนจบ test ด้วย fixture guards)
   });
 });
