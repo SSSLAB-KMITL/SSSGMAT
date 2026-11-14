@@ -12,7 +12,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView",
+  "stkReference", "sensorView", "globeManager",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -162,6 +162,8 @@ const BASE: Record<PanelKind, Base> = {
   windowProperties2d: { label: "window.properties2d", type: "floating", size: { width: 560, height: 440 }, persist: false, scenarioBound: true },
   fetchOrbitData: { label: "window.fetchOrbitData", type: "floating", size: { width: 520, height: 360 }, persist: false, scenarioBound: false },
   dailyForecastSettings: { label: "window.dailyForecastSettings", type: "floating", size: { width: 520, height: 360 }, persist: false, scenarioBound: false },
+  // Globe Manager (imagery spec §5.1): ชั้นภาพของลูกโลก ใช้ร่วมกันทุกหน้าต่าง 3D จึงไม่ผูก scenario และไม่เก็บตำแหน่งลง workbook (ชั้นที่เลือกเก็บใน workbook ผ่าน layout.globe)
+  globeManager: { label: "window.globeManager", type: "floating", size: { width: 560, height: 480 }, persist: false, scenarioBound: false },
   about: { label: "help.about", type: "floating", size: { width: 480, height: 320 }, persist: false, scenarioBound: false },
   stkReference: { label: "help.stkReference", type: "floating", size: { width: 760, height: 520 }, persist: false, scenarioBound: false },
   // Sensor View (sensor spec §5.4): หนึ่งบานต่อ sensor (กุญแจ = params.path) บันทึกใน workbook และปิดพร้อม scenario

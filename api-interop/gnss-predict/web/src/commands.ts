@@ -37,6 +37,7 @@ export const COMMAND_LABELS = {
   "view.messageViewer": "menu.view.messageViewer",
   "view.new3d": "menu.view.new3dWindow",
   "view.new2d": "menu.view.new2dWindow",
+  "view.globeManager": "menu.view.globeManager",
   "view.toolbar.default": "toolbar.default",
   "view.toolbar.animation": "toolbar.animation",
   "view.toolbar.graphics3d": "toolbar.graphics3d",

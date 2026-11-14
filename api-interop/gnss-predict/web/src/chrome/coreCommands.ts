@@ -38,7 +38,7 @@ export function registerCoreCommands(): () => void {
   const add = (id: CommandId, def: Omit<CommandDef, "label">): void => {
     disposers.push(registerCommand(id, { label: COMMAND_LABELS[id], ...def }));
   };
-  const openWindow = (id: CommandId, kind: "objectBrowser" | "timelineView" | "messageViewer"): void =>
+  const openWindow = (id: CommandId, kind: "objectBrowser" | "timelineView" | "messageViewer" | "globeManager"): void =>
     add(id, { run: () => void layout().openPanel(kind), enabled: workspaceMounted });
 
   // ---------- View ----------
@@ -47,6 +47,7 @@ export function registerCoreCommands(): () => void {
   openWindow("view.messageViewer", "messageViewer");
   add("view.new3d", { run: () => void layout().newGraphicsWindow("graphics3d"), enabled: workspaceMounted });
   add("view.new2d", { run: () => void layout().newGraphicsWindow("graphics2d"), enabled: workspaceMounted });
+  openWindow("view.globeManager", "globeManager");
   for (const name of TOOLBAR_NAMES) {
     add(`view.toolbar.${name}`, {
       run: () => layout().setToolbar(name, !layout().toolbars[name]),

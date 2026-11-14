@@ -85,7 +85,7 @@ afterEach(() => {
 describe("registry", () => {
   const FLOATING: PanelKind[] = [
     "propertiesBrowser", "insertObjects", "satelliteCatalog", "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d",
-    "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about", "stkReference",
+    "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about", "stkReference", "globeManager",
   ];
 
   test("every panel kind has a placeholder with the spec §4.1 window type", () => {

@@ -49,7 +49,7 @@ function parseSections(doc: string): Map<string, RefSection> {
   const out = new Map<string, RefSection>();
   let cur: RefSection | undefined;
   for (const line of doc.split("\n")) {
-    const h = /^## ([A-G])\. (.+)$/.exec(line);
+    const h = /^## ([A-H])\. (.+)$/.exec(line);
     if (h) { cur = { heading: h[2].trim(), sources: [] }; out.set(h[1], cur); continue; }
     if (!cur || !line.startsWith("|")) continue;
     const cells = line.split("|").slice(1, -1).map((c) => c.trim());
@@ -113,8 +113,8 @@ describe("the reference matcher", () => {
     expect(hasTerm(withHeading, "Browser", true)).toBe(false);
   });
 
-  test("the real reference parses into sections A to G, every row with 4 cells", () => {
-    expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
+  test("the real reference parses into sections A to H, every row with 4 cells", () => {
+    expect([...sections.keys()]).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
     for (const [k, sec] of sections) expect(sec.sources.length, k).toBeGreaterThan(0);
     expect(sections.get("C")!.heading).toBe("Properties Browser");
     expect(sections.get("G")!.heading).toMatch(/^Sensor\b/);
@@ -189,7 +189,7 @@ describe("stk labels are real STK terms", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
       if (l.source !== "stk") continue;
-      const m = /^STK ref §([A-G])$/.exec(l.ref ?? "");
+      const m = /^STK ref §([A-H])$/.exec(l.ref ?? "");
       if (!m) { bad.push(`${k}: ref ${JSON.stringify(l.ref)}`); continue; }
       const sec = sections.get(m[1])!;
       // ชื่อหัวข้อนับได้เฉพาะป้ายชื่อหน้าต่าง (window.*) เช่น "Properties Browser" ที่ reference เขียนไว้ที่หัวข้อ C เท่านั้น
@@ -312,6 +312,35 @@ describe("sensor labels", () => {
   });
 });
 
+// ---- Globe Manager (STK ref §H, ตรวจ 2026-11-14) ----
+
+describe("Globe Manager labels", () => {
+  test("the window and the View menu entry are the STK term, found in an Item or STK term cell of §H", () => {
+    const h = sections.get("H")!;
+    for (const k of ["menu.view.globeManager", "window.globeManager"] as const) {
+      expect(labels[k], k).toEqual({ text: "Globe Manager", source: "stk", ref: "STK ref §H" });
+      expect(hasTerm(h, "Globe Manager", k.startsWith("window.")), k).toBe(true);
+    }
+    expect(sections.get("H")!.heading).toMatch(/^Globe Manager\b/);
+  });
+
+  test("names the STK help does not use for these controls stay ours (STK shows an unlabeled check box and the word Translucency)", () => {
+    for (const k of ["field.onlineImagery", "field.globeLayer", "option.globe.naturalEarthII"] as const) expect(labels[k].source, k).toBe("ours");
+    expect(labels["field.onlineImagery"].text).toBe("Online imagery (NASA GIBS)");
+    expect(labels["option.globe.naturalEarthII"].text).toBe("Natural Earth II");
+    // "Show" และ "% Translucency" ใช้คีย์ที่มีอยู่แล้ว ไม่สร้างคีย์ซ้ำ
+    expect(Object.entries(labels).filter(([, l]) => l.text === "Show").map(([k]) => k)).toEqual(["ob.show"]);
+    expect(Object.entries(labels).filter(([, l]) => l.text === "% Translucency").map(([k]) => k)).toEqual(["field.translucency"]);
+  });
+
+  test("§H records its sources (STK help pages) and claims no menu item the help does not show", () => {
+    const section = ref.slice(ref.indexOf("## H. Globe Manager"));
+    expect(section).toContain("https://help.agi.com/stk/Content/");
+    expect(section).toContain("globeMgr/gmOverview.html");
+    expect(section).toMatch(/View menu/);
+  });
+});
+
 // ---- ครบทุกชื่อใน spec §4-§13 ----
 
 const textsUnder = (...prefixes: string[]) =>
@@ -321,7 +350,7 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§5.1 top menus", ["menu."], ["File", "Edit", "View", "Insert", "Analysis", "Utilities", "Window", "Help"]],
   ["§5.1 File", ["menu.file."], ["New...", "Open...", "Save", "Save As...", "Close", "Exit"]],
   ["§5.1 Edit", ["menu.edit."], ["Cut", "Copy", "Paste", "Delete", "Find..."]],
-  ["§5.1 View", ["menu.view."], ["Object Browser", "Timeline View", "Message Viewer", "New 3D Graphics Window", "New 2D Graphics Window", "Toolbars", "Full Screen"]],
+  ["§5.1 View", ["menu.view."], ["Object Browser", "Timeline View", "Message Viewer", "New 3D Graphics Window", "New 2D Graphics Window", "Globe Manager", "Toolbars", "Full Screen"]],
   ["§5.1 Insert", ["menu.insert."], ["New...", "Facility...", "Satellite...", "Constellation..."]],
   ["§5.1 Analysis", ["menu.analysis."], ["Access...", "Report & Graph Manager...", "Validation..."]],
   ["§5.1 object menu", ["menu.object."], ["Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"]],
@@ -338,7 +367,7 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§4.1/§11 window titles", ["window."], ["Object Browser", "3D Graphics {n} - Earth", "2D Graphics {n} - Earth", "Timeline View", "Message Viewer",
                                            "Properties Browser", "Insert STK Objects", "Search Satellite Catalog", "New Scenario Wizard",
                                            "Welcome to GNSS Studio", "View From/To", "3D Graphics Window Properties", "2D Graphics Window Properties",
-                                           "Windows", "Fetch Orbit Data", "Daily Forecast Settings", "Dockable", "Floating", "Integrated"]],
+                                           "Windows", "Fetch Orbit Data", "Daily Forecast Settings", "Globe Manager", "Dockable", "Floating", "Integrated"]],
   ["§4.1 Windows dialog", ["dialog.windows."], ["Window", "Type", "Activate", "Integrate", "Center", "Close"]],
   ["§8 Properties buttons", ["dialog."], ["OK", "Cancel", "Apply", "Help", "Reload"]],
   ["§8 pages", ["page."], ["Basic - Time", "Basic - Units", "Basic - Description", "Basic - Ionosphere", "2D Graphics - Global Attributes",
@@ -589,6 +618,22 @@ describe("consent texts name every host that a download contacts", () => {
       for (const host of HOSTS) expect(text, host).toContain(host);
     },
   );
+
+  test("the online imagery confirmation names the GIBS host the server really contacts, what is sent, the cache and its cap", () => {
+    const imagery = readFileSync(resolve(__dirname, "../../../server/gnss_studio_server/imagery.py"), "utf8");
+    const m = /^GIBS_URL = "https:\/\/([^/"]+)\//m.exec(imagery);
+    expect(m, "GIBS_URL not found in server/gnss_studio_server/imagery.py").not.toBeNull();
+    expect(m![1]).toBe("gibs.earthdata.nasa.gov");
+    const text = msg("globe.consent");
+    expect(text).toContain(m![1]);
+    expect(text).toMatch(/[\u0E00-\u0E7F]/);
+    expect(text).toMatch(/ชื่อชั้นภาพ.*เวลา.*พิกัด/);
+    expect(text).toContain("data/imagery");
+    expect(text).toContain("2 GB");
+    expect(text).toMatch(/ปิดได้ทุกเมื่อ/);
+    // ไม่ใช่ข้อความของการดาวน์โหลดข้อมูลวงโคจร: ไม่อ้างแหล่งอื่นที่ไม่ได้ติดต่อ
+    for (const host of HOSTS) expect(text, host).not.toContain(host);
+  });
 
   test("the Fetch Now confirmation says the other hosts may still be contacted when CelesTrak is rate-limited", () => {
     expect(msg("fetch.confirm")).toMatch(/จำกัดความถี่/);

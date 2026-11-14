@@ -23,7 +23,7 @@
 import { ENUMS } from "../api/enums.gen";
 
 export type Label = { text: string; source: "stk" | "ours"; ref?: string };
-type Section = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+type Section = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
 
 const stk = (text: string, section: Section): Label => ({ text, source: "stk", ref: `STK ref §${section}` });
 const ours = (text: string): Label => ({ text, source: "ours" });
@@ -58,6 +58,8 @@ const LABELS = {
   "menu.view.messageViewer": stk("Message Viewer", "A"),
   "menu.view.new3dWindow": ours("New 3D Graphics Window"),
   "menu.view.new2dWindow": ours("New 2D Graphics Window"),
+  // STK help: "the Globe Manager selection on the View menu" (STK ref §H); ไม่ใส่ ... ตามที่ STK เขียน
+  "menu.view.globeManager": stk("Globe Manager", "H"),
   "menu.view.toolbars": stk("Toolbars", "A"),
   "menu.view.fullScreen": ours("Full Screen"),
 
@@ -164,6 +166,7 @@ const LABELS = {
   "window.windows": ours("Windows"),
   "window.fetchOrbitData": ours("Fetch Orbit Data"),
   "window.dailyForecastSettings": ours("Daily Forecast Settings"),
+  "window.globeManager": stk("Globe Manager", "H"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),
@@ -382,6 +385,9 @@ const LABELS = {
   "field.cesiumToken": ours("Cesium Ion Token"),
   "field.nextRun": ours("Next Run"),
   "field.forDate": ours("For Date"),
+  // Globe Manager (STK ref §H: STK มีช่องติ๊กไม่มีป้ายและคำ Translucency ใช้ "Show" = ob.show และ "% Translucency" = field.translucency ที่มีอยู่)
+  "field.onlineImagery": ours("Online imagery (NASA GIBS)"),
+  "field.globeLayer": ours("Layer"),
   // หน่วยที่ต่อท้ายช่อง
   "field.unit.deg": ours("deg"),
   "field.unit.m": ours("m"),
@@ -398,6 +404,8 @@ const LABELS = {
   "option.updateMode.realTime": stk("Real Time", "C"),
   "option.updateMode.xRealTime": stk("X Real-Time", "C"),
   // Animation Cycle (STK ref §C) ค่าที่เก็บ off / stop / loop
+  // ชั้นฐานของลูกโลกที่มากับโปรแกรม (Globe Manager): ออฟไลน์ เป็นฐานเสมอ
+  "option.globe.naturalEarthII": ours("Natural Earth II"),
   "option.cycle.off": stk("Off", "C"),
   "option.cycle.stop": stk("Stop at Time", "C"),
   "option.cycle.loop": stk("Loop at Time", "C"),

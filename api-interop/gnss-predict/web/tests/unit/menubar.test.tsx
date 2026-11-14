@@ -10,6 +10,7 @@ import { msg } from "../../src/labels/messages.th";
 import { useLayout } from "../../src/stores/layout";
 import { useSelection } from "../../src/stores/selection";
 import { Workspace } from "../../src/Workspace";
+import { registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
 import { openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
 let disposeCore: () => void;
@@ -262,10 +263,26 @@ describe("View menu", () => {
     await mountWorkspace();
     const menu = await openMenu(user, "View");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Object Browser", "Timeline View", "Message Viewer", "New 3D Graphics Window", "New 2D Graphics Window", "Toolbars", "Full Screen",
+      "Object Browser", "Timeline View", "Message Viewer", "New 3D Graphics Window", "New 2D Graphics Window", "Globe Manager", "Toolbars", "Full Screen",
     ]);
     await user.click(item(menu, "New 3D Graphics Window"));
     expect(useLayout.getState().listWindows().map((w) => w.title)).toContain("3D Graphics 2 - Earth");
+  });
+
+  test("Globe Manager (after the New 3D/2D group) opens one floating window, even without a scenario, and a second click focuses it", async () => {
+    const user = userEvent.setup();
+    registerGlobeManagerPanel();
+    await mountWorkspace();
+    let menu = await openMenu(user, "View");
+    const entries = within(menu).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(entries.indexOf("Globe Manager")).toBe(entries.indexOf("New 2D Graphics Window") + 1);
+    await user.click(item(menu, "Globe Manager"));
+    const titles = () => useLayout.getState().listWindows().map((w) => w.title);
+    expect(titles().filter((x) => x === "Globe Manager")).toHaveLength(1);
+    expect(await screen.findByRole("checkbox", { name: t("field.onlineImagery") })).toBeDefined(); // the real window, not the placeholder
+    menu = await openMenu(user, "View");
+    await user.click(item(menu, "Globe Manager"));
+    expect(titles().filter((x) => x === "Globe Manager")).toHaveLength(1);
   });
 
   test("without a workspace the window items are disabled", async () => {

@@ -37,6 +37,8 @@ export const VIEW_MENU: readonly MenuEntry[] = [
   SEPARATOR,
   cmd("view.new3d"), cmd("view.new2d"),
   SEPARATOR,
+  cmd("view.globeManager"),
+  SEPARATOR,
   {
     submenu: "menu.view.toolbars",
     items: [

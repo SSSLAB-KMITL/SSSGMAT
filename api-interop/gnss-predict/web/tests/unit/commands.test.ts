@@ -138,7 +138,7 @@ describe("command ids", () => {
     const expected = [
       "file.new", "file.open", "file.save", "file.saveAs", "file.close", "file.exit", "file.recent.1", "file.recent.2", "file.recent.3", "file.recent.4",
       "edit.cut", "edit.copy", "edit.paste", "edit.delete", "edit.find",
-      "view.objectBrowser", "view.timelineView", "view.messageViewer", "view.new3d", "view.new2d",
+      "view.objectBrowser", "view.timelineView", "view.messageViewer", "view.new3d", "view.new2d", "view.globeManager",
       ...TOOLBAR_NAMES.map((n) => `view.toolbar.${n}`), "view.fullScreen",
       "insert.new", "insert.facility", "insert.satellite", "insert.sensor", "insert.constellation",
       "analysis.access", "analysis.reportGraphManager", "analysis.validation",

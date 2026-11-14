@@ -111,3 +111,15 @@ Base URL for relative links: `https://help.agi.com/stk/Content/`
 | 3D Graphics pages | STK | Attributes (**Show Boresight Marker**, **Show Radial Lines**, Translucent Lines, Interior Fill + % Translucency), Projection (Type: All Intersections / **Earth Intersections** / None; Space Projection), Pulse, Vertex Offset, Vector, Attitude Sphere, Data Display | vo/sensors-01.htm, vo/sensors-02.htm |
 | View through a sensor | NF | No "Sensor View" / boresight-view command. Closest: Sensor menu → **Obscuration...** (Obscuration View looks down the boresight; vehicle sensors; half angle ≤ 79.5 deg) and the licensed EOIR Sensor Scene. View From/To never names sensors | vo/obscur.htm, eoir/eoir_sceneGenerate.htm, vo/3DViewPosition.htm |
 | Satellite attitude profile used for sensor pointing | OK | Predefined profile **Nadir alignment with ECI velocity constraint** (Z to geocentric nadir, X constrained to the velocity); the ECF-velocity variant "may not be appropriate for satellites in synchronous or highly eccentric orbits" | stk/referenceframesvehicle.htm, stk/attitude/attitudeBasicTypes.htm |
+
+## H. Globe Manager (verified 2026-11-14, STK help pages read; only wording the pages show is recorded)
+
+Base URL as above (`https://help.agi.com/stk/Content/`). Read for GNSS Studio's Globe Manager window (online NASA GIBS imagery). Terms were read from the page text, not from screenshots; nothing was downloaded.
+
+| Item | Verdict | STK term / behavior | Page |
+|---|---|---|---|
+| Globe Manager | OK | Window name **Globe Manager** (page title "Globe Manager: Overview"). Opened from the Globe Manager Toolbar at the top of the 3D Graphics window ("Click" the Add Data Panel icon "to open the Globe Manager window") or from the Globe Manager selection on the View menu. Both are unavailable if a 3D Graphics window is not open or active. If the toolbar is hidden: View menu, Toolbars, GlobeManager. | globeMgr/gmOverview.html, training/UsingGlobeManagerInSTK.html |
+| Hierarchy | OK | Page title "Globe Manager Hierarchy Tab"; lists terrain and imagery data as image items, terrain items and Terrain/Imagery sets, with a Names, Types, Latitudes, Longitudes file list; the page does not say imagery layers | globeMgr/gmHierarchy.html |
+| Item Properties | OK | Item Properties window, Translucency Settings section: **Translucency** (tutorial: "Set Translucency: value to 35"), Interpolate Translucency over Altitude, Use Transparency Color. STK writes Translucency without a percent sign in this window | globeMgr/gmHierarchy.html, training/UsingGlobeManagerInSTK.html |
+| Visibility check box | NF | STK names no Show label here: each item or set has an unlabeled check box beside its name that controls whether it appears in the 3D Graphics window | globeMgr/gmHierarchy.html |
+| Menu entry for the Globe Manager window | STK | The help sentence calls it the Globe Manager selection on the View menu (no ellipsis is written in that sentence), so GNSS Studio's View menu entry is Globe Manager | globeMgr/gmOverview.html |

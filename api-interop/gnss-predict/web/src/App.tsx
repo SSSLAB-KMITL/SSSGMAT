@@ -18,6 +18,7 @@ import { registerDataCommands } from "./windows/dataCommands";
 import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSettings/DailyForecastSettings";
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
 import { registerFilePanels } from "./windows/filePanels";
+import { registerGlobeManagerPanel } from "./windows/GlobeManager/GlobeManager";
 import { registerGraphics2DCommands } from "./windows/Graphics2D/commands2d";
 import { registerGraphics2DPanel } from "./windows/Graphics2D/Graphics2D";
 import { registerWindowProperties2DPanel } from "./windows/Graphics2D/WindowProperties2D";
@@ -41,6 +42,7 @@ export function App() {
   // นาฬิกาของแอป, การต่อ SSE เข้ากับ store, คำสั่งของเมนู/แถบเครื่องมือ, หน้าต่างของไฟล์ scenario (Welcome, Wizard, About, STK UI Reference), Object Browser
   // (คำสั่ง edit.* object.* ob.* ของมันลงทะเบียนระดับแอป ไม่ผูกกับการเปิดหน้าต่าง), Properties Browser (object.properties เปิดมัน),
   // Insert STK Objects / Search Satellite Catalog / Fetch Orbit Data / Daily Forecast Settings (คำสั่ง insert.* และ utilities.* ลงทะเบียนระดับแอปเช่นกัน),
+  // Globe Manager (คำสั่ง view.globeManager อยู่ใน coreCommands: เปิดหน้าต่างนี้),
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
@@ -65,6 +67,7 @@ export function App() {
     registerSatelliteCatalogPanel();
     registerFetchOrbitDataPanel();
     registerDailyForecastSettingsPanel();
+    registerGlobeManagerPanel();
     registerGraphics3DPanel();
     registerViewFromToPanel();
     registerWindowProperties3DPanel();

@@ -1607,6 +1607,86 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* Globe Manager (src/windows/GlobeManager): สวิตช์ภาพออนไลน์ + ตารางชั้นภาพ */
+.globe {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.globe-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.globe-online {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.globe-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.globe-switch .form-check {
+  align-self: center;
+  margin: 0;
+}
+
+.globe-hint {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--border);
+}
+
+.globe-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.globe-table th,
+.globe-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.globe-table thead th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.globe-table tbody th {
+  font-weight: 400;
+}
+
+.globe-table td .form-check {
+  align-self: auto;
+  margin: 0;
+}
+
+.globe-num {
+  box-sizing: border-box;
+  width: 5em;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
 /* ---------- หน้าต่าง 3D / 2D Graphics (src/windows/graphics: ส่วนร่วม, Graphics3D, Graphics2D) ---------- */
 .gfx {
   box-sizing: border-box;
