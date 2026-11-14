@@ -647,6 +647,58 @@ class ModuleInheritanceStoreTests(unittest.TestCase):
         self.assertEqual(self.backup_file("Amateur").read_bytes(), original)
         self.assertEqual(self.file_json("Amateur")["version"], 2)
 
+    # ---- ไฟล์แบบ core ที่ยังไม่ถูกย้าย (การย้ายตอนเปิด server ข้ามไป หรือวางเข้ามาระหว่างทำงาน): สำเนาก่อนเขียนครั้งแรก
+
+    def backups(self) -> list[str]:
+        folder = self.backup_file("x").parent
+        return sorted(p.name for p in folder.iterdir()) if folder.is_dir() else []
+
+    def test_put_module_over_an_unmigrated_core_file_backs_it_up_first(self):
+        raw = self.write_v1()
+        self.store.put_module(self.store.get_module("Amateur"))
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), raw)               # ทุกไบต์ เหมือน migrate_modules
+        self.assertEqual(self.file_json("Amateur")["version"], 2)
+        self.store.put_module(self.store.get_module("Amateur"))                        # version 2 แล้ว: ไม่สำเนาอีก
+        self.assertEqual(self.backups(), ["Amateur.json"])
+
+    def test_window_save_over_an_unmigrated_core_file_backs_it_up_first(self):
+        raw = self.write_v1()
+        self.assertEqual(self.store.put_module_window("Amateur", {"state": 1})["state"], 1)
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), raw)
+        self.assertEqual((self.file_json("Amateur")["version"], self.file_json("Amateur")["window"]["state"]), (2, 1))
+
+    def test_batch_that_makes_unmigrated_core_files_default_backs_them_up_first(self):
+        """Ground Stations ลบสถานีที่ไฟล์แบบ core ใช้: ไฟล์ที่ถูก (เขียนเป็น version 2) และไฟล์ที่ช่องอื่นผิด (แก้ qth ในเนื้อไฟล์ตรงๆ)"""
+        good = self.write_v1()
+        bad = self.write_v1("Broken", edit=lambda d: d["refresh"].__setitem__("data_ms", 5))
+        other = Qth(name="OTHER", location="There", lat_deg=1.0, lon_deg=2.0, alt_m=3.0)
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.store.replace_qth([other], "OTHER"), ["Amateur", "Broken"])
+        self.assertEqual((self.backup_file("Amateur").read_bytes(), self.backup_file("Broken").read_bytes()), (good, bad))
+        self.assertEqual((self.file_json("Amateur")["version"], self.file_json("Amateur")["qth"]), (2, None))
+        self.assertIsNone(self.file_json("Broken")["qth"])
+
+    def test_backup_guard_never_overwrites_a_backup(self):
+        raw = self.write_v1()
+        self.backup_file("Amateur").parent.mkdir(parents=True)
+        self.backup_file("Amateur").write_bytes(b"older copy")
+        self.store.put_module(self.store.get_module("Amateur"))
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), b"older copy")     # ไม่ทับ
+        self.assertEqual((self.backup_file("Amateur").parent / "Amateur.1.json").read_bytes(), raw)
+        same = self.write_v1("Same")
+        self.backup_file("Same").write_bytes(same)                                    # มีสำเนาเดียวกันอยู่แล้ว: ไม่สำเนาซ้ำ
+        self.store.put_module(self.store.get_module("Same"))
+        self.assertEqual(self.backups(), ["Amateur.1.json", "Amateur.json", "Same.json"])
+
+    def test_new_and_v2_files_and_clones_need_no_backup(self):
+        raw = self.write_v1()
+        self.put("New")                                                                 # module ใหม่
+        self.put("New", layout_code="1;0;2;0;1", pin=["layout_code"])                   # ไฟล์ version 2
+        self.store.put_module_own("Copy", {**self.store.get_module_own("Amateur"), "name": "Copy"})   # clone ของไฟล์แบบ core
+        self.assertEqual(self.module_file("Amateur").read_bytes(), raw)                # ต้นฉบับไม่ถูกเขียน
+        self.assertEqual(self.file_json("Copy")["version"], 2)
+        self.assertEqual(self.backups(), [])
+
     def test_core_file_before_migration_reads_with_inheritance(self):
         raw = self.write_v1(edit=lambda d: d["map"].__setitem__("center_lon", 100))
         own = self.store.get_module_own("Amateur")

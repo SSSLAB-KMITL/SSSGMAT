@@ -372,6 +372,36 @@ class UnwritableDirTest(GplogTestBase):
         end_session(self.handler, 0, NOW)
 
 
+class SessionWriteFailureTest(GplogTestBase):
+    """เขียน "Session started" / "Session ended" ไม่ได้ (ดิสก์เต็ม, ไฟล์ถูกปิด): ไม่ทำให้ server เริ่มไม่ได้ และ end_session ยังถอด handler
+    (final review triage Task 8)"""
+
+    def test_full_disk_at_session_started_does_not_stop_the_start(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(GpredictLogHandler, "write", side_effect=OSError(28, "No space left on device")):
+            handler = self.start(4)                                                      # ไม่ raise
+        self.assertIn(handler, LOGGER.handlers)
+        self.assertEqual((handler.gp_level, LOGGER.getEffectiveLevel()), (4, logging.DEBUG))
+        self.assertIn("No space left on device", err.getvalue())
+        self.assertIn(str(self.log_path), err.getvalue())
+        end_session(handler, 0, NOW)
+
+    def test_write_failure_at_session_ended_still_detaches_closes_and_rotates(self):
+        for exc in (OSError(28, "No space left on device"), ValueError("I/O operation on closed file.")):
+            with self.subTest(exc=exc):
+                self.start(3)
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), mock.patch.object(GpredictLogHandler, "write", side_effect=exc):
+                    end_session(self.handler, 86400, NOW)                                # ไม่ raise
+                self.assertEqual(LOGGER.handlers, self.handlers_before)
+                self.assertEqual(LOGGER.level, self.level_before)
+                self.assertTrue(self.handler.closed)
+                self.assertTrue((self.dir / f"gpredict-{int(NOW)}.log").is_file())       # หมุนไฟล์ตามปกติ
+                self.assertIn(str(exc), err.getvalue())
+                (self.dir / f"gpredict-{int(NOW)}.log").unlink()
+
+
 class ParseEntryTest(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(gplog.parse_entry({"level": 1, "function": "multi_pass_response", "text": "x"}),

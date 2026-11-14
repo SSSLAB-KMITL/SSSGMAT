@@ -258,7 +258,7 @@ class Store:
         try:
             own = self.get_module_own(name)
         except ApiError:
-            write_json_atomic(self._module_path(name), {**self._read_module(name), "qth": None})
+            self._write_module(name, {**self._read_module(name), "qth": None})
         else:
             self.put_module_own(name, {**own, "qth": None})
 
@@ -405,7 +405,36 @@ class Store:
         m = self._effective(name, own, globals_)
         if m.qth is not None and m.qth not in self._qth_names():
             raise ApiError("MODULE_INVALID", 422, f"ไม่พบ QTH ชื่อ {m.qth} (qth)", "qth")
-        write_json_atomic(self._module_path(name), own)
+        self._write_module(name, own)
+
+    def _write_module(self, name: str, data: dict) -> None:
+        """ทุกการเขียนไฟล์ module ยกเว้นการย้ายตอนเปิด server (ผู้เรียกถือ lock): ไฟล์เดิมที่ยังไม่ใช่ version 2 (แบบ core ที่การย้าย
+        ข้ามไป, วางเข้ามาระหว่างทำงาน หรือเสีย) ถูกสำเนาทุกไบต์ไว้ก่อน (_backup_unmigrated) ค่าที่ตรึงไว้และไบต์เดิมจึงไม่หายเงียบๆ"""
+        path = self._module_path(name)
+        self._backup_unmigrated(path)
+        write_json_atomic(path, data)
+
+    def _backup_unmigrated(self, path: Path) -> None:
+        """สำเนาไฟล์ module ที่ยังไม่ใช่ version 2 ไว้ที่ _backup_v1/<name>.json แบบ migrate_modules (ของเรา) ไม่มีไฟล์หรือเป็น
+        version 2 แล้ว: ไม่ทำอะไร ไม่ทับสำเนาที่มีอยู่: มีสำเนาไบต์เดียวกันแล้วไม่สำเนาซ้ำ สำเนาที่ต่างไปทำให้ได้ <name>.<n>.json ถัดไป"""
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except ValueError:                     # JSONDecodeError และ UnicodeDecodeError: ไฟล์เสียก็เก็บไว้
+            data = None
+        if isinstance(data, dict) and data.get("version") == OWN_VERSION:
+            return
+        folder = self._module_dir / BACKUP_V1_DIR
+        backup, n = folder / path.name, 0
+        while backup.exists():
+            if backup.read_bytes() == raw:
+                return
+            n += 1
+            backup = folder / f"{path.stem}.{n}.json"
+        _write_bytes_atomic(backup, raw)
 
     def put_module(self, m: ModuleConfig, pin: Iterable[str] = (), unpin: Iterable[str] = ()) -> None:
         """สร้างหรือแทนที่ module ด้วยค่าเต็ม m (decision 3 ของแผนงานย่อย 4, own_dict):

@@ -1159,6 +1159,18 @@ class ModuleWindowApiTest(ApiTestBase):
             self.put_module(name)
             self.open_module(name)
 
+    def test_clone_of_a_window_opens_as_a_tab_and_keeps_the_size(self):
+        """Clone ของ module ที่เป็นหน้าต่างแยก: ไฟล์ของ module ใหม่มี window.state 0 (แท็บ ตามที่มันเปิดจริง) แต่จำขนาดและตำแหน่งไว้
+        ไม่งั้นหลังเปิด server ใหม่ (Restore the state of modules) มันขึ้นที่แถบคืนหน้าต่างทั้งที่ไม่เคยเป็นหน้าต่าง (final review triage Task 12)"""
+        self.open_a_and_b()
+        self.ok_window(state=1, x=10, y=20, width=640, height=480)
+        r = self.client.post("/api/modules/A/clone", json={"new_name": "C", "open": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["module"]["window"], {"state": 0, "x": 10, "y": 20, "width": 640, "height": 480})
+        self.assertEqual(self.file_json("C")["window"], {"state": 0, "x": 10, "y": 20, "width": 640, "height": 480})
+        self.assertEqual(self.file_json("A")["window"]["state"], 1)                            # ต้นฉบับยังเป็นหน้าต่าง
+        self.assertEqual(self.listing()["windows"], ["A"])
+
     def test_detach_then_attach(self):
         self.open_a_and_b()
         self.assertEqual(self.listing()["windows"], [])

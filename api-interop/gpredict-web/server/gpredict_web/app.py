@@ -1097,7 +1097,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.post("/api/modules/{name}/clone")
     def clone_module(name: str, body: dict = Body(...)):
-        """คัดลอกค่าที่ module เดิมตั้งเอง (ค่าที่ตรึงไว้ยังตรึง ค่าที่สืบทอดยังสืบทอด) ตรวจ QTH และดาวด้วยค่าที่ใช้จริง"""
+        """คัดลอกค่าที่ module เดิมตั้งเอง (ค่าที่ตรึงไว้ยังตรึง ค่าที่สืบทอดยังสืบทอด) ตรวจ QTH และดาวด้วยค่าที่ใช้จริง
+        module ใหม่เป็นแท็บเสมอ (window.state 0) ขนาดและตำแหน่งหน้าต่างที่จำไว้คงอยู่"""
         src = store.get_module(name)
         src_own = store.get_module_own(name)
         new_name, want_open = body.get("new_name"), body.get("open", True)    # Gpredict: "Open module when created" ตั้งต้นเปิด
@@ -1110,7 +1111,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         if clash:
             raise ApiError("MODULE_INVALID", 422, f"มี module ชื่อ {clash[0]} อยู่แล้ว (new_name)", "new_name")
         M.module_from_dict({**M.module_to_dict(src), "name": new_name}, set(store.qth_names()), satdb.norads())
-        store.put_module_own(new_name, {**src_own, "name": new_name})
+        # เปิดเป็นแท็บ (window.state 0) แม้ต้นฉบับเป็นหน้าต่างแยก: หน้าต่างเปิดเองไม่ได้ถ้าไม่มีการคลิก ขนาดและตำแหน่งที่จำไว้คงอยู่
+        window = {**src_own.get("window", M.WINDOW_DEFAULT), "state": 0}
+        store.put_module_own(new_name, {**src_own, "name": new_name, "window": window})
         clear_startup_messages()
         if want_open:
             hub.open(new_name)

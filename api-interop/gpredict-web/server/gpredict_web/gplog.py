@@ -110,11 +110,20 @@ class GpredictLogHandler(logging.Handler):
         super().close()
 
 
+def _session_line(handler: GpredictLogHandler, function: str, text: str, created: float) -> None:
+    """บรรทัด Session started/ended: เขียนไม่ได้ (ดิสก์เต็ม, ไฟล์ถูกปิด) บอกที่ stderr แล้วไปต่อ (ของเรา) ไม่ให้บรรทัดเดียว
+    ทำให้ server เริ่มหรือปิดไม่ได้ เหมือน emit ที่ทนการเขียนไม่ได้อยู่แล้ว"""
+    try:
+        handler.write(_INFO, function, text, created)
+    except (OSError, ValueError) as exc:     # ValueError: เขียนลงไฟล์ที่ถูกปิดแล้ว
+        print(f"{function}: เขียน \"{text}\" ลง {handler.log_dir / LOG_FILE} ไม่ได้: {exc}", file=sys.stderr)
+
+
 def start_session(log_dir: Path, level: int) -> GpredictLogHandler:
     """ลบ gpredict.log ของรอบก่อน เขียน "Session started" (INFO เสมอ แม้ level = 0) แล้วกรองที่ level และติด handler กับ logger gpredict_web"""
     handler = GpredictLogHandler(log_dir)
     if handler.has_file:
-        handler.write(_INFO, START_FUNCTION, "Session started", time.time())
+        _session_line(handler, START_FUNCTION, "Session started", time.time())
     handler.gp_level = level
     logger = logging.getLogger(LOGGER_NAME)
     handler.saved_logger_level = logger.level
@@ -130,7 +139,7 @@ def end_session(handler: GpredictLogHandler, clean_age: int, now: float) -> None
     if handler.closed:
         return
     if handler.has_file and handler.gp_level >= _INFO:
-        handler.write(_INFO, END_FUNCTION, "Session ended", now)
+        _session_line(handler, END_FUNCTION, "Session ended", now)
     logger = logging.getLogger(LOGGER_NAME)
     logger.removeHandler(handler)
     logger.setLevel(handler.saved_logger_level)
