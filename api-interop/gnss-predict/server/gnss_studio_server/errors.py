@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from gnss_predict.errors import GnssPredictError, ScenarioError
+from gnss_predict.errors import GnssPredictError, ResultsNotCurrentError, ScenarioError, StyleError
 
 NOT_FOUND_TEXT = "ไม่พบรายการที่ร้องขอ"
 METHOD_NOT_ALLOWED_TEXT = "path นี้ไม่รองรับวิธีเรียกแบบนี้"
@@ -35,8 +35,10 @@ def _api_error(request: Request, exc: ApiError) -> JSONResponse:
 
 
 def _engine_error(request: Request, exc: GnssPredictError) -> JSONResponse:
-    field = exc.field if isinstance(exc, ScenarioError) else None
-    return error_response(422, exc.code, str(exc), field)
+    """ScenarioError และ StyleError (`STYLE_INVALID`) มี field บอกช่องที่ผิด ผลลัพธ์ที่ไม่ตรงกับ scenario (`RESULTS_NOT_CURRENT`) เป็น 409
+    เหมือน route access/intervals (แก้ได้ด้วย Compute) ที่เหลือ 422"""
+    field = exc.field if isinstance(exc, (ScenarioError, StyleError)) else None
+    return error_response(409 if isinstance(exc, ResultsNotCurrentError) else 422, exc.code, str(exc), field)
 
 
 def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

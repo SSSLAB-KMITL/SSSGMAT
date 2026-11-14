@@ -222,6 +222,41 @@
         "title": "Animation",
         "type": "object"
       },
+      "ColumnOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "time",
+              "number",
+              "int"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "kind"
+        ],
+        "title": "ColumnOut",
+        "type": "object"
+      },
       "ComputeBody": {
         "properties": {
           "from": {
@@ -433,6 +468,92 @@
           }
         },
         "title": "DailyRunBody",
+        "type": "object"
+      },
+      "DataOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOut"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "title": "DataOut",
+        "type": "object"
+      },
+      "ElementOut": {
+        "properties": {
+          "interp": {
+            "enum": [
+              "linear",
+              "angle",
+              "previous",
+              "none"
+            ],
+            "title": "Interp",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "time",
+              "number",
+              "int"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "kind",
+          "interp"
+        ],
+        "title": "ElementOut",
         "type": "object"
       },
       "FacilityConstraints": {
@@ -1197,6 +1318,59 @@
         "title": "Position",
         "type": "object"
       },
+      "ProviderOut": {
+        "properties": {
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/ElementOut"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groups"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ours": {
+            "title": "Ours",
+            "type": "boolean"
+          },
+          "uses": {
+            "items": {
+              "enum": [
+                "Reports",
+                "Dynamic Displays"
+              ],
+              "type": "string"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "groups",
+          "elements",
+          "uses",
+          "ours"
+        ],
+        "title": "ProviderOut",
+        "type": "object"
+      },
       "SatelliteFilter": {
         "additionalProperties": true,
         "properties": {
@@ -1609,6 +1783,41 @@
           "ion"
         ],
         "title": "SourcesOut",
+        "type": "object"
+      },
+      "StylesOut": {
+        "properties": {
+          "installed": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Installed",
+            "type": "array"
+          },
+          "my": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "My",
+            "type": "array"
+          },
+          "scenario": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Scenario",
+            "type": "array"
+          }
+        },
+        "required": [
+          "installed",
+          "my",
+          "scenario"
+        ],
+        "title": "StylesOut",
         "type": "object"
       },
       "SwathSettings": {
@@ -2922,6 +3131,207 @@
         "summary": "Copy Scenario"
       }
     },
+    "/api/scenarios/{sc}/data": {
+      "get": {
+        "operationId": "get_data_api_scenarios__sc__data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object",
+            "required": true,
+            "schema": {
+              "title": "Object",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "elements",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Elements",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stop"
+            }
+          },
+          {
+            "in": "query",
+            "name": "step",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Step"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data"
+      }
+    },
+    "/api/scenarios/{sc}/dataproviders": {
+      "get": {
+        "operationId": "get_dataproviders_api_scenarios__sc__dataproviders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "class",
+            "required": true,
+            "schema": {
+              "title": "Class",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderOut"
+                  },
+                  "title": "Response Get Dataproviders Api Scenarios  Sc  Dataproviders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dataproviders"
+      }
+    },
     "/api/scenarios/{sc}/ephem/{hash}/{file}": {
       "get": {
         "operationId": "get_ephem_file_api_scenarios__sc__ephem__hash___file__get",
@@ -3698,6 +4108,202 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/styles": {
+      "get": {
+        "operationId": "get_styles_api_styles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "object_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StylesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Styles"
+      }
+    },
+    "/api/styles/{name}": {
+      "delete": {
+        "operationId": "delete_style_api_styles__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Style"
+      },
+      "post": {
+        "operationId": "create_style_api_styles__name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Style Api Styles  Name  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Style"
+      },
+      "put": {
+        "operationId": "put_style_api_styles__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Style Api Styles  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Style"
       }
     },
     "/api/validation/history": {

@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from gnss_predict.dataproviders import TableCache
+
 from .config import Config
 from .digests import FileDigests
 from .errors import install_error_handlers
@@ -14,13 +16,15 @@ from .imagery import TileFetcher
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
-from .routes import (access, daily, events, health, imagery, jobs, objects, orbits, results, scenarios, settings,
-                     validation)
+from .routes import (access, daily, events, health, imagery, jobs, objects, orbits, reports, results, scenarios,
+                     settings, validation)
 from .scheduler import Scheduler
 from .store import ScenarioStore
+from .styles import MyStyles
 
 
 SSE_PING_S = 15.0
+TABLE_CACHE_SIZE = 4        # bundle ที่ตารางอยู่ในหน่วยความจำพร้อมกัน (LRU): ราว 135 MB ต่อ bundle (130 ดาว 1 วัน) 8 bundle ถึง 0.4-1.1 GB
 
 
 @asynccontextmanager
@@ -54,6 +58,8 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     install_guards(app, config, app.state.logger)  # Host ของ server เอง และ Origin ของ server เองสำหรับคำขอที่แก้ข้อมูล
     app.state.plans = PlanCache(app.state.store, app.state.logger)
     app.state.digests = FileDigests()
+    app.state.tables = TableCache(TABLE_CACHE_SIZE)     # ตารางของ bundle ที่อ่านแล้ว ตัวเดียวต่อแอป (route /data และ /reports)
+    app.state.my_styles = MyStyles(config.data_dir, app.state.logger)
     app.state.imagery = TileFetcher(config.data_dir, logger=app.state.logger,   # ตัวเดียวต่อแอป; test แทน opener/นาฬิกาได้
                                     enabled=lambda source: imagery.source_enabled(config, app.state.logger, source))   # ตรวจสวิตช์ของแหล่งซ้ำก่อนต่อเน็ต
     app.state.bus = EventBus(app.state.logger)
@@ -71,6 +77,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(orbits.router, prefix="/api")
     app.include_router(results.router, prefix="/api")
     app.include_router(access.router, prefix="/api")
+    app.include_router(reports.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
     app.include_router(daily.router, prefix="/api")
     app.include_router(validation.router, prefix="/api")

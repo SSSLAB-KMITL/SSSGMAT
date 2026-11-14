@@ -1,6 +1,5 @@
 """fixture ที่ test ของ server ใช้ร่วมกัน ทุก fixture ใช้ data/ ชั่วคราว ไม่แตะ data/ จริง และไม่ใช้เน็ต"""
 
-import math
 import shutil
 import sys
 from datetime import timedelta
@@ -18,6 +17,8 @@ from gnss_predict import studio                         # noqa: E402
 from gnss_predict.propagate import Ephemeris            # noqa: E402
 from gnss_studio_server.app import create_app           # noqa: E402
 from gnss_studio_server.config import Config            # noqa: E402
+# วงโคจรวงกลมของ GMAT ปลอมมีที่เดียวที่ tests/report_fixture.py (test ของ engine ใช้ร่วม) GNSS_ORBITS ส่งต่อให้ test ที่อยากอ่านค่าตั้งต้น
+from tests.report_fixture import GNSS_ORBITS, circular_ecef_km  # noqa: E402,F401
 
 SNAPSHOT_SRC = ENGINE_ROOT / "tests" / "fixtures" / "studio" / "snapshot"
 SNAPSHOT_ID = "20261110T0000Z"
@@ -81,26 +82,6 @@ def s_empty(client, snapshot):
 
 # ---------- GMAT ปลอมและผลลัพธ์ที่คำนวณแล้ว ----------
 
-EARTH_MU_KM3_S2 = 398600.4418
-EARTH_ROTATION_RAD_S = 7.2921151467e-5
-# ระบบ -> (รัศมีวงโคจร กม., ความเอียง องศา) ของวงโคจรวงกลมที่ใกล้ของจริงที่สุดในแต่ละกลุ่ม
-GNSS_ORBITS = {"G": (26560.0, 55.0), "R": (25508.0, 64.8), "E": (29600.0, 56.0), "C": (27906.0, 55.0)}
-
-
-def _fake_ecef_km(system, slot, slots, t_s):
-    """ตำแหน่ง ECEF (กม.) ที่ t_s วินาทีหลังต้นช่วง ของดาวช่องที่ slot จาก slots ดวงในระบบเดียวกัน (วงกลม กระจายสามระนาบ)"""
-    radius, inclination = GNSS_ORBITS[system]
-    inc = math.radians(inclination)
-    rate = math.sqrt(EARTH_MU_KM3_S2 / radius ** 3)
-    u = 2 * math.pi * slot / slots + rate * t_s                    # argument of latitude
-    raan = 2 * math.pi * (slot % 3) / 3
-    x = radius * (math.cos(raan) * math.cos(u) - math.sin(raan) * math.sin(u) * math.cos(inc))
-    y = radius * (math.sin(raan) * math.cos(u) + math.cos(raan) * math.sin(u) * math.cos(inc))
-    z = radius * math.sin(u) * math.sin(inc)
-    theta = EARTH_ROTATION_RAD_S * t_s                               # หมุนจากกรอบเฉื่อยเป็น EarthFixed
-    return (x * math.cos(theta) + y * math.sin(theta), -x * math.sin(theta) + y * math.cos(theta), z)
-
-
 def fake_propagate(sats, start, stop, step_s, work_dir, console, timeout_s=900, **_):
     """แทน gnss_predict.studio.propagate (GMAT): วางดาวทุกดวงบนวงโคจรวงกลมของระบบตัวเอง ไม่รัน GMAT ไม่ใช้เน็ต"""
     n = int((stop - start).total_seconds()) // step_s
@@ -108,7 +89,7 @@ def fake_propagate(sats, start, stop, step_s, work_dir, console, timeout_s=900, 
     by_system: dict[str, list[str]] = {}
     for sat in sorted(sats, key=lambda s: s.prn):
         by_system.setdefault(sat.system, []).append(sat.prn)
-    positions = {prn: [_fake_ecef_km(system, slot, len(prns), k * step_s) for k in range(n + 1)]
+    positions = {prn: [circular_ecef_km(system, slot, len(prns), k * step_s) for k in range(n + 1)]
                  for system, prns in by_system.items() for slot, prn in enumerate(prns)}
     return Ephemeris(times, positions), []
 

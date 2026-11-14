@@ -2,6 +2,8 @@ import logging
 
 from fastapi import Request
 
+from gnss_predict.dataproviders import TableCache
+
 from ..config import Config
 from ..digests import FileDigests
 from ..events import EventBus
@@ -9,6 +11,7 @@ from ..imagery import TileFetcher
 from ..jobs import JobManager
 from ..plans import PlanCache
 from ..store import ScenarioStore
+from ..styles import MyStyles
 
 
 def get_config(request: Request) -> Config:
@@ -49,3 +52,13 @@ def get_logger(request: Request) -> logging.Logger:
 def get_imagery(request: Request) -> TileFetcher:
     """dependency: ตัวดึงชิ้นภาพ GIBS ของแอปที่รับ request นี้ (ตัวเดียวต่อแอป: สถานะการพักและ "ไม่มีภาพ" ที่จำไว้ใช้ร่วมกันทุก request)"""
     return request.app.state.imagery
+
+
+def get_tables(request: Request) -> TableCache:
+    """dependency: แคชตารางที่อ่านจาก bundle ของแอปที่รับ request นี้ (ตัวเดียวต่อแอป: ไม่เกิน TABLE_CACHE_SIZE bundle แบบ LRU)"""
+    return request.app.state.tables
+
+
+def get_my_styles(request: Request) -> MyStyles:
+    """dependency: My Styles (`data/styles/`) ของแอปที่รับ request นี้ (ตัวเดียวต่อแอป เพื่อให้ล็อกเขียนใช้ร่วมกัน)"""
+    return request.app.state.my_styles

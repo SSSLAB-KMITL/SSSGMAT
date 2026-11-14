@@ -407,6 +407,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scenarios/{sc}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Data */
+        get: operations["get_data_api_scenarios__sc__data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scenarios/{sc}/dataproviders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dataproviders */
+        get: operations["get_dataproviders_api_scenarios__sc__dataproviders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scenarios/{sc}/ephem/{hash}/{file}": {
         parameters: {
             query?: never;
@@ -582,6 +616,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/styles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Styles */
+        get: operations["get_styles_api_styles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/styles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Style */
+        put: operations["put_style_api_styles__name__put"];
+        /** Create Style */
+        post: operations["create_style_api_styles__name__post"];
+        /** Delete Style */
+        delete: operations["delete_style_api_styles__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validation/history": {
         parameters: {
             query?: never;
@@ -750,6 +820,18 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ColumnOut */
+        ColumnOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "time" | "number" | "int";
+            /** Name */
+            name: string;
+            /** Unit */
+            unit: string | null;
+        };
         /** ComputeBody */
         ComputeBody: {
             /** From */
@@ -844,6 +926,30 @@ export interface components {
         DailyRunBody: {
             /** For Date */
             for_date?: string | null;
+        };
+        /** DataOut */
+        DataOut: {
+            /** Columns */
+            columns: components["schemas"]["ColumnOut"][];
+            /** Rows */
+            rows: (string | number | null)[][];
+        };
+        /** ElementOut */
+        ElementOut: {
+            /**
+             * Interp
+             * @enum {string}
+             */
+            interp: "linear" | "angle" | "previous" | "none";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "time" | "number" | "int";
+            /** Name */
+            name: string;
+            /** Unit */
+            unit: string | null;
         };
         /** FacilityConstraints */
         FacilityConstraints: {
@@ -1233,6 +1339,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ProviderOut */
+        ProviderOut: {
+            /** Elements */
+            elements: components["schemas"]["ElementOut"][];
+            /** Groups */
+            groups: string[] | null;
+            /** Name */
+            name: string;
+            /** Ours */
+            ours: boolean;
+            /** Uses */
+            uses: ("Reports" | "Dynamic Displays")[];
+        };
         /** SatelliteFilter */
         SatelliteFilter: {
             /**
@@ -1442,6 +1561,21 @@ export interface components {
             ion: boolean;
             /** Osm */
             osm: boolean;
+        };
+        /** StylesOut */
+        StylesOut: {
+            /** Installed */
+            installed: {
+                [key: string]: unknown;
+            }[];
+            /** My */
+            my: {
+                [key: string]: unknown;
+            }[];
+            /** Scenario */
+            scenario: {
+                [key: string]: unknown;
+            }[];
         };
         /** SwathSettings */
         SwathSettings: {
@@ -2302,6 +2436,79 @@ export interface operations {
             };
         };
     };
+    get_data_api_scenarios__sc__data_get: {
+        parameters: {
+            query: {
+                object: string;
+                provider: string;
+                group?: string | null;
+                elements: string[];
+                start?: string | null;
+                stop?: string | null;
+                step?: string | null;
+            };
+            header?: never;
+            path: {
+                sc: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dataproviders_api_scenarios__sc__dataproviders_get: {
+        parameters: {
+            query: {
+                class: string;
+                name?: string | null;
+            };
+            header?: never;
+            path: {
+                sc: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ephem_file_api_scenarios__sc__ephem__hash___file__get: {
         parameters: {
             query?: never;
@@ -2808,6 +3015,145 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_styles_api_styles_get: {
+        parameters: {
+            query?: {
+                object_type?: string | null;
+                scenario?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StylesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_style_api_styles__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_style_api_styles__name__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_style_api_styles__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
