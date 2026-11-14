@@ -4,8 +4,8 @@
 import unittest
 
 from gpredict_web.rig import (
-    CMD_AOIQ, CMD_AOS, CMD_CHK_VFO, CMD_LOIQ, CMD_LOS, CMD_SET_VFO_OPT, cmd_duplex_split, cmd_ft817_split,
-    cmd_get_dcd, cmd_get_freq, cmd_get_ptt, cmd_get_split_freq, cmd_set_freq, cmd_set_ptt, cmd_set_split_freq,
+    CMD_AOIQ, CMD_AOS, CMD_CHK_VFO, CMD_GET_DCD, CMD_LOIQ, CMD_LOS, CMD_SET_VFO_OPT, cmd_duplex_split, cmd_ft817_split,
+    cmd_get_freq, cmd_get_ptt, cmd_get_split_freq, cmd_set_freq, cmd_set_ptt, cmd_set_split_freq,
     countdown_text, doppler_down, doppler_up, is_beacon, lock_down, lock_up, parse_flag, parse_freq, radio_freq,
     sat_from_radio, tune_centre,
 )
@@ -130,9 +130,6 @@ class CommandStringTest(unittest.TestCase):
         self.assertEqual(cmd_get_ptt(False), "t\n")
         self.assertEqual(cmd_get_ptt(True), "t currVFO\n")
 
-        self.assertEqual(cmd_get_dcd(False), b"\x8b\n")
-        self.assertEqual(cmd_get_dcd(True), b"\x8b currVFO\n")
-
         # Set PTT: ไม่มี q ต่อท้าย (spec §9.1 ข้อ 5)
         self.assertEqual(cmd_set_ptt(True, False), "T 1\n")
         self.assertEqual(cmd_set_ptt(False, False), "T 0\n")
@@ -163,14 +160,14 @@ class CommandStringTest(unittest.TestCase):
                     cmd_get_ptt(True), cmd_set_ptt(True, False), cmd_duplex_split(1, True), cmd_ft817_split(True, False)):
             self.assertIsInstance(cmd, str)
             self.assertTrue(cmd.endswith("\n"))
-        for dcd in (cmd_get_dcd(False), cmd_get_dcd(True)):
-            self.assertIsInstance(dcd, bytes)
-            self.assertTrue(dcd.endswith(b"\n"))
+        self.assertIsInstance(CMD_GET_DCD, bytes)
 
     def test_fixed_commands(self):
         self.assertEqual(CMD_SET_VFO_OPT, "\\set_vfo_opt 1\n")          # backslash หนึ่งตัวนำหน้า (ไม่ใช่ \s)
         self.assertEqual(len(CMD_SET_VFO_OPT), 15)
         self.assertEqual(CMD_CHK_VFO, "\\chk_vfo\n")
+        # DCD ไม่มีชื่อ VFO แม้มี VFO option (spec §9.1: rigctld 4.7.2 ตอบ `\x8b currVFO` สองบรรทัด)
+        self.assertEqual(CMD_GET_DCD, b"\x8b\n")
         self.assertEqual(CMD_AOS, "AOS\n")
         self.assertEqual(CMD_LOS, "LOS\n")
         self.assertEqual(CMD_AOIQ, "U IQRECORD 1\n")

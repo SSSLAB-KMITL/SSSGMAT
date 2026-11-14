@@ -1,8 +1,8 @@
 """Radio Control ของ Gpredict (ref-R §2-§4, spec §4 และ §9): ส่วนบนของไฟล์เป็นฟังก์ชันบริสุทธิ์ ไม่มี I/O ส่วนล่างคือ RigController
 
 - สูตร Doppler/LO (ref-R §3.2) และ transponder tune/lock (§3.3) หน่วย Hz ตรงตัว ไม่จำกัด passband (spec §9.2)
-- ข้อความคำสั่ง rigctld ทุกตัวสร้างที่นี่ที่เดียว (ref-R §4.1) ตรงตามตัวอักษรของ Gpredict ยกเว้นสองข้อที่ spec §9.1 แก้
-  (Set PTT ไม่ส่ง q ต่อท้าย, FT817 split ใช้ชื่อ VFO แทนเลขที่ไม่ได้อ่านจากไฟล์) ความถี่ใช้ `%10.0f` ไม่มีจุดทศนิยม
+- ข้อความคำสั่ง rigctld ทุกตัวสร้างที่นี่ที่เดียว (ref-R §4.1) ตรงตามตัวอักษรของ Gpredict ยกเว้นสามข้อที่ spec §9.1 แก้
+  (Set PTT ไม่ส่ง q ต่อท้าย, FT817 split ใช้ชื่อ VFO แทนเลขที่ไม่ได้อ่านจากไฟล์, DCD ไม่มีชื่อ VFO) ความถี่ใช้ `%10.0f` ไม่มีจุดทศนิยม
   และการจัดรูปแบบตัวเลขของ Python ไม่ขึ้นกับ locale
 - parse คำตอบของ rigctld (§3.6, §4.2) และข้อความ count-down (§2.6)
 - RigController: state machine และ cycle ของทุกชนิดวิทยุ (ref-R §2.7, §3.1-§3.8) รายละเอียดอยู่ที่ docstring ของ class
@@ -80,7 +80,7 @@ def is_beacon(t: dict) -> bool:
 
 
 # ---------------------------------------------------------------- คำสั่ง rigctld (ref-R §4.1)
-# ผลเป็น str ที่ลงท้าย \n (cmd_get_dcd เป็น bytes เพราะมีไบต์ 0x8B) vfo_opt = ธง VFO option ของอุปกรณ์นั้น (ref-R §4.2)
+# ผลเป็น str ที่ลงท้าย \n (CMD_GET_DCD เป็น bytes เพราะมีไบต์ 0x8B) vfo_opt = ธง VFO option ของอุปกรณ์นั้น (ref-R §4.2)
 
 CMD_SET_VFO_OPT = "\\set_vfo_opt 1\n"
 CMD_CHK_VFO = "\\chk_vfo\n"
@@ -88,6 +88,9 @@ CMD_AOS = "AOS\n"
 CMD_LOS = "LOS\n"
 CMD_AOIQ = "U IQRECORD 1\n"
 CMD_LOIQ = "U IQRECORD 0\n"
+# DCD: ไบต์ 0x8B (รหัสสั้นของ get_dcd ใน hamlib) ไม่มีชื่อ VFO แม้มี VFO option ต่างจาก Gpredict (spec §9.1): rigctld 4.7.2
+# ไม่อ่านชื่อ VFO ของ get_dcd แต่อ่าน ` currVFO` เป็นคำสั่งอีกตัว คำตอบจึงเกินมาหนึ่งบรรทัด (RPRT -1) และเหลื่อมกับทุกคำสั่งหลังจากนั้น
+CMD_GET_DCD = b"\x8b\n"
 
 # VFO Up (เลข 1=A 2=B 3=Main 4=Sub ของ radio-conf.h) → (ชื่อ VFO นั้น, ชื่อ VFO อีกฝั่งของคู่เดียวกัน) (gtk-rig-ctrl.c:1620-1668)
 _DUPLEX_VFOS = {1: ("VFOA", "VFOB"), 2: ("VFOB", "VFOA"), 3: ("Main", "Sub"), 4: ("Sub", "Main")}
@@ -117,11 +120,6 @@ def cmd_get_split_freq(vfo_opt: bool) -> str:
 
 def cmd_get_ptt(vfo_opt: bool) -> str:
     return f"t{_current(vfo_opt)}\n"
-
-
-def cmd_get_dcd(vfo_opt: bool) -> bytes:
-    """ไบต์ 0x8B (รหัสสั้นของ get_dcd ใน hamlib) ตามด้วย `\\n` หรือ ` currVFO\\n`"""
-    return b"\x8b" + _current(vfo_opt).encode("ascii") + b"\n"
 
 
 def cmd_set_ptt(on: bool, vfo_opt: bool) -> str:
@@ -955,7 +953,7 @@ class RigController:
 
     async def _get_ptt(self, dev: _Device) -> bool:
         """PTT (ref-R §3.6): "Read PTT" อ่านด้วย t ค่าอื่นอ่าน DCD (get_ptt ของ Gpredict) อ่านไม่ได้ถือว่าปิด"""
-        cmd = cmd_get_ptt(dev.vfo_opt) if dev.conf.ptt == PTT_CAT else cmd_get_dcd(dev.vfo_opt)
+        cmd = cmd_get_ptt(dev.vfo_opt) if dev.conf.ptt == PTT_CAT else CMD_GET_DCD
         return parse_flag(await self._cmd(dev, cmd) or [])
 
     async def _signal(self, dev: _Device, cmd: str) -> None:

@@ -7,6 +7,7 @@ test ห้ามใช้ hamlib จริงหรือเน็ต
   ค่าตั้งต้นคือ default_reply ซึ่ง test เรียกต่อได้ เช่น lambda cmd: None if cmd.startswith(b"AOS") else fake.default_reply(cmd)
 - default_reply: คำสั่งตั้งค่าตอบ "RPRT 0" และจำค่าไว้ (F -> freq, I -> split_freq, T -> ptt, P -> pos) คำสั่งอ่านตอบค่าที่จำไว้
   (f, i, t, p ตอบสองบรรทัด az กับ el, \\chk_vfo, 0x8b ตอบ DCD "0") คำสั่งอื่นตอบ "RPRT 0"
+- 0x8b ที่มีคำต่อท้าย (เช่น `\\x8b currVFO`) ตอบสองบรรทัด "0" แล้ว "RPRT -1" แบบ rigctld 4.7.2 ที่อ่านคำนั้นเป็นคำสั่งอีกตัว
 - vfo_opt ตอบแค่ \\chk_vfo (True หรือ "1" -> "1", นอกนั้น "0") \\set_vfo_opt ไม่เปลี่ยนค่านี้ test จึงจำลอง rigctld ที่ไม่รับ VFO option ได้
 - q ปิดการเชื่อมต่อนั้นโดยไม่ตอบ เหมือน rigctld
 - delay_s หน่วงก่อนตอบทุกคำสั่ง (จำลอง rigctld ช้า)
@@ -66,7 +67,7 @@ class FakeHamlib:
             if name == b"\\chk_vfo":
                 return b"1\n" if self.vfo_opt in (1, "1") else b"0\n"
             if name == b"\x8b":
-                return b"0\n"
+                return b"0\n" if len(words) == 1 else b"0\nRPRT -1\n"
             if name == b"F":
                 self.freq = float(words[-1])
             elif name == b"I":

@@ -244,6 +244,11 @@ class FakeHamlibTest(unittest.IsolatedAsyncioTestCase):
         self.fake.vfo_opt = False
         self.assertEqual(await self.client.command("\\chk_vfo\n"), ["0"])    # \set_vfo_opt ไม่เปลี่ยนค่าที่ test ตั้ง
 
+    async def test_dcd_with_a_vfo_name_answers_two_lines(self):
+        # แบบ rigctld 4.7.2 หลัง \set_vfo_opt 1 (ตรวจกับของจริง): ชื่อ VFO ต่อท้าย 0x8b ถูกอ่านเป็นคำสั่งอีกตัวที่ตอบ RPRT -1
+        self.assertEqual(await self.client.command(b"\x8b\n"), ["0"])
+        self.assertEqual(await self.client.command(b"\x8b currVFO\n", lines=2), ["0", "RPRT -1"])
+
     async def test_reply_none_is_silence_and_default_reply_is_reusable(self):
         self.fake.reply = lambda cmd: None if cmd.startswith(b"AOS") else self.fake.default_reply(cmd)
         with mock.patch.object(hamlib, "REPLY_TIMEOUT_S", 0.05):

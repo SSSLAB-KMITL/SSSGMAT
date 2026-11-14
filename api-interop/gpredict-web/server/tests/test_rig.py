@@ -363,6 +363,30 @@ class CycleTest(RigTestCase):
         await ctl.run_cycle()
         self.assertEqual(self.fake.log, [*PROBE, b"\x8b\n", b"F  145900000\n", b"f\n"])
 
+    async def test_read_dcd_with_vfo_option_keeps_replies_in_step(self):
+        """spec §9.1: DCD ส่ง `\\x8b` ไม่มีชื่อ VFO เสมอ เพราะ rigctld 4.7.2 ตอบ `\\x8b currVFO` สองบรรทัด (fake ทำแบบเดียวกัน)
+        บรรทัดที่เกินจะเป็นคำตอบของคำสั่งถัดไปทีละคำสั่ง ความถี่ที่ไปถึงวิทยุจึงผิด (เคยส่ง I VFOA ที่เป็นค่าที่อ่านค้าง)"""
+        self.write_radio("A", Type=3, PTT=2, VFO_UP=1, VFO_DOWN=2)
+        self.fake.vfo_opt = "1"
+        ctl = self.controller()
+        await ctl.act({"action": "track", "on": True})
+        await self.engage(ctl)
+        for k in range(4):
+            rate = 7.0 - 0.1 * k
+            ctl.on_tick(T0 + timedelta(seconds=k), row(rate=rate))
+            n = len(self.fake.log)
+            await ctl.run_cycle()
+            down = round(145_900_000 + doppler_down(145_900_000, rate))
+            up = round(435_100_000 + doppler_up(435_100_000, rate))
+            head = [*PROBE, b"S VFOB 1 VFOA\n", b"\x8b\n"] if k == 0 else [b"\x8b\n", b"f currVFO\n"]
+            middle = [b"I VFOA %10d\n" % up] if k == 0 else [b"i currVFO\n", b"I VFOA %10d\n" % up]
+            with self.subTest(cycle=k):
+                self.assertEqual(self.since(n), [*head, b"F currVFO %10d\n" % down, b"f currVFO\n",
+                                                 *middle, b"i currVFO\n"])
+                self.assertEqual((self.fake.freq, self.fake.split_freq), (down, up))
+                self.assertTrue(ctl.engaged)
+                self.assertIsNone(ctl.snapshot()["status"])
+
     async def test_unknown_radio_type_runs_rx_cycle(self):
         self.write_radio("A")
         ctl = self.controller()
