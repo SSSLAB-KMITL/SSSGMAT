@@ -91,6 +91,7 @@ afterEach(() => {
   disposeCore();
   sensorViewScenes.reset();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   delete window.__gnssStudioTest;
 });
 
@@ -263,21 +264,62 @@ describe("the window", () => {
     await mount({ G01: ["Sensor1"] });
     const fake = await open("Sensor1");
     const stage = screen.getByTestId("sensor-view");
-    let notPrevented = true;
-    act(() => void (notPrevented = fireEvent.wheel(stage, { deltaY: -100 })));
-    expect(notPrevented).toBe(false); // preventDefault: หน้าไม่เลื่อน
+    // นาฬิกาของตัวสะสมล้อ (wheelZoom.ts): รอยล้อห่างกัน 300 ms = ขั้นละรอย
+    let clock = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const notch = (deltaY: number, init: Partial<WheelEventInit> = {}): boolean => {
+      clock += 300;
+      let notPrevented = true;
+      act(() => void (notPrevented = fireEvent.wheel(stage, { deltaY, ...init })));
+      return notPrevented;
+    };
+    expect(notch(-100)).toBe(false); // preventDefault: หน้าไม่เลื่อน
     expect(views()[0].params?.zoom).toBe(2);
-    act(() => void fireEvent.wheel(stage, { deltaY: -100 }));
+    notch(-100);
     expect(views()[0].params?.zoom).toBe(4);
-    act(() => void fireEvent.wheel(stage, { deltaY: 100 }));
+    notch(100);
     expect(views()[0].params?.zoom).toBe(2);
     await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 2]));
-    act(() => void fireEvent.wheel(stage, { deltaY: -100, shiftKey: true }));
-    act(() => void fireEvent.wheel(stage, { deltaY: 100, shiftKey: true }));
+    notch(-100, { shiftKey: true });
+    notch(100, { shiftKey: true });
     expect(views()[0].params?.zoom).toBe(2);
     // ปลายทั้งสองไม่เลยช่วง
-    for (let i = 0; i < 5; i++) act(() => void fireEvent.wheel(stage, { deltaY: 100 }));
+    for (let i = 0; i < 5; i++) notch(100);
     expect(views()[0].params?.zoom).toBe(1);
+  });
+
+  test("a trackpad swipe (many small wheel events) or a pinch (ctrlKey) moves the zoom by at most a couple of steps, not to ×128", async () => {
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    const stage = screen.getByTestId("sensor-view");
+    let clock = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // ปัดนิ้ว: 30 เหตุการณ์ deltaY −40 ห่างกัน 10 ms
+    for (let i = 0; i < 30; i++) {
+      act(() => void fireEvent.wheel(stage, { deltaY: -40 }));
+      clock += 10;
+    }
+    const afterSwipe = views()[0].params?.zoom as number;
+    expect(afterSwipe).toBeGreaterThanOrEqual(2);
+    expect(afterSwipe).toBeLessThanOrEqual(4);
+    // นิ้วสัมผัสเบา ๆ: 20 เหตุการณ์ −4 ภายใน 100 ms ไม่ซูม
+    clock += 1000;
+    for (let i = 0; i < 20; i++) {
+      act(() => void fireEvent.wheel(stage, { deltaY: -4 }));
+      clock += 5;
+    }
+    expect(views()[0].params?.zoom).toBe(afterSwipe);
+    // pinch ออก (ctrlKey) ทางเดียวกัน: หน้าไม่ซูมทั้งหน้า (preventDefault)
+    clock += 1000;
+    let notPrevented = true;
+    for (let i = 0; i < 30; i++) {
+      act(() => void (notPrevented = fireEvent.wheel(stage, { deltaY: 40, ctrlKey: true })));
+      clock += 10;
+    }
+    expect(notPrevented).toBe(false);
+    const afterPinch = views()[0].params?.zoom as number;
+    expect(afterPinch).toBeLessThan(afterSwipe);
+    expect(afterPinch).toBeGreaterThanOrEqual(afterSwipe / 4);
   });
 
   test("HUD: FOV line, imagery source line (top layer, missing, offline) and the Globe Manager hint", async () => {

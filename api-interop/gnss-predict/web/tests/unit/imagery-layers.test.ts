@@ -16,6 +16,8 @@ interface FakeProvider {
 interface FakeLayer {
   imageryProvider: FakeProvider;
   alpha: number;
+  dayAlpha: number;
+  nightAlpha: number;
 }
 
 const made = vi.hoisted(() => ({ providers: [] as unknown[], schemes: [] as unknown[] }));
@@ -36,13 +38,15 @@ vi.mock("cesium", async (importOriginal) => {
   }
   class ImageryLayer {
     alpha = 1;
+    dayAlpha = 1;
+    nightAlpha = 1;
     constructor(public imageryProvider: unknown, _options?: unknown) {}
   }
   return { ...actual, UrlTemplateImageryProvider, WebMercatorTilingScheme, ImageryLayer };
 });
 
-const { WebMercatorTilingScheme } = await import("cesium");
-const { attachImageryLayers, imageryStatus, TOKEN_INTERVAL_MS } = await import("../../src/cesium/imageryLayers");
+const { Credit, ImageryProvider, NeverTileDiscardPolicy, Resource, WebMercatorTilingScheme } = await import("cesium");
+const { attachImageryLayers, imageryStatus, setImageryNightAlpha, TOKEN_INTERVAL_MS } = await import("../../src/cesium/imageryLayers");
 const { useImagery } = await import("../../src/stores/imagery");
 const { useLayout } = await import("../../src/stores/layout");
 const { useTime } = await import("../../src/stores/time");
@@ -103,8 +107,8 @@ const setTime = (iso: string) => useTime.setState({ current: new Date(iso) });
 const show = (layers: Record<string, { show: boolean; translucency: number }>) => useLayout.setState({ globe: { layers } });
 
 const offs: (() => void)[] = [];
-function attach(viewer: never) {
-  const off = attachImageryLayers(viewer, { now: () => Date.now() });
+function attach(viewer: never, nightAlpha?: number) {
+  const off = attachImageryLayers(viewer, { now: () => Date.now(), nightAlpha });
   offs.push(off);
   return off;
 }
@@ -199,8 +203,63 @@ describe("attachImageryLayers", () => {
     expect(viirs.tilingScheme).toBeInstanceOf(WebMercatorTilingScheme);
     expect(viirs.maximumLevel).toBe(9);
     expect(hima.maximumLevel).toBe(7);
-    expect(viirs.credit).toBe("NASA GIBS / EOSDIS");
-    expect(hima.credit).toBe("NASA GIBS / EOSDIS, JMA");
+  });
+
+  test("each layer's credit (NASA GIBS / EOSDIS, JMA, NOAA) is shown on screen, not only in Cesium's Data attribution box", () => {
+    useImagery.setState({ layers: [...CATALOG, { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: "NASA GIBS / EOSDIS, NOAA" }] });
+    show({ [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    const credits = v.gibs().map((l) => l.imageryProvider.options.credit);
+    for (const c of credits) expect(c).toBeInstanceOf(Credit);
+    expect(credits.map((c) => (c as InstanceType<typeof Credit>).html)).toEqual(["NASA GIBS / EOSDIS", "NASA GIBS / EOSDIS, JMA", "NASA GIBS / EOSDIS, NOAA"]);
+    expect(credits.every((c) => (c as InstanceType<typeof Credit>).showOnScreen)).toBe(true);
+  });
+
+  test("each provider has a NeverTileDiscardPolicy, so Cesium loads tiles by XHR (preferBlob) and the HTTP status reaches errorEvent in every browser", () => {
+    show({ [VIIRS]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.gibs()).toHaveLength(2);
+    for (const l of v.gibs()) expect(l.imageryProvider.options.tileDiscardPolicy).toBeInstanceOf(NeverTileDiscardPolicy);
+  });
+
+  test("Cesium's own ImageryProvider.loadImage asks for a blob (XHR) when the provider has a tile discard policy", () => {
+    const fetchImage = vi.spyOn(Resource.prototype, "fetchImage").mockReturnValue(undefined);
+    ImageryProvider.loadImage({ tileDiscardPolicy: new NeverTileDiscardPolicy() } as never, "/api/imagery/tiles/x/default/0/0/0");
+    expect(fetchImage).toHaveBeenLastCalledWith(expect.objectContaining({ preferBlob: true }));
+    ImageryProvider.loadImage({} as never, "/api/imagery/tiles/x/default/0/0/0");
+    expect(fetchImage.mock.lastCall?.[0]).not.toHaveProperty("preferBlob");
+    fetchImage.mockRestore();
+  });
+
+  test("GIBS layers follow Ambient Level like the base layer: nightAlpha from attach and from later changes, dayAlpha 1 (translucency stays in alpha)", async () => {
+    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer, 0.3);
+    expect(v.gibs().map((l) => [l.dayAlpha, l.nightAlpha])).toEqual([[1, 0.3], [1, 0.3]]);
+    expect(v.gibs()[1].alpha).toBeCloseTo(0.6, 12);
+
+    v.scene.requestRender.mockClear();
+    setImageryNightAlpha(v.viewer, 0.75);
+    expect(v.gibs().map((l) => l.nightAlpha)).toEqual([0.75, 0.75]);
+    expect(v.scene.requestRender).toHaveBeenCalled();
+
+    // ชั้นที่แสดงทีหลังและชั้นที่เปลี่ยนตามเวลา (ทั้งชั้นใหม่และชั้นเดิมที่รอ) ได้ค่าเดียวกัน
+    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 0 }, [MODIS]: { show: true, translucency: 0 } });
+    expect(v.gibs().map((l) => l.nightAlpha)).toEqual([0.75, 0.75, 0.75]);
+    await v.gibs()[1].imageryProvider.requestImage(0, 0, 0);
+    setTime("2026-11-12T12:00:00Z");
+    setImageryNightAlpha(v.viewer, 0.1);
+    expect(v.gibs().length).toBeGreaterThan(3);
+    expect(v.gibs().map((l) => l.nightAlpha)).toEqual(v.gibs().map(() => 0.1));
+  });
+
+  test("without a night alpha (no lighting settings) GIBS layers keep nightAlpha 1", () => {
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.gibs().map((l) => l.nightAlpha)).toEqual([1, 1]);
+    setImageryNightAlpha(fakeViewer().viewer, 0.2); // viewer ที่ไม่ได้ต่อ: ไม่ทำอะไร ไม่โยน
   });
 
   test("time that moves within the same token replaces nothing", () => {
@@ -336,8 +395,10 @@ describe("attachImageryLayers", () => {
       expect(error.retry).toBe(false);
     }
     expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBeCloseTo(0.75, 12);
-    // token ใหม่นับใหม่
+    // token ใหม่นับใหม่ (ชั้นเดิมยังอยู่บนจอจนชั้นใหม่ได้ชิ้นแรก จึงยังบอกของชั้นเดิม)
     setTime("2026-11-12T12:00:00Z");
+    expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBeCloseTo(0.75, 12);
+    await v.gibs().at(-1)!.imageryProvider.requestImage(0, 0, 1);
     expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBe(0);
   });
 
@@ -377,6 +438,25 @@ describe("imageryStatus", () => {
     expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: HIMA, label: "2026-11-11 12:00 UTC" });
     show({ [BM]: { show: true, translucency: 0 } });
     expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: BM, title: "Blue Marble", label: "" });
+  });
+
+  test("while the new time's layer has not loaded a tile, the HUD names the older layer still on screen", async () => {
+    show({ [VIIRS]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    const p = v.gibs()[0].imageryProvider;
+    await p.requestImage(0, 0, 1);
+    p.errorEvent.raiseEvent({ retry: true, error: { statusCode: 404 } });
+    setTime("2026-11-12T12:00:00Z");
+    expect(v.gibs()).toHaveLength(2);
+    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0.5 });
+    // อีกชั้นที่ยังไม่เริ่มโหลดแทนอีกครั้ง: ภาพบนจอยังเป็นชั้นเดิม
+    vi.advanceTimersByTime(TOKEN_INTERVAL_MS);
+    setTime("2026-11-13T12:00:00Z");
+    expect(imageryStatus(v.viewer).topLayer?.label).toBe("2026-11-11");
+    await v.gibs().at(-1)!.imageryProvider.requestImage(0, 0, 0);
+    expect(v.gibs()).toHaveLength(1);
+    expect(imageryStatus(v.viewer).topLayer).toMatchObject({ label: "2026-11-13", missingRatio: 0 });
   });
 
   test("nothing shown, switch off, or a viewer without the manager: null (the HUD says Natural Earth II)", () => {

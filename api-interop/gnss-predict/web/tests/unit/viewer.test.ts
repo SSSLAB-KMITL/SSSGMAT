@@ -23,7 +23,10 @@ vi.mock("cesium", async (importOriginal) => {
   return { ...actual, Viewer: FakeViewer, ImageryLayer, TileMapServiceImageryProvider };
 });
 
-const { createViewer, destroyViewer, watchRenderFailure } = await import("../../src/cesium/viewer");
+const { createViewer, destroyViewer, watchRenderFailure, localServerKey, LOCAL_SERVER_REQUESTS } = await import("../../src/cesium/viewer");
+const { RequestScheduler } = await import("cesium");
+/** getServerKey ของ Cesium เป็นของภายใน (ไม่อยู่ใน type) แต่เป็นตัวที่ RequestScheduler ใช้หา requestsByServer จริง */
+const cesiumServerKey = (url: string): string => (RequestScheduler as unknown as { getServerKey(url: string): string }).getServerKey(url);
 
 /** viewer ปลอมที่มีแค่ส่วนที่ destroyViewer / watchRenderFailure ใช้ order จดลำดับการเรียก */
 function fakeViewer(gl: unknown = undefined) {
@@ -123,5 +126,30 @@ describe("the 3D and 2D windows (scene3d.ts, scene2d.ts need real WebGL, so thei
       expect(source, file).toMatch(/destroyViewer\(viewer\)/); // a constructor that throws
       expect(source, file).toMatch(/watchRenderFailure\(viewer,/);
     }
+  });
+});
+
+// browser มี HTTP/1.1 ได้ 6 connection ต่อ server (หนึ่งถูก SSE ของ /api/events ถือไว้) แต่ Cesium ขอได้ 18 ต่อ server
+// ชิ้นภาพ GIBS ที่ช้า (server รอ NASA ได้ถึง 20 วินาที) จึงกัน API ทั้งหน้าได้: จำกัดคำขอของ Cesium ไป server ในเครื่องไว้ 4
+describe("request cap for the local server", () => {
+  test.each([
+    ["http://127.0.0.1:8000/api/x", { protocol: "http:", host: "127.0.0.1:8000" }],
+    ["http://localhost/", { protocol: "http:", host: "localhost" }],
+    ["https://studio.example/", { protocol: "https:", host: "studio.example" }],
+    ["https://studio.example:8443/", { protocol: "https:", host: "studio.example:8443" }],
+    ["http://[::1]:8000/", { protocol: "http:", host: "[::1]:8000" }],
+  ])("the key for %s is the same as Cesium's own RequestScheduler.getServerKey", (url, loc) => {
+    expect(localServerKey(loc)).toBe(cesiumServerKey(url));
+  });
+
+  test("default ports: http 80, https 443", () => {
+    expect(localServerKey({ protocol: "http:", host: "localhost" })).toBe("localhost:80");
+    expect(localServerKey({ protocol: "https:", host: "studio.example" })).toBe("studio.example:443");
+  });
+
+  test("loading the viewer module caps Cesium's requests to this page's server at 4", () => {
+    expect(LOCAL_SERVER_REQUESTS).toBe(4);
+    expect(RequestScheduler.requestsByServer[cesiumServerKey(window.location.href)]).toBe(4);
+    expect(RequestScheduler.requestsByServer[cesiumServerKey("/api/imagery/tiles/x/default/0/0/0")]).toBe(4);
   });
 });

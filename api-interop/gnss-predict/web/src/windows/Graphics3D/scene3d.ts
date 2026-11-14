@@ -49,7 +49,7 @@ import {
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
-import { attachImageryLayers, imageryStatus } from "../../cesium/imageryLayers";
+import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SceneObject, type SceneStyle, type SensorCtx,
@@ -291,7 +291,8 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
-    this.offs.push(attachImageryLayers(viewer)); // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้
+    // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้ ด้านกลางคืนจางตาม Ambient Level เท่าภาพฐาน (applyProps ส่งค่าใหม่ทีหลัง)
+    this.offs.push(attachImageryLayers(viewer, { nightAlpha: this.props.ambientLevel / 100 }));
     // โหมด Camera: data source ที่เพิ่มเข้ามา (CZML ชุดใหม่ก่อน adopted) ซ่อนทันที ไม่รอ restyle
     this.offs.push(viewer.dataSources.dataSourceAdded.addEventListener((_c: unknown, ds: { show: boolean }) => {
       if (this.cameraDisplay()) ds.show = false;
@@ -571,7 +572,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
    * - Enable Lighting → globe.enableLighting (แสงอาทิตย์ตามเวลา: กลางวัน/กลางคืน)
    * - Sun Level → scene.light.intensity = ระดับ/100 (Cesium บีบสีแสงที่เกิน 1 ลงมาที่ 1: 100% สว่างเต็มเท่าค่าตั้งต้นของ Cesium) มีผลเมื่อเปิดแสง
    * - Ambient Level → nightAlpha ของภาพโลก = ระดับ/100 บนพื้นสีดำ: ทรงรีเรียบไม่มี normal ของ terrain Cesium จึงใช้ ambient คงที่ 0.3 ใน shader
-   *   ความสว่างของภาพด้านกลางคืนจึงเป็นตัวปรับที่ใกล้ที่สุด มีผลเมื่อเปิดแสง
+   *   ความสว่างของภาพด้านกลางคืนจึงเป็นตัวปรับที่ใกล้ที่สุด มีผลเมื่อเปิดแสง ชั้นภาพ GIBS ได้ค่าเดียวกัน (setImageryNightAlpha)
    * - Night Lights Level → ภาพแสงไฟเมือง (Black Marble) ของ Cesium อยู่บน Cesium ion ต้องต่อเน็ต ไม่มีในโหมดออฟไลน์: ค่าเก็บไว้แต่ไม่มีผลต่อภาพ
    *   (หน้าต่าง Properties แสดงหมายเหตุไทย)
    * - Lat/Lon Lines → ชั้นภาพ GridImageryProvider (เส้นทุก 30° ที่ระยะไกล ถี่ขึ้นเมื่อซูม สีจาก --scene-grid-line)
@@ -588,6 +589,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
       base.dayAlpha = 1;
       base.nightAlpha = p.ambientLevel / 100;
     }
+    setImageryNightAlpha(this.viewer, p.ambientLevel / 100); // ตอนสร้างยังไม่ได้ต่อชั้น GIBS: ไม่ทำอะไร (constructor ส่งค่าให้ attach เอง)
     if (p.latLonLines && this.grid === null) {
       this.grid = imageryLayers.addImageryProvider(latLonGrid(sceneStyle().gridLine));
     } else if (!p.latLonLines && this.grid !== null) {

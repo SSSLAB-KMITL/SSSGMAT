@@ -10,15 +10,31 @@
 // - ปิดหน้าต่าง: destroyViewer (ไม่ใช่ viewer.destroy() ตรง ๆ) เพราะ Cesium ไม่เรียก WEBGL_lose_context context จึงค้างจน GC
 //   และ Chrome ทิ้ง context ที่เก่าที่สุด (มักเป็นหน้าต่าง 3D ตั้งต้น) เมื่อมีเกินราว 16 ตัว เช่น หลังเปิดปิดหน้าต่างหรือเปลี่ยน Projection ของ 2D หลายครั้ง
 // - หน้าต่าง 2D: map projection ตั้งได้ตอนสร้าง viewer เท่านั้น (Equidistant Cylindrical = GeographicProjection, Mercator = WebMercatorProjection)
+// - คำขอของ Cesium (ชิ้นภาพ GIBS) ไป server ของหน้านี้พร้อมกันไม่เกิน LOCAL_SERVER_REQUESTS (ตั้งตอนโหลดโมดูลนี้ ก่อนสร้าง viewer ตัวแรก):
+//   browser มี HTTP/1.1 ได้ 6 connection ต่อ server หนึ่งถูก SSE (/api/events) ถือไว้ ส่วน Cesium ขอได้ 18 ต่อ server
+//   ชิ้นภาพที่ server ยังรอ NASA (ถึง 20 วินาที) จึงกันคำขอ API ของหน้าได้ทั้งหมด จำกัดไว้ 4 = เหลืออย่างน้อยหนึ่ง connection ให้ API
 // CESIUM_BASE_URL (vite.config.ts define) = "/cesium": Workers, Assets, Widgets ถูกคัดลอกไปที่นั่นทั้งตอน build และเสิร์ฟตอน dev
 
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import {
-  buildModuleUrl, Color, GeographicProjection, GridImageryProvider, ImageryLayer, Ion, SceneMode, TileMapServiceImageryProvider, Viewer,
-  WebMercatorProjection,
+  buildModuleUrl, Color, GeographicProjection, GridImageryProvider, ImageryLayer, Ion, RequestScheduler, SceneMode, TileMapServiceImageryProvider,
+  Viewer, WebMercatorProjection,
 } from "cesium";
 
 Ion.defaultAccessToken = "";
+
+/** คำขอของ Cesium ไป server ของหน้านี้พร้อมกันได้ไม่เกินนี้ (ค่าตั้งต้นของ Cesium 18 ต่อ server) */
+export const LOCAL_SERVER_REQUESTS = 4;
+
+/**
+ * key ของ server ของหน้านี้ในรูปเดียวกับ RequestScheduler.getServerKey ของ Cesium (ของภายใน ไม่อยู่ใน type):
+ * authority ของ URL ถ้าไม่มี ":" ต่อท้ายด้วย port ตั้งต้น 443 (https) หรือ 80 (อื่น ๆ) location.host ไม่มี port ตั้งต้นอยู่แล้ว
+ */
+export function localServerKey(loc: { protocol: string; host: string }): string {
+  return /:/.test(loc.host) ? loc.host : `${loc.host}:${loc.protocol === "https:" ? "443" : "80"}`;
+}
+
+if (typeof location !== "undefined") RequestScheduler.requestsByServer[localServerKey(location)] = LOCAL_SERVER_REQUESTS;
 
 /** ภาพโลกที่มากับ Cesium (ความละเอียดต่ำ ระดับ 0–2: ประหยัดหน่วยความจำ GPU เมื่อเปิดหลายหน้าต่าง, spec §17 W1) */
 export function naturalEarthLayer(): ImageryLayer {

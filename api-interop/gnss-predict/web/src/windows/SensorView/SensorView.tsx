@@ -8,7 +8,8 @@
 // - ดาวแม่ไม่มีตำแหน่ง (sensorHud() = null: ไม่มีผลหรือนอกช่วงเวลา) = ภาพว่างพร้อมข้อความไทย (ไม่ใช่ error)
 // - Shift + ล้อเมาส์ = Step Forward / Backward แบบหน้าต่าง 3D; ลาก หมุน ซูมด้วยเมาส์ถูกปิดใน scene (กล้องล็อก)
 // - โหมดกล้อง (imagery spec §5.3): แถบ Display (Camera ตั้งต้น | Sensor) และ Zoom In / Zoom Out พร้อม "×n" เก็บใน params (display, zoom) แบบ Up
-//   ล้อเมาส์ไม่กด Shift บนภาพ = ซูมทีละขั้น (deltaY < 0 = เข้า) ตัวฟังแบบ capture ไม่ passive: preventDefault (หน้าไม่เลื่อน) และไม่ส่งต่อถึง canvas
+//   ล้อเมาส์ไม่กด Shift บนภาพ (รวม pinch) = ซูมตามยอดสะสม (wheelZoom.ts: trackpad ไม่กระโดด ×1 → ×128, deltaY < 0 = เข้า)
+//   ตัวฟังแบบ capture ไม่ passive: preventDefault (หน้าไม่เลื่อน) และไม่ส่งต่อถึง canvas
 //   Camera ไม่วาดวงขอบกรวย; วงในโหมด Sensor ใช้ fov ด้านสั้นที่หารด้วย zoom แล้ว
 //   HUD เพิ่มบรรทัดมุมกว้าง (FOV ×zoom) และแหล่งภาพพื้นโลก (ชั้น GIBS บนสุดจาก handle.sensorHud().imagery หรือ Natural Earth II ออฟไลน์)
 //   สวิตช์ภาพออนไลน์ปิด + Camera + zoom ≥ 8 = แนะนำ Globe Manager; สวิตช์เปิดอยู่ HUD อ่านใหม่ทุก IMAGERY_POLL_MS (ชิ้นภาพโหลดโดยที่เวลาไม่เปลี่ยน)
@@ -30,6 +31,7 @@ import {
   nextZoom, registerSensorViewScene, sensorViewParams, sensorViewScenes, SENSOR_VIEW_KIND, ZOOM_STEPS, type SensorHudImagery, type SensorViewDisplay,
   type SensorViewParams, type SensorViewUp, type SensorViewZoom,
 } from "./registry";
+import { createWheelZoom } from "./wheelZoom";
 
 const RAD = Math.PI / 180;
 const UPS: readonly SensorViewUp[] = ["north", "velocity"];
@@ -112,20 +114,25 @@ function useImageryPoll(enabled: boolean): void {
   }, [enabled]);
 }
 
-/** ล้อเมาส์ไม่กด Shift บนภาพ = ซูมทีละขั้น (Shift + ล้อเป็นของ useShiftWheelSteps) ไม่ให้หน้าเลื่อนและไม่ส่งต่อถึง canvas ของ Cesium */
+/**
+ * ล้อเมาส์ไม่กด Shift บนภาพ (รวม pinch ของ trackpad = ctrlKey + ล้อ) = ซูมตามยอดที่สะสม (wheelZoom.ts: 100 px ต่อขั้น ไม่เกินขั้นละ 150 ms)
+ * Shift + ล้อเป็นของ useShiftWheelSteps ไม่ให้หน้าเลื่อน (หรือซูมทั้งหน้า) และไม่ส่งต่อถึง canvas ของ Cesium
+ */
 function useWheelZoom(host: RefObject<HTMLDivElement | null>, zoom: SensorViewZoom, setZoom: (z: SensorViewZoom) => void): void {
   const latest = useRef({ zoom, setZoom });
   latest.current = { zoom, setZoom };
   useEffect(() => {
     const el = host.current;
     if (el === null) return;
+    const wheel = createWheelZoom({ now: () => performance.now(), pageHeight: () => window.innerHeight });
     const onWheel = (e: WheelEvent): void => {
       if (e.shiftKey) return;
       e.preventDefault();
       e.stopPropagation();
-      if (e.deltaY === 0) return;
+      const dir = wheel.step(e);
+      if (dir === 0) return;
       const { zoom: z, setZoom: set } = latest.current;
-      const next = nextZoom(z, e.deltaY < 0 ? 1 : -1);
+      const next = nextZoom(z, dir);
       if (next !== z) set(next);
     };
     el.addEventListener("wheel", onWheel, { capture: true, passive: false });

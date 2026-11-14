@@ -52,7 +52,8 @@ async function openSensorView(page: Page): Promise<void> {
 }
 
 const sensorCamera = (page: Page) => page.evaluate((n) => window.__gnssStudioTest!.sensorViewCamera(n), SENSOR);
-const entityPosition = (page: Page, name: string) => page.evaluate((n) => window.__gnssStudioTest!.entityPositionEcef(n), name);
+/** ป้ายของ object ในหน้าต่าง 3D หลักแสดงอยู่จริงไหม (entity.isShowing รวม show ของ data source และของป้าย) */
+const mainLabelShown = (page: Page, name: string) => page.evaluate((n) => window.__gnssStudioTest!.labelShown(n), name);
 
 /** ระยะ (เมตร) ระหว่างกล้องของ Sensor View กับดาวแม่ในหน้าต่าง 3D (อ่านสองค่าใน evaluate เดียว: เวลาเดียวกัน) ไม่มีกล้องหรือไม่มีดาว = null */
 async function cameraDistanceM(page: Page): Promise<number | null> {
@@ -126,8 +127,8 @@ test.describe("Sensor View Camera mode", () => {
     const start = (await sensorCamera(page))!;
     expect(start.display).toBe("camera");
     expect(start.zoom).toBe(1);
-    // หน้าต่าง 3D หลักยังวาด object ของตัวเอง (Camera ซ่อนเฉพาะในหน้าต่างของมัน)
-    expect(await entityPosition(page, SATELLITE), "the main 3D window still draws the satellite").not.toBeNull();
+    // หน้าต่าง 3D หลักยังวาด object ของตัวเอง (Camera ซ่อนเฉพาะในหน้าต่างของมัน): ป้ายของดาวแสดงอยู่ (isShowing รวม show ของ data source)
+    await expect.poll(() => mainLabelShown(page, SATELLITE), { message: "the main 3D window still draws the satellite" }).toBe(true);
 
     const fovAt1 = await shortSideFovDeg(page);
     expect(fovAt1, "short-side fov at ×1").not.toBeNull();
@@ -188,7 +189,7 @@ test.describe("Sensor View Camera mode", () => {
     await expect(displayButton(page, "Camera")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(async () => (await sensorCamera(page))?.visibleEntityCount, { message: "entities hidden again in Camera mode" }).toBe(0);
     await expect(sensorView(page).locator("svg.sensor-view-cone")).toHaveCount(0);
-    expect(await entityPosition(page, SATELLITE), "the main 3D window still draws the satellite").not.toBeNull();
+    await expect.poll(() => mainLabelShown(page, SATELLITE), { message: "the main 3D window still draws the satellite" }).toBe(true);
     await waitForCameraOnSatellite(page, "after switching display modes");
   });
 

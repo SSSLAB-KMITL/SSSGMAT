@@ -631,6 +631,13 @@ describe("consent texts name every host that a download contacts", () => {
     expect(text).toContain("data/imagery");
     expect(text).toContain("2 GB");
     expect(text).toMatch(/ปิดได้ทุกเมื่อ/);
+    // บอกตามจริงว่า NASA เห็นอะไรอีก: หมายเลข IP ของเครื่อง และ User-Agent ที่ server ส่งจริง (ไม่ใช่ "มีเพียง ... เท่านั้น")
+    const ua = /^USER_AGENT = "([^"]+)"/m.exec(imagery);
+    expect(ua, "USER_AGENT not found in server/gnss_studio_server/imagery.py").not.toBeNull();
+    expect(text).toContain(`User-Agent ${ua![1]}`);
+    expect(text).toMatch(/IP/);
+    expect(text).toMatch(/NASA/);
+    expect(text).not.toMatch(/เท่านั้น/);
     // ไม่ใช่ข้อความของการดาวน์โหลดข้อมูลวงโคจร: ไม่อ้างแหล่งอื่นที่ไม่ได้ติดต่อ
     for (const host of HOSTS) expect(text, host).not.toContain(host);
   });

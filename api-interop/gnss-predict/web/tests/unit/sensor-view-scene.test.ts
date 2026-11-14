@@ -14,6 +14,9 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SensorViewPose } from "../../src/cesium/sensorDraw";
 import { sensorViewFovDeg, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
+import { DEFAULT_GLOBE } from "../../src/layout/workbook";
+import { useImagery } from "../../src/stores/imagery";
+import { useLayout } from "../../src/stores/layout";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
@@ -293,5 +296,34 @@ describe("Camera display of a Sensor View", () => {
     expect(hud.fovDeg).toBeCloseTo(sensorViewShortFovDeg(45, 8), 12);
     mainScene.destroy();
     sensorScene.destroy();
+  });
+  // Ambient Level (3D Graphics Window Properties) ทำให้ด้านกลางคืนจาง: ชั้น GIBS ต้องจางเท่าภาพฐาน (index 0) ไม่ใช่สว่างทั้งลูก
+  test("Ambient Level sets the night alpha of the GIBS layers like the base layer, at mount and when the window properties change", async () => {
+    useImagery.setState({
+      enabled: true,
+      layers: [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS" }],
+      loaded: true,
+    });
+    useLayout.setState({ globe: { layers: { BlueMarble_NextGeneration: { show: true, translucency: 20 } } }, windowProps: { graphics3d: { enableLighting: true, ambientLevel: 30, latLonLines: false } } });
+    const viewer = fakeViewer();
+    const base = new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({ url: "/base/{z}/{x}/{y}.png" })); // ภาพฐาน (Natural Earth II) ปลอม ไม่โหลดชิ้นใด
+    viewer.imageryLayers.add(base);
+    vi.mocked(createViewer).mockReturnValueOnce(viewer as never);
+    const scene = mountScene3D("graphics3d", document.createElement("div"));
+    try {
+      const gibs = () => Array.from({ length: viewer.imageryLayers.length }, (_, i) => viewer.imageryLayers.get(i)).filter((l) => l !== base);
+      expect(gibs()).toHaveLength(1);
+      expect(base.nightAlpha).toBeCloseTo(0.3, 12);
+      expect(gibs()[0].nightAlpha).toBeCloseTo(0.3, 12);
+      expect(gibs()[0].dayAlpha).toBe(1);
+      expect(gibs()[0].alpha).toBeCloseTo(0.8, 12);
+      act(() => useLayout.setState({ windowProps: { graphics3d: { enableLighting: true, ambientLevel: 70, latLonLines: false } } }));
+      expect(base.nightAlpha).toBeCloseTo(0.7, 12);
+      expect(gibs()[0].nightAlpha).toBeCloseTo(0.7, 12);
+    } finally {
+      scene.destroy();
+      useImagery.setState(useImagery.getInitialState(), true);
+      useLayout.setState({ globe: DEFAULT_GLOBE, windowProps: {} });
+    }
   });
 });

@@ -7,19 +7,24 @@
 //   เรียงตาม catalog (ชั้นหลังทับชั้นก่อน) ชั้นของ id หนึ่งวางต่อจากชั้นบนสุดของ id ก่อนหน้าใน catalog ที่วาดอยู่ (ไม่มี = index 1)
 //   ชั้นใหม่จึงอยู่ใต้เส้น Lat/Lon ที่วางไว้ก่อนเสมอ ส่วนเส้น Lat/Lon ที่เปิดทีหลัง scene3d.ts ต่อท้ายรายการ (บนสุด) เอง
 // - ชั้นละหนึ่ง UrlTemplateImageryProvider ของ viewer นี้เอง (ไม่ใช้ร่วมกับ viewer อื่น): url /api/imagery/tiles/{id}/{token}/{z}/{y}/{x} (same-origin)
-//   Web Mercator, maximumLevel = max_level (ซูมลึกกว่านั้น Cesium ขยายจากระดับสูงสุด), credit ของชั้นขึ้นที่แถบเครดิตของ viewer
-// - alpha = 1 − translucency/100
+//   Web Mercator, maximumLevel = max_level (ซูมลึกกว่านั้น Cesium ขยายจากระดับสูงสุด)
+//   credit ของชั้น (NASA GIBS / EOSDIS, JMA, NOAA) เป็น Credit ที่แสดงบนภาพ (showOnScreen) ไม่ใช่แค่ในกล่อง Data attribution ของ Cesium
+//   tileDiscardPolicy = NeverTileDiscardPolicy: ไม่ทิ้งชิ้นใด แต่ทำให้ ImageryProvider.loadImage ของ Cesium โหลดด้วย XHR (preferBlob)
+//   ทุก browser รหัส HTTP จึงมาถึง errorEvent ด้วย (ไม่มี policy: Safari/Firefox ที่ createImageBitmap ไม่รับ option โหลดด้วย <img> ไม่มีรหัส HTTP)
+// - alpha = 1 − translucency/100 ; Ambient Level แบบภาพฐาน (scene3d.ts applyProps): dayAlpha = 1, nightAlpha = ระดับ/100
+//   (Cesium คูณ alpha ด้วย mix(dayAlpha, nightAlpha) ด้านกลางคืนจึงจางเท่าภาพฐานโดยไม่แตะ translucency) ค่าจาก opts.nightAlpha และ setImageryNightAlpha
 // - token ของเวลา (imageryTime.ts) เปลี่ยน → เปลี่ยนชั้นนั้นเป็น provider ของ token ใหม่ ไม่เกิน 1 ครั้งต่อ TOKEN_INTERVAL_MS ต่อ viewer
 //   (Throttle: ครั้งแรกทำทันที ครั้งท้ายตามมาเสมอ) เวลาเปลี่ยนแต่ token เท่าเดิม = ไม่ทำอะไร
 //   ชั้นเดิมอยู่ใต้ชั้นใหม่จนชั้นใหม่เริ่มโหลด (ชิ้นแรกได้ผล สำเร็จหรือไม่มีภาพ) จึงเอาออก ภาพไม่กะพริบ
 //   ชั้นที่ยังไม่เริ่มโหลดแล้วถูกแทนอีก (animation เร็ว) เอาออกทันที: id หนึ่งมีไม่เกินสองชั้น (ชั้นที่รอ + ชั้นเดิมที่ยังแสดงอยู่)
+//   ระหว่างนั้น HUD (imageryStatus) บอกเวลาและสัดส่วนชิ้นของชั้นเดิม เพราะเป็นภาพที่อยู่บนจอ
 // - ชิ้นที่โหลดไม่ได้ (errorEvent ของ provider): ไม่ลองซ้ำ (retry = false) มีตัวฟังแล้ว Cesium จึงไม่พิมพ์ error ของมันเอง ชิ้นนั้นโปร่งใส
 //   404 = ไม่มีภาพเวลานี้ นับต่อ (ชั้น, token) ไว้ให้ HUD (imageryStatus) ; 403 = server ปิดสวิตช์ (IMAGERY_DISABLED) → useImagery.enabled = false
 //   ทุก viewer เอาชั้น GIBS ออก ; ข้อผิดพลาดอื่น (503 BUSY/PAUSED, เครือข่าย) ไม่นับเป็นไม่มีภาพ
-//   รหัส HTTP มาจาก RequestErrorEvent.statusCode (Cesium โหลดชิ้นด้วย XHR เมื่อ browser มี createImageBitmap)
+//   รหัส HTTP มาจาก RequestErrorEvent.statusCode (XHR ของ preferBlob ข้างบน)
 // - ทุกการเปลี่ยนเรียก scene.requestRender() (viewer ใช้ requestRenderMode)
 
-import { ImageryLayer, UrlTemplateImageryProvider, WebMercatorTilingScheme, type Viewer } from "cesium";
+import { Credit, ImageryLayer, NeverTileDiscardPolicy, UrlTemplateImageryProvider, WebMercatorTilingScheme, type Viewer } from "cesium";
 import { useImagery, type ImageryLayerInfo } from "../stores/imagery";
 import { useLayout } from "../stores/layout";
 import { useTime } from "../stores/time";
@@ -55,10 +60,13 @@ interface Managed {
   /** ชั้นปัจจุบันได้ผลชิ้นแรกแล้ว */
   started: boolean;
   retiring: ImageryLayer | null;
+  /** token ของชั้นเดิมที่ยังแสดงอยู่ (null = ไม่มีชั้นเดิม) */
+  retiringToken: string | null;
 }
 
 interface Manager {
   status(): { topLayer: ImageryTopLayer | null };
+  setNightAlpha(alpha: number): void;
 }
 
 const managers = new WeakMap<object, Manager>();
@@ -75,6 +83,9 @@ const alphaOf = (id: string): number => {
   return 1 - t / 100;
 };
 
+/** ข้อความเครดิตเป็น HTML ของ Credit: กันอักขระพิเศษไว้ (ค่ามาจาก catalog ของ server) */
+const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 const statusOf = (e: unknown): number | undefined => {
   const code = (e as { error?: { statusCode?: unknown } } | null)?.error?.statusCode;
   return typeof code === "number" ? code : undefined;
@@ -82,14 +93,22 @@ const statusOf = (e: unknown): number | undefined => {
 
 /**
  * ต่อชั้นภาพ GIBS เข้ากับ viewer ตามสวิตช์ globe และเวลา คืนฟังก์ชันถอด (เอาชั้นออกและเลิกฟัง) เรียกก่อนทำลาย viewer
- * opts.now: นาฬิกาของ Throttle (test ฉีดได้)
+ * opts.now: นาฬิกาของ Throttle (test ฉีดได้) ; opts.nightAlpha: Ambient Level/100 ของหน้าต่าง (ไม่ระบุ = 1) เปลี่ยนทีหลังด้วย setImageryNightAlpha
  */
-export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => number } = {}): () => void {
+export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => number; nightAlpha?: number } = {}): () => void {
   const layers = viewer.imageryLayers;
   const managed = new Map<string, Managed>();
-  /** จำนวนชิ้นต่อ "id/token" ของ token ที่แสดงอยู่ */
+  /** จำนวนชิ้นต่อ "id/token" ของชั้นปัจจุบันและชั้นเดิมที่ยังแสดงอยู่ */
   const counts = new Map<string, TileCounts>();
   let detached = false;
+  let nightAlpha = opts.nightAlpha ?? 1;
+
+  /** ลบยอดนับของ id นี้ ยกเว้นของ token ที่ยังใช้อยู่ */
+  const dropCounts = (id: string, keep: readonly (string | null)[]): void => {
+    for (const key of [...counts.keys()]) {
+      if (key.startsWith(`${id}/`) && !keep.some((token) => token !== null && key === `${id}/${token}`)) counts.delete(key);
+    }
+  };
 
   const countsFor = (id: string, token: string): TileCounts => {
     const key = `${id}/${token}`;
@@ -124,7 +143,8 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       url: `/api/imagery/tiles/${info.id}/${token}/{z}/{y}/{x}`,
       tilingScheme: new WebMercatorTilingScheme(),
       maximumLevel: info.max_level,
-      credit: info.credit,
+      credit: new Credit(escapeHtml(info.credit), true),
+      tileDiscardPolicy: new NeverTileDiscardPolicy(),
     });
     const tiles = countsFor(info.id, token);
     const started = (): void => {
@@ -133,6 +153,8 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       m.started = true;
       drop(m.retiring);
       m.retiring = null;
+      m.retiringToken = null;
+      dropCounts(info.id, [m.token]);
       viewer.scene.requestRender();
     };
     const request = provider.requestImage.bind(provider);
@@ -162,6 +184,8 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     });
     const layer = new ImageryLayer(provider);
     layer.alpha = alphaOf(info.id);
+    layer.dayAlpha = 1;
+    layer.nightAlpha = nightAlpha;
     return layer;
   };
 
@@ -176,13 +200,14 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
 
   /** ชั้นของ id นี้เป็น token ใหม่: ชั้นปัจจุบันที่เริ่มโหลดแล้วกลายเป็นชั้นเดิมที่รอ ที่ยังไม่เริ่มโหลดเอาออกทันที */
   const replace = (m: Managed, token: string, order: readonly ImageryLayerInfo[]): void => {
-    for (const key of [...counts.keys()]) if (key.startsWith(`${m.info.id}/`)) counts.delete(key);
     if (m.started) {
       drop(m.retiring);
       m.retiring = m.layer;
+      m.retiringToken = m.token;
     } else {
       drop(m.layer);
     }
+    dropCounts(m.info.id, [m.retiringToken]);
     const layer = makeLayer(m.info, token);
     layers.add(layer, insertIndex(m.info.id, order));
     m.layer = layer;
@@ -210,7 +235,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       if (m === undefined) {
         const layer = makeLayer(info, token);
         layers.add(layer, insertIndex(info.id, order));
-        managed.set(info.id, { info, token, layer, started: false, retiring: null });
+        managed.set(info.id, { info, token, layer, started: false, retiring: null, retiringToken: null });
         changed = true;
         continue;
       }
@@ -258,15 +283,26 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       for (let i = order.length - 1; i >= 0; i--) {
         const m = managed.get(order[i].id);
         if (m === undefined) continue;
-        const c = counts.get(`${m.info.id}/${m.token}`) ?? { loaded: 0, missing: 0, failed: 0 };
+        // ชั้นใหม่ยังไม่ได้ชิ้นใด: ภาพบนจอยังเป็นชั้นเดิม
+        const token = !m.started && m.retiringToken !== null ? m.retiringToken : m.token;
+        const c = counts.get(`${m.info.id}/${token}`) ?? { loaded: 0, missing: 0, failed: 0 };
         const settled = c.loaded + c.missing + c.failed;
         return {
           topLayer: {
-            id: m.info.id, title: m.info.title, label: tokenLabel(m.info.period, m.token), missingRatio: settled === 0 ? 0 : c.missing / settled,
+            id: m.info.id, title: m.info.title, label: tokenLabel(m.info.period, token), missingRatio: settled === 0 ? 0 : c.missing / settled,
           },
         };
       }
       return { topLayer: null };
+    },
+    setNightAlpha: (alpha) => {
+      if (detached || alpha === nightAlpha) return;
+      nightAlpha = alpha;
+      for (const m of managed.values()) {
+        m.layer.nightAlpha = alpha;
+        if (m.retiring !== null) m.retiring.nightAlpha = alpha;
+      }
+      viewer.scene.requestRender();
     },
   };
   managers.set(viewer, manager);
@@ -280,6 +316,11 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     if (managers.get(viewer) === manager) managers.delete(viewer);
     viewer.scene.requestRender();
   };
+}
+
+/** Ambient Level ของหน้าต่างเปลี่ยน (scene3d.ts applyProps): nightAlpha ของทุกชั้น GIBS บน viewer นี้ (viewer ที่ไม่ได้ต่อ = ไม่ทำอะไร) */
+export function setImageryNightAlpha(viewer: object, alpha: number): void {
+  managers.get(viewer)?.setNightAlpha(alpha);
 }
 
 /** สถานะสำหรับ HUD ของ Sensor View: ชั้นบนสุดที่แสดงอยู่ (ชั้นสุดท้ายตามลำดับ catalog) null = ไม่มี (Natural Earth II) หรือ viewer ไม่ได้ต่อ */
