@@ -36,7 +36,7 @@ Sensor View โหมด Camera ซูมลงไปเห็นเมือง
 - catalog แยกตามแหล่ง (`source: "gibs" | "eox"`) แต่ละแหล่งมีแม่แบบ URL, ตารางชั้น, สวิตช์ (`enabled` / `eox`) ของตัวเอง
   EOX: `https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/g/{z}/{y}/{x}.jpg`, ชั้น `s2cloudless-2024_3857` (ชื่อชั้น/TileMatrixSet `g`/ระดับสูงสุด ยืนยันในขั้นยืนยันจริง; คาด max_level 15), period `static`, ext jpg
 - route เดิม `/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}` ใช้ต่อ (EOX ใช้ time `default`); สวิตช์ของแหล่งปิด → 403 `IMAGERY_DISABLED`
-  ข้อความไทยระบุชื่อแหล่ง; การพัก (403/429, ผิดติด 20 ครั้ง) และตัวนับแยกต่อแหล่ง; เพดานพร้อมกัน: GIBS 4, EOX 2
+  ข้อความไทยระบุชื่อแหล่ง; การพัก (403/429, ผิดติด 20 ครั้ง) และตัวนับแยกต่อแหล่ง; เพดานพร้อมกัน: GIBS 4, EOX 4 (เดิม 2; เพิ่มในรอบเร่งความเร็ว)
 - `GET /api/imagery/layers` → `{"enabled", "sources": {"gibs": bool, "eox": bool, "osm": bool, "ion": bool}, "layers": [... + "source"]}` (`enabled` คงไว้เพื่อเข้ากันได้)
 - cache: EOX เป็นภาพคงที่ เก็บถาวรใต้เพดาน 2 GB เดิม
 - OSM และ ion ไม่ผ่าน server
