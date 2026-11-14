@@ -15,7 +15,10 @@
   (รหัสสถานะยังเป็นตัวตัดสินเสมอ)
 - connection ที่ว่างอยู่นานเซิร์ฟเวอร์อาจปิดไปแล้ว: ถ้าคำขอบน connection ที่เคยใช้แล้วล้มด้วยการที่ปลายทางตัดการเชื่อมต่อก่อนตอบ (`STALE_ERRORS`) จะทิ้งตัวที่ว่างทั้งหมดของ host นั้น
   แล้วส่งซ้ำ **ครั้งเดียว** บน connection ใหม่ (คำขอ GET ที่ปลายทางไม่เคยตอบ) connection ใหม่ที่ล้มเหลว timeout หรือข้อผิดพลาดระหว่างอ่านเนื้อไม่ส่งซ้ำ
-  ดังนั้นกติกา "ดึงครั้งเดียว ไม่ลองซ้ำ" ต่อเซิร์ฟเวอร์ปลายทางยังเหมือนเดิม: ไม่มีคำขอใดถึงปลายทางสองครั้ง
+  ดังนั้นกติกา "ดึงครั้งเดียว ไม่ลองซ้ำ" ต่อเซิร์ฟเวอร์ปลายทางยังเหมือนเดิม ยกเว้นข้อนี้: GET หนึ่งคำขอส่งซ้ำได้อย่างมากหนึ่งครั้ง และเฉพาะเมื่อ connection ว่างที่ถูกตัดไปแล้วเท่านั้น
+- proxy ของสภาพแวดล้อม (`HTTPS_PROXY` / `https_proxy`): transport นี้เชื่อมตรง ไม่รู้จัก proxy คำขอที่ `urllib.request.getproxies()` มี `https` และ `proxy_bypass(host)`
+  ไม่ยกเว้น (NO_PROXY) จึงส่งต่อให้ `proxy_opener` (opener ของ urllib เดิมที่ไม่ตาม redirect; `imagery.make_transport` ใส่ให้) หลังตรวจ host/พอร์ต/userinfo แล้วเสมอ
+  ไม่มี `proxy_opener` (ตั้งต้น None, test ที่ฉีด connection factory) = ไม่ดู proxy เลย
 """
 
 import functools
@@ -25,6 +28,7 @@ import ssl
 import threading
 import urllib.error
 import urllib.parse
+import urllib.request
 from typing import Callable, Mapping
 
 POOL_WAIT_S = 15                       # รอที่ว่างใน pool นานสุด (ปกติไม่เคยรอ: ดูหัวไฟล์)
@@ -157,20 +161,29 @@ class KeepAliveTransport:
 
     pool_sizes: host -> ขนาด pool ของ host นั้น (ต้องไม่น้อยกว่าจำนวนคำขอที่ผู้เรียกส่งพร้อมกันไป host นั้น)
     max_body: เพดานขนาดเนื้อที่ผู้เรียกยอมรับ (เนื้อที่อ่านไปเกินนี้ = ทิ้ง connection)
-    connection_factory: callable(host, timeout) -> connection แบบ HTTPSConnection (ตั้งต้น `https_connection`; test ฉีดตัวปลอม)"""
+    connection_factory: callable(host, timeout) -> connection แบบ HTTPSConnection (ตั้งต้น `https_connection`; test ฉีดตัวปลอม)
+    proxy_opener: callable(request, timeout=...) สำหรับคำขอที่สภาพแวดล้อมสั่งให้ผ่าน https proxy (ดูหัวไฟล์) None = ไม่ดู proxy"""
 
-    def __init__(self, pool_sizes: Mapping[str, int], max_body: int, connection_factory: Callable | None = None):
+    def __init__(self, pool_sizes: Mapping[str, int], max_body: int, connection_factory: Callable | None = None,
+                 proxy_opener: Callable | None = None):
         self.pool_sizes = dict(pool_sizes)
         self.max_body = max_body
         self.connection_factory = connection_factory if connection_factory is not None else https_connection
+        self.proxy_opener = proxy_opener
         self._pools = {("https", host): _HostPool(size) for host, size in self.pool_sizes.items()}
 
     def live_connections(self) -> int:
         """จำนวน connection ที่เปิดอยู่ทั้งหมด (ที่ว่าง + ที่กำลังใช้) ทุก host"""
         return sum(pool.live() for pool in self._pools.values())
 
+    def _via_proxy(self, host: str) -> bool:
+        """สภาพแวดล้อมสั่งให้ host นี้ไป https proxy หรือไม่ (เกณฑ์เดียวกับ ProxyHandler ของ urllib: มี `https` ใน getproxies และ proxy_bypass ไม่ยกเว้น)"""
+        return self.proxy_opener is not None and "https" in urllib.request.getproxies() and not urllib.request.proxy_bypass(host)
+
     def open(self, request, timeout: float | None = None):
         host, target = self._locate(request.full_url)
+        if self._via_proxy(host):
+            return self.proxy_opener(request, timeout=timeout)
         pool = self._pools[("https", host)]
         headers = {"Host": host, "Accept-Encoding": "identity"}        # identity: Content-Length ต้องตรงกับไบต์ที่อ่านจริง
         headers.update(request.header_items())                        # User-Agent จากตัวดึง

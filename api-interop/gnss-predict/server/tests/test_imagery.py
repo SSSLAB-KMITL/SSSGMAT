@@ -10,6 +10,7 @@ import re
 import socket
 import threading
 import time
+import types
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -186,6 +187,10 @@ def no_real_network(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
     monkeypatch.setattr(urllib.request.OpenerDirector, "open", refuse)
     monkeypatch.setattr(socket, "create_connection", refuse)
+    # เครื่องที่ตั้ง proxy ไว้ (env หรือค่าระบบของ macOS) ต้องไม่เปลี่ยนผล test: ไม่มี proxy ตั้งต้น ใช้เฉพาะ env ที่ test ตั้งเอง
+    for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(urllib.request, "getproxies", urllib.request.getproxies_environment)
 
 
 def assert_error(r, status, code, field=None):
@@ -2004,3 +2009,113 @@ def test_injected_opener_bypasses_the_transport(tmp_path):
     assert fetcher.opener is opener and fetcher.transport is None
     with pytest.raises(ValueError):
         TileFetcher(tmp_path, opener=opener, connection_factory=FakeFactory())
+
+
+# ---------- proxy ของสภาพแวดล้อม (HTTPS_PROXY / https_proxy): ตัวส่ง keep-alive เชื่อมตรง จึงส่งคำขอที่ต้องผ่าน proxy ไปทาง opener ของ urllib เดิม ----------
+
+PROXIES = {"https": "http://proxy.invalid:3128", "http": "http://proxy.invalid:3128"}
+
+
+@pytest.fixture
+def proxied(monkeypatch):
+    """ตั้ง proxy ที่ getproxies/proxy_bypass รายงาน (ไม่ต่อเน็ต: ไม่มีอะไรแตะ socket) คืน function(proxies, bypass=ไม่ยกเว้น host ใด)"""
+    def configure(proxies, bypass=lambda host: False):
+        monkeypatch.setattr(urllib.request, "getproxies", lambda: dict(proxies))
+        monkeypatch.setattr(urllib.request, "proxy_bypass", bypass)
+    return configure
+
+
+def _proxy_transport(factory, via_proxy):
+    return KeepAliveTransport({GIBS_HOST: 2, EOX_HOST: 2}, MAX_BODY, factory, proxy_opener=via_proxy)
+
+
+def test_https_proxy_sends_the_request_through_the_urllib_opener_not_a_direct_connection(proxied):
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    proxied(PROXIES)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg", headers={"User-Agent": "t"})
+    resp = _proxy_transport(factory, via_proxy).open(request, timeout=7)
+    assert resp.read(MAX_BODY + 1) == JPEG
+    resp.close()
+    assert [(c.url, c.user_agent, c.timeout) for c in via_proxy.calls] == [(request.full_url, "t", 7)]
+    assert factory.created == []                                         # ไม่มี connection ตรงเลย: คำขอไม่หลุด proxy
+
+
+def test_proxy_path_passes_the_openers_errors_through_unchanged(proxied):
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    proxied(PROXIES)
+    via_proxy.script = [http_error(404), URLError("proxy refused")]
+    transport = _proxy_transport(factory, via_proxy)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg")
+    with pytest.raises(HTTPError) as exc:
+        transport.open(request, timeout=1)
+    assert exc.value.code == 404
+    exc.value.close()                                                    # HTTPError ถือไฟล์ชั่วคราว: ปิดเหมือนที่ตัวดึงทำ (-W error ไม่ยอมให้ปล่อยให้ตัวเก็บขยะปิด)
+    with pytest.raises(URLError):
+        transport.open(request, timeout=1)
+    assert factory.created == []
+
+
+@pytest.mark.parametrize("proxies,bypass", [
+    ({}, lambda host: False),                                            # ไม่มี proxy
+    ({"http": "http://proxy.invalid:3128"}, lambda host: False),         # มีแต่ http proxy: https ไม่ผ่าน proxy (urllib ก็ไม่ผ่าน)
+    (PROXIES, lambda host: host == GIBS_HOST),                           # NO_PROXY ยกเว้น host นี้
+])
+def test_no_applicable_https_proxy_keeps_the_direct_keepalive_connection(proxied, proxies, bypass):
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    proxied(proxies, bypass)
+    _drain(_proxy_transport(factory, via_proxy), urllib.request.Request(f"https://{GIBS_HOST}/a.jpg", headers={"User-Agent": "t"}))
+    assert via_proxy.calls == []
+    assert [c.host for c in factory.created] == [GIBS_HOST]
+
+
+def test_proxy_bypass_is_decided_per_host(proxied):
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    proxied(PROXIES, lambda host: host == EOX_HOST)
+    transport = _proxy_transport(factory, via_proxy)
+    _drain(transport, urllib.request.Request(f"https://{GIBS_HOST}/a.jpg"))
+    _drain(transport, urllib.request.Request(f"https://{EOX_HOST}/a.jpg"))
+    assert [c.url for c in via_proxy.calls] == [f"https://{GIBS_HOST}/a.jpg"]
+    assert [c.host for c in factory.created] == [EOX_HOST]
+
+
+@pytest.mark.parametrize("name", ["HTTPS_PROXY", "https_proxy"])
+def test_proxy_environment_variables_are_honoured_and_no_proxy_still_applies(monkeypatch, name):
+    """ตัวอ่านจริงของ urllib (ไม่ปลอม getproxies): ตัวแปรสภาพแวดล้อมตัวพิมพ์ใหญ่และเล็กใช้ได้ NO_PROXY ยกเว้น host"""
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    monkeypatch.setenv(name, "http://proxy.invalid:3128")
+    transport = _proxy_transport(factory, via_proxy)
+    _drain(transport, urllib.request.Request(f"https://{GIBS_HOST}/a.jpg"))
+    assert len(via_proxy.calls) == 1 and factory.created == []
+    monkeypatch.setenv("NO_PROXY", GIBS_HOST)
+    _drain(transport, urllib.request.Request(f"https://{GIBS_HOST}/b.jpg"))
+    assert len(via_proxy.calls) == 1 and [c.host for c in factory.created] == [GIBS_HOST]
+
+
+def test_the_host_guard_applies_before_the_proxy_path(proxied):
+    factory, via_proxy = FakeFactory(), FakeOpener()
+    proxied(PROXIES)
+    transport = _proxy_transport(factory, via_proxy)
+    for url in ("http://gibs.earthdata.nasa.gov/a.jpg", "https://evil.example/a.jpg", "https://gibs.earthdata.nasa.gov:8443/a.jpg",
+                "https://user@gibs.earthdata.nasa.gov/a.jpg"):
+        with pytest.raises(ValueError):
+            transport.open(urllib.request.Request(url), timeout=1)
+    assert via_proxy.calls == [] and factory.created == []
+
+
+def test_default_transport_falls_back_to_the_no_redirect_urllib_opener_but_an_injected_factory_never_does():
+    default = make_transport()
+    opener = default.proxy_opener.__self__                               # OpenerDirector.open ของ make_opener()
+    assert isinstance(opener, urllib.request.OpenerDirector)
+    assert any(isinstance(h, imagery.NoRedirect) for h in opener.handlers)
+    assert make_transport(FakeFactory()).proxy_opener is None            # test ที่ฉีด connection factory คุมการเชื่อมต่อเอง: ไม่มีทางไปหา opener จริง
+
+
+def test_default_fetcher_goes_through_the_proxy_opener_when_https_proxy_is_set(tmp_path, monkeypatch):
+    via_proxy = FakeOpener()
+    monkeypatch.setattr(imagery, "make_opener", lambda: types.SimpleNamespace(open=via_proxy))
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+    fetcher = TileFetcher(tmp_path, now=Clock(), utcnow=Wall())
+    assert fetcher.get(layer_by_id(BM), "default", 8, 0, 1)[1] == "image/jpeg"
+    assert len(via_proxy.calls) == 1 and via_proxy.calls[0].url.startswith(f"https://{GIBS_HOST}/")
+    assert via_proxy.calls[0].user_agent == imagery.USER_AGENT and via_proxy.calls[0].timeout == imagery.FETCH_TIMEOUT_S
+    assert fetcher.transport.live_connections() == 0

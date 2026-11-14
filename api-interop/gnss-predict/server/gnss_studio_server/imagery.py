@@ -22,7 +22,8 @@ GIBS = `enabled`, EOX = `eox`) ตรวจที่ route ทุกคำขอ
      และนับ (ต่อแหล่ง): ติดกัน 20 ครั้ง -> พักแหล่งนั้น 5 นาที (ตัวนับกลับเป็น 0 เมื่อพัก และเมื่อได้ภาพที่ใช้ได้หนึ่งชิ้นจากแหล่งนั้น)
      การส่งผ่าน `KeepAliveTransport` (`keepalive.py`): connection HTTPS ต่อ host ใช้ซ้ำหลัง response อ่านครบ ไม่ต้องเปิด TCP + TLS ใหม่ทุกชิ้น
      ทิ้ง connection เมื่อผิดพลาด อ่านไม่ครบ ตัดกลางทาง เกินเพดาน หรือเซิร์ฟเวอร์ส่ง `Connection: close` (connection เก่าที่ว่างอยู่แล้วถูกเซิร์ฟเวอร์ตัดไปเอง
-     ส่งซ้ำบน connection ใหม่ครั้งเดียว: คำขอไม่เคยถึงปลายทางสองครั้ง); ต่อเฉพาะ `https` ไป host ของ `SOURCES`
+     ส่งซ้ำบน connection ใหม่ครั้งเดียว: GET ส่งซ้ำได้อย่างมากหนึ่งครั้ง และเฉพาะบน connection ว่างที่ถูกตัดไปแล้ว); ต่อเฉพาะ `https` ไป host ของ `SOURCES`
+     (HTTPS_PROXY / https_proxy ที่ตั้งไว้ = ส่งคำขอนั้นผ่าน opener ของ urllib เดิมแทน ดู `keepalive.py`)
   6. ภาพที่ผ่านการตรวจเขียน cache แบบ atomic (เขียนไม่ได้ = log เตือนครั้งเดียว ส่งภาพให้อยู่ดี)
   ชิ้นที่ "ยังไม่นิ่ง" (`is_settled` เป็นเท็จ: daily ที่วันที่ UTC >= วันนี้ - 1 วัน, 10min ที่เวลาของ token >= ตอนนี้ - 3 ชั่วโมง รวมอนาคต)
   ดึงและส่งได้ตามปกติแต่ไม่เขียน cache ไม่อ่านจาก cache (ไฟล์เก่าของ token นั้นถูกมองข้าม) และ "ไม่มีภาพ" จำแค่ 10 นาที: GIBS
@@ -252,8 +253,11 @@ def source_pool_sizes() -> dict[str, int]:
 
 
 def make_transport(connection_factory=None) -> KeepAliveTransport:
-    """ตัวส่งตั้งต้นของตัวดึง: HTTPS keep-alive ไปเฉพาะ host ใน `SOURCES` (ดู `keepalive.py`) connection_factory ฉีดตัวปลอมได้ใน test"""
-    return KeepAliveTransport(source_pool_sizes(), MAX_BODY_BYTES, connection_factory)
+    """ตัวส่งตั้งต้นของตัวดึง: HTTPS keep-alive ไปเฉพาะ host ใน `SOURCES` (ดู `keepalive.py`) connection_factory ฉีดตัวปลอมได้ใน test
+    คำขอที่ HTTPS_PROXY / https_proxy สั่งให้ผ่าน proxy ไปทาง opener ของ urllib เดิม (`make_opener`: ไม่ตาม redirect) เหมือนก่อนใช้ keep-alive
+    ฉีด connection_factory = ผู้เรียกคุมการเชื่อมต่อเอง จึงไม่ต่อ opener จริงให้"""
+    proxy_opener = make_opener().open if connection_factory is None else None
+    return KeepAliveTransport(source_pool_sizes(), MAX_BODY_BYTES, connection_factory, proxy_opener)
 
 
 def _short(text: object) -> str:
