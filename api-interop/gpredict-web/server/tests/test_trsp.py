@@ -33,7 +33,7 @@ EXPECTED = {
         item("Mode V/U FM Voice Repeater", 145_990_000, 0, 437_800_000, 0, False, "FM"),
         item(LONG_NAME[:79], 0, 0, 145_800_000, 145_800_000, False, "ABCDEFGHIJKLMNOPQRS", 1200.0),
         item("Beacon", 0, 0, 145_800_000, 145_800_000, False, "5"),                 # mode 5 ไม่มีชื่อ: เลขเป็นข้อความ
-        item("Beacon", 0, 0, 0, 0, True, ""),                                       # ชื่อซ้ำเก็บทั้งสอง, mode_id null
+        item("Beacon", 0, 0, 0, 0, True, "0"),                                      # ชื่อซ้ำเก็บทั้งสอง, mode_id null: "0" เหมือน Gpredict
     ],
     43770: [item("Linear Transponder (inverting)", 435_000_000, 435_100_000, 145_900_000, 146_000_000, True, "USB")],
     40908: [item("9k6 BPSK Telemetry", 0, 0, 145_825_000, 0, False, "99", 9600.0)],
@@ -128,6 +128,17 @@ class ConvertTest(unittest.TestCase):
     def test_mode_not_found_is_number_as_text(self):
         self.assertEqual(self.result[40908][0]["mode"], "99")               # ไม่มี id 99 ใน modes
         self.assertEqual(self.result[25544][2]["mode"], "5")                # id 5 มีแต่ไม่มี name: ถูกข้าม จึงไม่เจอ
+
+    def test_missing_or_null_mode_id_is_looked_up_as_zero(self):
+        """Gpredict อ่าน mode_id ที่ไม่มีหรือเป็น null เป็น 0 (nx_json int_value) แล้วค้นใน modes: ไม่เจอเขียน "0" เจอใช้ชื่อ"""
+        no_key = {"description": "A", "norad_cat_id": 1}
+        null = {"description": "B", "norad_cat_id": 1, "mode_id": None}
+        self.assertEqual([t["mode"] for t in convert([], [no_key, null])[1]], ["0", "0"])
+        self.assertEqual(self.result[25544][3]["mode"], "0")                 # t-08 ใน fixture: mode_id null
+        zero = convert([{"id": 0, "name": "Unknown"}], [no_key, null, {**no_key, "mode_id": 0}])
+        self.assertEqual([t["mode"] for t in zero[1]], ["Unknown"] * 3)      # modes มี id 0: ใช้ชื่อนั้น
+        text = convert([], [{**no_key, "mode_id": "2"}, {**no_key, "mode_id": 1.5}, {**no_key, "mode_id": True}])
+        self.assertEqual([t["mode"] for t in text[1]], ["0", "0", "0"])      # ไม่ใช่จำนวนเต็ม: อ่านเป็น 0
 
     def test_alive_false_is_kept(self):
         self.assertEqual(self.result[43770][0]["name"], "Linear Transponder (inverting)")   # alive: false

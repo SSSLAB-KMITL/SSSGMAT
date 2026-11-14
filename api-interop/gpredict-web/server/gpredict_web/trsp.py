@@ -93,9 +93,9 @@ def _truthy(v) -> bool:
 def convert(modes: list, transmitters: list) -> dict[int, list[dict]]:
     """modes.json และ transmitters.json ของ SatNOGS -> {NORAD: [transponder]} ตามลำดับที่พบใน JSON
 
-    - mode ที่ไม่มี id หรือ name ถูกข้าม transmitter ที่ไม่มี description (หรือว่าง) หรือ norad_cat_id ไม่ใช่เลขจำนวนเต็มบวกถูกข้าม
+    - mode ที่ไม่มี id หรือ name ถูกข้าม transmitter ที่ไม่มี description หรือ norad_cat_id ไม่ใช่เลขจำนวนเต็มบวกถูกข้าม
     - name ตัดที่ TRSP_NAME_MAX ตัวอักษร mode เป็นชื่อ mode (ตัดที่ TRSP_MODE_MAX) หรือเลข mode_id เป็นข้อความถ้าไม่พบ
-      mode_id ไม่มีหรือเป็น null: "" (ของเรา: Gpredict อ่านเป็น 0 แล้วแสดง "0")
+      mode_id ไม่มี เป็น null หรือไม่ใช่จำนวนเต็มอ่านเป็น 0 เหมือน Gpredict (nx_json ให้ int_value 0) จึงเป็นชื่อของ mode 0 หรือ "0"
     - alive และ uuid ไม่ใช้ (transmitter ที่ alive เป็น false ก็เก็บ) ความถี่ ≤ 0 หรือไม่ใช่ตัวเลขเป็น 0 baud เขียนเป็นจำนวนเต็มเหมือน "%.0f"
     """
     names: dict[int, str] = {}
@@ -110,17 +110,14 @@ def convert(modes: list, transmitters: list) -> dict[int, list[dict]]:
         if not isinstance(t, dict):
             continue
         description, norad = t.get("description"), t.get("norad_cat_id")
+        # description ว่างก็ข้าม (ของเรา): Gpredict ข้ามเฉพาะที่ไม่มี แต่ description คือชื่อ transponder (ชื่อ group ในไฟล์ของ Gpredict)
+        # ซึ่งว่างไม่ได้ และ load_transponders ก็ไม่รับรายการที่ไม่มีชื่อ
         if not isinstance(description, str) or not description:
             continue
         if isinstance(norad, bool) or not isinstance(norad, int) or norad <= 0:
             continue
-        mode_id = _whole(t.get("mode_id"))
-        if mode_id is None:
-            mode = ""
-        elif mode_id in names:
-            mode = names[mode_id][:TRSP_MODE_MAX]
-        else:
-            mode = str(mode_id)
+        mode_id = _whole(t.get("mode_id")) or 0                # ไม่มีหรือ null เป็น 0 เหมือน Gpredict (trsp-update.c:296)
+        mode = names[mode_id][:TRSP_MODE_MAX] if mode_id in names else str(mode_id)
         baud = _number(t.get("baud"))
         out.setdefault(norad, []).append({
             "name": description[:TRSP_NAME_MAX],
