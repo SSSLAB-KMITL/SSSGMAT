@@ -18,6 +18,7 @@ import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice, SatNameMap } from "./notices";
 import { overlayFor } from "./overlay";
+import { NoPassMessage } from "./passes/NoPassMessage";
 import { PassWindows } from "./passes/PassWindowsHost";
 import { closeWindow, openWindow } from "./passes/passWindows";
 import type { PassWindow } from "./passes/passWindows";
@@ -25,6 +26,22 @@ import { closeSky, openSky, pruneSky } from "./passes/skyGlance";
 import type { SkyOpen } from "./passes/skyGlance";
 import { SkyGlanceWindow } from "./passes/SkyGlanceWindow";
 import { runQuit } from "./quit";
+import { ControllerWindows } from "./radio/ControllerWindowsHost";
+import {
+  CONFIGURE_BLOCKED_BOX,
+  dropModule,
+  dropRef,
+  hasModule,
+  mergeOpen,
+  openRefusalBox,
+  refKey,
+  sameRef,
+  syncWindows,
+  targetPosts,
+} from "./radio/controllerWindows";
+import type { ControllerBox, ControllerWindow } from "./radio/controllerWindows";
+import { closeController, getControllers, openController, postTarget } from "./radio/radioApi";
+import type { ControllerKind, ControllerRef } from "./radio/types";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
 import { activeTab, windowTitle } from "./tabs";
@@ -80,6 +97,11 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [moduleMenu, setModuleMenu] = useState<{ x: number; y: number } | null>(null); // the Module menu, where it is open
   const [selections, setSelections] = useState<Selections>({}); // the selected satellite of each module (not saved)
   const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
+  const [controllers, setControllers] = useState<readonly ControllerWindow[]>([]); // the Radio Control and Antenna Control windows of every module
+  const [controllerBox, setControllerBox] = useState<ControllerBox | null>(null); // Gpredict's error box of the controllers (no device, Configure blocked)
+  const controllersAsked = useRef(0); // GET /api/controllers sent so far: only the answer of the last one counts
+  const closingControllers = useRef(new Set<string>()); // (refKey) the controllers whose window was closed and that the server is still closing
+  const targetsSent = useRef<Selections>({}); // the selections whose targets have been sent
   const moduleButton = useRef<HTMLButtonElement>(null);
   const nextLocalId = useRef(0);
 
@@ -106,6 +128,25 @@ function Main({ onStopped }: { onStopped: () => void }) {
   useEffect(() => {
     void reloadModules();
   }, [reloadModules]);
+
+  /**
+   * Show the windows of the controllers the server has open (GET /api/controllers), at page load and after every open and close
+   * (decision 2 of the plan). Only the answer of the last request counts: an older one can miss a controller this page has just opened.
+   */
+  const syncControllers = useCallback(async () => {
+    const asked = ++controllersAsked.current;
+    try {
+      const open = await getControllers();
+      if (asked === controllersAsked.current) setControllers((l) => syncWindows(l, open, closingControllers.current));
+    } catch (e) {
+      addLocalError(errorText(e));
+    }
+  }, [addLocalError]);
+
+  // the controllers keep running in the server when the browser tab is closed: their windows come back when the page is loaded
+  useEffect(() => {
+    if (loaded) void syncControllers();
+  }, [loaded, syncControllers]);
 
   // the server is not there (yet): keep trying, so the page comes alive when it starts
   useEffect(() => {
@@ -154,6 +195,15 @@ function Main({ onStopped }: { onStopped: () => void }) {
     },
     [select, config, saveConfig, addLocalError],
   );
+
+  // the target of a module follows its selection (Select satellite, a click in a view, Autotrack): its controllers follow it (spec §3.3)
+  useEffect(() => {
+    const before = targetsSent.current;
+    targetsSent.current = selections;
+    for (const { module, norad } of targetPosts(before, selections)) {
+      postTarget(module, norad).catch((e: unknown) => addLocalError(errorText(e)));
+    }
+  }, [selections, addLocalError]);
 
   // Edit module took the selected satellite out of the module
   useEffect(() => {
@@ -246,6 +296,60 @@ function Main({ onStopped }: { onStopped: () => void }) {
     });
   }, [current]);
 
+  // ---------------------------------------------------------------- Radio Control and Antenna Control (ref-R §1)
+
+  /**
+   * Module menu → Radio Control / Antenna Control: the window of the controller of `module`, opened on the server first; one that is
+   * open already comes to the front instead. Without a device of the kind, Gpredict's "ERROR" box.
+   */
+  const openControl = useCallback(
+    async (module: string, kind: ControllerKind) => {
+      const ref = { module, kind };
+      if (controllers.some((w) => sameRef(w, ref))) {
+        setControllers((l) => mergeOpen(l, ref));
+        return;
+      }
+      try {
+        await openController(module, kind);
+      } catch (e) {
+        const box = openRefusalBox(kind, e);
+        if (box === null) addLocalError(errorText(e));
+        else setControllerBox(box);
+        return;
+      }
+      closingControllers.current.delete(refKey(ref)); // opened again while its close was on the way: the server has done the close first
+      setControllers((l) => mergeOpen(l, ref));
+      void syncControllers();
+    },
+    [controllers, addLocalError, syncControllers],
+  );
+  /** The user closed a controller window: it goes at once, the server disengages and closes the controller, then the list is read again. */
+  const closeControl = useCallback(
+    async (ref: ControllerRef) => {
+      const key = refKey(ref);
+      closingControllers.current.add(key);
+      setControllers((l) => dropRef(l, ref));
+      try {
+        await closeController(ref.module, ref.kind);
+      } catch (e) {
+        addLocalError(errorText(e));
+      } finally {
+        closingControllers.current.delete(key);
+      }
+      void syncControllers();
+    },
+    [addLocalError, syncControllers],
+  );
+  /** A window went by itself: its controller was closed from another browser tab, or its module was closed or deleted. */
+  const controllerGone = useCallback(
+    (ref: ControllerRef) => {
+      setControllers((l) => dropRef(l, ref));
+      void syncControllers();
+    },
+    [syncControllers],
+  );
+  const closeControllerBox = useCallback(() => setControllerBox(null), []);
+
   /** File → Quit (Ctrl+Q): stop the server and the page says so; a server that cannot be stopped from here says why instead */
   const quit = useCallback(() => runQuit(quitServer, onStopped, addLocalError), [onStopped, addLocalError]);
 
@@ -260,6 +364,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return void quit();
         case "updateTle":
           return show({ kind: "tle" });
+        case "updateTrsp":
+          return show({ kind: "trsp" });
         case "preferences":
           return show({ kind: "preferences" });
         case "onlineHelp":
@@ -299,15 +405,22 @@ function Main({ onStopped }: { onStopped: () => void }) {
         return setSkyGlance((s) => openSky(s, current)); // opens the window, or brings the open one to the front (ref-P §7.1)
       case "timeController":
         return openTimeController(current);
+      case "radio":
+      case "rotator":
+        return void openControl(current, action.type);
       case "configure":
-        return configureModule(current);
+        // not while a controller window of the module is open: Gpredict's box without a title says so (ref-R §1, spec §4.6)
+        return hasModule(controllers, current) ? setControllerBox(CONFIGURE_BLOCKED_BOX) : configureModule(current);
       case "clone":
         return show({ kind: "clone", module: current });
       case "delete":
         return show({ kind: "delete", module: current });
       case "close":
         return void closeModule(current).then(
-          () => reloadModules(),
+          () => {
+            setControllers((l) => dropModule(l, current)); // the server has closed its controllers with it
+            return reloadModules();
+          },
           (e: unknown) => addLocalError(errorText(e)),
         );
     }
@@ -333,7 +446,13 @@ function Main({ onStopped }: { onStopped: () => void }) {
     },
     [reloadModules],
   );
-  const deleted = useCallback(() => void reloadModules(), [reloadModules]);
+  const deleted = useCallback(
+    (name: string) => {
+      setControllers((l) => dropModule(l, name)); // the server has closed its controllers with it
+      void reloadModules();
+    },
+    [reloadModules],
+  );
   const moduleSaved = useCallback(() => void reloadModules(), [reloadModules]);
   const tleUpdated = useCallback(() => {
     void reloadModules(); // the server reloaded the open modules with the new TLEs and dropped its start-up hint to update them
@@ -417,6 +536,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
         onTleUpdated={tleUpdated}
       />
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
+      <ControllerWindows refs={controllers} onClosed={closeControl} onGone={controllerGone} />
       {current !== null && config !== null && skyGlance.has(current) && (
         <SkyGlanceWindow
           key={`sky:${current}`} // not the Time Controller's key: siblings with one key are mixed up by React (appKeys.test.ts)
@@ -437,6 +557,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
           onResetFailed={addLocalError}
         />
       )}
+      {controllerBox !== null && <NoPassMessage title={controllerBox.title} message={controllerBox.message} onOk={closeControllerBox} />}
     </div>
   );
 }

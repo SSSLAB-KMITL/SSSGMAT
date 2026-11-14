@@ -29,6 +29,8 @@ interface Props {
   onAction: (body: Record<string, unknown>) => Promise<RadioState>;
   /** the window was closed: the caller closes the controller on the server and removes the window */
   onClose: () => void;
+  /** when this number changes the window comes to the front: Module menu → Radio Control while the window is open (ref-R §1) */
+  raiseToken?: number;
 }
 
 /** The numbers whose steps the window keeps until the server has answered them (see useControllerState). */
@@ -41,7 +43,7 @@ const noChange = () => {};
  * It is the view of a RadioState and decides nothing: every press is sent with `onAction`, and the state that comes back is shown at once
  * and then the ticks follow. (ของเรา) A line at the bottom says in Thai why the radio cannot be used (the server's `status`, or why an action failed).
  */
-export function RadioControl({ module, state, onAction, onClose }: Props) {
+export function RadioControl({ module, state, onAction, onClose, raiseToken }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const { shown, edits, problem, send, act } = useControllerState<RadioState, EditKey>(state, onAction);
@@ -69,7 +71,7 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
   const status = problem ?? shown.status;
 
   return (
-    <FloatingWindow title={radioTitle(module)} onClose={onClose}>
+    <FloatingWindow title={radioTitle(module)} onClose={onClose} raiseToken={raiseToken}>
       <div ref={root} className="rc">
         <div className="rc-grid">
           <LinkFrame

@@ -18,6 +18,11 @@ export const TRACK_TICK_NUM = 4;
 export const POLAR_ORIENTATIONS = ["N/E/S/W", "N/W/S/E", "S/E/N/W", "S/W/N/E"] as const;
 export type Orientation = (typeof POLAR_ORIENTATIONS)[number];
 
+/** The orientation a module's configuration names (it holds a string): that one, N/E/S/W for a name that is not one of the four. */
+export function orientationOf(name: string): Orientation {
+  return (POLAR_ORIENTATIONS as readonly string[]).includes(name) ? (name as Orientation) : POLAR_ORIENTATIONS[0];
+}
+
 const DEG = Math.PI / 180;
 
 /** Radius of the horizon circle in px for a view `w` x `h` px (ref §6). Not below 0 only for views of 50 px and more: callers clamp. */

@@ -35,4 +35,11 @@ describe("the list of open dialogs", () => {
     expect(showDialog(list, { kind: "editModule", module: "B" })).toHaveLength(3);
     expect(dialogKey({ kind: "editModule", module: "A" })).not.toBe(dialogKey({ kind: "clone", module: "A" }));
   });
+
+  it("has one Transponder Update dialog", () => {
+    const list = showDialog([], { kind: "trsp" });
+    expect(showDialog(list, { kind: "trsp" })).toBe(list);
+    expect(dialogKey({ kind: "trsp" })).toBe("trsp");
+    expect(dialogKey({ kind: "trsp" })).not.toBe(dialogKey({ kind: "tle" }));
+  });
 });

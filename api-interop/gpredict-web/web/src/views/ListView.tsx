@@ -5,7 +5,7 @@ import { useMeta } from "../useMeta";
 import { clickSelection } from "./canvasCommon";
 import { useRefreshGate } from "./canvasHooks";
 import { inCanonicalOrder, isDecayed, LIST_ALIGN, listCell } from "./cells";
-import { nextSort, sortSaveFailureText, sortSats } from "./listSort";
+import { sortChange, sortSaveFailureText, sortSats } from "./listSort";
 
 /**
  * The List view (ref §4, spec §8.6): one row per satellite, one column per visible field of the module in the canonical order
@@ -32,7 +32,7 @@ export function ListView({ config, tick, selected, onSelect, onSaveConfig, onSat
   const time = useMemo(() => new Date(shown?.t ?? Number.NaN), [shown]);
 
   const sortBy = (column: string) => {
-    onSaveConfig((c) => ({ ...c, list_sort: nextSort(c.list_sort, column) })).catch((e: unknown) => onError?.(sortSaveFailureText(e)));
+    onSaveConfig(sortChange(column)).catch((e: unknown) => onError?.(sortSaveFailureText(e)));
   };
   const sortKey = (column: string) => (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.key === "Enter" || e.key === " ") {

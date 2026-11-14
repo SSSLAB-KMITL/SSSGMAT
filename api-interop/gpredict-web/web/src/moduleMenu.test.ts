@@ -25,7 +25,7 @@ describe("moduleMenu (ref §2)", () => {
     { norad: 7530, name: "OSCAR 7" },
   ];
 
-  it("has the items of Gpredict's module popup in order; Autotrack, Select satellite, Sky at a glance, Time Controller, Configure, Clone, Delete and Close work", () => {
+  it("has the items of Gpredict's module popup in order; Autotrack, Select satellite, Sky at a glance, Time Controller, Radio Control, Antenna Control, Configure, Clone, Delete and Close work", () => {
     expect(outline(moduleMenu({ autotrack: false, choices, selected: null }))).toEqual([
       "Detach module (later 4)",
       "Full screen (later 4)",
@@ -38,8 +38,8 @@ describe("moduleMenu (ref §2)", () => {
       "Sky at a glance",
       "Time Controller",
       "-",
-      "Radio Control (later 3)",
-      "Antenna Control (later 3)",
+      "Radio Control",
+      "Antenna Control",
       "-",
       "Configure",
       "Clone...",
@@ -77,8 +77,8 @@ describe("moduleMenu (ref §2)", () => {
       ["Autotrack", { type: "autotrack", on: true }],
       ["Sky at a glance", { type: "skyGlance" }],
       ["Time Controller", { type: "timeController" }],
-      ["Radio Control", undefined],
-      ["Antenna Control", undefined],
+      ["Radio Control", { type: "radio" }],
+      ["Antenna Control", { type: "rotator" }],
       ["Configure", { type: "configure" }],
       ["Clone...", { type: "clone" }],
       ["Delete", { type: "delete" }],
@@ -90,6 +90,13 @@ describe("moduleMenu (ref §2)", () => {
     const item = moduleMenu({ autotrack: false, choices, selected: null }).find((e) => e.kind === "item" && e.label === "Sky at a glance");
     expect(item).toEqual({ kind: "item", label: "Sky at a glance", action: { type: "skyGlance" } });
     expect(item).not.toHaveProperty("later");
+  });
+
+  it("module menu enables Radio Control and Antenna Control: they are not later items and their actions open the windows", () => {
+    const menu = moduleMenu({ autotrack: false, choices, selected: null });
+    expect(outline(menu).filter((l) => l.includes("later 3"))).toEqual([]);
+    expect(menu.find((e) => e.kind === "item" && e.label === "Radio Control")).toEqual({ kind: "item", label: "Radio Control", action: { type: "radio" } });
+    expect(menu.find((e) => e.kind === "item" && e.label === "Antenna Control")).toEqual({ kind: "item", label: "Antenna Control", action: { type: "rotator" } });
   });
 
   it("turns Autotrack off when it is chosen while on", () => {

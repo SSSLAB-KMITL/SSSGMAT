@@ -8,7 +8,7 @@ import { ToggleButton } from "../components/ToggleButton";
 import { PassPolarPlot } from "../passes/PassPolarPlot";
 import type { PolarScene } from "../passes/passPolar";
 import { strokeSegments } from "../passes/plotCommon";
-import type { Orientation } from "../views/polarGeom";
+import { orientationOf } from "../views/polarGeom";
 import { editedValue, fmtAngle } from "./radioView";
 import { crosshair, ROT_TOOLTIPS as TIPS, rotEnabled, rotMarkers, rotTitle, SETPOINT_RADIUS, targetRect } from "./rotView";
 import type { RotMarkers } from "./rotView";
@@ -20,14 +20,16 @@ interface Props {
   module: string;
   /** the newest state of the controller: the `rotator` of the module's tick. A new object replaces what the window shows */
   state: RotatorState;
-  /** the Polar View's orientation of the module: the plot is drawn the way the module's polar view is */
-  orientation: Orientation;
+  /** the Polar View's orientation of the module as its configuration holds it ("N/E/S/W", ...; N/E/S/W for another text): the plot is drawn the way the module's polar view is */
+  orientation: string;
   /** the name of the station, drawn at the top left of the plot; null when the Polar View's "QTH Info" is off */
   qthName: string | null;
   /** sends one action of the window to the server (controllerAction(module, "rotator", body)) and answers the new state, which the window shows at once */
   onAction: (body: Record<string, unknown>) => Promise<RotatorState>;
   /** the window was closed: the caller closes the controller on the server and removes the window */
   onClose: () => void;
+  /** when this number changes the window comes to the front: Module menu → Antenna Control while the window is open (ref-R §1) */
+  raiseToken?: number;
 }
 
 /** The numbers whose steps the window keeps until the server has answered them (see useControllerState). */
@@ -57,8 +59,9 @@ function paintMarkers(ctx: CanvasRenderingContext2D, markers: RotMarkers): void 
  * state that comes back is shown at once and then the ticks follow. (ของเรา) A line at the bottom says in Thai why the rotator cannot
  * be used (the server's `status`, or why an action failed).
  */
-export function RotatorControl({ module, state, orientation, qthName, onAction, onClose }: Props) {
+export function RotatorControl({ module, state, orientation: named, qthName, onAction, onClose, raiseToken }: Props) {
   const id = useId();
+  const orientation = orientationOf(named);
   const { shown, edits, problem, send, act } = useControllerState<RotatorState, EditKey>(state, onAction);
 
   const az = editedValue(edits.az, shown.knob.az);
@@ -78,7 +81,7 @@ export function RotatorControl({ module, state, orientation, qthName, onAction, 
   const status = problem ?? shown.status;
 
   return (
-    <FloatingWindow title={rotTitle(module)} onClose={onClose}>
+    <FloatingWindow title={rotTitle(module)} onClose={onClose} raiseToken={raiseToken}>
       <div className="ar">
         <div className="ar-plot">
           <div className="ar-plot-fill">

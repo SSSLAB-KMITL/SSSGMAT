@@ -5,15 +5,9 @@ import type { SatPos } from "./canvasCommon";
 import { prepareCanvas, useCanvasMouse, useElementSize, useRefreshGate } from "./canvasHooks";
 import { drawPolar } from "./polarDraw";
 import type { SkyTrack } from "./polarDraw";
-import { POLAR_ORIENTATIONS } from "./polarGeom";
-import type { Orientation } from "./polarGeom";
+import { orientationOf } from "./polarGeom";
 import { planSkyFetches } from "./polarTracks";
 import type { SkyRequest } from "./polarTracks";
-
-/** The orientation of the module, N/E/S/W if the config holds something else. */
-function orientationOf(name: string): Orientation {
-  return (POLAR_ORIENTATIONS as readonly string[]).includes(name) ? (name as Orientation) : POLAR_ORIENTATIONS[0];
-}
 
 /**
  * The Polar view (ref §6, spec §8.5), drawn on a canvas that fills its cell.

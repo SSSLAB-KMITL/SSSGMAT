@@ -4,6 +4,7 @@ import {
   azElToXY,
   cardinalLabels,
   type Orientation,
+  orientationOf,
   POLAR_ORIENTATIONS,
   polarRadius,
   tickLabelPos,
@@ -15,6 +16,15 @@ import {
 const CX = 200;
 const CY = 150;
 const R = 100;
+
+describe("orientationOf", () => {
+  it("narrows the module's setting (a string in its configuration) to one of the four orientations, N/E/S/W for anything else", () => {
+    for (const o of POLAR_ORIENTATIONS) expect(orientationOf(o)).toBe(o);
+    expect(orientationOf("")).toBe("N/E/S/W");
+    expect(orientationOf("n/w/s/e")).toBe("N/E/S/W");
+    expect(orientationOf("E/S/W/N")).toBe("N/E/S/W");
+  });
+});
 
 describe("polarRadius", () => {
   it("is min(w, h)/2 - 25 (ref §6)", () => {

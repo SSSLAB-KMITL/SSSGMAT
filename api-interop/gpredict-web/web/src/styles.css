@@ -797,6 +797,11 @@ body {
   padding: 4px 8px;
   border-left: 4px solid;
 }
+.trsp {
+  /* the TLE Update window's width: the Thai lines under "Finished" wrap inside it */
+  width: 440px;
+  max-width: 100%;
+}
 
 /* ---------------------------------------------------------------- module, properties and ground station dialogs */
 

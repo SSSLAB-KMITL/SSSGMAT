@@ -11,6 +11,8 @@ export type ModuleAction =
   | { type: "select"; norad: number }
   | { type: "skyGlance" }
   | { type: "timeController" }
+  | { type: "radio" }
+  | { type: "rotator" }
   | { type: "configure" }
   | { type: "clone" }
   | { type: "delete" }
@@ -38,8 +40,9 @@ export interface ModuleMenuState {
 
 /**
  * Gpredict's module popup, docked: Detach module, Full screen, Autotrack, Select satellite, Sky at a glance, Time Controller,
- * Radio Control, Antenna Control, Configure, Clone..., Delete, Close. Detach, Full screen and the two controls are for later
- * sub-projects (spec §8.2); Sky at a glance opens its window (sub-project 2, Task 14). Select satellite is off while there is no satellite to choose.
+ * Radio Control, Antenna Control, Configure, Clone..., Delete, Close. Detach and Full screen are for a later sub-project (spec §8.2);
+ * Sky at a glance opens its window (sub-project 2, Task 14), Radio Control and Antenna Control open theirs (sub-project 3, Task 14).
+ * Select satellite is off while there is no satellite to choose.
  */
 export function moduleMenu({ autotrack, choices, selected }: ModuleMenuState): MenuSpec<ModuleAction>[] {
   return [
@@ -57,8 +60,8 @@ export function moduleMenu({ autotrack, choices, selected }: ModuleMenuState): M
     { kind: "item", label: "Sky at a glance", action: { type: "skyGlance" } },
     { kind: "item", label: "Time Controller", action: { type: "timeController" } },
     SEPARATOR,
-    laterItem("Radio Control"),
-    laterItem("Antenna Control"),
+    { kind: "item", label: "Radio Control", action: { type: "radio" } },
+    { kind: "item", label: "Antenna Control", action: { type: "rotator" } },
     SEPARATOR,
     { kind: "item", label: "Configure", action: { type: "configure" } },
     { kind: "item", label: "Clone...", action: { type: "clone" } },

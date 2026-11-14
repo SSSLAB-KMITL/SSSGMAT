@@ -7,7 +7,7 @@ export const MENU_TITLES = ["File", "Edit", "Help"] as const;
 export type MenuTitle = (typeof MENU_TITLES)[number];
 
 /** What an enabled item of the menu bar does. */
-export type BarAction = "newModule" | "openModule" | "quit" | "updateTle" | "preferences" | "onlineHelp" | "license" | "about";
+export type BarAction = "newModule" | "openModule" | "quit" | "updateTle" | "updateTrsp" | "preferences" | "onlineHelp" | "license" | "about";
 
 /** Accelerators that work: Gpredict's Ctrl+N, Ctrl+O, Ctrl+Q and F1 (Online help). Log browser's Ctrl+L is shown but not used. */
 const ACCEL: Readonly<Record<BarAction, string | undefined>> = {
@@ -15,6 +15,7 @@ const ACCEL: Readonly<Record<BarAction, string | undefined>> = {
   openModule: "Ctrl+O",
   quit: "Ctrl+Q",
   updateTle: undefined,
+  updateTrsp: undefined,
   preferences: undefined,
   onlineHelp: "F1",
   license: undefined,
@@ -35,7 +36,7 @@ export function barMenu(title: MenuTitle): MenuSpec<BarAction>[] {
       return [
         item("Update TLE data from network", "updateTle"),
         laterItem("Update TLE data from local files"),
-        laterItem("Update transponder data"),
+        item("Update transponder data", "updateTrsp"),
         SEPARATOR,
         item("Preferences", "preferences"),
       ];

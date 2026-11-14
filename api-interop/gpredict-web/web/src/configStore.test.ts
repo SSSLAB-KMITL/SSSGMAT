@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ConfigStore } from "./configStore";
+import { popupChange } from "./satPopup";
+import { singleSatChange } from "./selection";
 import type { ModuleConfig } from "./types";
+import { sortChange } from "./views/listSort";
 
 function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
   return {
@@ -251,5 +254,37 @@ describe("ConfigStore", () => {
     expect(store.config).toBe(initial);
     store.reset(cfg()); // equal, not the same
     expect(store.config).toBe(initial);
+  });
+});
+
+describe("the saves of the views send `satellites` as the server stores it", () => {
+  // While a Radio Control or Antenna Control of the module is open, the server refuses a PUT whose `satellites` differ from the
+  // module's with 409 CONTROLLER_ACTIVE, and a reorder is a difference (sub-project 3, decision 4). The views save their settings
+  // with the same PUT while a controller is open, so each of these must send the list exactly as it was read: in its order.
+  const STORED = [25544, 7530, 43017, 20442]; // the order of the module file, not sorted
+  const changes: [string, (c: ModuleConfig) => ModuleConfig][] = [
+    ["Map: Highlight footprint off", popupChange({ type: "footprint", on: false }, 43017)],
+    ["Map: Highlight footprint on", popupChange({ type: "footprint", on: true }, 7530)],
+    ["Map: Ground Track", popupChange({ type: "groundTrack", on: true }, 43017)],
+    ["Polar: Sky track", popupChange({ type: "skyTrack", on: true }, 20442)],
+    ["Single sat's satellite (also Select satellite and Autotrack)", singleSatChange(7530)],
+    ["List: the sort", sortChange("El")],
+  ];
+
+  it.each(changes)("%s", async (_, change) => {
+    const { put, calls } = fakePut();
+    const stored = cfg({ satellites: [...STORED], footprint_off: [7530] });
+    const store = new ConfigStore(stored, put);
+    void store.save(change);
+    void store.save(change); // the second is built from what the server accepted for the first
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body.satellites).toBe(stored.satellites); // the very list that was read, not a copy that could be sorted
+    calls[0]!.resolve();
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.body.satellites).toEqual(STORED);
+    calls[1]!.resolve();
+    await flush();
+    expect(store.config.satellites).toEqual(STORED);
   });
 });

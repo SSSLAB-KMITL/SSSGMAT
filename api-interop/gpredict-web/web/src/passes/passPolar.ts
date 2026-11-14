@@ -7,7 +7,7 @@
 
 import { cssRgba, POLAR_COLORS } from "../colors";
 import { formatTime, fmtFixed } from "../format";
-import { AXIS_EXTRA, azElToXY, cardinalLabels, type Orientation, POLAR_ORIENTATIONS, xyToAzEl } from "../views/polarGeom";
+import { AXIS_EXTRA, azElToXY, cardinalLabels, type Orientation, orientationOf, xyToAzEl } from "../views/polarGeom";
 import type { Point, PlotSize, Segment, TextAnchor, TextMark } from "./plotCommon";
 import type { PassInfo } from "./types";
 
@@ -52,11 +52,6 @@ export interface PolarScene {
   trackColor: string;
   /** the time labels beside the track, `%H:%M` */
   ticks: TextMark[];
-}
-
-/** The orientation of the plot: the one named, N/E/S/W for a name that is not one of the four. */
-function orientationOf(name: string): Orientation {
-  return (POLAR_ORIENTATIONS as readonly string[]).includes(name) ? (name as Orientation) : POLAR_ORIENTATIONS[0];
 }
 
 /** Centre and radius of the circle in a plot of `size`. As Gpredict has them they are whole numbers (`guint`); the radius is not below 0. */
