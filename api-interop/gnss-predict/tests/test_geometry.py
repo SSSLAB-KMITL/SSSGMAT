@@ -1,7 +1,8 @@
 import math
 import unittest
-from gnss_predict.geometry import sez_to_az_el, ipp, mapping_factor, ecef_to_az_el, geodetic_to_ecef, ecef_to_aer
-from gnss_predict.config import THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M, THBK_ECEF_M
+from gnss_predict.geometry import (sez_to_az_el, ipp, mapping_factor, ecef_to_az_el, geodetic_to_ecef, ecef_to_aer,
+                                   ecef_to_geodetic)
+from gnss_predict.config import THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M, THBK_ECEF_M, WGS84_A_KM, WGS84_F
 
 
 class TestSezToAzEl(unittest.TestCase):
@@ -95,6 +96,42 @@ class TestGeodeticToEcef(unittest.TestCase):
         lo = geodetic_to_ecef(45.0, 30.0, 0.0)
         hi = geodetic_to_ecef(45.0, 30.0, 10000.0)
         self.assertAlmostEqual(math.dist(lo, hi), 10.0, places=9)
+
+
+class TestEcefToGeodetic(unittest.TestCase):
+    def test_round_trip(self):
+        count = 0
+        for lat in (-89.5, -45.0, 0.0, 13.729779, 60.0, 89.5):
+            for lon in (-179.9, 0.0, 100.781151, 180.0):
+                for h_m in (0.0, 6.4, 20_000_000.0):
+                    lat2, lon2, h2 = ecef_to_geodetic(*geodetic_to_ecef(lat, lon, h_m))
+                    with self.subTest(lat=lat, lon=lon, h_m=h_m):
+                        self.assertAlmostEqual(lat2, lat, delta=1e-9)
+                        # lon = 180 ที่ได้คืนเป็น 180 (ช่วง (−180, 180]) ตรงกับค่าที่ใส่เข้าไป
+                        self.assertAlmostEqual(lon2, lon, delta=1e-9)
+                        self.assertAlmostEqual(h2, h_m / 1000.0, delta=1e-6)          # 1 มม.
+                    count += 1
+        self.assertEqual(count, 72)
+
+    def test_poles(self):
+        b = WGS84_A_KM * (1.0 - WGS84_F)
+        lat, _, h = ecef_to_geodetic(0.0, 0.0, b)
+        self.assertAlmostEqual(lat, 90.0, delta=1e-9)
+        self.assertAlmostEqual(h, 0.0, delta=1e-6)
+        lat, _, h = ecef_to_geodetic(0.0, 0.0, -b - 1.0)                      # ไม่หารด้วยศูนย์ที่ p = 0
+        self.assertAlmostEqual(lat, -90.0, delta=1e-9)
+        self.assertAlmostEqual(h, 1.0, delta=1e-6)
+
+    def test_equator(self):
+        for got, ref in zip(ecef_to_geodetic(6378.137, 0.0, 0.0), (0.0, 0.0, 0.0)):
+            self.assertAlmostEqual(got, ref, delta=1e-9)
+        for got, ref in zip(ecef_to_geodetic(0.0, 6378.137 + 20000.0, 0.0), (0.0, 90.0, 20000.0)):
+            self.assertAlmostEqual(got, ref, delta=1e-9)
+
+    def test_lon_range(self):
+        lon = ecef_to_geodetic(-6378.137, 0.0, 0.0)[1]
+        self.assertEqual(lon, 180.0)                                          # ไม่ใช่ −180.0
+        self.assertEqual(ecef_to_geodetic(-6378.137, -0.0, 0.0)[1], 180.0)    # y = −0.0 ก็ต้องได้ 180
 
 
 class TestEcefToAer(unittest.TestCase):

@@ -2,15 +2,18 @@ import math
 import unittest
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from gnss_predict.analyze import (AerRow, Interval, aer_rows, access_intervals, global_statistics,
                                   intervals_from_elevations, legacy_rows)
 from gnss_predict.config import THBK_HEIGHT_M, THBK_LAT_DEG, THBK_LON_DEG
-from gnss_predict.geometry import (ecef_to_aer, geodetic_to_ecef, ipp, mapping_factor, sez_to_az_el)
+from gnss_predict.geometry import (ecef_to_aer, ecef_to_az_el, geodetic_to_ecef, ipp, mapping_factor,
+                                   sez_to_az_el)
 from gnss_predict.predict import rows_from_samples
 from gnss_predict.propagate import Ephemeris
 from gnss_predict.report import SezSample
 from gnss_predict.scenario import Facility
+from tests.report_fixture import circular_ecef_km, fake_propagate, slot_table
 
 UTC = timezone.utc
 T0 = datetime(2026, 11, 10, tzinfo=UTC)
@@ -278,6 +281,49 @@ class TestLegacyRows(unittest.TestCase):
                      22000.0, -5.43219, 101.98765, 0.987654)
         self.assertEqual(legacy_rows([row]),
                          [["2026-11-11", "01:02:03", "G07", "0.000", "12.346", "-5.4322", "101.9877", "0.98765"]])
+
+
+class TestAccessEdgesAgainstOneSecondSampling(unittest.TestCase):
+    """§10.2 แถว 4: ขอบช่วง access จากจุดห่าง 30 วินาที (ประมาณเชิงเส้น) ตรงกับการสุ่มมุมเงยทุก 1 วินาที ไม่เกิน 1 วินาที
+
+    ขอบจากการสุ่ม: ต้นช่วง = วินาทีแรกที่ El ≥ เกณฑ์, ท้ายช่วง = วินาทีสุดท้ายที่ El ≥ เกณฑ์
+    ขอบที่ถูกตัดที่ต้นหรือท้ายช่วงวิเคราะห์ (วินาทีที่ 0 และ 86400) ต้องเท่ากันพอดี
+    """
+    PRNS = ["G01", "G05", "G10", "G15", "G20", "G25", "E03", "E11", "E19", "R05", "R12", "C01", "C08"]
+    SECONDS = 86400
+
+    def test_edges_within_one_second(self):
+        sats = [SimpleNamespace(prn=prn, system=prn[0]) for prn in self.PRNS]
+        eph, _ = fake_propagate(sats, T0, T0 + timedelta(seconds=self.SECONDS), 30, None, None)
+        found = access_intervals(eph, THBK)
+        sta = geodetic_to_ecef(THBK.lat_deg, THBK.lon_deg, THBK.alt_m)
+        checked = clipped = 0
+        for prn, (system, slot, slots) in slot_table(sats).items():
+            inside = [ecef_to_az_el(circular_ecef_km(system, slot, slots, s), sta, THBK.lat_deg, THBK.lon_deg)[1]
+                      >= THBK.min_el_deg for s in range(self.SECONDS + 1)]
+            sampled: list[tuple[int, int]] = []
+            first = None
+            for s, ok in enumerate(inside):
+                if ok and first is None:
+                    first = s
+                elif not ok and first is not None:
+                    sampled.append((first, s - 1))
+                    first = None
+            if first is not None:
+                sampled.append((first, self.SECONDS))
+            got = [((iv.start - T0).total_seconds(), (iv.stop - T0).total_seconds()) for iv in found[prn]]
+            self.assertEqual(len(got), len(sampled), prn)
+            for (got_start, got_stop), (want_start, want_stop) in zip(got, sampled):
+                for name, g, w, cut in (("start", got_start, want_start, 0), ("stop", got_stop, want_stop, self.SECONDS)):
+                    with self.subTest(prn=prn, edge=name, sampled_s=w):
+                        if w == cut:
+                            self.assertEqual(g, float(cut))
+                            clipped += 1
+                        else:
+                            self.assertAlmostEqual(g, w, delta=1.0)
+                            checked += 1
+        self.assertGreater(checked, 20)
+        self.assertGreater(clipped, 0)                      # ทดสอบทั้งกิ่งขอบที่ถูกตัดด้วย
 
 
 if __name__ == "__main__":
