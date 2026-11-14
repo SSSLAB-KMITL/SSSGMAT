@@ -308,7 +308,14 @@ describe("number formats in the saved text (ref-D §2.1, ref-P §8.3)", () => {
     expect(one(PASS_A, ALL_SINGLE, 0, both)).toContain(" 1234 -3.457  13.75  100.50 OK03ab  4567   420 7.654");
     expect(list([PASS_A, PASS_B], ALL_MULTI, 0, ALL_SINGLE, both)).toBe(list([PASS_A, PASS_B], ALL_MULTI, 0, ALL_SINGLE, DEFAULT_NF));
     expect(list([PASS_A, PASS_B], ALL_MULTI, 1, ALL_SINGLE, both)).toBe(list([PASS_A, PASS_B], ALL_MULTI, 1, ALL_SINGLE, DEFAULT_NF));
-    expect(one(PASS_A, ALL_SINGLE, 0, both)).not.toMatch(/[NSEW]/); // the observer line has its words, but no number has a letter
+  });
+
+  it("saved text has no degree sign or hemisphere letter when N/S/E/W is on", () => {
+    const rows = one(PASS_A, ALL_SINGLE, 2, nf({ nsew: true })).split("\n"); // contents 2: the data rows only
+    expect(rows).toHaveLength(PASS_A.rows.length + 1); // and the empty text after the last newline
+    for (const row of rows) expect(row).not.toMatch(/°|\d[NSEW]\b/);
+    expect(rows[1]).toContain(" -13.75 -100.50 JG86xm"); // signed, as in the file with the default format
+    expect(one(PASS_A, ALL_SINGLE, 0, nf({ nsew: true }))).not.toContain("°");
   });
 
   it("saved text says Local or UTC", () => {
