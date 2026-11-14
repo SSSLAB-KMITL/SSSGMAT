@@ -640,12 +640,24 @@ describe("occlusion: layers under an opaque shown layer are not created", () => 
     expect(v.ids()).toEqual([OSM]);
   });
 
-  test("a png Himawari layer on top hides nothing: the opaque jpg layer under it and Himawari are both created", () => {
+  test("a png Himawari layer on top hides nothing: the layers under it and Himawari are all created", () => {
     useImagery.setState({ sources: GIBS_ON });
     show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 } });
     const v = fakeViewer();
     attach(v.viewer);
-    expect(v.ids()).toEqual([VIIRS, HIMA]);
+    expect(v.ids()).toEqual([BM, VIIRS, HIMA]);
+  });
+
+  test("a daily jpg layer (VIIRS) does not hide Blue Marble: a time it has no imagery for (404, e.g. a forecast) must still show Blue Marble", () => {
+    useImagery.setState({ sources: GIBS_ON });
+    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [MODIS]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([BM, VIIRS, MODIS]);
+    // ภาพคงที่ jpg ที่ 0% บังชั้นใต้มัน: EOX (ภาพคงที่ วาดเหนือ GIBS) บัง Blue Marble และ VIIRS
+    useImagery.setState({ sources: { ...GIBS_ON, eox: true } });
+    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 } });
+    expect(v.ids()).toEqual([EOX]);
   });
 
   test("a GOES GeoColor layer (jpg, but a geostationary disk: period 10min) hides nothing either", () => {
@@ -657,19 +669,19 @@ describe("occlusion: layers under an opaque shown layer are not created", () => 
     show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [GOES]: { show: true, translucency: 0 } });
     const v = fakeViewer();
     attach(v.viewer);
-    expect(v.ids()).toEqual([VIIRS, GOES]);
+    expect(v.ids()).toEqual([BM, VIIRS, GOES]);
   });
 
-  test("switching OSM off re-creates the layers under it down to the next opaque one, in draw order under the grid", () => {
+  test("switching OSM off re-creates the layers under it (down to the next opaque one, here Blue Marble), in draw order under the grid", () => {
     show({ ...OPAQUE_ALL, [EOX]: { show: true, translucency: 40 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.ids()).toEqual([OSM]);
     sources({ gibs: true, eox: true, osm: false });
-    expect(v.ids()).toEqual([VIIRS, EOX]);
+    expect(v.ids()).toEqual([BM, VIIRS, EOX]);
     expect(v.list.at(-1)).toBe(v.grid);
     sources({ gibs: true, eox: false, osm: false });
-    expect(v.ids()).toEqual([VIIRS]);
+    expect(v.ids()).toEqual([BM, VIIRS]);
     sources({ gibs: true, eox: true, osm: true });
     expect(v.ids()).toEqual([OSM]);
   });

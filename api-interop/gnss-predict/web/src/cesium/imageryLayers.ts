@@ -5,7 +5,7 @@
 // - แหล่ง (provider kinds): gibs และ eox = ชั้นใน catalog ผ่าน server ในเครื่อง (proxy) ; osm = OSM_LAYER ที่ browser ดึงตรง ; ion = Cesium ion ที่ browser ดึงตรง
 // - ชั้นที่วาด = ชั้นที่ globe บอกว่าแสดง เฉพาะของแหล่งที่สวิตช์เปิด (ปิด = ไม่มีชั้นของแหล่งนั้นเลย ไม่มีคำขอไปโฮสต์นั้นจาก browser)
 //   id ใน globe ที่ catalog ไม่รู้จักข้ามไป
-//   การบัง (occlusion): วาดเฉพาะชั้นทึบบนสุดที่แสดงอยู่กับชั้นที่อยู่เหนือมัน ชั้นทึบ = translucency 0 และ jpg ที่ไม่ใช่ชั้น 10min หรือ OSM (isOpaqueLayer)
+//   การบัง (occlusion): วาดเฉพาะชั้นทึบบนสุดที่แสดงอยู่กับชั้นที่อยู่เหนือมัน ชั้นทึบ = translucency 0 และ jpg ภาพคงที่ (Blue Marble, EOX) หรือ OSM (isOpaqueLayer)
 //   ชั้นข้างใต้ไม่ถูกสร้าง จึงไม่มีคำขอชิ้นภาพของมันเลย (วัดบน SE Asia: ราวครึ่งของคำขอไปที่ชั้นที่ OSM ทึบทับอยู่) Natural Earth II ยังเป็นฐานเสมอ (ออฟไลน์ ถูก)
 //   คิดใหม่ทุกครั้งที่ Show / Translucency (useLayout.globe) หรือสวิตช์ของแหล่งเปลี่ยน ชั้นที่โผล่กลับมาวางตามลำดับวาดเดิม
 // - ตำแหน่ง: เหนือ index 0 (Natural Earth II: applyProps ของ scene3d.ts ใช้ index 0 เป็นภาพฐานของกลางวัน/กลางคืน ห้ามแทรกที่ 0)
@@ -216,11 +216,12 @@ const alphaOf = (id: string): number => {
 };
 
 /**
- * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลก: translucency 0 และภาพทึบ = jpg ที่ครอบคลุมทั้งโลก (GIBS jpg, EOX) หรือ OpenStreetMap (png แต่ทึบ)
- * png ของ GIBS (Himawari) ไม่ทึบ และชั้น 10min (Himawari, GOES: ดาวค้างฟ้าเห็นแค่จานโลกของตัวเอง แม้ GOES เป็น jpg) ไม่นับว่าทึบ
+ * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลกเสมอ: translucency 0 และภาพทึบที่มีทุกชิ้นทุกเวลา = jpg ภาพคงที่ (Blue Marble, EOX) หรือ OpenStreetMap (png แต่ทึบ)
+ * ชั้นที่ผูกเวลา (daily: VIIRS, MODIS ; 10min: Himawari, GOES) ไม่นับว่าทึบ แม้เป็น jpg: เวลาที่ยังไม่มีภาพ (scenario พยากรณ์ล่วงหน้า) server ตอบ 404
+ * ชิ้นนั้นโปร่งใส ชั้นข้างใต้ (Blue Marble) ต้องยังอยู่ให้เห็น และ GOES/Himawari เห็นแค่จานโลกของดาวค้างฟ้า png ของ GIBS (Himawari) ไม่ทึบอยู่แล้ว
  */
 export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
-  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period !== "10min"));
+  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period === "static"));
 
 /**
  * ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด: ชั้นที่แสดงอยู่ตั้งแต่ชั้นทึบบนสุด (isOpaqueLayer) ขึ้นไป
