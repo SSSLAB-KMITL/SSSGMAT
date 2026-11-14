@@ -80,7 +80,7 @@ import { markersNear, selectOnClick } from "./pick";
 import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
 import { SatModelSource } from "./satModelSource";
 import {
-  noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type SatelliteAxes, type ViewFromToRequest, type ViewFromToResult,
+  notifyScenes, type MouseMode, type Scene3DHandle, type SatelliteAxes, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
 import {
   notifySensorViews, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
@@ -290,6 +290,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   /** ตำแหน่งที่กดปุ่มซ้ายในโหมด Grab Globe ค้างอยู่ (null = ไม่ได้กดอยู่) ไว้ดูว่าตอนปล่อยเป็นคลิกหรือลาก */
   private pressAt: Cartesian2 | null = null;
   private icrfPreloaded = false;
+  /** data source ที่ใช้อยู่มาจาก scene.czml (ไม่ใช่ตัวว่าง) */
+  private fromScene = false;
+  /** เวลาที่ดาวใน scene หาได้ตามชื่อครั้งแรก (noteLoaded) */
+  private loadedTime: number | null = null;
   /** Sensor View: กล้องตั้งตาม sensor ณ เวลาปัจจุบันแล้ว (false = ไม่มีตำแหน่ง) */
   private sensorCameraSet = false;
   /** Sensor View: fov และ near ของ frustum ก่อนเข้าโหมด sensor (คืนตอนออก) */
@@ -336,7 +340,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     );
     this.offs.push(
       useResults.subscribe((s, prev) => {
-        if (s.info !== prev.info || s.prnByNorad !== prev.prnByNorad) this.refreshScene();
+        if (s.info !== prev.info || s.prnByNorad !== prev.prnByNorad) {
+          this.refreshScene();
+          this.noteLoaded();
+        }
       }),
     );
     this.offs.push(
@@ -378,9 +385,23 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   /** ได้ data source ใหม่ (ตัวเก่าถูกเอาออกแล้ว): ตั้งกราฟิกและกล้องตามเดิม (entity เป็นตัวใหม่) */
   private adopted(fromScene: boolean): void {
     if (this.destroyed) return;
+    this.fromScene = fromScene;
     this.restyle();
     this.restoreView();
-    if (fromScene) noteSceneLoaded();
+    this.noteLoaded();
+  }
+
+  /**
+   * loadedAt (test hook sceneLoadedAt, e2e waitForScene) = ดาวใน scene หาได้ตามชื่อแล้ว: data source จาก scene.czml ถูกใช้และตั้งกราฟิกแล้ว และ manifest (NORAD → PRN)
+   * มาแล้ว สองอย่างมาคนละคำขอ ลำดับไหนก็ได้ (results.refresh ตั้ง info ก่อน แล้วโหลด manifest.json คู่กับ dop.csv) จึงเรียกทั้งตอน adopted และตอน manifest มา
+   * ไม่มี manifest (โหลดไม่ได้) = ไม่ตั้ง: หาดาวตามชื่อไม่ได้อยู่ดี ตั้งครั้งเดียวต่อหน้าต่าง (หน้าต่างที่สร้างใหม่ เช่นจาก workbook เริ่มจาก null)
+   */
+  private noteLoaded(): void {
+    if (this.loadedTime === null && !this.destroyed && this.fromScene && this.ds !== null && useResults.getState().manifest !== null) this.loadedTime = performance.now();
+  }
+
+  loadedAt(): number | null {
+    return this.loadedTime;
   }
 
   sceneFailed(): boolean {

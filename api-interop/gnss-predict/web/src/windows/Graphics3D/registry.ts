@@ -57,6 +57,8 @@ export interface Scene3DHandle {
   sensorFootprintPoints(name: string): number | null;
   /** จำนวนดาวที่แสดงเป็นโมเดล 3 มิติอยู่ (entity ดาวที่แสดงและมีโมเดลที่ไม่ได้ซ่อน) */
   modelCount(): number;
+  /** เวลา (performance.now) ที่ดาวใน scene ของหน้าต่างนี้หาได้ตามชื่อครั้งแรก (scene.czml ถูกใช้และ manifest มาแล้ว) ยังไม่ = null (test hook sceneLoadedAt) */
+  loadedAt(): number | null;
   /** แกน +X, +Y, +Z ของตัวดาวชื่อ name ในพิกัด ECEF (หน่วยหนึ่ง) จากท่าทางที่วาดอยู่ ไม่มีโมเดลที่แสดงหรือยังไม่เคยคำนวณท่าทาง = null */
   satelliteOrientation(name: string): SatelliteAxes | null;
   /** จุดของดาวชื่อ name แสดงอยู่ไหม (ดาวแสดงเป็นโมเดล = จุดซ่อน) ไม่มีดาวนั้น = null */
@@ -73,7 +75,6 @@ export interface Scene3DHandle {
 const registry = createSceneRegistry<Scene3DHandle>();
 /** ทะเบียนของหน้าต่าง 3D (ส่วนร่วมของหน้าต่าง เช่นแถบ "โหลดผลไม่สำเร็จ" อ่านจากที่นี่) */
 export const registry3d: SceneRegistry<Scene3DHandle> = registry;
-let loadedAt: number | null = null;
 
 /** แจ้งผู้ฟังว่าชุดหน้าต่างหรือสถานะของหน้าต่าง (โหมดเมาส์) เปลี่ยน */
 export const notifyScenes = (): void => registry.notify();
@@ -90,17 +91,16 @@ export const activeScene = (): Scene3DHandle | undefined => registry.active();
 
 export const firstScene = (): Scene3DHandle | undefined => registry.first("graphics3d");
 
-/** เวลา (performance.now) ที่ scene.czml โหลดเสร็จครั้งแรกในหน้านี้ */
-export function noteSceneLoaded(at: number = performance.now()): void {
-  if (loadedAt === null) loadedAt = at;
-}
-export const sceneLoadedAt = (): number | null => loadedAt;
+/**
+ * เวลา (performance.now) ที่หน้าต่าง 3D ตัวแรก (ที่ลงทะเบียนอยู่ตอนนี้) โหลดเสร็จ = ดาวใน scene หาได้ตามชื่อ (Scene3DHandle.loadedAt) ไม่มีหน้าต่าง หรือยังไม่เสร็จ = null
+ * เป็นของหน้าต่าง ไม่ใช่ของทั้งหน้า: File → Open จัดหน้าต่างตาม workbook หลังผลลัพธ์มาแล้ว หน้าต่าง 3D ที่มาแทนตัวเดิมเริ่มจากยังไม่โหลด
+ */
+export const sceneLoadedAt = (): number | null => firstScene()?.loadedAt() ?? null;
 
 export const subscribeScenes = (listener: () => void): (() => void) => registry.subscribe(listener);
 export const scenesVersion = (): number => registry.version();
 
 /** ล้างทะเบียน (test) */
 export function resetScenes(): void {
-  loadedAt = null;
   registry.reset();
 }

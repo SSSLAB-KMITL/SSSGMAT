@@ -60,8 +60,8 @@ const shownSatellites = (page: Page, names: string[]): Promise<string[]> =>
 const modelCount = (page: Page): Promise<number> => page.evaluate(() => window.__gnssStudioTest!.modelCount());
 
 /**
- * รอจนดาวที่แสดงทุกดวงเป็นโมเดลแล้วคืนรายชื่อ (ต้องมีอย่างน้อยหนึ่งดวง) รอรวมกันเพราะ sceneLoadedAt มาก่อน manifest (NORAD -> PRN) ได้:
- * ก่อนนั้น labelShown ของดาวทุกดวงเป็น null (ไม่รู้ว่า entity ไหน) จึงอ่านรายชื่อซ้ำจนกว่าจะนิ่ง
+ * รอจนดาวที่แสดงทุกดวงเป็นโมเดลแล้วคืนรายชื่อ (ต้องมีอย่างน้อยหนึ่งดวง) โมเดลมาทีหลัง sceneLoadedAt (catalog และ glb โหลดหลังดาวหาได้ตามชื่อ)
+ * จึงอ่านรายชื่อและจำนวนโมเดลซ้ำจนกว่าจะตรงกัน
  */
 async function waitForModels(page: Page, names: string[]): Promise<string[]> {
   await waitForScene(page);

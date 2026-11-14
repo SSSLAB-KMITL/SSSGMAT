@@ -13,7 +13,7 @@ import { registerGraphics3DCommands } from "../../src/windows/Graphics3D/command
 import { isClick, markersNear, PICK_RADIUS_PX, selectOnClick, selectScenePath } from "../../src/windows/Graphics3D/pick";
 import { DEFAULT_PROPS_3D, props3d } from "../../src/windows/Graphics3D/props";
 import {
-  activeScene, firstScene, markActive, noteSceneLoaded, registerScene, resetScenes, sceneLoadedAt, type MouseMode, type Scene3DHandle,
+  activeScene, firstScene, markActive, registerScene, resetScenes, sceneLoadedAt, type MouseMode, type Scene3DHandle,
 } from "../../src/windows/Graphics3D/registry";
 import { registerScene2D, resetScenes2D, type Scene2DHandle } from "../../src/windows/Graphics2D/registry2d";
 import { groupKey } from "../../src/windows/ObjectBrowser/tree";
@@ -42,6 +42,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     entityColor: (name: string) => (name === "G01" ? "#ffd23f" : null),
     labelShown: (name: string) => (name === "G01" ? true : null),
     frameCount: () => 7,
+    loadedAt: () => 1234,
     sensorFootprintPoints: () => null,
     modelCount: () => 3,
     satelliteOrientation: (name: string) => (name === "G01" ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : null),
@@ -147,11 +148,19 @@ describe("the open 3D windows", () => {
     expect(activeScene()).toBeUndefined();
   });
 
-  test("the first scene load is remembered once", () => {
+  test("sceneLoadedAt is the load time of the current first 3D window (a window that replaces it starts unloaded)", () => {
     expect(sceneLoadedAt()).toBeNull();
-    noteSceneLoaded(100);
-    noteSceneLoaded(200);
+    let at: number | null = 100;
+    const off = registerScene(fakeScene("graphics3d", { loadedAt: () => at }));
     expect(sceneLoadedAt()).toBe(100);
+    off();
+    expect(sceneLoadedAt()).toBeNull();
+    at = null;
+    const off2 = registerScene(fakeScene("graphics3d", { loadedAt: () => at }));
+    expect(sceneLoadedAt()).toBeNull();
+    at = 300;
+    expect(sceneLoadedAt()).toBe(300);
+    off2();
   });
 });
 
@@ -363,8 +372,6 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.labelShown("G01")).toBe(true);
     expect(hooks.labelShown("NOPE")).toBeNull();
     expect(hooks.frameCount()).toBe(7);
-    expect(hooks.sceneLoadedAt()).toBeNull();
-    noteSceneLoaded(1234);
     expect(hooks.sceneLoadedAt()).toBe(1234);
   });
 

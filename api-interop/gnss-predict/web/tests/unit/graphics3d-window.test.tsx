@@ -57,6 +57,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     entityColor: () => null,
     labelShown: () => null,
     frameCount: () => 0,
+    loadedAt: () => null,
     sensorFootprintPoints: () => null,
     modelCount: () => 0,
     satelliteOrientation: () => null,

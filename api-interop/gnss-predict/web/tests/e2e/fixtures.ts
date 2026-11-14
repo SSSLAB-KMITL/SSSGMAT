@@ -49,7 +49,7 @@ export async function openScenario(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("treeitem").first()).toBeVisible();
 }
 
-/** รอจน scene ของหน้าต่าง 3D โหลดผลลัพธ์เสร็จ (sceneLoadedAt มีค่า) */
+/** รอจน scene ของหน้าต่าง 3D โหลดผลลัพธ์เสร็จ (sceneLoadedAt มีค่า: scene.czml ถูกใช้และ manifest มาแล้ว ดาวหาได้ตามชื่อ เช่น labelShown("G01")) */
 export async function waitForScene(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(() => window.__gnssStudioTest?.sceneLoadedAt() ?? null), { message: "3D scene loaded" }).not.toBeNull();
 }
