@@ -135,9 +135,9 @@ CATALOG: tuple[Layer, ...] = (
           "NASA GIBS / EOSDIS, JMA", "gibs"),
     Layer("Himawari_AHI_Band13_Clean_Infrared", "Himawari-9 Clean Infrared", "10min", "GoogleMapsCompatible_Level6", 6, "png",
           "NASA GIBS / EOSDIS, JMA", "gibs"),
-    Layer("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+    Layer("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "png", "NASA GIBS / EOSDIS, NOAA",
           "gibs"),
-    Layer("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+    Layer("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "png", "NASA GIBS / EOSDIS, NOAA",
           "gibs"),
     # EOX: TileMatrixSet `g`, ชื่อชั้น และระดับสูงสุด 15 ตาม spec ยังรอยืนยันกับของจริง; ภาพคงที่รายปี เวลา = `default`
     Layer("s2cloudless-2024_3857", "Sentinel-2 cloudless 2024", "static", "g", 15, "jpg",
