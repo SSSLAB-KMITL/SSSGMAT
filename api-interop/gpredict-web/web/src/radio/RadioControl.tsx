@@ -13,7 +13,7 @@ import {
   fmtLo,
   fmtRange,
   fmtRate,
-  isPttSpace,
+  pttKey,
   RADIO_TOOLTIPS as TIPS,
   radioTitle,
 } from "./radioView";
@@ -54,15 +54,20 @@ export function RadioControl({ module, state, onAction, onClose, raiseToken }: P
     latest.current = { send, spacePtt: shown.space_ptt };
   });
   useEffect(() => {
-    const press = (e: KeyboardEvent) => {
+    const key = (e: KeyboardEvent) => {
       const target = e.target;
       if (!(target instanceof Element) || root.current?.closest(".float-window")?.contains(target) !== true) return;
-      if (!isPttSpace(e.key, latest.current.spacePtt, target.tagName)) return;
-      e.preventDefault(); // the button that has the focus is not pressed
-      if (!e.repeat) void latest.current.send({ action: "ptt_toggle" }); // (ของเรา) a key held down is one switch, not a flood of them
+      const what = pttKey(e.type, e.key, latest.current.spacePtt, target.tagName, e.repeat);
+      if (what === null) return;
+      e.preventDefault(); // the button that has the focus is not pressed (Firefox presses it on keyup, so that is cancelled too)
+      if (what === "toggle") void latest.current.send({ action: "ptt_toggle" });
     };
-    document.addEventListener("keydown", press);
-    return () => document.removeEventListener("keydown", press);
+    document.addEventListener("keydown", key);
+    document.addEventListener("keyup", key);
+    return () => {
+      document.removeEventListener("keydown", key);
+      document.removeEventListener("keyup", key);
+    };
   }, []);
 
   const down = editedValue(edits.down, shown.down.sat_hz);

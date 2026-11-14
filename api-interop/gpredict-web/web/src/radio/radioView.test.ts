@@ -16,6 +16,7 @@ import {
   fmtRate,
   isPttSpace,
   NO_REQUESTS,
+  pttKey,
   RADIO_TOOLTIPS,
   radioTitle,
   sendRequest,
@@ -180,6 +181,26 @@ describe("isPttSpace", () => {
     expect(isPttSpace(" ", true, "INPUT")).toBe(false);
     expect(isPttSpace(" ", true, "SELECT")).toBe(false);
     expect(isPttSpace(" ", true, "TEXTAREA")).toBe(false);
+  });
+});
+
+describe("pttKey", () => {
+  it("the first keydown of SPACE switches PTT; a key held down only swallows its repeats", () => {
+    expect(pttKey("keydown", " ", true, "BUTTON", false)).toBe("toggle");
+    expect(pttKey("keydown", " ", true, "BUTTON", true)).toBe("swallow");
+  });
+
+  it("the keyup of SPACE is swallowed too: Firefox presses the focused button on keyup", () => {
+    expect(pttKey("keyup", " ", true, "BUTTON", false)).toBe("swallow");
+    expect(pttKey("keyup", " ", true, "DIV", false)).toBe("swallow");
+  });
+
+  it("keys that are not PTT pass, on keydown and on keyup", () => {
+    for (const type of ["keydown", "keyup"]) {
+      expect(pttKey(type, " ", false, "BUTTON", false)).toBeNull();
+      expect(pttKey(type, " ", true, "INPUT", false)).toBeNull();
+      expect(pttKey(type, "Enter", true, "BUTTON", false)).toBeNull();
+    }
   });
 });
 

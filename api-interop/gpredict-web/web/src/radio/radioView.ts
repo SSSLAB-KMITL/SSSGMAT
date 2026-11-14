@@ -88,6 +88,19 @@ export function isPttSpace(key: string, spacePtt: boolean, tag: string): boolean
   return spacePtt && key === " " && !TYPING_TARGETS.has(tag);
 }
 
+/** What the window does with a key event (`isPttSpace`): "toggle" switches PTT, "swallow" only keeps the key from the page, null lets it pass. */
+export type PttKey = "toggle" | "swallow" | null;
+
+/**
+ * The window's handling of a SPACE that switches PTT (`type` is the event's type, `keydown` or `keyup`). Both events of that SPACE are
+ * swallowed so that the focused button is not pressed: a cancelled keydown is enough in Chrome, but Firefox presses the button on keyup
+ * unless the keyup is cancelled too. Only the first keydown switches PTT (ของเรา): a key held down is one switch, not a flood of them.
+ */
+export function pttKey(type: string, key: string, spacePtt: boolean, tag: string, repeat: boolean): PttKey {
+  if (!isPttSpace(key, spacePtt, tag)) return null;
+  return type === "keydown" && !repeat ? "toggle" : "swallow";
+}
+
 // ---------------------------------------------------------------- edits the server has not answered (the knobs, Cycle)
 
 /**
