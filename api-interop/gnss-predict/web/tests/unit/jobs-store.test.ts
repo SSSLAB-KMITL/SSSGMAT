@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { recordQueuedJob, startJob } from "../../src/api/startJob";
 import { isActiveJob, useJobs, type JobEvent } from "../../src/stores/jobs";
 import { stubFetch } from "./helpers/fake-fetch";
 
@@ -91,5 +92,25 @@ describe("isActiveJob", () => {
     useJobs.getState().onJobEvent(ev({ id: "a", state: "queued" }));
     useJobs.getState().onJobEvent(ev({ id: "b", state: "cancelled" }));
     expect(useJobs.getState().activeFor("E2E")?.id).toBe("a");
+  });
+});
+
+describe("recordQueuedJob", () => {
+  test("records a queued job for the scenario so activeFor sees it at once", () => {
+    recordQueuedJob("acc1", "analyze", "S1");
+    expect(useJobs.getState().jobs.acc1).toMatchObject({ id: "acc1", kind: "analyze", scenario: "S1", state: "queued", progress: { stage: null, fraction: null } });
+    expect(useJobs.getState().activeFor("S1")?.id).toBe("acc1");
+  });
+
+  test("an event that arrived before the reply is not pulled back to queued", () => {
+    useJobs.getState().onJobEvent(ev({ id: "acc1", kind: "analyze", scenario: "S1", state: "running" }));
+    recordQueuedJob("acc1", "analyze", "S1");
+    expect(useJobs.getState().jobs.acc1.state).toBe("running");
+  });
+
+  test("startJob records the job it started", async () => {
+    stubFetch({ "POST /api/scenarios/S1/propagate": { status: 202, json: { job: "p1" } } });
+    expect(await startJob("/scenarios/S1/propagate", "propagate", "S1")).toBe("p1");
+    expect(useJobs.getState().jobs.p1).toMatchObject({ kind: "propagate", scenario: "S1", state: "queued" });
   });
 });

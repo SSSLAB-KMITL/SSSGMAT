@@ -167,6 +167,8 @@ const LABELS = {
   "window.fetchOrbitData": ours("Fetch Orbit Data"),
   "window.dailyForecastSettings": ours("Daily Forecast Settings"),
   "window.globeManager": stk("Globe Manager", "H"),
+  // ชื่อหน้าต่างรายงาน/กราฟที่เลือกหลาย object (P11): `Multiple Objects: <style>` (data/reports.ts reportTitle)
+  "window.multipleObjects": ours("Multiple Objects"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),

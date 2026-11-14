@@ -29,7 +29,17 @@ export default defineConfig({
   build: {
     outDir: "dist",
     // Cesium (ราว 4 MB) อยู่ใน chunk ของตัวเองที่หน้าต่าง 3D และ 2D ใช้ร่วมกัน ตั้งชื่อเองให้อ่านรายการคำขอได้ (ไม่งั้นได้ชื่อของโมดูลที่ใช้ร่วมตัวใดตัวหนึ่ง)
-    rolldownOptions: { output: { codeSplitting: { groups: [{ name: "cesium", test: /[\\/]node_modules[\\/](cesium|@cesium)[\\/]/ }] } } },
+    // ECharts (กับ zrender) แยก chunk "echarts" ที่โหลดเฉพาะผ่าน import("echarts") ใน windows/Graph/chart.ts (ไม่อยู่ใน bundle หลัก)
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "cesium", test: /[\\/]node_modules[\\/](cesium|@cesium)[\\/]/ },
+            { name: "echarts", test: /[\\/]node_modules[\\/](echarts|zrender)[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   server: {
     proxy: {

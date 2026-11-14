@@ -132,3 +132,11 @@ export async function apiGetText(path: string, opts: ApiOptions = {}): Promise<s
   if (!res.ok) throw errorFrom(res.status, body, res.statusText);
   return body;
 }
+
+/** ส่ง JSON แล้วรับคำตอบเป็นข้อความ (ไฟล์รายงาน .txt/.csv พร้อม Content-Disposition) ข้อผิดพลาดเป็น ApiError แบบเดียวกัน */
+export async function apiSendText(method: string, path: string, body: unknown, opts: ApiOptions = {}): Promise<{ text: string; headers: Headers }> {
+  const init: RequestInit = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const { res, body: text } = await run(method, path, init, opts.signal);
+  if (!res.ok) throw errorFrom(res.status, text, res.statusText);
+  return { text, headers: res.headers };
+}

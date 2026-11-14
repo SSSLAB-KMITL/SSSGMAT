@@ -15,7 +15,15 @@ export async function startJob(path: string, kind: JobKind, scenario: string | n
   const { data } = await apiSend<{ job?: unknown }>("POST", path);
   const id = typeof data?.job === "string" ? data.job : null;
   if (id === null) throw new RangeError("the server did not return a job id");
+  recordQueuedJob(id, kind, scenario);
+  return id;
+}
+
+/**
+ * ใส่ record queued ของ job ที่เพิ่งได้ id เข้า useJobs (ถ้ายังไม่มี) ใช้กับงานที่ POST แล้วได้ id มาในรูปอื่น เช่น Compute ของ Access tool
+ * และ Refresh ของหน้าต่างรายงาน: record ที่มีแล้ว (event มาถึงก่อนคำตอบ) ไม่ถูกเขียนทับ
+ */
+export function recordQueuedJob(id: string, kind: JobKind, scenario: string | null): void {
   const jobs = useJobs.getState();
   if (jobs.jobs[id] === undefined) jobs.onJobEvent({ id, kind, scenario, state: "queued", progress: { stage: null, fraction: null } });
-  return id;
 }
