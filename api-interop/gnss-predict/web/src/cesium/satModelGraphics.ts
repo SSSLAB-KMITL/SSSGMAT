@@ -7,8 +7,9 @@
 // - หน้าตา: ขอบ (silhouette) สีของระบบทุกโมเดล (ดวงที่เลือกหนากว่า) สีของระบบผสม 50% แสงอาทิตย์ 2 เท่า และแสงรอบตัวคงที่ (ด้านกลางคืนยังเห็น)
 //   ไม่ตั้ง maximumScale: Model Pixel Size ใช้ได้ทุกระยะ
 // - applyModelDetail: Model Detail Threshold ดาวที่ห่างกล้องเกินค่านี้กลับเป็นจุด (model.show = false: ไม่วาด ไม่คำนวณท่าทาง)
-// - updateModelAttitudes: ท่าทาง (attitude.ts) และมุมแผงของดาวที่แสดงอยู่ทุกดวง ณ เวลาหนึ่ง เขียนลง ConstantProperty เดิม (ไม่มี CallbackProperty:
-//   หน้าต่าง 3D ข้าม update ตอนอยู่เฉย ๆ ตาม event ของ EntityCollection: idleUpdates.ts) ผู้เรียกเรียกตามรอบ throttle 250 ms เดียวกับ sensor
+// - updateModelAttitudes: ท่าทางตามกฎของ block ของดาวแต่ละดวง (attitudeLaws.ts: spec.law) และมุมแผงของดาวที่แสดงอยู่ทุกดวง ณ เวลาหนึ่ง
+//   เขียนลง ConstantProperty เดิม (ไม่มี CallbackProperty: หน้าต่าง 3D ข้าม update ตอนอยู่เฉย ๆ ตาม event ของ EntityCollection: idleUpdates.ts)
+//   ผู้เรียกเรียกตามรอบ throttle 250 ms เดียวกับ sensor กฎทุกตัวไม่มีสถานะ: ท่าทาง ณ t ไม่ขึ้นกับรอบก่อนหน้า (scrub = throttle = เล่นต่อเนื่อง)
 //   ไม่สร้างออบเจ็กต์ใหม่ต่อดวงต่อรอบ (scratch ของโมดูลและสถานะต่อ entity)
 //
 // แกน (พิสูจน์กับ ModelUtility.getAxisCorrectionMatrix ของ Cesium จริงใน tests/unit/sat-model-render.test.ts):
@@ -23,7 +24,8 @@ import {
   Cartesian2, Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Matrix4, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
   ReferenceFrame, type EntityCollection, type Property, type Scene,
 } from "cesium";
-import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
+import { bodyToEcefQuaternion, sunPositionEcef, wingAngle, type AttitudeFrame } from "./attitude";
+import { lawAttitude, type AttitudeLaw, type LawAttitude } from "./attitudeLaws";
 import { VELOCITY_STEP_S, velocityOf } from "./sensorDraw";
 
 // ไม่ตั้ง maximumScale: Model.updateComputedScale ของ Cesium ขยายโมเดลเป็น Model Pixel Size × (เมตรต่อพิกเซล) / เส้นผ่านศูนย์กลางของโมเดล
@@ -63,9 +65,9 @@ export interface SatModelSpec {
   uri: string;
   /** node ของแผงโซลาร์ตาม wing_nodes ของ catalog */
   wingNodes: readonly string[];
-  /** ดาวสำรวจโลก: เฟรม sensor §3.1 แทน yaw steering */
-  eo: boolean;
-  /** normal ด้านเซลล์ตอนมุมศูนย์ในกรอบตัวดาว (satModels.wingZeroNormal) */
+  /** กฎท่าทางของดาว (attitudeLaws.attitudeLawFor จาก block ของดาว; ดาวสำรวจโลก = nadir_velocity) */
+  law: AttitudeLaw;
+  /** normal ด้านเซลล์ตอนมุมศูนย์ในกรอบตัวดาว (satModels.cellNormalOf: cell_normal ของ catalog) */
   zeroNormal: Cartesian3;
 }
 
@@ -80,8 +82,8 @@ export interface SatModelLook {
 
 interface ModelState {
   spec: SatModelSpec;
-  /** เฟรมล่าสุด (ey ของมันคือ prevEy ของรอบถัดไป) */
-  frame: AttitudeFrame;
+  /** ท่าทางล่าสุด (ที่เก็บผลของ lawAttitude: ไม่ใช่ข้อมูลเข้าของรอบถัดไป) */
+  att: LawAttitude;
   hasFrame: boolean;
   /** มุมแผงล่าสุด (คงไว้เมื่อดวงอาทิตย์อยู่แนว ±Y ของตัวดาว) */
   theta: number;
@@ -121,7 +123,8 @@ export function applySatelliteModel(entity: Entity, look: SatModelLook | null): 
       uri: spec.uri, nodeTransformations: nodes, environmentMapOptions: { ...MODEL_ENVIRONMENT_MAP },
       lightColor: new Color(MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE, 1), imageBasedLightingFactor: Cartesian2.clone(MODEL_IBL_FACTOR),
     });
-    st = { spec, frame: { ex: new Cartesian3(), ey: new Cartesian3(), ez: new Cartesian3() }, hasFrame: false, theta: 0, orientation: constant(Quaternion.clone(Quaternion.IDENTITY)), wings };
+    const att: LawAttitude = { frame: { ex: new Cartesian3(), ey: new Cartesian3(), ez: new Cartesian3() }, yaw: 0, mode: "YS", beta: 0, mu: 0 };
+    st = { spec, att, hasFrame: false, theta: 0, orientation: constant(Quaternion.clone(Quaternion.IDENTITY)), wings };
     entity.orientation = st.orientation;
     states.set(entity, st);
   } else {
@@ -221,7 +224,7 @@ function sunAlongY(frame: AttitudeFrame, sun: Cartesian3, r: Cartesian3): boolea
 }
 
 /**
- * ท่าทางและมุมแผงของทุกดาวที่มีโมเดลและแสดงอยู่ใน entities ณ time (ดาวที่ซ่อน ไม่มีตำแหน่ง ณ t หรือไม่มีทั้ง t − 1 s และ t + 1 s ไม่ถูกแตะ)
+ * ท่าทาง (กฎของ spec.law: attitudeLaws.lawAttitude) และมุมแผงของทุกดาวที่มีโมเดลและแสดงอยู่ใน entities ณ time (ดาวที่ซ่อน ไม่มีตำแหน่ง ณ t หรือไม่มีทั้ง t − 1 s และ t + 1 s ไม่ถูกแตะ)
  * ความเร็วจาก sensorDraw.velocityOf ตัวเดียวกับ sensor: t ± 1 s, ขอบช่วงตัวอย่าง (เริ่ม/จบ animation) = ผลต่างข้างเดียว 1 s
  * คืนจำนวนดาวที่คำนวณ ค่าที่ไม่เปลี่ยนไม่ส่ง event (ConstantProperty.setValue เทียบค่า)
  */
@@ -244,8 +247,9 @@ export function updateModelAttitudes(entities: EntityCollection, time: JulianDat
       if (r === undefined) continue;
       const v = velocityOf(r, p0 ?? null, p1 ?? null, scratchV);
       if (v === null) continue;
-      const frame = st.spec.eo ? nadirVelocityFrame(r, v, st.frame) : yawSteeringFrame(r, v, sun, st.hasFrame ? st.frame.ey : undefined, st.frame);
-      if (frame === null) continue;
+      const att = lawAttitude(st.spec.law, r, v, sun, time, st.att);
+      if (att === null) continue;
+      const frame = att.frame;
       st.hasFrame = true;
       if (!sunAlongY(frame, sun, r)) st.theta = wingAngle(frame, sun, r, st.spec.zeroNormal);
       if (!suspended) {

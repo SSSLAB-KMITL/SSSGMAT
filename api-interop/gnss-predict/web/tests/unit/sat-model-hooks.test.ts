@@ -20,8 +20,8 @@ function orbit(phase: number, incl = 0.96, radius = GPS_R): SampledPositionPrope
   return p;
 }
 
-const GNSS: SatModelSpec = { id: "gps-iif", uri: "blob:test/gps-iif", wingNodes: ["wing+Y", "wing-Y"], eo: false, zeroNormal: new Cartesian3(-1, 0, 0) };
-const EO: SatModelSpec = { id: "terra", uri: "blob:test/terra", wingNodes: ["wing-Y"], eo: true, zeroNormal: new Cartesian3(0, 0, 1) };
+const GNSS: SatModelSpec = { id: "gps-iif", uri: "blob:test/gps-iif", wingNodes: ["wing+Y", "wing-Y"], law: "nominal_ys", zeroNormal: new Cartesian3(-1, 0, 0) };
+const EO: SatModelSpec = { id: "terra", uri: "blob:test/terra", wingNodes: ["wing-Y"], law: "nadir_velocity", zeroNormal: new Cartesian3(0, 0, 1) };
 const LOOK = { pixelSize: 48, color: Color.fromCssColorString("#ffd23f"), selected: false };
 
 function sat(spec: SatModelSpec, phase = 0.7) {

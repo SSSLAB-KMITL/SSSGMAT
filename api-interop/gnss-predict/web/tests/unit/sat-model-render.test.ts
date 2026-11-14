@@ -14,13 +14,14 @@ import {
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { bodyToEcefQuaternion, sunPositionEcef, yawSteeringFrame, type AttitudeFrame } from "../../src/cesium/attitude";
+import { attitudeLawFor, lawAttitude, type AttitudeLaw } from "../../src/cesium/attitudeLaws";
 import { applyGraphics, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import {
   applyModelDetail, applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_LIGHT_SCALE, MODEL_SILHOUETTE_PX, modelCountOf, modelOrientation, modelPrimitiveState,
   SELECTED_SILHOUETTE_PX, setModelSelection, updateModelAttitudes, watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
 } from "../../src/cesium/satModelGraphics";
 import {
-  CESIUM_GLTF_EXTENSIONS, DEFAULT_WING_ZERO_NORMAL, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
+  CESIUM_GLTF_EXTENSIONS, cellNormalOf, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
 } from "../../src/cesium/satModels";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
 import { msg } from "../../src/labels/messages.th";
@@ -84,10 +85,12 @@ function orbit(phase: number, incl = 0.96, radius = GPS_R): SampledPositionPrope
   return p;
 }
 
-function specOf(id: string, uri = `blob:test/${id}`): SatModelSpec {
-  const r = resolveModel(catalog, entryOf(id).norad_ids !== undefined ? { block: null, norad: entryOf(id).norad_ids![0] } : { block: entryOf(id).blocks![0], norad: null });
+/** spec ของโมเดล id แบบที่ SatModelSource สร้าง: กฎท่าทางจาก block แรกของโมเดล (law ระบุเองได้) normal ด้านเซลล์จาก cell_normal ของ catalog */
+function specOf(id: string, uri = `blob:test/${id}`, law?: AttitudeLaw): SatModelSpec {
+  const block = entryOf(id).norad_ids !== undefined ? null : entryOf(id).blocks![0];
+  const r = resolveModel(catalog, block === null ? { block: null, norad: entryOf(id).norad_ids![0] } : { block, norad: null });
   expect(r.id).toBe(id);
-  return { id, uri, wingNodes: wingNodesOf(catalog, id), eo: r.eo, zeroNormal: cart(wingZeroNormal(id)) };
+  return { id, uri, wingNodes: wingNodesOf(catalog, id), law: law ?? attitudeLawFor(block, r.eo), zeroNormal: cart(cellNormalOf(catalog, id)) };
 }
 
 const LOOK = { pixelSize: 48, color: Color.fromCssColorString("#ffd23f"), selected: false };
@@ -176,7 +179,7 @@ describe("wing nodes in the real glbs", () => {
         for (const θ of [0.3, -1.2, 2.9]) {
           const q = Quaternion.fromAxisAngle(WING_AXIS_GLTF, θ);
           const nodeMatrix = Matrix4.multiply(original, Matrix4.fromRotation(Matrix3.fromQuaternion(q)), new Matrix4());
-          const body = cart(wingZeroNormal(id));
+          const body = cart(cellNormalOf(catalog, id));
           const expected = Matrix3.multiplyByVector(Matrix3.fromRotationY(θ), body, new Cartesian3()); // Cesium R_y(θ): +Z → +X
           const got = Matrix4.multiplyByPointAsVector(nodeMatrix, cart(gltfOfBody(v3(body))), new Cartesian3());
           expect(angleDeg(cart(bodyOfGltf(v3(got))), expected), `${id} ${name} θ=${θ}`).toBeLessThan(1e-9);
@@ -192,27 +195,49 @@ describe("wing nodes in the real glbs", () => {
       const glb = readGlb(m.glb);
       for (const name of wingNodesOf(catalog, m.id)) {
         const n = bodyOfGltf(faceNormal(glb, name, "solar_cells")!);
-        expect(angleDeg(cart(n), cart(wingZeroNormal(m.id))), `${m.id} ${name}`).toBeLessThan(0.5);
+        expect(angleDeg(cart(n), cart(cellNormalOf(catalog, m.id))), `${m.id} ${name}`).toBeLessThan(0.5);
       }
     }
   });
 
-  test("EO models without a solar_cells material: the map follows the panel's own faces (terra both faces cells, GOES 'solarpanel-faces'); aqua and suomi-npp default to +X along their panel normal", () => {
-    // terra: แผงสองหน้า วัสดุเซลล์เดียวกันทั้ง ±Z ของตัวดาว (glTF ∓Y)
+  test("EO models without a solar_cells material: catalog cell_normal lies along the panel's own faces (terra both faces cells, GOES 'solarpanel-faces', aqua/suomi-npp ±X)", () => {
+    // terra: แผงสองหน้า วัสดุเซลล์เดียวกันทั้ง ±Z ของตัวดาว (glTF ∓Y) catalog เลือก −Z
     const terra = areaByAxis(readGlb(entryOf("terra").glb), "wing-Y", "Main Solar Panels.001");
     expect(terra["+Y"]).toBeCloseTo(terra["-Y"], 3);
-    expect(Math.abs(wingZeroNormal("terra")[2])).toBe(1);
+    expect(cellNormalOf(catalog, "terra")).toEqual([0, 0, -1]);
     // GOES: หน้าเซลล์ (Goes2-solarpanel-faces) ชี้ +Z ของตัวดาว
     const goes = bodyOfGltf(faceNormal(readGlb(entryOf("goes").glb), "wing-Y", "Goes2-solarpanel-faces")!);
-    expect(angleDeg(cart(goes), cart(wingZeroNormal("goes")))).toBeLessThan(0.5);
-    // aqua, suomi-npp: บอกไม่ได้ว่าด้านไหนเป็นเซลล์ (texture เดียวกันทั้งสองด้าน) ใช้ +X ตั้งต้น ซึ่งอยู่ในแนว normal ของแผงจริง
+    expect(angleDeg(cart(goes), cart(cellNormalOf(catalog, "goes")))).toBeLessThan(0.5);
+    // aqua, suomi-npp: texture เดียวกันทั้งสองด้าน catalog บอกด้าน (aqua +X, suomi-npp −X) ซึ่งอยู่ในแนว normal ของแผงจริง
+    expect(cellNormalOf(catalog, "aqua")).toEqual([1, 0, 0]);
+    expect(cellNormalOf(catalog, "suomi-npp")).toEqual([-1, 0, 0]);
     for (const [id, material] of [["aqua", "tex_01"], ["suomi-npp", "tex_01"]] as const) {
-      expect(WING_ZERO_NORMAL[id], id).toBeUndefined();
-      expect(wingZeroNormal(id)).toEqual(DEFAULT_WING_ZERO_NORMAL);
       const areas = areaByAxis(readGlb(entryOf(id).glb), "wing-Y", material);
       const biggest = Object.entries(areas).sort((a, b) => b[1] - a[1])[0][0];
       expect(biggest.slice(1), id).toBe("X");
     }
+  });
+});
+
+describe("cell_normal of the catalog", () => {
+  test("every model's cell_normal is read from the catalog (±X / ±Z); the per-id table is only a fallback and agrees with it", () => {
+    const AXES: Record<string, [number, number, number]> = { "+X": [1, 0, 0], "-X": [-1, 0, 0], "+Z": [0, 0, 1], "-Z": [0, 0, -1] };
+    for (const m of catalog.models) {
+      const field = (m as { cell_normal?: string }).cell_normal;
+      expect(field, m.id).toMatch(/^[+-][XZ]$/);
+      expect(cellNormalOf(catalog, m.id), m.id).toEqual(AXES[field!]);
+      expect(wingZeroNormal(m.id), m.id).toEqual(AXES[field!]);
+    }
+    expect(Object.keys(WING_ZERO_NORMAL).sort()).toEqual(catalog.models.map((m) => m.id).sort());
+  });
+
+  test("a catalog without cell_normal (or with an unreadable value) falls back to the per-id table", () => {
+    const stripped: ModelCatalog = { ...catalog, models: catalog.models.map(({ cell_normal: _drop, ...m }: ModelCatalog["models"][number]) => m) };
+    expect(cellNormalOf(stripped, "terra")).toEqual(wingZeroNormal("terra"));
+    expect(cellNormalOf(stripped, "goes")).toEqual([0, 0, 1]);
+    const odd: ModelCatalog = { ...catalog, models: catalog.models.map((m) => (m.id === "aqua" ? { ...m, cell_normal: "+Y" } : m)) };
+    expect(cellNormalOf(odd, "aqua")).toEqual(wingZeroNormal("aqua"));
+    expect(cellNormalOf(catalog, "no-such-model")).toEqual(wingZeroNormal("no-such-model"));
   });
 });
 
@@ -243,7 +268,7 @@ describe("posed models: nadir down and cells toward the sun after Cesium's trans
       const q = entity.orientation!.getValue(TIME) as Quaternion;
       const ey = rendered(q, null, gltfOfBody([0, 1, 0]));
       const beta = Math.asin(Math.abs(Cartesian3.dot(es, ey)));
-      const zero = cart(gltfOfBody(v3(cart(wingZeroNormal(id)))));
+      const zero = cart(gltfOfBody(v3(cart(cellNormalOf(catalog, id)))));
       const n = rendered(orientation, nodes[name].rotation, v3(zero));
       expect(Math.abs(Cartesian3.dot(n, ey)), `${id} ${phase}`).toBeLessThan(1e-9); // ยังอยู่ในระนาบ X-Z ของตัวดาว
       expect(Cartesian3.dot(n, es)).toBeGreaterThan(0); // ด้านเซลล์ ไม่ใช่ด้านหลัง
@@ -266,11 +291,54 @@ describe("posed models: nadir down and cells toward the sun after Cesium's trans
     const r = fixed(at)!;
     const other = fixed(JulianDate.addSeconds(at, side, new JulianDate()))!;
     const v = Cartesian3.multiplyByScalar(Cartesian3.subtract(other, r, new Cartesian3()), side, new Cartesian3());
-    const want = modelOrientation(yawSteeringFrame(r, v, sunPositionEcef(at))!);
+    const want = modelOrientation(lawAttitude("gps_iif", r, v, sunPositionEcef(at), at)!.frame);
     const q = entity.orientation!.getValue(at) as Quaternion;
     expect(Quaternion.equalsEpsilon(q, want, 1e-9) || Quaternion.equalsEpsilon(q, Quaternion.negate(want, new Quaternion()), 1e-9)).toBe(true);
     const toEarth = Cartesian3.normalize(Cartesian3.negate(r, new Cartesian3()), new Cartesian3());
     expect(angleDeg(rendered(q, null, gltfOfBody([0, 0, 1])), toEarth)).toBeLessThan(1e-6);
+  });
+
+  test("each satellite is posed by its block's law: a BDS-2G (orbit normal) model flies +X along the inertial velocity, wings still on the sun's X-Z projection", () => {
+    const entities = new EntityCollection();
+    const position = orbit(1.1);
+    const entity = entities.add(new Entity({ id: "sat/C01", position }));
+    const spec = specOf("bds2-igso", undefined, attitudeLawFor("BDS-2G", false));
+    expect(spec.law).toBe("orbit_normal");
+    applySatelliteModel(entity, { ...LOOK, spec });
+    expect(updateModelAttitudes(entities, TIME)).toBe(1);
+    const fixed = (dt: number) => position.getValueInReferenceFrame(JulianDate.addSeconds(TIME, dt, new JulianDate()), ReferenceFrame.FIXED, new Cartesian3())!;
+    const r = fixed(0);
+    const v = Cartesian3.multiplyByScalar(Cartesian3.subtract(fixed(1), fixed(-1), new Cartesian3()), 0.5, new Cartesian3());
+    const vi = new Cartesian3(v.x - 7.292115e-5 * r.y, v.y + 7.292115e-5 * r.x, v.z);
+    const q = entity.orientation!.getValue(TIME) as Quaternion;
+    const ex = rendered(q, null, gltfOfBody([1, 0, 0]));
+    const rHat = Cartesian3.normalize(r, new Cartesian3());
+    const along = Cartesian3.normalize(Cartesian3.subtract(vi, Cartesian3.multiplyByScalar(rHat, Cartesian3.dot(vi, rHat), new Cartesian3()), new Cartesian3()), new Cartesian3());
+    expect(angleDeg(ex, along)).toBeLessThan(1e-6);
+    // แผง: normal ด้านเซลล์อยู่ในระนาบ X-Z ของตัวดาวและคลาดจากดวงอาทิตย์เท่ามุมระหว่าง es กับระนาบนั้นเท่านั้น
+    const es = Cartesian3.normalize(Cartesian3.subtract(sunPositionEcef(TIME), r, new Cartesian3()), new Cartesian3());
+    const ey = rendered(q, null, gltfOfBody([0, 1, 0]));
+    const nodes = entity.model!.nodeTransformations!.getValue(TIME) as Record<string, TranslationRotationScale>;
+    for (const name of spec.wingNodes) {
+      const n = rendered(q, nodes[name].rotation, gltfOfBody(v3(spec.zeroNormal)));
+      expect(Math.abs(Cartesian3.dot(n, ey))).toBeLessThan(1e-9);
+      expect(Math.abs(Cartesian3.angleBetween(n, es) - Math.asin(Math.abs(Cartesian3.dot(es, ey))))).toBeLessThan(1e-6);
+    }
+    // ผลเดียวกับการเรียกกฎตรง ๆ
+    const want = modelOrientation(lawAttitude("orbit_normal", r, v, sunPositionEcef(TIME), TIME)!.frame);
+    expect(Quaternion.equalsEpsilon(q, want, 1e-6) || Quaternion.equalsEpsilon(q, Quaternion.negate(want, new Quaternion()), 1e-6)).toBe(true);
+  });
+
+  test("attitude does not depend on update history: a satellite updated every 250 ms and one updated once land on the same pose", () => {
+    const a = new EntityCollection();
+    const b = new EntityCollection();
+    const ea = a.add(new Entity({ id: "sat/A", position: orbit(0.3) }));
+    const eb = b.add(new Entity({ id: "sat/A", position: orbit(0.3) }));
+    for (const e of [ea, eb]) applySatelliteModel(e, { ...LOOK, spec: specOf("glonass-m") });
+    for (let s = -600; s <= 0; s += 0.25) updateModelAttitudes(a, JulianDate.addSeconds(TIME, s, new JulianDate()));
+    updateModelAttitudes(b, JulianDate.addSeconds(TIME, 900, new JulianDate()));
+    updateModelAttitudes(b, TIME);
+    expect(Quaternion.equals(ea.orientation!.getValue(TIME) as Quaternion, eb.orientation!.getValue(TIME) as Quaternion)).toBe(true);
   });
 
   test("a satellite with no position on either side of t (single sample) is left alone", () => {
@@ -701,7 +769,7 @@ describe("SatModelSource: catalog and glb loading", () => {
     await flush();
     expect(changedA).toHaveBeenCalledTimes(2);
     const spec = a.specFor({ block: "GAL-2", norad: 40128 })!;
-    expect(spec).toMatchObject({ id: "galileo-foc", eo: false, wingNodes: ["solar_wing_+Y", "solar_wing_-Y"] });
+    expect(spec).toMatchObject({ id: "galileo-foc", law: "galileo_foc", wingNodes: ["solar_wing_+Y", "solar_wing_-Y"] });
     expect(spec.uri).toMatch(/^blob:/);
     expect(v3(spec.zeroNormal)).toEqual([-1, 0, 0]);
     expect(b.specFor({ block: "GAL-2", norad: 1 })!.uri).toBe(spec.uri); // หน้าต่างที่มาทีหลังได้ทันที
@@ -713,9 +781,30 @@ describe("SatModelSource: catalog and glb loading", () => {
     expect(b.specFor({ block: "NOT-A-BLOCK", norad: 99 })).toBeNull();
     await flush();
     expect(changedB).toHaveBeenCalledTimes(1); // สองไฟล์เสร็จในชุดเดียวกัน (MODEL_BATCH_MS) = changed() ครั้งเดียว
-    expect(b.specFor({ block: null, norad: 41836 })).toMatchObject({ id: "himawari-9", eo: true, wingNodes: ["wing-Y"] });
-    expect(b.specFor({ block: "NOT-A-BLOCK", norad: 99 })).toMatchObject({ id: "generic", eo: false });
+    expect(b.specFor({ block: null, norad: 41836 })).toMatchObject({ id: "himawari-9", law: "nadir_velocity", wingNodes: ["wing-Y"] });
+    expect(b.specFor({ block: "NOT-A-BLOCK", norad: 99 })).toMatchObject({ id: "generic", law: "nominal_ys" });
     expect(useMessages.getState().items).toEqual([]);
+  });
+
+  test("the attitude law follows each satellite's block: blocks sharing one model share its glb but not its law", async () => {
+    const { calls } = stubModelFetch();
+    const src = new SatModelSource(() => undefined);
+    const sats = [{ block: "BDS-2G", norad: 1 }, { block: "BDS-2I", norad: 2 }, { block: "QZS-1", norad: 3 }, { block: "QZS-2I", norad: 4 }];
+    for (let round = 0; round < 2; round++) {
+      for (const s of sats) src.specFor(s);
+      await flush();
+    }
+    const [geo, igso, qzs1, qzs2] = sats.map((s) => src.specFor(s)!);
+    expect([geo.id, igso.id, qzs1.id, qzs2.id]).toEqual(["bds2-igso", "bds2-igso", "qzss-igso", "qzss-igso"]);
+    expect([geo.law, igso.law, qzs1.law, qzs2.law]).toEqual(["orbit_normal", "bds2_ys_on", "qzss1_ys_on", "qzss2_pseudo_ys"]);
+    expect(geo.uri).toBe(igso.uri);
+    expect(src.specFor({ block: "BDS-2G", norad: 9 })).toBe(geo); // spec เดียวกันต่อ (โมเดล, กฎ)
+    expect(calls.filter((p) => p.endsWith(".glb")).sort()).toEqual(["/models/bds2-igso/bds2-igso.glb", "/models/qzss-igso/qzss-igso.glb"]);
+    // terra: cell_normal ของ catalog (−Z)
+    src.specFor({ block: null, norad: 25994 });
+    await flush();
+    expect(v3(src.specFor({ block: null, norad: 25994 })!.zeroNormal)).toEqual([0, 0, -1]);
+    src.dispose();
   });
 
   test("glbs that arrive within one batch window make one changed() (one restyle); a glb arriving later makes another", async () => {

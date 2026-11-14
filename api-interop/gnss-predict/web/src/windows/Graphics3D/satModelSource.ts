@@ -9,11 +9,13 @@
 //   ทุกหน้าต่างวาดดาวของโมเดลนั้นใหม่เป็นจุด)
 //   catalog ล้มเหลว: ทุกดวงเป็นจุด + ข้อความครั้งเดียว (loadModelCatalog ไม่จำความล้มเหลว: หน้าต่างที่เปิดใหม่ลองอีกครั้ง)
 // - block ของดาวจาก catalog ของ snapshot (satelliteInfo().block) ตรงตัวกับ blocks ใน models/catalog.json (ตรวจกับ snapshot จริงแล้ว) ไม่ต้องแปลง
-//   block ว่าง ("") ถือเป็นไม่มี block
+//   block ว่าง ("") ถือเป็นไม่มี block block เดียวกันนี้เลือกกฎท่าทาง (attitudeLaws.attitudeLawFor): หลาย block ใช้โมเดล (glb) เดียวกันได้แต่กฎต่างกัน
+//   (เช่น BDS-2G orbit normal กับ BDS-2I YS ↔ ON) spec จึงมีหนึ่งตัวต่อ (โมเดล, กฎ)
 
 import { Cartesian3 } from "cesium";
+import { attitudeLawFor } from "../../cesium/attitudeLaws";
 import type { SatModelSpec } from "../../cesium/satModelGraphics";
-import { loadModelCatalog, loadModelGlb, resolveModel, wingNodesOf, wingZeroNormal, type ModelCatalog, type ResolvedModel } from "../../cesium/satModels";
+import { cellNormalOf, loadModelCatalog, loadModelGlb, resolveModel, wingNodesOf, type ModelCatalog, type ResolvedModel } from "../../cesium/satModels";
 import { msg } from "../../labels/messages.th";
 import { report } from "../../stores/messages";
 
@@ -24,7 +26,7 @@ export const MODEL_BATCH_MS = 100;
 let loadedCatalog: ModelCatalog | null = null;
 /** url ของ glb → blob uri (null = ล้มเหลว) ไม่มี = ยังไม่ได้ขอหรือกำลังโหลด */
 const glbResults = new Map<string, string | null>();
-/** spec ต่อ id ของโมเดล (ดาวหลายดวงและหลายหน้าต่างใช้ตัวเดียวกัน: ผู้ใช้ห้ามแก้) */
+/** spec ต่อ "<id ของโมเดล>|<กฎ>" (ดาวหลายดวงและหลายหน้าต่างใช้ตัวเดียวกัน: ผู้ใช้ห้ามแก้) */
 const specs = new Map<string, SatModelSpec>();
 /** url ของ glb → id ของโมเดล (หาโมเดลจาก blob uri ที่ Cesium โหลดไม่สำเร็จ) */
 const idByUrl = new Map<string, string>();
@@ -67,8 +69,9 @@ export class SatModelSource {
     const cat = this.catalogOrLoad();
     if (cat === null) return null;
     let m: ResolvedModel;
+    const block = sat.block === "" ? null : sat.block;
     try {
-      m = resolveModel(cat, { block: sat.block === "" ? null : sat.block, norad: sat.norad });
+      m = resolveModel(cat, { block, norad: sat.norad });
     } catch (e) {
       // catalog ถูกตรวจแบบตื้น (satModels.parseCatalog): รายการที่ผิดรูปทำให้จับคู่ไม่ได้ = จุด + แจ้งครั้งเดียว
       reportOnce("catalog", "MODEL_CATALOG", msg("model.catalogFailed", { message: errorText(e) }));
@@ -80,10 +83,12 @@ export class SatModelSource {
       return null;
     }
     if (uri === null) return null;
-    let spec = specs.get(m.id);
+    const law = attitudeLawFor(block, m.eo);
+    const key = `${m.id}|${law}`;
+    let spec = specs.get(key);
     if (spec === undefined || spec.uri !== uri) {
-      spec = { id: m.id, uri, wingNodes: wingNodesOf(cat, m.id), eo: m.eo, zeroNormal: Cartesian3.fromArray([...wingZeroNormal(m.id)]) };
-      specs.set(m.id, spec);
+      spec = { id: m.id, uri, wingNodes: wingNodesOf(cat, m.id), law, zeroNormal: Cartesian3.fromArray([...cellNormalOf(cat, m.id)]) };
+      specs.set(key, spec);
     }
     return spec;
   }
@@ -105,7 +110,7 @@ export class SatModelSource {
     if (url === undefined) return;
     const id = idByUrl.get(url) ?? url;
     glbResults.set(url, null);
-    specs.delete(id);
+    for (const key of [...specs.keys()]) if (key.startsWith(`${id}|`)) specs.delete(key);
     reportOnce(`model:${id}`, "MODEL_LOAD", msg("model.loadFailed", { model: id, message: errorText(error) }));
     for (const src of live) src.settled();
   }

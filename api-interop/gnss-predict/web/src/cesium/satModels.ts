@@ -13,6 +13,8 @@ export interface ModelEntry {
   triangles: number;
   /** node ของแผงโซลาร์ใน glb: 2 ชื่อ = แผงคู่ (±Y), 1 ชื่อ = แผงเดี่ยว (ดาวสำรวจโลก) */
   wing_nodes?: string[];
+  /** normal ด้านเซลล์ของแผงตอนมุมศูนย์ในกรอบตัวดาว: "+X", "-X", "+Z" หรือ "-Z" (cellNormalOf) */
+  cell_normal?: string;
   status: string;
 }
 
@@ -99,14 +101,14 @@ export function wingNodesOf(cat: ModelCatalog, id: string): string[] {
 }
 
 /**
- * normal ด้านเซลล์ของแผงโซลาร์ตอนมุมศูนย์ (θ = 0) ในกรอบตัวดาว ต่อโมเดล (ใช้กับ attitude.ts wingAngle)
- * ที่มา: หน้าของ material ที่เป็นเซลล์ใน node แผงของ glb จริง (ผลรวม normal จากการพันของสามเหลี่ยม: tests/unit/sat-model-render.test.ts ตรวจกับ glb ทุกตัว)
- * - −X: โมเดลที่มี material "solar_cells" (GNSS ทุกตัว, generic, himawari-9) ตรงกับ NOTES ของ gps-iif, gps-iii ("solar cells facing −X")
- *   และ galileo-foc ("the cell side faces body −X")
- * - terra +Z: "Main Solar Panels.001" เป็นแผงสองชั้นที่ใช้ texture เซลล์ทั้งสองด้าน (±Z ของตัวดาว พื้นที่เท่ากัน) แกนจึงแน่นอน ด้านเลือก +Z (ด้านไหนก็เห็นเซลล์)
- * - goes +Z: หน้า "Goes2-solarpanel-faces" (สีน้ำเงินของเซลล์) ชี้ +Z ด้านตรงข้ามเป็นโครงสีเทา
- * ไม่อยู่ในรายการ = DEFAULT_WING_ZERO_NORMAL (+X): aqua และ suomi-npp ใช้ texture เดียวกันทั้งสองด้านของแผง บอกไม่ได้ว่าด้านไหนเป็นเซลล์
- * (แนว normal ของแผงทั้งสองตัวคือ ±X จึงยังหันแผงเข้าหาดวงอาทิตย์ แต่ด้านที่เห็นอาจเป็นด้านหลัง)
+ * ตารางสำรองของ normal ด้านเซลล์ตอนมุมศูนย์ (θ = 0) ในกรอบตัวดาว ต่อโมเดล: ใช้เฉพาะเมื่อ catalog ไม่มี cell_normal หรืออ่านไม่ได้ (cellNormalOf)
+ * ค่าตรงกับ cell_normal ของ catalog ปัจจุบัน (test ตรวจทุกโมเดล) ที่มาของค่า:
+ * - −X: โมเดลที่มี material "solar_cells" (GNSS ทุกตัว, generic, himawari-9) ตรงกับ NOTES ของ gps-iif, gps-iii, galileo-foc
+ *   (tests/unit/sat-model-render.test.ts ตรวจกับหน้าเซลล์ใน glb จริง)
+ * - terra −Z: "Main Solar Panels.001" เป็นแผงสองชั้นที่ใช้ texture เซลล์ทั้งสองด้าน (±Z ของตัวดาว พื้นที่เท่ากัน) catalog เลือก −Z
+ * - goes +Z: หน้า "Goes2-solarpanel-faces" (สีน้ำเงินของเซลล์) ชี้ +Z
+ * - aqua +X, suomi-npp −X: texture เดียวกันทั้งสองด้านของแผง (แกน ±X แน่นอน) ด้านตาม catalog
+ * ไม่อยู่ในตาราง = DEFAULT_WING_ZERO_NORMAL (−X: ด้านเซลล์ของโมเดล procedural ทุกตัว)
  */
 export const WING_ZERO_NORMAL: Readonly<Record<string, readonly [number, number, number]>> = {
   "galileo-foc": [-1, 0, 0],
@@ -128,14 +130,29 @@ export const WING_ZERO_NORMAL: Readonly<Record<string, readonly [number, number,
   "navic-nvs": [-1, 0, 0],
   generic: [-1, 0, 0],
   "himawari-9": [-1, 0, 0],
-  terra: [0, 0, 1],
+  terra: [0, 0, -1],
+  aqua: [1, 0, 0],
+  "suomi-npp": [-1, 0, 0],
   goes: [0, 0, 1],
 };
 
-export const DEFAULT_WING_ZERO_NORMAL: readonly [number, number, number] = [1, 0, 0];
+export const DEFAULT_WING_ZERO_NORMAL: readonly [number, number, number] = [-1, 0, 0];
 
+/** normal ด้านเซลล์จากตารางสำรอง (WING_ZERO_NORMAL) */
 export function wingZeroNormal(id: string): readonly [number, number, number] {
   return Object.hasOwn(WING_ZERO_NORMAL, id) ? WING_ZERO_NORMAL[id] : DEFAULT_WING_ZERO_NORMAL;
+}
+
+const CELL_NORMALS: Readonly<Record<string, readonly [number, number, number]>> = { "+X": [1, 0, 0], "-X": [-1, 0, 0], "+Z": [0, 0, 1], "-Z": [0, 0, -1] };
+
+/**
+ * normal ด้านเซลล์ของแผงโซลาร์ตอนมุมศูนย์ (θ = 0) ในกรอบตัวดาวของโมเดล id (ใช้กับ attitude.ts wingAngle)
+ * จาก cell_normal ของ catalog ("+X", "-X", "+Z", "-Z"; ตัวพิมพ์เล็กได้) ไม่มีฟิลด์ ค่าอื่น หรือไม่มีโมเดลนี้ = ตารางสำรอง wingZeroNormal(id)
+ */
+export function cellNormalOf(cat: ModelCatalog, id: string): readonly [number, number, number] {
+  const field = cat.models.find((m) => m.id === id)?.cell_normal;
+  const key = typeof field === "string" ? field.toUpperCase() : "";
+  return Object.hasOwn(CELL_NORMALS, key) ? CELL_NORMALS[key] : wingZeroNormal(id);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

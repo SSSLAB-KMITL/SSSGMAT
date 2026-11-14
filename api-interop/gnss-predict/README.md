@@ -1177,31 +1177,31 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 **โมเดลที่มี (23 ตัว ใน `models/catalog.json`)**
 
-| โมเดล | block (`satelliteInfo(norad).block` จากข้อมูล IGS) หรือ NORAD | ท่าทาง |
+| โมเดล | block (`satelliteInfo(norad).block` จากข้อมูล IGS) หรือ NORAD | กฎท่าทาง (ตาม block ของดาว ไม่ใช่ตามโมเดล) |
 |---|---|---|
-| `gps-iif` | GPS-IIF | yaw steering |
-| `gps-iii` | GPS-III, GPS-IIIA, GPS-III-1 | yaw steering |
-| `gps-iir` | GPS-IIR-A, GPS-IIR-B, GPS-IIR-M | yaw steering |
-| `glonass-m` | GLO-M, GLO-M+ | yaw steering |
-| `glonass-k1` | GLO-K1, GLO-K1+, GLO-K1A, GLO-K1B | yaw steering |
-| `glonass-k2` | GLO-K2 | yaw steering |
-| `galileo-iov` | GAL-1 | yaw steering |
-| `galileo-foc` | GAL-2 | yaw steering |
-| `bds2-igso` | BDS-2I, BDS-2G, BDS-2M | yaw steering |
-| `bds3-geo` | BDS-3G | yaw steering |
-| `bds3-igso` | BDS-3I | yaw steering |
-| `bds3-meo-cast` | BDS-3M-CAST, BDS-3SM-CAST | yaw steering |
-| `bds3-meo-secm` | BDS-3M-SECM-A, BDS-3M-SECM-B, BDS-3SM-SECM | yaw steering |
-| `qzss-igso` | QZS-2A, QZS-2I, QZS-1 | yaw steering |
-| `qzss-geo` | QZS-2G, QZS-3G | yaw steering |
-| `navic-irnss1` | IRS-1G, IRS-1I | yaw steering |
-| `navic-nvs` | IRS-2G, IRS-2I | yaw steering |
-| `generic` | block อื่นใน `fallback_blocks` (BDS-3S, BDS-3SI-CAST, BDS-3SI-SECM, GAL-0A, GAL-0B, GLO, GPS-I, GPS-II, GPS-IIA) และดาวที่ไม่มี block หรือไม่มีใน catalog | yaw steering เสมอ (ทั้งที่ได้มาจาก block และที่ตกมาเพราะไม่รู้จัก) |
-| `terra` | NORAD 25994 | nadir + ความเร็ว |
-| `aqua` | NORAD 27424 | nadir + ความเร็ว |
-| `suomi-npp` | NORAD 37849 (Suomi NPP), 43013 (NOAA-20) | nadir + ความเร็ว |
-| `goes` | NORAD 41866, 43226, 51850, 60133 (GOES-16/17/18/19) | nadir + ความเร็ว |
-| `himawari-9` | NORAD 41836, 40267 (Himawari-9/8) | nadir + ความเร็ว |
+| `gps-iif` | GPS-IIF | `gps_iif` |
+| `gps-iii` | GPS-III, GPS-IIIA, GPS-III-1 | `gps_iii` (ประมาณการ) |
+| `gps-iir` | GPS-IIR-A, GPS-IIR-B, GPS-IIR-M | `gps_iir` |
+| `glonass-m` | GLO-M, GLO-M+ | `glonass_m` |
+| `glonass-k1` | GLO-K1, GLO-K1+, GLO-K1A, GLO-K1B | `glonass_k` (ประมาณการ) |
+| `glonass-k2` | GLO-K2 | `glonass_k` (ประมาณการ) |
+| `galileo-iov` | GAL-1 | `galileo_iov` |
+| `galileo-foc` | GAL-2 | `galileo_foc` |
+| `bds2-igso` | BDS-2I, BDS-2G, BDS-2M | BDS-2I/2M `bds2_ys_on`, BDS-2G `orbit_normal` |
+| `bds3-geo` | BDS-3G | `orbit_normal` |
+| `bds3-igso` | BDS-3I | `bds3_cast` |
+| `bds3-meo-cast` | BDS-3M-CAST, BDS-3SM-CAST | `bds3_cast` |
+| `bds3-meo-secm` | BDS-3M-SECM-A, BDS-3M-SECM-B, BDS-3SM-SECM | `bds3_secm` |
+| `qzss-igso` | QZS-2A, QZS-2I, QZS-1 | QZS-2A/2I `qzss2_pseudo_ys`, QZS-1 `qzss1_ys_on` |
+| `qzss-geo` | QZS-2G, QZS-3G | `orbit_normal` |
+| `navic-irnss1` | IRS-1G, IRS-1I | `navic` (ประมาณการ) |
+| `navic-nvs` | IRS-2G, IRS-2I | `navic` (ประมาณการ) |
+| `generic` | block อื่นใน `fallback_blocks` (BDS-3S, BDS-3SI-CAST, BDS-3SI-SECM, GAL-0A, GAL-0B, GLO, GPS-I, GPS-II, GPS-IIA) และดาวที่ไม่มี block หรือไม่มีใน catalog | BDS-3SI-CAST `bds3_cast`, BDS-3SI-SECM `bds3_secm`, block อื่นและไม่มี block `nominal_ys` |
+| `terra` | NORAD 25994 | `nadir_velocity` |
+| `aqua` | NORAD 27424 | `nadir_velocity` |
+| `suomi-npp` | NORAD 37849 (Suomi NPP), 43013 (NOAA-20) | `nadir_velocity` |
+| `goes` | NORAD 41866, 43226, 51850, 60133 (GOES-16/17/18/19) | `nadir_velocity` |
+| `himawari-9` | NORAD 41836, 40267 (Himawari-9/8) | `nadir_velocity` |
 
 ลำดับเลือกโมเดลของดาวหนึ่งดวง: **block ตรงตัวกับ `blocks` ของโมเดล → `fallback_blocks` → `norad_ids` → `generic`** (block ที่ไม่รู้จักหรือไม่มี ข้ามไปที่ `norad_ids` แล้วถึง `generic`)
 โมเดลของดาวสำรวจโลก (Terra, Aqua, Suomi NPP/NOAA-20, GOES, Himawari) เลือกจาก NORAD ที่ตรงกับ `norad_ids` ข้อมูล GNSS ที่ engine ดึงมาไม่มีดาวเหล่านี้ จึงไม่ได้ใช้กับ scenario ปกติ
@@ -1209,20 +1209,44 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 **ท่าทางของตัวดาว (คำนวณใน ECEF ณ เวลา Animation)** r, v = ตำแหน่งและความเร็วของดาว (ความเร็วจากผลต่างตำแหน่ง t ± 1 s เหมือน sensor), s = ตำแหน่งดวงอาทิตย์ (ฟังก์ชันของ Cesium ที่ใช้กับแสงในหน้าต่าง 3D)
 
-- **GNSS (ทุกโมเดลที่มี block รวม QZSS และ NavIC): yaw steering** `ez = −r̂` (+Z ชี้ศูนย์กลางโลก), `es` = ทิศไปดวงอาทิตย์, `ey = (ez × es)/|ez × es|`, `ex = ey × ez` ดวงอาทิตย์จึงอยู่ในระนาบ X-Z ฝั่ง +X เสมอ
-  ถ้าดวงอาทิตย์อยู่แนวเดียวกับทิศลงโลก (|ez × es| < 1e-6) ใช้ `ey` เดิม ถ้าไม่มีใช้เฟรมของ sensor
-- **ดาวสำรวจโลก: Nadir alignment with ECI velocity constraint** (เฟรมเดียวกับ sensor, [9.9](#99-sensor-และ-sensor-view)): +Z ชี้ลงโลก +X ตามส่วนของความเร็วเฉื่อยที่ตั้งฉากกับ +Z
-- **แผงโซลาร์**: หมุนรอบแกน +Y ของตัวดาวให้ normal ด้านเซลล์ชี้ไปทางดวงอาทิตย์ (ฉายลงระนาบ X-Z) ดาว GNSS คลาดไม่เกิน 1° (yaw steering ทำให้ดวงอาทิตย์อยู่ในระนาบ X-Z) ดาวสำรวจโลกคลาดตามมุม β ของวงโคจร
+- **ดาว GNSS: กฎท่าทางตาม block ของดาวแต่ละดวง** (`web/src/cesium/attitudeLaws.ts`, สูตรจาก [docs/2026-11-14-gnss-attitude-laws.md](docs/2026-11-14-gnss-attitude-laws.md) §1–§4)
+  ทุกกฎ: +Z ชี้ศูนย์กลางโลก แล้วหมุนรอบ +Z ด้วยมุม yaw ψ จากกรอบ orbit normal (+X ตามความเร็วเฉื่อย, +Y = −h); β = มุมดวงอาทิตย์เหนือระนาบวงโคจร μ = มุมในวงโคจรนับจากเที่ยงคืน
+  nominal yaw steering ψ = atan2(−tan β, sin μ) (ดวงอาทิตย์อยู่ในระนาบ X-Z ฝั่ง +X) กฎรายรุ่นต่างจาก nominal เฉพาะตอน β ต่ำใกล้เที่ยงวัน/เที่ยงคืนหรือในเงาโลก
+  **ไม่มีสถานะ**: ท่าทาง ณ เวลาหนึ่งคำนวณจากตำแหน่ง ความเร็ว และดวงอาทิตย์ ณ เวลานั้นเท่านั้น (จุดเริ่ม/จบของการหมุนหาเชิงวิเคราะห์จาก β, μ) เลื่อนเวลา กระโดดเวลา หรือเล่นต่อเนื่องจึงได้ท่าทางเดียวกัน
+
+  | กฎ | block | ช่วงพิเศษและพฤติกรรม |
+  |---|---|---|
+  | `nominal_ys` | block ที่ไม่รู้จัก, เลิกใช้ (GPS-IIA, GAL-0A, GLO, BDS-3S, …) หรือไม่มี | nominal ทุกช่วง |
+  | `orbit_normal` | BDS-2G, BDS-3G, QZS-2G, QZS-3G | ψ = 0 ตลอด (+X ตามความเร็ว) |
+  | `gps_iir` | GPS-IIR-A/B/M | \|β\| < 2.4°: หมุน 0.20°/s แบบกึ่งกลางที่ทั้งเที่ยงวันและเที่ยงคืน |
+  | `gps_iif` | GPS-IIF | เที่ยงวัน \|β\| < 4.35°: 0.11°/s (β ∈ [−0.7°, 0) หมุนกลับทาง); ในเงาโลก (\|β\| < 13.9°): อัตราคงที่ตลอดเงา ออกเงาตรง nominal |
+  | `gps_iii` (ประมาณการ) | GPS-III, GPS-IIIA, GPS-III-1 | \|β\| < 5.8°: หมุนเรียบ ≤ 0.082°/s ราว 1 ชั่วโมง (β หน่วงแบบ CAST, d = 2000 เลือกเอง) |
+  | `glonass_m` | GLO-M, GLO-M+ | เที่ยงวัน \|β\| < 2°: 0.25°/s กึ่งกลาง; ในเงาโลก: เริ่มหมุน 0.25°/s ตอนเข้าเงาไปถึงมุมตอนออกเงาแล้วค้างไว้ |
+  | `glonass_k` (ประมาณการ) | GLO-K1, GLO-K1+, GLO-K1A, GLO-K1B, GLO-K2 | \|β\| < 2°: 0.24987°/s กึ่งกลางทั้งสอง node (ไม่มีช่วงเร่ง/ผ่อนอัตรา) |
+  | `galileo_iov` | GAL-1 | เวกเตอร์ดวงอาทิตย์เสริม (กล่อง 15° × 2°) |
+  | `galileo_foc` | GAL-2 | \|β\| < 4.1° และ ε < 10°: สูตร cosine ผ่าน ±90° ที่ node (ครึ่งคาบ = ช่วงสมมาตร ≈ 2828 s) |
+  | `bds2_ys_on` | BDS-2I, BDS-2M | \|β\| ≤ 4°: orbit normal ทั้งรอบ |
+  | `bds3_cast` | BDS-3M-CAST, BDS-3I, BDS-3SM-CAST, BDS-3SI-CAST | \|β\| ≤ 3°: β หน่วง (d = 80,000) |
+  | `bds3_secm` | BDS-3M-SECM-A/B, BDS-3SM-SECM, BDS-3SI-SECM | \|β\| ≤ 3°: ใช้ β = ±3° |
+  | `qzss1_ys_on` | QZS-1 | \|β\| ≤ 20°: orbit normal |
+  | `qzss2_pseudo_ys` | QZS-2I, QZS-2A | \|β\| < ≈ 4.4°: หมุนอัตราคงที่ 0.055°/s ผ่าน ±90° ที่ node |
+  | `navic` (ประมาณการ) | IRS-1G, IRS-1I, IRS-2G, IRS-2I | \|β\| < 4°: orbit normal (เกณฑ์เลือกเอง ISRO ไม่เผย) |
+
+- **ดาวสำรวจโลก (`nadir_velocity`): Nadir alignment with ECI velocity constraint** (เฟรมเดียวกับ sensor, [9.9](#99-sensor-และ-sensor-view)): +Z ชี้ลงโลก +X ตามส่วนของความเร็วเฉื่อยที่ตั้งฉากกับ +Z
+- **แผงโซลาร์**: หมุนรอบแกน +Y ของตัวดาวให้ normal ด้านเซลล์ชี้ไปทางดวงอาทิตย์ที่ฉายลงระนาบ X-Z ของตัวดาว ช่วง nominal คลาดไม่เกิน 1° ช่วงหมุนพิเศษ orbit normal และดาวสำรวจโลกคลาดเท่ามุมระหว่างดวงอาทิตย์กับระนาบ X-Z
+  ด้านเซลล์ตอนมุมศูนย์อ่านจาก `cell_normal` ของ `models/catalog.json` (terra −Z, suomi-npp −X, aqua +X, goes +Z, ตัวอื่น −X) catalog ที่ไม่มีฟิลด์นี้ใช้ตารางสำรองในโค้ดที่มีค่าเดียวกัน
   แผงเดี่ยว (`wing-Y`) ของดาวสำรวจโลกหมุนด้วยวิธีเดียวกัน ถ้าดวงอาทิตย์อยู่แนว ±Y ของตัวดาวพอดี มุมแผงคงค่าเดิม
 - +Z ของตัวดาวชี้ศูนย์กลางโลก (ตรวจใน unit test กับ `ModelUtility.getAxisCorrectionMatrix` จริงของ Cesium คลาด < 1e-6° และใน e2e ผ่าน test hook `satelliteOrientation` คลาด < 0.5°)
 
 **ข้อจำกัดของแบบจำลองท่าทาง**
 
-- **ไม่มีการหมุนช่วงเที่ยง/เที่ยงคืน (noon/midnight turn)** ของ yaw steering: ใช้แบบ nominal ทุกช่วง ตอนมุม β ของดวงอาทิตย์ต่ำ ดาวจริงหมุนเร็วหรือกลับเข้าโหมดพิเศษ โมเดลหมุนตามสูตรเรียบ ๆ
-- **BeiDou ไม่จำลองโหมด orbit-normal** (ตอน β ต่ำ ดาว BeiDou ใช้โหมดนี้แทน yaw steering): ใช้ yaw steering แบบ nominal ทุกช่วง
-- **ด้านเซลล์ของ `aqua` และ `suomi-npp` ไม่แน่นอน**: แผงสองหน้าใช้พื้นผิวเดียวกัน ระบบหมุนแผงให้ normal (แกน ±X) หันหาดวงอาทิตย์ แต่ด้านที่เห็นอาจเป็นด้านหลังแผง
-  ด้านเซลล์ของ `goes` เชื่อได้ระดับปานกลาง ส่วน `terra` เซลล์อยู่ทั้งสองหน้า (แกนแผงแน่นอน ด้านที่หันเป็นไปตามอำเภอใจ)
-- โมเดลนี้เป็นภาพประกอบ ไม่ใช่ท่าทางที่วัดได้ของดาว: ไม่มีการจำลอง attitude ของ eclipse หรือดาวที่ manoeuvre และโมเดลของดาวรุ่นที่ไม่มีใน catalog ใช้ `generic`
+- **กฎท่าทางเป็นแบบจำลองเชิงวิเคราะห์ของวงโคจรเกือบวงกลม** ไม่ใช่ท่าทางที่วัดได้: การหมุนพิเศษหาจุดเริ่ม/จบจาก β, μ ณ ขณะนั้น (β ถือว่าคงที่ระหว่างการหมุน) เงาโลกเป็นทรงกระบอก (ไม่แยก umbra/penumbra)
+  กฎที่สลับตามเกณฑ์ β (BDS-2, QZS-1, NavIC, Galileo FOC, GPS IIF ช่วง −0.7°) และตอน β เปลี่ยนเครื่องหมาย ท่าทางกระโดดได้ ณ ขณะที่ β ข้ามเกณฑ์ (ดาวจริงหมุนช่วงนั้นช้า ๆ)
+- **ประมาณการ**: `gps_iii` (ค่าหน่วง d = 2000 เลือกให้ ≤ 0.082°/s และราว 1 ชั่วโมง), `glonass_k` (อัตราคงที่ ไม่มีช่วงเร่ง/ผ่อน และไม่อ่านพารามิเตอร์ใน CDMA nav), `navic` (เกณฑ์ ON 4° และ +Z ชี้ศูนย์กลางโลก ไม่ชี้เป้า 5°N 83°E)
+- ไม่จำลอง: CYS ของ BDS-2 บางดวงหลังอัปเกรดปี 2017–2018, การพลิกที่เลื่อนออกไปของ BDS-3 SECM, แบบ WHU ของ CAST, ค่า β0 = 2.8° ของ CAST MEO (ใช้ 3° ทุกดวง), การชี้เป้าของ NavIC, การหมุนช่วง manoeuvre
+- **ด้านเซลล์ของ `aqua` และ `suomi-npp` ตาม `cell_normal` ของ catalog**: แผงสองหน้าใช้พื้นผิวเดียวกัน แกนแผง (±X) แน่นอน ด้านที่เห็นเป็นไปตามที่ catalog เลือก
+  ด้านเซลล์ของ `goes` เชื่อได้ระดับปานกลาง ส่วน `terra` เซลล์อยู่ทั้งสองหน้า (แกนแผงแน่นอน catalog เลือก −Z)
+- โมเดลนี้เป็นภาพประกอบ ไม่ใช่ท่าทางที่วัดได้ของดาว และโมเดลของดาวรุ่นที่ไม่มีใน catalog ใช้ `generic` (ท่าทางยังตาม block ของดาว)
 - ภาพที่ออกมาตรวจด้วยคณิตศาสตร์ของ Cesium และ e2e (จำนวนโมเดล จุดซ่อนหรือแสดง ทิศ +Z) ไม่ได้ตรวจด้วยตาบน GPU จริง (e2e ใช้ SwiftShader และไม่ใช้ภาพจับหน้าจอ)
   ความเร็ว 30 fps ที่ 146 ดวงยังไม่ได้วัดบน GPU จริง (Model Detail Threshold ลดจำนวนโมเดลที่วาดลงตามระยะจากกล้อง)
 
@@ -1250,5 +1274,5 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - โมเดลที่เหลือ (GNSS ทั้ง 17 ตัว, `generic` และ `himawari-9`) สร้างเองด้วยเรขาคณิตและพื้นผิวแบบ procedural ใน Blender (`models/<id>/scripts/build.py`) ไม่ใช้ไฟล์ของผู้อื่น ขนาดอ้างอิงจากเอกสารสาธารณะของผู้ผลิตและหน่วยงาน (ระบุใน `NOTES.md` ของแต่ละโมเดล)
 - โมเดลจาก Sketchfab ที่ `SOURCES.md` ระบุเป็นตัวเลือกไว้ **ไม่ได้ดาวน์โหลดและไม่ได้ใช้**
 
-**ทดสอบ**: unit test (`tests/unit/sat-model-*.test.ts`, `attitude.test.ts`, `models-packaging.test.ts`) และ e2e `web/tests/e2e/models.spec.ts` (`npm run e2e`): ที่ Model Detail Threshold 200,000 km ดาวที่แสดงทุกดวงเป็นโมเดล ที่ 1,000 km ทุกดวงเป็นจุด
+**ทดสอบ**: unit test (`tests/unit/sat-model-*.test.ts`, `attitude.test.ts`, `attitude-laws.test.ts` (ทุกกฎที่ β = ±0.5°, ±2°, 5°, 15°: ความต่อเนื่อง อัตราหมุน nominal นอกช่วง กรอบตั้งฉาก ไม่ขึ้นกับประวัติ), `models-packaging.test.ts`) และ e2e `web/tests/e2e/models.spec.ts` (`npm run e2e`): ที่ Model Detail Threshold 200,000 km ดาวที่แสดงทุกดวงเป็นโมเดล ที่ 1,000 km ทุกดวงเป็นจุด
 และดาวที่กล้องเข้าไปใกล้ (test hook `flyToSatellite`) เป็นโมเดล ปิด Satellite Models แล้วเหลือ 0 และจุดกลับมา `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์ ไม่มี request ออกนอกเครื่อง +Z ชี้ลงโลกคลาด < 0.5°

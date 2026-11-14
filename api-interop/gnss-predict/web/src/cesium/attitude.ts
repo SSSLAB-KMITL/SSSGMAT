@@ -2,9 +2,10 @@
 // ฟังก์ชันล้วน ใช้แค่ชนิดคณิตศาสตร์ของ Cesium (Cartesian3, Matrix3, Quaternion, JulianDate) ไม่แตะ scene หรือ entity
 //
 // r, v = ตำแหน่ง (เมตร) / ความเร็ว ECEF (m/s) ของดาว (ความเร็วจากผลต่างตำแหน่ง t ± 1 s แบบเดียวกับ sensor), s = ตำแหน่งดวงอาทิตย์ ECEF (sunPositionEcef)
-// - GNSS (โมเดลที่มี blocks) ใช้ yaw steering: ez = −r̂, es = (s − r)/|s − r|, ey = (ez × es)/|ez × es|, ex = ey × ez
-//   ดวงอาทิตย์จึงอยู่ในระนาบ X-Z ฝั่ง +X เสมอ (es·ey = 0, es·ex = |ez × es| ≥ 0)
-// - ดาวสำรวจโลก (โมเดลจาก norad_ids) ใช้เฟรม sensor §3.1 (Nadir alignment with ECI velocity constraint) จาก sensorGeometry.bodyFrame
+// - yawSteeringFrame: nominal yaw steering แบบมีสถานะ (prevEy): ez = −r̂, es = (s − r)/|s − r|, ey = (ez × es)/|ez × es|, ex = ey × ez
+//   ดวงอาทิตย์จึงอยู่ในระนาบ X-Z ฝั่ง +X เสมอ (es·ey = 0, es·ex = |ez × es| ≥ 0) โมเดลในหน้าต่าง 3D ไม่ได้ใช้ตัวนี้แล้ว:
+//   ดาว GNSS ใช้กฎรายรุ่นที่ไม่มีสถานะใน attitudeLaws.ts (nominal_ys ให้เฟรมเดียวกับฟังก์ชันนี้นอกจุดเอกฐาน)
+// - ดาวสำรวจโลก (โมเดลจาก norad_ids) ใช้เฟรม sensor §3.1 (Nadir alignment with ECI velocity constraint) จาก sensorGeometry.bodyFrame (nadirVelocityFrame)
 // - แผงโซลาร์หมุนรอบ +Y ของตัวดาวให้ normal ด้านเซลล์ชี้ไปทาง es ที่ฉายลงระนาบ X-Z (wingAngle)
 
 import { Cartesian3, Matrix3, Quaternion, Simon1994PlanetaryPositions, Transforms, type JulianDate } from "cesium";
