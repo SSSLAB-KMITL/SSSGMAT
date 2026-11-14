@@ -71,7 +71,8 @@ export function RadioControl({ module, state, onAction, onClose, raiseToken }: P
   const status = problem ?? shown.status;
 
   return (
-    <FloatingWindow title={radioTitle(module)} onClose={onClose} raiseToken={raiseToken}>
+    // not closed by Escape: closing disengages the radio, and Gpredict closes the window only with its close button (ref-R §1)
+    <FloatingWindow title={radioTitle(module)} onClose={onClose} closeOnEscape={false} raiseToken={raiseToken}>
       <div ref={root} className="rc">
         <div className="rc-grid">
           <LinkFrame

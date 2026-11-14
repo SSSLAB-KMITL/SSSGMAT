@@ -81,7 +81,8 @@ export function RotatorControl({ module, state, orientation: named, qthName, onA
   const status = problem ?? shown.status;
 
   return (
-    <FloatingWindow title={rotTitle(module)} onClose={onClose} raiseToken={raiseToken}>
+    // not closed by Escape: closing disengages the rotator, and Gpredict closes the window only with its close button (ref-R §1)
+    <FloatingWindow title={rotTitle(module)} onClose={onClose} closeOnEscape={false} raiseToken={raiseToken}>
       <div className="ar">
         <div className="ar-plot">
           <div className="ar-plot-fill">

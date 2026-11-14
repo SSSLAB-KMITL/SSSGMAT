@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { centerIn, clampToViewport } from "../windowGeom";
+import { shouldCloseOnEscape } from "./floatingEscape";
 import type { Point, Size } from "../windowGeom";
 
 interface Props {
   /** shown in the title bar, centred */
   title: string;
-  /** the close button, or Escape while this is the front window */
+  /** the close button, or Escape while this is the front window (unless `closeOnEscape` is false) */
   onClose: () => void;
+  /** Escape closes the window when it is in front. Default true; Radio Control and Antenna Control pass false: Gpredict closes them only with the close button (ref-R §1) */
+  closeOnEscape?: boolean;
   children: ReactNode;
   /** top left corner in client px; the window is moved back inside the page if it does not fit. Default: centred */
   initialPosition?: Point;
@@ -45,7 +48,7 @@ function viewportSize(): Size {
  * button, dragged by the title bar, always kept inside the page, closed by Escape when it is in front. A press on a
  * window brings it to the front. It does not block the page behind it.
  */
-export function FloatingWindow({ title, onClose, children, initialPosition, width, raiseToken }: Props) {
+export function FloatingWindow({ title, onClose, closeOnEscape = true, children, initialPosition, width, raiseToken }: Props) {
   const id = useId();
   const titleId = `${id}-title`;
   const box = useRef<HTMLDivElement>(null);
@@ -107,17 +110,15 @@ export function FloatingWindow({ title, onClose, children, initialPosition, widt
     return () => setStack(stack.filter((w) => w !== id));
   }, [id]);
 
-  // Escape closes the front window only; not while a popup menu is open (Escape closes the menu first)
+  // Escape closes the front window only; not while a popup menu is open (Escape closes the menu first), and not a window that keeps itself open on Escape
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (stack[stack.length - 1] !== id) return;
-      if (document.querySelector(".popup-menu") !== null) return;
-      onClose();
+      const press = { key: e.key, defaultPrevented: e.defaultPrevented, closeOnEscape, front: stack[stack.length - 1] === id, popupOpen: document.querySelector(".popup-menu") !== null };
+      if (shouldCloseOnEscape(press)) onClose();
     };
     document.addEventListener("keydown", escape);
     return () => document.removeEventListener("keydown", escape);
-  }, [id, onClose]);
+  }, [id, onClose, closeOnEscape]);
 
   const raise = () => {
     if (stack[stack.length - 1] !== id) setStack([...stack.filter((w) => w !== id), id]);
