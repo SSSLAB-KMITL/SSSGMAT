@@ -16,12 +16,15 @@
 //   ไม่มีหน้าต่าง ไม่มีดาว หรือไม่มีตำแหน่ง ณ เวลานี้ = false
 // และ workbookRestoredAt(): เวลา (performance.now) ที่ File → Open จัดหน้าต่างตาม workbook ครั้งล่าสุดเสร็จ (useLayout.restoredAt) รออยู่ = null
 //   หน้าต่าง 3D ที่ workbook สร้างใหม่โหลดเสร็จหลังเวลานี้ e2e (waitForScene) จึงรอ sceneLoadedAt() ≥ ค่านี้ ไม่อ่านหน้าต่างที่กำลังถูกแทน
+// และ reportRows(panelId): เซลล์ทุกแถวที่หน้าต่างรายงานนั้นแสดงอยู่ (หัวส่วน หัวคอลัมน์ แถว สถิติ ไม่ขึ้นกับการเลื่อนของตาราง virtual)
+//   Dynamic Display = แถวของเวลาปัจจุบัน ไม่มีหน้าต่างนั้นหรือยังไม่มีตาราง = []
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useLayout } from "../stores/layout";
 import { useTime } from "../stores/time";
 import { parseIsoUtc } from "../time/parse";
 import { firstScene2D } from "../windows/Graphics2D/registry2d";
+import { reportRowsOf } from "../windows/Report/table";
 import { firstScene, sceneLoadedAt, type SatelliteAxes, type SatelliteModelState } from "../windows/Graphics3D/registry";
 import { sensorViewFor, type SensorCamera } from "../windows/SensorView/registry";
 
@@ -42,6 +45,7 @@ export interface GnssStudioTestHooks {
   satelliteModel(name: string): SatelliteModelState | null;
   flyToSatellite(name: string, rangeM: number): boolean;
   workbookRestoredAt(): number | null;
+  reportRows(panelId: string): string[][];
 }
 
 declare global {
@@ -79,5 +83,6 @@ export function installTestHooks(): void {
     satelliteModel: (name) => firstScene()?.satelliteModel(name) ?? null,
     flyToSatellite: (name, rangeM) => firstScene()?.flyToSatellite(name, rangeM) ?? false,
     workbookRestoredAt: () => useLayout.getState().restoredAt,
+    reportRows: (panelId) => reportRowsOf(panelId),
   };
 }

@@ -41,20 +41,32 @@ export interface MountedScene {
   destroy(): void;
 }
 
+export interface ResultsBannerProps {
+  /**
+   * สถานะที่ผู้เรียกรู้เอง (หน้าต่างรายงาน: server ตอบ 409 RESULTS_NOT_CURRENT) แทนสถานะ ephem ของ useResults
+   * null = ผลของผู้เรียกใช้ได้ ไม่แสดงแถบ ไม่ระบุ = ตาม useResults (หน้าต่าง 3D/2D)
+   */
+  status?: "stale" | "missing" | null;
+  /** งานของปุ่ม Apply แทน POST /propagate (หน้าต่างรายงาน: Compute ของ access แล้วสร้างรายงานใหม่) ผู้เรียกแจ้งข้อผิดพลาดเอง */
+  onApply?: () => Promise<void>;
+}
+
 /** แถบเหนือภาพเมื่อผลลัพธ์ไม่ตรงกับ scenario หรือยังไม่มี พร้อมปุ่ม Apply */
-export function ResultsBanner() {
+export function ResultsBanner({ status: override, onApply }: ResultsBannerProps = {}) {
   const name = useScenario((s) => s.name);
-  const status = useResults((s) => s.status);
+  const stored = useResults((s) => s.status);
   const error = useResults((s) => s.info?.error ?? null);
   const job = useJobs((s) => (name === null ? undefined : s.activeFor(name)));
   const [sending, setSending] = useState(false);
+  const status = override === undefined ? stored : override;
   if (name === null || (status !== "stale" && status !== "missing")) return null;
 
   const busy = sending || job !== undefined;
   const apply = async (): Promise<void> => {
     setSending(true);
     try {
-      await startJob(`/scenarios/${encodeURIComponent(name)}/propagate`, "propagate", name);
+      if (onApply !== undefined) await onApply();
+      else await startJob(`/scenarios/${encodeURIComponent(name)}/propagate`, "propagate", name);
     } catch (e) {
       report("error", "PROPAGATE", msg("banner.applyFailed", { message: errorText(e) }));
     } finally {

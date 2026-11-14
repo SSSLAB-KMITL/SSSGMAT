@@ -11,7 +11,7 @@
 // test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
 //
 // การตั้งชื่อคีย์: `<กลุ่ม>.<ที่ใช้>.<ชื่อ>` แบบ camelCase กลุ่มที่ใช้: menu anim toolbar window page field option ob
-// timeline mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View) คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
+// timeline report (หน้าต่างรายงาน) mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View) คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
 //   - เมนูย่อย View → Toolbars ใช้ toolbar.* เป็นชื่อแถบ
 //   - เมนูคลิกขวาของ Object Browser ใช้ menu.object.* ชุดเดียวกับเมนูที่ตั้งชื่อตามชนิด object
 //   - ช่อง Time Step และ X Real Time Multiplier ในหน้า Basic - Time ใช้ anim.timeStep / anim.xRealTimeMultiplier
@@ -169,6 +169,8 @@ const LABELS = {
   "window.globeManager": stk("Globe Manager", "H"),
   // ชื่อหน้าต่างรายงาน/กราฟที่เลือกหลาย object (P11): `Multiple Objects: <style>` (data/reports.ts reportTitle)
   "window.multipleObjects": ours("Multiple Objects"),
+  // ชื่อชนิดหน้าต่างรายงาน (ชื่อบนแท็บของแต่ละบานมาจาก reportTitle: `THBK-To-G01: Access`) reference ไม่มีคำนี้เดี่ยว ๆ
+  "window.report": ours("Report"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),
@@ -542,6 +544,24 @@ const LABELS = {
   "timeline.setAnimationTimeToIntervalStop": ours("Set Animation Time to Interval Stop Time"),
   "timeline.center": ours("Center"),
   "timeline.removeFromTimeline": ours("Remove from Timeline"),
+
+  // ---------- หน้าต่างรายงาน (spec §6.1, STK ref §F) ----------
+  // §F: "Report windows ... Refresh (F5)", "right-click Show Animation Time Line, Set Animation Time", "Global Statistics (Total Duration)"
+  "report.refresh": stk("Refresh", "F"),
+  "report.setAnimationTime": stk("Set Animation Time", "F"),
+  "report.globalStatistics": stk("Global Statistics", "F"),
+  // reference ไม่มีเมนู Export ของหน้าต่างรายงานและกล่อง Export Setup (spec §3.5 ใช้ชื่อตาม STK แต่ reference ไม่ยืนยัน) จึงเป็น ours
+  "report.export": ours("Export"),
+  "report.toCsvFormat": ours("To CSV Format..."),
+  "report.setup": ours("Setup..."),
+  "report.exportSetup": ours("Export Setup"),
+  "report.fieldDelimiter": ours("Field Delimiter"),
+  "report.encloseHeaderFields": ours("Enclose Header Fields in Quotes"),
+  "report.writeReportTitle": ours("Write Report Title"),
+  "report.headers": ours("Headers"),
+  // ค่าในตาราง: ส่วนที่ไม่มีแถว และค่าที่ไม่มี (เหมือนไฟล์ .txt ของ engine)
+  "report.noData": ours("No Data"),
+  "report.notAvailable": ours("N/A"),
 
   // ---------- Message Viewer (spec §11, STK ref §A) ----------
   "mv.tab.all": stk("All Messages", "A"),

@@ -1915,6 +1915,113 @@ body {
   grid-template-columns: 120px minmax(0, 1fr);
 }
 
+/* ---------- หน้าต่างรายงาน (src/windows/Report) ---------- */
+/* หน้าต่างรายงาน (spec §6.1): แถบเครื่องมือ แถบเตือน และตารางแบบ virtual (แถวสูงคงที่ 20px ตาม ROW_HEIGHT ใน Report.tsx) */
+.rpt {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+}
+
+.rpt-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.rpt-menubar {
+  display: flex;
+}
+
+.rpt-busy,
+.rpt-note {
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.rpt-note {
+  margin: 12px;
+}
+
+.rpt-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rpt-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.rpt-scroll:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.rpt-table {
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+
+.rpt-table td,
+.rpt-table th {
+  box-sizing: border-box;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+.rpt-spacer td {
+  padding: 0;
+}
+
+.rpt-title th {
+  text-align: left;
+  font-weight: 600;
+  padding-top: 4px;
+}
+
+.rpt-head th {
+  text-align: right;
+  font-weight: 600;
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.rpt-head th:first-child {
+  text-align: left;
+}
+
+.rpt-num {
+  text-align: right;
+}
+
+.rpt-time {
+  text-align: left;
+  cursor: context-menu;
+}
+
+.rpt-row:hover {
+  background: var(--hover-bg);
+}
+
+.rpt-nodata td {
+  font-style: italic;
+}
+
 /* ---------- Timeline View (src/windows/TimelineView) ---------- */
 /* canvas วาดทั้งหมด (draw.ts) ที่นี่เหลือแค่กรอบ ส่วนที่เป็น DOM ซ้อนบน canvas (โฟกัสของ Time Display แถบเลื่อน หมายเหตุเมื่อชี้) */
 .tl {

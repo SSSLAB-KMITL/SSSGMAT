@@ -244,6 +244,21 @@ const MESSAGES = {
   "timeline.interval": "{name}: {start} ถึง {stop} ({duration}, มุมเงยสูงสุด {maxEl}°)",
   "timeline.intervalNoElevation": "{name}: {start} ถึง {stop} ({duration})",
 
+  // หน้าต่างรายงาน (spec §6.1, §8)
+  "report.loading": "กำลังสร้างรายงาน...",
+  "report.badParams": "หน้าต่างรายงานนี้ไม่มีข้อมูลว่าจะสร้างรายงานอะไร ปิดหน้าต่างแล้วสร้างใหม่จาก Report & Graph Manager",
+  "report.styleInvalid": "สร้างรายงานไม่ได้ เพราะ style นี้อ้างข้อมูลที่ไม่มี ดูรายละเอียดใน Message Viewer แล้วแก้ style ก่อนกด Refresh",
+  "report.failed": "สร้างรายงานไม่สำเร็จ: {message}",
+  "report.notCurrent": "ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบันหรือยังไม่มี กด Refresh เพื่อคำนวณใหม่แล้วสร้างรายงานอีกครั้ง",
+  "report.computing": "กำลังคำนวณผลลัพธ์ใหม่ รายงานจะสร้างใหม่เองเมื่อคำนวณเสร็จ",
+  "report.computeFailed": "สั่งคำนวณผลลัพธ์ใหม่ให้รายงานไม่สำเร็จ: {message}",
+  "report.computeJobFailed": "คำนวณผลลัพธ์ใหม่ไม่สำเร็จ จึงยังสร้างรายงานไม่ได้ ดูสาเหตุในข้อความของงานใน Message Viewer",
+  "report.exportFailed": "ส่งออกรายงานเป็นไฟล์ CSV ไม่สำเร็จ: {message}",
+  "report.delimiterInvalid": "Field Delimiter ต้องเป็นอักขระเดียวที่ไม่ใช่เครื่องหมายคำพูด (\") หรือการขึ้นบรรทัดใหม่",
+  "report.providersFailed": "อ่านวิธีประมาณค่าของข้อมูลจาก server ไม่สำเร็จ Dynamic Display จึงประมาณค่าเชิงเส้นทุกคอลัมน์ (มุมที่ข้าม 0° อาจผิด): {message}",
+  "report.export": "ส่งออกรายงานที่แสดงอยู่ทั้งช่วงเป็นไฟล์ CSV ตามค่าใน Setup...",
+  "report.refreshHint": "สร้างรายงานใหม่จากผลลัพธ์ล่าสุด (F5)",
+
   // Message Viewer (spec §11)
   "mv.empty": "ไม่มีข้อความในแท็บนี้",
   "mv.noDetail": "ข้อความนี้ไม่มีรายละเอียดเพิ่มเติม",

@@ -30,6 +30,7 @@ import { registerMessageViewerPanel } from "./windows/MessageViewer/MessageViewe
 import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowser";
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
+import { registerReportPanel } from "./windows/Report/Report";
 import { registerSatelliteCatalogPanel } from "./windows/SatelliteCatalog/SatelliteCatalog";
 import { registerSensorViewCommands } from "./windows/SensorView/commands";
 import { registerSensorViewPanel } from "./windows/SensorView/SensorView";
@@ -46,6 +47,7 @@ export function App() {
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
+  // หน้าต่างรายงาน (เปิดด้วย openReport ของ windows/Report/Report.tsx),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -74,6 +76,7 @@ export function App() {
     registerGraphics2DPanel();
     registerWindowProperties2DPanel();
     registerSensorViewPanel();
+    registerReportPanel();
     const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();

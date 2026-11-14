@@ -5,6 +5,7 @@
 // - ไฟล์นี้ไม่รู้จัก dockview: การวางหน้าต่างอยู่ใน placement.ts และ stores/layout.ts
 
 import { createElement, type FC } from "react";
+import { reportTitle } from "../data/reports";
 import { labels, t, type LabelKey } from "../labels/labels";
 import { msg } from "../labels/messages.th";
 import { parentOf } from "../stores/scenario";
@@ -12,7 +13,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView", "globeManager",
+  "stkReference", "sensorView", "globeManager", "report",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -172,6 +173,14 @@ const BASE: Record<PanelKind, Base> = {
     label: "window.sensorView", type: "integrated", size: { width: 640, height: 480 }, persist: true, scenarioBound: true,
     title: sensorViewTitle,
     instanceKey: (params) => (typeof params?.path === "string" ? params.path : ""),
+  },
+  // หน้าต่างรายงาน (spec §6, P11): Integrated เป็นแท็บกลาง บันทึกใน workbook (คืนแล้วสร้างรายงานใหม่) ปิดพร้อม scenario
+  // ชื่อ "THBK-To-G01: Access" / "Multiple Objects: Access"; หนึ่งบานต่อรายงาน (style, ชนิด, object, เวลา, Dynamic Display) เปิดซ้ำ = โฟกัสบานเดิม
+  // รายงานต่างกันเปิดได้หลายบาน (singleton ต่อกุญแจแบบ Properties Browser: layout.test ตรวจว่ามีแค่ 3D/2D ที่ไม่ใช่ singleton)
+  report: {
+    label: "window.report", type: "integrated", size: { width: 720, height: 420 }, persist: true, scenarioBound: true,
+    title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.report")),
+    instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
   },
 };
 
