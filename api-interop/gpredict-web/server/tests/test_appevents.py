@@ -245,6 +245,18 @@ class AppSocketTest(ApiTestBase):
         self.assertEqual(ws_receive_json(ws), PREFS)
         self.assertEqual(self.flush(ws), [])                                  # ครั้งละหนึ่งเหตุการณ์
 
+    def test_prefs_put_that_writes_nothing_publishes_nothing(self):
+        """PUT /api/prefs ที่ไม่เปลี่ยนค่าใด (เช่น GLOBAL/CURRENT_PAGE เดิมทุกครั้งที่สลับแท็บ) ไม่ส่ง prefs_changed (final review minor 7)"""
+        ws = self.connect()
+        self.assertEqual(self.client.put("/api/prefs", json={"set": {"PREDICT/NUMBER_OF_PASSES": 25}}).status_code, 200)
+        self.assertEqual(self.flush(ws), [PREFS])
+        self.assertEqual(self.client.put("/api/prefs", json={"set": {"PREDICT/NUMBER_OF_PASSES": 25}}).status_code, 200)
+        self.assertEqual(self.client.put("/api/prefs", json={}).status_code, 200)
+        self.assertEqual(self.client.put("/api/prefs", json={"remove": ["GLOBAL/CURRENT_PAGE"]}).status_code, 200)   # ไม่เคยตั้ง
+        self.assertEqual(self.flush(ws), [])
+        self.assertEqual(self.client.put("/api/prefs", json={"remove": ["PREDICT/NUMBER_OF_PASSES"]}).status_code, 200)
+        self.assertEqual(self.flush(ws), [PREFS])
+
     def test_dry_run_and_rejected_changes_publish_nothing(self):
         ws = self.connect()
         station = {"name": "NEW", "location": "NEW town", "lat_deg": 1.5, "lon_deg": 2.5, "alt_m": 3.0}

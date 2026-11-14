@@ -3,12 +3,14 @@
 - URL แต่ละตัวใน "TLE sources:" (TLE/URLS) แยกเป็นสองแบบด้วย classify
   - CelesTrak `https://celestrak.org/NORAD/elements/gp.php?GROUP=<g>&…`: ดึง OMM ของกลุ่ม <g> ด้วย omm.fetch_group ลง OMM cache
     และ state file ที่ใช้ร่วมกับ GNSS Studio (1 ครั้งต่อกลุ่มต่อ 2 ชม. นับร่วมกัน) ช่อง FORMAT ไม่มีผล (spec §5.1)
+    รวม celestrak.com (www. ด้วย), key group= ตัวพิมพ์ใดก็ได้ และไฟล์แบบเดิม /NORAD/elements/<g>.txt (ของเรา: ไม่ให้ URL รูปอื่น
+    ของกลุ่มเดียวกันข้ามกติกาที่นับร่วมกับ GNSS Studio)
   - URL อื่น (เช่น AMSAT nasabare.txt): ดึงข้อความ TLE 2/3 บรรทัดด้วย fetch_text ไม่เกิน 1 ครั้งต่อ URL ต่อ SOURCE_MIN_INTERVAL_S
     ไฟล์อยู่ที่ data/tle/_cache/<sha256(url)[:12]>.txt state ที่ data/tle/_cache/state.json {url: {last_request, last_success}}
     (รูปเวลาเดียวกับ state ของ engine) กลุ่มคือชื่อไฟล์ใน URL ไม่รวมนามสกุล
 - กติกาการขอ (เหมือน engine): last_request บันทึกทุกครั้งที่ server ได้รับคำขอ รวม HTTP error และคำตอบที่ไม่มี TLE ใช้ได้
   ส่วนต่อ server ไม่ได้เลย (URLError: DNS, connect, proxy ที่ต่อไม่ได้) ไม่บันทึก คำตอบที่ใช้ไม่ได้ไม่ทับไฟล์เดิม และใช้ไฟล์เดิมต่อ
-  TLE เดิมจึงไม่หาย
+  TLE เดิมจึงไม่หาย คำตอบที่ได้รับบันทึก last_request ก่อนเขียนไฟล์ cache เขียนไม่ได้ก็ไม่ขอซ้ำก่อนครบ 2 ชม.
 - Proxy (TLE/PROXY) ใช้กับทุก source: opener เดียวจาก make_opener ส่งให้ทั้ง fetch_group และ fetch_text
 - คำขอที่ส่งเองมีแค่ User-Agent "gpredict-web" (คำขอ CelesTrak ส่งโดย engine ด้วย User-Agent ของ engine)
 - TLE ทุก source ของรอบหนึ่งรวมกันใน SatDb.apply_sets ครั้งเดียว (ref-D §5.3) TLE/LAST_UPDATE ตั้งเมื่อ updated + new > 0
@@ -17,6 +19,7 @@
 """
 
 import hashlib
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from http.client import HTTPException
@@ -38,8 +41,10 @@ SOURCE_MIN_INTERVAL_S = 7200            # source ข้อความ: ส่�
 USER_AGENT = "gpredict-web"
 TIMEOUT_S = 30
 STATE_FILE = "state.json"
-CELESTRAK_HOSTS = ("celestrak.org", "www.celestrak.org")
-CELESTRAK_GP_PATH = "/NORAD/elements/gp.php"
+CELESTRAK_HOSTS = ("celestrak.org", "www.celestrak.org", "celestrak.com", "www.celestrak.com")
+CELESTRAK_GP_PATH = "/norad/elements/gp.php"            # เทียบแบบไม่สนตัวพิมพ์
+# ไฟล์ของกลุ่มแบบเดิม /NORAD/elements/<group>.txt ชื่อกลุ่มแบบเดียวกับที่ engine รับ (omm._GROUP_RE)
+_LEGACY_GROUP_FILE = re.compile(r"/norad/elements/([A-Za-z0-9-]{1,32})\.txt", re.IGNORECASE)
 LOCAL_SUFFIXES = (".tle", ".txt")       # ไฟล์ที่ Update from local files อ่าน (ไม่สนตัวพิมพ์, ref-D §5.3 แถว Files read)
 # ข้อความ ERROR ของ Gpredict เมื่อ Update จาก network หยุดก่อนรวม TLE (tle_update_from_network, tle-update.c:523-533, :647-665)
 NO_FILES_LOG = "No files to fetch from network."
@@ -49,17 +54,23 @@ _UTC = timezone.utc
 
 
 def classify(url: str) -> tuple[str, str]:
-    """("celestrak", กลุ่ม) เมื่อเป็น gp.php ของ celestrak.org (หรือ www.) ที่มี GROUP ไม่งั้น ("text", ชื่อไฟล์ใน path ไม่รวมนามสกุล)
+    """("celestrak", กลุ่ม) เมื่อเป็นกลุ่มของ CelesTrak ที่อ่านชื่อกลุ่มได้ ไม่งั้น ("text", ชื่อไฟล์ใน path ไม่รวมนามสกุล)
+    กลุ่มของ CelesTrak: เครื่อง celestrak.org หรือ celestrak.com (www. ด้วย) กับ gp.php ที่มี GROUP (key ตัวพิมพ์ใดก็ได้) หรือไฟล์แบบเดิม
+    /NORAD/elements/<group>.txt URL อื่นของ CelesTrak (CATNR, ไฟล์ใน supplemental) เป็นข้อความที่นับ 2 ชม. ต่อ URL
     (ของเรา) path ที่ไม่มีชื่อไฟล์ใช้ชื่อเครื่อง URL ที่อ่านไม่ได้ใช้ทั้ง URL"""
     try:
         parts = urlsplit(url)
         host = parts.hostname or ""
     except ValueError:
         return "text", url
-    if host in CELESTRAK_HOSTS and parts.path == CELESTRAK_GP_PATH:
-        group = parse_qs(parts.query).get("GROUP")
-        if group:
-            return "celestrak", group[0]
+    if host in CELESTRAK_HOSTS:
+        if parts.path.lower() == CELESTRAK_GP_PATH:
+            group = next((v for k, v in parse_qs(parts.query).items() if k.upper() == "GROUP"), None)
+            if group:
+                return "celestrak", group[0]
+        legacy = _LEGACY_GROUP_FILE.fullmatch(parts.path)
+        if legacy:
+            return "celestrak", legacy[1]
     return "text", PurePosixPath(unquote(parts.path)).stem or host or url
 
 
@@ -103,6 +114,7 @@ def fetch_text(url: str, cache_dir: Path, now: datetime, opener=urlopen) -> tupl
     - ส่งคำขอไปไม่ถึง SOURCE_MIN_INTERVAL_S: ไม่ส่ง ใช้ไฟล์เดิม + ORBIT_RATE_LIMITED_LOCAL (info) ไม่มีไฟล์ = None + warning
     - สำเร็จเมื่อคำตอบมี TLE ใช้ได้อย่างน้อย 1 ชุด: เขียนทับไฟล์ บันทึก last_request และ last_success
     - HTTP error, timeout, คำตอบที่ไม่มี TLE ใช้ได้: ไม่ทับไฟล์ บันทึก last_request ใช้ไฟล์เดิม (หรือ None) + ORBIT_DOWNLOAD_FAILED
+    - เขียนไฟล์ cache ไม่ได้ (ดิสก์เต็ม): เหมือนข้อบน last_request บันทึกไว้ก่อนเขียนแล้วจึงไม่ขอซ้ำก่อนครบ 2 ชม.
     - ต่อ server ไม่ได้ (URLError) หรือ urllib ไม่รับ URL/proxy: เหมือนข้อบนแต่ไม่บันทึก last_request (server ไม่ได้รับคำขอ)"""
     cache_dir = Path(cache_dir)
     path = cache_dir / f"{hashlib.sha256(url.encode('utf-8')).hexdigest()[:12]}.txt"
@@ -118,7 +130,7 @@ def fetch_text(url: str, cache_dir: Path, now: datetime, opener=urlopen) -> tupl
             return None, [Message("ORBIT_DOWNLOAD_FAILED", "warning", f"{text} และยังไม่มีไฟล์ใน cache จึงข้าม source นี้", url)]
         return cached, [Message("ORBIT_RATE_LIMITED_LOCAL", "info", f"{text} ใช้ไฟล์เดิม", url)]
 
-    sent = True
+    unrecorded = True                       # คำขอถึง server แล้วแต่ยังไม่ได้บันทึก last_request
     try:
         with opener(Request(url, headers={"User-Agent": USER_AGENT}), timeout=TIMEOUT_S) as resp:
             data = resp.read()
@@ -128,19 +140,27 @@ def fetch_text(url: str, cache_dir: Path, now: datetime, opener=urlopen) -> tupl
     except HTTPException as exc:            # อ่านคำตอบไม่จบ (IncompleteRead) ไม่ใช่ OSError
         reason = f"อ่านคำตอบไม่จบ: {exc}"
     except URLError as exc:                 # DNS, connect, proxy ที่ต่อไม่ได้: server ไม่ได้รับคำขอ
-        reason, sent = str(exc), False
+        reason, unrecorded = str(exc), False
     except OSError as exc:                  # timeout หรือ connection reset หลังส่งคำขอแล้ว
         reason = str(exc) or type(exc).__name__
     except ValueError as exc:               # URL หรือ proxy ที่ urllib ไม่รับ: ยังไม่ได้ส่ง
-        reason, sent = f"URL หรือ proxy ไม่ถูกต้อง: {exc}", False
+        reason, unrecorded = f"URL หรือ proxy ไม่ถูกต้อง: {exc}", False
     else:
-        if parse_tle_text(_decode(data)):
-            _write_bytes_atomic(path, data)
-            _record_request(state_file, url, now, success=True)
-            return path, []
-        reason = "คำตอบไม่มีข้อมูล TLE ที่ใช้ได้"
+        # server ได้รับคำขอแล้ว: นับ 2 ชม. ตั้งแต่ตอนนี้ ก่อนเขียนไฟล์ใด (เขียน cache ไม่ได้ก็ไม่ขอซ้ำก่อนครบ)
+        _record_request(state_file, url, now, success=False)
+        unrecorded = False
+        if not parse_tle_text(_decode(data)):
+            reason = "คำตอบไม่มีข้อมูล TLE ที่ใช้ได้"
+        else:
+            try:
+                _write_bytes_atomic(path, data)
+            except OSError as exc:
+                reason = f"เก็บไฟล์ cache ไม่ได้: {exc}"
+            else:
+                _record_request(state_file, url, now, success=True)
+                return path, []
 
-    if sent:
+    if unrecorded:                          # คำขอถึง server แต่ไม่ได้คำตอบที่อ่านจบ
         _record_request(state_file, url, now, success=False)
     text = f"ดาวน์โหลด TLE จาก {url} ไม่สำเร็จ ({reason})"
     if cached is None:

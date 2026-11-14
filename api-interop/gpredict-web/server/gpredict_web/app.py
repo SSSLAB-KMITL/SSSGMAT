@@ -75,7 +75,7 @@ from .ephem import EphemManager
 from .errors import ApiError
 from .hwconf import HwConf, radio_to_dict, rot_to_dict
 from .locations import locations_json
-from .maps import check_upload_size, list_maps, map_entry, resolve as resolve_map, save_upload
+from .maps import STOCK_MAPS, check_upload_size, list_maps, map_entry, resolve as resolve_map, save_upload
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
@@ -104,6 +104,9 @@ LOG_DIR = "logs"                       # โฟลเดอร์ log ใต้ 
 TLE_LOCAL_FILES_MAX = 200
 TLE_LOCAL_BYTES_MAX = 20 * 1024 * 1024
 TLE_LOCAL_NAME_MAX = 255
+# body JSON ของ /api/tle/local ที่อ่านได้: ข้อความ 20 MB เข้ารหัสใน JSON ยาวขึ้นได้ (\n เป็นสองไบต์ ฯลฯ) จึงเผื่อเป็นสองเท่า
+# Content-Length ที่เกินปฏิเสธก่อนอ่าน ส่วน chunked หยุดอ่านเมื่อเกิน ไม่ส่งก้อนใหญ่ให้ตัวแปลง JSON
+TLE_LOCAL_BODY_MAX = 2 * TLE_LOCAL_BYTES_MAX
 # function ในบรรทัด log ของ Update TLE ตามต้นฉบับ (tle-update.c): รวม TLE แล้ว / Update จาก network หยุดก่อนรวม
 TLE_LOG_FUNCTION = "tle_update_from_files"
 TLE_NET_LOG_FUNCTION = "tle_update_from_network"
@@ -440,18 +443,46 @@ def _sat_dict(r: SatRecord, with_tle: bool = False) -> dict:
     return d
 
 
-async def _read_map_body(request: Request) -> bytes:
-    """body ดิบของการอัปโหลดภาพ: เกิน MAP_UPLOAD_MAX แล้วหยุดอ่านและตอบ 422 MAP_INVALID
-    (Content-Length ที่บอกว่าเกินปฏิเสธก่อนอ่านเลย ส่วน chunked นับระหว่างอ่าน)"""
+async def _read_body(request: Request, check_size: Callable[[int], None]) -> bytes:
+    """body ดิบที่จำกัดขนาด: check_size(จำนวนไบต์) raise เมื่อเกิน Content-Length ที่บอกว่าเกินปฏิเสธก่อนอ่านเลย
+    ส่วน chunked (หรือ Content-Length ที่ไม่จริง) นับระหว่างอ่านและหยุดที่ก้อนแรกที่เกิน ไม่เก็บทั้งก้อนไว้ในหน่วยความจำ"""
     declared = request.headers.get("content-length", "")
     if declared.isascii() and declared.isdigit():
-        check_upload_size(int(declared))
+        check_size(int(declared))
     chunks, total = [], 0
     async for chunk in request.stream():
         total += len(chunk)
-        check_upload_size(total)
+        check_size(total)
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+async def _read_map_body(request: Request) -> bytes:
+    """body ดิบของการอัปโหลดภาพ: เกิน MAP_UPLOAD_MAX แล้วหยุดอ่านและตอบ 422 MAP_INVALID"""
+    return await _read_body(request, check_upload_size)
+
+
+def _check_tle_local_size(size: int) -> None:
+    if size > TLE_LOCAL_BODY_MAX:
+        raise ApiError("TLE_FILE_INVALID", 422,
+                       f"ข้อมูลไฟล์ที่ส่งมาใหญ่เกิน {TLE_LOCAL_BODY_MAX // (1024 * 1024)} MB (ข้อความรวมได้ไม่เกิน "
+                       f"{TLE_LOCAL_BYTES_MAX // (1024 * 1024)} MB)", "files")
+
+
+async def _read_tle_local_body(request: Request) -> bytes:
+    """body ของ POST /api/tle/local: เกิน TLE_LOCAL_BODY_MAX แล้วหยุดอ่านและตอบ 422 TLE_FILE_INVALID (object "files")"""
+    return await _read_body(request, _check_tle_local_size)
+
+
+def _json_object(raw: bytes) -> dict:
+    """body ที่อ่านเองเป็น JSON object: อ่านไม่ได้หรือไม่ใช่ object -> 422 REQUEST_INVALID ข้อความเดียวกับที่ FastAPI ตอบ"""
+    try:
+        value = json.loads(raw)
+    except ValueError:                       # JSONDecodeError, UnicodeDecodeError และ int เกิน 4300 หลัก
+        raise ApiError("REQUEST_INVALID", 422, "ข้อมูลที่ส่งมาไม่ใช่ JSON ที่ถูกต้อง") from None
+    if not isinstance(value, dict):
+        raise ApiError("REQUEST_INVALID", 422, "ข้อมูลที่ส่งมาต้องเป็น JSON object")
+    return value
 
 
 def _clock_dict(clock: ModuleClock) -> dict:
@@ -849,10 +880,15 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/maps/{file}")
     def get_map(file: str):
+        """ภาพที่อัปโหลด: no-cache ให้ browser ถามใหม่ทุกครั้ง (ได้ 304 ถ้าไม่เปลี่ยน) ภาพที่อัปโหลดชื่อเดิมซ้ำจึงไม่ค้างภาพเก่า
+        ภาพของ Gpredict ไม่เปลี่ยน จึงใช้ cache ตามปกติ"""
         path = resolve_map(cfg.data_dir, file)
         if path is None:
             raise ApiError("NOT_FOUND", 404, f"ไม่พบภาพแผนที่ {file}", file)
-        return FileResponse(path, headers={"X-Content-Type-Options": "nosniff"})   # ภาพของผู้ใช้: ห้าม browser เดาชนิดเอง
+        headers = {"X-Content-Type-Options": "nosniff"}                              # ภาพของผู้ใช้: ห้าม browser เดาชนิดเอง
+        if file not in STOCK_MAPS:
+            headers["Cache-Control"] = "no-cache"
+        return FileResponse(path, headers=headers)
 
     @app.get("/api/tle/groups")
     def tle_groups():
@@ -934,10 +970,11 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             return tle_result(update_from_files(satdb, prefs, files, now()))
 
     @app.post("/api/tle/local")
-    async def tle_local(body: dict = Body(...)):
+    async def tle_local(request: Request):
         """Edit → Update TLE data from local files: {"files": [{"name", "text"}]} ไฟล์ระดับบนที่ลงท้าย .tle/.txt (ไม่สนตัวพิมพ์)
-        ถูกอ่าน ไฟล์อื่นถูกข้าม ตอบตัวนับแบบ POST /api/tle/update (ตรวจขนาดที่ _local_files)"""
-        files = _local_files(body)
+        ถูกอ่าน ไฟล์อื่นถูกข้าม ตอบตัวนับแบบ POST /api/tle/update body เกิน TLE_LOCAL_BODY_MAX: 422 TLE_FILE_INVALID ก่อนแปลง JSON
+        (_read_tle_local_body) JSON ที่อ่านไม่ได้หรือไม่ใช่ object: 422 REQUEST_INVALID จำนวนและขนาดของข้อความตรวจที่ _local_files"""
+        files = _local_files(_json_object(await _read_tle_local_body(request)))
         return await asyncio.to_thread(update_tle_local, files)
 
     # ---------------- transponder (Edit -> Update transponder data, spec §7)
@@ -1235,7 +1272,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     def put_prefs(body: dict = Body(...), dry_run: bool = Query(False)):
         """{"set": {key: ค่า}, "remove": [key]} (ไม่ใส่ = ว่าง) ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย
         ?dry_run=true: ตรวจเหมือนกันทุกอย่างและตอบรูปเดียวกัน (ค่าที่จะใช้หลังเขียน) แต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อน)
-        ไม่ส่งเหตุการณ์ ที่เขียนจริงส่ง prefs_changed ทาง /ws/app"""
+        ไม่ส่งเหตุการณ์ ที่เขียนจริงส่ง prefs_changed ทาง /ws/app (เฉพาะเมื่อมีค่าเปลี่ยนและเขียนไฟล์)"""
         set_ = body.get("set", {})
         remove = body.get("remove", [])
         if not isinstance(set_, dict):
@@ -1244,8 +1281,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             raise ApiError("PREFS_INVALID", 422, "รายการที่จะลบ (remove) ต้องเป็นรายการชื่อ key ของ Preferences", "remove")
         if dry_run:
             return _prefs_dict(prefs.preview(set_, remove))
-        prefs.update(set_, remove)
-        events.publish({"type": EVENT_PREFS_CHANGED})
+        if prefs.update(set_, remove):       # ไม่มีอะไรเปลี่ยน (เช่น GLOBAL/CURRENT_PAGE เดิม): ไม่ให้ทุกหน้าอ่าน Preferences ใหม่
+            events.publish({"type": EVENT_PREFS_CHANGED})
         return _prefs_dict(prefs)
 
     # ---------------- Preferences → Interfaces
@@ -1327,11 +1364,16 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/logs/current")
     def current_log():
-        """ข้อความของ gpredict.log ของ session นี้ (Log browser อ่านครั้งเดียวตอนเปิด) ไม่มีไฟล์หรืออ่านไม่ได้ = ข้อความว่าง"""
+        """ข้อความของ gpredict.log ของ session นี้ (Log browser อ่านครั้งเดียวตอนเปิด) ไม่มีไฟล์ = ข้อความว่าง (log ลง stderr อยู่)
+        มีแต่อ่านไม่ได้ (สิทธิ์, เป็นโฟลเดอร์ ฯลฯ): 500 LOG_UNREADABLE (ของเรา) ไม่ใช่ข้อความว่างที่ดูเหมือนไม่มี log"""
+        path = cfg.data_dir / LOG_DIR / gplog.LOG_FILE
         try:
-            data = (cfg.data_dir / LOG_DIR / gplog.LOG_FILE).read_bytes()
-        except OSError:
+            data = path.read_bytes()
+        except FileNotFoundError:
             data = b""
+        except OSError as exc:
+            _log.warning("อ่าน %s ให้ Log browser ไม่ได้: %s", path, exc)
+            raise ApiError("LOG_UNREADABLE", 500, f"อ่านไฟล์ log {path} ไม่ได้: {exc}", gplog.LOG_FILE) from None
         return Response(data, media_type="text/plain; charset=utf-8")
 
     @app.post("/api/log", status_code=204)

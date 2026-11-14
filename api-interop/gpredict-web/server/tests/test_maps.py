@@ -12,7 +12,7 @@ from gpredict_web import maps
 from gpredict_web.errors import ApiError
 from gpredict_web.maps import MAP_UPLOAD_MAX, STOCK_MAPS, image_size, list_maps, resolve, save_upload
 from gpredict_web.module import DEFAULT_MAP, is_map_file
-from tests.helpers import temp_config
+from tests.helpers import FakeRequest, temp_config
 from tests.test_api import ApiTestBase
 
 # ref-D §11 "Stock maps shipped" ตามลำดับในเอกสาร
@@ -237,19 +237,6 @@ class UploadTest(unittest.TestCase):
         self.assertEqual(len(list_maps(self.data)), 15)                                  # ไม่ซ้ำในรายการ
 
 
-class FakeRequest:
-    """คำขอที่ส่ง body เป็นก้อนๆ (stream) และนับว่าถูกอ่านไปกี่ก้อน (TestClient คำนวณ Content-Length ให้เองจึงจำลอง chunked ไม่ได้)"""
-
-    def __init__(self, chunks: int, size: int, headers: dict | None = None):
-        self.headers = headers or {}
-        self.sent, self._chunks, self._size = 0, chunks, size
-
-    async def stream(self):
-        for _ in range(self._chunks):
-            self.sent += 1
-            yield b"\x00" * self._size
-
-
 class ReadMapBodyTest(unittest.TestCase):
     """_read_map_body: เกินขีดจำกัดต้องหยุดอ่านทันที ไม่เก็บทั้งก้อนไว้ในหน่วยความจำ"""
 
@@ -319,6 +306,17 @@ class MapsApiTest(ApiTestBase):
             with self.subTest(name=name, content_type=content_type):
                 self.assert_error(self.post(name, body, content_type), 422, "MAP_INVALID", obj)
         self.assertFalse((self.cfg.data_dir / "maps").exists())
+
+    def test_uploaded_map_is_revalidated_so_a_replaced_one_does_not_show_stale(self):
+        """ภาพที่อัปโหลดชื่อเดิมซ้ำแทนภาพเดิม: Cache-Control: no-cache ให้ browser ถามใหม่ทุกครั้ง (ไม่ใช้ภาพเก่าจาก cache เป็นชั่วโมง)
+        ภาพของ Gpredict ไม่เคยเปลี่ยน จึงไม่ต้อง"""
+        self.assertEqual(self.post("my.png", png_bytes()).status_code, 200)
+        r = self.client.get("/api/maps/my.png")
+        self.assertEqual((r.status_code, r.headers.get("cache-control")), (200, "no-cache"))
+        self.assertEqual(r.headers["x-content-type-options"], "nosniff")
+        stock = self.client.get(f"/api/maps/{DEFAULT_MAP}")
+        self.assertEqual(stock.status_code, 200)
+        self.assertIsNone(stock.headers.get("cache-control"))
 
     def test_upload_too_big(self):
         big = padded(png_bytes(), MAP_UPLOAD_MAX + 1)

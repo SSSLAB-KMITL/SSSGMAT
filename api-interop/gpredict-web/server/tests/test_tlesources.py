@@ -2,11 +2,13 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, urlopen
 
 from gpredict_web.prefs import PREFS, Prefs      # import gpredict_web ก่อน: __init__ ใส่ path ของ gnss_predict
 from gpredict_web.satdb import SatDb
+from gpredict_web import tlesources
 from gpredict_web.tletext import parse_tle_text
 from gpredict_web.tlesources import (
     SOURCE_MIN_INTERVAL_S, USER_AGENT, cache_dir, classify, fetch_text, make_opener, source_groups, update_from_files,
@@ -71,13 +73,27 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(classify("https://www.amsat.org/amsat/ftp/keps/current/nasabare.txt"), ("text", "nasabare"))
         self.assertEqual(classify("http://www.CelesTrak.org/NORAD/elements/gp.php?FORMAT=tle&GROUP=iridium-NEXT"),
                          ("celestrak", "iridium-NEXT"))
-        # ไม่ใช่ gp.php ที่มี GROUP ของ CelesTrak: ดึงเป็นข้อความ กลุ่มคือชื่อไฟล์ใน path ไม่รวมนามสกุล
+        # ไม่ใช่กลุ่มของ CelesTrak: ดึงเป็นข้อความ (1 ครั้งต่อ URL ต่อ 2 ชม.) กลุ่มคือชื่อไฟล์ใน path ไม่รวมนามสกุล
         self.assertEqual(classify("https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle"), ("text", "gp"))
-        self.assertEqual(classify("https://celestrak.org/NORAD/elements/amateur.txt"), ("text", "amateur"))
+        self.assertEqual(classify("https://celestrak.org/NORAD/elements/supplemental/starlink.txt"), ("text", "starlink"))
+        self.assertEqual(classify("https://celestrak.org/NORAD/elements/bad%20name.txt"), ("text", "bad name"))
         self.assertEqual(classify("https://example.org/NORAD/elements/gp.php?GROUP=amateur"), ("text", "gp"))
+        self.assertEqual(classify("https://example.org/NORAD/elements/amateur.txt"), ("text", "amateur"))
         self.assertEqual(classify("http://server.com/file.txt"), ("text", "file"))
         self.assertEqual(classify("http://server.com/keps/my%20sats.tle?x=1"), ("text", "my sats"))
         self.assertEqual(classify("http://server.com/"), ("text", "server.com"))      # ไม่มีชื่อไฟล์: ใช้ชื่อเครื่อง
+
+    def test_celestrak_com_and_legacy_shapes_share_the_group_limit(self):
+        """celestrak.com (ที่ Gpredict รุ่นเก่าตั้งไว้และ redirect ไป .org), ไฟล์ /NORAD/elements/<group>.txt แบบเดิม และ group= ตัวเล็ก
+        เป็นกลุ่มของ CelesTrak: ใช้กติกา 1 ครั้งต่อกลุ่มต่อ 2 ชม. ที่นับร่วมกับ GNSS Studio ไม่ใช่กติกาต่อ URL (final review server minor 3)"""
+        for url, group in (("https://celestrak.com/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle", "amateur"),
+                           ("http://www.celestrak.com/NORAD/elements/gp.php?GROUP=weather", "weather"),
+                           ("https://celestrak.org/NORAD/elements/gp.php?group=gps-ops&FORMAT=tle", "gps-ops"),
+                           ("http://www.celestrak.com/NORAD/elements/amateur.txt", "amateur"),
+                           ("https://celestrak.org/NORAD/elements/iridium-NEXT.txt", "iridium-NEXT"),
+                           ("https://CELESTRAK.COM/norad/elements/noaa.txt", "noaa")):
+            with self.subTest(url=url):
+                self.assertEqual(classify(url), ("celestrak", group))
 
     def test_source_groups_in_url_order_without_repeats(self):
         urls = [NASABARE_URL, AMATEUR_URL, AMATEUR_OMM_URL, "https://mirror.example/nasabare.txt",
@@ -173,6 +189,25 @@ class FetchTextTest(unittest.TestCase):
         self.assertIn("HTTP 503", messages[0].text)
         self.assertEqual(self.state()[NASABARE_URL]["last_request"], "2026-11-12T12:00:00Z")
 
+    def test_request_is_recorded_before_the_cache_write(self):
+        """คำขอที่ถึง server นับ 2 ชม. ทันทีที่ได้คำตอบ ก่อนเขียนไฟล์ cache: ดิสก์เต็มตอนเขียนไม่ทำให้ขอซ้ำก่อนครบ (final review minor 2)"""
+        opener = UrlOpener({NASABARE_URL: NASABARE})
+        real = tlesources._write_bytes_atomic
+
+        def full_disk(path, data):
+            if path.suffix == ".txt":
+                raise OSError(28, "No space left on device")
+            real(path, data)
+
+        with mock.patch.object(tlesources, "_write_bytes_atomic", full_disk):
+            path, messages = fetch_text(NASABARE_URL, self.cache, T0, opener)
+        self.assertIsNone(path)
+        self.assertEqual([(m.code, m.level) for m in messages], [("ORBIT_DOWNLOAD_FAILED", "warning")])
+        self.assertIn("No space left on device", messages[0].text)
+        self.assertEqual(self.state(), {NASABARE_URL: {"last_request": "2026-11-12T06:00:00Z"}})
+        fetch_text(NASABARE_URL, self.cache, T0 + HOUR, opener)                          # ยังไม่ครบ 2 ชม.: ไม่ขอซ้ำ
+        self.assertEqual(len(opener.requests), 1)
+
     def test_unreachable_server_is_not_recorded(self):
         opener = UrlOpener({NASABARE_URL: URLError("ต่อไม่ได้")})
         path, messages = fetch_text(NASABARE_URL, self.cache, T0, opener)
@@ -222,6 +257,15 @@ class UpdateFromSourcesTest(unittest.TestCase):
         self.assertEqual(self.db.groups(), ["amateur", "nasabare"])
         self.assertEqual(sorted(n for n in self.db.norads() if "amateur" in self.db.get(n).groups), AMATEUR_NORADS)
         self.assertIn("amateur", omm.read_state(self.cfg.state_file))                   # state ของ engine ที่ใช้ร่วมกับ GNSS Studio
+
+    def test_celestrak_com_url_follows_the_group_limit_shared_with_gnss_studio(self):
+        """GNSS Studio ขอกลุ่ม amateur ไปเมื่อ 30 นาทีก่อน: URL แบบ celestrak.com ของกลุ่มเดียวกันไม่ส่งคำขอ (ใช้ไฟล์ของ engine)"""
+        self.cfg.state_file.parent.mkdir(parents=True, exist_ok=True)
+        self.cfg.state_file.write_text(json.dumps({"amateur": {"last_request": "2026-11-12T05:30:00Z"}}), encoding="utf-8")
+        opener = UrlOpener({})                                                          # คำขอใดๆ = AssertionError
+        res = self.run_update(opener, urls=["http://www.celestrak.com/NORAD/elements/amateur.txt"])
+        self.assertEqual(opener.urls, [])
+        self.assertEqual([(m.code, m.object) for m in res.messages], [("ORBIT_DOWNLOAD_FAILED", "amateur")])
 
     def test_same_celestrak_group_or_url_fetched_once(self):
         opener = UrlOpener({NASABARE_URL: NASABARE, AMATEUR_OMM_URL: dump(GROUP_A)})

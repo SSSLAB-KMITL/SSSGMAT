@@ -381,16 +381,18 @@ class Prefs:
             new.pop(key, None)
         return {key: new[key] for key in PREFS if key in new}
 
-    def update(self, set_: dict, remove: list[str]) -> None:
+    def update(self, set_: dict, remove: list[str]) -> bool:
         """ตั้งค่าใน set_ และลบ key ใน remove (กลับไปใช้ค่าตั้งต้น) ตรวจทุก key ก่อน ผิดตัวเดียว (ไม่รู้จัก ค่าผิด หรืออยู่ทั้งสองฝั่ง)
-        raise 422 PREFS_INVALID และไม่เขียนอะไรเลย เขียนไฟล์ไม่สำเร็จ: raise OSError และค่าที่ใช้อยู่ไม่เปลี่ยน"""
+        raise 422 PREFS_INVALID และไม่เขียนอะไรเลย เขียนไฟล์ไม่สำเร็จ: raise OSError และค่าที่ใช้อยู่ไม่เปลี่ยน
+        คืน True เมื่อเขียนไฟล์ False เมื่อไม่มีอะไรเปลี่ยน (ไม่เขียน)"""
         clean = self._checked(set_, remove)
         with self._write_lock:
             new = self._merged(self._user, clean, remove)
             if new == self._user:
-                return
+                return False
             write_json_atomic(self._path, {"version": FILE_VERSION, "values": new})
             self._user = new
+            return True
 
     def preview(self, set_: dict, remove: list[str]) -> "Prefs":
         """(ของเรา) dry run ของ update: ตรวจเหมือนกันทุกอย่าง แล้วคืนค่าที่จะใช้หลัง update เป็น Prefs อ่านอย่างเดียว
@@ -404,5 +406,5 @@ class _Preview(Prefs):
     def __init__(self, user: dict[str, object]):
         self._user = user
 
-    def update(self, set_: dict, remove: list[str]) -> None:
+    def update(self, set_: dict, remove: list[str]) -> bool:
         raise TypeError("ตัวอย่างค่าจาก Prefs.preview แก้ไม่ได้")

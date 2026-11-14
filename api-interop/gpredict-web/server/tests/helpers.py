@@ -64,6 +64,19 @@ WINDOW_HOURS = 16
 STEP_S = 30
 
 
+class FakeRequest:
+    """คำขอที่ส่ง body เป็นก้อนๆ (stream) และนับว่าถูกอ่านไปกี่ก้อน (TestClient คำนวณ Content-Length ให้เองจึงจำลอง chunked ไม่ได้)"""
+
+    def __init__(self, chunks: int, size: int, headers: dict | None = None):
+        self.headers = headers or {}
+        self.sent, self._chunks, self._size = 0, chunks, size
+
+    async def stream(self):
+        for _ in range(self._chunks):
+            self.sent += 1
+            yield b"\x00" * self._size
+
+
 class FakeNow:
     """นาฬิกาเครื่องปลอมที่เลื่อนได้ (ส่งเป็น now ของ ModuleClock หรือ Hub)"""
 

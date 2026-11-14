@@ -22,6 +22,7 @@ from gpredict_web.app import create_app, host_allow_list
 from gpredict_web.clock import CLOCK_TIME_TEXT
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
+from gpredict_web.errors import ApiError
 from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, MODULE_KEYS, PAGE_PATHS,
                                  POLAR_CONTENTS, POLAR_ORIENTATIONS, SINGLE_FIELDS, SINGLE_HINTS, module_from_dict,
                                  module_to_dict)
@@ -34,7 +35,7 @@ from gpredict_web.tlesources import cache_dir
 from gpredict_web.trsp import MODES_URL, TRANSMITTERS_URL
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
-from tests.helpers import TEST_HOSTS, FakeNow, half_pass_s, temp_config
+from tests.helpers import TEST_HOSTS, FakeNow, FakeRequest, half_pass_s, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
 from tests.test_pass_service import GEO, HIDDEN, WOBBLE, PassPropagate, is_day_job, pass_records
 from tests.test_runtime import ISO_MS, NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
@@ -616,6 +617,37 @@ class TleApiTest(ApiTestBase):
         thai = "ก" * (limit // 3 + 1)
         self.assert_error(self.client.post("/api/tle/local", json={"files": [{"name": "t.txt", "text": thai}]}),
                           422, "TLE_FILE_INVALID", "files")
+
+    def test_tle_local_body_over_the_read_limit_is_refused_before_parsing(self):
+        """body ของ /api/tle/local ถูกอ่านแบบจำกัดขนาด (TLE_LOCAL_BODY_MAX) และตรวจ Content-Length ก่อนอ่าน ไม่ส่งก้อนใหญ่ให้ตัวแปลง JSON
+        (final review server minor 4) ขีดจำกัด 20 MB ของข้อความยังเหมือนเดิม"""
+        self.assertEqual(app_module.TLE_LOCAL_BODY_MAX, 2 * app_module.TLE_LOCAL_BYTES_MAX)
+        body = json.dumps({"files": [{"name": "a.txt", "text": "x" * 2000}]}).encode()
+        with mock.patch.object(app_module, "TLE_LOCAL_BODY_MAX", 1000), \
+                mock.patch.object(app_module, "_local_files", wraps=app_module._local_files) as parsed:
+            r = self.client.post("/api/tle/local", content=body, headers={"content-type": "application/json"})
+        self.assert_error(r, 422, "TLE_FILE_INVALID", "files")
+        parsed.assert_not_called()
+        headers = {"content-type": "application/json"}
+        self.assert_error(self.client.post("/api/tle/local", content=b"{not json", headers=headers), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.client.post("/api/tle/local", json=[1]), 422, "REQUEST_INVALID", None)
+        r = self.client.post("/api/tle/local", json={"files": []})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_tle_local_body_reader(self):
+        read = lambda request: asyncio.run(app_module._read_tle_local_body(request))
+        limit = app_module.TLE_LOCAL_BODY_MAX
+        declared = FakeRequest(chunks=3, size=10, headers={"content-length": str(limit + 1)})
+        with self.assertRaises(ApiError) as cm:
+            read(declared)
+        self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("TLE_FILE_INVALID", 422, "files"))
+        self.assertEqual(declared.sent, 0)                                              # ไม่อ่านเลย
+        mb = 1024 * 1024
+        chunked = FakeRequest(chunks=limit // mb + 10, size=mb)                          # ไม่มี Content-Length
+        with self.assertRaises(ApiError):
+            read(chunked)
+        self.assertEqual(chunked.sent, limit // mb + 1)                                  # หยุดที่ก้อนแรกที่เกิน
+        self.assertEqual(len(read(FakeRequest(chunks=2, size=5))), 10)
 
     def test_tle_groups_follow_sources(self):
         science = SatRecord(99001, "SCI", ["amateur", "science"], record(25544).tle_lines, T0, T0)
@@ -1692,6 +1724,16 @@ class CurrentLogApiTest(ApiTestBase):
         r = self.client.get("/api/logs/current")
         self.assertEqual((r.status_code, r.text, r.headers["content-type"]), (200, "", "text/plain; charset=utf-8"))
         self.assertFalse((self.cfg.data_dir / "logs").exists())
+
+    def test_unreadable_file_is_an_error_not_an_empty_log(self):
+        """gpredict.log อ่านไม่ได้ (สิทธิ์, เป็นโฟลเดอร์ ฯลฯ): 500 LOG_UNREADABLE ภาษาไทย ไม่ใช่ข้อความว่างที่ดูเหมือนไม่มีข้อความ log
+        (final review server minor 5)"""
+        (self.cfg.data_dir / "logs" / "gpredict.log").mkdir(parents=True)
+        with self.assertLogs("gpredict_web.app", "WARNING") as logs:
+            r = self.client.get("/api/logs/current")
+        body = self.assert_error(r, 500, "LOG_UNREADABLE")
+        self.assertIn("gpredict.log", body["text"])
+        self.assertIn("gpredict.log", logs.output[0])
 
     def test_meta_log_dir_is_where_the_file_is_written(self):
         self.assertEqual(Path(self.client.get("/api/meta").json()["log_dir"]), (self.cfg.data_dir / "logs").absolute())

@@ -139,6 +139,14 @@ class PrefsStoreTest(PrefsTestCase):
         self.assertEqual(p.user_keys(), [MIN_ELEV])
         self.assertEqual(self.prefs().get(MIN_ELEV), 30)          # instance ใหม่อ่านจากไฟล์
 
+    def test_update_says_whether_it_wrote(self):
+        """True เมื่อเขียนไฟล์ False เมื่อไม่มีอะไรเปลี่ยน (PUT /api/prefs ส่ง prefs_changed เฉพาะเมื่อเขียน)"""
+        p = self.prefs()
+        self.assertIs(p.update({MIN_ELEV: 30}, []), True)
+        self.assertIs(p.update({MIN_ELEV: 30}, []), False)
+        self.assertIs(p.update({}, [LOOK_AHEAD]), False)                 # ไม่เคยตั้ง
+        self.assertIs(p.update({}, [MIN_ELEV]), True)
+
     def test_remove_returns_to_default(self):
         p = self.prefs()
         p.update({MIN_ELEV: 30, LOOK_AHEAD: 7}, [])
