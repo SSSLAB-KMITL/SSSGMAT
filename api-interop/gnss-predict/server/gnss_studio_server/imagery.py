@@ -1,7 +1,8 @@
 """ภาพถ่ายออนไลน์จาก NASA GIBS: รายการชั้นภาพ ตัวดึงชิ้นภาพ และ cache บนดิสก์ (spec ภาพออนไลน์ §3, §4, §6)
 
 server เป็นจุดเดียวที่ต่อ GIBS: URL ปลายทางประกอบจาก `CATALOG` กับค่าที่ผ่าน `valid_time` / `tile_in_range` เท่านั้น ไม่รับ URL, host หรือ path จากผู้ใช้
-สวิตช์ `online_imagery.enabled` อยู่ที่ route (อ่านทุกคำขอ): ตัวดึงไม่รู้เรื่องสวิตช์ จึงห้ามเรียก `TileFetcher.get` นอก route ที่ตรวจสวิตช์แล้ว
+สวิตช์ `online_imagery.enabled` ตรวจที่ route ทุกคำขอ (อ่านจาก settings.json) และตัวดึงตรวจซ้ำอีกครั้งด้วย `enabled` ที่ฉีดเข้ามา
+หลังได้คิวและก่อนต่อเน็ตเสมอ (คำขอที่รอคิวอยู่ตอนผู้ใช้ปิดสวิตช์ต้องไม่ถูกส่งไป GIBS) แต่ยังห้ามเรียก `TileFetcher.get` นอก route ที่ตรวจสวิตช์แล้ว
 
 - `CATALOG`: ตารางเดียวของชั้นภาพ (ลำดับ = ลำดับวาด ชั้นหลังทับชั้นก่อน) ค่า TileMatrixSet / ext / รูปแบบเวลายังรอยืนยันกับ GIBS จริง (ขั้น B0)
   แก้ที่ตารางนี้ที่เดียว
@@ -9,16 +10,21 @@ server เป็นจุดเดียวที่ต่อ GIBS: URL ปล�
   1. ชิ้นที่อยู่ใน cache ส่งเลย (แตะ mtime) แม้กำลังพักการดึง; ชิ้นที่ cache เสีย (ไม่ใช่ JPEG/PNG ตาม ext) ถูกลบแล้วนับเป็นไม่มี
   2. ชิ้นที่ GIBS เคยตอบ 400/404 ไม่ถามซ้ำ 1 ชั่วโมง (จำในหน่วยความจำ สูงสุด 10,000 รายการ) -> 404 `IMAGERY_NOT_AVAILABLE`
   3. กำลังพัก -> 503 `IMAGERY_PAUSED` (detail = เวลา UTC ที่ลองได้อีก)
-  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ)
+  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ แล้วตรวจสวิตช์อีกครั้ง
+     ปิดอยู่ -> 403 `IMAGERY_DISABLED` ไม่ต่อเน็ต)
   5. ดึงครั้งเดียว ไม่ลองซ้ำ timeout 20 วินาที ไม่ตาม redirect (3xx = ล้มเหลว) อ่านไม่เกิน 2 MB + 1 ไบต์
      400/404 -> จำว่าไม่มีภาพ; 403/429 -> พักทุกชั้นภาพ 15 นาที (log ครั้งเดียวต่อการพัก);
      ผิดพลาดอื่น (เครือข่าย timeout 5xx redirect ตอบผิดรูป ภาพที่ตัดกลางทาง ภาพเกิน 2 MB ไม่ใช่ JPEG/PNG ตรงกับ ext) -> 502 `IMAGERY_FETCH_FAILED`
      และนับ: ติดกัน 20 ครั้ง -> พัก 5 นาที (ตัวนับกลับเป็น 0 เมื่อพัก และเมื่อได้ภาพที่ใช้ได้หนึ่งชิ้น)
   6. ภาพที่ผ่านการตรวจเขียน cache แบบ atomic (เขียนไม่ได้ = log เตือนครั้งเดียว ส่งภาพให้อยู่ดี)
+  ชิ้นที่ "ยังไม่นิ่ง" (`is_settled` เป็นเท็จ: daily ที่วันที่ UTC >= วันนี้ - 1 วัน, 10min ที่เวลาของ token >= ตอนนี้ - 3 ชั่วโมง รวมอนาคต)
+  ดึงและส่งได้ตามปกติแต่ไม่เขียน cache ไม่อ่านจาก cache (ไฟล์เก่าของ token นั้นถูกมองข้าม) และ "ไม่มีภาพ" จำแค่ 10 นาที: GIBS
+  ยังประมวลผลภาพของช่วงนี้อยู่ ภาพที่ได้ตอนนี้อาจไม่ครบหรือถูกแทนที่ภายหลัง; static (`default`) นิ่งเสมอ
   ไม่ถอดรหัสภาพ ไม่เชื่อ Content-Type ของ GIBS: media type มาจากชนิดที่ตรวจได้จาก magic bytes
 - `TileCache`: `<data>/imagery/tiles/<layer>/<time ที่ ':' เป็น '-'>/<z>/<y>/<x>.<ext>` path ถูก resolve แล้วต้องอยู่ใต้ root (symlink ที่ชี้ออกนอก = ValueError)
   นับขนาดรวมครั้งแรกด้วยการสแกนแล้วจำยอดในหน่วยความจำ เกิน `CACHE_CAP_BYTES` ลบไฟล์ mtime เก่าสุดจนเหลือ `CACHE_LOW_WATER` ของเพดาน
-- `now` เป็นนาฬิกาแบบ monotonic (วินาที) ที่ฉีดเข้าได้ใน test ส่วนเวลาที่ตอบใน `IMAGERY_PAUSED` คำนวณจากเวลา UTC ปัจจุบันบวกเวลาพักที่เหลือ
+- `now` เป็นนาฬิกาแบบ monotonic (วินาที) ใช้กับการพักและอายุของ "ไม่มีภาพ"; `utcnow` เป็นนาฬิกาเวลาจริง (UTC, มี tzinfo) ใช้ตัดสินว่าชิ้นภาพนิ่งหรือยัง
+  และคำนวณเวลาที่ตอบใน `IMAGERY_PAUSED` (เวลา UTC ปัจจุบันบวกเวลาพักที่เหลือ) ทั้งสองฉีดเข้าได้ใน test
 """
 
 import http.client
@@ -32,7 +38,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from .errors import ApiError
 from .store import write_atomic
@@ -51,7 +57,10 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 CACHE_CAP_BYTES = 2 * 1024 ** 3
 CACHE_LOW_WATER = 0.9                          # เกินเพดานแล้วลบจนเหลือสัดส่วนนี้ของเพดาน
 MEMO_TTL_S = 3600
+MEMO_UNSETTLED_TTL_S = 10 * 60                 # "ไม่มีภาพ" ของชิ้นที่ยังไม่นิ่งจำสั้นกว่า: ภาพอาจมาทีหลัง
 MEMO_MAX_ENTRIES = 10_000
+SETTLE_DAILY_DAYS = 1                          # daily นิ่งเมื่อวันที่ UTC < วันนี้ - 1 วัน
+SETTLE_10MIN_HOURS = 3                         # 10min นิ่งเมื่อเวลาของ token < ตอนนี้ - 3 ชั่วโมง
 
 MEDIA_TYPES = {"jpg": "image/jpeg", "png": "image/png"}
 
@@ -61,6 +70,7 @@ BUSY_TEXT = "มีคำขอภาพค้างอยู่มาก ลอ
 PAUSED_TEXT = "หยุดดึงภาพจาก NASA GIBS ชั่วคราว"
 TIME_TEXT = "เวลาของภาพไม่ถูกต้องสำหรับชั้นภาพนี้"
 COORD_TEXT = "{name} ต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง {top}"
+DISABLED_TEXT = "ภาพออนไลน์ปิดอยู่ เปิดได้ที่ View → Globe Manager"
 
 
 # ---------- catalog ----------
@@ -121,6 +131,19 @@ def valid_time(layer: Layer, time: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def is_settled(layer: Layer, time: str, now: datetime) -> bool:
+    """ชิ้นภาพของ token เวลานี้นิ่งแล้วหรือยัง (cache ได้ถาวรหรือไม่): static นิ่งเสมอ; daily นิ่งเมื่อวันที่ < (วันนี้ UTC - 1 วัน)
+    คือวันนี้ เมื่อวาน และอนาคตยังไม่นิ่ง; 10min นิ่งเมื่อเวลาของ token < ตอนนี้ - 3 ชั่วโมง (พอดี 3 ชั่วโมงและอนาคตยังไม่นิ่ง)
+    `now` ต้องมี tzinfo; `time` ต้องผ่าน `valid_time` แล้ว"""
+    if layer.period == "static":
+        return True
+    now = now.astimezone(timezone.utc)
+    if layer.period == "daily":
+        return datetime.strptime(time, "%Y-%m-%d").date() < now.date() - timedelta(days=SETTLE_DAILY_DAYS)
+    token = datetime.strptime(time, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return token < now - timedelta(hours=SETTLE_10MIN_HOURS)
 
 
 def tile_in_range(layer: Layer, z: int, y: int, x: int) -> bool:
@@ -297,16 +320,21 @@ class TileFetcher:
     """ดึงชิ้นภาพ GIBS ตามกติกาที่หัวไฟล์ (ตัวเดียวต่อแอป: เก็บสถานะการพัก ตัวนับ และ "ไม่มีภาพ" ที่จำไว้)
 
     opener: callable(request, timeout=...) -> response ที่มี `.read(n)` (และ `.status`, `.headers`, `.close()` ถ้ามี) ตั้งต้นคือ `make_opener().open`
-    now: นาฬิกา monotonic เป็นวินาที"""
+    now: นาฬิกา monotonic เป็นวินาที (การพักและอายุของ "ไม่มีภาพ")
+    utcnow: นาฬิกาเวลาจริง คืน datetime ที่มี tzinfo ตั้งต้น `datetime.now(timezone.utc)` (ตัดสินว่าชิ้นภาพนิ่งหรือยัง)
+    enabled: callable() -> bool อ่านสวิตช์ `online_imagery.enabled` ตอนนั้น (app ต่อเข้ากับ settings.json); ตั้งต้นเปิดเสมอ"""
 
-    def __init__(self, data_dir: Path, opener=None, now=time.monotonic, logger: logging.Logger | None = None):
+    def __init__(self, data_dir: Path, opener=None, now=time.monotonic, logger: logging.Logger | None = None,
+                 utcnow: Callable[[], datetime] | None = None, enabled: Callable[[], bool] | None = None):
         self.opener = opener if opener is not None else make_opener().open
         self.now = now
+        self.utcnow = utcnow if utcnow is not None else (lambda: datetime.now(timezone.utc))
+        self.enabled = enabled if enabled is not None else (lambda: True)
         self.logger = logger or logging.getLogger(__name__)
         self.cache = TileCache(Path(data_dir) / "imagery" / "tiles")
         self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
         self._lock = threading.Lock()                         # ปกป้อง _memo, _paused_until, _failures, _cache_ok
-        self._memo: dict[tuple, float] = {}                   # ที่อยู่ของชิ้น -> เวลาหมดอายุ (เรียงตามการใส่ = เรียงตามเวลาหมดอายุ)
+        self._memo: dict[tuple, float] = {}                   # ที่อยู่ของชิ้น -> เวลาหมดอายุ (เรียงตามการใส่)
         self._paused_until = 0.0
         self._failures = 0
         self._cache_ok = True
@@ -317,14 +345,19 @@ class TileFetcher:
             raise ValueError(f"invalid tile address: {layer.id} {time!r} {z!r}/{y!r}/{x!r}")
         path = self.cache.path(layer, time, z, y, x)
         key = (layer.id, time, z, y, x)
-        data = self._local(layer, key, path)
+        settled = self.is_settled(layer, time)                # ตัดสินครั้งเดียวต่อคำขอ ใช้ทั้งอ่าน/เขียน cache และอายุของ memo
+        data = self._local(layer, key, path, settled)
         if data is None:
-            data = self._fetch(layer, key, path, time, z, y, x)
+            data = self._fetch(layer, key, path, time, z, y, x, settled)
         return data, MEDIA_TYPES[layer.ext]
 
-    def _local(self, layer: Layer, key: tuple, path: Path) -> bytes | None:
-        """คำตอบที่ไม่ต้องต่อเน็ต: ไบต์จาก cache, หรือ ApiError (จำว่าไม่มีภาพ / กำลังพัก) ไม่มีคำตอบ = None"""
-        data = self.cache.read(path, layer.ext)
+    def is_settled(self, layer: Layer, time: str) -> bool:
+        """ชิ้นภาพของ token นี้นิ่งแล้วหรือยัง ณ ตอนนี้ (ดู `is_settled`): route ใช้เลือก Cache-Control"""
+        return is_settled(layer, time, self.utcnow())
+
+    def _local(self, layer: Layer, key: tuple, path: Path, settled: bool) -> bytes | None:
+        """คำตอบที่ไม่ต้องต่อเน็ต: ไบต์จาก cache (เฉพาะชิ้นที่นิ่ง), หรือ ApiError (จำว่าไม่มีภาพ / กำลังพัก) ไม่มีคำตอบ = None"""
+        data = self.cache.read(path, layer.ext) if settled else None
         if data is not None:
             return data
         with self._lock:
@@ -338,20 +371,23 @@ class TileFetcher:
                 raise self._paused_error(now)
         return None
 
-    def _fetch(self, layer: Layer, key: tuple, path: Path, time: str, z: int, y: int, x: int) -> bytes:
+    def _fetch(self, layer: Layer, key: tuple, path: Path, time: str, z: int, y: int, x: int, settled: bool) -> bytes:
         if not self._slots.acquire(timeout=QUEUE_WAIT_S):
             raise ApiError(503, "IMAGERY_BUSY", BUSY_TEXT)
         try:
-            data = self._local(layer, key, path)              # ระหว่างรอคิว อีกคำขอเก็บชิ้นนี้ไว้แล้ว หรือเกิดการพักขึ้น
+            data = self._local(layer, key, path, settled)     # ระหว่างรอคิว อีกคำขอเก็บชิ้นนี้ไว้แล้ว หรือเกิดการพักขึ้น
             if data is not None:
                 return data
-            data = self._download(layer, key, upstream_url(layer, time, z, y, x))
-            self._store(path, data)
+            if not self.enabled():                            # ระหว่างรอคิว ผู้ใช้อาจปิดสวิตช์: ต้องไม่ต่อเน็ตหลังปิด
+                raise ApiError(403, "IMAGERY_DISABLED", DISABLED_TEXT)
+            data = self._download(layer, key, upstream_url(layer, time, z, y, x), settled)
+            if settled:                                       # ชิ้นที่ยังไม่นิ่งส่งได้แต่ไม่เก็บ: GIBS ยังเติมภาพช่วงนี้อยู่
+                self._store(path, data)
             return data
         finally:
             self._slots.release()
 
-    def _download(self, layer: Layer, key: tuple, url: str) -> bytes:
+    def _download(self, layer: Layer, key: tuple, url: str, settled: bool) -> bytes:
         """ดึงหนึ่งครั้งแล้วตรวจ: ได้ไบต์ของภาพที่ใช้ได้ หรือ ApiError"""
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         try:
@@ -368,7 +404,7 @@ class TileFetcher:
             code = exc.code
             exc.close()
             if code in (400, 404):
-                self._remember_missing(key)
+                self._remember_missing(key, settled)
                 raise ApiError(404, "IMAGERY_NOT_AVAILABLE", NOT_AVAILABLE_TEXT) from None
             if code in (403, 429):
                 with self._lock:
@@ -402,12 +438,13 @@ class TileFetcher:
             with self._lock:
                 self._cache_ok = True
 
-    def _remember_missing(self, key: tuple) -> None:
+    def _remember_missing(self, key: tuple, settled: bool) -> None:
+        ttl = MEMO_TTL_S if settled else MEMO_UNSETTLED_TTL_S
         with self._lock:
             self._memo.pop(key, None)
-            while len(self._memo) >= MEMO_MAX_ENTRIES:       # รายการแรกคือที่หมดอายุก่อน
+            while len(self._memo) >= MEMO_MAX_ENTRIES:       # เต็มแล้วทิ้งรายการที่ใส่ไว้นานสุด (ไม่จำเป็นต้องเป็นรายการที่หมดอายุก่อน)
                 del self._memo[next(iter(self._memo))]
-            self._memo[key] = self.now() + MEMO_TTL_S
+            self._memo[key] = self.now() + ttl
 
     def _fail(self, reason: str, count: bool = True) -> ApiError:
         """502 `IMAGERY_FETCH_FAILED` และนับความล้มเหลว (ติดกัน FAILURE_LIMIT ครั้ง = พัก) 403/429 ไม่นับ: มีการพักของตัวเอง"""
@@ -428,5 +465,5 @@ class TileFetcher:
             self.logger.warning("%s %d นาที (%s)", PAUSED_TEXT, seconds // 60, why)
 
     def _paused_error(self, now: float) -> ApiError:
-        resume = datetime.now(timezone.utc) + timedelta(seconds=self._paused_until - now)
+        resume = self.utcnow() + timedelta(seconds=self._paused_until - now)
         return ApiError(503, "IMAGERY_PAUSED", PAUSED_TEXT, detail=resume.strftime("%Y-%m-%dT%H:%M:%SZ"))

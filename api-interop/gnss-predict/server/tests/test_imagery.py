@@ -22,7 +22,8 @@ from conftest import make_client
 from gnss_studio_server import imagery, settings
 from gnss_studio_server.app import create_app
 from gnss_studio_server.config import Config
-from gnss_studio_server.imagery import CATALOG, TileCache, TileFetcher, layer_by_id, make_opener, upstream_url, valid_time
+from gnss_studio_server.imagery import (CATALOG, TileCache, TileFetcher, is_settled, layer_by_id, make_opener, upstream_url,
+                                        valid_time)
 
 ERROR_KEYS = {"code", "text", "field", "detail"}
 THAI = re.compile("[฀-๿]")
@@ -116,6 +117,22 @@ class Clock:
         self.t += seconds
 
 
+NOW = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)       # "ตอนนี้" ของ test (นาฬิกาเวลาจริงที่ฉีดเข้าตัวดึง ไม่ขยับเอง)
+
+
+class Wall:
+    """นาฬิกา UTC ปลอม (วันที่/เวลาจริง ใช้ตัดสินว่าชิ้นภาพนิ่งหรือยัง) แยกจาก `Clock` ที่เป็น monotonic ของการพักและ memo"""
+
+    def __init__(self):
+        self.t = NOW
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, **kwargs):
+        self.t += timedelta(**kwargs)
+
+
 def http_error(code):
     return HTTPError("https://gibs.earthdata.nasa.gov/x", code, f"HTTP {code}", Message(), io.BytesIO(b""))
 
@@ -124,8 +141,10 @@ class Env:
     def __init__(self, data_dir, no_web_dist):
         self.data_dir = data_dir
         self.app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
-        self.opener, self.clock = FakeOpener(), Clock()
-        self.fetcher = TileFetcher(data_dir, opener=self.opener, now=self.clock, logger=self.app.state.logger)
+        self.opener, self.clock, self.wall = FakeOpener(), Clock(), Wall()
+        logger = self.app.state.logger
+        self.fetcher = TileFetcher(data_dir, opener=self.opener, now=self.clock, logger=logger, utcnow=self.wall,
+                                   enabled=lambda: settings.load(data_dir, logger).online_imagery.enabled)
         self.app.state.imagery = self.fetcher
         self.client = make_client(self.app)
 
@@ -196,6 +215,7 @@ def test_limits_match_global_constraints():
     assert imagery.CACHE_CAP_BYTES == 2 * 1024 ** 3
     assert imagery.CACHE_LOW_WATER == 0.9
     assert imagery.MEMO_TTL_S == 3600
+    assert imagery.MEMO_UNSETTLED_TTL_S == 600
     assert imagery.MEMO_MAX_ENTRIES == 10_000
 
 
@@ -228,6 +248,37 @@ def test_limits_match_global_constraints():
 ])
 def test_valid_time(layer_id, time, ok):
     assert valid_time(layer_by_id(layer_id), time) is ok
+
+
+# today = 2026-11-14 12:00 UTC (NOW): daily ไม่นิ่งตั้งแต่เมื่อวาน (>= วันนี้ - 1 วัน) เป็นต้นไป; 10min ไม่นิ่งถ้าเวลาของ token >= ตอนนี้ - 3 ชั่วโมง
+@pytest.mark.parametrize("layer_id, time, settled", [
+    (BM, "default", True),
+    (VI, "2026-11-10", True),
+    (VI, "2026-11-12", True),                         # 2 วันก่อน: นิ่ง
+    (VI, "2026-11-13", False),                        # เมื่อวาน
+    (VI, "2026-11-14", False),                        # วันนี้
+    (VI, "2026-11-15", False),                        # พรุ่งนี้ (อนาคต)
+    (VI, "2027-01-01", False),
+    (HW, "2026-11-14T08:50:00Z", True),               # 3 ชม. 10 นาทีก่อน
+    (HW, "2026-11-14T09:00:00Z", False),              # พอดี 3 ชม.: ยังไม่นิ่ง (>= ตอนนี้ - 3 ชม.)
+    (HW, "2026-11-14T10:00:00Z", False),              # 2 ชม.ก่อน
+    (HW, "2026-11-14T12:00:00Z", False),              # ตอนนี้
+    (HW, "2026-11-14T12:10:00Z", False),              # อนาคต
+    (HW, "2026-11-20T00:00:00Z", False),
+    (HW, "2026-11-14T08:00:00Z", True),               # 4 ชม.ก่อน
+    (HW, "2026-11-13T00:00:00Z", True),
+])
+def test_is_settled(layer_id, time, settled):
+    assert is_settled(layer_by_id(layer_id), time, NOW) is settled
+
+
+def test_is_settled_uses_utc_date_boundaries():
+    layer = layer_by_id(VI)
+    assert is_settled(layer, "2026-11-12", datetime(2026, 11, 14, 0, 0, 0, tzinfo=timezone.utc)) is True
+    assert is_settled(layer, "2026-11-12", datetime(2026, 11, 13, 23, 59, 59, tzinfo=timezone.utc)) is False
+    # เวลาท้องถิ่น +07:00 ที่ตรงกับ UTC วันที่ 11-13: ต้องนับตามวันที่ UTC ไม่ใช่วันที่ท้องถิ่น
+    local = datetime(2026, 11, 14, 5, 0, tzinfo=timezone(timedelta(hours=7)))
+    assert is_settled(layer, "2026-11-12", local) is False
 
 
 def test_upstream_url_exact():
@@ -500,6 +551,133 @@ def test_cache_write_failure_still_serves_the_tile(env):
     assert len(env.opener.calls) == 2
 
 
+# ---------- ชิ้นภาพที่ยังไม่นิ่ง: ไม่ cache ไม่ส่งจากดิสก์ ส่ง no-store ----------
+
+SETTLED_CC = "private, max-age=86400"
+
+
+def _unsettled_case(env, layer_id, time, z=3, y=2, x=5):
+    env.enable()
+    ext = "png" if layer_id == HW else "jpg"
+    body = PNG if ext == "png" else JPEG
+    r1, r2 = env.tile(layer_id, time, z, y, x), env.tile(layer_id, time, z, y, x)
+    for r in (r1, r2):
+        assert r.status_code == 200, r.text
+        assert r.content == body
+        assert r.headers["cache-control"] == "no-store"
+        assert r.headers["x-content-type-options"] == "nosniff"
+    assert len(env.opener.calls) == 2                              # ไม่เคยส่งจาก cache
+    assert not env.path(layer_id, time, z, y, x, ext).exists()
+    assert tile_files(env) == []
+
+
+@pytest.mark.parametrize("layer_id, time", [
+    (VI, "2026-11-14"),                                            # วันนี้
+    (VI, "2026-11-13"),                                            # เมื่อวาน
+    (VI, "2026-11-20"),                                            # อนาคต
+    (HW, "2026-11-14T10:00:00Z"),                                  # 2 ชม.ก่อน
+    (HW, "2026-11-14T09:00:00Z"),                                  # พอดี 3 ชม.
+    (HW, "2026-11-14T13:00:00Z"),                                  # อนาคต
+], ids=["daily-today", "daily-yesterday", "daily-future", "10min-2h", "10min-3h-exact", "10min-future"])
+def test_unsettled_tile_is_not_cached_and_sends_no_store(env, layer_id, time):
+    _unsettled_case(env, layer_id, time)
+
+
+@pytest.mark.parametrize("layer_id, time, ext", [
+    (VI, "2026-11-12", "jpg"),                                     # 2 วันก่อน
+    (VI, DAY, "jpg"),
+    (HW, "2026-11-14T08:00:00Z", "png"),                           # 4 ชม.ก่อน
+    (HW, "2026-11-14T08:50:00Z", "png"),                           # 3 ชม. 10 นาทีก่อน
+    (BM, "default", "jpg"),                                        # static นิ่งเสมอ
+], ids=["daily-2d", "daily-3d", "10min-4h", "10min-3h10", "static"])
+def test_settled_tile_is_cached_with_max_age(env, layer_id, time, ext):
+    env.enable()
+    z, y, x = (0, 0, 0) if layer_id == BM else (3, 2, 5)
+    r1, r2 = env.tile(layer_id, time, z, y, x), env.tile(layer_id, time, z, y, x)
+    for r in (r1, r2):
+        assert r.status_code == 200, r.text
+        assert r.headers["cache-control"] == SETTLED_CC
+        assert r.headers["x-content-type-options"] == "nosniff"
+    assert len(env.opener.calls) == 1
+    assert env.path(layer_id, time, z, y, x, ext).is_file()
+
+
+def test_old_file_for_unsettled_token_is_ignored_not_served_not_overwritten(env):
+    env.enable()
+    old = JPEG[:-1] + b"X"                                         # ผ่านการตรวจ magic bytes แต่ไม่เหมือนที่ GIBS ส่งมาตอนนี้
+    path = env.path(VI, "2026-11-14", 3, 2, 5)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(old)
+    r = env.tile(VI, "2026-11-14", 3, 2, 5)
+    assert r.status_code == 200
+    assert r.content == JPEG
+    assert r.headers["cache-control"] == "no-store"
+    assert len(env.opener.calls) == 1
+    assert path.read_bytes() == old                                # ไม่ถูกเขียนทับ
+
+
+def test_tile_becomes_cacheable_once_it_settles(env):
+    env.enable()
+    assert env.tile(VI, "2026-11-13", 3, 2, 5).headers["cache-control"] == "no-store"
+    assert env.tile(HW, "2026-11-14T10:00:00Z", 3, 2, 5).headers["cache-control"] == "no-store"
+    assert tile_files(env) == []
+    env.wall.advance(days=2)                                       # เมื่อวานกลายเป็น 3 วันก่อน; 10:00 เมื่อสองวันก่อน
+    assert env.tile(VI, "2026-11-13", 3, 2, 5).headers["cache-control"] == SETTLED_CC
+    assert env.tile(HW, "2026-11-14T10:00:00Z", 3, 2, 5).headers["cache-control"] == SETTLED_CC
+    assert len(tile_files(env)) == 2
+    assert len(env.opener.calls) == 4
+    env.tile(VI, "2026-11-13", 3, 2, 5)
+    assert len(env.opener.calls) == 4
+
+
+def test_unsettled_not_available_memo_lasts_10_min(env):
+    env.enable()
+    env.opener.script = [http_error(404), http_error(404)]
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 1
+    env.clock.advance(599)
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 1
+    env.clock.advance(2)                                           # รวม 601 s: หมดอายุ
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 2
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")      # จำใหม่อีก 10 นาที
+    assert len(env.opener.calls) == 2
+    env.clock.advance(601)
+    assert env.tile(VI, "2026-11-14", 3, 2, 5).status_code == 200
+    assert len(env.opener.calls) == 3
+
+
+def test_unsettled_10min_slot_not_available_memo_lasts_10_min(env):
+    env.enable()
+    env.opener.script = [http_error(404)]
+    assert_error(env.tile(HW, "2026-11-14T11:50:00Z", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    env.clock.advance(601)
+    assert env.tile(HW, "2026-11-14T11:50:00Z", 3, 2, 5).status_code == 200
+    assert len(env.opener.calls) == 2
+
+
+def test_settled_not_available_memo_still_lasts_1_hour(env):
+    env.enable()
+    env.opener.script = [http_error(404)] * 2
+    assert_error(env.tile(VI, "2026-11-12", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    env.clock.advance(601)
+    assert_error(env.tile(VI, "2026-11-12", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 1                              # เกิน 10 นาทีแล้วแต่ยังจำอยู่
+    env.clock.advance(3000)                                        # รวม 3601 s
+    assert_error(env.tile(VI, "2026-11-12", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 2
+
+
+def test_unsettled_tile_failures_and_pause_behave_as_before(env):
+    env.enable()
+    env.opener.script = [http_error(403)]
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 5), 502, "IMAGERY_FETCH_FAILED")
+    assert_error(env.tile(VI, "2026-11-14", 3, 2, 6), 503, "IMAGERY_PAUSED")
+    assert len(env.opener.calls) == 1
+
+
 # ---------- ไม่มีภาพ: จำไว้ ----------
 
 @pytest.mark.parametrize("code", [404, 400])
@@ -555,7 +733,7 @@ def test_upstream_403_pauses_15_min(env, code):
     env.enable()
     assert env.tile(VI, DAY, 9, 0, 0).status_code == 200            # ชิ้นนี้อยู่ใน cache แล้ว
     env.opener.script = [http_error(code)]
-    started = datetime.now(timezone.utc)
+    started = env.wall()
     j = assert_error(env.tile(VI, DAY, 9, 0, 1), 502, "IMAGERY_FETCH_FAILED")
     assert j["text"] == "ดึงภาพจาก NASA GIBS ไม่สำเร็จ"
     assert str(code) in j["detail"]
@@ -583,7 +761,7 @@ def test_20_consecutive_failures_pause_5_min(env):
         j = assert_error(env.tile(VI, DAY, 9, 0, x), 502, "IMAGERY_FETCH_FAILED")
         assert j["detail"]
     assert len(env.opener.calls) == 20
-    started = datetime.now(timezone.utc)
+    started = env.wall()
     j = assert_error(env.tile(VI, DAY, 9, 0, 20), 503, "IMAGERY_PAUSED")
     assert timedelta(minutes=4) < _resume_time(j) - started < timedelta(minutes=6)
     assert len(env.opener.calls) == 20
@@ -723,6 +901,89 @@ def test_concurrency_limit_busy(env, monkeypatch):
             t.join(10)
     assert [r[1] for r in results] == ["image/jpeg"] * 4
     assert env.tile(VI, DAY, 9, 0, 5).status_code == 200            # ที่ว่างคืนแล้ว
+
+
+# ---------- สวิตช์ปิดระหว่างรอคิว ----------
+
+class SpySlots:
+    """ห่อ semaphore ของตัวดึง: บอกเมื่อมีคำขอที่หาที่ว่างไม่ได้ทันทีและกำลังจะรอคิว"""
+
+    def __init__(self, inner):
+        self.inner, self.queued = inner, threading.Event()
+
+    def acquire(self, timeout=None):
+        if self.inner.acquire(blocking=False):
+            return True
+        self.queued.set()
+        return self.inner.acquire(timeout=timeout)
+
+    def release(self):
+        self.inner.release()
+
+
+def test_switch_is_rechecked_after_waiting_for_a_slot(env, monkeypatch):
+    env.enable()
+    slots = env.fetcher._slots = SpySlots(env.fetcher._slots)
+    gate, entered = threading.Event(), threading.Semaphore(0)
+
+    def blocking(request):
+        entered.release()
+        assert gate.wait(10)
+        return FakeResponse(JPEG)
+
+    env.opener.default = blocking
+    layer, results = layer_by_id(VI), []
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, DAY, 9, 0, x))) for x in range(4)]
+    fifth = []
+    queued_request = threading.Thread(target=lambda: fifth.append(env.tile(VI, DAY, 9, 0, 4)))
+    for t in threads:
+        t.start()
+    try:
+        for _ in range(4):
+            assert entered.acquire(timeout=10)                     # 4 ชิ้นอยู่ใน opener: ที่ว่างหมด
+        queued_request.start()                                     # คำขอที่ 5 ผ่านสวิตช์ของ route (เปิดอยู่) แล้วรอคิว
+        assert slots.queued.wait(10)
+        assert len(env.opener.calls) == 4
+        env.enable(False)                                          # ผู้ใช้ปิดสวิตช์ระหว่างที่คำขอที่ 5 ยังรออยู่
+    finally:
+        gate.set()
+        for t in threads + [queued_request]:
+            t.join(10)
+    assert len(fifth) == 1
+    j = assert_error(fifth[0], 403, "IMAGERY_DISABLED")
+    assert j["text"] == "ภาพออนไลน์ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+    assert len(env.opener.calls) == 4                              # ที่ 5 ไม่ถึง opener
+    assert not env.path(VI, DAY, 9, 0, 4).exists()
+    assert [r[1] for r in results] == ["image/jpeg"] * 4
+
+
+def test_switch_recheck_error_is_not_counted_or_remembered(env):
+    env.enable()
+    env.fetcher.enabled = lambda: False
+    with pytest.raises(imagery.ApiError) as exc:
+        env.fetcher.get(layer_by_id(VI), DAY, 9, 0, 0)
+    assert (exc.value.status, exc.value.code) == (403, "IMAGERY_DISABLED")
+    assert env.opener.calls == []
+    env.fetcher.enabled = lambda: True
+    assert env.fetcher.get(layer_by_id(VI), DAY, 9, 0, 0)[1] == "image/jpeg"     # ไม่ถูกจำ ไม่พัก
+    assert len(env.opener.calls) == 1
+
+
+def test_fetcher_without_enabled_callable_is_always_enabled(tmp_path):
+    fetcher = TileFetcher(tmp_path, opener=FakeOpener())
+    assert fetcher.enabled() is True
+
+
+def test_app_wires_fetcher_enabled_to_the_settings_switch(tmp_path):
+    app = create_app(Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-dist"), start_background=False)
+    fetcher = app.state.imagery
+    assert fetcher.enabled() is False                              # ไม่มี settings.json
+    settings.save(tmp_path / "data", settings.Settings(daily=settings.Daily(enabled=False),
+                                                       online_imagery=settings.OnlineImagery(enabled=True)))
+    assert fetcher.enabled() is True
+    settings.save(tmp_path / "data", settings.Settings(daily=settings.Daily(enabled=False),
+                                                       online_imagery=settings.OnlineImagery(enabled=False)))
+    assert fetcher.enabled() is False
 
 
 # ---------- เพดาน cache ----------
