@@ -31,7 +31,7 @@ import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
 import { mountScene3D } from "../../src/windows/Graphics3D/scene3d";
-import { resetModelReports, SatModelSource } from "../../src/windows/Graphics3D/satModelSource";
+import { MODEL_BATCH_MS, resetModelReports, SatModelSource } from "../../src/windows/Graphics3D/satModelSource";
 import { makeDoc } from "./helpers/chrome";
 import { areaByAxis, bodyOfGltf, faceNormal, gltfOfBody, MODELS_DIR, parents, readGlb, type V3 } from "./helpers/glb";
 import { CATALOG, makeScenarioDoc } from "./helpers/objects";
@@ -465,14 +465,33 @@ function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?:
   });
   vi.stubGlobal("fetch", fetch);
   let n = 0;
-  const createObjectURL = vi.fn(() => `blob:http://localhost/${++n}`);
-  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL }));
+  const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:http://localhost/${++n}`);
   return { calls, createObjectURL };
 }
 
+/** fetch ปลอมที่ catalog ตอบทันที ส่วน glb ตอบเมื่อ test สั่ง release(path) (ก่อนหรือหลังคำขอก็ได้) */
+function stubDeferredGlbs() {
+  const waiting = new Map<string, () => void>();
+  const released = new Set<string>();
+  const release = (path: string): void => {
+    released.add(path);
+    waiting.get(path)?.();
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    if (path === "/models/catalog.json") return new Response(JSON.stringify(catalog), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (!released.has(path)) await new Promise<void>((r) => waiting.set(path, r));
+    return new Response(glbBytes(path.slice("/models/".length)), { status: 200, headers: { "Content-Type": "model/gltf-binary" } });
+  }));
+  let n = 0;
+  vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:http://localhost/${++n}`);
+  return { release };
+}
+
+/** ให้คำขอที่ค้างเสร็จและชุดของ SatModelSource (MODEL_BATCH_MS) ปิด */
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, MODEL_BATCH_MS + 20));
 };
 
 describe("SatModelSource: catalog and glb loading", () => {
@@ -483,6 +502,7 @@ describe("SatModelSource: catalog and glb loading", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     resetModelLoads();
   });
 
@@ -511,10 +531,35 @@ describe("SatModelSource: catalog and glb loading", () => {
     expect(b.specFor({ block: null, norad: 41836 })).toBeNull();
     expect(b.specFor({ block: "NOT-A-BLOCK", norad: 99 })).toBeNull();
     await flush();
-    expect(changedB).toHaveBeenCalledTimes(2);
+    expect(changedB).toHaveBeenCalledTimes(1); // สองไฟล์เสร็จในชุดเดียวกัน (MODEL_BATCH_MS) = changed() ครั้งเดียว
     expect(b.specFor({ block: null, norad: 41836 })).toMatchObject({ id: "himawari-9", eo: true, wingNodes: ["wing-Y"] });
     expect(b.specFor({ block: "NOT-A-BLOCK", norad: 99 })).toMatchObject({ id: "generic", eo: false });
     expect(useMessages.getState().items).toEqual([]);
+  });
+
+  test("glbs that arrive within one batch window make one changed() (one restyle); a glb arriving later makes another", async () => {
+    const { release } = stubDeferredGlbs();
+    const changed = vi.fn();
+    const src = new SatModelSource(changed);
+    src.specFor({ block: "GPS-IIF", norad: 1 }); // catalog
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    const sats = [{ block: "GPS-IIF", norad: 1 }, { block: "GPS-IIR-M", norad: 2 }, { block: "GAL-2", norad: 3 }, { block: "GLO-M+", norad: 4 }, { block: "BDS-3M-CAST", norad: 5 }];
+    for (const s of sats) expect(src.specFor(s)).toBeNull();
+    // ห้าไฟล์มาถึงห่างกัน 15 ms (อยู่ในหน้าต่างเดียว MODEL_BATCH_MS)
+    for (const path of ["gps-iif", "gps-iir", "galileo-foc", "glonass-m", "bds3-meo-cast"].map((id) => `/models/${entryOf(id).glb}`)) {
+      release(path);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, MODEL_BATCH_MS * 2));
+    expect(changed).toHaveBeenCalledTimes(2);
+    for (const s of sats) expect(src.specFor(s)).not.toBeNull();
+    // ไฟล์ที่ขอทีหลัง: อีกชุดหนึ่ง
+    expect(src.specFor({ block: null, norad: 41836 })).toBeNull();
+    release(`/models/${entryOf("himawari-9").glb}`);
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(3));
+    expect(src.specFor({ block: null, norad: 41836 })?.id).toBe("himawari-9");
+    src.dispose();
   });
 
   test("a glb that fails (404 or the app's HTML page) leaves that model as points with one Thai message per model id", async () => {
@@ -606,6 +651,7 @@ describe("3D window with models", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     resetModelLoads();
     useResults.setState({ prnByNorad: new Map() });
     useScenario.setState({ name: null, doc: null, tree: null });

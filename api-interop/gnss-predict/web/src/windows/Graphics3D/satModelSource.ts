@@ -2,6 +2,8 @@
 // - catalog (/models/catalog.json) และ glb โหลดครั้งเดียวต่อหน้าเว็บ (satModels.ts loadModelCatalog / loadModelGlb) ผลเก็บไว้ระดับหน้า หน้าต่างทุกบานใช้ร่วมกัน
 //   (หน้าต่างที่เปิดทีหลังได้โมเดลที่โหลดแล้วทันที)
 // - specFor ตอบทันที: ยังไม่มี catalog หรือ glb ของโมเดลนั้น = null (ดาวเป็นจุด) แล้วเริ่มโหลด เสร็จ = changed() ให้หน้าต่างวาดใหม่ (restyle เรียก specFor อีกรอบ)
+//   changed() ถูกรวบเป็นชุด: ไฟล์แรกที่เสร็จเปิดหน้าต่าง MODEL_BATCH_MS ไฟล์ที่เสร็จในหน้าต่างนั้นรวมเป็น changed() ครั้งเดียวตอนหน้าต่างปิด
+//   (ตอนเปิดหน้าเว็บ glb ราว 17 ไฟล์ทยอยมาจะได้ restyle ไม่กี่ครั้ง ไม่ใช่ครั้งละไฟล์) ไฟล์ที่เสร็จหลังจากนั้นเปิดชุดใหม่
 // - โหลดล้มเหลว = ดาวที่ใช้โมเดลนั้นเป็นจุดต่อไป (ไม่ลองซ้ำ) + ข้อความไทยใน Message Viewer ครั้งเดียวต่อ id ต่อหน้าเว็บ
 //   catalog ล้มเหลว: ทุกดวงเป็นจุด + ข้อความครั้งเดียว (loadModelCatalog ไม่จำความล้มเหลว: หน้าต่างที่เปิดใหม่ลองอีกครั้ง)
 // - block ของดาวจาก catalog ของ snapshot (satelliteInfo().block) ตรงตัวกับ blocks ใน models/catalog.json (ตรวจกับ snapshot จริงแล้ว) ไม่ต้องแปลง
@@ -12,6 +14,9 @@ import type { SatModelSpec } from "../../cesium/satModelGraphics";
 import { loadModelCatalog, loadModelGlb, resolveModel, wingNodesOf, wingZeroNormal, type ModelCatalog, type ResolvedModel } from "../../cesium/satModels";
 import { msg } from "../../labels/messages.th";
 import { report } from "../../stores/messages";
+
+/** ช่วงที่รวบไฟล์ที่โหลดเสร็จเป็น changed() ครั้งเดียว (ms) */
+export const MODEL_BATCH_MS = 100;
 
 /** catalog ที่โหลดแล้วของหน้านี้ */
 let loadedCatalog: ModelCatalog | null = null;
@@ -43,6 +48,8 @@ export class SatModelSource {
   /** url ของ glb ที่ตัวนี้รอผลอยู่ */
   private readonly waiting = new Set<string>();
   private disposed = false;
+  /** ชุดที่เปิดอยู่ (changed() ตอนครบ MODEL_BATCH_MS) */
+  private batch: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly changed: () => void) {}
 
@@ -75,10 +82,17 @@ export class SatModelSource {
   /** เลิกแจ้งหน้าต่าง (ผลที่มาทีหลังยังเก็บไว้ให้หน้าต่างอื่น) */
   dispose(): void {
     this.disposed = true;
+    if (this.batch !== null) clearTimeout(this.batch);
+    this.batch = null;
   }
 
+  /** catalog หรือ glb เสร็จ: เข้าชุดที่เปิดอยู่ หรือเปิดชุดใหม่ */
   private settled(): void {
-    if (!this.disposed) this.changed();
+    if (this.disposed || this.batch !== null) return;
+    this.batch = setTimeout(() => {
+      this.batch = null;
+      if (!this.disposed) this.changed();
+    }, MODEL_BATCH_MS);
   }
 
   private catalogOrLoad(): ModelCatalog | null {

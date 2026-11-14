@@ -42,7 +42,7 @@
 // - globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE (1000, ค่าตั้งต้นของ Cesium 100) ทั้งหน้าต่าง 3D และ Sensor View
 // - โมเดล 3 มิติของดาว (models integration spec §3–§4, 3D Graphics Window Properties → Details → Satellite Models / Model Pixel Size):
 //   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
-//   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นครั้งเดียวต่อ microtask)
+//   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นชุดละ 100 ms: SatModelSource)
 //   เลือกดาว (useSelection) = ขอบรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) Sensor View: โมเดลของดาวแม่ถูกซ่อนเหมือนจุดและป้าย (กล้องอยู่ในตัวดาว)
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
@@ -284,7 +284,6 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   /** ท่าทางและมุมแผงของโมเดลดาว (รอบเดียวกับ sensor) */
   private readonly modelThrottle = new Throttle(SENSOR_INTERVAL_MS, () => this.poseModels());
   private readonly models = new SatModelSource(() => this.modelsChanged());
-  private restyleQueued = false;
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
   /** ตำแหน่งที่กดปุ่มซ้ายในโหมด Grab Globe ค้างอยู่ (null = ไม่ได้กดอยู่) ไว้ดูว่าตอนปล่อยเป็นคลิกหรือลาก */
@@ -427,14 +426,9 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     };
   }
 
-  /** catalog หรือ glb โหลดเสร็จ: วาดใหม่ครั้งเดียวแม้หลายโมเดลเสร็จพร้อมกัน */
+  /** catalog หรือ glb ชุดหนึ่งโหลดเสร็จ (SatModelSource รวบเป็นชุดละ MODEL_BATCH_MS แล้ว): วาดใหม่ครั้งเดียวต่อชุด */
   private modelsChanged(): void {
-    if (this.restyleQueued || this.destroyed) return;
-    this.restyleQueued = true;
-    queueMicrotask(() => {
-      this.restyleQueued = false;
-      if (this.props.satelliteModels) this.restyle();
-    });
+    if (!this.destroyed && this.props.satelliteModels) this.restyle();
   }
 
   private outlineSelected(): void {
