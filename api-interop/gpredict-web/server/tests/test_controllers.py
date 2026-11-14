@@ -4,9 +4,11 @@ ControllerHub สร้าง controller ด้วย timer จริง rotator
 
 import asyncio
 import json
+import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gpredict_web.controllers import ControllerHub
 from gpredict_web.ephem import EphemManager
@@ -168,6 +170,29 @@ class ControllerHubTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.object, "99999")
         self.assertEqual(self.controllers.target("M"), 43017)
         await self.assert_api_error(self.controllers.set_target("Nope", 25544), 404, "NOT_FOUND")
+
+    async def test_latest_target_wins(self):
+        # สองการเลือกดาวติดกัน: การเลือกแรกรอรายชื่อดาว (lock ของ runtime ที่ tick ถือ) นานกว่าการเลือกที่สอง
+        # ต้องได้ดาวของการเลือกล่าสุด ไม่ใช่ของคำขอที่เสร็จทีหลัง
+        await self.open_both()
+        rt = self.hub.get("M")
+        names, release, calls = rt.sat_names, threading.Event(), []
+
+        def sat_names():
+            calls.append(None)
+            if len(calls) == 1:
+                release.wait(2.0)
+            return names()
+
+        with mock.patch.object(rt, "sat_names", sat_names):
+            first = asyncio.create_task(self.controllers.set_target("M", 43017))
+            await until(lambda: len(calls) == 1)
+            await self.controllers.set_target("M", 25544)
+            release.set()
+            await first
+        self.assertEqual(self.controllers.target("M"), 25544)
+        snaps = self.snapshots()
+        self.assertEqual((snaps["radio"]["norad"], snaps["rotator"]["norad"]), (25544, 25544))
 
     # ---------------------------------------------------------------- tick
 

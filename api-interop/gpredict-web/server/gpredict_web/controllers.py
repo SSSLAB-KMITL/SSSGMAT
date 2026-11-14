@@ -14,6 +14,7 @@
 """
 
 import asyncio
+import itertools
 import logging
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
@@ -72,6 +73,8 @@ class ControllerHub:
         self._wake = wake
         self._controllers: dict[tuple[str, str], Controller] = {}   # (module, kind) ตามลำดับที่เปิด
         self._targets: dict[str, int] = {}
+        self._target_seq: dict[str, int] = {}                        # module -> ลำดับของการเลือกดาวล่าสุด
+        self._seq = itertools.count(1)
         self._locks: dict[str, list] = {}                            # module -> [asyncio.Lock, จำนวนผู้ถือหรือรอ]
         self._tasks: set[asyncio.Task] = set()
         self._stopped = False
@@ -93,16 +96,21 @@ class ControllerHub:
 
     async def set_target(self, module: str, norad: int) -> None:
         """เป้าหมายของ module เปลี่ยน (spec §3.3): จำไว้ให้ controller ที่จะเปิด และ controller ที่เปิดอยู่เลือกดาวนั้น
-        module ไม่ได้เปิดหรือดาวไม่อยู่ใน module: 404 NOT_FOUND โดยไม่เปลี่ยนอะไร"""
+        module ไม่ได้เปิดหรือดาวไม่อยู่ใน module: 404 NOT_FOUND โดยไม่เปลี่ยนอะไร
+        (ของเรา) การเลือกที่มาก่อนแต่รอรายชื่อดาวนานกว่า (thread ไหนเสร็จก่อนก็ได้) ไม่ทับการเลือกที่มาทีหลัง: ทุกคำขอได้ลำดับก่อนรอ
+        และเฉพาะคำขอล่าสุดของ module ถูกใช้ คำขอที่ถูกแซงตอบสำเร็จโดยไม่เปลี่ยนอะไร (module ที่ปิดระหว่างรอก็ไม่ได้เป้าหมายค้าง)"""
         rt = self._hub.get(module)
         if rt is None:
             raise _not_open(module)
+        seq = self._target_seq[module] = next(self._seq)
         try:
             names = await asyncio.to_thread(rt.sat_names)        # lock ของ runtime อาจถูก tick ถือหลายวินาที
         except ModuleClosedError:
             raise _not_open(module) from None
         if not any(n == norad for n, _ in names):
             raise ApiError("NOT_FOUND", 404, f"ไม่พบดาว NORAD {norad} ใน module {module}", str(norad))
+        if self._target_seq.get(module) != seq:
+            return
         self._targets[module] = norad
         for kind in KINDS:
             ctl = self._controllers.get((module, kind))
@@ -196,6 +204,7 @@ class ControllerHub:
             closing = [(k, ctl) for k in kinds if (ctl := self._controllers.pop((module, k), None)) is not None]
             if forget_target:
                 self._targets.pop(module, None)
+                self._target_seq.pop(module, None)
             await asyncio.gather(*(self._close_one(module, k, ctl) for k, ctl in closing))
 
     async def _close_one(self, module: str, kind: str, ctl: Controller) -> None:
