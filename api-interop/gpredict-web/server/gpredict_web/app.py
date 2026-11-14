@@ -500,6 +500,12 @@ def _hwconf_dict(radios, rotators) -> dict:
     return {"radios": [radio_to_dict(r) for r in radios], "rotators": [rot_to_dict(r) for r in rotators]}
 
 
+def log_file(cfg: Config) -> Path:
+    """gpredict.log ของ data dir นี้ (spec งานย่อย 4 §6.1: data/logs/gpredict.log) ที่เดียวที่สร้างที่อยู่นี้: ไฟล์ที่ log session เขียน
+    (โฟลเดอร์ของมันคือ log_dir ของ /api/meta), ที่ Log browser อ่าน และที่ python -m gpredict_web พิมพ์ตอนเริ่ม"""
+    return cfg.data_dir / LOG_DIR / gplog.LOG_FILE
+
+
 def _meta(cfg: Config) -> dict:
     """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)
     module_keys: หน้าของ Module properties -> {path ของค่าใน module: key ของค่ารวมที่สืบทอด} (spec งานย่อย 4 §9.1)
@@ -529,7 +535,7 @@ def _meta(cfg: Config) -> dict:
                        "location": S.LOCATION_MAX, "weather_station": S.WEATHER_STATION_MAX},
         "module_keys": {page: {path: M.MODULE_KEYS[path] for path in paths} for page, paths in M.PAGE_PATHS.items()},
         "global_layout_extra": list(M.GLOBAL_LAYOUT_EXTRA),
-        "log_dir": str((cfg.data_dir / LOG_DIR).absolute()),
+        "log_dir": str(log_file(cfg).parent.absolute()),
     }
 
 
@@ -700,7 +706,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         events.bind(asyncio.get_running_loop())         # /ws/app รับเหตุการณ์ตั้งแต่ server เริ่ม (ไม่ขึ้นกับ start_background)
         try:
             # log session ครอบทั้งชีวิตของ server: ระดับอ่านตอนเริ่มครั้งเดียว (มีผลครั้งถัดไปเหมือน Gpredict) ส่วน LOG/CLEAN_AGE อ่านตอนจบ
-            session = gplog.start_session(cfg.data_dir / LOG_DIR, prefs.get("LOG/LEVEL")) if start_background else None
+            session = gplog.start_session(log_file(cfg).parent, prefs.get("LOG/LEVEL")) if start_background else None
             try:
                 if start_background:
                     app.state.startup_messages = await asyncio.to_thread(startup)
@@ -1366,7 +1372,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     def current_log():
         """ข้อความของ gpredict.log ของ session นี้ (Log browser อ่านครั้งเดียวตอนเปิด) ไม่มีไฟล์ = ข้อความว่าง (log ลง stderr อยู่)
         มีแต่อ่านไม่ได้ (สิทธิ์, เป็นโฟลเดอร์ ฯลฯ): 500 LOG_UNREADABLE (ของเรา) ไม่ใช่ข้อความว่างที่ดูเหมือนไม่มี log"""
-        path = cfg.data_dir / LOG_DIR / gplog.LOG_FILE
+        path = log_file(cfg)
         try:
             data = path.read_bytes()
         except FileNotFoundError:

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 import gpredict_web
 from gpredict_web.__main__ import build_server, main, parse_args
+from gpredict_web.app import log_file
 from gpredict_web.config import DATA_ENV, PORT
 from tests.helpers import temp_config
 
@@ -89,6 +90,14 @@ class MainTest(unittest.TestCase):
         self.assertEqual(lines[0], "Gpredict Web: http://127.0.0.1:8740/")
         self.assertIn(str((self.data / "logs" / "gpredict.log").absolute()), lines[1])
         self.assertRegex(lines[1], r"[ก-๙]")
+        # "normally": a gpredict.log that cannot be opened sends the lines to the terminal instead (gplog.py)
+        self.assertIn("ตามปกติ", lines[1])
+        self.assertIn("ถ้าเปิดไฟล์ไม่ได้", lines[1])
+
+    def test_log_file_is_the_one_path_of_gpredict_log(self):
+        """ที่อยู่ของ gpredict.log สร้างที่เดียว (log_file) ทั้งตอนเริ่ม, /api/meta และ Log browser"""
+        cfg = temp_config(self)
+        self.assertEqual(log_file(cfg), cfg.data_dir / "logs" / "gpredict.log")
 
     def test_quit_sets_should_exit(self):
         server, _ = self.build()
