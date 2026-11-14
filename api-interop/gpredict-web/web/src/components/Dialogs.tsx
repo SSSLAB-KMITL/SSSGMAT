@@ -23,6 +23,8 @@ interface Props {
   current: string | null;
   config: ModuleConfig | null;
   saveConfig: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
+  /** read the shown module's configuration again (Edit module's OK, which re-creates the module) */
+  reloadConfig: () => void;
   hide: (d: Dialog) => void;
   /** File → New module made and opened `name` (`open` are the open modules then) */
   onCreated: (name: string, open: string[]) => void;
@@ -42,6 +44,7 @@ export const Dialogs = memo(function Dialogs({
   current,
   config,
   saveConfig,
+  reloadConfig,
   hide,
   onCreated,
   onModuleSaved,
@@ -60,7 +63,7 @@ export const Dialogs = memo(function Dialogs({
           case "editModule":
             // it edits the module of the tab that is shown, through the page's one `save` of that module's configuration
             return d.module === current && config !== null ? (
-              <ModuleDialog key={dialogKey(d)} target={{ kind: "edit", config, save: saveConfig }} onClose={close} />
+              <ModuleDialog key={dialogKey(d)} target={{ kind: "edit", config, save: saveConfig, reload: reloadConfig }} onClose={close} />
             ) : null;
           case "open":
             return <OpenModuleDialog key={dialogKey(d)} open={open} onClose={close} onOpened={onOpened} />;

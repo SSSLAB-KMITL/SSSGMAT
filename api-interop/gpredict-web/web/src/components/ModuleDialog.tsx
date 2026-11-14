@@ -41,6 +41,11 @@ export type ModuleTarget =
       config: ModuleConfig;
       /** the page's one `save` of the open module's configuration (useModuleConfig): the only way to write it, with its pins */
       save: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
+      /**
+       * read the configuration again: OK re-creates the module (ref-D §9 "Configure → OK"), which then takes the global values it
+       * inherits now; until then an open module keeps the ones it was made with (spec §9.1)
+       */
+      reload: () => void;
     };
 
 interface Props {
@@ -174,11 +179,10 @@ export function ModuleDialog({ target, onClose }: Props) {
     }
     const draft: ModuleDraft = { qth, satellites: sats.map((s) => s.norad), props: props! };
     const saving = propsSave(initial!.props, draft.props, marks.dirty, marks.reset, meta!);
-    if (!hasModuleChanges(initial!, draft) && saving.pin.length === 0 && saving.unpin.length === 0) {
-      onClose();
-      return;
+    if (hasModuleChanges(initial!, draft) || saving.pin.length > 0 || saving.unpin.length > 0) {
+      await t.save(editModuleChange(initial!, draft, saving.change), { pin: saving.pin, unpin: saving.unpin });
     }
-    await t.save(editModuleChange(initial!, draft, saving.change), { pin: saving.pin, unpin: saving.unpin });
+    t.reload(); // Gpredict re-creates the module on OK, also when nothing changed
     onClose();
   };
 
