@@ -522,6 +522,8 @@ const LABELS = {
   "sensorView.display.camera": ours("Camera"),
   "sensorView.display.sensor": ours("Sensor"),
   "sensorView.zoom": ours("Zoom"),
+  // ช่องความกว้างพื้นที่ที่จุดใต้ดาวข้างปุ่มซูม ("500 m", "1.5 km") Enter = ซูมให้ได้ความกว้างนั้น
+  "sensorView.width": ours("Width"),
 
   // ---------- Timeline View (spec §10, STK ref §D) ----------
   "timeline.globalTimeBar": stk("Global Time Bar", "D"),

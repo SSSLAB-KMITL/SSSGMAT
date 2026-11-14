@@ -17,6 +17,7 @@ import {
   sensorViewGroundWidthM,
   sensorViewFovDeg,
   sensorViewShortFovDeg,
+  sensorViewZoomForGroundWidth,
 } from "../../src/cesium/sensorGeometry";
 import { EARTH_RADIUS_KM, WGS84_E2 } from "../../src/cesium/swath";
 
@@ -273,4 +274,27 @@ test("needed imagery level never goes below 0, and bad input has no level", () =
   expect(neededImageryLevel(10_000, 0)).toBeNull();
   expect(neededImageryLevel(Number.NaN, 600)).toBeNull();
   expect(neededImageryLevel(10_000, Number.POSITIVE_INFINITY)).toBeNull();
+});
+
+test("sensorViewZoomForGroundWidth inverts the ground width within 1 % and clamps to the zoom range", () => {
+  const widthAt = (alt: number, alpha: number, zoom: number) => sensorViewGroundWidthM(alt, sensorViewShortFovDeg(alpha, zoom));
+  for (const [alt, alpha] of [[GPS_H, 14.4], [800, 30], [35786, 8.7]] as const) {
+    for (const target of [50, 500, 1500, 10_000, 250_000]) {
+      const zoom = sensorViewZoomForGroundWidth(alt, alpha, target);
+      expect(zoom, `${alt} km, ${alpha}°, ${target} m`).not.toBeNull();
+      const got = widthAt(alt, alpha, zoom!);
+      if (zoom! > 1 && zoom! < 262144) expect(Math.abs(got - target) / target, `${alt} km, ${alpha}°, ${target} m`).toBeLessThan(0.01);
+    }
+  }
+  // แคบกว่าที่ ×262144 เห็น = ×262144 ; กว้างกว่าภาพที่ ×1 (ถึงขอบฟ้า) = ×1
+  expect(widthAt(GPS_H, 14.4, 262144)).toBeGreaterThan(1);
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, 1)).toBe(262144);
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, 1e9)).toBe(1);
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, widthAt(GPS_H, 14.4, 1))).toBe(1);
+  // ช่วงที่ส่งเอง
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, 1, 1, 8192)).toBe(8192);
+  // ไม่มีคำตอบ: ดาวไม่อยู่เหนือพื้น หรือความกว้างไม่ใช่จำนวนบวก
+  expect(sensorViewZoomForGroundWidth(0, 14.4, 500)).toBeNull();
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, 0)).toBeNull();
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, Number.NaN)).toBeNull();
 });

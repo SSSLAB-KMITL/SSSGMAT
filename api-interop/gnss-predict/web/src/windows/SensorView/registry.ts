@@ -3,13 +3,15 @@
 // - ทะเบียนแยกจาก registry3d ของหน้าต่าง 3D (P3): คำสั่ง g3d.*, object.zoomTo และ test hook ของหน้าต่าง 3D จึงไม่ไปโดนหน้าต่างที่กล้องล็อกนี้
 // - หน้าต่างลงทะเบียน handle (scene3d.mountSensorView) ของตัวเองเมื่อ viewer พร้อม และถอนเมื่อปิด
 // - หนึ่งบานต่อ sensor: params ของ panel = { path, up, display, zoom } (P8: ค่าเก็บใน params จึงไปกับ workbook) เปิดพร้อมกันได้ไม่เกิน SENSOR_VIEW_LIMIT บาน
-//   display/zoom (imagery spec §5.3): Camera = เห็นแต่โลก (ค่าตั้งต้น รวมถึง workbook เก่าที่ไม่มีช่องนี้), Sensor = แบบเดิม; zoom ∈ ZOOM_STEPS
+//   display/zoom (imagery spec §5.3): Camera = เห็นแต่โลก (ค่าตั้งต้น รวมถึง workbook เก่าที่ไม่มีช่องนี้), Sensor = แบบเดิม
+//   zoom = จำนวนต่อเนื่องใน [1, 262144] (zoom.ts: ปุ่มและล้อก้าว ×√2 บนตาราง 2^(k/2) ช่อง Width ตั้งค่าใดก็ได้ในช่วง)
 // - หา handle ของ sensor ตามชื่อ (test hook sensorViewCamera) จาก params.path ของ panel ใน dockview
 
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import type { ImagerySourceId } from "../../stores/imagery";
 import { useLayout } from "../../stores/layout";
 import { createSceneRegistry, type SceneRegistry } from "../graphics/sceneRegistry";
+import { isZoom } from "./zoom";
 
 /** ชนิดหน้าต่างใน layout/panels.ts */
 export const SENSOR_VIEW_KIND = "sensorView";
@@ -22,15 +24,11 @@ export type SensorViewUp = "north" | "velocity";
 /** camera = ซ่อนทุกอย่างที่ไม่ใช่ลูกโลกในหน้าต่างนี้ (ค่าตั้งต้น), sensor = แสดง object ของ scenario แบบหน้าต่าง 3D (imagery spec §5.3) */
 export type SensorViewDisplay = "camera" | "sensor";
 
-/** ขั้นของการซูม: มุมกว้างด้านสั้น = sensorViewShortFovDeg(α) / zoom ถึง ×8192 (ดาว GPS ≈ 0.0037° ≈ 1.3 km บนพื้น: imagery spec §4.4) */
-export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] as const;
-export type SensorViewZoom = (typeof ZOOM_STEPS)[number];
-
-/** ขั้นถัดไป (dir 1 = Zoom In, −1 = Zoom Out) ปลายทั้งสองคงที่ */
-export function nextZoom(zoom: SensorViewZoom, dir: 1 | -1): SensorViewZoom {
-  const i = ZOOM_STEPS.indexOf(zoom);
-  return ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))];
-}
+/**
+ * การซูม: มุมกว้างด้านสั้น = sensorViewShortFovDeg(α) / zoom, zoom ∈ [1, 262144] (zoom.ts ZOOM_MIN / ZOOM_MAX)
+ * ดาว GPS: ×8192 ≈ 0.0037° ≈ 1.3 km บนพื้น (imagery spec §4.4), ×262144 ≈ 0.00012° ≈ 40 m
+ */
+export type SensorViewZoom = number;
 
 export interface SensorViewParams {
   /** path ของ sensor ("*\/Sensor/Sensor1") */
@@ -117,11 +115,9 @@ export const registerSensorViewScene = (handle: SensorViewHandle): (() => void) 
 /** แจ้งผู้ฟัง (ข้อความบนภาพ) ว่าสถานะของหน้าต่างเปลี่ยน เช่น โหลดผลเข้าภาพเสร็จ */
 export const notifySensorViews = (): void => sensorViewScenes.notify();
 
-const isZoom = (v: unknown): v is SensorViewZoom => (ZOOM_STEPS as readonly unknown[]).includes(v);
-
 /**
  * params จากค่าที่เก็บไว้ (workbook เก่าหรือแก้มือ): path ที่ไม่ใช่สตริง = "", up ที่ไม่รู้จัก = north,
- * display ที่ไม่ใช่ "sensor" = camera, zoom ที่ไม่ใช่ตัวเลขใน ZOOM_STEPS (รวมถึงสตริง "8") = 1
+ * display ที่ไม่ใช่ "sensor" = camera, zoom ที่ไม่ใช่ตัวเลขจำกัดใน [1, 262144] (รวมถึงสตริง "8", NaN, 0) = 1
  */
 export function sensorViewParams(raw: unknown): SensorViewParams {
   const p = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};

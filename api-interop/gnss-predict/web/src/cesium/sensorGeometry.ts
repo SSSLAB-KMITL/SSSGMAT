@@ -211,6 +211,29 @@ export function sensorViewGroundWidthM(altKm: number, shortFovDeg: number): numb
 }
 
 /**
+ * zoom ของ Sensor View ที่ภาพเห็นพื้นกว้าง widthM เมตรตามด้านสั้นที่จุดใต้ดาว (ตัวผกผันของ sensorViewGroundWidthM กับ sensorViewShortFovDeg):
+ * ค้นแบบแบ่งครึ่งบน log2(zoom) ใน [minZoom, maxZoom] (ความกว้างลดลงเมื่อ zoom เพิ่ม ช่วงที่ภาพกว้างเกินจานโลกความกว้างคงที่ที่ขอบฟ้า)
+ * กว้างเท่าหรือมากกว่าที่ minZoom เห็น = minZoom ; แคบเท่าหรือน้อยกว่าที่ maxZoom เห็น = maxZoom
+ * ดาวไม่อยู่เหนือผิวโลก กรวยไม่มีขนาด หรือ widthM ไม่ใช่จำนวนบวกจำกัด = null
+ */
+export function sensorViewZoomForGroundWidth(altKm: number, halfAngleDeg: number, widthM: number, minZoom = 1, maxZoom = 262_144): number | null {
+  if (!(widthM > 0) || !Number.isFinite(widthM)) return null;
+  const widthAt = (zoom: number): number => sensorViewGroundWidthM(altKm, sensorViewShortFovDeg(halfAngleDeg, zoom));
+  const widest = widthAt(minZoom);
+  if (!(widest > 0)) return null;
+  if (widthM >= widest) return minZoom;
+  if (widthM <= widthAt(maxZoom)) return maxZoom;
+  let lo = Math.log2(minZoom);
+  let hi = Math.log2(maxZoom);
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (widthAt(2 ** mid) > widthM) lo = mid;
+    else hi = mid;
+  }
+  return 2 ** ((lo + hi) / 2);
+}
+
+/**
  * ระดับชิ้นภาพ (Web Mercator, 256 px) ที่ละเอียดพอให้ภาพกว้าง groundWidthM เมตรบน shortSidePx พิกเซลไม่ขยายจนเบลอ:
  * ระดับต่ำสุด z ที่ metresPerPixel(z) ≤ groundWidthM / shortSidePx, z = ceil(log2(2π·Re / (groundWidthM / shortSidePx · 256))) ไม่ต่ำกว่า 0
  * คิดที่เส้นศูนย์สูตร (ละติจูด φ ชิ้นแคบลง cos φ เท่า ระดับที่ต้องใช้จริงจึงต่ำกว่าเล็กน้อย: ประมาณการด้านที่เตือนเร็วไว้ก่อน)

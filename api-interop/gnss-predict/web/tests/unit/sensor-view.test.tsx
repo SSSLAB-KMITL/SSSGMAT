@@ -8,7 +8,7 @@ import { dirname, resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { sensorViewGroundWidthM, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
+import { sensorViewGroundWidthM, sensorViewShortFovDeg, sensorViewZoomForGroundWidth } from "../../src/cesium/sensorGeometry";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { runCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
@@ -25,9 +25,10 @@ import { registerObjectBrowserPanel } from "../../src/windows/ObjectBrowser/Obje
 import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/objectCommands";
 import { openSensorView } from "../../src/windows/SensorView/commands";
 import {
-  nextZoom, sensorViewParams, sensorViewScenes, ZOOM_STEPS, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle,
-  type SensorViewUp, type SensorViewZoom,
+  sensorViewParams, sensorViewScenes, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle, type SensorViewUp,
+  type SensorViewZoom,
 } from "../../src/windows/SensorView/registry";
+import { nextZoom, parseGroundWidth, snapZoomIndex, ZOOM_GRID, ZOOM_MAX, zoomText } from "../../src/windows/SensorView/zoom";
 import { coneCircleRadius, finestLevelReached, groundWidthText, registerSensorViewPanel } from "../../src/windows/SensorView/SensorView";
 import { sensorViewRenamed, startSensorViewTracking } from "../../src/windows/SensorView/track";
 import { Workspace } from "../../src/Workspace";
@@ -215,7 +216,7 @@ describe("the window", () => {
     const circle = () => document.querySelector(".sensor-view-cone circle");
     await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38)!, 9));
     await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
-    await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38, 2)!, 9));
+    await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38, Math.SQRT2)!, 9));
   });
 
   test("Display: new windows start in Camera; Sensor and back are stored in the params and sent to the scene", async () => {
@@ -238,10 +239,10 @@ describe("the window", () => {
     await user.click(within(bar).getByRole("button", { name: t("sensorView.display.sensor") }));
     await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
     act(() => void openSensorView(sensorPath("Sensor1")));
-    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), display: "sensor", zoom: 2 });
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), display: "sensor", zoom: Math.SQRT2 });
   });
 
-  test("Zoom In three times gives ×8, thirteen times ×8192; the ends disable the buttons", async () => {
+  test("Zoom In steps by ×√2: six clicks give ×8, twenty-six ×8192, thirty-six the ×262144 end; the ends disable the buttons", async () => {
     const user = userEvent.setup();
     await mount({ G01: ["Sensor1"] });
     const fake = await open("Sensor1");
@@ -250,17 +251,73 @@ describe("the window", () => {
     const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
     expect(within(bar).getByText("×1")).toBeDefined();
     expect((zoomOut() as HTMLButtonElement).disabled).toBe(true);
-    for (let i = 0; i < 3; i++) await user.click(zoomIn());
+    await user.click(zoomIn());
+    expect(views()[0].params?.zoom).toBe(Math.SQRT2);
+    expect(within(bar).getByText("×1.4")).toBeDefined();
+    for (let i = 0; i < 5; i++) await user.click(zoomIn());
     expect(views()[0].params).toEqual({ ...NEW("Sensor1"), zoom: 8 });
     expect(within(bar).getByText("×8")).toBeDefined();
     await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 8]));
-    for (let i = 0; i < 10; i++) await user.click(zoomIn());
+    for (let i = 0; i < 20; i++) await user.click(zoomIn());
     expect(views()[0].params?.zoom).toBe(8192);
     expect(within(bar).getByText("×8192")).toBeDefined();
-    expect((zoomIn() as HTMLButtonElement).disabled).toBe(true);
+    expect((zoomIn() as HTMLButtonElement).disabled).toBe(false);
     await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 8192]));
+    for (let i = 0; i < 10; i++) await user.click(zoomIn());
+    expect(views()[0].params?.zoom).toBe(ZOOM_MAX);
+    expect(within(bar).getByText("×262k")).toBeDefined();
+    expect((zoomIn() as HTMLButtonElement).disabled).toBe(true);
     await user.click(zoomOut());
-    expect(views()[0].params?.zoom).toBe(4096);
+    await user.click(zoomOut());
+    expect(views()[0].params?.zoom).toBe(131072);
+  });
+
+  test("the Width box shows the ground width now; Enter sets the zoom that gives the typed width at the sub-point; bad input reverts with a Thai hint", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    const box = () => within(bar).getByRole("textbox", { name: t("sensorView.width") }) as HTMLInputElement;
+    const nowText = (hud: SensorHud) => {
+      const { unit, width } = groundWidthText(sensorViewGroundWidthM(hud.altKm, hud.fovDeg));
+      return `${width} ${unit}`;
+    };
+    await waitFor(() => expect(box().value).toBe(nowText(HUD)));
+    await user.clear(box());
+    await user.type(box(), "1.5 km{Enter}");
+    const zoom = views()[0].params?.zoom as number;
+    expect(zoom).toBeCloseTo(sensorViewZoomForGroundWidth(HUD.altKm, HUD.coneHalfAngle, 1500)!, 9);
+    const width = sensorViewGroundWidthM(HUD.altKm, sensorViewShortFovDeg(HUD.coneHalfAngle, zoom));
+    expect(Math.abs(width - 1500) / 1500).toBeLessThan(0.01);
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", zoom]));
+    expect(screen.queryByText(msg("sensorView.widthInvalid"))).toBeNull();
+    // ภาพตามซูมใหม่: ช่องแสดงความกว้างตอนนี้
+    fake.hud = { ...HUD, fovDeg: sensorViewShortFovDeg(HUD.coneHalfAngle, zoom), zoom };
+    act(() => sensorViewScenes.notify());
+    await waitFor(() => expect(box().value).toBe("1.50 km"));
+    // พิมพ์ผิด: ช่องกลับเป็นค่าเดิม ซูมไม่เปลี่ยน คำแนะนำภาษาไทย
+    await user.clear(box());
+    await user.type(box(), "abc{Enter}");
+    expect(box().value).toBe("1.50 km");
+    expect(views()[0].params?.zoom).toBe(zoom);
+    expect(screen.getByText(msg("sensorView.widthInvalid"))).toBeDefined();
+    expect(msg("sensorView.widthInvalid")).toMatch(/[฀-๿]/);
+    // ค่าที่แคบเกินช่วงซูม = ×262144 ; กว้างกว่าภาพที่ ×1 = ×1
+    await user.clear(box());
+    await user.type(box(), "1 m{Enter}");
+    expect(views()[0].params?.zoom).toBe(ZOOM_MAX);
+    expect(screen.queryByText(msg("sensorView.widthInvalid"))).toBeNull();
+    await user.clear(box());
+    await user.type(box(), "100000 km{Enter}");
+    expect(views()[0].params?.zoom).toBe(1);
+    // ดาวไม่มีตำแหน่ง: ตั้งไม่ได้ บอกเหตุผลเป็นภาษาไทย
+    fake.hud = null;
+    act(() => sensorViewScenes.notify());
+    await user.clear(box());
+    await user.type(box(), "500{Enter}");
+    expect(views()[0].params?.zoom).toBe(1);
+    expect(screen.getByText(msg("sensorView.widthNoPosition"))).toBeDefined();
   });
 
   test("the mouse wheel without Shift zooms (and does not scroll the page); with Shift it does not zoom", async () => {
@@ -277,9 +334,10 @@ describe("the window", () => {
       return notPrevented;
     };
     expect(notch(-100)).toBe(false); // preventDefault: หน้าไม่เลื่อน
+    expect(views()[0].params?.zoom).toBe(Math.SQRT2); // หนึ่งรอย = ×√2
+    notch(-100);
     expect(views()[0].params?.zoom).toBe(2);
     notch(-100);
-    expect(views()[0].params?.zoom).toBe(4);
     notch(100);
     expect(views()[0].params?.zoom).toBe(2);
     await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 2]));
@@ -336,7 +394,7 @@ describe("the window", () => {
     expect(msg("sensorView.hudImageryOffline")).toBe("ภาพพื้นโลก: Natural Earth II (ออฟไลน์)");
     // ซูม ≥ 8 ในโหมด Camera และสวิตช์ปิด: แนะนำ Globe Manager
     expect(lines()).not.toContain(msg("sensorView.hintGlobeManager"));
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    for (let i = 0; i < 6; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
     fake.hud = { ...HUD, fovDeg: 30.198 / 8, zoom: 8 };
     act(() => sensorViewScenes.notify());
     await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
@@ -365,7 +423,7 @@ describe("the window", () => {
     const fake = await open("Sensor1");
     await screen.findByTestId("sensor-view-hud");
     const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
-    for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    for (let i = 0; i < 6; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
     try {
       for (const sources of [{ gibs: false, eox: false, osm: false, ion: true }, { gibs: true, eox: true, osm: true, ion: false }]) {
         act(() => useImagery.setState({ sources }));
@@ -410,10 +468,12 @@ describe("the window", () => {
     const gps = (zoom: number): SensorHud => ({ ...HUD, altKm: 20200, coneHalfAngle: 14.4, fovDeg: sensorViewShortFovDeg(14.4, zoom), zoom: zoom as SensorViewZoom });
     await show(gps(1024), msg("sensorView.hudGroundWidthKm", { width: "10.4" }));
     await show(gps(8192), msg("sensorView.hudGroundWidthKm", { width: "1.30" }));
-    // FOV ที่ ×8192 ≈ 0.0037° ไม่ปัดเป็น 0.00; ×1024 ≈ 0.0295°; ×128 ≈ 0.24°
+    // FOV ต่ำกว่า 1° เป็นเลขนัยสำคัญ 2 ตัว: ×8192 ≈ 0.0037° ไม่ปัดเป็น 0.00; ×1024 ≈ 0.0295°; ×128 ≈ 0.24°; ×262144 ≈ 0.000115° (อ่านได้ ไม่เป็น 0.0001)
     expect(lines()).toContain(msg("sensorView.hudFov", { fov: "0.0037", zoom: 8192 }));
-    await show(gps(1024), msg("sensorView.hudFov", { fov: "0.0295", zoom: 1024 }));
+    await show(gps(1024), msg("sensorView.hudFov", { fov: "0.030", zoom: 1024 }));
     await show(gps(128), msg("sensorView.hudFov", { fov: "0.24", zoom: 128 }));
+    await show(gps(262144), msg("sensorView.hudFov", { fov: "0.00012", zoom: "262k" }));
+    await show(gps(Math.SQRT2), msg("sensorView.hudFov", { fov: "21.4", zoom: "1.4" }));
     await show(gps(1024), msg("sensorView.hudGroundWidthKm", { width: "10.4" }));
     // ×1: กว้างกว่าจานโลก = ขอบฟ้า (หลักหมื่น km ไม่ทศนิยม)
     const full = gps(1);
@@ -611,19 +671,69 @@ describe("Sensor View params (imagery spec §5.3)", () => {
     expect(sensorViewParams({ zoom: 128 }).zoom).toBe(128); // workbook เก่า (สูงสุด ×128) ยังเปิดได้
     expect(sensorViewParams({ display: "Sensor" }).display).toBe("camera");
     expect(sensorViewParams({ display: 1 }).display).toBe("camera");
-    for (const bad of [3, 0, "8", 16384, 12, -2, 1.5, Number.NaN, null]) expect(sensorViewParams({ zoom: bad }).zoom, String(bad)).toBe(1);
+    // zoom เป็นจำนวนต่อเนื่องใน [1, 262144] (ค่าจากช่อง Width ไม่อยู่บนตาราง ×√2) ค่าเดิมที่เป็นกำลังสองยังใช้ได้
+    for (const ok of [1, 3, 12, 1.5, Math.SQRT2, 16384, 37.25, 262144]) expect(sensorViewParams({ zoom: ok }).zoom, String(ok)).toBe(ok);
+    for (const bad of [0, 0.5, "8", -2, 262144.5, 1e9, Number.NaN, Number.POSITIVE_INFINITY, null, true]) {
+      expect(sensorViewParams({ zoom: bad }).zoom, String(bad)).toBe(1);
+    }
     expect(sensorViewParams(null)).toEqual({ path: "", up: "north", display: "camera", zoom: 1 });
   });
 
-  test("zoom steps are the 14 powers of two from 1 to 8192 and nextZoom stops at both ends", () => {
-    expect(ZOOM_STEPS).toEqual([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]);
-    expect(nextZoom(1, 1)).toBe(2);
-    expect(nextZoom(4, -1)).toBe(2);
+  test("the grid is 2^(k/2) for k = 0..36: powers of two exactly at even k, ×262144 at the end", () => {
+    expect(ZOOM_GRID).toHaveLength(37);
+    for (let k = 0; k <= 36; k++) expect(ZOOM_GRID[k]).toBeCloseTo(2 ** (k / 2), 9);
+    for (let k = 0; k <= 36; k += 2) expect(ZOOM_GRID[k]).toBe(2 ** (k / 2));
+    expect(ZOOM_GRID[1]).toBe(Math.SQRT2);
+    expect(ZOOM_GRID[26]).toBe(8192);
+    expect(ZOOM_GRID[36]).toBe(ZOOM_MAX);
+    expect(ZOOM_MAX).toBe(262144);
+  });
+
+  test("nextZoom snaps to the nearest grid point first, then steps by ×√2, and stops at both ends", () => {
+    expect(nextZoom(1, 1)).toBe(Math.SQRT2);
+    expect(nextZoom(Math.SQRT2, 1)).toBe(2);
+    expect(nextZoom(2, -1)).toBe(Math.SQRT2);
     expect(nextZoom(1, -1)).toBe(1);
-    expect(nextZoom(128, 1)).toBe(256);
-    expect(nextZoom(4096, 1)).toBe(8192);
-    expect(nextZoom(8192, 1)).toBe(8192);
-    expect(nextZoom(8192, -1)).toBe(4096);
+    expect(nextZoom(4096, 1)).toBeCloseTo(4096 * Math.SQRT2, 6);
+    expect(nextZoom(8192, -1)).toBeCloseTo(4096 * Math.SQRT2, 6);
+    expect(nextZoom(ZOOM_MAX, 1)).toBe(ZOOM_MAX);
+    expect(nextZoom(ZOOM_MAX, -1)).toBeCloseTo(131072 * Math.SQRT2, 3);
+    // ค่าที่ไม่อยู่บนตาราง (จากช่อง Width): จุดที่ใกล้ที่สุดในสเกล log ก่อน แล้วจึงก้าว
+    expect(snapZoomIndex(37.2)).toBe(10); // 2·log2(37.2) = 10.44 → 32
+    expect(nextZoom(37.2, 1)).toBeCloseTo(32 * Math.SQRT2, 9);
+    expect(nextZoom(37.2, -1)).toBeCloseTo(16 * Math.SQRT2, 9);
+    expect(snapZoomIndex(1.1)).toBe(0);
+    expect(nextZoom(1.1, -1)).toBe(1);
+    expect(snapZoomIndex(200_000)).toBe(35);
+    expect(nextZoom(200_000, 1)).toBe(ZOOM_MAX);
+    // ไล่จาก ×1 ทีละขั้น: ขั้นที่ 2k เป็นกำลังสองพอดีเสมอ (ไม่สะสมความคลาด)
+    let z = 1;
+    for (let i = 1; i <= 36; i++) {
+      z = nextZoom(z, 1);
+      if (i % 2 === 0) expect(z).toBe(2 ** (i / 2));
+    }
+  });
+
+  test("the toolbar label: whole numbers below 10000 exactly, one decimal below 10, whole numbers up to 9999, then thousands as k (cut, never rounded up)", () => {
+    const cases: [number, string][] = [
+      [1, "1"], [Math.SQRT2, "1.4"], [2, "2"], [2 * Math.SQRT2, "2.8"], [4 * Math.SQRT2, "5.7"], [8, "8"], [8 * Math.SQRT2, "11"], [64 * Math.SQRT2, "91"],
+      [1024, "1024"], [1024 * Math.SQRT2, "1448"], [8192, "8192"], [8192 * Math.SQRT2, "11k"], [16384, "16k"], [65536, "65k"], [ZOOM_MAX, "262k"],
+      [3.27, "3.3"], [9.96, "10"], [37.2, "37"], [9999.4, "9999"],
+    ];
+    for (const [z, text] of cases) expect(zoomText(z), String(z)).toBe(text);
+    // ทุกจุดบนตารางได้ป้ายต่างกัน
+    expect(new Set(ZOOM_GRID.map(zoomText)).size).toBe(ZOOM_GRID.length);
+  });
+
+  test("the Width box reads metres (no unit or m) and kilometres, with or without a space; anything else is not a width", () => {
+    expect(parseGroundWidth("500 m")).toBe(500);
+    expect(parseGroundWidth("500m")).toBe(500);
+    expect(parseGroundWidth("500")).toBe(500);
+    expect(parseGroundWidth(" 1.5 km ")).toBe(1500);
+    expect(parseGroundWidth("1.5KM")).toBe(1500);
+    expect(parseGroundWidth("0.25 km")).toBe(250);
+    expect(parseGroundWidth(".5 km")).toBe(500);
+    for (const bad of ["", "km", "abc", "0", "0 m", "-5 m", "1,5 km", "5 mi", "1e3", "Infinity", "1.5 km 2", "NaN"]) expect(parseGroundWidth(bad), bad).toBeNull();
   });
 });
 

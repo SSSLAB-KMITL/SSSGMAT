@@ -1854,6 +1854,27 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ช่อง Width ข้างค่าซูม (ความกว้างพื้นที่ที่จุดใต้ดาว "1.50 km") และคำแนะนำเมื่อพิมพ์ผิด */
+.sensor-view-width-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.sensor-view-width {
+  width: 7em;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.sensor-view-width-hint {
+  margin-left: 6px;
+  color: var(--menu-text);
+  font-style: italic;
+  white-space: nowrap;
+}
+
 /* คำแนะนำ Globe Manager ใน HUD (โหมด Camera ซูมลึกโดยไม่มีภาพออนไลน์) */
 .sensor-view-hint {
   font-family: var(--font-ui);
