@@ -6,7 +6,8 @@ import { valueAt } from "../../src/data/dynamic";
 import type { ReportJson, ReportSection } from "../../src/data/reports";
 import { formatTime } from "../../src/time/format";
 import {
-  DEFAULT_GRAPH_THEME, graphOption, graphState, graphTimeOption, objectColorOf, STRIP_CHART_DURATION_S, timeAxisLabel, type GraphCtx,
+  colorKeyOf, DEFAULT_GRAPH_THEME, graphCrosshairOption, graphOption, graphState, graphTimeOption, objectColorOf, STRIP_CHART_DURATION_S, timeAxisLabel,
+  type GraphCtx,
 } from "../../src/windows/Graph/options";
 import { makeDoc } from "./helpers/chrome";
 
@@ -125,6 +126,39 @@ describe("time_xy", () => {
     expect(o.legend.data).toEqual(series.map((s) => s.name));
   });
 
+  test("gap breaks come from the times only, so every series of a section stays index-aligned", () => {
+    // Elevation ไม่มีค่าที่แถวก่อนช่องว่างพอดี: จุดคั่นของช่องว่างยังอยู่ที่ตำแหน่งเดียวกับของ Range
+    const rows = [...aerRows(0, [[100, 10, 1], [101, 11, 2]]), ...aerRows(30, [[102, 12, 3], [103, 13, 4]])];
+    (rows[1] as (string | number | null)[])[2] = null;
+    const o = graphOption(aer([g01(rows)]), ctx({ maxGapMs: 90_000 })) as AnyObj;
+    const el = dataSeries(o).find((s) => s.name === "THBK-To-G01 Elevation")!;
+    const rg = dataSeries(o).find((s) => s.name === "THBK-To-G01 Range")!;
+    expect(el.data.map((d: unknown[]) => d[1])).toEqual([10, null, null, 12, 13]);
+    expect(rg.data.map((d: unknown[]) => d[1])).toEqual([1, 2, null, 3, 4]);
+    expect(el.data.map((d: unknown[]) => d[0])).toEqual(rg.data.map((d: unknown[]) => d[0]));
+  });
+
+  test("stacked and step series are not sampled (lttb would misalign the bands)", () => {
+    const columns = [
+      { name: "Time", unit: null, kind: "time" as const },
+      { name: "GDOP", unit: null, kind: "number" as const },
+      { name: "N Visible", unit: null, kind: "int" as const },
+      { name: "GPS", unit: null, kind: "int" as const },
+    ];
+    const rows = [[iso(T0), 1.5, 9, 9], [iso(T0 + MIN), 1.6, 10, 10]];
+    const fac = section("*/Facility/THBK", "THBK", columns, rows);
+    const stacked = dataSeries(graphOption(report({ type: "time_xy", y1: ["GPS"], y2: [], stack: true }, [fac]), ctx()) as AnyObj);
+    expect(stacked.map((s) => s.sampling)).toEqual(["none"]);
+    const mixed = dataSeries(graphOption(report({ type: "time_xy", y1: ["GDOP"], y2: ["N Visible"], stack: false }, [fac]), ctx()) as AnyObj);
+    expect(mixed.map((s) => [s.name, s.sampling, s.step])).toEqual([["THBK GDOP", "lttb", undefined], ["THBK N Visible", "none", "end"]]);
+  });
+
+  test("the crosshair part only touches the axis pointers (merge, keeps the zoom)", () => {
+    expect(graphCrosshairOption(aer([g01()]), ctx({ crosshair: true }))).toEqual({ tooltip: { axisPointer: { type: "cross" } } });
+    expect(graphCrosshairOption(aer([g01()]), ctx())).toEqual({ tooltip: { axisPointer: { type: "line" } } });
+    expect(graphCrosshairOption({ ...aer([g01()]), graph: null }, ctx())).toBeNull();
+  });
+
   test("stacked n asset coverage", () => {
     const columns = [
       { name: "Time", unit: null, kind: "time" as const },
@@ -223,6 +257,17 @@ describe("interval", () => {
     expect(shape.shape.x).toBe(200);
     expect(shape.shape.width).toBe(30); // ตัดที่ขอบขวาของพื้นที่กราฟ (230)
     expect(band.renderItem({ coordSys: { x: 0, y: 0, width: 100, height: 100 } }, api)).toBeNull();
+  });
+
+  test("the crosshair part of interval graphs shows the axis pointers by id", () => {
+    const o = graphOption(intervals(), ctx()) as AnyObj;
+    expect(xAxis(o).id).toBe("time");
+    expect(o.yAxis.id).toBe("objects");
+    expect(graphCrosshairOption(intervals(), ctx({ crosshair: true }))).toEqual({
+      tooltip: { axisPointer: { type: "cross" } },
+      xAxis: { id: "time", axisPointer: { show: true } },
+      yAxis: { id: "objects", axisPointer: { show: true } },
+    });
   });
 
   test("the time line is a vertical line in interval graphs too", () => {
@@ -351,5 +396,28 @@ describe("object colours", () => {
     expect(colorOf("*/Satellite/G01")).toBe("#ffd23f");
     expect(colorOf("*/Satellite/NOPE")).toBe("#c8c8c8");
     expect(objectColorOf(null, new Map(), tokens)(G01)).toBe("#c8c8c8");
+  });
+
+  test("the colour key changes only with what the colours depend on", () => {
+    const base = makeDoc({
+      objects: [
+        { class: "Facility", name: "THBK", position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 0 } },
+        { class: "Satellite", name: "G01", norad: 1 },
+        { class: "Constellation", name: "GPS", system: "G", assigned_objects: ["*/Satellite/G01"] },
+      ] as never,
+    });
+    const prn = new Map([[1, "G01"]]);
+    const key = colorKeyOf(base, prn);
+    // แก้คำอธิบาย ตำแหน่ง Facility หรือช่วงเวลา: สีไม่เปลี่ยน
+    expect(colorKeyOf({ ...base, description: "x", analysis_period: { start: "2026-11-13T00:00:00Z", stop: "2026-11-14T00:00:00Z" } }, prn)).toBe(key);
+    const moved = { ...base, objects: base.objects.map((o) => (o.class === "Facility" ? { ...o, position: { type: "Geodetic", lat_deg: 1, lon_deg: 2, alt_m: 0 } } : o)) } as typeof base;
+    expect(colorKeyOf(moved, new Map(prn))).toBe(key);
+    // สีของดาว สีของ Constellation สมาชิก หรือ PRN เปลี่ยน: กุญแจเปลี่ยน
+    const recolored = { ...base, objects: base.objects.map((o) => (o.name === "G01" ? { ...o, graphics2d: { inherit: false, color: "#123456" } } : o)) } as typeof base;
+    expect(colorKeyOf(recolored, prn)).not.toBe(key);
+    const constColor = { ...base, objects: base.objects.map((o) => (o.class === "Constellation" ? { ...o, color: "#abcdef" } : o)) } as typeof base;
+    expect(colorKeyOf(constColor, prn)).not.toBe(key);
+    expect(colorKeyOf(base, new Map([[1, "R01"]]))).not.toBe(key);
+    expect(colorKeyOf(null, prn)).not.toBe(key);
   });
 });

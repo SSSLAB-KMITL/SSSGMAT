@@ -8,10 +8,13 @@
 //     polar90  Az El Polar: มุม = Azimuth (0° ด้านบน ตามเข็มนาฬิกา) รัศมี = Elevation (90° อยู่กลาง ขอบนอก = 0°) ข้อมูล [El, Az]
 // - เส้นขาด (ค่า null คั่น): ช่องว่างระหว่างแถวยาวเกิน maxGapMs (ระหว่าง access, ข้อมูลขาด), ค่าที่ไม่มี และมุมที่วน (Azimuth 359.5 → 0.5,
 //   Lon 179 → -179) ซึ่งถ้าลากต่อจะเป็นเส้นแนวตั้งทั้งกราฟ (Review Focus 1) maxGapMs ที่ผู้เรียกไม่ส่ง = 1.5 × ระยะสั้นที่สุดระหว่างแถวของข้อมูล
+//   จุดคั่นของช่องว่างคิดจากเวลาของ section ครั้งเดียว (ทุก element ได้ตำแหน่งเดียวกัน) series ที่ซ้อนกันจึงเรียงดัชนีตรงกัน
+// - sampling: "lttb" เฉพาะเส้นต่อเนื่อง series ที่ซ้อนหรือเป็นขั้นบันได (จำนวนนับ) ไม่สุ่ม (LTTB เลือกจุดแยกต่อ series ทำให้ขอบแถบไม่ตรงกัน)
 // - เส้นเวลา animation: time_xy และ interval เป็นเส้นแนวตั้ง (markLine ของ series "timeLine") เฉพาะเมื่อเวลาอยู่ในช่วงของแกน
 //   polar90 เป็นจุดตำแหน่งปัจจุบัน (series "current" ค่าจาก valueAt: Azimuth ประมาณตามวง) นอก access = ไม่มีจุด; showTimeLine false = ไม่มีทั้งสองแบบ
 // - Strip Chart (stripMs): แกนเวลาแสดง [now - stripMs, now] เลื่อนตามนาฬิกา ไม่งั้นแกนครอบข้อมูลทั้งหมด
-// - graphTimeOption = เฉพาะส่วนที่เปลี่ยนตามเวลา (id เดียวกับใน graphOption) ให้หน้าต่าง setOption แบบ merge ไม่ส่งข้อมูลทั้งชุดซ้ำทุกครั้ง
+// - graphTimeOption / graphCrosshairOption = เฉพาะส่วนที่เปลี่ยนตามเวลาหรือปุ่มสลับ (id เดียวกับใน graphOption) ให้หน้าต่าง setOption แบบ merge
+//   ไม่ส่งข้อมูลทั้งชุดซ้ำ และไม่ล้างการซูมของผู้ใช้
 // - แกนเวลาและ tooltip ใช้ DateFormat ของ scenario (formatTime) สีพื้น ตัวอักษร เส้นตาราง จาก theme.css (--graph-*) ผ่าน readGraphTheme
 // - ข้อความใน tooltip เป็น HTML: ชื่อ object/element มาจากข้อมูล จึง escape ก่อนเสมอ
 
@@ -67,6 +70,19 @@ export function objectColorOf(doc: ScenarioDoc | null, prnByNorad: ReadonlyMap<n
     const obj = doc?.objects.find((o) => objectPath(o) === target);
     return obj === undefined || doc === null ? tokens.other : effectiveColor(obj, doc, { prnByNorad, tokens });
   };
+}
+
+/**
+ * กุญแจของทุกอย่างที่ objectColorOf ใช้ (ชนิด ชื่อ NORAD สีและ inherit ของ graphics2d สี/ระบบ/สมาชิกของ Constellation และ NORAD → PRN)
+ * หน้าต่างสร้างตัวหาสีใหม่ (และวาดกราฟใหม่) เมื่อกุญแจเปลี่ยนเท่านั้น การแก้ส่วนอื่นของ scenario จึงไม่ล้างการซูม
+ */
+export function colorKeyOf(doc: ScenarioDoc | null, prnByNorad: ReadonlyMap<number, string>): string {
+  if (doc === null) return "null";
+  const objects = doc.objects.map((o) => {
+    const x = o as { norad?: unknown; graphics2d?: { inherit?: unknown; color?: unknown } | null; color?: unknown; system?: unknown; assigned_objects?: unknown };
+    return [o.class, o.name, x.norad ?? null, x.graphics2d?.inherit ?? null, x.graphics2d?.color ?? null, x.color ?? null, x.system ?? null, x.assigned_objects ?? null];
+  });
+  return JSON.stringify([objects, [...prnByNorad].sort((a, b) => a[0] - b[0])]);
 }
 
 // ---------- ข้อมูล ----------
@@ -132,8 +148,23 @@ function maxGapOf(times: readonly number[], ctx: GraphCtx): number {
   return step * 1.5;
 }
 
-/** [ms, ค่า] ของคอลัมน์ col พร้อมจุด null คั่นตรงช่องว่างและจุดวนของมุม */
-function lineData(section: ReportSection, col: number, maxGapMs: number, wraps: boolean): Point[] {
+/**
+ * จุดคั่นของช่องว่างระหว่างแถว (ขึ้นกับเวลาอย่างเดียว ไม่ขึ้นกับค่าของ element): breaks[i] = เวลากลางระหว่างแถวก่อนหน้ากับแถว i
+ * เมื่อห่างกันเกิน maxGapMs ไม่งั้น NaN ทุก series ของ section ได้จุดคั่นตำแหน่งเดียวกัน ข้อมูลจึงเรียงดัชนีตรงกัน (การซ้อนของ ECharts ซ้อนตามดัชนี)
+ */
+function gapBreaks(times: readonly number[], maxGapMs: number): number[] {
+  const out = new Array<number>(times.length).fill(Number.NaN);
+  let pt = Number.NaN;
+  times.forEach((t, i) => {
+    if (!Number.isFinite(t)) return;
+    if (Number.isFinite(pt) && !(t - pt <= maxGapMs)) out[i] = (pt + t) / 2; // maxGapMs ที่เป็น NaN = ขาด (ไม่ลากข้าม)
+    pt = t;
+  });
+  return out;
+}
+
+/** [ms, ค่า] ของคอลัมน์ col พร้อมจุด null คั่นตรงช่องว่าง (breaks ของ section) และจุดวนของมุม (เฉพาะ element ที่วน ซึ่งไม่ถูกซ้อน) */
+function lineData(section: ReportSection, col: number, breaks: readonly number[], wraps: boolean): Point[] {
   const times = timesOf(section);
   const out: Point[] = [];
   let pt = Number.NaN;
@@ -142,10 +173,9 @@ function lineData(section: ReportSection, col: number, maxGapMs: number, wraps: 
     const t = times[i];
     if (!Number.isFinite(t)) return;
     const v = num(row[col]);
-    if (out.length > 0 && out[out.length - 1][1] !== null) {
-      const gap = !(t - pt <= maxGapMs); // maxGapMs ที่เป็น NaN = ขาด (ไม่ลากข้าม)
-      const wrap = wraps && v !== null && pv !== null && Math.abs(v - pv) > 180;
-      if (gap || wrap) out.push([(pt + t) / 2, null]);
+    if (out.length > 0) {
+      if (Number.isFinite(breaks[i])) out.push([breaks[i], null]);
+      else if (wraps && v !== null && pv !== null && Math.abs(v - pv) > 180) out.push([(pt + t) / 2, null]);
     }
     out.push([t, v]);
     pt = t;
@@ -258,7 +288,8 @@ function xySeries(report: ReportJson, ctx: GraphCtx, theme: GraphTheme): XySerie
   const elements: [string, number][] = [...graph.y1.map((n) => [n, 0] as [string, number]), ...graph.y2.map((n) => [n, 1] as [string, number])];
   const out: XySeries[] = [];
   report.sections.forEach((section, si) => {
-    const maxGap = maxGapOf(timesOf(section), ctx);
+    const times = timesOf(section);
+    const breaks = gapBreaks(times, maxGapOf(times, ctx));
     const color = ctx.colorOf(section.object);
     const stackName = report.sections.length === 1 ? "total" : `total ${section.title}`;
     elements.forEach(([element, axis], ei) => {
@@ -271,8 +302,10 @@ function xySeries(report: ReportJson, ctx: GraphCtx, theme: GraphTheme): XySerie
         element, int,
         option: {
           id: `s${si}:${element}`, name: `${section.title} ${element}`, type: "line", yAxisIndex: axis,
-          data: lineData(section, col, maxGap, WRAPPING.has(element)),
-          color: lineColor, showSymbol: false, sampling: "lttb", connectNulls: false,
+          data: lineData(section, col, breaks, WRAPPING.has(element)),
+          color: lineColor, showSymbol: false, connectNulls: false,
+          // LTTB เลือกจุดของแต่ละ series แยกกัน: series ที่ซ้อนกันหรือเป็นขั้นบันได (จำนวนนับ) จะได้ขอบไม่ตรงกันและขั้นเลื่อนไปทั้งช่วง bucket
+          sampling: stack || int ? "none" : "lttb",
           lineStyle: { width: 1.5, color: lineColor, type: stack ? "solid" : LINE_TYPES[ei % LINE_TYPES.length] },
           emphasis: { focus: "series" },
           ...(stack ? { stack: stackName, step: "end", areaStyle: { opacity: 0.55 } } : int ? { step: "end" } : {}),
@@ -375,7 +408,7 @@ function intervalOption(report: ReportJson, ctx: GraphCtx, theme: GraphTheme): O
     },
     xAxis: { ...timeAxis(report, ctx, theme), axisPointer: { show: ctx.crosshair === true, label: { formatter: (p: { value: number }) => fmt(p.value) } } },
     yAxis: {
-      type: "category", data: titles, inverse: true,
+      id: "objects", type: "category", data: titles, inverse: true,
       axisLabel: { color: theme.text }, axisLine: { lineStyle: { color: theme.axis } },
       splitLine: { show: true, lineStyle: { color: theme.grid } },
       axisPointer: { show: ctx.crosshair === true },
@@ -514,6 +547,16 @@ export function graphTimeOption(report: ReportJson, ctx: GraphCtx): Option | nul
     default:
       return null;
   }
+}
+
+/** เฉพาะ Crosshair Cursor (setOption แบบ merge: ไม่ล้างการซูมของผู้ใช้) */
+export function graphCrosshairOption(report: ReportJson, ctx: GraphCtx): Option | null {
+  const type = report.graph?.type;
+  if (type === undefined) return null;
+  const on = ctx.crosshair === true;
+  const tooltip = { axisPointer: { type: on ? "cross" : "line" } };
+  if (type !== "interval") return { tooltip };
+  return { tooltip, xAxis: { id: "time", axisPointer: { show: on } }, yAxis: { id: "objects", axisPointer: { show: on } } };
 }
 
 /** สิ่งที่กราฟแสดงอยู่ (test hook graphState) */

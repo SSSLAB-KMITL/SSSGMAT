@@ -3,8 +3,9 @@
 // - การโหลด Refresh (F5) แถบเตือนผลลัพธ์ไม่ตรง (409) และการคำนวณใหม่ ใช้ useReportLoader ตัวเดียวกับหน้าต่างรายงาน (windows/Report/Report.tsx)
 // - ECharts โหลดแบบ lazy ผ่าน loadECharts (chart.ts) เท่านั้น ไฟล์นี้ import echarts ได้แค่ type; chunk โหลดไม่ได้ = ข้อความไทย role="alert"
 //   และ Refresh ลองโหลดใหม่ (chart.ts ไม่จำการโหลดที่ล้ม)
-// - option มาจาก options.ts: setOption เต็ม (notMerge) เมื่อข้อมูล/รูปแบบเวลา/สี/ปุ่มสลับเปลี่ยน, ส่วนที่ตามเวลา animation (เส้นเวลา, จุดปัจจุบันของ polar,
-//   แกนของ Strip Chart) setOption แบบ merge ไม่เกินทุก GRAPH_TIME_REFRESH_MS ms ไม่เรียก server ซ้ำ
+// - option มาจาก options.ts: setOption เต็ม (notMerge) เมื่อข้อมูล/รูปแบบเวลา/สีเปลี่ยน (สีตาม colorKeyOf: แก้ส่วนอื่นของ scenario ไม่วาดใหม่),
+//   ส่วนที่ตามเวลา animation (เส้นเวลา, จุดปัจจุบันของ polar, แกนของ Strip Chart) setOption แบบ merge ไม่เกินทุก GRAPH_TIME_REFRESH_MS ms ไม่เรียก server ซ้ำ
+//   ปุ่มสลับ (เส้นเวลา, Crosshair Cursor) ก็ merge: การซูมของผู้ใช้คงอยู่; Zoom Out ใช้ไม่ได้กับกราฟ polar (ไม่มีการซูมตามเวลา)
 // - Strip Chart = style ที่เปิด Dynamic Display (params.dynamic) ชนิด time_xy: แกนเวลาแสดง STRIP_CHART_DURATION_S วินาทีล่าสุดที่จบที่เวลาปัจจุบัน
 // - แถบเครื่องมือ: Save (PNG), Copy to Clipboard (PNG), Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor
 //   สองปุ่มสลับจำไว้ใน windowProps ของหน้าต่าง (อยู่ใน workbook)
@@ -31,13 +32,14 @@ import { ResultsBanner } from "../graphics/GraphicsFrame";
 import { parseReportParams, requestOf, useReportLoader, type LoaderMessages, type PrepareReport } from "../Report/Report";
 import { loadECharts, type ECharts } from "./chart";
 import {
-  graphOption, graphState, graphTimeOption, objectColorOf, readGraphTheme, registerGraphState, STRIP_CHART_DURATION_S, type GraphCtx,
+  colorKeyOf, graphCrosshairOption, graphOption, graphState, graphTimeOption, objectColorOf, readGraphTheme, registerGraphState, STRIP_CHART_DURATION_S,
+  type GraphCtx,
 } from "./options";
 
 /** setOption ตามเวลา animation ไม่บ่อยกว่านี้ (ms) */
 export const GRAPH_TIME_REFRESH_MS = 250;
 
-const GRAPH_MESSAGES: LoaderMessages = { failed: "graph.failed", computeFailed: "graph.computeFailed", computeJobFailed: "graph.computeJobFailed" };
+const GRAPH_MESSAGES: LoaderMessages = { codePrefix: "GRAPH", failed: "graph.failed", computeFailed: "graph.computeFailed", computeJobFailed: "graph.computeJobFailed" };
 /** กราฟไม่ต้องเตรียมอะไรเพิ่มหลังได้รายงาน (จุดปัจจุบันของ polar ประมาณค่าเองใน options.ts) */
 const prepareNothing: PrepareReport<null> = async () => null;
 
@@ -84,7 +86,11 @@ export function Graph({ params, panelId }: PanelProps) {
   const doc = useScenario((s) => s.doc);
   const stepS = doc?.step_s ?? 30;
   const prnByNorad = useResults((s) => s.prnByNorad);
-  const colorOf = useMemo(() => objectColorOf(doc, prnByNorad), [doc, prnByNorad]);
+  // ตัวหาสีสร้างใหม่เฉพาะเมื่อสิ่งที่สีขึ้นอยู่เปลี่ยน (แก้คำอธิบาย/ตำแหน่ง/ช่วงเวลาของ scenario ไม่วาดใหม่ ไม่ล้างการซูม)
+  const colorKey = useMemo(() => colorKeyOf(doc, prnByNorad), [doc, prnByNorad]);
+  const colorSource = useRef({ doc, prnByNorad });
+  colorSource.current = { doc, prnByNorad };
+  const colorOf = useMemo(() => objectColorOf(colorSource.current.doc, colorSource.current.prnByNorad), [colorKey]);
   const theme = useMemo(() => readGraphTheme(), []);
   const props = useLayout((s) => s.windowProps[panelId]);
   const showTimeLine = props?.showTimeLine !== false;
@@ -137,7 +143,10 @@ export function Graph({ params, panelId }: PanelProps) {
   }, [lib]);
   usePanelResize(panelId, () => chartRef.current?.resize());
 
-  // option เต็ม: เมื่อข้อมูล รูปแบบเวลา สี หรือปุ่มสลับเปลี่ยน (เวลาปัจจุบันอ่านจาก latest)
+  /** ค่าของปุ่มสลับที่อยู่ในกราฟแล้ว (การสลับใช้ setOption แบบ merge ไม่วาดใหม่ทั้งกราฟ การซูมของผู้ใช้จึงคงอยู่) */
+  const applied = useRef({ showTimeLine, crosshair });
+
+  // option เต็ม: เมื่อข้อมูล รูปแบบเวลา หรือสีเปลี่ยน (เวลาปัจจุบันและปุ่มสลับอ่านจาก latest)
   useEffect(() => {
     if (chart === null) return;
     const option = report === null ? null : graphOption(report, latest.current.ctx);
@@ -148,16 +157,27 @@ export function Graph({ params, panelId }: PanelProps) {
     }
     chart.setOption(option, { notMerge: true });
     drawn.current = true;
-  }, [chart, report, fmt, ltz, colorOf, showTimeLine, crosshair, stripMs, maxGapMs, theme]);
+    applied.current = { showTimeLine: latest.current.ctx.showTimeLine, crosshair: latest.current.ctx.crosshair === true };
+  }, [chart, report, fmt, ltz, colorOf, stripMs, maxGapMs, theme]);
 
-  // ส่วนที่ตามเวลา animation (merge): เส้นเวลา จุดปัจจุบัน และแกนของ Strip Chart
+  // ส่วนที่ตามเวลา animation และ Show Animation Time Line (merge): เส้นเวลา จุดปัจจุบัน และแกนของ Strip Chart
   useEffect(() => {
     const { report: r, ctx: c } = latest.current;
     if (chart === null || r === null || !drawn.current) return;
-    if (!c.showTimeLine && c.stripMs === null) return;
+    if (!c.showTimeLine && c.stripMs === null && !applied.current.showTimeLine) return; // ซ่อนอยู่แล้ว ไม่มีอะไรเปลี่ยน
     const part = graphTimeOption(r, c);
     if (part !== null) chart.setOption(part);
-  }, [chart, now]);
+    applied.current.showTimeLine = c.showTimeLine;
+  }, [chart, now, showTimeLine]);
+
+  // Crosshair Cursor (merge)
+  useEffect(() => {
+    const { report: r, ctx: c } = latest.current;
+    if (chart === null || r === null || !drawn.current || applied.current.crosshair === crosshair) return;
+    const part = graphCrosshairOption(r, c);
+    if (part !== null) chart.setOption(part);
+    applied.current.crosshair = crosshair;
+  }, [chart, crosshair]);
 
   useEffect(() => registerGraphState(panelId, () => {
     const { report: r, ctx: c } = latest.current;
@@ -257,7 +277,9 @@ export function Graph({ params, panelId }: PanelProps) {
       <div className="rpt-toolbar" role="toolbar" aria-label={t("window.graph")}>
         <button type="button" className="btn" disabled={!canDraw} title={msg("graph.saveHint")} onClick={save}>{t("graph.save")}</button>
         <button type="button" className="btn" disabled={!canDraw} title={msg("graph.copyHint")} onClick={() => void copy()}>{t("graph.copyToClipboard")}</button>
-        <button type="button" className="btn" disabled={!canDraw} title={msg("graph.zoomOutHint")} onClick={zoomOut}>{t("graph.zoomOut")}</button>
+        <button type="button" className="btn" disabled={!canDraw || report?.graph?.type === "polar90"} title={msg("graph.zoomOutHint")} onClick={zoomOut}>
+          {t("graph.zoomOut")}
+        </button>
         <button
           type="button"
           className="btn"

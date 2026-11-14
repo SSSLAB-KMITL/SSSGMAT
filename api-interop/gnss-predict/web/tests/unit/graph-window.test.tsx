@@ -13,6 +13,7 @@ import { getPanelDef } from "../../src/layout/panels";
 import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
+import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { Graph, registerGraphPanel } from "../../src/windows/Graph/Graph";
 import { openReport, type ReportParams } from "../../src/windows/Report/Report";
@@ -198,20 +199,41 @@ describe("graph window", () => {
     await user.click(screen.getByRole("button", { name: t("graph.zoomOut") }));
     expect(chart.dispatchAction).toHaveBeenCalledWith({ type: "dataZoom", start: 0, end: 100 });
 
-    // Toggle Animation Timeline: สลับเส้นเวลา (จำใน windowProps)
+    // Toggle Animation Timeline: สลับเส้นเวลา (จำใน windowProps) แบบ merge ไม่วาดใหม่ทั้งกราฟ (ซูมของผู้ใช้คงอยู่)
+    const fulls = () => chart.options.filter((o) => (o.opts as AnyObj)?.notMerge === true).length;
+    const before = fulls();
     const toggle = screen.getByRole("button", { name: t("graph.toggleAnimationTimeline") });
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
     await user.click(toggle);
-    await waitFor(() => expect(markLine(lastFull(chart))).toEqual([]));
+    await waitFor(() => expect(markLine(lastOption(chart))).toEqual([]));
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(useLayout.getState().windowProps.graph?.showTimeLine).toBe(false);
     await user.click(toggle);
-    await waitFor(() => expect(markLine(lastFull(chart))).toEqual([T0 + 5 * MIN]));
+    await waitFor(() => expect(markLine(lastOption(chart))).toEqual([T0 + 5 * MIN]));
 
-    // Crosshair Cursor
+    // Crosshair Cursor (merge)
     expect(lastFull(chart).tooltip.axisPointer.type).toBe("line");
     await user.click(screen.getByRole("button", { name: t("graph.crosshairCursor") }));
-    await waitFor(() => expect(lastFull(chart).tooltip.axisPointer.type).toBe("cross"));
+    await waitFor(() => expect(lastOption(chart).tooltip?.axisPointer?.type).toBe("cross"));
+    expect(fulls()).toBe(before);
+  });
+
+  test("scenario edits that do not change colours keep the graph (and its zoom)", async () => {
+    const doc = scenario();
+    stubFetch({ [REPORTS]: { json: aerGraph() } });
+    mount();
+    const chart = await ready();
+    const fulls = () => chart.options.filter((o) => (o.opts as AnyObj)?.notMerge === true).length;
+    const before = fulls();
+    act(() => useScenario.setState({ doc: { ...doc, description: "edited" } }));
+    await act(async () => {});
+    expect(fulls()).toBe(before);
+    // สีของดาวเปลี่ยน = วาดใหม่ด้วยสีใหม่
+    act(() => useScenario.setState({
+      doc: { ...doc, objects: doc.objects.map((o) => (o.name === "G01" ? { ...o, graphics2d: { inherit: false, color: "#123456" } } : o)) as never },
+    }));
+    await waitFor(() => expect(fulls()).toBe(before + 1));
+    expect((lastFull(chart).series as AnyObj[]).find((s) => s.name === "THBK-To-G01 Azimuth")!.color).toBe("#123456");
   });
 
   test("copy to clipboard without clipboard support says so", async () => {
@@ -239,7 +261,7 @@ describe("graph window", () => {
     // Show Animation Time Line สลับ
     fireEvent.contextMenu(surface, { clientX: 40, clientY: 30 });
     await user.click(await screen.findByRole("menuitemcheckbox", { name: t("graph.showAnimationTimeLine") }));
-    await waitFor(() => expect(markLine(lastFull(chart))).toEqual([]));
+    await waitFor(() => expect(markLine(lastOption(chart))).toEqual([]));
 
     // Set Animation Time = เวลาที่ตำแหน่งคลิก
     fireEvent.contextMenu(surface, { clientX: 40, clientY: 30 });
@@ -266,6 +288,25 @@ describe("graph window", () => {
     fireEvent.contextMenu(container.querySelector(".graph-chart")!, { clientX: 40, clientY: 30 });
     await screen.findByRole("menuitem", { name: t("graph.exportDialog") });
     expect(screen.queryByRole("menuitem", { name: t("report.setAnimationTime") })).toBeNull();
+    // polar ไม่มีการซูมตามแกนเวลา: Zoom Out ใช้ไม่ได้
+    await user.keyboard("{Escape}");
+    expect((screen.getByRole("button", { name: t("graph.zoomOut") }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: t("graph.save") }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test("graph windows log under GRAPH_* codes", async () => {
+    scenario();
+    const f = stubFetch({
+      [REPORTS]: { status: 409, json: { code: "RESULTS_NOT_CURRENT", text: "x", field: null, detail: null } },
+      [COMPUTE]: { status: 202, json: { job: "j-3", etag: "e2" } },
+    });
+    mount();
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    act(() => useJobs.getState().onJobEvent({ id: "j-3", kind: "analyze", scenario: "S1", state: "failed", progress: null }));
+    await waitFor(() => expect(useMessages.getState().items.find((m) => m.text === msg("graph.computeJobFailed"))?.code).toBe("GRAPH_COMPUTE"));
+    expect(useMessages.getState().items.some((m) => m.code.startsWith("REPORT_"))).toBe(false);
   });
 
   test("strip chart follows the clock", async () => {

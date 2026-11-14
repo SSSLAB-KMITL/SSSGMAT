@@ -200,8 +200,10 @@ async function providerElements(sc: string, objects: readonly string[], signal: 
 
 type Phase = "loading" | "ready" | "notCurrent" | "styleInvalid" | "failed";
 
-/** ข้อความไทยที่ต่างกันระหว่างหน้าต่างรายงานกับหน้าต่างกราฟ */
+/** ข้อความไทยและรหัสใน Message Viewer ที่ต่างกันระหว่างหน้าต่างรายงานกับหน้าต่างกราฟ */
 export interface LoaderMessages {
+  /** คำนำรหัสของข้อความ: REPORT_FAILED / GRAPH_FAILED, *_COMPUTE, *_NO_SATELLITES, *_NEEDS_ACCESS (รหัสจาก server ใช้ตามที่ได้มา) */
+  codePrefix: "REPORT" | "GRAPH";
   failed: MsgKey;
   computeFailed: MsgKey;
   computeJobFailed: MsgKey;
@@ -298,7 +300,7 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
           setPhase("styleInvalid");
         } else {
           const failed = msg(text.failed, { message: errorText(e) });
-          notify("error", e instanceof ApiError ? e.code : "REPORT_FAILED", failed, object);
+          notify("error", e instanceof ApiError ? e.code : `${text.codePrefix}_FAILED`, failed, object);
           setFailure(failed);
           setPhase("failed");
         }
@@ -317,14 +319,14 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
     const short = (path: string): string => path.slice(FACILITY.length);
     setComputing(true);
     try {
-      for (const facility of plan.unreachable) notify("error", "REPORT_NO_SATELLITES", msg("report.noSatellites", { facility: short(facility) }), facility);
+      for (const facility of plan.unreachable) notify("error", `${text.codePrefix}_NO_SATELLITES`, msg("report.noSatellites", { facility: short(facility) }), facility);
       const computes = [...plan.computes];
       if (plan.needsAccess.length > 0) {
         // รายงานของ Facility ที่ยังไม่มี access: การสร้าง access ใหม่แก้ scenario จึงถามก่อน ไม่ตกลง = หยุด (ไม่ propagate ไม่สร้างรายงานซ้ำวน)
         const yes = await confirm(msg("report.needsAccess", { facility: plan.needsAccess.map((c) => short(c.from)).join(", ") }));
         if (signal.aborted) return;
         if (!yes) {
-          notify("info", "REPORT_NEEDS_ACCESS", msg("report.needsAccessDeclined"), object);
+          notify("info", `${text.codePrefix}_NEEDS_ACCESS`, msg("report.needsAccessDeclined"), object);
           return;
         }
         computes.push(...plan.needsAccess);
@@ -344,9 +346,9 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
       const ok = await waitForJobs(jobs, signal);
       if (signal.aborted) return;
       if (ok) setRevision((r) => r + 1);
-      else notify("error", "REPORT_COMPUTE", msg(text.computeJobFailed), object);
+      else notify("error", `${text.codePrefix}_COMPUTE`, msg(text.computeJobFailed), object);
     } catch (e) {
-      if (!signal.aborted) notify("error", e instanceof ApiError ? e.code : "REPORT_COMPUTE", msg(text.computeFailed, { message: errorText(e) }), object);
+      if (!signal.aborted) notify("error", e instanceof ApiError ? e.code : `${text.codePrefix}_COMPUTE`, msg(text.computeFailed, { message: errorText(e) }), object);
     } finally {
       if (!signal.aborted) setComputing(false);
     }
@@ -370,7 +372,7 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
   return { sc, phase, failure, loaded, computing, bannerStatus, recompute, refresh, root, onKeyDown };
 }
 
-const REPORT_MESSAGES: LoaderMessages = { failed: "report.failed", computeFailed: "report.computeFailed", computeJobFailed: "report.computeJobFailed" };
+const REPORT_MESSAGES: LoaderMessages = { codePrefix: "REPORT", failed: "report.failed", computeFailed: "report.computeFailed", computeJobFailed: "report.computeJobFailed" };
 
 /** Dynamic Display: วิธีประมาณค่าของแต่ละคอลัมน์จาก /dataproviders (อ่านไม่ได้ = คำเตือนแล้วประมาณตามชนิดคอลัมน์) รายงานธรรมดา = null */
 const prepareReport = (p: ReportParams | null): PrepareReport<DynamicSection[] | null> => async (report, sc, signal, object) => {
