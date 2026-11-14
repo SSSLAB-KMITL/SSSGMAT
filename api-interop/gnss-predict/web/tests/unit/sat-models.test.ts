@@ -272,3 +272,21 @@ describe("loadModelCatalog", () => {
     expect(resolveFresh(cat, { block: "GPS-IIA", norad: null }).id).toBe("generic");
   });
 });
+
+describe("unit-test guard for /models (tests/unit/setup.ts)", () => {
+  const settledWithin = (p: Promise<unknown>, ms: number): Promise<string> =>
+    Promise.race([p.then(() => "resolved", () => "rejected"), new Promise<string>((r) => setTimeout(() => r("pending"), ms))]);
+
+  test("an unstubbed fetch of a model file never reaches the network: it stays pending (satellites stay points, no warning)", async () => {
+    expect(await settledWithin(fetch("/models/catalog.json"), 50)).toBe("pending");
+    expect(await settledWithin(fetch("/models/gps-iif/gps-iif.glb"), 50)).toBe("pending");
+    // แม้ URL เต็ม (port ที่ปิดอยู่จะ reject ทันทีถ้าออกไปจริง)
+    expect(await settledWithin(fetch("http://127.0.0.1:9/models/catalog.json"), 50)).toBe("pending");
+    expect(await settledWithin(fetch(new URL("http://127.0.0.1:9/models/x.glb")), 50)).toBe("pending");
+    expect(await settledWithin(fetch(new Request("http://127.0.0.1:9/models/x.glb")), 50)).toBe("pending");
+  });
+
+  test("other URLs are not touched by the guard", async () => {
+    expect(await settledWithin(fetch("http://127.0.0.1:9/api/health"), 2000)).toBe("rejected");
+  });
+});

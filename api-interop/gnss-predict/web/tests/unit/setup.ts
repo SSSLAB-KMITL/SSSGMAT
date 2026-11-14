@@ -30,3 +30,24 @@ if (typeof HTMLCanvasElement !== "undefined") HTMLCanvasElement.prototype.getCon
 // ต้องทำให้ test ล้มเหลว ไม่ใช่ผ่านไปเงียบ ๆ เพราะ boundary แสดงข้อความแทน test ที่ตั้งใจทำให้พังเรียก takeReportedErrors() ไปตรวจเอง
 if (typeof window !== "undefined") window.reportError = recordReportedError;
 afterEach(() => failOnReportedErrors());
+
+// ไฟล์โมเดล 3 มิติ (/models/...: catalog.json และ glb) ห้ามออกเครือข่ายใน unit test: หน้าต่าง 3D ที่ mount จริงขอ catalog เองตอน restyle
+// fetch ของ /models ที่ test ไม่ได้ stub เอง (vi.stubGlobal("fetch", …) แทนตัวนี้) ได้ promise ที่ไม่มีวันเสร็จ = ดาวเป็นจุดตลอด ไม่มีข้อความเตือน
+// URL อื่นผ่านไปที่ fetch เดิม vi.unstubAllGlobals คืนมาที่ตัวนี้ (ตั้งตรง ๆ ก่อน test ใด stub)
+const passFetch = globalThis.fetch;
+const MODELS_PATH = /^\/models(\/|$)/;
+
+function requestPath(input: RequestInfo | URL): string | null {
+  const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  try {
+    return new URL(href, "http://localhost").pathname;
+  } catch {
+    return null;
+  }
+}
+
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  const path = requestPath(input);
+  if (path !== null && MODELS_PATH.test(path)) return new Promise<Response>(() => undefined);
+  return passFetch(input, init);
+}) as typeof fetch;

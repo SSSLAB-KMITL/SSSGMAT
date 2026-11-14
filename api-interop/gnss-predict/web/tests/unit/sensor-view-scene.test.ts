@@ -13,14 +13,17 @@ import { act } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SensorViewPose } from "../../src/cesium/sensorDraw";
 import { sensorViewFovDeg, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
+import { resetModelLoads } from "../../src/cesium/satModels";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
 import { DEFAULT_GLOBE } from "../../src/layout/workbook";
 import { useImagery, type ImageryLayerInfo } from "../../src/stores/imagery";
 import { useLayout } from "../../src/stores/layout";
+import { useMessages } from "../../src/stores/messages";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { GLOBE_TILE_CACHE_SIZE, mountScene3D, mountSensorView, placeSensorCamera, releaseContextMenu } from "../../src/windows/Graphics3D/scene3d";
+import { resetModelReports } from "../../src/windows/Graphics3D/satModelSource";
 import { sensorViewScenes } from "../../src/windows/SensorView/registry";
 import { CATALOG, makeScenarioDoc } from "./helpers/objects";
 
@@ -244,6 +247,18 @@ describe("Camera display of a Sensor View", () => {
   afterEach(() => {
     useResults.setState({ prnByNorad: new Map() });
     useScenario.setState({ name: null, doc: null, tree: null });
+  });
+
+  test("mounting the scenes (models on, no fetch stub) leaves no model message: the /models guard keeps the catalog pending", async () => {
+    resetModelLoads();
+    resetModelReports();
+    useMessages.setState(useMessages.getInitialState(), true);
+    const { mainScene, sensorScene } = await mountBoth();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(useMessages.getState().items.map((m) => m.code)).toEqual([]);
+    expect(mainScene.modelCount()).toBe(0);
+    sensorScene.destroy();
+    mainScene.destroy();
   });
 
   test("hides everything in its own viewer only; Sensor brings back exactly what the scenario shows (user-hidden stays hidden)", async () => {
