@@ -4,6 +4,9 @@
   (path ใต้ `data/`) ที่ `JobManager.submit` ที่เดียว ไม่มี scenario -> 404 (job ซ้ำที่ยังรอ/รันอยู่ได้ id เดิม)
 - `GET /validation/history`: บรรทัดของ `data/validation/history.jsonl` ที่แปลงแล้ว ตามลำดับในไฟล์ บรรทัดที่อ่านไม่ได้ (ไม่ใช่ JSON,
   ไม่ใช่ object, มี NaN/Infinity ซึ่งส่งเป็น JSON ไม่ได้, UTF-8 เสีย) ข้ามพร้อม log ไม่มีไฟล์ = `[]`
+- `GET /validation/pending` **(ของเรา: spec §7, P7)**: วันของ scenario รายวันที่ยังไม่มีผลตรวจ จาก `Scheduler.pending(now)` ตามลำดับวันแล้วชื่อ:
+  `{scenario, day, state: "pending" | "gave_up", next_attempt_utc}` (`/validation/history` มีแต่วันที่ตรวจแล้ว) อ่านอย่างเดียว:
+  ไม่สั่ง job ไม่เขียน state.json `next_attempt_utc` เป็น null เมื่อ gave_up หรืองานประจำวันปิดอยู่
 - `GET /validation/{sc}/{day}`: เนื้อ `validation_<day>.json` หาตามลำดับ (1) ephem bundle ที่ current ของ scenario (2)
   `data/validation/<sc>/` ซึ่งเป็นที่ที่การเก็บรักษา (Task 11) ย้ายไปไว้ก่อนลบ `ephem/` (ใช้ได้แม้ scenario ถูกลบไปแล้ว)
   (3) `ephem/<hash>/` อื่นใดก็ได้ของ scenario ใหม่สุดตาม mtime ของไฟล์ก่อน ข้าม bundle และไฟล์ที่เป็น symlink
@@ -18,8 +21,9 @@ import math
 import os
 import stat
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 
 from gnss_predict.studio import HISTORY_FILE, VALIDATION_DIR
@@ -131,6 +135,23 @@ def history(config: Config = Depends(get_config), logger: logging.Logger = Depen
             continue
         records.append(record)
     return records
+
+
+# ---------- Pending / Gave up ----------
+
+class PendingDay(BaseModel):
+    """วันที่ยังไม่มีผลตรวจ: pending = ยังลองอยู่ gave_up = ตัวตั้งเวลาเลิกแล้ว"""
+    scenario: str
+    day: str
+    state: Literal["pending", "gave_up"]
+    next_attempt_utc: str | None             # เวลาที่ตัวตั้งเวลาจะลองครั้งถัดไป (UTC ลงท้าย Z) gave_up/ปิดงานประจำวัน = None
+
+
+@router.get("/validation/pending", response_model=list[PendingDay])
+def pending(request: Request) -> list[dict]:
+    """วันที่ยังไม่มีผลตรวจและสถานะ (pending พร้อมเวลาลองครั้งถัดไป หรือ gave_up) เรียงตามวันแล้วชื่อ scenario อ่านอย่างเดียว"""
+    scheduler = request.app.state.scheduler
+    return scheduler.pending(scheduler.clock())
 
 
 # ---------- ผลรายวัน ----------

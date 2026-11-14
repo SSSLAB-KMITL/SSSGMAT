@@ -819,6 +819,120 @@ def test_corrupt_state_file_is_treated_as_empty(at, data_dir, validate, snapshot
     assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-13T06:00:00Z"
 
 
+# ---------- Pending / Gave up (Scheduler.pending: อ่านอย่างเดียว) ----------
+
+def pending_item(scenario: str, day: str, state: str, next_attempt_utc: str | None) -> dict:
+    return {"scenario": scenario, "day": day, "state": state, "next_attempt_utc": next_attempt_utc}
+
+
+def test_pending_states(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")                             # ยังไม่ตรวจ: ลองครั้งถัดไป = 03:00 + 3 ชม.
+    make_daily(data_dir, "2026-11-09")                             # เลิกแล้ว
+    make_daily(data_dir, "2026-11-08")                             # ตรวจแล้ว: ไม่อยู่ในรายการ
+    make_daily(data_dir, "2026-11-12")                             # วันนี้: ยังไม่ถึงเวลาตรวจ
+    make_scenario(data_dir, "S1", "2026-11-10", daily=False)       # ไม่ใช่ scenario รายวัน
+    write_state(data_dir, "2026-11-12T03:00:00Z", given_up=[("daily_20261109", "2026-11-09")])
+    done = data_dir / "validation" / "daily_20261108" / "validation_2026-11-08.json"
+    done.parent.mkdir(parents=True)
+    done.write_text("{}")
+    assert sched.pending(T("2026-11-12T04:00Z")) == [
+        pending_item("daily_20261109", "2026-11-09", "gave_up", None),
+        pending_item("daily_20261110", "2026-11-10", "pending", "2026-11-12T06:00:00Z")]
+
+
+def test_pending_does_not_submit(sched, jobs, data_dir, snapshot, validate):
+    make_daily(data_dir, "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    assert len(sched.pending(T("2026-11-12T04:00Z"))) == 2
+    assert jobs.list() == [] and validate.calls == []
+    assert not state_file(data_dir).exists() and not (data_dir / "daily").exists()      # ไม่เขียน state
+    assert not (data_dir / "validation").exists()
+
+
+def test_pending_next_attempt_follows_the_retry_rule(data_dir, bus, clock, snapshot):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)         # ไม่เริ่มคิว: job ที่ส่งค้าง queued
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    make_daily(data_dir, "2026-11-09")
+    make_daily(data_dir, "2026-11-10")
+    now = T("2026-11-12T04:00Z")
+    only = lambda: {i["day"]: i["next_attempt_utc"] for i in sched.pending(now)}
+    assert only() == {"2026-11-09": "2026-11-12T04:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}   # ไม่เคยลอง = ตอนนี้
+    write_state(data_dir, "2026-11-12T03:00:00Z")
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)                      # state อ่านครั้งแรกที่ใช้
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T06:00:00Z"}
+    idle.submit("validate", "daily_20261110", {"day": "2026-11-10"}, origin="scheduler")       # รอ/รันอยู่ = ตอนนี้
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}
+    idle.submit("validate", "daily_20261109", {"day": "2026-11-08"})             # day ไม่ตรง: ไม่นับ
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}
+    now = T("2026-11-12T06:00Z")                                                 # ถึงเวลาลองแล้ว: ไม่ย้อนอดีต
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T06:00:00Z"}
+    now = T("2026-11-12T09:30Z")
+    assert only() == {"2026-11-09": "2026-11-12T09:30:00Z", "2026-11-10": "2026-11-12T09:30:00Z"}
+
+
+def test_pending_uses_the_current_retry_hours_and_utc(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    write_state(data_dir, "2026-11-12T03:00:00Z")
+    save_settings(data_dir, Settings(daily=Daily(validation_retry_hours=12)))
+    other_zone = datetime(2026, 11, 12, 11, 0, tzinfo=timezone(timedelta(hours=7)))      # = 04:00Z
+    (item,) = sched.pending(other_zone)
+    assert item["next_attempt_utc"] == "2026-11-12T15:00:00Z"
+
+
+def test_pending_when_daily_job_is_disabled(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    write_state(data_dir, "2026-11-12T03:00:00Z", given_up=[("daily_20261109", "2026-11-09")])
+    disable(data_dir)
+    assert sched.pending(T("2026-11-12T04:00Z")) == [
+        pending_item("daily_20261109", "2026-11-09", "gave_up", None),
+        pending_item("daily_20261110", "2026-11-10", "pending", None)]            # ปิดอยู่: ไม่มีรอบถัดไป
+
+
+def test_pending_sorted_by_day_then_scenario_and_counts_every_validation_location(sched, data_dir, snapshot):
+    make_scenario(data_dir, "Zed", "2026-11-10")
+    make_scenario(data_dir, "Alpha", "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    make_daily(data_dir, "2026-11-07")
+    kept = make_scenario(data_dir, "Kept", "2026-11-10")
+    in_bundle = make_scenario(data_dir, "InBundle", "2026-11-10")
+    _bundle(kept, "ephem/old", {"validation_2026-11-10.json": "{}"}, when="2026-11-09T00:00Z")
+    (data_dir / "validation" / "InBundle").mkdir(parents=True)
+    (data_dir / "validation" / "InBundle" / "validation_2026-11-10.json").write_text("{}")
+    _bundle(in_bundle, "ephem/x", {"validation_2026-11-09.json": "{}"})                 # วันอื่น: ไม่ใช่ของวันนี้
+    got = sched.pending(T("2026-11-12T04:00Z"))
+    assert [(i["day"], i["scenario"]) for i in got] == [
+        ("2026-11-07", "daily_20261107"), ("2026-11-09", "daily_20261109"), ("2026-11-10", "Alpha"), ("2026-11-10", "Zed")]
+
+
+def test_pending_given_up_day_with_a_file_is_not_listed(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    write_state(data_dir, None, given_up=[("daily_20261110", "2026-11-10")])
+    assert [i["state"] for i in sched.pending(T("2026-11-12T04:00Z"))] == ["gave_up"]
+    done = data_dir / "validation" / "daily_20261110" / "validation_2026-11-10.json"
+    done.parent.mkdir(parents=True)
+    done.write_text("{}")                                          # ผู้ใช้สั่งตรวจเองสำเร็จภายหลัง
+    assert sched.pending(T("2026-11-12T04:00Z")) == []
+
+
+def test_pending_follows_the_real_ticks(at, sched, data_dir, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert sched.pending(T("2026-11-12T23:00Z")) == []             # วันนี้ยังไม่ถึงเวลา
+    assert sched.pending(T("2026-11-13T00:30Z")) == [pending_item("daily_20261112", "2026-11-12", "pending", "2026-11-13T00:30:00Z")]
+    at("2026-11-13T06:00Z")                                        # ลองแล้ว TRUTH_UNAVAILABLE
+    assert sched.pending(T("2026-11-13T06:30Z")) == [pending_item("daily_20261112", "2026-11-12", "pending", "2026-11-13T09:00:00Z")]
+    at("2026-11-27T03:00Z")                                        # เลยเส้นตาย: เลิก
+    assert sched.pending(T("2026-11-27T03:30Z")) == [pending_item("daily_20261112", "2026-11-12", "gave_up", None)]
+    state_before = state_file(data_dir).read_bytes()
+    validate.mode = "ok"
+    sched.pending(T("2026-11-27T04:00Z"))
+    assert state_file(data_dir).read_bytes() == state_before
+
+
+def test_pending_with_no_daily_scenarios_is_empty(sched, data_dir):
+    assert sched.pending(T("2026-11-12T04:00Z")) == []
+
+
 # ---------- เก็บรักษา ----------
 
 OLD = "2026-11-13T00:00Z"            # mtime ตั้งต้นของ bundle: เก่ากว่าเกณฑ์เมื่อ now = 2026-12-20 และเก็บ 30 วัน

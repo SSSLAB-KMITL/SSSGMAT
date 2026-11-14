@@ -1314,6 +1314,46 @@
         "title": "PassSettings",
         "type": "object"
       },
+      "PendingDay": {
+        "description": "วันที่ยังไม่มีผลตรวจ: pending = ยังลองอยู่ gave_up = ตัวตั้งเวลาเลิกแล้ว",
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "next_attempt_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt Utc"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "gave_up"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "day",
+          "state",
+          "next_attempt_utc"
+        ],
+        "title": "PendingDay",
+        "type": "object"
+      },
       "Position": {
         "additionalProperties": true,
         "properties": {
@@ -4696,6 +4736,29 @@
           }
         },
         "summary": "History"
+      }
+    },
+    "/api/validation/pending": {
+      "get": {
+        "description": "วันที่ยังไม่มีผลตรวจและสถานะ (pending พร้อมเวลาลองครั้งถัดไป หรือ gave_up) เรียงตามวันแล้วชื่อ scenario อ่านอย่างเดียว",
+        "operationId": "pending_api_validation_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingDay"
+                  },
+                  "title": "Response Pending Api Validation Pending Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pending"
       }
     },
     "/api/validation/{sc}/{day}": {

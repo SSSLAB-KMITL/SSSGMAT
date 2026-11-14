@@ -13,6 +13,7 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 
 import pytest
 
@@ -912,3 +913,76 @@ def test_history_route_is_not_shadowed_by_the_day_route(client, data_dir):
     history_path(data_dir).write_text(json.dumps(DAY_RECORD) + "\n", encoding="utf-8")
     assert client.get("/api/validation/history").json() == [DAY_RECORD]
     assert_error(client.get(day_url("history")), 404, "NOT_FOUND")                      # scenario ชื่อ history ไม่มี
+
+
+# ---------- GET /validation/pending ----------
+
+PENDING_NOW = datetime(2026, 11, 12, 4, 0, tzinfo=timezone.utc)
+
+
+def make_daily_scenario(data_dir, day):
+    """scenario รายวันขั้นต่ำ (ตัวตั้งเวลาอ่านแค่ `daily.for_date` ของ scenario.json)"""
+    name = f"daily_{day.replace('-', '')}"
+    folder = data_dir / "scenarios" / name
+    folder.mkdir(parents=True)
+    (folder / "scenario.json").write_text(json.dumps({"daily": {"for_date": day}}), encoding="utf-8")
+    return name
+
+
+def write_state_file(data_dir, last_attempt, given_up=()):
+    path = data_dir / "daily" / "state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"last_validation_attempt_utc": last_attempt,
+                                "given_up": [{"scenario": s, "day": d} for s, d in given_up]}), encoding="utf-8")
+
+
+def test_pending_route(client, data_dir):
+    scheduler = client.app.state.scheduler
+    scheduler.clock = lambda: PENDING_NOW                                               # นาฬิกาจำลอง
+    for day in ("2026-11-08", "2026-11-09", "2026-11-10", "2026-11-12"):
+        make_daily_scenario(data_dir, day)
+    put_day_file(data_dir / "validation" / "daily_20261108", day="2026-11-08")          # ตรวจแล้ว: ไม่อยู่ในรายการ
+    write_state_file(data_dir, "2026-11-12T03:00:00Z", given_up=[("daily_20261109", "2026-11-09")])
+    r = client.get("/api/validation/pending")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/json")
+    assert r.json() == scheduler.pending(PENDING_NOW)
+    assert r.json() == [
+        {"scenario": "daily_20261109", "day": "2026-11-09", "state": "gave_up", "next_attempt_utc": None},
+        {"scenario": "daily_20261110", "day": "2026-11-10", "state": "pending", "next_attempt_utc": "2026-11-12T06:00:00Z"}]
+
+
+def test_pending_route_is_read_only(client, data_dir):
+    client.app.state.scheduler.clock = lambda: PENDING_NOW
+    make_daily_scenario(data_dir, "2026-11-10")
+    assert len(client.get("/api/validation/pending").json()) == 1
+    assert client.get("/api/jobs").json() == []                                         # ไม่สั่ง job
+    assert not (data_dir / "daily").exists() and not (data_dir / "settings.json").exists()   # ไม่เขียน state และค่าตั้ง
+
+
+def test_pending_route_without_daily_scenarios_is_empty(client, s1):                    # S1 ไม่ใช่ scenario รายวัน
+    assert client.get("/api/validation/pending").json() == []
+
+
+def test_pending_route_uses_the_saved_settings(client, data_dir):
+    client.app.state.scheduler.clock = lambda: PENDING_NOW
+    make_daily_scenario(data_dir, "2026-11-10")
+    write_state_file(data_dir, "2026-11-12T03:00:00Z")
+    assert client.get("/api/validation/pending").json()[0]["next_attempt_utc"] == "2026-11-12T06:00:00Z"
+    assert client.put("/api/settings", json=settings_with(validation_retry_hours=12)).status_code == 200
+    assert client.get("/api/validation/pending").json()[0]["next_attempt_utc"] is None          # CUSTOM ปิดงานประจำวัน
+    assert client.put("/api/settings", json=settings_with(enabled=True, validation_retry_hours=12)).status_code == 200
+    assert client.get("/api/validation/pending").json()[0]["next_attempt_utc"] == "2026-11-12T15:00:00Z"
+
+
+def test_pending_route_is_not_shadowed_by_the_day_route(client, data_dir):
+    client.app.state.scheduler.clock = lambda: PENDING_NOW
+    make_daily_scenario(data_dir, "2026-11-10")
+    assert client.get("/api/validation/pending").json()[0]["scenario"] == "daily_20261110"
+    assert_error(client.get(day_url("pending")), 404, "NOT_FOUND")                      # scenario ชื่อ pending ไม่มี
+
+
+def test_pending_route_uses_the_real_clock_by_default(client, data_dir):
+    make_daily_scenario(data_dir, "2020-01-01")                                         # เก่ามาก: ผ่านไปหนึ่งวันแน่นอน
+    (item,) = client.get("/api/validation/pending").json()
+    assert (item["day"], item["state"]) == ("2020-01-01", "pending")
+

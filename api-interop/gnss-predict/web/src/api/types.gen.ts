@@ -686,6 +686,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/validation/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending
+         * @description วันที่ยังไม่มีผลตรวจและสถานะ (pending พร้อมเวลาลองครั้งถัดไป หรือ gave_up) เรียงตามวันแล้วชื่อ scenario อ่านอย่างเดียว
+         */
+        get: operations["pending_api_validation_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/validation/{sc}/{day}": {
         parameters: {
             query?: never;
@@ -1364,6 +1384,23 @@ export interface components {
             visible_sides?: "Both" | "Ascending" | "Descending";
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * PendingDay
+         * @description วันที่ยังไม่มีผลตรวจ: pending = ยังลองอยู่ gave_up = ตัวตั้งเวลาเลิกแล้ว
+         */
+        PendingDay: {
+            /** Day */
+            day: string;
+            /** Next Attempt Utc */
+            next_attempt_utc: string | null;
+            /** Scenario */
+            scenario: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "gave_up";
         };
         /** Position */
         Position: {
@@ -3351,6 +3388,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    pending_api_validation_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingDay"][];
                 };
             };
         };

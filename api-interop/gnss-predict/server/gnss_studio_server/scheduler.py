@@ -24,6 +24,8 @@
 4. `jobs.prune(now)` วันละครั้ง (UTC)
 5. ส่ง SSE `daily` `{state, last_run_utc, next_run_utc, for_date}` เมื่อสถานะต่างจากที่ส่งครั้งก่อน (`daily_status`)
 
+- `Scheduler.pending(now)` (อ่านอย่างเดียว ไม่สั่ง job ไม่เขียน state; ใช้กับ `GET /api/validation/pending`): วันของ scenario รายวันที่
+  ถึงเวลาตรวจแล้วแต่ยังไม่มี `validation_<วัน>.json` เป็น `pending` (พร้อมเวลาที่จะลองครั้งถัดไป) หรือ `gave_up` (อยู่ใน `given_up`)
 - ค่าตั้งอ่านใหม่ทุก tick (`settings.load`) ไม่ cache ปิด `enabled` (รวมไฟล์ค่าตั้งเสียที่ fail safe เป็นปิด) = ไม่ทำข้อ 1-3
   (ไม่ดึงข้อมูลและไม่ลบผลตามค่าตั้งที่ไม่ได้ยืนยัน) ข้อ 4-5 ยังทำ
 - สถานะของการตรวจย้อนหลังอยู่ที่ `data/daily/state.json` `{"last_validation_attempt_utc", "given_up": [{scenario, day}]}`
@@ -212,6 +214,7 @@ class Scheduler:
         self.interval_s = interval_s
         self._tick_lock = threading.Lock()
         self._state: _State | None = None
+        self._state_lock = threading.Lock()         # โหลด state ครั้งแรก: `pending` (thread ของ route) กับ tick โหลดพร้อมกันได้
         self._pruned_on: date | None = None
         self._last_status: dict | None = None
         self._wake = threading.Event()
@@ -301,6 +304,40 @@ class Scheduler:
                 self._save_state(state)
         return submitted
 
+    def pending(self, now: datetime) -> list[dict]:
+        """วันที่ยังรอผลตรวจย้อนหลัง เรียงตามวันแล้วชื่อ scenario: `{"scenario", "day", "state", "next_attempt_utc"}`
+        ต่อ scenario รายวันที่ for_date <= วันนี้ − 1 (UTC) และยังไม่มี validation_<day>.json (เกณฑ์เดียวกับ `_validation`)
+
+        - `gave_up`: อยู่ใน `given_up` (ตัวตั้งเวลาเลิกแล้ว) `next_attempt_utc` เป็น None
+        - `pending`: มี job validate ของวันนั้นที่รอ/รันอยู่ = `now` ไม่งั้น max(now, ครั้งล่าสุดที่สั่ง + `validation_retry_hours`)
+          (ไม่เคยสั่งเลย = `now`) งานประจำวันปิดอยู่ (`enabled: false`) = None เพราะตัวตั้งเวลาไม่สั่งเอง
+
+        อ่านอย่างเดียว: ไม่สั่ง job ไม่เขียน state.json (อ่านเข้า memory เหมือน tick) เรียกจาก thread ของ route ได้ระหว่าง tick:
+        `given_up` ถูกคัดลอกก่อนใช้ ส่วน job อ่านผ่าน `jobs.list()` (มีล็อกของตัวเอง)"""
+        now = now.astimezone(timezone.utc)
+        daily = self.settings_provider().daily
+        state = self._load_state()
+        given_up, last_attempt = set(state.given_up), state.last_attempt
+        retry_at = None if last_attempt is None else last_attempt + timedelta(hours=daily.validation_retry_hours)
+        busy = {(r.scenario, r.params.get("day")) for r in self.jobs.list() if r.kind == "validate" and r.state in ACTIVE}
+        latest_day = now.date() - timedelta(days=1)
+        out = []
+        for name, for_date in daily_scenarios(self.data_dir):
+            day = for_date.isoformat()
+            if for_date > latest_day or self._validated(name, day):
+                continue
+            if (name, day) in given_up:
+                label, when = "gave_up", None
+            elif not daily.enabled:
+                label, when = "pending", None
+            elif (name, day) in busy or retry_at is None:
+                label, when = "pending", now
+            else:
+                label, when = "pending", max(now, retry_at)
+            out.append({"scenario": name, "day": day, "state": label,
+                        "next_attempt_utc": None if when is None else iso_utc(when)})
+        return sorted(out, key=lambda item: (item["day"], item["scenario"]))
+
     def _give_up(self, state: _State, name: str, day: str, daily: Daily, last: JobRecord) -> None:
         state.given_up.add((name, day))
         self._save_state(state)
@@ -311,16 +348,17 @@ class Scheduler:
         self.logger.warning("ตัวตั้งเวลา: %s", text)
 
     def _load_state(self) -> _State:
-        if self._state is None:
-            path = self.data_dir / DAILY_DIR / STATE_FILE
-            try:
-                self._state = _State.from_bytes(path.read_bytes())
-            except FileNotFoundError:
-                self._state = _State()
-            except (OSError, ValueError, RecursionError) as exc:
-                self.logger.warning("อ่าน %s ไม่ได้ ถือว่ายังไม่มีสถานะการตรวจย้อนหลัง: %s: %s", path, type(exc).__name__, exc)
-                self._state = _State()
-        return self._state
+        with self._state_lock:                           # ต้องได้ object เดียวกันทุก thread: tick แก้แล้วบันทึกต่อจากตัวนี้
+            if self._state is None:
+                path = self.data_dir / DAILY_DIR / STATE_FILE
+                try:
+                    self._state = _State.from_bytes(path.read_bytes())
+                except FileNotFoundError:
+                    self._state = _State()
+                except (OSError, ValueError, RecursionError) as exc:
+                    self.logger.warning("อ่าน %s ไม่ได้ ถือว่ายังไม่มีสถานะการตรวจย้อนหลัง: %s: %s", path, type(exc).__name__, exc)
+                    self._state = _State()
+            return self._state
 
     def _save_state(self, state: _State) -> None:
         """เขียนไม่ได้แค่ log: สถานะในหน่วยความจำยังใช้ได้จนกว่าจะเปิด server ใหม่"""
