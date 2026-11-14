@@ -8,11 +8,13 @@
 - .txt: บรรทัดแรก `<scenario>    <เวลาสร้าง UTCG เสมอ>` แล้วแต่ละ object เป็นส่วน
   `<ชื่อ>:  <style>` / บรรทัดว่าง / หัวคอลัมน์ / ขีด `-` / แถว คอลัมน์คั่น 4 ช่องว่างและกว้างคงที่ต่อส่วน (ทุกบรรทัด
   ของส่วนยาวเท่ากัน) ตัวเลขชิดขวา เวลาชิดซ้าย ไม่มีแถวเลย = `No Data` ท้ายรายงานมี `Global Statistics`
-- ส่วนที่ไม่มีแถวแต่มีสถิติของ object (style แบบ Summary Only เช่น AccessSummary) พิมพ์เฉพาะสถิติ ไม่มีตาราง
-  (Report ไม่มีธง summary_only: ส่วนที่ไม่มีทั้งแถวและสถิติคือ `No Data`)
-- .csv: ไม่มีบล็อก Global Statistics หลาย object คั่นด้วยบรรทัดว่าง ส่วนที่เป็นสถิติล้วนเขียนเป็นแถว `ชื่อ,ค่า`
+- ส่วนที่ `Section.summary_only` (style แบบ Summary Only เช่น AccessSummary) พิมพ์เฉพาะสถิติของ object ไม่มีตาราง
+  (ไม่มีสถิติให้พิมพ์ = `No Data`) ส่วนอื่นที่ไม่มีแถวมีตารางว่างพร้อม `No Data` เสมอ แม้ style จะมีสถิติต่อ object
+- .csv: ไม่มีบล็อก Global Statistics หลาย object คั่นด้วยบรรทัดว่าง ส่วน Summary Only เขียนสถิติเป็นแถว `ชื่อ,ค่า`
+  ส่วนอื่นไม่มีสถิติ (ส่วนที่ไม่มีแถวมีแต่หัวคอลัมน์)
   Export Setup: Field Delimiter, Enclose Header Fields in Quotes, Write Report Title, Headers
-- JSON: ค่าจริงไม่ปัดเศษ เวลาเป็น ISO มิลลิวินาที ลงท้าย Z (หน้าเว็บจัดรูปแบบเองตาม `DECIMALS`)
+- JSON: ค่าจริงไม่ปัดเศษ เวลาเป็น ISO มิลลิวินาที ลงท้าย Z (หน้าเว็บจัดรูปแบบเองตาม `DECIMALS`) แต่ละส่วนมี
+  `summary_only` ให้หน้าเว็บเลือกว่าจะแสดงตารางหรือเฉพาะสถิติแบบเดียวกับ .txt
 """
 
 import csv
@@ -39,7 +41,7 @@ DEFAULT_DECIMALS = 3
 # P9: ที่เหลือ (มุม ระยะ Duration DOP Lat Lon Alt ค่าสถิติของมัน) 3 ตำแหน่ง
 DECIMALS = {"IPP Lat": 4, "IPP Lon": 4, "MF": 5, "Lat Rate": 6, "Lon Rate": 6, "Alt Rate": 6}
 
-_OFFSET = re.compile(r"([+-])(\d{2}):(\d{2})")
+_OFFSET = re.compile(r"([+-])(\d{2}):(\d{2})", re.ASCII)       # \d ของ JS รับแค่ 0-9
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 Text = Callable[[object], str]
 
@@ -161,11 +163,6 @@ def _statistics(stats: list[tuple[str, object]], missing: str) -> list[tuple[str
     return [(name, missing if (text := _statistic_text(name, value)) is None else text) for name, value in stats]
 
 
-def _is_statistics_only(section: Section) -> bool:
-    """ส่วนแบบ Summary Only: ไม่มีแถวแต่มีสถิติของ object"""
-    return not section.rows and bool(section.summary)
-
-
 # ---------- .txt ----------
 
 def _statistic_lines(stats: list[tuple[str, object]]) -> list[str]:
@@ -199,8 +196,8 @@ def format_txt(report: Report, date_format: str, ltz_offset: str) -> str:
     blocks = [[f"{report.scenario}{SCENARIO_GAP}{created}"]]
     for section in report.sections:
         block = [f"{section.title}:  {report.style}", ""]
-        if _is_statistics_only(section):
-            block += _statistic_lines(section.summary)
+        if section.summary_only:
+            block += _statistic_lines(section.summary) if section.summary else [NO_DATA]
         else:
             block += _table_lines(section, time_text, unit_label)
             if section.summary:
@@ -242,7 +239,7 @@ def format_csv(report: Report, date_format: str, ltz_offset: str, setup: ExportS
             out.write("\n")
         if setup.title:
             plain.writerow([f"{section.title}:  {report.style}"])
-        if _is_statistics_only(section):
+        if section.summary_only:
             plain.writerows(_statistics(section.summary, ""))
             continue
         if setup.headers:
@@ -274,6 +271,7 @@ def report_json(report: Report) -> dict:
             "columns": [{"name": c.name, "unit": c.unit, "kind": c.kind} for c in section.columns],
             "rows": [[_json_value(v) for v in row] for row in section.rows],
             "summary": stats(section.summary),
+            "summary_only": section.summary_only,
         })
     return {"scenario": report.scenario, "style": report.style, "kind": report.kind,
             "created_utc": _iso_ms(report.created), "sections": sections,

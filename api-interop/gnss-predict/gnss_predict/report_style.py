@@ -58,6 +58,7 @@ class Section:
     columns: list[Column]
     rows: list[list]
     summary: list[tuple[str, float | int | None]]
+    summary_only: bool = False   # style.summary.summary_only: ไม่แสดงแถว (rows ว่าง) แสดงเฉพาะสถิติของ object
 
 
 @dataclass
@@ -409,7 +410,8 @@ def build_report(rs: ResultSet, style: dict, objects: list[str], start: datetime
         sections.append(Section(
             object=obj, title=display_name(obj), columns=list(columns),
             rows=[] if summary.get("summary_only", False) else rows,
-            summary=[(stat, _statistic(stat, rows, names, accesses)) for stat in per_object]))
+            summary=[(stat, _statistic(stat, rows, names, accesses)) for stat in per_object],
+            summary_only=summary.get("summary_only", False)))
     global_statistics = ([(stat, _statistic(stat, all_rows, names, all_accesses)) for stat in global_names]
                          if len(objects) > 1 else [])
     return Report(scenario=rs.scenario.name, style=style["name"], kind=style["kind"], created=now,
