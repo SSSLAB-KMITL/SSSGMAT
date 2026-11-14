@@ -135,9 +135,19 @@
     {
       "id": "qzss-igso",
       "glb": "qzss-igso/qzss-igso.glb",
-      "blocks": ["QZS-2A", "QZS-2I", "QZS-1"],
+      "blocks": ["QZS-2A", "QZS-2I"],
       "size_m": [2.854, 18.92, 6.205],
       "triangles": 5170,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "qzss-qzs1",
+      "glb": "qzss-qzs1/qzss-qzs1.glb",
+      "blocks": ["QZS-1"],
+      "size_m": [2.854, 25.3, 6.205],
+      "triangles": 5302,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
       "status": "done"

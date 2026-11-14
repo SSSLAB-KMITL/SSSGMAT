@@ -1,6 +1,6 @@
-# QZSS IGSO (`QZS-2A`, `QZS-2I`, `QZS-1`) — 3D Model Technical Notes (`qzss-igso`)
+# QZSS IGSO (`QZS-2A`, `QZS-2I`) — 3D Model Technical Notes (`qzss-igso`)
 
-Procedural, real-scale 3D model of the **Japanese Quasi-Zenith Satellite System (QZSS) IGSO spacecraft** (**QZS-1R / Michibiki-1R**, **QZS-2 / Michibiki-2**, **QZS-4 / Michibiki-4**), built by Mitsubishi Electric on the **DS2000** platform (IGS blocks `QZS-2A`, `QZS-2I`; also covers historical `QZS-1`). Built in headless Blender (`scripts/build.py`) using only original procedural geometry and procedural PBR textures.
+Procedural, real-scale 3D model of the **Japanese Quasi-Zenith Satellite System (QZSS) IGSO spacecraft** (**QZS-1R / Michibiki-1R**, **QZS-2 / Michibiki-2**, **QZS-4 / Michibiki-4**), built by Mitsubishi Electric on the **DS2000** platform (IGS blocks `QZS-2A`, `QZS-2I`). `QZS-1` (`25.3 m` span) is separated into `models/qzss-qzs1/`. Built in headless Blender (`scripts/build.py`) using only original procedural geometry and procedural PBR textures.
 
 ---
 
@@ -21,7 +21,7 @@ Matches `galileo-foc`:
 
 | Component / Parameter | Value | Status | Source & Notes |
 |---|---|---|---|
-| **IGS block codes** | `QZS-2A`, `QZS-2I`, `QZS-1` | **official** | `igs_satellite_metadata.snx` (`J005` QZS-1R = `QZS-2A`; `J002` QZS-2 & `J004` QZS-4 = `QZS-2I`; retired `J001` QZS-1 = `QZS-1`). |
+| **IGS block codes** | `QZS-2A`, `QZS-2I` | **official** | `igs_satellite_metadata.snx` (`J005` QZS-1R = `QZS-2A`; `J002` QZS-2 & `J004` QZS-4 = `QZS-2I`; retired `J001` `QZS-1` is now mapped to `qzss-qzs1`). |
 | **Envelope dimensions** | `2.9 × 19.0 × 6.2 m` (on-orbit QZS-2/4/1R); `2.9 × 3.1 × 6.2 m` stowed box | **official** | Cabinet Office *Satellite Property Information* (`SPI-QZS2`, `SPI-QZS4`, `SPI-QZS1R`), JAXA/eoPortal QZSS specs. |
 | **DS2000 main bus box** | `2.400 × 2.360 × 4.900 m` (`Z ∈ [-2.50, +2.40]`) | **derived** | Derived from MELCO DS2000 structural envelope (`~2.36 × 2.30 × 5.0 m` plus `-Z` launch adapter ring down to `-2.90 m` and `+Z` antenna deck). |
 | **Main L-band helical cone (`L-ANT`)** | Truncated cone `Ø1.76 m` base → `Ø1.46 m` top (`h = 0.56 m`), `19` helical elements (`+Z` tips at `+3.305 m`) | **official / derived** | `SPI-QZS2` Box-Wing-Hat model (`Ø1.8 → Ø1.5 m, h = 0.8 m` envelope) and JAXA helical array layout (`1 + 6 + 12` elements). Total `Z` height `-2.900` to `+3.305 = 6.205 m`. |
@@ -34,7 +34,7 @@ Matches `galileo-foc`:
 
 ## 3. Simplifications & Omissions
 
-- `QZS-1` (retired 2022–2023) is mapped alongside `QZS-2A` (QZS-1R) and `QZS-2I` (QZS-2/4); `QZS-1` shared the DS2000 IGSO bus with slightly wider (`25.3 m`) ETS-VIII-derived wings before QZS-1R standardized the constellation on `19 m` wings.
+- `QZS-1` (retired 2022–2023, `25.3 m` ETS-VIII-derived wings) is separated into `models/qzss-qzs1/` so `qzss-igso` covers the standardized `19 m` `QZS-2A`/`QZS-2I` constellation.
 - External MLI harnesses, S-band omni brackets, and thruster plumbing are simplified to clean geometric primitives under `5,200` triangles.
 
 ---
