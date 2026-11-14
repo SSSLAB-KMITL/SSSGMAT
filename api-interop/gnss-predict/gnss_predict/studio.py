@@ -4,6 +4,9 @@
     python3 -m gnss_predict.studio propagate --scenario DIR [--data DIR]
     python3 -m gnss_predict.studio analyze   --scenario DIR --facility NAME [--data DIR]
     python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 FILE] [--facility NAME] [--data DIR]
+    python3 -m gnss_predict.studio report    --scenario DIR --style NAME --object PATH [--object PATH ...]
+                                             [--kind report|graph] [--format txt|csv] [--start T --stop T] [--step S]
+                                             [--data DIR]
 
 - ทุกคำสั่งเป็นฟังก์ชันที่ server เรียกได้ตรง (`fetch_snapshot`, `run_propagate`, `run_analyze`, `run_validate`)
   CLI แค่แปลง argument
@@ -18,6 +21,10 @@
   เรียกด้วย 0.0 ตอนเริ่มและ 1.0 ตอนจบ (ไม่เรียก 1.0 ถ้าจบด้วย exception)
 - CLI พิมพ์ path ผลลัพธ์บรรทัดแรกตามด้วย `<level>: <text>` ของแต่ละ Message ลง stdout
   exit code: 0 สำเร็จ, 1 GnssPredictError (พิมพ์ลง stderr), 2 argument ผิด
+- `report` อ่านผลที่ propagate/analyze ไว้แล้วเท่านั้น (ไม่รัน GMAT ไม่ analyze ให้ ไม่มีผลที่ตรง = RESULTS_NOT_CURRENT)
+  พิมพ์ตัวรายงาน (.txt หรือ .csv) ลง stdout ไม่พิมพ์ path: style หาจาก Scenario Styles (`styles` ใน scenario.json)
+  แล้ว Installed Styles, DateFormat จาก `units` ของ scenario.json, `--object` ซ้ำได้ (Access = คู่ path ในข้อเดียว)
+  start/stop เป็นเวลา ISO ที่ระบุเขตเวลา ไม่ส่ง = ช่วงวิเคราะห์ของ scenario ไม่ส่ง --step = ทุกจุดของ scenario
 """
 
 import argparse
@@ -623,6 +630,32 @@ def _day_arg(text: str) -> date:
         raise argparse.ArgumentTypeError(f"วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD ได้ {text!r}") from None
 
 
+def _time_arg(text: str) -> datetime:
+    try:
+        t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        t = None
+    if t is None or t.tzinfo is None:
+        raise argparse.ArgumentTypeError(f"เวลาต้องเป็น ISO 8601 ที่ระบุเขตเวลา เช่น 2026-11-10T01:00:00Z ได้ {text!r}")
+    return t.astimezone(timezone.utc)
+
+
+def _report_text(args: argparse.Namespace, now: datetime) -> str:
+    """ประกอบและจัดรูปแบบรายงานตาม argument (import ในฟังก์ชัน: dataproviders import โมดูลนี้ทั้งโมดูลอยู่แล้ว)"""
+    from .dataproviders import open_result_set
+    from .report_format import format_csv, format_txt, time_format_of
+    from .report_style import build_report, resolve_style
+
+    scenario_dir = args.scenario.resolve()
+    rs = open_result_set(scenario_dir, args.data.resolve())              # อ่าน scenario.json และตรวจก่อน
+    doc = json.loads((scenario_dir / SCENARIO_FILE).read_bytes().decode("utf-8"))
+    styles = doc.get("styles")
+    style = resolve_style(args.style, args.kind, [], styles if isinstance(styles, list) else [])
+    date_format, ltz_offset = time_format_of(doc)
+    report = build_report(rs, style, args.object, args.start, args.stop, args.step, now)
+    return (format_csv if args.format == "csv" else format_txt)(report, date_format, ltz_offset)
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python3 -m gnss_predict.studio",
                                 description="GNSS Studio engine: ดึงข้อมูลวงโคจร, propagate ด้วย GMAT "
@@ -652,6 +685,21 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--sp3", type=Path, help="ใช้ไฟล์ SP3 นี้แทนการดาวน์โหลด SP3 MGEX ของวันนั้น")
     validate.add_argument("--facility", help="ชื่อ Facility ที่วัด Az/El (ค่าเริ่มต้น: Facility แรกใน scenario)")
     validate.add_argument("--data", type=Path, default=DATA_DIR, help=data_help)
+
+    rep = sub.add_parser("report", help="สร้างรายงาน .txt/.csv จากผล propagate/analyze ที่มีอยู่ (พิมพ์ลง stdout)")
+    rep.add_argument("--scenario", type=Path, required=True, help=scenario_help)
+    rep.add_argument("--style", required=True, help="ชื่อ style (Scenario Styles แล้ว Installed Styles ไม่สนตัวพิมพ์)")
+    rep.add_argument("--object", action="append", required=True,
+                     help="path ของ object เช่น '*/Facility/THBK', '*/Satellite/G01' หรือคู่ Access "
+                          "'*/Facility/THBK */Satellite/G01' (ซ้ำได้)")
+    rep.add_argument("--kind", choices=["report", "graph"],
+                     help="ชนิดของ style เมื่อชื่อเดียวกันมีทั้งสองชนิด (เช่น Access) ไม่ส่ง = report ก่อน")
+    rep.add_argument("--format", choices=["txt", "csv"], default="txt", help="รูปแบบไฟล์ (ค่าเริ่มต้น txt)")
+    rep.add_argument("--start", type=_time_arg, help="เวลาเริ่ม (Specify Time Period) ต้องใช้คู่กับ --stop")
+    rep.add_argument("--stop", type=_time_arg, help="เวลาจบ (Specify Time Period) ต้องใช้คู่กับ --start")
+    rep.add_argument("--step", type=int, help="Step (วินาที) ต้องเป็นจำนวนเท่าของ step ของ scenario "
+                                              "ไม่ส่ง = ทุกจุดของ scenario")
+    rep.add_argument("--data", type=Path, default=DATA_DIR, help=data_help)
     return p
 
 
@@ -668,6 +716,9 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> int:
             path, messages = run_propagate(args.scenario.resolve(), data_dir)
         elif args.command == "analyze":
             path, messages = run_analyze(args.scenario.resolve(), args.facility, data_dir)
+        elif args.command == "report":
+            sys.stdout.write(_report_text(args, now or datetime.now(timezone.utc)))
+            return 0
         else:
             path, messages = run_validate(args.scenario.resolve(), args.day, data_dir,
                                           args.sp3.resolve() if args.sp3 else None, args.facility)

@@ -24,6 +24,7 @@ from gnss_predict.propagate import Ephemeris
 from gnss_predict.sp3 import read_sp3_all
 from gnss_predict.studio import (PropagatePlan, fetch_snapshot, main, plan_analyze, plan_propagate,
                                  run_analyze, run_propagate, run_validate)
+from tests.report_fixture import build_computed_scenario, circular_ecef_km
 
 UTC = timezone.utc
 SNAP = Path(__file__).parent / "fixtures" / "studio" / "snapshot"
@@ -606,6 +607,155 @@ class TestServerHooks(FakeGmat):
             with self.assertRaises(Stop):
                 run_validate(self.sc, date(2026, 11, 10), self.data, on_gmat_start=hook)
         self.assertIs(rp.call_args.kwargs["on_gmat_start"], hook)
+
+
+class TestReportCli(unittest.TestCase):
+    """CLI report (ไม่รัน GMAT ไม่ analyze ให้): G01 อยู่เหนือ THBK ตลอด ส่วนดาวอื่นวงโคจรวงกลม"""
+
+    NOW = datetime(2026, 11, 15, 0, 0, tzinfo=UTC)
+    G01 = "*/Facility/THBK */Satellite/G01"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        up = geodetic_to_ecef(THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M)
+        norm = math.sqrt(sum(c * c for c in up))
+        overhead = tuple(c / norm * 26560.0 for c in up)
+
+        def ecef(prn, t_s):
+            return overhead if prn == "G01" else circular_ecef_km(prn[0], 0, 1, t_s)
+
+        sc, cls.data = build_computed_scenario(Path(cls._tmp.name), ecef=ecef)
+        cls.sc = str(sc)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def run_report(self, *args, now=None):
+        return run_main(["report", "--scenario", self.sc, "--data", str(self.data), *args], now=now)
+
+    def expected(self, style, objects, fmt="txt", kind="report"):
+        from gnss_predict.dataproviders import open_result_set
+        from gnss_predict.report_format import format_csv, format_txt
+        from gnss_predict.report_style import build_report, resolve_style
+        rs = open_result_set(Path(self.sc), Path(self.data))
+        report = build_report(rs, resolve_style(style, kind, [], []), objects, None, None, None, self.NOW)
+        return (format_txt if fmt == "txt" else format_csv)(report, "UTCG", "+07:00")
+
+    def test_report_txt_to_stdout(self):
+        both = "*/Facility/THBK */Satellite/G01"
+        code, out, err = self.run_report("--style", "Access", "--object", both, now=self.NOW)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out, self.expected("Access", [both]))
+        self.assertIn("THBK-To-G01:  Access", out)
+        # เวลาสร้างมาจากนาฬิกาจริงเมื่อไม่ส่ง now: เทียบโดยตัดบรรทัดแรก
+        code, out2, _ = self.run_report("--style", "Access", "--object", both)
+        self.assertEqual(code, 0)
+        self.assertRegex(out2.split("\n")[0], r"^Test_Scen    \d{1,2} \w{3} \d{4} \d\d:\d\d:\d\d\.\d{3} UTCG$")
+        self.assertEqual(out2.split("\n", 1)[1], out.split("\n", 1)[1])
+        # path ของผลลัพธ์ไม่ถูกพิมพ์ นอกจากตัวรายงาน
+        self.assertNotIn(self.sc, out)
+
+    def test_report_several_objects_and_kinds(self):
+        e11 = "*/Facility/THBK */Satellite/E11"
+        code, out, _ = self.run_report("--style", "Access", "--object", self.G01, "--object", e11, now=self.NOW)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, self.expected("Access", [self.G01, e11]))
+        self.assertIn("Global Statistics", out)
+        code, out, _ = self.run_report("--style", "Access", "--kind", "graph", "--object", self.G01, now=self.NOW)
+        self.assertEqual((code, out), (0, self.expected("Access", [self.G01], kind="graph")))
+        code, out, _ = self.run_report("--style", "LLA Position", "--object", "*/Satellite/G01", now=self.NOW)
+        self.assertEqual((code, out), (0, self.expected("LLA Position", ["*/Satellite/G01"])))
+        code, out, _ = self.run_report("--style", "All DOPs", "--object", "*/Facility/THBK", "--format", "csv",
+                                       now=self.NOW)
+        self.assertEqual((code, out), (0, self.expected("All DOPs", ["*/Facility/THBK"], fmt="csv")))
+
+    def test_report_csv_with_window(self):
+        code, out, err = self.run_report("--style", "AER", "--format", "csv", "--object", self.G01,
+                                         "--start", "2026-11-10T01:00:00Z", "--stop", "2026-11-10T02:00:00Z",
+                                         "--step", "120")
+        self.assertEqual((code, err), (0, ""))
+        lines = out.split("\n")
+        self.assertEqual(lines[0], "Time (UTCG),Azimuth (deg),Elevation (deg),Range (km)")
+        rows = [line for line in lines[1:] if line]
+        self.assertEqual(len(rows), 31)                                # 01:00:00 ถึง 02:00:00 ทุก 2 นาที ปิดทั้งสองข้าง
+        stamps = [datetime.strptime(r.split(",")[0], "%d %b %Y %H:%M:%S.000 UTCG").replace(tzinfo=UTC) for r in rows]
+        start, stop = datetime(2026, 11, 10, 1, tzinfo=UTC), datetime(2026, 11, 10, 2, tzinfo=UTC)
+        self.assertTrue(all(start <= t <= stop for t in stamps))
+        self.assertEqual({(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])}, {120.0})
+        self.assertEqual(stamps[0], start)
+
+    def test_report_uses_scenario_units_and_styles(self):
+        path = Path(self.sc) / "scenario.json"
+        original = path.read_bytes()
+        self.addCleanup(path.write_bytes, original)
+        doc = json.loads(original)
+        doc["units"] = {"date_format": "LTZG", "ltz_offset": "-05:30"}
+        doc["styles"] = [{"name": "Mine", "kind": "report", "object_type": "Access",
+                          "content": [{"provider": "Access Data", "group": None,
+                                       "elements": ["Start Time", "Duration"]}]}]
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        code, out, err = self.run_report("--style", "mine", "--format", "csv", "--object", self.G01, now=self.NOW)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out.split("\n")[0], "Start Time (LTZG-05:30),Duration (sec)")
+        self.assertTrue(out.split("\n")[1].startswith("9 Nov 2026 18:30:00.000 LTZG-05:30,"))   # 00:00Z − 5:30
+        doc["units"] = {"date_format": "GPS"}
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        code, _, err = self.run_report("--style", "Access", "--object", self.G01)
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
+
+    def test_report_errors(self):
+        code, out, err = self.run_report("--style", "AER", "--object", self.G01, "--step", "90")
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
+        code, out, err = self.run_report("--style", "NoSuchStyle", "--object", self.G01)
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("error: STYLE_INVALID:"), err)
+        code, _, err = self.run_report("--style", "Access", "--object", "*/Facility/THBK")    # ชนิด object ไม่ตรง style
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
+        code, _, err = self.run_report("--style", "Access", "--object", self.G01, "--start", "2026-11-10T01:00:00Z")
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
+        code, _, err = self.run_report("--style", "Access", "--object", "*/Facility/NOPE */Satellite/G01")
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
+
+    def test_report_argument_errors_exit_2(self):
+        for args in (["--style", "Access"],                                          # ไม่ส่ง --object
+                     ["--object", self.G01],                                         # ไม่ส่ง --style
+                     ["--style", "Access", "--object", self.G01, "--format", "pdf"],
+                     ["--style", "Access", "--object", self.G01, "--kind", "chart"],
+                     ["--style", "Access", "--object", self.G01, "--step", "abc"],
+                     ["--style", "Access", "--object", self.G01, "--start", "yesterday"],
+                     ["--style", "Access", "--object", self.G01, "--start", "2026-11-10T01:00:00"]):   # ไม่มีเขตเวลา
+            with self.subTest(args=args):
+                code, out, _ = self.run_report(*args)
+                self.assertEqual((code, out), (2, ""))
+        code, _, _ = run_main(["report", "--style", "Access", "--object", self.G01])           # ไม่ส่ง --scenario
+        self.assertEqual(code, 2)
+
+
+class TestReportCliWithoutResults(TempDirs):
+    def test_no_analyze_results_is_results_not_current(self):
+        for style, obj in (("Access", "*/Facility/THBK */Satellite/G01"), ("LLA Position", "*/Satellite/G01"),
+                           ("All DOPs", "*/Facility/THBK")):
+            with self.subTest(style=style):
+                code, out, err = run_main(["report", "--scenario", str(self.sc), "--data", str(self.data),
+                                           "--style", style, "--object", obj])
+                self.assertEqual((code, out), (1, ""))
+                self.assertTrue(err.startswith("error: RESULTS_NOT_CURRENT:"), err)
+        self.assertFalse((self.sc / "ephem").exists())               # CLI ไม่รัน GMAT ไม่เขียนผลให้
+        self.assertFalse((self.sc / "access").exists())
+
+    def test_broken_scenario_is_scenario_invalid(self):
+        (self.sc / "scenario.json").write_text("{", encoding="utf-8")
+        code, _, err = run_main(["report", "--scenario", str(self.sc), "--data", str(self.data),
+                                 "--style", "Access", "--object", "*/Facility/THBK */Satellite/G01"])
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: SCENARIO_INVALID:"), err)
 
 
 if __name__ == "__main__":
