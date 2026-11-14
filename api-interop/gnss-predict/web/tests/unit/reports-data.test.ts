@@ -2,12 +2,13 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../../src/api/client";
 import {
   DECIMALS,
   DEFAULT_DECIMALS,
   DEFAULT_EXPORT_SETUP,
+  REVOKE_DELAY_MS,
   accessName,
   accessPath,
   decimalsOf,
@@ -23,7 +24,10 @@ import {
   type StyleDef,
 } from "../../src/data/reports";
 import { labels } from "../../src/labels/labels";
+import { useMessages } from "../../src/stores/messages";
 import { stubFetch } from "./helpers/fake-fetch";
+
+beforeEach(() => useMessages.setState(useMessages.getInitialState(), true));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -111,10 +115,20 @@ describe("downloadReport", () => {
       return `blob:http://localhost/${blobs.length}`;
     });
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    // ตัวตั้งเวลาคืน URL เก็บไว้ให้ test สั่งเอง (ตัวอื่นผ่านไปที่ setTimeout จริง)
+    const timers: { fn: () => void; ms: number | undefined }[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms === REVOKE_DELAY_MS) {
+        timers.push({ fn, ms });
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }
+      return realSetTimeout(fn, ms, ...rest);
+    }) as typeof setTimeout);
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
       clicks.push({ href: this.href, download: this.download, inDocument: document.body.contains(this) });
     });
-    return { blobs, clicks, revoke };
+    return { blobs, clicks, revoke, timers };
   }
 
   test("downloadReport names the file from Content-Disposition", async () => {
@@ -131,7 +145,11 @@ describe("downloadReport", () => {
     expect(dl.clicks).toEqual([{ href: "blob:http://localhost/1", download: "THBK-To-G01_Access.txt", inDocument: true }]);
     expect(await dl.blobs[0].text()).toBe(text);
     expect(dl.blobs[0].type).toBe("text/plain;charset=utf-8");
-    await new Promise((r) => setTimeout(r, 0)); // URL คืนในรอบถัดไป (ให้เบราว์เซอร์เริ่มดาวน์โหลดก่อน)
+    // URL คืนหลังราว 30 วินาที (เบราว์เซอร์อ่าน Blob หลัง click) ไม่ใช่ทันที
+    expect(REVOKE_DELAY_MS).toBe(30_000);
+    expect(dl.revoke).not.toHaveBeenCalled();
+    expect(dl.timers).toHaveLength(1);
+    dl.timers[0].fn();
     expect(dl.revoke).toHaveBeenCalledWith("blob:http://localhost/1");
     expect(document.querySelectorAll("a[download]")).toHaveLength(0);
   });
@@ -156,6 +174,26 @@ describe("downloadReport", () => {
     const dl = captureDownloads();
     await downloadReport("S1", REQUEST, "txt");
     expect(dl.clicks[0].download).toBe("Az El .._x.txt");
+  });
+
+  test("a failure while saving leaves no anchor and no URL behind", async () => {
+    stubFetch({ "POST /api/scenarios/S1/reports": { text: "x" } });
+    const dl = captureDownloads();
+    vi.mocked(URL.createObjectURL).mockImplementation(() => {
+      throw new Error("quota");
+    });
+    await expect(downloadReport("S1", REQUEST, "txt")).rejects.toThrow("quota");
+    expect(document.querySelectorAll("a")).toHaveLength(0);
+    expect(dl.timers).toEqual([]);
+    vi.mocked(URL.createObjectURL).mockImplementation(() => "blob:http://localhost/9");
+    vi.mocked(HTMLAnchorElement.prototype.click).mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    await expect(downloadReport("S1", REQUEST, "txt")).rejects.toThrow("blocked");
+    expect(document.querySelectorAll("a")).toHaveLength(0);
+    expect(dl.timers).toHaveLength(1);
+    dl.timers[0].fn();
+    expect(dl.revoke).toHaveBeenCalledWith("blob:http://localhost/9");
   });
 
   test("errors are ApiError and nothing is downloaded", async () => {
@@ -200,11 +238,71 @@ describe("styles and providers", () => {
     expect(fake.calls[1].query.toString()).toBe("");
   });
 
-  test("fetchStyles drops entries that are not named objects", async () => {
-    stubFetch({ "GET /api/styles": { json: { installed: [ACCESS_STYLE, null, 3, { kind: "report" }], my: [{ name: "Half" }], scenario: [] } } });
-    const tiers = await fetchStyles("Access", null);
+  test("fetchStyles drops malformed styles with one Thai warning each", async () => {
+    // My Styles แก้มือได้ และ Scenario Styles อยู่ใน scenario.json: server ตรวจแค่ว่าเป็น object จึงต้องตรวจโครงที่นี่
+    const lean = { name: "Lean", kind: "report", object_type: "Access", content: [{ provider: "Access Data", elements: ["Duration"] }] };
+    const graphContent = [{ provider: "AER Data", group: "Default", elements: ["Time", "Elevation"] }];
+    stubFetch({
+      "GET /api/styles": {
+        json: {
+          installed: [ACCESS_STYLE],
+          my: [{ name: "Half" }, lean, { ...ACCESS_STYLE, name: "BadKind", kind: "table" }],
+          scenario: [
+            { name: "NoGraph", kind: "graph", object_type: "Access", content: graphContent },
+            { name: "Elev", kind: "graph", object_type: "Access", content: graphContent, graph: { type: "time_xy", y1: ["Elevation"] } },
+            null,
+            { kind: "report" },
+          ],
+        },
+      },
+    });
+    const tiers = await fetchStyles("Access", "S1");
     expect(tiers.installed).toEqual([ACCESS_STYLE]);
-    expect(tiers.my).toEqual([{ name: "Half" }]);
+    // style ที่ถูกต้องแต่ละช่องที่ engine ไม่บังคับ ได้ค่าตั้งต้นของ engine
+    expect(tiers.my).toEqual([{
+      ...ACCESS_STYLE, name: "Lean", content: [{ provider: "Access Data", group: null, elements: ["Duration"] }],
+      summary: { per_object: [], global_statistics: [], summary_only: false },
+    }]);
+    expect(tiers.scenario).toEqual([{
+      name: "Elev", kind: "graph", object_type: "Access", content: graphContent,
+      time: { mode: "object_period", step_s: null }, summary: { per_object: [], global_statistics: [], summary_only: false },
+      graph: { type: "time_xy", y1: ["Elevation"], y2: [] }, dynamic: false, derive: null, ours: false,
+    }]);
+    const warnings = useMessages.getState().items;
+    expect(warnings.map((m) => [m.level, m.code])).toEqual(Array(5).fill(["warning", "STYLE_MALFORMED"]));
+    for (const name of ["Half", "BadKind", "NoGraph"]) {
+      expect(warnings.filter((m) => m.text.includes(`"${name}"`)), name).toHaveLength(1);
+    }
+    expect(warnings.every((m) => /[\u0E00-\u0E7F]/.test(m.text))).toBe(true);
+    expect(warnings.filter((m) => m.text.includes("My Styles"))).toHaveLength(2);
+    expect(warnings.filter((m) => m.text.includes("Scenario Styles"))).toHaveLength(3);
+  });
+
+  test.each([
+    ["no kind", { kind: undefined }],
+    ["unknown object type", { object_type: "Constellation" }],
+    ["object type not a string", { object_type: 3 }],
+    ["empty content", { content: [] }],
+    ["content not an array", { content: { provider: "Access Data" } }],
+    ["content entry not an object", { content: ["Access Data"] }],
+    ["provider not a string", { content: [{ provider: 1, group: null, elements: ["Duration"] }] }],
+    ["group a number", { content: [{ provider: "Access Data", group: 2, elements: ["Duration"] }] }],
+    ["elements not strings", { content: [{ provider: "Access Data", group: null, elements: ["Duration", 4] }] }],
+    ["elements missing", { content: [{ provider: "Access Data", group: null }] }],
+    ["time not an object", { time: "object_period" }],
+    ["time mode unknown", { time: { mode: "later", step_s: null } }],
+    ["summary not an object", { summary: [] }],
+    ["summary lists not strings", { summary: { per_object: [1], global_statistics: [], summary_only: false } }],
+    ["report with a graph", { graph: { type: "time_xy", y1: ["Duration"], y2: [] } }],
+    ["graph style without a graph", { kind: "graph", graph: null }],
+    ["graph type unknown", { kind: "graph", graph: { type: "pie", y1: [], y2: [] } }],
+    ["dynamic not a boolean", { dynamic: "yes" }],
+    ["derive unknown", { derive: "holes" }],
+    ["empty name", { name: "" }],
+  ])("a style with %s is dropped", async (_case, patch) => {
+    stubFetch({ "GET /api/styles": { json: { installed: [], my: [{ ...ACCESS_STYLE, ...patch }], scenario: [] } } });
+    expect((await fetchStyles(null, null)).my).toEqual([]);
+    expect(useMessages.getState().items.map((m) => m.code)).toEqual(["STYLE_MALFORMED"]);
   });
 
   test("saveMyStyle puts and deleteMyStyle deletes by encoded name", async () => {

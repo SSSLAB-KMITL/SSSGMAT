@@ -74,6 +74,25 @@ describe("valueAt", () => {
     expect(valueAt(gapRows, gapTimes, T0 + 600_000, interps, MAX_GAP)).toEqual([null, 20]);
   });
 
+  test("the gap check fails closed", () => {
+    const { rows, times } = table([[10], [20]]);
+    const interps: Interp[] = ["linear", "linear"];
+    // maxGap ที่ไม่ใช่ตัวเลข (step หายไป) = ไม่ประมาณเลย ดีกว่าลากเส้นข้ามช่องว่าง
+    expect(valueAt(rows, times, T0 + STEP / 2, interps, Number.NaN)).toBeNull();
+    // ห่างเท่ากับ maxGap พอดียังประมาณได้
+    expect(valueAt(rows, times, T0 + STEP / 2, interps, STEP)).toEqual([null, 15]);
+    expect(valueAt(rows, times, T0 + STEP / 2, interps, STEP - 1)).toBeNull();
+    // จุดตรงตัวยังได้ค่าแม้ maxGap เสีย
+    expect(valueAt(rows, times, T0, interps, Number.NaN)).toEqual([null, 10]);
+  });
+
+  test("antipodal angles go the negative way (pinned)", () => {
+    // 0 → 180 ห่างกันครึ่งวงพอดี ทางสั้นที่สุดมีสองทาง: ใช้ d = -180 จึงได้ 270 ที่กลาง (ไม่ใช่ 90)
+    // ข้อมูลจริงห่างกันหนึ่ง step ไม่ถึงครึ่งวง ยกเว้นดาวผ่านจุดยอดฟ้าพอดี ซึ่ง Azimuth ไม่นิยามอยู่แล้ว
+    const { rows, times } = table([[0], [180]]);
+    expect(valueAt(rows, times, T0 + STEP / 2, ["linear", "angle"], MAX_GAP)?.[1]).toBeCloseTo(270, 12);
+  });
+
   test("exact sample returns it", () => {
     const { rows, times } = table([[10, 359, 5, null], [20, 1, 7, 2], [30, 3, 9, 4]]);
     const interps: Interp[] = ["linear", "linear", "angle", "previous", "linear"];

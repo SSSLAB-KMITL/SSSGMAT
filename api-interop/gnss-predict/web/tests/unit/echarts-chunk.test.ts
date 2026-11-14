@@ -1,9 +1,11 @@
 // ECharts (ราว 1 MB) ห้ามอยู่ใน bundle หลัก: โหลดได้ทางเดียวคือ import("echarts") ใน windows/Graph/chart.ts (Global Constraints)
 // ถ้าโมดูลของรายงาน/Dynamic Display/ตัวโหลด import "echarts" แบบ static การ import ข้างล่างจะล้มดัง ๆ ส่วน loadECharts ต้อง reject
-// (พิสูจน์ว่า import อยู่ในฟังก์ชัน ไม่ใช่ตอนโหลดโมดูล) และไม่มีไฟล์ใดใน src อ้าง "echarts" นอกจาก chart.ts
+// (พิสูจน์ว่า import อยู่ในฟังก์ชัน ไม่ใช่ตอนโหลดโมดูล) และ JS ที่ build ได้จาก src อ้าง "echarts" ที่เดียวคือ chart.ts
+// (type อย่าง import type { EChartsOption } หรือ import("echarts").X ใช้ได้ทุกไฟล์ เพราะถูกลบตอน build)
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { transformWithOxc } from "vite";
 import { expect, test, vi } from "vitest";
 
 vi.mock("echarts", () => {
@@ -36,16 +38,50 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-test("only windows/Graph/chart.ts names the echarts module, and only as a dynamic import", () => {
+const MODULE = /["'](echarts|zrender)(\/[^"']*)?["']/;
+
+/** JS ที่ build ได้จากไฟล์ (oxc ตัวเดียวกับ vite build): type ทุกแบบถูกลบแล้ว เหลือแต่การอ้างที่รันจริง */
+async function emitted(file: string): Promise<string> {
+  const { code } = await transformWithOxc(readFileSync(file, "utf8"), file, { lang: file.endsWith(".tsx") ? "tsx" : "ts" });
+  return code;
+}
+
+test("the build keeps only one reference to echarts, the dynamic import in windows/Graph/chart.ts", async () => {
   const src = resolve(import.meta.dirname, "../../src");
-  const mentions = sourceFiles(src)
-    .map((file) => ({ file: relative(src, file).split("\\").join("/"), text: readFileSync(file, "utf8") }))
-    .filter(({ text }) => /["'](echarts|zrender)(\/[^"']*)?["']/.test(text));
-  expect(mentions.map((m) => m.file)).toEqual(["windows/Graph/chart.ts"]);
-  const chart = mentions[0].text;
-  // import แบบ static (ยกเว้น import type ที่ถูกลบตอน build) หรือ export ... from ลาก echarts เข้า chunk ของผู้ที่ import chart.ts
-  expect(chart).not.toMatch(/^\s*import\s(?!type\s)[^(]*["']echarts["']/m);
-  expect(chart).not.toMatch(/^\s*export\s[^(]*from\s*["']echarts["']/m);
-  // typeof import("echarts") เป็นแค่ type: import จริงที่รันมีที่เดียว
-  expect(chart.match(/(?<!typeof\s*)import\(\s*["']echarts["']\s*\)/g)).toHaveLength(1);
+  const runtime: { file: string; code: string }[] = [];
+  for (const file of sourceFiles(src)) {
+    if (!MODULE.test(readFileSync(file, "utf8"))) continue; // ไฟล์ที่ไม่เอ่ยถึงเลย ไม่ต้องแปลง
+    const code = await emitted(file);
+    if (MODULE.test(code)) runtime.push({ file: relative(src, file).split("\\").join("/"), code });
+  }
+  expect(runtime.map((m) => m.file)).toEqual(["windows/Graph/chart.ts"]);
+  const refs = runtime[0].code.match(new RegExp(MODULE.source, "g")) ?? [];
+  expect(refs).toEqual(['"echarts"']);
+  expect(runtime[0].code).toMatch(/import\(\s*"echarts"\s*\)/);
+});
+
+test("type-only forms are erased and runtime forms are caught", async () => {
+  // แบบที่ Task 10 ใช้ได้ (EChartsOption ฯลฯ) ต้องหายหมดหลัง build; แบบที่ลาก echarts เข้า chunk ต้องเหลืออยู่ให้ test ข้างบนจับได้
+  const erased = [
+    'import type { EChartsOption } from "echarts";\nexport let o: EChartsOption | null = null;',
+    'import { type SeriesOption } from "echarts";\nexport let s: SeriesOption | null = null;',
+    'export type X = import("echarts").EChartsOption;',
+    'export type L = typeof import("echarts");',
+    'export type { EChartsOption } from "echarts";',
+  ];
+  for (const text of erased) {
+    const { code } = await transformWithOxc(text, "x.ts", { lang: "ts" });
+    expect(code, text).not.toMatch(MODULE);
+  }
+  const kept = [
+    'import * as echarts from "echarts";\nexport const init = echarts.init;',
+    'import "echarts";',
+    'export { init } from "echarts";',
+    'export const load = () => import("echarts").then((m) => m.init);',
+    'import { init } from "zrender";\nexport const z = init;',
+  ];
+  for (const text of kept) {
+    const { code } = await transformWithOxc(text, "x.ts", { lang: "ts" });
+    expect(code, text).toMatch(MODULE);
+  }
 });

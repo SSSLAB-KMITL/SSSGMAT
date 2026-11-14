@@ -8,6 +8,8 @@
 import { apiGet, apiSend, apiSendText, type ApiOptions } from "../api/client";
 import type { components } from "../api/types.gen";
 import { t } from "../labels/labels";
+import { msg } from "../labels/messages.th";
+import { report } from "../stores/messages";
 
 type Schemas = components["schemas"];
 
@@ -52,6 +54,9 @@ export async function fetchReport(sc: string, req: ReportRequest, signal?: Abort
   return data;
 }
 
+/** เวลาที่ถือ object URL ของไฟล์ที่ดาวน์โหลดไว้ก่อนคืน */
+export const REVOKE_DELAY_MS = 30_000;
+
 const MIME = { txt: "text/plain;charset=utf-8", csv: "text/csv;charset=utf-8" } as const;
 
 /** ชื่อไฟล์จาก Content-Disposition (filename* แบบ RFC 5987 ก่อน แล้ว filename) ตัดส่วน path ทิ้ง ไม่มี = null */
@@ -85,18 +90,20 @@ export async function downloadReport(sc: string, req: ReportRequest, format: "tx
   const body = setup === undefined ? { ...req, format } : { ...req, format, export: setup };
   const { text, headers } = await apiSendText("POST", reportsPath(sc), body);
   const name = fileNameOf(headers.get("Content-Disposition")) ?? fallbackName(req.style, format);
-  const url = URL.createObjectURL(new Blob([text], { type: MIME[format] }));
+  let url: string | null = null;
   const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.style.display = "none";
-  document.body.append(a);
   try {
+    url = URL.createObjectURL(new Blob([text], { type: MIME[format] }));
+    a.href = url;
+    a.download = name;
+    a.style.display = "none";
+    document.body.append(a);
     a.click();
   } finally {
     a.remove();
-    // Safari เริ่มดาวน์โหลดหลัง click คืนค่า: คืน URL ในรอบถัดไป
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    // เบราว์เซอร์อ่าน Blob หลัง click คืนค่าแล้ว (Safari/Firefox อาจช้า): คืน URL หลัง REVOKE_DELAY_MS ไม่ใช่ทันที
+    const made = url;
+    if (made !== null) setTimeout(() => URL.revokeObjectURL(made), REVOKE_DELAY_MS);
   }
 }
 
@@ -155,11 +162,138 @@ export interface StyleTiers {
   scenario: StyleDef[];
 }
 
-/** My Style ที่แก้มือในไฟล์อาจขาดบางช่อง (server ส่งต่อตามที่อ่านได้): กรองแค่ที่ไม่ใช่ object หรือไม่มีชื่อ */
-const named = (list: unknown): StyleDef[] =>
-  (Array.isArray(list) ? list : []).filter(
-    (s): s is StyleDef => typeof s === "object" && s !== null && typeof (s as { name?: unknown }).name === "string",
-  );
+// ---------- ตรวจโครงของ style ที่ได้จาก server ----------
+// server ตรวจ My Styles (ไฟล์ที่แก้มือ) และ Scenario Styles (scenario.json) แค่ว่าเป็น object: ที่นี่ตรวจโครงตามกฎของ engine
+// check_style (ไม่ตรวจชื่อ provider/element กับตาราง provider ซึ่ง server ตรวจตอนสร้างรายงาน, P6) ช่องที่ engine ไม่บังคับ
+// (time, summary, graph ของรายงาน, dynamic, derive, ours) ได้ค่าตั้งต้นของ engine ผลจึงเป็น StyleDef ครบทุกช่อง
+// style ที่โครงผิดไม่อยู่ในรายการ และส่งคำเตือนหนึ่งข้อความต่อ style เข้า Message Viewer
+
+const KINDS: readonly string[] = ["report", "graph"];
+const OBJECT_TYPES: readonly string[] = ["Access", "Facility", "Satellite"];
+const GRAPH_TYPES: readonly string[] = ["time_xy", "interval", "polar90"];
+const TIME_MODES: readonly string[] = ["object_period", "specify"];
+
+type Doc = Record<string, unknown>;
+type Parsed<T> = { ok: true; value: T } | { ok: false; field: string };
+
+const isDoc = (v: unknown): v is Doc => typeof v === "object" && v !== null && !Array.isArray(v);
+const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+const bad = (field: string): { ok: false; field: string } => ({ ok: false, field });
+
+/** ช่อง bool ที่ไม่ส่งมา = fallback ส่งมาแต่ไม่ใช่ bool = undefined (ผิด) */
+const boolOr = (v: unknown, fallback: boolean): boolean | undefined => (v === undefined ? fallback : typeof v === "boolean" ? v : undefined);
+
+function parseContent(v: unknown): Parsed<StyleContent[]> {
+  if (!Array.isArray(v) || v.length === 0) return bad("content");
+  const out: StyleContent[] = [];
+  for (const [i, entry] of v.entries()) {
+    const at = `content[${i}]`;
+    if (!isDoc(entry)) return bad(at);
+    if (typeof entry.provider !== "string") return bad(`${at}.provider`);
+    const group = entry.group ?? null;
+    if (group !== null && typeof group !== "string") return bad(`${at}.group`);
+    if (!isStrings(entry.elements) || entry.elements.length === 0) return bad(`${at}.elements`);
+    out.push({ provider: entry.provider, group, elements: [...entry.elements] });
+  }
+  return { ok: true, value: out };
+}
+
+function parseTime(v: unknown): Parsed<StyleTime> {
+  if (v === undefined) return { ok: true, value: { mode: "object_period", step_s: null } };
+  if (!isDoc(v)) return bad("time");
+  const mode = v.mode ?? "object_period";
+  if (typeof mode !== "string" || !TIME_MODES.includes(mode)) return bad("time.mode");
+  const step = v.step_s ?? null;
+  if (step !== null && !(typeof step === "number" && Number.isInteger(step) && step > 0)) return bad("time.step_s");
+  const time: StyleTime = { mode: mode as StyleTime["mode"], step_s: step };
+  for (const key of ["start", "stop"] as const) {
+    if (v[key] === undefined) continue;
+    if (typeof v[key] !== "string") return bad(`time.${key}`);
+    time[key] = v[key];
+  }
+  return { ok: true, value: time };
+}
+
+function parseSummary(v: unknown): Parsed<StyleSummary> {
+  if (v === undefined) return { ok: true, value: { per_object: [], global_statistics: [], summary_only: false } };
+  if (!isDoc(v)) return bad("summary");
+  const lists: Partial<Record<"per_object" | "global_statistics", string[]>> = {};
+  for (const key of ["per_object", "global_statistics"] as const) {
+    const list = v[key] ?? [];
+    if (!isStrings(list)) return bad(`summary.${key}`);
+    lists[key] = [...list];
+  }
+  const summaryOnly = boolOr(v.summary_only, false);
+  if (summaryOnly === undefined) return bad("summary.summary_only");
+  return { ok: true, value: { per_object: lists.per_object ?? [], global_statistics: lists.global_statistics ?? [], summary_only: summaryOnly } };
+}
+
+function parseGraph(v: unknown, kind: StyleKind): Parsed<GraphDef | null> {
+  if (kind === "report") return v === undefined || v === null ? { ok: true, value: null } : bad("graph");
+  if (!isDoc(v)) return bad("graph");
+  if (typeof v.type !== "string" || !GRAPH_TYPES.includes(v.type)) return bad("graph.type");
+  const graph: GraphDef = { type: v.type as GraphType, y1: [], y2: [] };
+  for (const axis of ["y1", "y2"] as const) {
+    const names = v[axis] ?? [];
+    if (!isStrings(names)) return bad(`graph.${axis}`);
+    graph[axis] = [...names];
+  }
+  if (v.stack !== undefined) {
+    if (typeof v.stack !== "boolean") return bad("graph.stack");
+    graph.stack = v.stack;
+  }
+  return { ok: true, value: graph };
+}
+
+/** style จาก server เป็น StyleDef ครบทุกช่อง หรือช่องแรกที่ผิด */
+export function parseStyle(v: unknown): Parsed<StyleDef> {
+  if (!isDoc(v)) return bad("style");
+  if (typeof v.name !== "string" || v.name === "") return bad("name");
+  if (typeof v.kind !== "string" || !KINDS.includes(v.kind)) return bad("kind");
+  if (typeof v.object_type !== "string" || !OBJECT_TYPES.includes(v.object_type)) return bad("object_type");
+  const kind = v.kind as StyleKind;
+  const content = parseContent(v.content);
+  if (!content.ok) return content;
+  const time = parseTime(v.time);
+  if (!time.ok) return time;
+  const summary = parseSummary(v.summary);
+  if (!summary.ok) return summary;
+  const graph = parseGraph(v.graph, kind);
+  if (!graph.ok) return graph;
+  const dynamic = boolOr(v.dynamic, false);
+  if (dynamic === undefined) return bad("dynamic");
+  const derive = v.derive ?? null;
+  if (derive !== null && derive !== "gaps") return bad("derive");
+  const ours = boolOr(v.ours, false);
+  if (ours === undefined) return bad("ours");
+  return {
+    ok: true,
+    value: {
+      name: v.name, kind, object_type: v.object_type as StyleObjectType, content: content.value, time: time.value,
+      summary: summary.value, graph: graph.value, dynamic, derive, ours,
+    },
+  };
+}
+
+const TIER_NAMES: Record<keyof StyleTiers, string> = { installed: "Installed Styles", my: "My Styles", scenario: "Scenario Styles" };
+
+/** style ที่โครงถูกต้องของชั้นหนึ่ง ที่เหลือทิ้งพร้อมคำเตือนหนึ่งข้อความต่อ style */
+function stylesOf(list: unknown, tier: keyof StyleTiers): StyleDef[] {
+  const out: StyleDef[] = [];
+  for (const [i, entry] of (Array.isArray(list) ? list : []).entries()) {
+    const parsed = parseStyle(entry);
+    if (parsed.ok) {
+      out.push(parsed.value);
+      continue;
+    }
+    const name = isDoc(entry) && typeof entry.name === "string" && entry.name !== "" ? entry.name : null;
+    const text = name === null
+      ? msg("styles.malformedUnnamed", { n: i + 1, tier: TIER_NAMES[tier] })
+      : msg("styles.malformed", { name, tier: TIER_NAMES[tier], field: parsed.field });
+    report("warning", "STYLE_MALFORMED", text);
+  }
+  return out;
+}
 
 /** objectType / sc เป็น null = ไม่กรองชนิด / ไม่เอา Scenario Styles */
 export async function fetchStyles(objectType: string | null, sc: string | null, opts: ApiOptions = {}): Promise<StyleTiers> {
@@ -168,7 +302,7 @@ export async function fetchStyles(objectType: string | null, sc: string | null, 
   if (sc !== null) q.set("scenario", sc);
   const query = q.toString();
   const { data } = await apiGet<Partial<Record<keyof StyleTiers, unknown>>>(`/styles${query === "" ? "" : `?${query}`}`, opts);
-  return { installed: named(data?.installed), my: named(data?.my), scenario: named(data?.scenario) };
+  return { installed: stylesOf(data?.installed, "installed"), my: stylesOf(data?.my, "my"), scenario: stylesOf(data?.scenario, "scenario") };
 }
 
 const stylePath = (name: string): string => `/styles/${encodeURIComponent(name)}`;

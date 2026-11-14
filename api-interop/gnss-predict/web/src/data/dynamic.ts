@@ -20,6 +20,8 @@ const wrap360 = (deg: number): number => {
   return w === 360 ? 0 : w; // (-1e-15 % 360) + 360 ปัดเป็น 360 ได้
 };
 
+// ปลายห่างกันครึ่งวงพอดี (0 → 180) ทางสั้นที่สุดมีสองทาง: d อยู่ใน [-180, 180) จึงได้ -180 ไปทางลบ กลางทางเป็น 270 (ไม่ใช่ 90)
+// ข้อมูลจริงห่างกันหนึ่ง step จึงไม่ถึงครึ่งวง ยกเว้นดาวผ่านจุดยอดฟ้าพอดี ซึ่ง Azimuth ไม่นิยามอยู่แล้ว (dynamic.test.ts ปักผลไว้)
 function angleBetween(a: number, b: number, f: number): number {
   const d = wrap360(b - a + 180) - 180; // [-180, 180): ทางสั้นที่สุดจาก a ไป b
   const v = wrap360(a + f * d);
@@ -63,7 +65,7 @@ export function valueAt(
   if (i === n - 1) return null;
   const t0 = times[i];
   const t1 = times[i + 1];
-  if (t1 - t0 > maxGapMs) return null;
+  if (!(t1 - t0 <= maxGapMs)) return null; // เขียนแบบ !(<=): maxGapMs ที่เป็น NaN นับเป็นช่องว่าง (ไม่ลากข้าม)
   const b = rows[i + 1];
   const f = (t - t0) / (t1 - t0);
   const width = Math.max(a.length, b.length);

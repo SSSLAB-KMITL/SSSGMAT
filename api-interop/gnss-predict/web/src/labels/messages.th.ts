@@ -316,6 +316,10 @@ const MESSAGES = {
   "sensorView.widthNoPosition": "ตั้งความกว้างไม่ได้ ดาวยังไม่มีตำแหน่ง ณ เวลานี้",
   // ความกว้างที่พิมพ์เกินช่วงที่ซูมถึง ({min} {max} = ความกว้างแคบสุด/กว้างสุดที่ความสูงตอนนี้ พร้อมหน่วย) ตั้งเป็นปลายช่วงที่ใกล้ที่สุดให้แล้ว
   "sensorView.widthClamped": "ความกว้างที่ความสูงนี้ตั้งได้ตั้งแต่ {min} ถึง {max} จึงตั้งเป็นค่าที่ใกล้ที่สุดให้",
+  // style ใน My Styles (ไฟล์ data/styles ที่แก้มือ) หรือ Scenario Styles (scenario.json) ที่โครงไม่ครบ: ไม่แสดงในรายการ
+  // {tier} = My Styles / Scenario Styles / Installed Styles, {field} = ช่องแรกที่ผิด เช่น content[0].elements
+  "styles.malformed": "style \"{name}\" ใน {tier} มีโครงไม่ถูกต้องที่ช่อง {field} จึงไม่แสดงในรายการ แก้หรือลบ style นี้",
+  "styles.malformedUnnamed": "style รายการที่ {n} ใน {tier} ไม่มีชื่อหรือไม่ใช่ object จึงไม่แสดงในรายการ แก้หรือลบ style นี้",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;
