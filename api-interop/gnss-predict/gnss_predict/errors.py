@@ -79,3 +79,17 @@ class BrdcUnavailableError(GnssPredictError):
 class ResultCorruptError(GnssPredictError):
     """manifest.json ของโฟลเดอร์ผลลัพธ์ที่มีอยู่แล้วอ่านไม่ได้"""
     code = "RESULT_CORRUPT"
+
+
+class ResultsNotCurrentError(GnssPredictError):
+    """ยังไม่มีผลลัพธ์ (ephem หรือ access) ที่ตรงกับ scenario ปัจจุบัน ต้อง Compute ใหม่ก่อนสร้างรายงาน"""
+    code = "RESULTS_NOT_CURRENT"
+
+
+class StyleError(GnssPredictError):
+    """style หรือคำขอข้อมูลอ้างชื่อ provider, group หรือ element ที่ไม่มี field บอกช่องที่ผิด เช่น elements[2]"""
+    code = "STYLE_INVALID"
+
+    def __init__(self, text: str, field: str):
+        super().__init__(text)
+        self.field = field
