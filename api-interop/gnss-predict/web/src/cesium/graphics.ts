@@ -11,6 +11,7 @@
 // - applyGraphics ตั้งกราฟิกของ entity ใน data source ที่โหลดแล้ว ไม่โหลด CZML ใหม่: แก้ Properties แล้วเห็นทันที
 //   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง: passes.ts)
 //   ดาว Inertial by Window ไม่มี path ของ Cesium (Graphics3D วาด polyline จาก toInertial แทน) เส้น access ใช้ --color-access ถ้า access ไม่ได้ตั้งสีเอง
+//   ดาวในหน้าต่าง 3D ที่มีโมเดล (ctx.models, satModelGraphics.ts): entity.model + orientation แทนจุด (จุดถูกซ่อน ป้ายและเส้นทางคงเดิม)
 //   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
 //   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
 //   และคง `show` ตามช่วงเวลาใน CZML ไว้ (ซ่อนทั้งเส้นด้วย entity.show เมื่อดาวหรือ Facility ปลายทางถูกซ่อน)
@@ -24,6 +25,7 @@ import {
 import type { components } from "../api/types.gen";
 import { effectiveColor, objectPath, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
+import { applySatelliteModel, type SatModelSpec } from "./satModelGraphics";
 import { drawableSensors, sensorDrawState, VELOCITY_STEP_S, type SensorDrawState, type SensorObj } from "./sensorDraw";
 import type { Vec3 } from "./sensorGeometry";
 
@@ -221,6 +223,18 @@ export interface ApplyCtx {
   declutter?: boolean;
   /** ช่วงวิเคราะห์ (2D: lead/trail แบบ All, Current Interval) ไม่ระบุ = ไม่มี ground track ในหน้าต่าง 2D */
   analysis?: { start: JulianDate; stop: JulianDate };
+  /** โมเดล 3 มิติของดาว (หน้าต่าง 3D ที่เปิด Satellite Models) ไม่ระบุ = ดาวเป็นจุดทุกดวง */
+  models?: SatelliteModels;
+}
+
+/** โมเดลของดาวในหน้าต่าง 3D (models integration spec §4) */
+export interface SatelliteModels {
+  /** Model Pixel Size (พิกเซล) */
+  pixelSize: number;
+  /** โมเดลที่พร้อมวาดของดาว NORAD นี้ ไม่มี (ยังโหลดไม่เสร็จ โหลดล้มเหลว) = วาดเป็นจุด */
+  specFor(norad: number): SatModelSpec | null;
+  /** id ของ entity ดาวที่ถูกเลือก (ขอบสีของดาวรอบโมเดล) */
+  selectedId?: string | null;
 }
 
 const INERTIAL_BY_WINDOW = "Inertial by Window";
@@ -367,6 +381,11 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
       entity.label = labelFor(obj.name, g.labelShow, color, ctx.declutter === true, style);
       if (g.show) shown.add(id);
       if (obj.class === "Satellite" && ctx.mode === "3d") {
+        const spec = ctx.models?.specFor((obj as SatelliteObj).norad) ?? null;
+        applySatelliteModel(
+          entity,
+          spec === null || ctx.models === undefined ? null : { spec, pixelSize: ctx.models.pixelSize, color, selected: ctx.models.selectedId === id },
+        );
         const period = entityPeriod(entity);
         const inertial = graphics3dOf(obj).orbit_system === INERTIAL_BY_WINDOW;
         entity.path =

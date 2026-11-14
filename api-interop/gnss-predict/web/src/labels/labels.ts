@@ -356,6 +356,9 @@ const LABELS = {
   "field.latLonLines": stk("Lat/Lon Lines", "E"),
   "field.labelDeclutter": stk("Label Declutter", "E"),
   "field.showTime": stk("Show Time", "E"),
+  // โมเดล 3 มิติของดาว (ไม่มีใน STK reference: ชื่อของเราเอง)
+  "field.satelliteModels": ours("Satellite Models"),
+  "field.modelPixelSize": ours("Model Pixel Size"),
   // 2D Graphics Window Properties
   "field.projection": stk("Projection", "E"),
   "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),
@@ -404,6 +407,7 @@ const LABELS = {
   "field.unit.hours": ours("hours"),
   "field.unit.offset": ours("±hh:mm"),
   "field.unit.percent": ours("%"),
+  "field.unit.px": ours("px"),
 
   // ---------- คำที่แสดงของตัวเลือก (ค่าที่เก็บกับคำที่แสดงต่างกันได้ ดู optionLabel) ----------
   // Time Update Mode (STK ref §C) ค่าที่เก็บ time_step / real_time / x_real_time

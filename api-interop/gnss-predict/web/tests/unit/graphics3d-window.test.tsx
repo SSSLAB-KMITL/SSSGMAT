@@ -58,6 +58,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     labelShown: () => null,
     frameCount: () => 0,
     sensorFootprintPoints: () => null,
+    modelCount: () => 0,
     pathAt: () => null,
     entityScreenPosition: () => null,
     ...over,
@@ -410,6 +411,7 @@ describe("3D Graphics Window Properties", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(useLayout.getState().windowProps.graphics3d).toEqual({
       enableLighting: true, ambientLevel: 20, sunLevel: 100, nightLightsLevel: 50, latLonLines: true, labelDeclutter: false, showTime: true,
+      satelliteModels: true, modelPixelSize: 48,
     });
     expect(closePanel).not.toHaveBeenCalled();
     await user.click(screen.getByRole("tab", { name: "Annotation" }));
@@ -417,6 +419,30 @@ describe("3D Graphics Window Properties", () => {
     await user.click(screen.getByRole("button", { name: "OK" }));
     expect(useLayout.getState().windowProps.graphics3d?.showTime).toBe(false);
     expect(closePanel).toHaveBeenCalledWith("windowProperties3d");
+  });
+
+  test("Details: Satellite Models (on by default) and Model Pixel Size, a whole number of pixels from 16 to 256", async () => {
+    const user = userEvent.setup();
+    useLayout.setState({ api: fakeApi(["graphics3d"]) as never });
+    render(<WindowProperties3D panelId="windowProperties3d" params={{ target: "graphics3d" }} />);
+    await user.click(screen.getByRole("tab", { name: "Details" }));
+    const models = screen.getByLabelText("Satellite Models") as HTMLInputElement;
+    const size = screen.getByLabelText("Model Pixel Size") as HTMLInputElement;
+    expect(models.checked).toBe(true);
+    expect(size.value).toBe("48");
+    for (const bad of ["300", "12.5"]) {
+      await user.clear(size);
+      await user.type(size, bad);
+      await user.click(screen.getByRole("button", { name: "Apply" }));
+      expect(size.getAttribute("aria-invalid"), bad).toBe("true");
+      expect(useLayout.getState().windowProps.graphics3d).toBeUndefined();
+    }
+    expect(screen.getByRole("alert").textContent).toBe(msg("form.notInteger"));
+    await user.clear(size);
+    await user.type(size, "96");
+    await user.click(models);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(useLayout.getState().windowProps.graphics3d).toMatchObject({ satelliteModels: false, modelPixelSize: 96 });
   });
 
   test("a level outside 0–100 is refused at the field and nothing is stored", async () => {

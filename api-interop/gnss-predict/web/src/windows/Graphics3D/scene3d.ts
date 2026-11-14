@@ -40,6 +40,10 @@
 //   viewFromSensor ที่เปลี่ยนแค่ zoom หรือ Up (path และ Display เท่าเดิม) = ตั้งกล้องอย่างเดียว (updateSensorCamera) แล้วแจ้ง HUD ไม่ restyle
 //   (ไม่วาด entity ใหม่ทุกขั้นซูม) Display หรือ path เปลี่ยนยังผ่าน restyle ตามเดิม
 // - globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE (1000, ค่าตั้งต้นของ Cesium 100) ทั้งหน้าต่าง 3D และ Sensor View
+// - โมเดล 3 มิติของดาว (models integration spec §3–§4, 3D Graphics Window Properties → Details → Satellite Models / Model Pixel Size):
+//   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
+//   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นครั้งเดียวต่อ microtask)
+//   เลือกดาว (useSelection) = ขอบรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) Sensor View: โมเดลของดาวแม่ถูกซ่อนเหมือนจุดและป้าย (กล้องอยู่ในตัวดาว)
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
 
@@ -53,9 +57,10 @@ import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
+import { modelCountOf, setModelSelection, updateModelAttitudes } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
-  sensorStateAt, sensorStatesAt, type SceneObject, type SceneStyle, type SensorCtx,
+  sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
@@ -67,10 +72,12 @@ import { satelliteInfo } from "../../data/catalog";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
+import { useSelection } from "../../stores/selection";
 import { useTime } from "../../stores/time";
 import { parseIsoUtc } from "../../time/parse";
 import { markersNear, selectOnClick } from "./pick";
 import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
+import { SatModelSource } from "./satModelSource";
 import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
@@ -99,7 +106,7 @@ const FACILITY_VIEW_FROM = new Cartesian3(0, -1_500_000, 1_500_000);
 const INERTIAL_STEP_S = 300;
 const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
-/** Sensor: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
+/** Sensor และท่าทางของโมเดลดาว: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
 const SENSOR_INTERVAL_MS = 250;
 /**
  * จำนวนชิ้นของลูกโลกที่ Cesium เก็บไว้ในหน่วยความจำ (globe.tileCacheSize) ของหน้าต่าง 3D และ Sensor View ค่าตั้งต้นของ Cesium คือ 100
@@ -274,6 +281,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   /** entity ของ sensor ที่วาดอยู่ใน viewer.entities ตาม id */
   private readonly sensorEntities = new Map<string, Entity>();
   private readonly sensorThrottle = new Throttle(SENSOR_INTERVAL_MS, () => this.drawSensors());
+  /** ท่าทางและมุมแผงของโมเดลดาว (รอบเดียวกับ sensor) */
+  private readonly modelThrottle = new Throttle(SENSOR_INTERVAL_MS, () => this.poseModels());
+  private readonly models = new SatModelSource(() => this.modelsChanged());
+  private restyleQueued = false;
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
   /** ตำแหน่งที่กดปุ่มซ้ายในโหมด Grab Globe ค้างอยู่ (null = ไม่ได้กดอยู่) ไว้ดูว่าตอนปล่อยเป็นคลิกหรือลาก */
@@ -332,7 +343,15 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
         const before = this.props;
         this.props = props3d(s.windowProps[panelId]);
         this.applyProps();
-        if (before.labelDeclutter !== this.props.labelDeclutter) this.restyle();
+        if (
+          before.labelDeclutter !== this.props.labelDeclutter || before.satelliteModels !== this.props.satelliteModels
+          || before.modelPixelSize !== this.props.modelPixelSize
+        ) this.restyle();
+      }),
+    );
+    this.offs.push(
+      useSelection.subscribe((s, prev) => {
+        if (s.activePath !== prev.activePath) this.outlineSelected();
       }),
     );
     this.homeView();
@@ -377,14 +396,70 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (ds === null || this.destroyed) return;
     const { doc } = useScenario.getState();
     ensureFacilities(ds.entities, doc);
-    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter });
+    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter, models: this.modelCtx() });
     this.hideCameraSatellite();
     this.updateInertial(true);
     this.updateSensors(true);
+    this.updateModels(true);
     this.updateSensorCamera();
     if (this.view.kind === "sensor") this.applyDisplay();
     this.viewer.scene.requestRender();
     if (this.view.kind === "sensor") this.opts.notify(); // ข้อความบนภาพอ่านใหม่ (doc หรือ entity เปลี่ยนโดยที่เวลาไม่เปลี่ยน)
+  }
+
+  // ---------- โมเดล 3 มิติของดาว ----------
+
+  /** id ของ entity ดาวที่ถูกเลือก (useSelection) ไม่ใช่ดาวหรือไม่มีในภาพ = null */
+  private selectedEntityId(): string | null {
+    const path = useSelection.getState().activePath;
+    if (path === null || !path.startsWith("*/Satellite/")) return null;
+    const obj = useScenario.getState().doc?.objects.find((o) => objectPath(o) === path);
+    return obj === undefined ? null : (entityIdFor(obj, useResults.getState().prnByNorad) ?? null);
+  }
+
+  /** โมเดลของดาวสำหรับ applyGraphics (ปิด Satellite Models = ไม่มี: ดาวเป็นจุด) block จาก catalog ของ snapshot */
+  private modelCtx(): SatelliteModels | undefined {
+    if (!this.props.satelliteModels) return undefined;
+    return {
+      pixelSize: this.props.modelPixelSize,
+      specFor: (norad) => this.models.specFor({ block: satelliteInfo(norad)?.block ?? null, norad }),
+      selectedId: this.selectedEntityId(),
+    };
+  }
+
+  /** catalog หรือ glb โหลดเสร็จ: วาดใหม่ครั้งเดียวแม้หลายโมเดลเสร็จพร้อมกัน */
+  private modelsChanged(): void {
+    if (this.restyleQueued || this.destroyed) return;
+    this.restyleQueued = true;
+    queueMicrotask(() => {
+      this.restyleQueued = false;
+      if (this.props.satelliteModels) this.restyle();
+    });
+  }
+
+  private outlineSelected(): void {
+    const ds = this.ds;
+    if (ds === null || this.destroyed || !this.props.satelliteModels) return;
+    setModelSelection(ds.entities, this.selectedEntityId());
+    this.viewer.scene.requestRender();
+  }
+
+  /** ท่าทางของโมเดล (force = ทันที, ไม่งั้นไม่เกิน 4 ครั้งต่อวินาทีโดยรอบสุดท้ายตามมาเสมอ) */
+  private updateModels(force: boolean): void {
+    if (this.destroyed) return;
+    if (force) this.modelThrottle.flush();
+    else this.modelThrottle.request();
+  }
+
+  private poseModels(): void {
+    const ds = this.ds;
+    if (ds === null || this.destroyed) return;
+    if (updateModelAttitudes(ds.entities, this.viewer.clock.currentTime) > 0) this.viewer.scene.requestRender();
+  }
+
+  modelCount(): number {
+    const ds = this.ds;
+    return ds === null || this.destroyed ? 0 : modelCountOf(ds.entities, this.viewer.clock.currentTime);
   }
 
   /** Sensor View ในโหมด Camera */
@@ -424,6 +499,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.updateSensorCamera();
     this.updateInertial(false);
     this.updateSensors(false);
+    this.updateModels(false);
   }
 
   // ---------- Inertial by Window ----------
@@ -769,13 +845,14 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     return state === null ? null : { sensor, satellite: sensor.parent.split("/").at(-1) ?? "", state };
   }
 
-  /** P7: ดาวแม่อยู่ตรงตำแหน่งกล้อง ซ่อนจุดและป้ายของมัน (เส้นวงโคจรยังอยู่) applyGraphics สร้างจุดและป้ายใหม่ทุกครั้ง จึงเรียกต่อจากมันเสมอ */
+  /** P7: ดาวแม่อยู่ตรงตำแหน่งกล้อง ซ่อนจุด ป้าย และโมเดลของมัน (เส้นวงโคจรยังอยู่) applyGraphics สร้างจุดและป้ายใหม่ทุกครั้ง จึงเรียกต่อจากมันเสมอ */
   private hideCameraSatellite(): void {
     if (this.view.kind !== "sensor") return;
     const parent = this.sensorObj(this.view.path)?.parent;
     const entity = parent === undefined ? undefined : this.entityForPath(parent);
     if (entity?.point !== undefined) entity.point.show = new ConstantProperty(false);
     if (entity?.label !== undefined) entity.label.show = new ConstantProperty(false);
+    if (entity?.model !== undefined) entity.model.show = new ConstantProperty(false);
   }
 
   /** กล้องของโหมด sensor ณ เวลาปัจจุบัน (spec §5.4) ไม่มีตำแหน่ง = ไม่ขยับกล้อง (หน้าต่างแสดงข้อความแทนภาพ) */
@@ -944,6 +1021,8 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     for (const off of this.offs) off();
     this.inertialThrottle.dispose();
     this.sensorThrottle.dispose();
+    this.modelThrottle.dispose();
+    this.models.dispose();
     this.handler.destroy();
     this.zoom.destroy();
     this.inertialPaths.clear();

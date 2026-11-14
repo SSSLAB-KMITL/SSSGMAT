@@ -90,6 +90,54 @@ export function resolveModel(cat: ModelCatalog, sat: { block: string | null; nor
   return resolved(ix.fallback, false);
 }
 
+/** node ของแผงโซลาร์ของโมเดล id ตาม wing_nodes ใน catalog (ชื่อต่างกันต่อโมเดล: galileo-foc ใช้ solar_wing_±Y) ไม่มี = ชื่อมาตรฐานตามจำนวนแผง */
+export function wingNodesOf(cat: ModelCatalog, id: string): string[] {
+  const m = cat.models.find((x) => x.id === id);
+  if (m === undefined) return [];
+  if (m.wing_nodes !== undefined) return [...m.wing_nodes];
+  return wingsOf(m) === "single" ? ["wing-Y"] : ["wing+Y", "wing-Y"];
+}
+
+/**
+ * normal ด้านเซลล์ของแผงโซลาร์ตอนมุมศูนย์ (θ = 0) ในกรอบตัวดาว ต่อโมเดล (ใช้กับ attitude.ts wingAngle)
+ * ที่มา: หน้าของ material ที่เป็นเซลล์ใน node แผงของ glb จริง (ผลรวม normal จากการพันของสามเหลี่ยม: tests/unit/sat-model-render.test.ts ตรวจกับ glb ทุกตัว)
+ * - −X: โมเดลที่มี material "solar_cells" (GNSS ทุกตัว, generic, himawari-9) ตรงกับ NOTES ของ gps-iif, gps-iii ("solar cells facing −X")
+ *   และ galileo-foc ("the cell side faces body −X")
+ * - terra +Z: "Main Solar Panels.001" เป็นแผงสองชั้นที่ใช้ texture เซลล์ทั้งสองด้าน (±Z ของตัวดาว พื้นที่เท่ากัน) แกนจึงแน่นอน ด้านเลือก +Z (ด้านไหนก็เห็นเซลล์)
+ * - goes +Z: หน้า "Goes2-solarpanel-faces" (สีน้ำเงินของเซลล์) ชี้ +Z ด้านตรงข้ามเป็นโครงสีเทา
+ * ไม่อยู่ในรายการ = DEFAULT_WING_ZERO_NORMAL (+X): aqua และ suomi-npp ใช้ texture เดียวกันทั้งสองด้านของแผง บอกไม่ได้ว่าด้านไหนเป็นเซลล์
+ * (แนว normal ของแผงทั้งสองตัวคือ ±X จึงยังหันแผงเข้าหาดวงอาทิตย์ แต่ด้านที่เห็นอาจเป็นด้านหลัง)
+ */
+export const WING_ZERO_NORMAL: Readonly<Record<string, readonly [number, number, number]>> = {
+  "galileo-foc": [-1, 0, 0],
+  "galileo-iov": [-1, 0, 0],
+  "gps-iif": [-1, 0, 0],
+  "gps-iii": [-1, 0, 0],
+  "gps-iir": [-1, 0, 0],
+  "glonass-m": [-1, 0, 0],
+  "glonass-k1": [-1, 0, 0],
+  "glonass-k2": [-1, 0, 0],
+  "bds2-igso": [-1, 0, 0],
+  "bds3-geo": [-1, 0, 0],
+  "bds3-igso": [-1, 0, 0],
+  "bds3-meo-cast": [-1, 0, 0],
+  "bds3-meo-secm": [-1, 0, 0],
+  "qzss-geo": [-1, 0, 0],
+  "qzss-igso": [-1, 0, 0],
+  "navic-irnss1": [-1, 0, 0],
+  "navic-nvs": [-1, 0, 0],
+  generic: [-1, 0, 0],
+  "himawari-9": [-1, 0, 0],
+  terra: [0, 0, 1],
+  goes: [0, 0, 1],
+};
+
+export const DEFAULT_WING_ZERO_NORMAL: readonly [number, number, number] = [1, 0, 0];
+
+export function wingZeroNormal(id: string): readonly [number, number, number] {
+  return Object.hasOwn(WING_ZERO_NORMAL, id) ? WING_ZERO_NORMAL[id] : DEFAULT_WING_ZERO_NORMAL;
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -128,4 +176,39 @@ export function loadModelCatalog(): Promise<ModelCatalog> {
     });
   }
   return loading;
+}
+
+/** "glTF" แบบ little-endian ที่ 4 ไบต์แรกของ glb */
+const GLB_MAGIC = 0x46546c67;
+
+const glbLoads = new Map<string, Promise<string>>();
+
+/**
+ * โหลด glb ที่ url ครั้งเดียวต่อหน้าเว็บ แล้วคืน blob: URL ของไฟล์นั้น (ใช้เป็น uri ของ ModelGraphics)
+ * - หนึ่งคำขอต่อไฟล์ไม่ว่ามีดาวกี่ดวงหรือหน้าต่างกี่บาน: Cesium โหลดจาก blob ในเครื่อง (ResourceCache ของมันใช้ร่วมกันตาม uri เดียวกัน)
+ * - ตรวจหัว glb (magic "glTF" รุ่น 2) ก่อน: ไฟล์ที่หายทำให้ server ตอบหน้าแอป (HTML) สถานะ 200 ซึ่ง Cesium จะโหลดล้มเหลวเงียบ ๆ
+ *   ล้มเหลวที่นี่ผู้เรียกจึงรู้และกลับไปวาดเป็นจุด
+ * - ผลล้มเหลวถูกจำไว้ (ไม่ลองซ้ำ ข้อความแจ้งครั้งเดียวต่อโมเดล) จนกว่าจะ resetModelLoads
+ */
+export function loadModelGlb(url: string): Promise<string> {
+  let p = glbLoads.get(url);
+  if (p === undefined) {
+    p = (async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url} ตอบ ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const view = new DataView(buf);
+      if (buf.byteLength < 12 || view.getUint32(0, true) !== GLB_MAGIC || view.getUint32(4, true) !== 2)
+        throw new Error(`${url} ไม่ใช่ไฟล์ glb (glTF 2.0)`);
+      return URL.createObjectURL(new Blob([buf], { type: "model/gltf-binary" }));
+    })();
+    glbLoads.set(url, p);
+  }
+  return p;
+}
+
+/** ลืม catalog และ glb ที่โหลดไว้ (test) blob URL เดิมไม่ถูกคืน */
+export function resetModelLoads(): void {
+  glbLoads.clear();
+  loading = null;
 }

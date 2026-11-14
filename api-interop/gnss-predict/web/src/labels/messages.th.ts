@@ -41,6 +41,9 @@ const MESSAGES = {
   // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
   "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",
   "g3d.nightLightsNote": "ภาพแสงไฟเมืองตอนกลางคืนต้องโหลดจากอินเทอร์เน็ต (Cesium ion) จึงไม่มีในโปรแกรมที่ทำงานออฟไลน์นี้ ค่า Night Lights Level ถูกเก็บไว้แต่ยังไม่มีผลต่อภาพ",
+  // โมเดล 3 มิติของดาวในหน้าต่าง 3D ({model} = id ของโมเดลใน models/catalog.json) แจ้งครั้งเดียวต่อโมเดลต่อการเปิดหน้าเว็บ
+  "model.loadFailed": "โหลดโมเดล 3 มิติ {model} ไม่สำเร็จ ({message}) ดาวที่ใช้โมเดลนี้แสดงเป็นจุดแทน",
+  "model.catalogFailed": "โหลดรายการโมเดล 3 มิติของดาวไม่สำเร็จ ({message}) ดาวทุกดวงในหน้าต่าง 3D แสดงเป็นจุดแทน",
   "g3d.noWindow": "หน้าต่าง 3D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 3D ที่ต้องการ",
   // หน้าต่าง 2D: 2D Graphics Window Properties (spec §9.3)
   "g2d.noWindow": "หน้าต่าง 2D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 2D ที่ต้องการ",

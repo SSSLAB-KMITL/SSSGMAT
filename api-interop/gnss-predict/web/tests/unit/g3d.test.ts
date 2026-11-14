@@ -43,6 +43,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     labelShown: (name: string) => (name === "G01" ? true : null),
     frameCount: () => 7,
     sensorFootprintPoints: () => null,
+    modelCount: () => 3,
     pathAt: () => null,
     entityScreenPosition: (name: string) => (name === "G01" ? [320, 240] : null),
     ...over,
@@ -87,8 +88,20 @@ describe("3D Graphics Window Properties values", () => {
   });
 
   test("stored values are used as they are", () => {
-    const p = { enableLighting: true, ambientLevel: 10, sunLevel: 80, nightLightsLevel: 0, latLonLines: true, labelDeclutter: true, showTime: false };
+    const p = {
+      enableLighting: true, ambientLevel: 10, sunLevel: 80, nightLightsLevel: 0, latLonLines: true, labelDeclutter: true, showTime: false,
+      satelliteModels: false, modelPixelSize: 100,
+    };
     expect(props3d(p)).toEqual(p);
+  });
+
+  test("Satellite Models is on by default at 48 px; Model Pixel Size is a whole number kept within 16 to 256", () => {
+    expect(DEFAULT_PROPS_3D).toMatchObject({ satelliteModels: true, modelPixelSize: 48 });
+    expect(props3d({})).toMatchObject({ satelliteModels: true, modelPixelSize: 48 }); // workbook รุ่นก่อนมีโมเดล
+    expect(props3d({ modelPixelSize: 4 }).modelPixelSize).toBe(16);
+    expect(props3d({ modelPixelSize: 1000 }).modelPixelSize).toBe(256);
+    expect(props3d({ modelPixelSize: 63.6 }).modelPixelSize).toBe(64);
+    expect(props3d({ modelPixelSize: "64", satelliteModels: "no" })).toMatchObject({ satelliteModels: true, modelPixelSize: 48 });
   });
 });
 
@@ -332,7 +345,9 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(() => hooks.setTime("not a time")).toThrow(RangeError);
     expect(hooks.entityPositionEcef("G01")).toBeNull(); // ยังไม่มีหน้าต่าง 3D
     expect(hooks.frameCount()).toBe(0);
+    expect(hooks.modelCount()).toBe(0); // ไม่มีหน้าต่าง 3D
     registerScene(fakeScene("graphics3d"));
+    expect(hooks.modelCount()).toBe(3);
     expect(hooks.entityPositionEcef("G01")).toEqual([1, 2, 3]);
     expect(hooks.entityPositionEcef("G01", "2026-11-11T06:00:00Z")).toEqual([1, 2, 4]);
     expect(hooks.entityPositionEcef("NOPE")).toBeNull();

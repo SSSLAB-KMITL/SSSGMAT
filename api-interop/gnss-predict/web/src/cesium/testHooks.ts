@@ -7,6 +7,7 @@
 // ไม่แสดง อยู่หลังโลก หรืออยู่นอกภาพ = null
 // และ sensorViewCamera(ชื่อ sensor): กล้องของ Sensor View ของ sensor นั้น (ทะเบียนของ Sensor View แยกจากหน้าต่าง 3D: P3) ไม่มีหน้าต่างหรือไม่มีตำแหน่ง = null
 //   พร้อม display ("camera" | "sensor"), zoom และ visibleEntityCount (entity ที่แสดงอยู่จริงใน viewer ของหน้าต่างนั้น: โหมด Camera = 0) (imagery spec §5.3)
+// และ modelCount(): จำนวน entity ดาวที่แสดงเป็นโมเดล 3 มิติอยู่ในหน้าต่าง 3D ตัวแรก (ไม่มีหน้าต่าง = 0) (models integration spec §5)
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useTime } from "../stores/time";
@@ -26,6 +27,7 @@ export interface GnssStudioTestHooks {
   overlays2d(): Record<string, number> | null;
   sensorFootprint(name: string, view: "3d" | "2d"): number | null;
   sensorViewCamera(sensorName: string): SensorCamera | null;
+  modelCount(): number;
 }
 
 declare global {
@@ -57,5 +59,6 @@ export function installTestHooks(): void {
     overlays2d: () => firstScene2D()?.overlayCounts() ?? null,
     sensorFootprint: (name, view) => (view === "3d" ? firstScene()?.sensorFootprintPoints(name) : firstScene2D()?.sensorFootprintPoints(name)) ?? null,
     sensorViewCamera: (sensorName) => sensorViewFor(sensorName)?.sensorCamera() ?? null,
+    modelCount: () => firstScene()?.modelCount() ?? 0,
   };
 }
