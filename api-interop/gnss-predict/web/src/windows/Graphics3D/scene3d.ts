@@ -37,6 +37,9 @@
 //   ไม่จำค่าเดิม: กลับเป็น Sensor = คืน show ของคอลเลกชันแล้ว restyle คำนวณการแสดงของแต่ละ entity ใหม่จาก doc (object ที่ผู้ใช้ซ่อนยังซ่อน)
 //   scene นี้ไม่มี primitive ของตัวเองนอกจากที่ data source วาด ลูกโลก ชั้นภาพ บรรยากาศ ดาวพื้นหลัง และแสงคงไว้ หน้าต่างอื่นไม่ถูกแตะ (viewer ของตัวเอง)
 //   zoom: fov ด้านสั้น = sensorViewShortFovDeg(α) / zoom ตำแหน่งและทิศกล้องไม่เปลี่ยน
+//   viewFromSensor ที่เปลี่ยนแค่ zoom หรือ Up (path และ Display เท่าเดิม) = ตั้งกล้องอย่างเดียว (updateSensorCamera) แล้วแจ้ง HUD ไม่ restyle
+//   (ไม่วาด entity ใหม่ทุกขั้นซูม) Display หรือ path เปลี่ยนยังผ่าน restyle ตามเดิม
+// - globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE (1000, ค่าตั้งต้นของ Cesium 100) ทั้งหน้าต่าง 3D และ Sensor View
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
 
@@ -98,6 +101,11 @@ const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
 /** Sensor: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
 const SENSOR_INTERVAL_MS = 250;
+/**
+ * จำนวนชิ้นของลูกโลกที่ Cesium เก็บไว้ในหน่วยความจำ (globe.tileCacheSize) ของหน้าต่าง 3D และ Sensor View ค่าตั้งต้นของ Cesium คือ 100
+ * ซูมเข้าออกหรือภาพเคลื่อนตามดาวแล้วกลับมาที่เดิม: ชิ้นที่เคยโหลดยังอยู่ ไม่ต้องขอใหม่ (รอบเร่งความเร็ว)
+ */
+export const GLOBE_TILE_CACHE_SIZE = 1000;
 /** Sensor View: near ของ frustum (เมตร) กล้องอยู่ที่ดาวพอดี (ความเสี่ยง S3) */
 const SENSOR_VIEW_NEAR_M = 1;
 /** HUD: ชั้นบนสุดที่ชิ้นขาดเกินสัดส่วนนี้ของชิ้นที่ได้ผลแล้ว = "ไม่มีภาพเวลานี้" (GIBS/EOX) หรือ "ชิ้นภาพส่วนใหญ่โหลดไม่ได้" (OSM, ion) (imagery spec §5.3) */
@@ -285,6 +293,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
+    scene.globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE;
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
     this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: opts.notify });
@@ -709,8 +718,15 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
       this.release();
       this.lockCamera(true);
     }
+    const before = this.view;
     // จำ path ไว้แม้ doc ยังไม่มี sensor นี้ (เช่น Rename ที่มาถึงก่อน doc ใหม่): กล้องตามเองเมื่อ doc มี
     this.view = { kind: "sensor", path, up, display, zoom };
+    if (before.kind === "sensor" && before.path === path && before.display === display) {
+      // ซูมหรือ Up เปลี่ยนอย่างเดียว: กล้องอย่างเดียว (ตำแหน่ง ทิศ fov) ไม่วาด entity ใหม่ (restyle) แล้ว HUD อ่านใหม่
+      this.updateSensorCamera();
+      this.opts.notify();
+      return this.sensorObj(path) === undefined ? "notFound" : "ok";
+    }
     this.applyDisplay(); // ก่อน restyle: กลับเป็น Sensor แล้ว restyle วาด sensor และ Inertial by Window ใหม่ตาม entity.show ของ doc
     this.restyle();
     if (this.ds === null) this.updateSensorCamera(); // ยังไม่มี data source (restyle ไม่ทำงาน): กล้องรอ adopted

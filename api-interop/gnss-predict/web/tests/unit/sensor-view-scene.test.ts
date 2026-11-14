@@ -20,7 +20,8 @@ import { useLayout } from "../../src/stores/layout";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
-import { mountScene3D, mountSensorView, placeSensorCamera, releaseContextMenu } from "../../src/windows/Graphics3D/scene3d";
+import { GLOBE_TILE_CACHE_SIZE, mountScene3D, mountSensorView, placeSensorCamera, releaseContextMenu } from "../../src/windows/Graphics3D/scene3d";
+import { sensorViewScenes } from "../../src/windows/SensorView/registry";
 import { CATALOG, makeScenarioDoc } from "./helpers/objects";
 
 vi.mock("../../src/cesium/viewer", async (importOriginal) => ({
@@ -297,6 +298,58 @@ describe("Camera display of a Sensor View", () => {
     mainScene.destroy();
     sensorScene.destroy();
   });
+  test("a zoom or Up change moves only the camera: no restyle (no entity redraw), the fov and the HUD still follow", async () => {
+    const { mainScene, sensorScene } = await mountBoth();
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+    const restyle = vi.spyOn(sensorScene as unknown as { restyle(): void }, "restyle");
+    const notified = vi.fn();
+    const off = sensorViewScenes.subscribe(notified);
+    try {
+      sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", Math.SQRT2);
+      expect(sensorScene.sensorCamera()!.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300, Math.SQRT2), 9);
+      expect(sensorScene.sensorHud()!.fovDeg).toBeCloseTo(sensorViewShortFovDeg(45, Math.SQRT2), 12);
+      sensorScene.viewFromSensor("*/Sensor/Sensor1", "velocity", "camera", 2);
+      expect(sensorScene.sensorCamera()).toMatchObject({ zoom: 2, display: "camera", visibleEntityCount: 0 });
+      expect(sensorScene.sensorCamera()!.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300, 2), 9);
+      expect(restyle).not.toHaveBeenCalled();
+      expect(notified).toHaveBeenCalled(); // HUD อ่านใหม่
+      // Display และ path ยังผ่าน restyle
+      sensorScene.viewFromSensor("*/Sensor/Sensor1", "velocity", "sensor", 2);
+      expect(restyle).toHaveBeenCalledTimes(1);
+    } finally {
+      off();
+      mainScene.destroy();
+      sensorScene.destroy();
+    }
+  });
+
+  test("the globe keeps 1000 tiles in its cache in 3D windows and Sensor Views (Cesium's default is 100)", async () => {
+    const { main, sensor, mainScene, sensorScene } = await mountBoth();
+    expect(GLOBE_TILE_CACHE_SIZE).toBe(1000);
+    expect((main.scene.globe as { tileCacheSize?: number }).tileCacheSize).toBe(1000);
+    expect((sensor.scene.globe as { tileCacheSize?: number }).tileCacheSize).toBe(1000);
+    mainScene.destroy();
+    sensorScene.destroy();
+  });
+
+  test("zoom ×262144 (the deepest): the boresight does not move (1e-9) and the fov is the ×1 fov / 262144", async () => {
+    const { mainScene, sensorScene } = await mountBoth();
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+    const wide = sensorScene.sensorCamera()!;
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 262144);
+    const deepest = sensorScene.sensorCamera()!;
+    expect(deepest.zoom).toBe(262144);
+    expect(deepest.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300, 262144), 12);
+    expect(deepest.fovDeg).toBeGreaterThan(0);
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(deepest.direction[i] - wide.direction[i])).toBeLessThan(1e-9);
+      expect(Math.abs(deepest.up[i] - wide.up[i])).toBeLessThan(1e-9);
+      expect(deepest.position[i]).toBeCloseTo(wide.position[i], 3);
+    }
+    mainScene.destroy();
+    sensorScene.destroy();
+  });
+
   test("zoom ×8192: the boresight and the position do not move, only the fov narrows; the HUD carries the view size", async () => {
     const { mainScene, sensorScene } = await mountBoth();
     sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
