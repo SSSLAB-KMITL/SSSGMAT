@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "frame": "+Z nadir antenna, +Y array axis, metres, glTF Y-up export",
+  "models": [
+    {
+      "id": "galileo-foc",
+      "glb": "galileo-foc/galileo_foc.glb",
+      "blocks": ["GAL-2"],
+      "size_m": [2.651, 14.67, 1.43],
+      "triangles": 12472,
+      "wing_nodes": ["solar_wing_+Y", "solar_wing_-Y"],
+      "status": "done"
+    },
+    {
+      "id": "gps-iif",
+      "glb": "gps-iif/gps-iif.glb",
+      "blocks": ["GPS-IIF"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "gps-iii",
+      "glb": "gps-iii/gps-iii.glb",
+      "blocks": ["GPS-III", "GPS-IIIA", "GPS-III-1"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "bds3-meo-cast",
+      "glb": "bds3-meo-cast/bds3-meo-cast.glb",
+      "blocks": ["BDS-3M-CAST", "BDS-3SM-CAST"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "glonass-m",
+      "glb": "glonass-m/glonass-m.glb",
+      "blocks": ["GLO-M", "GLO-M+"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "bds3-meo-secm",
+      "glb": "bds3-meo-secm/bds3-meo-secm.glb",
+      "blocks": ["BDS-3M-SECM-A", "BDS-3M-SECM-B", "BDS-3SM-SECM"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "gps-iir",
+      "glb": "gps-iir/gps-iir.glb",
+      "blocks": ["GPS-IIR-A", "GPS-IIR-B", "GPS-IIR-M"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "glonass-k1",
+      "glb": "glonass-k1/glonass-k1.glb",
+      "blocks": ["GLO-K1", "GLO-K1+", "GLO-K1A", "GLO-K1B"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "galileo-iov",
+      "glb": "galileo-iov/galileo-iov.glb",
+      "blocks": ["GAL-1"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "bds3-geo-igso",
+      "glb": "bds3-geo-igso/bds3-geo-igso.glb",
+      "blocks": ["BDS-3G", "BDS-3I"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "glonass-k2",
+      "glb": "glonass-k2/glonass-k2.glb",
+      "blocks": ["GLO-K2"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "bds2-igso",
+      "glb": "bds2-igso/bds2-igso.glb",
+      "blocks": ["BDS-2I", "BDS-2G", "BDS-2M"],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    },
+    {
+      "id": "generic",
+      "glb": "generic/generic.glb",
+      "blocks": [],
+      "size_m": [0, 0, 0],
+      "triangles": 0,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "pending"
+    }
+  ],
+  "fallback": "generic",
+  "fallback_blocks": [
+    "BDS-3S",
+    "BDS-3SI-CAST",
+    "BDS-3SI-SECM",
+    "GAL-0A",
+    "GAL-0B",
+    "GLO",
+    "GPS-I",
+    "GPS-II",
+    "GPS-IIA",
+    "IRS-1G",
+    "IRS-1I",
+    "IRS-2G",
+    "IRS-2I",
+    "QZS-1",
+    "QZS-2A",
+    "QZS-2G",
+    "QZS-2I",
+    "QZS-3G"
+  ]
+}

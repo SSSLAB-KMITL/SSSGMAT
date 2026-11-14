@@ -14,11 +14,10 @@
   - `scripts/measure_yoke.py` produces the yoke measurement.
 - **`scripts/compare.py`** builds the comparison sheets: the photo on the left, a render of the glb from a matched camera on the right. These sheets are for internal review only, and no photo pixel goes into the model.
 - **`scripts/render_setup.py`** holds the shared render setup.
-- **`renders/`**
-  - `01_earth_face`, `02_side_span`, `03_three_quarter`, `04_anti_earth`, `05_bus_closeup`, `06_yoke_closeup`, `07_wing_back`.
-  - `compare_phenix_earth_face`, `compare_wing_side_view`, `compare_wing_deploy_2013`.
-  - `90_reimport_check`.
-- **`refs/`** holds downloaded pages and photos, plus gridded crops derived from them. These are references only.
+- **`renders/`** (JPEG, 1200×750):
+  - `01_earth_face.jpg`, `02_side_span.jpg`, `03_three_quarter.jpg`, `04_anti_earth.jpg`, `05_bus_closeup.jpg`, `06_yoke_closeup.jpg`, `07_wing_back.jpg`.
+  - `90_reimport_check.jpg`.
+- **`_refs/galileo-foc/`** holds downloaded pages and photos, gridded crops derived from them, and the internal photo comparison sheets (`compare_phenix_earth_face.png`, `compare_wing_side_view.png`, `compare_wing_deploy_2013.png`). These are references only.
 
 ## 1. Axes and origin (unchanged convention)
 
@@ -152,9 +151,9 @@ This was verified from the accessor bounds in the exported file.
 
 All three were rendered under a bright, cleanroom-like grey environment so that colours are comparable.
 
-- **`renders/compare_phenix_earth_face.png`**: Phenix chamber 2013, 24 mm, frontal camera from the measured face scale. Wings are hidden because they were not mounted in the photo. Face extent, nav antenna, SAR hexagon and helices, LRR, S-band cylinder and Earth-sensor block line up within a few cm.
-- **`renders/compare_wing_side_view.png`**: ESA 2017 side view, 27 mm, frontal. Panel extents, strips, blanks, inserts, central harness gap and yoke T line up.
-- **`renders/compare_wing_deploy_2013.png`**: 2013 deployment, 24 mm.
+- **`_refs/galileo-foc/compare_phenix_earth_face.png`**: Phenix chamber 2013, 24 mm, frontal camera from the measured face scale. Wings are hidden because they were not mounted in the photo. Face extent, nav antenna, SAR hexagon and helices, LRR, S-band cylinder and Earth-sensor block line up within a few cm.
+- **`_refs/galileo-foc/compare_wing_side_view.png`**: ESA 2017 side view, 27 mm, frontal. Panel extents, strips, blanks, inserts, central harness gap and yoke T line up.
+- **`_refs/galileo-foc/compare_wing_deploy_2013.png`**: 2013 deployment, 24 mm.
   - The camera comes from the 6-point wing PnP, and the array angle was fitted (0.5°) from the bus edges.
   - Yellow crosses mark the measured points on both halves; on the render they fall on the wing corners.
   - The bus −X edge and root-hinge marks are within ~60 px (full-res).
