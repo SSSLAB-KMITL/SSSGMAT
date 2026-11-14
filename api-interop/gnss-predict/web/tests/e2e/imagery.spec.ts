@@ -10,6 +10,7 @@
 import type { Page } from "@playwright/test";
 import { ephemHash, expect, openScenario, saveScenario, test as base, treeRow, waitForScene } from "./fixtures";
 import { E2E_ORIGIN, isLocalRequest } from "./localRequest";
+import { ZOOM_GRID, zoomText } from "../../src/windows/SensorView/zoom";
 import { msg } from "../../src/labels/messages.th";
 
 const RAD = Math.PI / 180;
@@ -168,10 +169,13 @@ test.describe("Sensor View Camera mode", () => {
     const fovAt1 = await shortSideFovDeg(page);
     expect(fovAt1, "short-side fov at ×1").not.toBeNull();
 
-    // Zoom In สองครั้ง = ×4: fov ด้านสั้น = 1/4 ของ ×1 (คลาดไม่เกิน 1%) และกล้องยังอยู่ที่ดาว (< 1 ม.) ส่วนหน้าต่างอื่นไม่ถูกแตะ
+    // Zoom In ทีละ ×√2: สองครั้ง = ×2, สี่ครั้ง = ×4: fov ด้านสั้น = 1/4 ของ ×1 (คลาดไม่เกิน 1%) และกล้องยังอยู่ที่ดาว (< 1 ม.) ส่วนหน้าต่างอื่นไม่ถูกแตะ
+    await zoomIn(page).click();
+    await expect(zoomValue(page)).toHaveText("×1.4");
     await zoomIn(page).click();
     await expect(zoomValue(page)).toHaveText("×2");
     await expectShortSideFov(page, fovAt1! / 2, "at ×2");
+    await zoomIn(page).click();
     await zoomIn(page).click();
     await expect(zoomValue(page)).toHaveText("×4");
     await expectShortSideFov(page, fovAt1! / 4, "at ×4");
@@ -190,15 +194,18 @@ test.describe("Sensor View Camera mode", () => {
     await expect(hud(page)).toContainText(msg("sensorView.hudImageryOffline"));
     await expect(hud(page)).not.toContainText(msg("sensorView.hintGlobeManager"));
 
-    // Zoom Out ด้วยล้อเมาส์ (deltaY > 0 = ออก ทีละขั้น) ไม่ใช่ Step Backward และไม่เปลี่ยนตำแหน่งกล้อง
+    // Zoom Out ด้วยล้อเมาส์ (deltaY > 0 = ออก หนึ่งรอย = ×√2) ไม่ใช่ Step Backward และไม่เปลี่ยนตำแหน่งกล้อง
     const box = (await page.getByTestId("sensor-view").boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, 100);
-    await expect(zoomValue(page)).toHaveText("×2");
-    await expectShortSideFov(page, fovAt1! / 2, "after the wheel");
+    await expect(zoomValue(page)).toHaveText("×2.8");
+    await expectShortSideFov(page, fovAt1! / (2 * Math.SQRT2), "after the wheel");
     await waitForCameraOnSatellite(page, "after the wheel");
 
-    // Zoom Out อีกครั้ง = ×1 (ปุ่มปิดใช้ที่ปลายล่าง) fov กลับเป็นค่าตั้งต้น
+    // Zoom Out อีกสามครั้ง = ×1 (ปุ่มปิดใช้ที่ปลายล่าง) fov กลับเป็นค่าตั้งต้น
+    await zoomOut(page).click();
+    await expect(zoomValue(page)).toHaveText("×2");
+    await zoomOut(page).click();
     await zoomOut(page).click();
     await expect(zoomValue(page)).toHaveText("×1");
     await expect(zoomOut(page)).toBeDisabled();
@@ -234,7 +241,7 @@ test.describe("Sensor View Camera mode", () => {
     await openSensorView(page);
     await waitForCameraOnSatellite(page, "at ×1");
 
-    for (let i = 0; i < 3; i++) await zoomIn(page).click();
+    for (let i = 0; i < 6; i++) await zoomIn(page).click(); // ทีละ ×√2
     await expect(zoomValue(page)).toHaveText("×8");
     await expect(hud(page)).toContainText(msg("sensorView.hintGlobeManager"));
     await expect(hud(page)).toContainText(/FOV [0-9.]+° ×8/);
@@ -243,7 +250,7 @@ test.describe("Sensor View Camera mode", () => {
     await expect(hud(page)).not.toContainText(msg("sensorView.hintGlobeManager"));
   });
 
-  test("zooms to ×8192 with 13 clicks of Zoom In: the short-side fov is 1/8192 of ×1, the boresight does not move and the HUD shows the ground width", async ({ page }) => {
+  test("zooms to ×8192 with 26 clicks of Zoom In: the short-side fov is 1/8192 of ×1, the boresight does not move and the HUD shows the ground width", async ({ page }) => {
     await openScenario(page, "E2E");
     await waitForScene(page);
     await openSensorView(page);
@@ -254,14 +261,15 @@ test.describe("Sensor View Camera mode", () => {
     // ×1 มีบรรทัดความกว้างพื้นที่แล้ว (ภาพกว้างกว่าจานโลก = กว้างถึงขอบฟ้า) ยังไม่ต่ำกว่า 1 km
     expect(await groundWidthKm(page), "ground width at ×1 (km)").toBeGreaterThan(1000);
 
-    // ZOOM_STEPS มี 14 ค่า (1, 2, 4, ..., 8192) จึงกด Zoom In 13 ครั้งถึงปลายทาง ทีละขั้นเป็นเลขยกกำลังสองตามลำดับ
-    for (let i = 1; i <= 13; i++) {
+    // ปุ่มก้าวทีละ ×√2 บนตาราง 2^(k/2) (zoom.ts) จึงกด Zoom In 26 ครั้งถึง ×8192 ทุกครั้งที่สองเป็นเลขยกกำลังสองตามลำดับ
+    for (let i = 1; i <= 26; i++) {
       await expect(zoomIn(page)).toBeEnabled();
       await zoomIn(page).click();
-      await expect(zoomValue(page)).toHaveText(`×${2 ** i}`);
+      await expect(zoomValue(page)).toHaveText(`×${zoomText(ZOOM_GRID[i])}`);
+      if (i % 2 === 0) await expect(zoomValue(page)).toHaveText(`×${2 ** (i / 2)}`);
     }
     await expect(zoomValue(page)).toHaveText("×8192");
-    await expect(zoomIn(page), "Zoom In at the top step").toBeDisabled();
+    await expect(zoomIn(page), "Zoom In at ×8192 (the range now goes to ×262144)").toBeEnabled();
     await expect(zoomOut(page)).toBeEnabled();
 
     // มุมกว้างด้านสั้น = 1/8192 ของ ×1 (คลาดไม่เกิน 1%) กล้องยังอยู่ที่ดาว และทิศกล้องคลาดจาก ×1 ไม่เกิน 0.01° (global constraint ข้อ ซูม ×8192)
@@ -290,8 +298,8 @@ test.describe("Sensor View Camera mode", () => {
     await expect(hud(page)).not.toContainText("ภาพละเอียดสุดของแหล่งนี้แล้ว");
     await expect(hud(page)).toContainText(msg("sensorView.hintGlobeManager"));
 
-    // ×1024 (ขั้นที่ 11) ตามที่ spec บอก ≈ 10 km ที่ความสูงของดาว GPS: ถอยหลังสามขั้นแล้วบรรทัดความกว้างตรงกับสูตรเดียวกัน (กว้างกว่า ×8192 แปดเท่า)
-    for (let i = 0; i < 3; i++) await zoomOut(page).click();
+    // ×1024 ตามที่ spec บอก ≈ 10 km ที่ความสูงของดาว GPS: ถอยหลังหกขั้น (×√2) แล้วบรรทัดความกว้างตรงกับสูตรเดียวกัน (กว้างกว่า ×8192 แปดเท่า)
+    for (let i = 0; i < 6; i++) await zoomOut(page).click();
     await expect(zoomValue(page)).toHaveText("×1024");
     await expectShortSideFov(page, fovAt1 / 1024, "at ×1024");
     const expectedKm1024 = expectedGroundWidthKm((await sensorCamera(page))!.position, (await shortSideFovDeg(page))!);
@@ -303,6 +311,20 @@ test.describe("Sensor View Camera mode", () => {
       }, { message: `HUD ground width at ×1024 (expected about ${expectedKm1024.toFixed(2)} km)` })
       .toBeLessThanOrEqual(0.03);
     await waitForCameraOnSatellite(page, "at ×1024");
+
+    // ช่อง Width: "1.5 km" แล้ว Enter = ซูมให้พื้นที่ที่จุดใต้ดาวกว้าง 1.5 km (วัดอิสระจากความสูงของกล้องและ fov ด้านสั้น คลาดไม่เกิน 3%)
+    const width = sensorView(page).getByRole("textbox", { name: "Width", exact: true });
+    await width.fill("1.5 km");
+    await width.press("Enter");
+    await expect
+      .poll(async () => {
+        const camera = await sensorCamera(page);
+        const fov = await shortSideFovDeg(page);
+        return camera === null || fov === null ? Number.POSITIVE_INFINITY : Math.abs(expectedGroundWidthKm(camera.position, fov) - 1.5) / 1.5;
+      }, { message: "ground width after typing 1.5 km in the Width box" })
+      .toBeLessThanOrEqual(0.03);
+    await expect(width).toHaveValue("1.50 km");
+    await waitForCameraOnSatellite(page, "after the Width box");
   });
 });
 
