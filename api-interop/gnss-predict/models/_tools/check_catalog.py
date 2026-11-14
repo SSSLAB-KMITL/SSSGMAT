@@ -42,16 +42,30 @@ def read_snx_blocks(path):
     return blocks
 
 
+def _reject_dup_keys(pairs):
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise ValueError(f"Duplicate JSON object key: {k!r}")
+        out[k] = v
+    return out
+
+
 def main():
     if not os.path.exists(CATALOG_PATH):
         print(f"ERROR: {CATALOG_PATH} not found", file=sys.stderr)
         sys.exit(1)
-    with open(CATALOG_PATH, "r", encoding="utf-8") as fh:
-        cat = json.load(fh)
+    try:
+        with open(CATALOG_PATH, "r", encoding="utf-8") as fh:
+            cat = json.load(fh, object_pairs_hook=_reject_dup_keys)
+    except ValueError as exc:
+        print(f"ERROR: invalid catalog JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     errors = []
     seen_ids = set()
     seen_blocks = {}
+    seen_norads = {}
 
     for entry in cat.get("models", []):
         mid = entry["id"]
@@ -64,6 +78,14 @@ def main():
                 errors.append(f"Block {blk!r} listed in both {seen_blocks[blk]!r} and {mid!r}")
             seen_blocks[blk] = mid
 
+        for nid in entry.get("norad_ids", []):
+            if isinstance(nid, bool) or not isinstance(nid, int) or nid <= 0:
+                errors.append(f"Invalid NORAD ID {nid!r} in model {mid!r} (expected positive int)")
+                continue
+            if nid in seen_norads:
+                errors.append(f"NORAD ID {nid} listed in both {seen_norads[nid]!r} and {mid!r}")
+            seen_norads[nid] = mid
+
         status = entry.get("status", "pending")
         glb_rel = entry.get("glb", "")
         glb_abs = os.path.join(MODELS_DIR, glb_rel)
@@ -74,6 +96,17 @@ def main():
                 sz = os.path.getsize(glb_abs)
                 if sz > int(1.5 * 1048576):
                     errors.append(f"Model {mid!r} glb {glb_rel} exceeds 1.5 MB ({sz} bytes)")
+
+    overrides = cat.get("overrides", {})
+    if not isinstance(overrides, dict):
+        errors.append(f"Top-level 'overrides' must be an object, got {type(overrides).__name__}")
+        overrides = {}
+    else:
+        for cospar, target_mid in overrides.items():
+            if not isinstance(cospar, str) or not cospar.strip():
+                errors.append(f"Invalid override COSPAR key: {cospar!r}")
+            if target_mid not in seen_ids:
+                errors.append(f"Override {cospar!r} points to unknown model id {target_mid!r}")
 
     fallback_blocks = set(cat.get("fallback_blocks", []))
     for blk in fallback_blocks:
@@ -88,7 +121,8 @@ def main():
     done_count = sum(1 for m in cat.get("models", []) if m.get("status") == "done")
     total_count = len(cat.get("models", []))
     print(f"Catalog check: {done_count}/{total_count} models done, "
-          f"{len(seen_blocks)} blocks mapped to models, {len(fallback_blocks)} blocks mapped to fallback ({cat.get('fallback')!r}).")
+          f"{len(seen_blocks)} blocks mapped to models, {len(seen_norads)} NORAD IDs mapped, "
+          f"{len(overrides)} COSPAR overrides, {len(fallback_blocks)} blocks mapped to fallback ({cat.get('fallback')!r}).")
 
     if errors:
         for e in errors:

@@ -156,6 +156,56 @@
       "status": "done"
     },
     {
+      "id": "terra",
+      "glb": "terra/terra.glb",
+      "blocks": [],
+      "norad_ids": [25994],
+      "size_m": [6.811, 13.027, 5.142],
+      "triangles": 13397,
+      "wing_nodes": ["wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "aqua",
+      "glb": "aqua/aqua.glb",
+      "blocks": [],
+      "norad_ids": [27424],
+      "size_m": [8.828, 16.701, 4.772],
+      "triangles": 12977,
+      "wing_nodes": ["wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "suomi-npp",
+      "glb": "suomi-npp/suomi-npp.glb",
+      "blocks": [],
+      "norad_ids": [37849, 43013],
+      "size_m": [4.183, 8.959, 2.569],
+      "triangles": 4024,
+      "wing_nodes": ["wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "goes",
+      "glb": "goes/goes.glb",
+      "blocks": [],
+      "norad_ids": [41866, 43226, 51850, 60133],
+      "size_m": [11.14, 13.444, 12.197],
+      "triangles": 14799,
+      "wing_nodes": ["wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "himawari-9",
+      "glb": "himawari-9/himawari-9.glb",
+      "blocks": [],
+      "norad_ids": [41836, 40267],
+      "size_m": [5.218, 8.037, 5.3],
+      "triangles": 2496,
+      "wing_nodes": ["wing-Y"],
+      "status": "done"
+    },
+    {
       "id": "generic",
       "glb": "generic/generic.glb",
       "blocks": [],
@@ -165,6 +215,7 @@
       "status": "done"
     }
   ],
+  "overrides": {},
   "fallback": "generic",
   "fallback_blocks": [
     "BDS-3S",
