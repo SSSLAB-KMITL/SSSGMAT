@@ -17,10 +17,17 @@ export interface PrefsPageApi {
   /**
    * `fn` is run after OK has saved the preferences, for data that is not a key of Preferences (the radio list, say). `key` names
    * what it saves within the page: the latest registration runs, so a page can register an inline closure on every render and the
-   * one OK runs sees the newest state. OK runs each key of each page once, in the order of its first registration. If one rejects,
+   * one OK runs sees the newest state. OK runs each key of each page once, in the group order of OK (`COMMIT_ORDER`: General, Modules, Interfaces, Predict) and within a group in the order of its first registration. If one rejects,
    * the window stays open and shows the error.
    */
   onCommit(key: string, fn: () => Promise<void>): void;
+  /**
+   * `fn` is run when OK is pressed, before anything is saved, to check what the page will save itself in its `onCommit` without writing it
+   * (a dry run: PUT /api/hwconf?dry_run=true, say), and rejects with the error to show if it is wrong. If any page's check fails, nothing
+   * of the window is saved (spec §10). A page that has an `onCommit` of its own for a `key` registers the check under the same `key`. Keyed
+   * like `onCommit`: the latest registration of a key runs, once, in the group order of OK. A rejection of a `TabError` names the tab.
+   */
+  onCheck(key: string, fn: () => Promise<void>): void;
 }
 
 export interface PrefGroup {
@@ -42,8 +49,14 @@ export const PREF_GROUPS: readonly PrefGroup[] = [
   { id: "predict", label: "Predict", icon: "▦", page: PredictPages },
 ];
 
-/** The group the window opens at: Gpredict opens at General, which has no page yet (sub-project 4 changes this to "general"). */
-export const FIRST_GROUP: PrefGroupId = "predict";
+/** The group the window opens at (spec §10): Gpredict opens at General. */
+export const FIRST_GROUP: PrefGroupId = "general";
+
+/** The order OK saves the groups in (ref-D §1: General, Modules, Interfaces, Predict), whichever page was visited or registered first. */
+export const COMMIT_ORDER: readonly PrefGroupId[] = PREF_GROUPS.map((g) => g.id);
+
+/** The label of a group: the name of the icon, of the title of the window and of the group in a failure text. */
+export const groupLabel = (id: PrefGroupId): string => PREF_GROUPS.find((g) => g.id === id)!.label;
 
 /**
  * Which group the window shows, and the groups it has shown. The page of a group that has been shown stays in the window (hidden)
@@ -54,7 +67,15 @@ export interface GroupView {
   visited: readonly PrefGroupId[];
 }
 
-export const firstView = (): GroupView => ({ active: FIRST_GROUP, visited: [FIRST_GROUP] });
+/**
+ * The view when the window opens: at General, or, while General has no page (it is shown and cannot be chosen, sub-project 4 gives it
+ * one), at the first group that has a page, never on one that is disabled.
+ */
+export function firstView(groups: readonly PrefGroup[] = PREF_GROUPS): GroupView {
+  const first = groups.find((g) => g.id === FIRST_GROUP && g.page !== null) ?? groups.find((g) => g.page !== null);
+  const active = first?.id ?? FIRST_GROUP; // (every group without a page: nothing to show, which does not happen)
+  return { active, visited: [active] };
+}
 
 /** The view after choosing `id`; the same view if that group has no page (it cannot be chosen) or is shown already. */
 export function switchGroup(view: GroupView, id: PrefGroupId, groups: readonly PrefGroup[] = PREF_GROUPS): GroupView {

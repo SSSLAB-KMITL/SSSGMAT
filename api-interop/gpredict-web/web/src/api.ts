@@ -133,13 +133,22 @@ export const getSkyTrack = (name: string, norad: number) =>
 
 // ---------------------------------------------------------------- preferences
 
+export interface WriteOptions {
+  /** the server checks everything and answers as it would after the write, and writes nothing (and tells no other page of it) */
+  dryRun?: boolean;
+}
+
+/** `?dry_run=true` for a PUT that checks and answers like the real one but writes nothing (Preferences' OK checks every part first). */
+export const writeUrl = (path: string, o?: WriteOptions): string => (o?.dryRun === true ? `${path}?dry_run=true` : path);
+
 export const getPrefs = () => request<PrefsAnswer>("GET", "/api/prefs");
 /**
  * Set the keys of `set` and remove (back to the default) the keys of `remove`; 422 PREFS_INVALID (ApiError, Thai text, `object` =
  * the key) if one is wrong, and then nothing is written. A key must not be in both: the server refuses that too.
+ * `dryRun`: the same check and answer (the values as they would be), nothing written.
  */
-export const putPrefs = (set: Readonly<Record<string, PrefValue>>, remove: readonly string[]) =>
-  request<PrefsAnswer>("PUT", "/api/prefs", { set, remove });
+export const putPrefs = (set: Readonly<Record<string, PrefValue>>, remove: readonly string[], o?: WriteOptions) =>
+  request<PrefsAnswer>("PUT", writeUrl("/api/prefs", o), { set, remove });
 
 // ---------------------------------------------------------------- other
 

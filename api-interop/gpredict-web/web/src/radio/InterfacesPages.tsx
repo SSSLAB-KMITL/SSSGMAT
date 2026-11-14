@@ -1,7 +1,8 @@
 // The Interfaces group of Preferences (ref-R §8, sat-pref-interfaces.c): a notebook with the tabs "Radios" and "Rotators", each a table of
 // the devices with the buttons Add new, Edit and Delete, and the editors that Add and Edit open (RadioEditor, RotatorEditor).
 // Nothing is written until OK of the Preferences window: the page keeps its own list (hwconfForm.ts, the reducer) and registers one
-// function with the window that sends it (PUT /api/hwconf), only when the list differs from the one the server had.
+// function with the window that sends it (PUT /api/hwconf) and one that checks it first (the same PUT as a dry run), only when the list
+// differs from the one the server had.
 
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -23,7 +24,7 @@ import {
   rotatorFormFor,
 } from "./hwconfForm";
 import { RadioEditor } from "./RadioEditor";
-import { getHwconf, putHwconf } from "./radioApi";
+import { checkHwconf, getHwconf, putHwconf } from "./radioApi";
 import { RotatorEditor } from "./RotatorEditor";
 import type { ControllerKind, HwConf } from "./types";
 
@@ -101,6 +102,11 @@ function InterfacesNotebook({ api, hw }: { api: PrefsPageApi; hw: HwConf }) {
   const changed = hwChanged(state.original, state.hw);
   useEffect(() => {
     if (!changed) return;
+    // the window checks before it writes anything (all or nothing): the same lists, as a dry run
+    api.onCheck("hwconf", async () => {
+      const body = commitBody(latest.current);
+      if (body !== null) await checkHwconf(body);
+    });
     api.onCommit("hwconf", async () => {
       const body = commitBody(latest.current);
       if (body !== null) await putHwconf(body);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { closeModule, errorText, getModules, putTabs, quit as quitServer, resetClock, retryModule } from "./api";
+import { connectAppEvents, keepIfSame } from "./appEvents";
 import { autotrackTarget } from "./autotrack";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
@@ -25,6 +26,7 @@ import type { PassWindow } from "./passes/passWindows";
 import { closeSky, openSky, pruneSky } from "./passes/skyGlance";
 import type { SkyOpen } from "./passes/skyGlance";
 import { SkyGlanceWindow } from "./passes/SkyGlanceWindow";
+import { reloadPrefs } from "./prefs/prefsStore";
 import { runQuit } from "./quit";
 import { ControllerWindows } from "./radio/ControllerWindowsHost";
 import {
@@ -99,6 +101,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
   const [controllers, setControllers] = useState<readonly ControllerWindow[]>([]); // the Radio Control and Antenna Control windows of every module
   const [controllerBox, setControllerBox] = useState<ControllerBox | null>(null); // Gpredict's error box of the controllers (no device, Configure blocked)
+  const modulesAsked = useRef(0); // GET /api/modules sent so far: only the answer of the last one counts
   const controllersAsked = useRef(0); // GET /api/controllers sent so far: only the answer of the last one counts
   const closingControllers = useRef(new Set<string>()); // (refKey) the controllers whose window was closed and that the server is still closing
   const targetsSent = useRef<Selections>({}); // the selections whose targets have been sent
@@ -109,17 +112,25 @@ function Main({ onStopped }: { onStopped: () => void }) {
     setLocal((l) => [...l, { id: `local:${nextLocalId.current++}`, level: "error", text }]);
   }, []);
 
-  /** (Re)read the modules, the open ones and the startup messages. Called after Open, Clone, Delete, Close and the TLE update (and after New module). */
+  /**
+   * (Re)read the modules, the open ones and the startup messages. Called after Open, Clone, Delete, Close and the TLE update (and after
+   * New module), and when the server says that the modules changed (`modules_changed` of /ws/app, which also arrives for what this
+   * page did itself). Safe to call at any time and as often as you like: only the answer of the last request sent counts, and an answer
+   * with what the page holds already sets nothing (the same objects stay in the state), so the tab that is shown is not rendered again.
+   */
   const reloadModules = useCallback(async () => {
+    const asked = ++modulesAsked.current;
     try {
       const r = await getModules();
-      setOpen(r.open);
-      setModules(r.modules);
-      setStartup(r.messages);
+      if (asked !== modulesAsked.current) return; // a newer read was sent after this one: its answer is the newer
+      setOpen((o) => keepIfSame(o, r.open));
+      setModules((m) => keepIfSame(m, r.modules));
+      setStartup((s) => keepIfSame(s, r.messages));
       setLoadFailed(false);
       setLoaded(true);
-      setLocal((l) => l.filter((n) => n.id !== "load"));
+      setLocal((l) => (l.some((n) => n.id === "load") ? l.filter((n) => n.id !== "load") : l));
     } catch (e) {
+      if (asked !== modulesAsked.current) return;
       setLoadFailed(true);
       setLocal((l) => [...l.filter((n) => n.id !== "load"), { id: "load", level: "error", text: errorText(e) }]);
     }
@@ -128,6 +139,24 @@ function Main({ onStopped }: { onStopped: () => void }) {
   useEffect(() => {
     void reloadModules();
   }, [reloadModules]);
+
+  // the events of the program (/ws/app, spec §12): the page follows what changes on the server, from another browser tab too. Events sent
+  // while the socket was not connected are lost, so the page reads again every time it connects. A read that fails (the server is
+  // going away) leaves what the page holds: the socket's reconnect reads again.
+  useEffect(
+    () =>
+      connectAppEvents({
+        connected: () => {
+          void reloadModules();
+          reloadPrefs().catch(() => {});
+        },
+        prefsChanged: () => void reloadPrefs().catch(() => {}),
+        modulesChanged: () => void reloadModules(),
+        // the TLE age check found old data: Task 18 shows Gpredict's box with this text
+        tleOld: (_text) => {},
+      }),
+    [reloadModules],
+  );
 
   /**
    * Show the windows of the controllers the server has open (GET /api/controllers), at page load and after every open and close

@@ -96,3 +96,11 @@ export const reloadPrefs = (): Promise<void> => store.reload();
 
 /** Set the keys of `set` and put the keys of `remove` back to their defaults (PUT /api/prefs); rejects with the server's error. The page shows the answer. */
 export const savePrefs = (set: Readonly<Record<string, PrefValue>>, remove: readonly string[]): Promise<void> => store.save(set, remove);
+
+/**
+ * Check what OK would send (a dry run of PUT /api/prefs): rejects with the server's error, as `savePrefs` would, and writes nothing, tells
+ * no other page, and changes nothing the page holds (the answer is not taken: it is what the values would be).
+ */
+export const checkPrefs = async (set: Readonly<Record<string, PrefValue>>, remove: readonly string[]): Promise<void> => {
+  await putPrefs(set, remove, { dryRun: true });
+};

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../api";
 import type { PrefsAnswer } from "../types";
-import { CommitList, draftToRequest, draftValue, RESET, resetInDraft, setInDraft } from "./prefsDraft";
+import { pageFailure, prefsFailure, TabError } from "./prefPlaces";
+import { CommitList, commitPreferences, commitSteps, draftToRequest, draftValue, RESET, resetInDraft, setInDraft } from "./prefsDraft";
 import type { Draft } from "./prefsDraft";
 
 const ELEV = "PREDICT/MINIMUM_ELEV";
@@ -106,40 +108,206 @@ describe("the draft is immutable", () => {
   });
 });
 
-describe("CommitList (onCommit of the pages): keyed, the latest registration runs", () => {
+// the order of the groups in the window, which is the order OK runs them in (Gpredict: General, Modules, Interfaces, Predict)
+const ORDER = ["general", "modules", "interfaces", "predict"];
+
+describe("CommitList (onCommit and onCheck of the pages): keyed, the latest registration runs, groups in their fixed order", () => {
   const fn = () => Promise.resolve();
   const other = () => Promise.resolve();
 
   it("a page that registers the same key again replaces what it registered before", () => {
-    const list = new CommitList();
+    const list = new CommitList(ORDER);
     list.add("predict", "radios", other);
     list.add("predict", "radios", fn);
     expect(list.all).toEqual([fn]);
   });
 
-  it("keeps the order of the first registration of each page and key", () => {
-    const list = new CommitList();
+  it("keeps the order of the first registration of each key within a group", () => {
+    const list = new CommitList(ORDER);
     list.add("predict", "radios", other);
-    list.add("modules", "layout", fn);
     list.add("predict", "rotators", fn);
     list.add("predict", "radios", fn); // replaced in its first place
-    expect(list.all).toEqual([fn, fn, fn]);
-    list.add("modules", "layout", other);
-    expect(list.all).toEqual([fn, other, fn]);
+    list.add("predict", "extra", other);
+    expect(list.all).toEqual([fn, fn, other]);
+    list.add("predict", "radios", other);
+    expect(list.all).toEqual([other, fn, other]);
   });
 
-  it("the same key of two pages is two entries", () => {
-    const list = new CommitList();
+  it("orders by group first: General, Modules, Interfaces, Predict, whichever page was visited and registered first", () => {
+    const list = new CommitList(ORDER);
+    const run: string[] = [];
+    const step = (name: string) => async () => void run.push(name);
+    list.add("predict", "a", step("predict"));
+    list.add("interfaces", "hwconf", step("interfaces"));
+    list.add("general", "qth", step("general:qth"));
+    list.add("modules", "layout", step("modules"));
+    list.add("general", "tle", step("general:tle"));
+    list.add("predict", "b", step("predict:b"));
+    return (async () => {
+      for (const commit of list.all) await commit();
+      expect(run).toEqual(["general:qth", "general:tle", "modules", "interfaces", "predict", "predict:b"]);
+    })();
+  });
+
+  it("the same key of two groups is two entries", () => {
+    const list = new CommitList(ORDER);
     list.add("predict", "save", fn);
     list.add("modules", "save", other);
+    expect(list.all).toEqual([other, fn]);
+  });
+
+  it("a group that is not in the order runs after the others", () => {
+    const list = new CommitList(ORDER);
+    list.add("elsewhere", "x", other);
+    list.add("predict", "y", fn);
     expect(list.all).toEqual([fn, other]);
   });
 
   it("a closure made at every render runs once, and it is the newest (it sees the newest state)", async () => {
-    const list = new CommitList();
+    const list = new CommitList(ORDER);
     const seen: number[] = [];
     for (let render = 1; render <= 3; render++) list.add("predict", "save", async () => void seen.push(render));
     for (const commit of list.all) await commit();
     expect(seen).toEqual([3]);
+  });
+
+  it("tells the group and key of each entry, in the same order (the window names the group of a failure)", () => {
+    const list = new CommitList(ORDER);
+    list.add("predict", "a", fn);
+    list.add("general", "qth", other);
+    expect(list.entries.map((e) => [e.page, e.key])).toEqual([
+      ["general", "qth"],
+      ["predict", "a"],
+    ]);
+  });
+});
+
+describe("commitPreferences: every part is checked, then the preferences are saved, then the pages commit", () => {
+  /** steps that write what they do into `log`; `failing` names the step that rejects */
+  function steps(log: string[], failing: string | null = null, checks = 2, commits = 2) {
+    const step = (name: string) => async () => {
+      log.push(name);
+      if (name === failing) throw new Error(`${name} failed`);
+    };
+    return {
+      checkPrefs: step("checkPrefs"),
+      checks: Array.from({ length: checks }, (_, i) => step(`check${i}`)),
+      savePrefs: step("savePrefs"),
+      commits: Array.from({ length: commits }, (_, i) => step(`commit${i}`)),
+    };
+  }
+
+  it("commits run after prefs in registration order, after every check", async () => {
+    const log: string[] = [];
+    await commitPreferences(steps(log));
+    expect(log).toEqual(["checkPrefs", "check0", "check1", "savePrefs", "commit0", "commit1"]);
+  });
+
+  it("nothing is saved when a check fails", async () => {
+    const log: string[] = [];
+    await expect(commitPreferences(steps(log, "check1"))).rejects.toThrow("check1 failed");
+    expect(log).toEqual(["checkPrefs", "check0", "check1"]); // no savePrefs, no commit
+  });
+
+  it("nothing is saved when the check of the preferences fails, and the pages are not asked to check", async () => {
+    const log: string[] = [];
+    await expect(commitPreferences(steps(log, "checkPrefs"))).rejects.toThrow("checkPrefs failed");
+    expect(log).toEqual(["checkPrefs"]);
+  });
+
+  it("a failed save stops before the commits", async () => {
+    const log: string[] = [];
+    await expect(commitPreferences(steps(log, "savePrefs"))).rejects.toThrow("savePrefs failed");
+    expect(log).toEqual(["checkPrefs", "check0", "check1", "savePrefs"]);
+  });
+
+  it("a failed commit stops the commits after it", async () => {
+    const log: string[] = [];
+    await expect(commitPreferences(steps(log, "commit0"))).rejects.toThrow("commit0 failed");
+    expect(log).toEqual(["checkPrefs", "check0", "check1", "savePrefs", "commit0"]);
+  });
+
+  it("runs the steps one at a time", async () => {
+    const log: string[] = [];
+    const slow = (name: string) => async () => {
+      log.push(`${name}:start`);
+      await Promise.resolve();
+      await Promise.resolve();
+      log.push(`${name}:end`);
+    };
+    await commitPreferences({ checkPrefs: slow("p"), checks: [slow("c0"), slow("c1")], savePrefs: slow("s"), commits: [slow("m")] });
+    expect(log).toEqual(["p:start", "p:end", "c0:start", "c0:end", "c1:start", "c1:end", "s:start", "s:end", "m:start", "m:end"]);
+  });
+
+  it("works with no checks and no commits", async () => {
+    const log: string[] = [];
+    await commitPreferences(steps(log, null, 0, 0));
+    expect(log).toEqual(["checkPrefs", "savePrefs"]);
+  });
+});
+
+describe("commitSteps: OK of the window, with the text of a failure placed", () => {
+  const label = (g: string) => ({ general: "General", modules: "Modules", interfaces: "Interfaces", predict: "Predict" })[g]!;
+
+  /** the window's parts, which write what they do into `log`; `refusal` is what the dry run of the preferences throws */
+  function parts(log: string[], overrides: { changed?: boolean; refusal?: unknown } = {}) {
+    const checks = new CommitList(ORDER);
+    const commits = new CommitList(ORDER);
+    const step = (name: string, failure?: unknown) => async () => {
+      log.push(name);
+      if (failure !== undefined) throw failure;
+    };
+    return {
+      checks,
+      commits,
+      step,
+      parts: {
+        changed: overrides.changed ?? true,
+        checkPrefs: step("checkPrefs", overrides.refusal),
+        savePrefs: step("savePrefs"),
+        checks,
+        commits,
+        prefsFailedAs: (e: unknown) => prefsFailure(e, (g) => label(g)),
+        pageFailedAs: (page: string, e: unknown) => pageFailure(label(page), e),
+      },
+    };
+  }
+
+  it("nothing is saved when a page's check fails, and the error says its group and tab and the Thai text of the server", async () => {
+    const log: string[] = [];
+    const w = parts(log);
+    w.checks.add("interfaces", "hwconf", w.step("check interfaces", new TabError("Rotators", "Port ต้องเป็นจำนวนเต็ม 1024–65535")));
+    w.checks.add("general", "qth", w.step("check general"));
+    w.commits.add("general", "qth", w.step("commit general"));
+    w.commits.add("interfaces", "hwconf", w.step("commit interfaces"));
+    await expect(commitPreferences(commitSteps(w.parts))).rejects.toThrow("Interfaces → Rotators: Port ต้องเป็นจำนวนเต็ม 1024–65535");
+    expect(log).toEqual(["checkPrefs", "check general", "check interfaces"]); // General first; no savePrefs, no commit
+  });
+
+  it("nothing is saved when the preferences are refused: the error is placed by the key the server names", async () => {
+    const log: string[] = [];
+    const w = parts(log, { refusal: new ApiError("PREFS_INVALID", "Minimum elevation ต้องเป็นจำนวนเต็ม 1–90", 422, "error", "PREDICT/MINIMUM_ELEV") });
+    w.checks.add("interfaces", "hwconf", w.step("check interfaces"));
+    w.commits.add("interfaces", "hwconf", w.step("commit interfaces"));
+    await expect(commitPreferences(commitSteps(w.parts))).rejects.toThrow(
+      "Predict → Pass Conditions: Minimum elevation ต้องเป็นจำนวนเต็ม 1–90",
+    );
+    expect(log).toEqual(["checkPrefs"]);
+  });
+
+  it("a failed commit names its group", async () => {
+    const log: string[] = [];
+    const w = parts(log);
+    w.commits.add("interfaces", "hwconf", w.step("commit interfaces", new ApiError("HWCONF_INVALID", "เขียนไฟล์ไม่ได้", 500)));
+    await expect(commitPreferences(commitSteps(w.parts))).rejects.toThrow("Interfaces: เขียนไฟล์ไม่ได้");
+  });
+
+  it("without a change to a preference the preferences are neither checked nor saved, and the pages still are", async () => {
+    const log: string[] = [];
+    const w = parts(log, { changed: false });
+    w.checks.add("interfaces", "hwconf", w.step("check"));
+    w.commits.add("interfaces", "hwconf", w.step("commit"));
+    await commitPreferences(commitSteps(w.parts));
+    expect(log).toEqual(["check", "commit"]);
   });
 });

@@ -54,24 +54,104 @@ export function draftToRequest(answer: PrefsAnswer, draft: Draft): { set: Record
   return { set, remove };
 }
 
-/** A function a page wants run when OK has saved the preferences (PrefsPageApi.onCommit). */
+/** A function a page registers with the window: an onCommit (run after the preferences are saved) or an onCheck (run before anything is). */
 export type Commit = () => Promise<void>;
 
+interface Entry {
+  page: string;
+  key: string;
+  fn: Commit;
+}
+
 /**
- * The onCommit functions of one Preferences window, one per page and key: the latest registration of a (page, key) replaces the
- * one before (a page registers on every render, so the newest closure, which sees the newest state, is the one that runs). OK runs
- * each (page, key) once, in the order of its first registration.
+ * The onCommit functions of one Preferences window, or its onCheck functions (the window keeps one list of each): one per page and
+ * key, the latest registration of a (page, key) replacing the one before (a page registers on every render, so the newest closure,
+ * which sees the newest state, is the one that runs). OK runs each (page, key) once, ordered by group as in `order` (Gpredict's: General,
+ * Modules, Interfaces, Predict) whichever page was visited and registered first, and within a group by the first registration. A group
+ * that `order` does not name runs after the others.
  */
 export class CommitList {
-  private readonly entries: { page: string; key: string; fn: Commit }[] = [];
+  private readonly registered: Entry[] = [];
+
+  constructor(private readonly order: readonly string[]) {}
 
   add(page: string, key: string, fn: Commit): void {
-    const entry = this.entries.find((e) => e.page === page && e.key === key);
-    if (entry === undefined) this.entries.push({ page, key, fn });
+    const entry = this.registered.find((e) => e.page === page && e.key === key);
+    if (entry === undefined) this.registered.push({ page, key, fn });
     else entry.fn = fn;
+  }
+
+  /** The entries in the order they run in. */
+  get entries(): readonly Entry[] {
+    const rank = (page: string) => {
+      const i = this.order.indexOf(page);
+      return i < 0 ? this.order.length : i;
+    };
+    return [...this.registered].sort((a, b) => rank(a.page) - rank(b.page)); // (a sort is stable: registration order within a group)
   }
 
   get all(): readonly Commit[] {
     return this.entries.map((e) => e.fn);
   }
+}
+
+/** What OK of the Preferences window does, as functions (the window makes them; `commitPreferences` only orders them). */
+export interface CommitSteps {
+  /** the dry run of the preferences (PUT /api/prefs?dry_run=true) */
+  checkPrefs: Commit;
+  /** the dry runs of what the pages save themselves (their onCheck) */
+  checks: readonly Commit[];
+  savePrefs: Commit;
+  /** what the pages save themselves (their onCommit) */
+  commits: readonly Commit[];
+}
+
+/**
+ * OK of the Preferences window, all or nothing (spec §10, plan decision 6): every part is checked first, with dry runs that write
+ * nothing, and only when all of them pass is anything written. In this order, one at a time, and the first step that rejects ends it
+ * (its error is what rejects here): checkPrefs, every check, savePrefs, every commit. A check that fails therefore leaves every file as
+ * it was.
+ */
+export async function commitPreferences(steps: CommitSteps): Promise<void> {
+  await steps.checkPrefs();
+  for (const check of steps.checks) await check();
+  await steps.savePrefs();
+  for (const commit of steps.commits) await commit();
+}
+
+/** What the window has to make the steps of OK. */
+export interface PreferenceParts {
+  /** the draft changes a preference: when it does not there is nothing to check or save (the pages' own steps are still run) */
+  changed: boolean;
+  checkPrefs: Commit;
+  savePrefs: Commit;
+  checks: CommitList;
+  commits: CommitList;
+  /** the text to show for a failure of the preferences (checking or saving them): where it belongs, then the server's text */
+  prefsFailedAs(e: unknown): string;
+  /** the text to show for a failure of a page's check or commit; `page` is the group that registered it */
+  pageFailedAs(page: string, e: unknown): string;
+}
+
+/** The step that does what `step` does and fails with the Error of `text(failure)`, which is what the window shows (and what rejects `commitPreferences`). */
+const failingAs =
+  (text: (failure: unknown) => string, step: Commit): Commit =>
+  async () => {
+    try {
+      await step();
+    } catch (e) {
+      throw new Error(text(e));
+    }
+  };
+
+/** The steps for `commitPreferences`, each failing with a text that says where the failure is (spec §10: "<group> → <tab>: <text>"). */
+export function commitSteps(p: PreferenceParts): CommitSteps {
+  const nothing: Commit = async () => {};
+  const page = (e: { page: string; fn: Commit }) => failingAs((failure) => p.pageFailedAs(e.page, failure), e.fn);
+  return {
+    checkPrefs: p.changed ? failingAs(p.prefsFailedAs, p.checkPrefs) : nothing,
+    checks: p.checks.entries.map(page),
+    savePrefs: p.changed ? failingAs(p.prefsFailedAs, p.savePrefs) : nothing,
+    commits: p.commits.entries.map(page),
+  };
 }

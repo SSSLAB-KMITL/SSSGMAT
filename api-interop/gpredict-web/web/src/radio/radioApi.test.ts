@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import {
+  checkHwconf,
   closeController,
   controllerAction,
   getControllers,
@@ -11,6 +12,7 @@ import {
   putHwconf,
   updateTransponders,
 } from "./radioApi";
+import { TabError } from "../prefs/prefPlaces";
 import type { HwConf } from "./types";
 
 type Call = { url: string; init: RequestInit | undefined };
@@ -47,6 +49,16 @@ describe("hwconf", () => {
     expect(calls[0]!.url).toBe("/api/hwconf");
     expect(calls[0]!.init?.method).toBe("PUT");
     expect(body(calls[0])).toEqual(HW);
+  });
+
+  it("a dry run goes to ?dry_run=true with the same body", async () => {
+    const calls = stubFetch(() => json(HW));
+    await putHwconf(HW, { dryRun: true });
+    expect(calls[0]!.url).toBe("/api/hwconf?dry_run=true");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(body(calls[0])).toEqual(HW);
+    await putHwconf(HW, {});
+    expect(calls[1]!.url).toBe("/api/hwconf");
   });
 
   it("throws the server's refusal as ApiError, with its Thai text and the key", async () => {
@@ -116,5 +128,54 @@ describe("controllers", () => {
     const e = await controllerAction("A", "radio", { action: "tune" }).catch((err: unknown) => err);
     expect(e).toBeInstanceOf(ApiError);
     expect((e as ApiError).status).toBe(404);
+  });
+});
+
+describe("checkHwconf (the check of the Interfaces page before OK writes)", () => {
+  const RADIO = { name: "IC-910" } as unknown as HwConf["radios"][number];
+  const HW: HwConf = { radios: [RADIO], rotators: [] };
+  const refusal = (text: string) => json({ code: "HWCONF_INVALID", level: "error", text, object: "Port" }, 422);
+
+  it("is one dry run when the devices are right", async () => {
+    const calls = stubFetch(() => json(HW));
+    await checkHwconf(HW);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("/api/hwconf?dry_run=true");
+    expect(body(calls[0])).toEqual(HW);
+  });
+
+  it("a refusal names the Radios tab when the radios alone are refused", async () => {
+    const calls = stubFetch(() => refusal("Port ต้องเป็นจำนวนเต็ม 1024–65535"));
+    const e = await checkHwconf(HW).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(TabError);
+    expect((e as TabError).tab).toBe("Radios");
+    expect((e as TabError).message).toBe("Port ต้องเป็นจำนวนเต็ม 1024–65535");
+    expect(calls).toHaveLength(2);
+    expect(body(calls[1])).toEqual({ radios: [RADIO], rotators: [] }); // the second dry run asks about the radios alone
+  });
+
+  it("names the Rotators tab when the radios are right and the whole is refused", async () => {
+    const withRotator: HwConf = { radios: [RADIO], rotators: [{ name: "Rot" } as unknown as HwConf["rotators"][number]] };
+    stubFetch((_url, init) => (JSON.parse(String(init?.body)).rotators.length === 0 ? json(HW) : refusal("Port ต้องเป็นจำนวนเต็ม 1024–65535")));
+    const e = await checkHwconf(withRotator).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(TabError);
+    expect((e as TabError).tab).toBe("Rotators");
+  });
+
+  it("a failure that is not a refusal of the devices (the server is not there) is let through as it is", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("failed to fetch");
+    });
+    const e = await checkHwconf(HW).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(ApiError);
+    expect((e as ApiError).code).toBe("NETWORK_ERROR");
+  });
+
+  it("when the second dry run fails for another reason, the first failure is what is shown", async () => {
+    let n = 0;
+    stubFetch(() => (n++ === 0 ? refusal("Port ต้องเป็นจำนวนเต็ม 1024–65535") : new Response("", { status: 500 })));
+    const e = await checkHwconf(HW).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(ApiError);
+    expect((e as ApiError).code).toBe("HWCONF_INVALID");
   });
 });

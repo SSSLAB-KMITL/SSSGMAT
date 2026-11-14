@@ -77,6 +77,18 @@ describe("api", () => {
     expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ set: { "PREDICT/LOOK_AHEAD": 7 }, remove: ["PREDICT/MINIMUM_ELEV"] });
   });
 
+  it("a dry run goes to ?dry_run=true and sends the same body", async () => {
+    const calls = stubFetch(() => json({ values: {}, defaults: {}, user: [] }));
+    await putPrefs({ "PREDICT/LOOK_AHEAD": 7 }, ["PREDICT/MINIMUM_ELEV"], { dryRun: true });
+    expect(calls[0]!.url).toBe("/api/prefs?dry_run=true");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ set: { "PREDICT/LOOK_AHEAD": 7 }, remove: ["PREDICT/MINIMUM_ELEV"] });
+    await putPrefs({}, [], { dryRun: false });
+    await putPrefs({}, [], {});
+    expect(calls[1]!.url).toBe("/api/prefs");
+    expect(calls[2]!.url).toBe("/api/prefs");
+  });
+
   it("a refused preference is an ApiError with the Thai text and the key", async () => {
     stubFetch(() => json({ code: "PREFS_INVALID", level: "error", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV" }, 422));
     await expect(putPrefs({ "PREDICT/MINIMUM_ELEV": 0 }, [])).rejects.toMatchObject({ code: "PREFS_INVALID", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV", status: 422 });

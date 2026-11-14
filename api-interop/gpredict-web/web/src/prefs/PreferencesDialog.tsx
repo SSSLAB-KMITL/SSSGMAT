@@ -5,11 +5,12 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Modal } from "../components/Modal";
 import { laterTooltip } from "../later";
 import type { PrefValue } from "../types";
-import { firstView, PREF_GROUPS, switchGroup } from "./prefGroups";
+import { COMMIT_ORDER, firstView, groupLabel, PREF_GROUPS, switchGroup } from "./prefGroups";
 import type { PrefGroupId, PrefsPageApi } from "./prefGroups";
-import { CommitList, draftToRequest, draftValue, resetInDraft, setInDraft } from "./prefsDraft";
+import { pageFailure, prefsFailure } from "./prefPlaces";
+import { CommitList, commitPreferences, commitSteps, draftToRequest, draftValue, resetInDraft, setInDraft } from "./prefsDraft";
 import type { Draft } from "./prefsDraft";
-import { reloadPrefs, savePrefs, usePrefs } from "./prefsStore";
+import { checkPrefs, reloadPrefs, savePrefs, usePrefs } from "./prefsStore";
 
 interface Props {
   onClose: () => void;
@@ -26,18 +27,21 @@ function GroupPage({ page, api }: { page: (api: PrefsPageApi) => ReactNode; api:
  * Edit → Preferences (ref-D §1, spec §8.1): a modal window "GPREDICT Preferences :: <group>" with the four groups as icons at
  * its left, the page of the group beside them, and the buttons Cancel and OK (no Apply).
  *
- * The pages change a draft that belongs to the window. OK sends what differs from the server's values (PUT /api/prefs through
- * `savePrefs`), then runs the latest `onCommit` function of each page and key, in the order they were first registered, then
- * closes. If any of that fails the window stays open and shows the Thai error. Cancel and Escape close it and save nothing. The
- * page of a group that has been shown stays in the window (hidden) until it closes, so switching groups loses nothing; the window
- * reads the server's values again when it opens, and a page is built from them. An error in a page shows a Thai message in its place
- * (ErrorBoundary, ของเรา) and leaves the window and the other pages as they are.
+ * The pages change a draft that belongs to the window. OK is all or nothing (spec §10, `commitPreferences`): it first checks every part
+ * with dry runs that write nothing (what differs from the server's values, PUT /api/prefs?dry_run=true, then the latest `onCheck`
+ * function of each page and key), and only when all of them pass writes: the preferences (`savePrefs`), then the latest `onCommit`
+ * function of each page and key. The pages run in Gpredict's order, General, Modules, Interfaces, Predict, whichever was visited first.
+ * Then the window closes. If any step fails it stays open and shows the Thai error as "<group> → <tab>: <text>". Cancel and Escape
+ * close it and save nothing. The page of a group that has been shown stays in the window (hidden) until it closes, so switching groups
+ * loses nothing; the window reads the server's values again when it opens, and a page is built from them. An error in a page shows a
+ * Thai message in its place (ErrorBoundary, ของเรา) and leaves the window and the other pages as they are.
  */
 export function PreferencesDialog({ onClose }: Props) {
   const answer = usePrefs();
   const [draft, setDraft] = useState<Draft>(NO_CHANGES);
   const [view, setView] = useState(firstView);
-  const [commits] = useState(() => new CommitList());
+  const [checks] = useState(() => new CommitList(COMMIT_ORDER));
+  const [commits] = useState(() => new CommitList(COMMIT_ORDER));
   const [settled, setSettled] = useState(false); // the read at opening has ended, with or without an answer
   const [loadError, setLoadError] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -62,7 +66,7 @@ export function PreferencesDialog({ onClose }: Props) {
   const setValue = useCallback((key: string, v: PrefValue) => setDraft((d) => setInDraft(d, key, v)), []);
   const resetKeys = useCallback((keys: readonly string[]) => setDraft((d) => resetInDraft(d, keys)), []);
 
-  /** what each page gets: they differ only in the group that registers an onCommit; new when the values the pages show change */
+  /** what each page gets: they differ only in the group that registers an onCheck or onCommit; new when the values the pages show change */
   const apis = useMemo(
     () =>
       answer === null
@@ -75,10 +79,11 @@ export function PreferencesDialog({ onClose }: Props) {
                 set: setValue,
                 reset: resetKeys,
                 onCommit: (key, fn) => commits.add(g.id, key, fn),
+                onCheck: (key, fn) => checks.add(g.id, key, fn),
               },
             ]),
           ),
-    [answer, draft, setValue, resetKeys, commits],
+    [answer, draft, setValue, resetKeys, checks, commits],
   );
 
   const ready = apis !== null && settled;
@@ -89,8 +94,18 @@ export function PreferencesDialog({ onClose }: Props) {
     setFailure(null);
     try {
       const { set, remove } = draftToRequest(answer, draft);
-      if (Object.keys(set).length > 0 || remove.length > 0) await savePrefs(set, remove);
-      for (const commit of commits.all) await commit();
+      await commitPreferences(
+        commitSteps({
+          changed: Object.keys(set).length > 0 || remove.length > 0,
+          checkPrefs: () => checkPrefs(set, remove),
+          savePrefs: () => savePrefs(set, remove),
+          checks,
+          commits,
+          prefsFailedAs: (e) => prefsFailure(e, groupLabel),
+          // a page's name is a group's id: the pages are registered by `PREF_GROUPS.map` above and nowhere else
+          pageFailedAs: (page, e) => pageFailure(groupLabel(page as PrefGroupId), e),
+        }),
+      );
       onClose();
     } catch (e) {
       setFailure(errorText(e));

@@ -1,7 +1,9 @@
 // REST client of the radio and rotator routes (sub-project 3, spec §8): the devices of Preferences → Interfaces, the transponders
 // and the controllers. Throws ApiError for status >= 400, like api.ts.
 
-import { moduleUrl, request } from "../api";
+import { ApiError, moduleUrl, request, writeUrl } from "../api";
+import type { WriteOptions } from "../api";
+import { TabError } from "../prefs/prefPlaces";
 import type { ControllerKind, ControllerRef, HwConf, RadioState, RotatorState, Transponder, TrspUpdateAnswer } from "./types";
 
 // ---------------------------------------------------------------- Preferences → Interfaces
@@ -12,8 +14,31 @@ export const getHwconf = () => request<HwConf>("GET", "/api/hwconf");
  * Replaces all the devices with these: both lists are required, every device is checked first (422 HWCONF_INVALID, Thai text, `object` =
  * the key) and then nothing is written; the devices that are not in the lists are deleted. `Cycle` and `Threshold` are ignored: the
  * server keeps the file's (1000 and 5.0 for a new device). Two names that differ only in case are refused.
+ * `dryRun`: the same check and answer, nothing written.
  */
-export const putHwconf = (h: HwConf) => request<HwConf>("PUT", "/api/hwconf", h);
+export const putHwconf = (h: HwConf, o?: WriteOptions) => request<HwConf>("PUT", writeUrl("/api/hwconf", o), h);
+
+/**
+ * The check of the Interfaces page before OK of Preferences writes anything: a dry run of the lists. The server names the field that is
+ * wrong, not the list it is in, so a refusal is asked again about the radios alone (with no rotators): that is refused when the fault is
+ * in the radios, and the failure is then a TabError of "Radios", else of "Rotators" (the window shows the tab). Any other failure (the
+ * server is not there) is let through as it is.
+ */
+export async function checkHwconf(h: HwConf, put: typeof putHwconf = putHwconf): Promise<void> {
+  try {
+    await put(h, { dryRun: true });
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 422) throw e;
+    const radiosAreRight = await put({ radios: h.radios, rotators: [] }, { dryRun: true }).then(
+      () => true,
+      (second: unknown) => {
+        if (second instanceof ApiError && second.status === 422) return false;
+        throw e; // the second question could not be answered: the first failure is what is shown
+      },
+    );
+    throw new TabError(radiosAreRight ? "Rotators" : "Radios", e.text);
+  }
+}
 
 // ---------------------------------------------------------------- transponders
 
