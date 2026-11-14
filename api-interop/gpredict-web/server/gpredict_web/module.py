@@ -241,9 +241,17 @@ def _colours(v, defaults: dict[str, int], path: str, label: str) -> dict[str, in
     return out
 
 
+MAP_FILE_TEXT = "ต้องเป็นชื่อไฟล์ยาว 1-100 ตัวอักษร A-Z, a-z, ตัวเลข, _, . หรือ - (ไม่มี path)"
+
+
+def is_map_file(v) -> bool:
+    """ชื่อไฟล์ภาพแผนที่ที่รับ (ของ module และค่ารวม MODULES/MAP_FILE ใช้กติกาเดียวกัน): ตาม MAP_FILE_RE และไม่ใช่จุดล้วน"""
+    return isinstance(v, str) and MAP_FILE_RE.fullmatch(v) is not None and set(v) != {"."}
+
+
 def _map_file(v) -> str:
-    if not (isinstance(v, str) and MAP_FILE_RE.fullmatch(v)) or set(v) == {"."}:
-        raise _invalid("map.file", "ภาพแผนที่ (map.file) ต้องเป็นชื่อไฟล์ยาว 1-100 ตัวอักษร A-Z, a-z, ตัวเลข, _, . หรือ - (ไม่มี path)")
+    if not is_map_file(v):
+        raise _invalid("map.file", f"ภาพแผนที่ (map.file) {MAP_FILE_TEXT}")
     return v
 
 

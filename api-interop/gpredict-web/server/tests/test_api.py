@@ -19,8 +19,9 @@ from gpredict_web.app import create_app, host_allow_list
 from gpredict_web.clock import CLOCK_TIME_TEXT
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
 from gpredict_web.ephem import EphemManager
-from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, POLAR_CONTENTS,
-                                 POLAR_ORIENTATIONS, SINGLE_FIELDS, SINGLE_HINTS, module_from_dict, module_to_dict)
+from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_CONTENTS, MODULE_KEYS, PAGE_PATHS,
+                                 POLAR_CONTENTS, POLAR_ORIENTATIONS, SINGLE_FIELDS, SINGLE_HINTS, module_from_dict,
+                                 module_to_dict)
 from gpredict_web.observe import qth_geo
 from gpredict_web.passes import find_passes
 from gpredict_web.prefs import PREFS
@@ -496,7 +497,7 @@ class ModuleApiTest(ApiTestBase):
         self.assertEqual(self.store.session(), [])
 
     def test_clone(self):
-        self.put_module(qth="OTHER", refresh={"data_ms": 1000})
+        self.put_module(qth="OTHER", refresh={"data_ms": 1000}, pin=["refresh.data_ms"])
         self.open_module()
         r = self.client.post("/api/modules/M/clone", json={"new_name": "M2", "open": True})
         self.assertEqual(r.status_code, 200, r.text)
@@ -551,7 +552,7 @@ class ModuleApiTest(ApiTestBase):
 
     def test_put_module_while_open_updates_tick(self):
         """Review Focus 5: แก้ QTH และดาวของ module ที่เปิดอยู่ในอีกแท็บ tick ถัดไปของทุกแท็บใช้ค่าใหม่"""
-        self.put_module(qth="ORIGIN", refresh={"data_ms": 100})
+        self.put_module(qth="ORIGIN", refresh={"data_ms": 100}, pin=["refresh.data_ms"])
         self.open_module()
         with self.client.websocket_connect("/ws/modules/M") as tab1, \
                 self.client.websocket_connect("/ws/modules/M") as tab2:
@@ -575,6 +576,127 @@ class ModuleApiTest(ApiTestBase):
                     self.assertEqual((tick["status"], tick["qth"]["name"]), ("ok", "OTHER"))
                     self.assertEqual([s["norad"] for s in tick["sats"]], list(NORADS[:2]))
         self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "OTHER")
+
+
+class ModuleInheritanceApiTest(ApiTestBase):
+    """ไฟล์ module เก็บเฉพาะค่าที่ตั้งเอง: PUT /api/modules/{name} ตรึงหรือปล่อยค่าด้วย pin/unpin (decision 3), clone และ meta
+    (spec งานย่อย 4 §9.1)"""
+
+    MODULE_ONLY_KEYS = {"version", "name", "qth", "satellites", "list_sort", "single", "footprint_off", "ground_track",
+                        "sky_track", "window"}
+
+    def file_json(self, name: str = "M") -> dict:
+        return json.loads((self.cfg.data_dir / "modules" / f"{name}.json").read_text(encoding="utf-8"))
+
+    def set_global(self, key: str, value) -> None:
+        r = self.client.put("/api/prefs", json={"set": {key: value}})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def get(self, name: str = "M") -> dict:
+        r = self.client.get(f"/api/modules/{name}")
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def test_put_module_without_pin_keeps_inheritance(self):
+        self.put_module()
+        full = self.get()
+        full["layout_code"] = "1;0;2;0;1"                                   # ต่างจากค่ารวม แต่ไม่ได้ตรึง
+        full["map"]["center_lon"] = 50
+        r = self.client.put("/api/modules/M", json=full)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["layout_code"], LAYOUT_PRESETS[0][1])      # คำตอบคือค่าที่ใช้จริง
+        self.assertEqual(r.json(), self.get())
+        self.assertNotIn("layout_code", self.file_json())
+        self.assertNotIn("map", self.file_json())
+        self.set_global("MODULES/GRID", "0;0;2;0;1")
+        self.assertEqual(self.get()["layout_code"], "0;0;2;0;1")
+
+    def test_put_module_pin_unpin(self):
+        self.put_module()
+        full = self.get()
+        full["layout_code"] = "1;0;2;0;1"
+        full["map"]["center_lon"] = 50
+        r = self.client.put("/api/modules/M", json={**full, "pin": ["layout_code", "map.center_lon"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["layout_code"], r.json()["map"]["center_lon"]), ("1;0;2;0;1", 50))
+        self.assertNotIn("pin", r.json())
+        own = self.file_json()
+        self.assertEqual((own["layout_code"], own["map"]), ("1;0;2;0;1", {"center_lon": 50}))
+        self.assertNotIn("pin", own)
+        self.set_global("MODULES/GRID", "0;0;2;0;1")
+        self.assertEqual(self.get()["layout_code"], "1;0;2;0;1")             # ตรึงไว้: ไม่ตามค่ารวม
+        r = self.client.put("/api/modules/M", json={**self.get(), "unpin": ["layout_code"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["layout_code"], "0;0;2;0;1")
+        self.assertNotIn("layout_code", self.file_json())
+        self.assertEqual(self.file_json()["map"], {"center_lon": 50})
+
+    def test_put_module_bad_pin_path_is_422(self):
+        self.put_module()
+        file = self.cfg.data_dir / "modules" / "M.json"
+        before = file.read_bytes()
+        for label, extra, field in [
+            ("unknown path", {"pin": ["nope"]}, "pin"),
+            ("module-only field", {"pin": ["satellites"]}, "pin"),
+            ("window", {"pin": ["window"]}, "pin"),
+            ("whole section", {"pin": ["map"]}, "pin"),
+            ("not a string", {"pin": [1]}, "pin"),
+            ("string not list", {"pin": "layout_code"}, "pin"),
+            ("object not list", {"pin": {"layout_code": True}}, "pin"),
+            ("null", {"pin": None}, "pin"),
+            ("unpin unknown", {"unpin": ["map.nope"]}, "unpin"),
+            ("unpin string", {"unpin": "layout_code"}, "unpin"),
+            ("both", {"pin": ["layout_code"], "unpin": ["layout_code"]}, "unpin"),
+        ]:
+            with self.subTest(label):
+                self.assert_error(self.client.put("/api/modules/M", json=self.module_body(**extra)), 422,
+                                  "MODULE_INVALID", field)
+        self.assertEqual(file.read_bytes(), before)
+        self.assert_error(self.client.put("/api/modules/N", json=self.module_body("N", pin=["nope"])), 422,
+                          "MODULE_INVALID", "pin")
+        self.assertEqual(self.store.list_modules(), ["M"])
+
+    def test_new_module_stores_only_module_fields(self):
+        body = self.module_body(layout_code="1;0;2;0;1", refresh={"data_ms": 700}, list_columns=["Az"],
+                                map={"center_lon": 10, "file": "earth_800.png"}, polar={"orientation": "S/W/N/E"},
+                                single={"fields": ["Azimuth"], "selected": NORADS[0]},
+                                window={"state": 1, "x": 1, "y": 1, "width": 300, "height": 300})
+        r = self.client.put("/api/modules/M", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        own = self.file_json()
+        self.assertEqual(set(own), self.MODULE_ONLY_KEYS)
+        self.assertEqual(own["version"], 2)
+        self.assertEqual(own["single"], {"selected": NORADS[0]})
+        self.assertEqual(own["window"]["state"], 0)                          # window เปลี่ยนผ่าน PUT นี้ไม่ได้ (decision 4)
+        self.assertEqual(r.json(), module_to_dict(module_from_dict(self.module_body(single={"selected": NORADS[0]}),
+                                                                   None, None)))
+        r = self.client.post("/api/modules/M/clone", json={"new_name": "M2", "open": False})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.file_json("M2"), {**own, "name": "M2"})
+
+    def test_clone_keeps_pinned_values(self):
+        self.put_module(qth="OTHER", layout_code="1;0;2;0;1", refresh={"data_ms": 1000}, map={"center_lon": 30},
+                        pin=["layout_code", "map.center_lon"])
+        source = self.get()
+        r = self.client.post("/api/modules/M/clone", json={"new_name": "M2", "open": False})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["module"], {**source, "name": "M2"})
+        self.assertEqual(self.file_json("M2"), {**self.file_json("M"), "name": "M2"})
+        self.set_global("MODULES/GRID", "0;0;2;0;1")
+        self.set_global("MODULES/DATA_TIMEOUT", 500)
+        clone = self.get("M2")
+        self.assertEqual((clone["layout_code"], clone["map"]["center_lon"]), ("1;0;2;0;1", 30))     # ยังตรึง
+        self.assertEqual((clone["refresh"]["data_ms"], clone["qth"]), (500, "OTHER"))             # ยังสืบทอด
+
+    def test_meta_module_keys(self):
+        meta = self.client.get("/api/meta").json()
+        self.assertEqual(meta["module_keys"]["layout"], {"layout_code": "MODULES/GRID"})
+        self.assertEqual(list(meta["module_keys"]), list(PAGE_PATHS))
+        for page, paths in PAGE_PATHS.items():
+            self.assertEqual(meta["module_keys"][page], {p: MODULE_KEYS[p] for p in paths}, page)
+        self.assertEqual(meta["module_keys"]["refresh"]["refresh.data_ms"], "MODULES/DATA_TIMEOUT")
+        self.assertEqual(meta["global_layout_extra"], ["GLOBAL/MAIN_WIN_POS", "GLOBAL/MOD_WIN_POS", "GLOBAL/MOD_STATE"])
+        self.assertEqual(meta["log_dir"], str(self.cfg.data_dir / "logs"))
 
 
 # ---------------------------------------------------------------- runtime: retry, นาฬิกา, track
@@ -1155,7 +1277,7 @@ class ControllerApiTest(ApiTestBase):
         super().setUp()
         self.rig = HamlibThread(self)
         self.rot = HamlibThread(self)
-        self.put_module(refresh={"data_ms": 100})
+        self.put_module(refresh={"data_ms": 100}, pin=["refresh.data_ms"])
         trsp = self.cfg.data_dir / "trsp"
         trsp.mkdir(parents=True, exist_ok=True)
         (trsp / f"{ISS}.json").write_text(json.dumps([LINEAR, BEACON, INVERTING]), encoding="utf-8")
@@ -1418,7 +1540,8 @@ class ControllerApiTest(ApiTestBase):
         self.open_ctl("rotator")
         file = self.cfg.data_dir / "modules" / "M.json"
         before = file.read_bytes()
-        body = self.put_module(ground_track=[ISS], single={"selected": AO91}, map={"track_orbits": 5})
+        body = self.put_module(ground_track=[ISS], single={"selected": AO91}, map={"track_orbits": 5},
+                               pin=["map.track_orbits"])
         self.assertNotEqual(file.read_bytes(), before)
         saved = self.store.get_module("M")
         self.assertEqual((saved.ground_track, saved.single["selected"], saved.map["track_orbits"]), ([ISS], AO91, 5))
@@ -1908,7 +2031,7 @@ class HostOriginTest(ApiTestBase):
         self.assertNotIn("access-control-allow-origin", r.headers)
 
     def test_websocket_foreign_origin_or_host_closes_1008(self):
-        self.put_module(refresh={"data_ms": 100})
+        self.put_module(refresh={"data_ms": 100}, pin=["refresh.data_ms"])
         self.open_module()
         for headers in ({"origin": self.FOREIGN}, {"origin": "null"}, {"host": "evil.example"}):
             with self.subTest(headers=headers), self.assertRaises(WebSocketDisconnect) as ctx:
@@ -2017,15 +2140,44 @@ class LifespanTest(ApiTestBase):
             self.store.put_module(module_from_dict({"name": name, "satellites": list(NORADS)}, None, None))
         (self.cfg.data_dir / "modules" / "Broken.json").write_text("{", encoding="utf-8")
         self.store.set_session(["B", "Broken", "A"])
-        with self.assertLogs("gpredict_web.app", "WARNING") as logs:
+        with self.assertLogs("gpredict_web", "WARNING") as logs:          # store: ย้ายไม่ได้, app: เปิดไม่ได้
             client = self.start()
-        self.assertIn("Broken", "\n".join(logs.output))
+        self.assertIn("Broken", "\n".join(r.getMessage() for r in logs.records if r.name == "gpredict_web.app"))
+        self.assertIn("Broken", "\n".join(r.getMessage() for r in logs.records if r.name == "gpredict_web.store"))
         self.assertEqual(self.opener.urls, [])                              # มี module แล้ว: ไม่ bootstrap module
         self.assertEqual(self.app.state.hub.open_names(), ["B", "A"])
         body = client.get("/api/modules").json()
         self.assertEqual(body["open"], ["B", "A"])
         self.assertEqual(self.store.session(), ["B", "A"])
         self.assertEqual([(m["code"], m["object"]) for m in body["messages"]], [("MODULE_INVALID", "Broken")])
+
+    def test_startup_migrates_core_module_files_before_opening_the_session(self):
+        """Review Focus 1: เปิด server ครั้งแรกหลังอัปเกรด ไฟล์ module แบบ core ถูกย้ายก่อนเปิด module ที่ค้างใน session"""
+        self.store.put_qth(ORIGIN)
+        self.store.set_default_qth("ORIGIN")
+        self.write_satdb([record(n) for n in NORADS])
+        core = module_to_dict(module_from_dict({"name": "Old", "satellites": list(NORADS), "layout_code": "1;0;2;0;1",
+                                                "refresh": {"data_ms": 100}}, None, None))
+        for path in ("window", "map.file", "map.colours", "map.shadow_alpha", "polar.colours"):
+            *parents, last = path.split(".")                                  # ช่องที่ core ยังไม่มี
+            section = core
+            for p in parents:
+                section = section[p]
+            del section[last]
+        modules = self.cfg.data_dir / "modules"
+        modules.mkdir(parents=True)
+        original = json.dumps(core).encode("utf-8")
+        (modules / "Old.json").write_bytes(original)
+        self.store.set_session(["Old"])
+        with self.assertLogs("gpredict_web.app", "INFO") as logs:
+            client = self.start()
+        self.assertIn("Old", "\n".join(logs.output))
+        own = json.loads((modules / "Old.json").read_text(encoding="utf-8"))
+        self.assertEqual((own["version"], own["layout_code"], own["refresh"]), (2, "1;0;2;0;1", {"data_ms": 100}))
+        self.assertEqual((modules / "_backup_v1" / "Old.json").read_bytes(), original)
+        self.assertEqual(client.get("/api/modules").json()["open"], ["Old"])
+        self.assertEqual(self.app.state.hub.get("Old").module.layout_code, "1;0;2;0;1")
+        self.assertEqual(client.get("/api/modules/Old").json(), module_to_dict(module_from_dict(core, None, None)))
 
     def test_shutdown_closes_runtimes_and_ephem(self):
         self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")

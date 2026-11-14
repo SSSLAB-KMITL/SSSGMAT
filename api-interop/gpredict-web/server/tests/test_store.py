@@ -5,9 +5,22 @@ from dataclasses import replace
 from pathlib import Path
 
 from gpredict_web import config
+from gpredict_web.ephem import EphemManager
 from gpredict_web.errors import ApiError
+from gpredict_web.module import (DEFAULT_LAYOUT_CODE, DEFAULT_MAP, MODULE_KEYS, PAGE_PATHS, get_path, module_from_dict,
+                                 module_to_dict)
+from gpredict_web.prefs import Prefs
+from gpredict_web.runtime import Hub
+from gpredict_web.satdb import SatDb
 from gpredict_web.store import Qth, Store, qth_from_dict, write_json_atomic
-from tests.helpers import temp_config
+from tests.helpers import FakeNow, temp_config
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+V1_AMATEUR = FIXTURES / "module_v1_amateur.json"           # ไฟล์ module แบบ core (version 1) ที่ core เขียนจริง
+# ช่องของไฟล์ module ใหม่ที่ไม่ได้ตรึงค่าใด (ช่องของ module อย่างเดียว + version)
+MODULE_ONLY_KEYS = {"version", "name", "qth", "satellites", "list_sort", "single", "footprint_off", "ground_track",
+                    "sky_track", "window"}
+WINDOW_DEFAULT = {"state": 0, "x": None, "y": None, "width": None, "height": None}
 
 
 def thbk() -> Qth:
@@ -312,6 +325,287 @@ class AtomicWriteTests(StoreTestCase):
             write_json_atomic(target, {"a": object()})
         self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"a": 1})
         self.assertEqual([p.name for p in target.parent.iterdir()], ["x.json"])
+
+
+class ModuleInheritanceStoreTests(unittest.TestCase):
+    """ไฟล์ module version 2 เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ใช้จริง = ของ module → ค่ารวม (Prefs) → ค่าตั้งต้นของ Gpredict
+    และการย้ายไฟล์เต็มแบบ core ตอนเปิด server (spec งานย่อย 4 §9.1, Review Focus 1)"""
+
+    def setUp(self):
+        self.cfg = temp_config(self)
+        self.data = self.cfg.data_dir
+        self.prefs = Prefs(self.data)
+        self.store = Store(self.data, globals_=self.prefs.values)
+        self.store.put_qth(thbk())
+        self.store.set_default_qth("THBK")
+
+    def module_file(self, name: str) -> Path:
+        return self.data / "modules" / f"{name}.json"
+
+    def backup_file(self, name: str) -> Path:
+        return self.data / "modules" / "_backup_v1" / f"{name}.json"
+
+    def file_json(self, name: str) -> dict:
+        return json.loads(self.module_file(name).read_text(encoding="utf-8"))
+
+    def write_v1(self, name: str = "Amateur", edit=None) -> bytes:
+        """ไฟล์ module แบบ core จาก fixture (ชื่อ name, edit แก้ dict ก่อนเขียน) คืนไบต์ที่เขียน"""
+        d = json.loads(V1_AMATEUR.read_text(encoding="utf-8"))
+        d["name"] = name
+        if edit is not None:
+            edit(d)
+        raw = (json.dumps(d, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        self.module_file(name).parent.mkdir(parents=True, exist_ok=True)
+        self.module_file(name).write_bytes(raw)
+        return raw
+
+    def write_raw(self, name: str, raw: bytes) -> None:
+        self.module_file(name).parent.mkdir(parents=True, exist_ok=True)
+        self.module_file(name).write_bytes(raw)
+
+    def put(self, name: str = "M", pin=(), unpin=(), **over) -> None:
+        m = module_from_dict({"name": name, "qth": None, "satellites": [25544, 43013], **over}, None, None)
+        self.store.put_module(m, pin=pin, unpin=unpin)
+
+    # ---- การย้ายไฟล์ของ core
+
+    def test_migration_keeps_effective_values_and_backup(self):
+        original = self.write_v1(edit=lambda d: d["map"].__setitem__("center_lon", 100))
+        before = module_to_dict(self.store.get_module("Amateur"))
+        names = self.store.migrate_modules()
+        self.assertEqual(names, ["Amateur"])
+        self.assertTrue(self.backup_file("Amateur").is_file())
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), original)          # สำเนาเดิมทุกไบต์
+        own = self.store.get_module_own("Amateur")
+        self.assertEqual(own["version"], 2)
+        self.assertNotIn("layout_code", own)
+        self.assertEqual(own["map"]["center_lon"], 100)
+        self.assertEqual(module_to_dict(self.store.get_module("Amateur")), before)
+        fixture = json.loads(V1_AMATEUR.read_text(encoding="utf-8"))
+        self.assertEqual(self.file_json("Amateur"), {
+            "version": 2, "name": "Amateur", "qth": "THBK", "satellites": fixture["satellites"],
+            "list_sort": {"column": "Satellite", "ascending": True}, "single": {"selected": fixture["single"]["selected"]},
+            "footprint_off": [], "ground_track": [], "sky_track": [], "window": WINDOW_DEFAULT,
+            "map": {"center_lon": 100}})
+        self.assertEqual(self.store.list_modules(), ["Amateur"])                       # โฟลเดอร์สำเนาไม่ใช่ module
+
+    def test_migration_runs_once(self):
+        original = self.write_v1()
+        self.assertEqual(self.store.migrate_modules(), ["Amateur"])
+        migrated = self.module_file("Amateur").read_bytes()
+        self.assertEqual(self.store.migrate_modules(), [])
+        self.assertEqual(Store(self.data, globals_=self.prefs.values).migrate_modules(), [])     # เปิด server อีกครั้ง
+        self.assertEqual(self.module_file("Amateur").read_bytes(), migrated)
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), original)          # สำเนาไม่ถูกทับ
+        self.assertEqual(sorted(p.name for p in self.backup_file("Amateur").parent.iterdir()), ["Amateur.json"])
+
+    def test_migrated_core_file_inherits_every_global(self):
+        """ไฟล์ของ core ที่ไม่เคยแก้ค่า: ทุกค่าที่สืบทอดได้ถูกลบ (ค่าเท่าค่าตั้งต้น หรือไม่มีในไฟล์ เช่น map.file และสี)"""
+        self.write_v1()
+        self.store.migrate_modules()
+        own = self.store.get_module_own("Amateur")
+        self.assertEqual(set(own), MODULE_ONLY_KEYS)
+        for path in MODULE_KEYS:
+            with self.subTest(path), self.assertRaises(KeyError):
+                get_path(own, path)
+        self.prefs.update({"MODULES/MAP_FILE": "earth_800.png", "MODULES/POLAR_CHART_ORIENT": "S/W/N/E",
+                           "MODULES/MAP_TRACK_NUM": 9}, [])
+        m = self.store.get_module("Amateur")
+        self.assertEqual((m.map["file"], m.polar["orientation"], m.map["track_orbits"]), ("earth_800.png", "S/W/N/E", 9))
+
+    def test_migration_strips_against_the_current_globals(self):
+        """เทียบกับค่ารวมที่ใช้อยู่ (Prefs.values) ไม่ใช่ค่าตั้งต้น: ค่าที่ใช้จริงของทุก module จึงไม่เปลี่ยน"""
+        self.prefs.update({"MODULES/MAP_CENTER": 100, "MODULES/MAP_TRACK_NUM": 5}, [])
+        self.write_v1("Same", edit=lambda d: d["map"].__setitem__("center_lon", 100))
+        self.write_v1("Core")                                         # center_lon 0 = ค่าตั้งต้นแต่ไม่เท่าค่ารวม 100
+        before = {n: self.store.get_module(n) for n in ("Core", "Same")}
+        self.assertEqual(before["Core"].map["center_lon"], 0)                     # ค่าในไฟล์ของ core ชนะค่ารวม
+        self.assertEqual(self.store.migrate_modules(), ["Core", "Same"])
+        self.assertEqual(self.store.get_module_own("Core")["map"], {"center_lon": 0, "track_orbits": 3})
+        self.assertEqual(self.store.get_module_own("Same")["map"], {"track_orbits": 3})
+        for n, m in before.items():
+            self.assertEqual(self.store.get_module(n), m, n)
+
+    def test_migration_keeps_paths_missing_from_the_file_inheriting(self):
+        def drop(d):
+            del d["polar"]
+            del d["map"]["track_orbits"]
+            del d["refresh"]["map"]
+        self.prefs.update({"MODULES/POLAR_CHART_ORIENT": "S/E/N/W", "MODULES/MAP_TRACK_NUM": 7}, [])
+        self.write_v1(edit=drop)
+        before = self.store.get_module("Amateur")
+        self.assertEqual((before.polar["orientation"], before.map["track_orbits"]), ("S/E/N/W", 7))
+        self.assertEqual(self.store.migrate_modules(), ["Amateur"])
+        own = self.store.get_module_own("Amateur")
+        for path in (*PAGE_PATHS["polar"], "map.track_orbits", "refresh.map"):
+            with self.subTest(path), self.assertRaises(KeyError):
+                get_path(own, path)
+        self.assertEqual(self.store.get_module("Amateur"), before)
+        self.prefs.update({"MODULES/POLAR_CHART_ORIENT": "N/W/S/E", "MODULES/MAP_REFRESH": 20}, [])
+        m = self.store.get_module("Amateur")
+        self.assertEqual((m.polar["orientation"], m.refresh["map"]), ("N/W/S/E", 20))
+
+    def test_migration_without_prefs_uses_gpredict_defaults(self):
+        store = Store(self.data)                                       # globals_=None: ค่าตั้งต้นของ Gpredict แบบ core
+        self.write_v1(edit=lambda d: d["map"].__setitem__("center_lon", 100))
+        before = store.get_module("Amateur")
+        self.assertEqual(store.migrate_modules(), ["Amateur"])
+        self.assertEqual(store.get_module_own("Amateur")["map"], {"center_lon": 100})
+        self.assertEqual(set(store.get_module_own("Amateur")), MODULE_ONLY_KEYS | {"map"})
+        self.assertEqual(store.get_module("Amateur"), before)
+
+    def test_migration_leaves_broken_files_untouched_and_logs(self):
+        """ไฟล์ที่แก้ด้วยมือจนเสียไม่ถูกย้ายหรือสำเนา (log WARNING ทีละไฟล์) ไฟล์อื่นย้ายตามปกติ และเปิด server ได้"""
+        self.write_v1("Good")
+        broken = {
+            "NotJson": b"{", "NotUtf8": b"\xff\xfe", "NotObject": b"[1]",
+            "BadValue": json.dumps({"name": "BadValue", "satellites": [1], "refresh": {"data_ms": 5}}).encode(),
+            "BadSection": json.dumps({"name": "BadSection", "satellites": [1], "map": 5}).encode(),
+            "OtherName": json.dumps({"name": "Else", "satellites": [1]}).encode(),
+        }
+        for name, raw in broken.items():
+            self.write_raw(name, raw)
+        with self.assertLogs("gpredict_web.store", "WARNING") as logs:
+            names = self.store.migrate_modules()
+        self.assertEqual(names, ["Good"])
+        self.assertEqual(len(logs.output), len(broken))
+        for name, raw in broken.items():
+            with self.subTest(name):
+                self.assertEqual(self.module_file(name).read_bytes(), raw)
+                self.assertFalse(self.backup_file(name).exists())
+                self.assertIn(name, "\n".join(logs.output))
+        self.assertEqual(self.file_json("Good")["version"], 2)
+
+    def test_migration_never_overwrites_a_backup(self):
+        original = self.write_v1()
+        self.backup_file("Amateur").parent.mkdir(parents=True)
+        self.backup_file("Amateur").write_bytes(b"older copy")
+        with self.assertLogs("gpredict_web.store", "WARNING") as logs:
+            self.assertEqual(self.store.migrate_modules(), [])               # เก็บสำเนาไม่ได้ จึงไม่ย้าย
+        self.assertIn("_backup_v1", "\n".join(logs.output))
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), b"older copy")
+        self.assertEqual(self.module_file("Amateur").read_bytes(), original)
+        self.backup_file("Amateur").write_bytes(original)                   # สำเนาเดียวกัน (ผู้ใช้คืนไฟล์จากสำเนา): ย้ายได้
+        self.assertEqual(self.store.migrate_modules(), ["Amateur"])
+        self.assertEqual(self.backup_file("Amateur").read_bytes(), original)
+        self.assertEqual(self.file_json("Amateur")["version"], 2)
+
+    def test_core_file_before_migration_reads_with_inheritance(self):
+        raw = self.write_v1(edit=lambda d: d["map"].__setitem__("center_lon", 100))
+        own = self.store.get_module_own("Amateur")
+        self.assertEqual((own["version"], own["map"]), (2, {"center_lon": 100}))
+        self.assertEqual(self.module_file("Amateur").read_bytes(), raw)           # อ่านอย่างเดียว ไม่ย้าย
+        self.prefs.update({"MODULES/MAP_FILE": "earth_800.png"}, [])              # ไฟล์ของ core ไม่มี map.file: สืบทอด
+        m = self.store.get_module("Amateur")
+        self.assertEqual((m.map["center_lon"], m.map["file"]), (100, "earth_800.png"))
+
+    # ---- ค่าที่ใช้จริงและการบันทึก
+
+    def test_global_change_reaches_unpinned_module(self):
+        self.put("Free")
+        self.put("Pinned", pin=["layout_code"], layout_code="1;0;2;0;1")
+        self.prefs.update({"MODULES/GRID": "0;0;2;0;1"}, [])
+        self.assertEqual(self.store.get_module("Free").layout_code, "0;0;2;0;1")
+        self.assertEqual(self.store.get_module("Pinned").layout_code, "1;0;2;0;1")
+        self.prefs.update({}, ["MODULES/GRID"])
+        self.assertEqual(self.store.get_module("Free").layout_code, DEFAULT_LAYOUT_CODE)
+
+    def test_open_runtime_keeps_old_globals_until_reload(self):
+        self.put("M")
+        ephem = EphemManager(self.cfg, find_console=lambda: Path("/fake/GmatConsole"), start_worker=False)
+        self.addCleanup(ephem.close)
+        hub = Hub(self.store, SatDb(self.data / "satdb.json"), ephem, FakeNow(), prefs=self.prefs)
+        rt = hub.open("M")
+        self.addCleanup(hub.close, "M")
+        self.assertEqual(rt.module.map["track_orbits"], 3)
+        self.prefs.update({"MODULES/MAP_TRACK_NUM": 7}, [])
+        self.assertIs(hub.open("M"), rt)
+        self.assertEqual(rt.module.map["track_orbits"], 3)                    # ค่ารวมมีผลเมื่อ module ถูกสร้างใหม่
+        self.assertEqual(self.store.get_module("M").map["track_orbits"], 7)
+        hub.reload("M")
+        self.assertEqual(rt.module.map["track_orbits"], 7)
+
+    def test_put_module_without_pin_stores_only_module_fields(self):
+        self.put("M", layout_code="1;0;2;0;1", refresh={"data_ms": 700}, map={"center_lon": 10},
+                 single={"fields": ["Azimuth"], "selected": 43013})
+        self.assertEqual(set(self.file_json("M")), MODULE_ONLY_KEYS)
+        self.assertEqual(self.file_json("M")["single"], {"selected": 43013})
+        m = self.store.get_module("M")
+        self.assertEqual((m.layout_code, m.refresh["data_ms"], m.map["center_lon"]), (DEFAULT_LAYOUT_CODE, 300, 0))
+        self.assertEqual(m.single["selected"], 43013)
+        self.assertEqual(m.single["fields"], self.prefs.get("MODULES/SINGLE_SAT_FIELDS"))
+
+    def test_put_module_pin_and_unpin(self):
+        self.put("M", pin=["layout_code", "map.center_lon"], layout_code="1;0;2;0;1", map={"center_lon": 10})
+        self.assertEqual((self.file_json("M")["layout_code"], self.file_json("M")["map"]), ("1;0;2;0;1", {"center_lon": 10}))
+        # ค่าที่ตั้งไว้แล้วรับค่าใหม่จาก body ค่าที่ยังสืบทอดถูกข้าม
+        self.put("M", layout_code="2;0;1;0;1", map={"center_lon": 20, "track_orbits": 9})
+        m = self.store.get_module("M")
+        self.assertEqual((m.layout_code, m.map["center_lon"], m.map["track_orbits"]), ("2;0;1;0;1", 20, 3))
+        self.put("M", unpin=["layout_code"], layout_code="2;0;1;0;1", map={"center_lon": 20})
+        self.assertNotIn("layout_code", self.file_json("M"))
+        self.assertEqual(self.file_json("M")["map"], {"center_lon": 20})
+        self.assertEqual(self.store.get_module("M").layout_code, DEFAULT_LAYOUT_CODE)
+
+    def test_put_module_bad_pin_writes_nothing(self):
+        for pin, unpin, field in ((["nope"], (), "pin"), (["window"], (), "pin"), (["map"], (), "pin"),
+                                  ((), ["name"], "unpin"), (["layout_code"], ["layout_code"], "unpin")):
+            with self.subTest(pin=pin, unpin=unpin), self.assertRaises(ApiError) as cm:
+                self.put("M", pin=pin, unpin=unpin)
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("MODULE_INVALID", 422, field))
+        self.assertEqual(self.store.list_modules(), [])
+
+    def test_put_module_keeps_the_window_of_the_file(self):
+        self.put("M")
+        own = self.store.get_module_own("M")
+        own["window"] = {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600}
+        self.store.put_module_own("M", own)
+        self.put("M", window={"state": 0, "x": 1, "y": 2, "width": 300, "height": 200})
+        self.assertEqual(self.store.get_module("M").window, {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600})
+
+    def test_put_module_replaces_a_broken_file(self):
+        self.write_raw("M", b"{")
+        self.put("M", pin=["layout_code"], layout_code="1;0;2;0;1")
+        self.assertEqual(self.store.get_module("M").layout_code, "1;0;2;0;1")
+        self.write_raw("M", json.dumps({"version": 2, "name": "M", "satellites": [1], "refresh": {"data_ms": 5}}).encode())
+        self.put("M")                                                         # ไฟล์เดิมค่าผิด: เขียนแทนเหมือน module ใหม่
+        self.assertEqual(set(self.file_json("M")), MODULE_ONLY_KEYS)
+
+    def test_put_module_own(self):
+        self.put("M")
+        own = self.store.get_module_own("M")
+        del own["version"]
+        own.update(qth="THBK", layout_code="0;0;2;0;1")
+        self.store.put_module_own("M", own)
+        self.assertEqual(self.file_json("M"), {"version": 2, **own})
+        m = self.store.get_module("M")
+        self.assertEqual((m.qth, m.layout_code), ("THBK", "0;0;2;0;1"))
+        before = self.module_file("M").read_bytes()
+        for label, bad, field in (("bad value", {**own, "layout_code": "1;0"}, "layout_code"),
+                                  ("other name", {**own, "name": "Other"}, "name"),
+                                  ("unknown qth", {**own, "qth": "GONE"}, "qth"),
+                                  ("not an object", ["M"], None)):
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                self.store.put_module_own("M", bad)
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("MODULE_INVALID", 422, field))
+        self.assertEqual(self.module_file("M").read_bytes(), before)
+
+    def test_hand_broken_own_section_is_invalid_not_ignored(self):
+        self.put("M")
+        self.write_raw("M", json.dumps({**self.file_json("M"), "map": 5}).encode())
+        with self.assertRaises(ApiError) as cm:
+            self.store.get_module("M")
+        self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+
+    def test_hand_broken_global_map_file_does_not_break_modules(self):
+        """MODULES/MAP_FILE ที่ไม่ใช่ชื่อไฟล์แผนที่ (แก้ preferences.json ด้วยมือ) ถูกข้ามตอนอ่าน ทุก module ที่สืบทอดยังใช้ได้"""
+        self.put("M")
+        (self.data / "preferences.json").write_text(json.dumps(
+            {"version": 1, "values": {"MODULES/MAP_FILE": "../../secret.jpg", "MODULES/MAP_CENTER": 45}}), encoding="utf-8")
+        with self.assertLogs("gpredict_web.prefs", "WARNING"):
+            prefs = Prefs(self.data)
+        m = Store(self.data, globals_=prefs.values).get_module("M")
+        self.assertEqual((m.map["file"], m.map["center_lon"]), (DEFAULT_MAP, 45))
 
 
 if __name__ == "__main__":

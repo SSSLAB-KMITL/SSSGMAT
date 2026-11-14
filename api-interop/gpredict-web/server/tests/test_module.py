@@ -871,13 +871,17 @@ class ModuleStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_module("Amateur"), m)
         path = self.cfg.data_dir / "modules" / "Amateur.json"
         self.assertTrue(path.is_file())
-        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), module_to_dict(m))
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {       # version 2: เฉพาะช่องของ module (ค่าอื่นสืบทอด)
+            "version": 2, "name": "Amateur", "qth": "CNX", "satellites": [25544, 43013],
+            "list_sort": {"column": "Satellite", "ascending": True}, "single": {"selected": None},
+            "footprint_off": [], "ground_track": [], "sky_track": [],
+            "window": {"state": 0, "x": None, "y": None, "width": None, "height": None}})
         self.assertEqual([p.name for p in path.parent.iterdir()], ["Amateur.json"])
 
     def test_put_replaces_existing(self):
         self.add("A")
         m = build(name="A", refresh={"data_ms": 700})
-        self.store.put_module(m)
+        self.store.put_module(m, pin=["refresh.data_ms"])
         self.assertEqual(self.store.get_module("A").refresh["data_ms"], 700)
         self.assertEqual(self.store.list_modules(), ["A"])
 

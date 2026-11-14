@@ -40,7 +40,6 @@ TIME_FORMAT_MAX = 50                    # ความยาวสูงสุ�
 TLE_PROXY_MAX = 200
 URLS_COUNT = (1, 50)                    # จำนวน URL ใน TLE sources ที่รับ
 URL_MAX = 500
-RGBA_MAX = 0xFFFFFFFF
 # General → TLE Update "TLE sources:" ตั้งต้น 1 AMSAT + 10 CelesTrak ตัวที่ 6 สะกด tlet ตาม Gpredict (ref-D §4, sat-cfg.c:235-246)
 TLE_URLS_DEFAULT = (
     "https://www.amsat.org/amsat/ftp/keps/current/nasabare.txt",
@@ -66,7 +65,9 @@ _log = logging.getLogger(__name__)
 class PrefSpec:
     """kind: "int", "float", "bool", "colour" (#rrggbb ตัวเล็ก), "columns" (รายการชื่อใน choices ไม่ซ้ำ เรียงตาม choices),
     "str" (ถ้ามี choices ต้องเป็นหนึ่งในนั้น), "token" ("str" ที่ไม่มีช่องว่างหรือ ; ใช้กับ proxy), "rgba" (int 0xRRGGBBAA),
-    "urls" (รายการ URL http/https), "layout" (layout code ที่ module.parse_layout รับ)
+    "urls" (รายการ URL http/https), "layout" (layout code ที่ module.parse_layout รับ),
+    "map_file" (ชื่อไฟล์ภาพแผนที่ที่ module.is_map_file รับ)
+    ค่ารวม MODULES/* ต้องผ่านการตรวจของ module.py ด้วยเสมอ ไม่งั้นทุก module ที่สืบทอดค่านั้นเปิดไม่ได้
     lo และ hi คือช่วงที่รับ (รวมปลาย) ของ int และ float (ใส่แค่ lo = ตั้งแต่ lo ขึ้นไป), allowed คือชุดค่าที่รับของ int,
     max_len คือความยาวสูงสุดของ str และ token (นับตัวอักษร), label คือป้ายของ Gpredict ที่ใช้ในข้อความ error (ไม่ใส่ = ใช้ชื่อ key)
     field หลัง default ไม่บังคับทั้งหมด งานย่อยที่เพิ่มชนิดหรือ field ใหม่จึงไม่ต้องแก้แถวเดิม"""
@@ -149,8 +150,8 @@ PREFS.update({
     "MODULES/MAP_TRACK_NUM": PrefSpec("int", mod.TRACK_ORBITS_DEFAULT, *mod.TRACK_ORBITS_RANGE,
                                       label="Display ground track for"),
     "MODULES/MAP_CENTER": PrefSpec("int", mod.CENTER_LON_DEFAULT, *mod.CENTER_LON_RANGE, label="Center map at longitude"),
-    "MODULES/MAP_FILE": PrefSpec("str", mod.DEFAULT_MAP, max_len=100, label="Background Map"),
-    "MODULES/MAP_SHADOW_ALPHA": PrefSpec("int", mod.MAP_SHADOW_DEFAULT, 0, 255, label="Shadow"),
+    "MODULES/MAP_FILE": PrefSpec("map_file", mod.DEFAULT_MAP, label="Background Map"),
+    "MODULES/MAP_SHADOW_ALPHA": PrefSpec("int", mod.MAP_SHADOW_DEFAULT, *mod.SHADOW_ALPHA_RANGE, label="Shadow"),
 })
 # (key ของ Gpredict, ชื่อสีใน mod.MAP_COLOURS_DEFAULT, ป้ายของปุ่มสี)
 PREFS.update({f"MODULES/{key}": PrefSpec("rgba", mod.MAP_COLOURS_DEFAULT[name], label=f"{label} (Map View)")
@@ -260,8 +261,14 @@ def _check_token(spec: PrefSpec, v):
 
 
 def _check_rgba(spec: PrefSpec, v):
-    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= RGBA_MAX:
-        raise _Rejected(f"ต้องเป็นสีรูปแบบ 0xRRGGBBAA (จำนวนเต็ม 0–{RGBA_MAX})")
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= mod.RGBA_MAX:
+        raise _Rejected(f"ต้องเป็นสีรูปแบบ 0xRRGGBBAA (จำนวนเต็ม 0–{mod.RGBA_MAX})")
+    return v
+
+
+def _check_map_file(spec: PrefSpec, v):
+    if not mod.is_map_file(v):
+        raise _Rejected(mod.MAP_FILE_TEXT)
     return v
 
 
@@ -286,7 +293,7 @@ def _check_layout(spec: PrefSpec, v):
 
 _CHECKS = {"int": _check_int, "float": _check_float, "bool": _check_bool, "colour": _check_colour,
            "columns": _check_columns, "str": _check_str, "token": _check_token, "rgba": _check_rgba,
-           "urls": _check_urls, "layout": _check_layout}
+           "urls": _check_urls, "layout": _check_layout, "map_file": _check_map_file}
 
 
 def _spec(key: str) -> PrefSpec:

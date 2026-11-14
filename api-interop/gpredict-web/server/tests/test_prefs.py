@@ -613,11 +613,14 @@ class PrefsDataKeysTest(PrefsTestCase):
             self.assert_invalid(orient, bad, "Orientation")
         self.assert_invalid(orient, "x", "N/E/S/W, N/W/S/E, S/E/N/W, S/W/N/E")
         file = "MODULES/MAP_FILE"
-        self.assertEqual(validate(file, "x" * 100), "x" * 100)
-        self.assertEqual(validate(file, "แผนที่.jpg"), "แผนที่.jpg")
+        for ok in ("x" * 100, "a", "earth_800.png", "nasa-bmng-07_1024.jpg", ".hidden.jpg", "a..b"):
+            self.assertEqual(validate(file, ok), ok)
         self.assert_invalid(file, "x" * 101, "100")
-        for bad in (None, 5, ["a.jpg"]):
-            self.assert_invalid(file, bad)
+        # ชื่อที่ module.py ไม่รับเป็น map.file ต้องไม่ผ่านที่นี่ด้วย ไม่งั้นทุก module ที่สืบทอดค่านี้เปิดไม่ได้
+        for bad in ("", ".", "..", "...", "../x.jpg", "a/b.jpg", "a b.jpg", "แผนที่.jpg", "x.jpg\n", None, 5, ["a.jpg"]):
+            with self.subTest(bad=bad):
+                err = self.assert_invalid(file, bad, "Background Map")
+                self.assertRegex(err.text, r"[ก-๙]")
         proxy = "TLE/PROXY"
         for ok in ("", "http://my.proxy.com", "http://user:pw@my.proxy.com:3128", "x" * 200):
             self.assertEqual(validate(proxy, ok), ok)
@@ -636,6 +639,25 @@ class PrefsDataKeysTest(PrefsTestCase):
         key = "MODULES/SINGLE_SAT_FIELDS"
         self.assertEqual(validate(key, ["Visibility", "Azimuth"]), ["Azimuth", "Visibility"])
         self.assert_invalid(key, ["Az"], "Single Sat View")
+
+    def test_every_module_value_prefs_accepts_is_valid_for_modules(self):
+        """ค่ารวม MODULES/* ที่ Preferences รับต้องเป็นค่าที่ module.py รับเสมอ: module ที่สืบทอดค่านั้นต้องเปิดได้"""
+        samples = {
+            "int": lambda s: [s.lo, s.hi, s.default],
+            "bool": lambda s: [True, False],
+            "rgba": lambda s: [0, mod.RGBA_MAX, s.default],
+            "str": lambda s: list(s.choices),
+            "columns": lambda s: [[], list(s.choices), [s.choices[-1], s.choices[0]]],
+            "layout": lambda s: [code for _, code in mod.LAYOUT_PRESETS],
+            "map_file": lambda s: ["a", "x" * 100, "a.b-c_D9.png", ".hidden.jpg", s.default],
+        }
+        own = {"name": "A", "satellites": [1]}
+        for key in mod.MODULE_KEYS.values():
+            spec = PREFS[key]
+            for value in samples[spec.kind](spec):
+                with self.subTest(key=key, value=value):
+                    effective = mod.effective_dict(own, {key: validate(key, value)})
+                    mod.module_from_dict(effective, None, None)
 
     def test_values_defaults_and_user_cover_the_new_keys(self):
         p = self.prefs()

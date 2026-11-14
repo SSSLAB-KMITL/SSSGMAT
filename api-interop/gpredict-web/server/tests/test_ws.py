@@ -47,7 +47,7 @@ def wait_for(predicate, timeout=2.0) -> bool:
 class WebSocketTest(ApiTestBase):
     def setUp(self):
         super().setUp()
-        self.put_module(refresh={"data_ms": 100})
+        self.put_module(refresh={"data_ms": 100}, pin=["refresh.data_ms"])     # ตรึงไว้: PUT ต่อจากนี้เปลี่ยนค่าได้
 
     def close_code(self, ws, limit=200) -> int:
         """อ่านจน server ปิด socket แล้วคืน close code"""
@@ -319,7 +319,7 @@ class ControllerTickTest(ApiTestBase):
 
     def setUp(self):
         super().setUp()
-        self.put_module(refresh={"data_ms": 100})
+        self.put_module(refresh={"data_ms": 100}, pin=["refresh.data_ms"])
         hw = self.cfg.data_dir / "hwconf"
         hw.mkdir(parents=True, exist_ok=True)
         (hw / "A.rig.json").write_text(json.dumps({"Host": "localhost", "Port": 4532, "Type": 0, "PTT": 0}),

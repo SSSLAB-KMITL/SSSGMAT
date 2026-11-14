@@ -8,6 +8,9 @@
   + GET /api/controllers, POST /api/modules/{name}/target, /radio[/open|/close] และ /rotator[/open|/close] (Radio Control และ
     Antenna Control: controllers.py) PUT module ที่เปลี่ยน qth หรือ satellites ขณะ controller เปิดอยู่ตอบ 409 CONTROLLER_ACTIVE
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
+- module (spec งานย่อย 4 §9.1): ไฟล์เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ไม่ได้ตั้งสืบทอดค่ารวมของ Preferences → Modules
+  PUT /api/modules/{name} รับ pin/unpin (รายการ path ใน module.MODULE_KEYS) ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
+  GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
@@ -70,6 +73,7 @@ PASS_POLL_S = 0.2                      # คำขอ pass: ถาม days_statu
 CLIENT_CLOSED = 499                    # status ของคำขอที่ browser ตัดไปแล้ว (ไม่มีใครอ่าน แค่ให้ log เห็น)
 LICENSE_FILE = REPO_ROOT / "License.txt"
 README_FILE = REPO_ROOT / "api-interop" / "gpredict-web" / "README.md"      # คู่มือที่ Help → Online help แสดงในหน้าเว็บ
+LOG_DIR = "logs"                       # โฟลเดอร์ log ใต้ data dir (spec งานย่อย 4 §6.1: data/logs/gpredict.log)
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -414,8 +418,10 @@ def _hwconf_dict(radios, rotators) -> dict:
     return {"radios": [radio_to_dict(r) for r in radios], "rotators": [rot_to_dict(r) for r in rotators]}
 
 
-def _meta() -> dict:
-    """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)"""
+def _meta(cfg: Config) -> dict:
+    """ค่าคงที่ที่หน้าเว็บใช้เป็นป้าย tooltip และค่าตั้งต้น (ชุดเดียวกับที่ server ใช้ตรวจ module)
+    module_keys: หน้าของ Module properties -> {path ของค่าใน module: key ของค่ารวมที่สืบทอด} (spec งานย่อย 4 §9.1)
+    log_dir: โฟลเดอร์ log จริง แทน "<conf dir>/logs/" ในหน้า Message Logs (decision 17)"""
     defaults = M.module_to_dict(M.ModuleConfig(name=""))
     del defaults["name"]
     return {
@@ -439,7 +445,18 @@ def _meta() -> dict:
         "qth_limits": {"lat_deg": [-S.LAT_MAX, S.LAT_MAX], "lon_deg": [-S.LON_MAX, S.LON_MAX],
                        "alt_m": [S.ALT_MIN_M, S.ALT_MAX_M], "description": S.DESCRIPTION_MAX,
                        "location": S.LOCATION_MAX, "weather_station": S.WEATHER_STATION_MAX},
+        "module_keys": {page: {path: M.MODULE_KEYS[path] for path in paths} for page, paths in M.PAGE_PATHS.items()},
+        "global_layout_extra": list(M.GLOBAL_LAYOUT_EXTRA),
+        "log_dir": str((cfg.data_dir / LOG_DIR).absolute()),
     }
+
+
+def _path_list(body: dict, key: str) -> list:
+    """pin / unpin ของ PUT /api/modules/{name}: ไม่ส่ง = ว่าง ต้องเป็นรายการ (path แต่ละตัวตรวจที่ module.own_dict)"""
+    v = body.get(key, [])
+    if not isinstance(v, list):
+        raise ApiError("MODULE_INVALID", 422, f"{key} ต้องเป็นรายการ path ของค่าที่ module สืบทอดได้", key)
+    return v
 
 
 # ---------------------------------------------------------------- ตรวจข้อมูล
@@ -482,10 +499,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     - opener: ใช้ดึง OMM และข้อมูล transponder จาก SatNOGS (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
     - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
     - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)"""
-    store = Store(cfg.data_dir)
+    prefs = Prefs(cfg.data_dir)
+    store = Store(cfg.data_dir, globals_=prefs.values)      # module ที่ไม่ได้ตั้งค่าเองใช้ค่ารวมของ Preferences → Modules
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
     ephem = ephem if ephem is not None else EphemManager(cfg, start_worker=start_background)
-    prefs = Prefs(cfg.data_dir)
     hwconf = HwConf(cfg.data_dir)
     hub = Hub(store, satdb, ephem, now, prefs=prefs)
     pass_service = PassService(hub, ephem, prefs, now)
@@ -519,6 +536,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         app.state.startup_messages = []
 
     def startup() -> list[Message]:
+        migrated = store.migrate_modules()          # ก่อนเปิด module ใดๆ (Review Focus 1 ของงานย่อย 4)
+        if migrated:
+            _log.info("ย้ายไฟล์ module เป็นแบบเก็บเฉพาะค่าที่ตั้งเอง (สำเนาเดิมอยู่ที่ %s): %s",
+                      cfg.data_dir / S.MODULES_DIR / S.BACKUP_V1_DIR, ", ".join(migrated))
         t = now()
         ephem.prune(t)
         messages = bootstrap(store, satdb, cfg, t, opener)
@@ -704,16 +725,18 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                                "ให้ปิด Radio Control และ Antenna Control ของ module นี้ก่อน แล้วลองบันทึกใหม่", field)
 
     def put_module_sync(name: str, body: dict, controller_active: bool) -> dict:
+        """body = ค่าเต็มของ module + pin/unpin (decision 3): ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin คำตอบคือค่าที่ใช้จริงหลังบันทึก"""
         if body.get("name") != name:
             raise ApiError("MODULE_INVALID", 422, f"ชื่อ module (name) ต้องตรงกับชื่อใน URL ({name})", "name")
         _check_case_clash(store.list_modules(), name, "MODULE_INVALID", "name", "module")
         m = M.module_from_dict(body, set(store.qth_names()), satdb.norads())
+        pin, unpin = _path_list(body, "pin"), _path_list(body, "unpin")
         if controller_active:
             check_configurable(name, m)
-        store.put_module(m)
+        store.put_module(m, pin, unpin)
         hub.reload(name)                     # เปิดอยู่: tick ถัดไปของทุกแท็บใช้ค่าใหม่ (ไม่ได้เปิด: ไม่ทำอะไร)
         clear_startup_messages()
-        return M.module_to_dict(m)
+        return M.module_to_dict(store.get_module(name))
 
     @app.put("/api/modules/{name}")
     async def put_module(name: str, body: dict = Body(...)):
@@ -759,7 +782,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.post("/api/modules/{name}/clone")
     def clone_module(name: str, body: dict = Body(...)):
+        """คัดลอกค่าที่ module เดิมตั้งเอง (ค่าที่ตรึงไว้ยังตรึง ค่าที่สืบทอดยังสืบทอด) ตรวจ QTH และดาวด้วยค่าที่ใช้จริง"""
         src = store.get_module(name)
+        src_own = store.get_module_own(name)
         new_name, want_open = body.get("new_name"), body.get("open", True)    # Gpredict: "Open module when created" ตั้งต้นเปิด
         if not (isinstance(new_name, str) and NAME_RE.fullmatch(new_name)):
             raise ApiError("MODULE_INVALID", 422,
@@ -769,13 +794,13 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         clash = [n for n in store.list_modules() if n.casefold() == new_name.casefold()]
         if clash:
             raise ApiError("MODULE_INVALID", 422, f"มี module ชื่อ {clash[0]} อยู่แล้ว (new_name)", "new_name")
-        m = M.module_from_dict({**M.module_to_dict(src), "name": new_name}, set(store.qth_names()), satdb.norads())
-        store.put_module(m)
+        M.module_from_dict({**M.module_to_dict(src), "name": new_name}, set(store.qth_names()), satdb.norads())
+        store.put_module_own(new_name, {**src_own, "name": new_name})
         clear_startup_messages()
         if want_open:
             hub.open(new_name)
             session_add(new_name)
-        return {"module": M.module_to_dict(m), "open": open_list()}
+        return {"module": M.module_to_dict(store.get_module(new_name)), "open": open_list()}
 
     @app.put("/api/session/tabs")
     def put_tabs(body: dict = Body(...)):
@@ -975,7 +1000,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/meta")
     def meta():
-        return _meta()
+        return _meta(cfg)
 
     def repo_text(path: Path) -> PlainTextResponse:
         try:
