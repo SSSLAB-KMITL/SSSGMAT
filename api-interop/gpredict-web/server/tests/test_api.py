@@ -458,8 +458,10 @@ class SatelliteApiTest(ApiTestBase):
         r = self.client.get("/api/satellites/25544")
         self.assertEqual(r.status_code, 200)
         rec = record(25544)
-        self.assertEqual(r.json(), {"norad": 25544, "name": "SAT-25544", "groups": ["amateur"],
-                                    "epoch": iso(rec.epoch), "updated": iso(rec.updated), "tle": list(rec.tle_lines)})
+        body = r.json()
+        self.assertEqual(body.pop("orbit_info")["catnum"], 25544)                # ค่าทุกช่องของ Orbit Info ทดสอบใน test_satinfo
+        self.assertEqual(body, {"norad": 25544, "name": "SAT-25544", "groups": ["amateur"], "epoch": iso(rec.epoch),
+                                "updated": iso(rec.updated), "tle": list(rec.tle_lines), "status": "Unknown"})
         self.assert_error(self.client.get("/api/satellites/11111"), 404, "NOT_FOUND", "11111")
         self.assert_error(self.client.get("/api/satellites/abc"), 422, "REQUEST_INVALID", "norad")
 

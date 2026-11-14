@@ -64,10 +64,12 @@ from .controllers import RADIO, ROTATOR, ControllerHub
 from .ephem import EphemManager
 from .errors import ApiError
 from .hwconf import HwConf, radio_to_dict, rot_to_dict
+from .maps import check_upload_size, list_maps, map_entry, resolve as resolve_map, save_upload
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
 from .satdb import SatDb, SatRecord, UpdateResult
+from .satinfo import orbit_info
 from .store import Store, qth_from_dict
 from .tleage import TLE_CHECK_INTERVAL_S, TleAgeChecker
 from .tlesources import make_opener, source_times, update_from_files, update_from_sources
@@ -426,6 +428,20 @@ def _sat_dict(r: SatRecord, with_tle: bool = False) -> dict:
     return d
 
 
+async def _read_map_body(request: Request) -> bytes:
+    """body ดิบของการอัปโหลดภาพ: เกิน MAP_UPLOAD_MAX แล้วหยุดอ่านและตอบ 422 MAP_INVALID
+    (Content-Length ที่บอกว่าเกินปฏิเสธก่อนอ่านเลย ส่วน chunked นับระหว่างอ่าน)"""
+    declared = request.headers.get("content-length", "")
+    if declared.isascii() and declared.isdigit():
+        check_upload_size(int(declared))
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        check_upload_size(total)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _clock_dict(clock: ModuleClock) -> dict:
     t, state, throttle, label = clock.snapshot()
     return {"state": state, "throttle": throttle, "time": iso_ms(t), "label": label}
@@ -754,7 +770,32 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         r = satdb.get(norad)
         if r is None:
             raise ApiError("NOT_FOUND", 404, f"ไม่พบดาว NORAD {norad} ในดัชนีดาว", str(norad))
-        return _sat_dict(r, with_tle=True)
+        try:
+            info = orbit_info(r)
+        except ValueError:                   # (ของเรา) ไฟล์ดัชนีที่แก้มือจน TLE อ่านไม่ได้: ยังตอบดาวได้ Satellite Info ไม่มีค่า Orbit Info
+            info = None
+        return {**_sat_dict(r, with_tle=True), "status": r.status, "orbit_info": info}
+
+    # ---------------- ภาพแผนที่ (Map View: Background Map)
+
+    @app.get("/api/maps")
+    def get_maps():
+        return {"maps": list_maps(cfg.data_dir), "default": M.DEFAULT_MAP}
+
+    @app.post("/api/maps")
+    async def upload_map(request: Request, name: str = Query("")):
+        """อัปโหลดภาพ (ของเรา): body ดิบ ไม่เกิน MAP_UPLOAD_MAX, Content-Type image/png หรือ image/jpeg ตรงกับนามสกุลของ name
+        คืนรายการของภาพนั้นแบบเดียวกับ GET /api/maps"""
+        body = await _read_map_body(request)
+        saved = await asyncio.to_thread(save_upload, cfg.data_dir, name, request.headers.get("content-type"), body)
+        return map_entry(cfg.data_dir, saved)
+
+    @app.get("/api/maps/{file}")
+    def get_map(file: str):
+        path = resolve_map(cfg.data_dir, file)
+        if path is None:
+            raise ApiError("NOT_FOUND", 404, f"ไม่พบภาพแผนที่ {file}", file)
+        return FileResponse(path, headers={"X-Content-Type-Options": "nosniff"})   # ภาพของผู้ใช้: ห้าม browser เดาชนิดเอง
 
     @app.get("/api/tle/groups")
     def tle_groups():
