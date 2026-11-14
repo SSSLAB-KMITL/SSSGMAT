@@ -1,0 +1,27 @@
+# GNSS Studio ใน Docker (README หัวข้อ 10)
+#   docker compose up -d --build      แล้วเปิด http://127.0.0.1:8000/
+#
+# - port ผูกกับ 127.0.0.1 ของเครื่อง host เท่านั้น (server ไม่มี login และ HTTPS) ใน container server ฟัง 0.0.0.0
+#   เพราะ Docker ส่งทราฟฟิกเข้า eth0 ของ container ไม่ใช่ loopback
+# - port ของ host ต้องเท่ากับ port ใน container: server รับคำสั่งแก้ข้อมูลเฉพาะจาก Origin http://127.0.0.1:<GNSS_STUDIO_PORT>
+#   เปลี่ยน port ด้วย GNSS_STUDIO_PORT=8010 docker compose up -d (ตัวแปรเดียวใช้ทั้งสองฝั่ง)
+# - ข้อมูลทั้งหมดอยู่ใน volume gnss_data (/data) เปิดครั้งแรก entrypoint เขียน settings.json ที่ปิดงานประจำวันและภาพออนไลน์
+name: gnss-studio
+
+services:
+  gnss-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gnss-studio:dev
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:${GNSS_STUDIO_PORT:-8000}:${GNSS_STUDIO_PORT:-8000}"
+    environment:
+      GNSS_STUDIO_PORT: "${GNSS_STUDIO_PORT:-8000}"
+    volumes:
+      - gnss_data:/data
+    restart: unless-stopped
+
+volumes:
+  gnss_data:

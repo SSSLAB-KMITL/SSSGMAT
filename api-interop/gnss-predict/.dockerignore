@@ -1,0 +1,32 @@
+# ส่งเข้า build context เฉพาะสิ่งที่ Dockerfile ใช้ (allowlist) ที่เหลือไม่ส่ง
+# สำคัญ: data/ (ข้อมูลจริงของผู้ใช้, settings.json, Cesium ion token) ต้องไม่เข้า image
+*
+!docker/
+!gnss_predict/
+!templates/
+!server/requirements.txt
+!server/gnss_studio_server/
+!web/
+!models/
+
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+
+# web: ติดตั้งใหม่ด้วย npm ci และ build ใหม่ใน image ไม่ใช้ของเครื่อง
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+web/tests
+
+# models: vite ส่งเฉพาะ catalog.json กับ glb ที่ catalog ระบุ (web/modelsPackaging.ts) โฟลเดอร์ทำงานไม่ต้องส่ง
+models/_refs
+models/_tools
+models/vendor
+models/**/_refs
+models/**/renders
+models/**/scripts
+models/**/textures
+models/**/vendor
+models/**/*.md

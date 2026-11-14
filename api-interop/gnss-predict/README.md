@@ -1279,3 +1279,146 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 **ทดสอบ**: unit test (`tests/unit/sat-model-*.test.ts`, `attitude.test.ts`, `attitude-laws.test.ts` (ทุกกฎที่ β = ±0.5°, ±2°, 5°, 15°: ความต่อเนื่อง อัตราหมุน nominal นอกช่วง กรอบตั้งฉาก ไม่ขึ้นกับประวัติ), `models-packaging.test.ts`) และ e2e `web/tests/e2e/models.spec.ts` (`npm run e2e`): ที่ Model Detail Threshold 200,000 km ดาวที่แสดงทุกดวงเป็นโมเดล ที่ 1,000 km ทุกดวงเป็นจุด
 และดาวที่กล้องเข้าไปใกล้ (test hook `flyToSatellite`) เป็นโมเดล ปิด Satellite Models แล้วเหลือ 0 และจุดกลับมา `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์ ไม่มี request ออกนอกเครื่อง +Z ชี้ลงโลกคลาด < 0.5°
+
+## 10. Docker (GNSS Studio ใน container)
+
+image เดียวมีครบ: server (FastAPI), หน้าเว็บที่ build แล้ว (`web/dist` รวม Cesium และโมเดล 3 มิติ) และ **NASA GMAT R2026a รุ่น Linux x86_64 ทางการ**
+(`GmatConsole` แบบ headless) จึง propagate ได้จริงใน container โดยไม่ต้อง build GMAT เอง ผลตรงกับ GMAT บน macOS (ดู 10.8)
+
+- เหตุผลและทางเลือกอื่น: [docs/2026-11-15-docker-research.md](docs/2026-11-15-docker-research.md) (ทางเลือก ก)
+  และ [docs/2026-11-15-gnss-studio-docker-decisions.md](docs/2026-11-15-gnss-studio-docker-decisions.md)
+- ไฟล์: `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `docker/entrypoint.sh`, `docker/gmat-headless.sh`, `docker/settings.first-run.json`
+
+### 10.1 build และเปิด (compose)
+
+รันจากโฟลเดอร์ `api-interop/gnss-predict` (ต้องต่อเน็ตตอน build: Docker Hub, apt, npm และ SourceForge สำหรับ GMAT ราว 402 MB)
+
+```bash
+cd api-interop/gnss-predict
+docker compose up -d --build          # build image gnss-studio:dev แล้วเปิด
+# เปิด http://127.0.0.1:8000/
+docker compose logs -f                # ดู log (Ctrl-C ออกจาก log เท่านั้น container ยังทำงาน)
+docker compose down                   # หยุดและลบ container (volume ข้อมูลยังอยู่)
+```
+
+build อย่างเดียวโดยไม่ใช้ compose: `docker build --platform linux/amd64 -t gnss-studio:dev .`
+
+image ทำ 3 stage:
+1. `web`: `npm ci` จาก `web/package-lock.json` ที่ commit ไว้ (ไม่ใช้ `node_modules` หรือ `dist` ของเครื่อง) แล้ว `npm run build`
+2. `gmat`: ดาวน์โหลด tarball ทางการ ตรวจ MD5 และ SHA-256 ก่อนแตกไฟล์ แล้ว `docker/gmat-headless.sh` ปิด plugin GUI และตัดส่วนที่ไม่ใช้
+3. `runtime`: Ubuntu 24.04 `linux/amd64` + Python 3.12 (venv ที่ `/opt/venv` ติดตั้งตาม `server/requirements.txt`)
+   ตอน build ตรวจว่า `GmatConsole` และ plugin ทุกตัวหาไลบรารีครบ (`ldd`) และ `GmatConsole --version` รันได้โดยไม่มี `DISPLAY`
+
+ใน container โครงโฟลเดอร์เหมือน repo: GMAT อยู่ที่ `/opt/sssgmat/application` แอปอยู่ที่ `/opt/sssgmat/api-interop/gnss-predict`
+(ตั้ง `GMAT_BIN=/opt/sssgmat/application/bin/GmatConsole` ไว้แล้ว) process รันเป็นผู้ใช้ `gnss` (uid 10001) ไม่ใช่ root และมี `tini` เป็น PID 1
+
+ขนาด image (วัดจริง 2026-11-15): **296 MB** แบบบีบอัด (`docker image ls`, CONTENT SIZE) และราว **479 MB** เมื่อแตกเป็นระบบไฟล์
+(GMAT 276 MB ซึ่ง 234 MB เป็น `data/`, venv 33 MB, `web/dist` 35 MB) build ครั้งแรกบน Apple silicon ใช้ราว 2 นาที (ดึง base image ไว้แล้ว รวมดาวน์โหลด GMAT, `npm ci` และ `pip install`) build ซ้ำที่แก้เฉพาะโค้ดใช้ไม่ถึงนาที
+
+### 10.2 ข้อมูล: volume `/data`
+
+ทุกอย่างที่ server เขียน (scenario, ผล propagate/access, job, log, `settings.json`) อยู่ที่ `/data` ใน container
+(`GNSS_STUDIO_DATA=/data`) compose ผูกกับ named volume `gnss-studio_gnss_data` ข้อมูลอยู่รอดหลัง `docker compose down` และ build ใหม่
+ลบทิ้งด้วย `docker compose down -v` เท่านั้น
+
+- `data/` ของ repo **ไม่ถูกส่งเข้า image** (`.dockerignore` แบบ allowlist) และ container ไม่แตะโฟลเดอร์นั้น
+- จะใช้โฟลเดอร์บนเครื่องแทน named volume ก็ได้ เช่น `-v "$PWD/docker-data:/data"` ใน `docker run` (โฟลเดอร์ต้องเขียนได้โดย uid 10001;
+  บน Docker Desktop/OrbStack ของ macOS ใช้ได้ทันที บน Linux ให้ `chown 10001:10001` ก่อน) **อย่าชี้ไปที่ `data/` จริงของ repo**
+  ถ้าไม่ต้องการให้ container ใช้ข้อมูลชุดเดียวกับ server บนเครื่อง
+- ใส่ snapshot วงโคจรที่มีอยู่แล้วโดยไม่ต่อเน็ต: คัดลอกไปที่ `/data/orbits/<YYYYMMDDTHHMMZ>/` (เช่น `docker compose cp <โฟลเดอร์> gnss-studio:/data/orbits/<ชื่อ>`)
+
+### 10.3 port: ผูกกับ 127.0.0.1 เท่านั้น
+
+compose map `127.0.0.1:8000:8000`: เปิดได้จากเครื่องนี้เท่านั้น เครื่องอื่นในเครือข่ายเข้าไม่ได้ (server ไม่มี login และ HTTPS)
+ใน container server ฟัง `0.0.0.0` (`GNSS_STUDIO_HOST`) เพราะ Docker ส่งทราฟฟิกเข้า `eth0` ของ container ไม่ใช่ loopback
+log ตอนเปิดจึงมีคำเตือน `GNSS_STUDIO_HOST=0.0.0.0 ไม่ใช่ที่อยู่ loopback` หนึ่งบรรทัด ซึ่งคาดไว้แล้ว: ที่กันจริงคือการ map port ที่ `127.0.0.1`
+และตัวกัน Host/Origin ของ server (หัวข้อ 8.2) ยังทำงานเหมือนเดิม (Host อื่นได้ 400, PUT ที่ Origin อื่นได้ 403)
+
+**port ของเครื่องต้องเท่ากับ port ใน container**: server รับคำสั่งที่แก้ข้อมูลจากหน้าเว็บเฉพาะ Origin `http://127.0.0.1:<GNSS_STUDIO_PORT>`
+ถ้า map `127.0.0.1:8010:8000` หน้าเว็บเปิดได้แต่บันทึกอะไรไม่ได้ (403 `FORBIDDEN_ORIGIN`) จึงเปลี่ยน port ด้วยตัวแปรเดียวที่ compose ใช้ทั้งสองฝั่ง:
+
+```bash
+GNSS_STUDIO_PORT=8010 docker compose up -d     # http://127.0.0.1:8010/
+# docker run: docker run -d -p 127.0.0.1:8010:8010 -e GNSS_STUDIO_PORT=8010 -v gnss_data:/data gnss-studio:dev
+```
+
+ห้ามแก้เป็น `"8000:8000"` หรือ `0.0.0.0:...` (เปิดให้ทั้งเครือข่าย) ถ้าจำเป็นต้องใช้จากเครื่องอื่นให้ทำ reverse proxy ที่มี login และ HTTPS เอง
+
+### 10.4 ค่าตั้งตอนเปิดครั้งแรก (ไม่ดึงอะไรจากเน็ตเอง)
+
+ถ้า `/data/settings.json` ยังไม่มี `docker/entrypoint.sh` เขียนไฟล์นี้ก่อนเปิด server (ตรงรูปแบบของ `server/gnss_studio_server/settings.py`):
+
+```json
+{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":"","online_imagery":{"enabled":false,"eox":false,"osm":false,"ion":false}}
+```
+
+- งานประจำวัน **ปิด** (server ปกติเปิดเองเมื่อไม่มีไฟล์ ซึ่งจะดึง CelesTrak และ CDDIS) และภาพออนไลน์ปิดทุกแหล่ง ไม่มี Cesium ion token
+- ไฟล์ที่มีอยู่แล้ว (ผู้ใช้แก้หรือ PUT `/api/settings` ไว้) ไม่ถูกเขียนทับ ข้อความใน log: `entrypoint: เปิดครั้งแรก เขียน /data/settings.json ...`
+- เปิดงานประจำวันหรือภาพออนไลน์ภายหลังได้จาก Daily Forecast Settings หรือ Globe Manager ในหน้าเว็บ (หัวข้อ 8.3 และ 9.10)
+  image มี `curl` และ `ca-certificates` ไว้ให้ `fetch`/`validate` ดึง FTPS เมื่อผู้ใช้สั่งเท่านั้น
+
+### 10.5 GMAT ใน image: รุ่นและ checksum
+
+| รายการ | ค่า |
+|---|---|
+| ไฟล์ | `gmat-ubuntu-x64-R2026a.tar.gz` (401664992 ไบต์) จาก `https://downloads.sourceforge.net/project/gmat/GMAT/GMAT-R2026a/gmat-ubuntu-x64-R2026a.tar.gz` |
+| MD5 ทางการ | `ec496a0319657fa2c079d7e996b9b1ed` จาก SourceForge RSS ของโฟลเดอร์ `https://sourceforge.net/projects/gmat/rss?path=/GMAT/GMAT-R2026a` (`<media:hash algo="md5">` และ `filesize` ของไฟล์นี้) |
+| SHA-256 | `fe124b4a606b2e3b704a6fbb1c37b87598d5df0d18cb661c304b5f60074a7754` คำนวณเองจากไฟล์ที่ผ่าน MD5 ทางการแล้ว (SourceForge ไม่เผยแพร่ SHA-256) ใช้กันการชนของ MD5 |
+| SHA-1 (ข้อมูลอ้างอิง ไม่ได้ pin) | `15bb6057a25853ea68f2c0c781e030d4beae3348` คำนวณเอง หน้า Files ของ SourceForge ติด Cloudflare challenge อ่านค่า SHA-1 ทางการไม่ได้ |
+| Build Date ของ `GmatConsole` | `Mar 30 2026 10:09:27` (ลงใน `manifest.json` ช่อง `gmat_version` เป็น `GmatConsole-R2026a (Build Date: Mar 30 2026 10:09:27)`) |
+| สัญญาอนุญาต | Apache 2.0 (`/opt/sssgmat/application/License.txt` อยู่ใน image) |
+
+Dockerfile ตรวจทั้ง `md5sum -c` และ `sha256sum -c` ไม่ผ่าน = build ล้ม
+
+`docker/gmat-headless.sh` ทำให้ `GmatConsole` รัน headless โดยไม่ต้องมี `DISPLAY`, X11 หรือ Xvfb:
+- comment out plugin `libOpenFramesInterface`, `libOVtoOFI`, `libPythonInterface_py312`, `libMatlabInterface` ใน `bin/gmat_startup_file.txt`
+  (ขึ้นต้นบรรทัดด้วย `# [docker: headless]`) plugin ที่เหลือ 15 ตัวรวม `thinksys/libTLEPropagator` (`SPICESGP4`) และ `libStation` โหลดตามเดิม
+- ลบ GUI (`GMAT-R2026a`, `lib/` ของ wxWidgets/OSG/OpenFrames, `osg*`), `docs/`, `samples/`, `bin/gmatpy`, Java/MATLAB API,
+  plugin Python/MATLAB/OpenFrames และ `libCSALT` (ต้องใช้ SNOPT ที่ไม่ได้แจกมา) คง `data/` ทั้งหมดไว้
+- log ของ GMAT มีบรรทัด `HELP_PATH directory does not exist: ../docs/help/` เพราะลบ `docs/` ไม่ใช่ข้อผิดพลาด
+
+### 10.6 อัปเดต GMAT
+
+1. ดูไฟล์ใหม่และ MD5 ทางการใน RSS ของโฟลเดอร์รุ่นนั้น: `curl -s "https://sourceforge.net/projects/gmat/rss?path=/GMAT/GMAT-<รุ่น>" | grep -A3 ubuntu`
+2. ดาวน์โหลดลงโฟลเดอร์ว่างใหม่ (ไม่รันอะไรในไฟล์บนเครื่อง) ตรวจ `md5 -r` ให้ตรงค่าใน RSS และขนาดตรง `filesize` แล้วคำนวณ `shasum -a 256`
+3. แก้ `ARG` ใน stage `gmat` ของ `Dockerfile` ให้ครบ 4 ค่า: `GMAT_VERSION`, `GMAT_URL`, `GMAT_MD5`, `GMAT_SHA256`
+   (และคอมเมนต์ที่อ้างที่มาของ checksum) ถ้า tarball รุ่นใหม่ไม่ได้อยู่ใต้ `GMAT/<รุ่น>/` ให้แก้คำสั่ง `mv` ด้วย
+4. `docker compose build` ถ้า `gmat-headless.sh` ล้มเพราะชื่อ plugin เปลี่ยน ให้แก้รายการ `DISABLED` ในไฟล์นั้น
+5. ตรวจ parity ตามขั้นใน 10.8 กับ GMAT บนเครื่อง (`|Δpos|` ≤ 1 m) ก่อนใช้งานจริง และบันทึกค่าใหม่ในตาราง 10.5
+6. รุ่น engine (`ENGINE_VERSION`) ไม่ได้ขึ้นกับรุ่น GMAT: ผลเก่าใน `ephem/<hash>/` ของ volume ไม่ถูกคำนวณใหม่เอง ลบโฟลเดอร์ `ephem/` ของ scenario ถ้าต้องการผลจาก GMAT รุ่นใหม่
+
+### 10.7 Apple silicon (M-series): รันผ่าน emulation
+
+GMAT ทางการมีแต่ x86_64 image จึงเป็น `linux/amd64` เสมอ (stage `runtime` ใช้ `FROM --platform=linux/amd64` และ compose ตั้ง `platform: linux/amd64`)
+บน Mac ที่เป็น Apple silicon Docker Desktop หรือ OrbStack รันผ่าน Rosetta 2 (หรือ QEMU ถ้าไม่ได้เปิด Rosetta) ใช้ได้ทุกอย่างแต่ช้ากว่า native:
+stage `web` และ `gmat` build บนสถาปัตยกรรมของเครื่อง (`$BUILDPLATFORM`) จึงไม่โดน emulation ตอน build มีแค่ stage `runtime`
+ใน Docker Desktop ควรเปิด Settings > General > "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" (QEMU ช้ากว่ามาก)
+`docker run` ที่ไม่ใส่ `--platform linux/amd64` จะเตือนว่า platform ไม่ตรงกับเครื่อง ซึ่งไม่เป็นไร
+
+เวลาที่วัดจริงบน Apple silicon + OrbStack (Rosetta) กับ scenario ทดสอบ 6 ดวง 24 ชม. step 30 วินาที (2881 epoch) จาก fixture ของ engine:
+
+| ที่รัน | เวลา propagate (รวมเปิด GMAT) |
+|---|---|
+| macOS native (`application/bin/GmatConsole` ที่ build เอง) | 2.4 วินาที |
+| container ผ่าน CLI (`docker exec ... python -m gnss_predict.studio propagate`) | 9.1 วินาที |
+| container ผ่าน API job (`POST /api/scenarios/<sc>/propagate`, started → finished) | 5.7 วินาที |
+
+server ใน container ตอบ `/api/health` ได้ราว 2 วินาทีหลัง `docker run`
+
+### 10.8 ใช้ CLI ของ engine ใน container และตรวจ parity
+
+entrypoint รันคำสั่งที่ส่งต่อท้ายแทน server (ยังเขียน `settings.json` ครั้งแรกให้เหมือนเดิม):
+
+```bash
+# container ที่เปิดอยู่แล้ว
+docker compose exec gnss-studio python -m gnss_predict.studio propagate --scenario /data/scenarios/<ชื่อ> --data /data
+# container ชั่วคราวบน volume เดียวกัน
+docker compose run --rm gnss-studio python -m gnss_predict.studio analyze --scenario /data/scenarios/<ชื่อ> --facility THBK
+```
+
+ผลตรวจ parity (2026-11-15): snapshot fixture `tests/fixtures/studio/snapshot` (ไม่ต่อเน็ต) ดาว G01, E11, R05, C01, C40, R10
+ช่วง 2026-11-10T00:00Z ถึง 2026-11-11T00:00Z step 30 วินาที รันบน macOS (`GMAT_BIN=application/bin/GmatConsole`) และใน container ด้วยข้อมูลชุดเดียวกัน:
+- ได้ `ephem/<hash>` เดียวกัน (`8ce4ea1ede0d`) ทั้งสองที่
+- `predicted.sp3` เทียบทุกดาวทุก epoch 17286 ตำแหน่ง: `|Δpos|` สูงสุด **0.001 m** (หลักสุดท้ายของ SP3 ที่ปัดเป็น mm)
+  เช่น G01 ที่ 2026-11-10 12:00:18 GPST ได้ ECEF (−14749.301634, 12814.722486, 17933.961209) km ตรงกันทุกหลัก (`Δ` = 0 m, 0°)
+- API job กับ CLI ใน container ได้ `predicted.sp3` ไบต์ต่อไบต์เหมือนกัน
