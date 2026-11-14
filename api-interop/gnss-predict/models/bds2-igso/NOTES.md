@@ -1,6 +1,6 @@
-# BeiDou-2 IGSO / GEO / MEO (`BDS-2I`, `BDS-2G`, `BDS-2M`) — 3D Model Technical Notes (`bds2-igso`)
+# BeiDou-2 IGSO / MEO (`BDS-2I`, `BDS-2M`) — 3D Model Technical Notes (`bds2-igso`)
 
-Procedural, real-scale 3D model of a **BeiDou-2 navigation satellite** manufactured by CAST on the DFH-3A platform (IGS blocks `BDS-2I`, `BDS-2G`, and `BDS-2M`). Built in headless Blender (`scripts/build.py`) using only original procedural geometry and procedural PBR textures.
+Procedural, real-scale 3D model of a **BeiDou-2 IGSO/MEO navigation satellite** manufactured by CAST on the DFH-3A platform (IGS blocks `BDS-2I` and `BDS-2M`; `BDS-2G` GEO is modeled separately in `bds2-geo` with its deployable RDSS reflector). Built in headless Blender (`scripts/build.py`) using only original procedural geometry and procedural PBR textures.
 
 ---
 
@@ -23,7 +23,7 @@ Every dimension used in `scripts/build.py` is listed below and marked **official
 
 | Component / Parameter | Value | Status | Source & Notes |
 |---|---|---|---|
-| **IGS block codes** | `BDS-2I`, `BDS-2G`, `BDS-2M` | **official** | `igs_satellite_metadata.snx` (active and historical BeiDou-2 IGSO, GEO, and MEO satellites). |
+| **IGS block codes** | `BDS-2I`, `BDS-2M` (`BDS-2G` moved to `bds2-geo`) | **official** | `igs_satellite_metadata.snx` (active and historical BeiDou-2 IGSO and MEO satellites). |
 | **DFH-3A bus box (`X_B × Y_B × Z_B`)** | `2.000 × 1.720 × 2.200 m` | **official** | Montenbruck et al. (2015), Guo et al. (2016), and CAST DFH-3A platform specifications (`Z ∈ [-1.100, +1.100]` m, matching the SINEX LRA `Z` coordinates `+1.1000–1.1128 m` directly on the `+Z` face). |
 | **Solar array total area (`A_sa`)** | `20.47 m²` (`10.234 m²` per wing) | **official** | Matches the `20.5–22.7 m²` BDS-2 DFH-3A solar array area in Montenbruck et al. (2015) and Guo et al. (2016). |
 | **Solar wing geometry** | `2 wings`, `3 panels/wing` (`2.080 × 1.640 m` per panel) | **derived** | `3 × 2.080 × 1.640 = 10.234 m²/wing`; SADM pivot at `|Y| = 0.860 m`, yoke `0.900 m`, gap `0.060 m`. |
@@ -40,7 +40,7 @@ Every dimension used in `scripts/build.py` is listed below and marked **official
 
 - All three BeiDou-2 blocks (`BDS-2I`, `BDS-2G`, `BDS-2M`) use the same CAST DFH-3A rectangular bus (`2.000 × 1.720 × 2.200 m`) with the `+Z` payload deck at `Z = +1.100 m`:
   - **`BDS-2I` (IGSO)**: Carries the 90-prism `LRA_BDS_SHAO_90` at `(-0.4173, -0.5729, +1.1001)` m (used as the primary geometry for this model).
-  - **`BDS-2G` (GEO)**: Carries the same 90-prism `LRA_BDS_SHAO_90` shifted slightly in `-X` to `(-0.6241, -0.5705, +1.1000)` m and adds a larger C/S-band RDSS reflector for geostationary short-message service.
+  - **`BDS-2G` (GEO)**: Modeled separately in [`bds2-geo`](../bds2-geo/NOTES.md) with the 90-prism `LRA_BDS_SHAO_90` shifted to `(-0.6241, -0.5705, +1.1000)` m and the deployable Ø 2.0 m C/S-band RDSS reflector.
   - **`BDS-2M` (MEO)**: Carries the smaller 42-prism `LRA_BDS_SHAO_42` at almost the identical deck location `(-0.4321, -0.5621, +1.1128)` m.
 
 ---

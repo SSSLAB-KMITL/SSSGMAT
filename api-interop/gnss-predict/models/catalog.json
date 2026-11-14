@@ -125,9 +125,19 @@
     {
       "id": "bds2-igso",
       "glb": "bds2-igso/bds2-igso.glb",
-      "blocks": ["BDS-2I", "BDS-2G", "BDS-2M"],
+      "blocks": ["BDS-2I", "BDS-2M"],
       "size_m": [2.05, 16.24, 2.92],
       "triangles": 5244,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds2-geo",
+      "glb": "bds2-geo/bds2-geo.glb",
+      "blocks": ["BDS-2G"],
+      "size_m": [3.975, 16.24, 2.92],
+      "triangles": 6072,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
       "status": "done"
