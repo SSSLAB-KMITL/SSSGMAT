@@ -6,6 +6,7 @@ import json
 import threading
 import time
 import unittest
+from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest import mock
@@ -251,6 +252,133 @@ class QthApiTest(ApiTestBase):
         self.assertEqual(r.status_code, 200, r.text)
         qth = self.hub.get("M").tick()["qth"]
         self.assertEqual((qth["location"], qth["lat_deg"]), ("Moved", 11.5))
+
+    # ---- PUT /api/qth/batch (OK ของ Preferences → Ground Stations)
+
+    def station(self, name: str, **over) -> dict:
+        return {"name": name, "location": f"{name} town", "lat_deg": 1.5, "lon_deg": 2.5, "alt_m": 3.0, **over}
+
+    def put_batch(self, stations, default, query: str = ""):
+        return self.client.put(f"/api/qth/batch{query}", json={"stations": stations, "default": default})
+
+    def qth_state(self) -> dict:
+        """ทุกอย่างที่ batch แตะได้: ไฟล์ใต้ data dir ทั้งหมด (สถานี, สถานีตั้งต้น, module) และรายการจาก GET /api/qth"""
+        files = {str(p.relative_to(self.cfg.data_dir)): p.read_bytes()
+                 for p in sorted(self.cfg.data_dir.rglob("*")) if p.is_file()}
+        return {"files": files, "listed": self.client.get("/api/qth").json()}
+
+    def test_batch_replaces_whole_set(self):
+        edited, new = self.station("OTHER", location="Moved", alt_m=310), self.station("NEW", description="สถานีใหม่")
+        r = self.put_batch([new, edited], "NEW")                                     # ลำดับในคำขอไม่สำคัญ: คำตอบเรียงตามชื่อ
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), ["qth", "default", "changed_modules"])
+        self.assertEqual(body["qth"], [{"weather_station": "", **new, "alt_m": 3.0},
+                                       {"description": "", "weather_station": "", **edited, "alt_m": 310.0}])
+        self.assertEqual((body["default"], body["changed_modules"]), ("NEW", []))
+        listed = self.client.get("/api/qth").json()
+        self.assertEqual((listed["qth"], listed["default"]), (body["qth"], "NEW"))
+        self.assertEqual(self.store.qth_names(), ["NEW", "OTHER"])                   # ORIGIN หายไป
+
+    def test_batch_delete_in_use_and_default(self):
+        """Review Focus 4: ลบสถานีตั้งต้นพร้อมสถานีที่ module ที่เปิดอยู่ใช้ใน OK ครั้งเดียว ไม่ 500 module เปลี่ยนเป็น ** DEFAULT **
+        แต่ module ที่เปิดอยู่ยังทำงานด้วยสถานีเดิม (ไม่ hub.reload) จนถูกเปิดใหม่"""
+        self.put_module()                                                            # M ใช้ ORIGIN (ตั้งต้น)
+        self.put_module("N", qth=None)                                               # N ใช้ ** DEFAULT ** (= ORIGIN)
+        self.put_module("K", qth="OTHER")                                            # K ใช้สถานีที่ยังอยู่
+        self.open_module()
+        rt = self.hub.get("M")
+        self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "ORIGIN")
+        kept = (self.cfg.data_dir / "modules" / "K.json").read_bytes()
+        with self.assertLogs("gpredict_web.store", "ERROR") as logs:
+            r = self.put_batch([self.station("OTHER", lat_deg=10.0, lon_deg=20.0)], "OTHER")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["default"], r.json()["changed_modules"]), ("OTHER", ["M"]))
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("M", logs.records[0].args)
+        self.assertIn("ORIGIN", logs.records[0].args)
+        self.assertIsNone(self.client.get("/api/modules/M").json()["qth"])           # ไฟล์ M เป็น ** DEFAULT ** แล้ว
+        self.assertIsNone(self.store.get_module_own("M")["qth"])
+        self.assertEqual((self.cfg.data_dir / "modules" / "K.json").read_bytes(), kept)
+        self.assertIs(self.hub.get("M"), rt)                                         # runtime เดิมยังอยู่ ไม่ถูกสร้างใหม่
+        self.assertEqual(rt.qth, ORIGIN)
+        self.assertEqual(rt._q, qth_geo(ORIGIN))                                     # ยังใช้ QthGeo ของสถานีเดิม
+        self.assertEqual(rt.tick()["qth"]["name"], "ORIGIN")
+        self.assertEqual(self.client.get("/api/modules").json()["open"], ["M"])
+        self.assertEqual(self.client.post("/api/modules/M/close").status_code, 200)   # เปิดใหม่ = ใช้สถานีตั้งต้นใหม่
+        self.open_module()
+        self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "OTHER")
+
+    def test_batch_dry_run_changes_nothing(self):
+        self.put_module("N", qth="ORIGIN")
+        before = self.qth_state()
+        body = [self.station("OTHER", lat_deg=10.0, lon_deg=20.0), self.station("NEW")]
+        with self.assertNoLogs("gpredict_web.store", "ERROR"):
+            dry = self.put_batch(body, "NEW", "?dry_run=true")
+        self.assertEqual(dry.status_code, 200, dry.text)
+        self.assertEqual((dry.json()["default"], dry.json()["changed_modules"]), ("NEW", ["N"]))
+        self.assertEqual(self.qth_state(), before)
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            real = self.put_batch(body, "NEW", "?dry_run=false")
+        self.assertEqual(real.status_code, 200, real.text)
+        self.assertEqual(real.json(), dry.json())                                    # คำตอบรูปเดียวกับของจริง
+        self.assertNotEqual(self.qth_state(), before)
+        self.assertEqual(self.store.qth_names(), ["NEW", "OTHER"])
+
+    def test_batch_invalid_is_422_and_changes_nothing(self):
+        self.put_module("N", qth="ORIGIN")
+        before = self.qth_state()
+        ok = self.station("A1")
+        for stations, default, code, obj in (
+                ([], "A1", "QTH_LAST", "stations"),
+                ([ok, self.station("a1")], "A1", "QTH_INVALID", "name"),             # ชื่อซ้ำไม่สนตัวพิมพ์
+                ([ok, ok], "A1", "QTH_INVALID", "name"),
+                ([ok], "ORIGIN", "QTH_INVALID", "default"),                          # ไม่อยู่ในรายการ
+                ([ok], "a1", "QTH_INVALID", "default"),
+                ([ok], None, "QTH_INVALID", "default"),
+                ([ok], ["A1"], "QTH_INVALID", "default"),
+                ([ok, self.station("B2", lat_deg=91)], "A1", "QTH_INVALID", "lat_deg"),
+                ([ok, self.station("B2", alt_m="high")], "A1", "QTH_INVALID", "alt_m"),
+                ([ok, self.station("bad name")], "A1", "QTH_INVALID", "name"),
+                ([ok, {"location": "no name"}], "A1", "QTH_INVALID", "name"),
+                ([ok, "B2"], "A1", "QTH_INVALID", None),
+                ("A1", "A1", "QTH_INVALID", "stations"),
+                (None, "A1", "QTH_INVALID", "stations")):
+            with self.subTest(stations=stations, default=default):
+                real = self.put_batch(stations, default)
+                self.assert_error(real, 422, code, obj)
+                dry = self.put_batch(stations, default, "?dry_run=true")
+                self.assertEqual((dry.status_code, dry.json()), (422, real.json()))   # dry run ตอบ error เดียวกับของจริง
+                self.assertEqual(self.qth_state(), before)
+        self.assert_error(self.client.put("/api/qth/batch", json={"default": "A1"}), 422, "QTH_INVALID", "stations")
+        self.assert_error(self.client.put("/api/qth/batch", json={"stations": [ok]}), 422, "QTH_INVALID", "default")
+        self.assert_error(self.client.put("/api/qth/batch", json=[ok]), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.client.put("/api/qth/batch?dry_run=maybe", json={"stations": [ok], "default": "A1"}), 422,
+                          "REQUEST_INVALID", "dry_run")
+        self.assertEqual(self.qth_state(), before)
+
+    def test_batch_error_names_the_station(self):
+        r = self.put_batch([self.station("A1"), self.station("B2", lat_deg=91)], "A1")
+        body = self.assert_error(r, 422, "QTH_INVALID", "lat_deg")
+        self.assertIn("B2", body["text"])
+
+    def test_batch_route_is_not_taken_as_a_station_name(self):
+        """/api/qth/batch ต้องมาก่อน /api/qth/{name}: PUT ไม่ถูกตีว่าเป็นสถานีชื่อ batch"""
+        self.assertEqual(self.put_batch([self.station("A1")], "A1").status_code, 200)
+        self.assertEqual(self.store.qth_names(), ["A1"])
+        self.assert_error(self.client.get("/api/qth/batch"), 404, "NOT_FOUND", "batch")
+
+    def test_delete_endpoint_still_refuses_in_use(self):
+        """DELETE /api/qth/{name} ยังเป็นแบบ core (409 IN_USE) มีแต่ batch ที่ทำตาม Gpredict"""
+        self.put_module(qth="OTHER")
+        self.put_module("D", qth=None)                                               # ใช้สถานีตั้งต้น (ORIGIN)
+        before = self.qth_state()
+        self.assert_error(self.client.delete("/api/qth/OTHER"), 409, "IN_USE", "OTHER")
+        self.assert_error(self.client.delete("/api/qth/ORIGIN"), 409, "IN_USE", "ORIGIN")
+        self.assertEqual(self.qth_state(), before)
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            r = self.put_batch([self.station("ORIGIN")], "ORIGIN")                  # batch ลบ OTHER ที่ module M ใช้ได้
+        self.assertEqual((r.status_code, r.json()["changed_modules"]), (200, ["M"]))
 
 
 # ---------------------------------------------------------------- ดาวและ TLE
@@ -1523,6 +1651,33 @@ class ControllerApiTest(ApiTestBase):
                 self.post(f"{kind}/close")
         self.put_module(sats=NORADS[:2])                                            # ปิด controller แล้วแก้ได้
         self.assertEqual(self.store.get_module("M").satellites, list(NORADS[:2]))
+
+    def test_batch_deleting_the_station_of_a_module_with_open_controllers(self):
+        """ลบสถานีของ module ที่มี controller เปิดอยู่ใน OK ของ Preferences: ไฟล์ module เป็น ** DEFAULT ** (ตามที่ Gpredict ทำ)
+        แต่ runtime และ controller ไม่ถูกบังคับให้เปลี่ยนสถานี (batch ไม่ผ่าน PUT module และไม่ hub.reload) จนกว่า controller จะปิดแล้วถูกบันทึกใหม่"""
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        self.open_ctl("radio")
+        self.open_ctl("rotator")
+        both = [{"module": "M", "kind": "radio"}, {"module": "M", "kind": "rotator"}]
+        rt = self.hub.get("M")
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            r = self.client.put("/api/qth/batch", json={"stations": [asdict(OTHER)], "default": "OTHER"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["changed_modules"], ["M"])
+        self.assertIsNone(self.store.get_module_own("M")["qth"])
+        self.assertEqual(self.listed(), both)                                       # controller ยังเปิดอยู่ ไม่ถูกปิด
+        self.assertIs(self.hub.get("M"), rt)
+        self.assertEqual((rt.qth.name, rt.module.qth, rt.tick()["qth"]["name"]), ("ORIGIN", "ORIGIN", "ORIGIN"))
+        self.assertEqual(self.act("radio", action="track", on=False)["norad"], SAT_BY_NAME)    # ยังสั่ง controller ได้ตามปกติ
+        self.assertEqual(self.act("rotator", action="track", on=False)["norad"], SAT_BY_NAME)
+        # กฎ 409 ยังอยู่: runtime ใช้ ORIGIN แต่ไฟล์เป็น ** DEFAULT ** (= OTHER) การบันทึกที่ส่ง qth: None จึงเป็นการเปลี่ยนสถานี
+        self.assert_error(self.client.put("/api/modules/M", json=self.module_body(qth=None)), 409, "CONTROLLER_ACTIVE", "qth")
+        self.assertEqual(rt.qth.name, "ORIGIN")
+        self.post("radio/close")
+        self.post("rotator/close")
+        self.put_module(qth=None)                                                   # ปิด controller แล้วบันทึกได้ runtime ตามสถานีตั้งต้นใหม่
+        self.assertEqual(self.hub.get("M").qth.name, "OTHER")
 
     def test_configure_validation_comes_before_conflict(self):
         self.put_hw([self.radio("A")])

@@ -3,6 +3,7 @@ import os
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from gpredict_web import config
 from gpredict_web.ephem import EphemManager
@@ -271,6 +272,161 @@ class DefaultQthTests(StoreTestCase):
         self.store.set_default_qth("THBK")
         (self.cfg.data_dir / "qth" / "THBK.json").unlink()
         self.assertIsNone(self.store.default_qth())
+
+
+class ReplaceQthTests(StoreTestCase):
+    """Store.replace_qth: แทนทั้งชุดสถานีและสถานีตั้งต้นในครั้งเดียวแบบ OK ของ Preferences → Ground Stations (spec งานย่อย 4 §4)
+    ตรวจทุกอย่างก่อนแตะดิสก์ module ที่ใช้สถานีที่หายเปลี่ยนเป็น ** DEFAULT ** ก่อนไฟล์สถานีถูกลบ"""
+
+    def setUp(self):
+        super().setUp()
+        self.alpha = Qth(name="Alpha", location="Alpha town", lat_deg=10.0, lon_deg=20.0, alt_m=5.0)
+        self.beta = Qth(name="Beta", location="Beta town", lat_deg=30.0, lon_deg=40.0, alt_m=6.0)
+        self.store.put_qth(self.alpha)
+        self.store.put_qth(self.beta)
+        self.store.set_default_qth("Alpha")
+
+    def put_module(self, name: str, qth: str | None) -> None:
+        self.store.put_module(module_from_dict({"name": name, "qth": qth, "satellites": [25544]}, None, None))
+
+    def module_file(self, name: str) -> Path:
+        return self.cfg.data_dir / "modules" / f"{name}.json"
+
+    def snapshot(self) -> dict[str, bytes]:
+        return {str(p.relative_to(self.cfg.data_dir)): p.read_bytes()
+                for p in sorted(self.cfg.data_dir.rglob("*")) if p.is_file()}
+
+    def test_batch_replaces_whole_set(self):
+        edited = replace(self.beta, location="Beta moved", lat_deg=31.5)
+        gamma = Qth(name="Gamma", description="new", location="Gamma town", lat_deg=-5.0, lon_deg=100.0, alt_m=12.0)
+        self.assertEqual(self.store.replace_qth([edited, gamma], "Gamma"), [])
+        self.assertEqual(self.store.qth_names(), ["Beta", "Gamma"])
+        self.assertFalse((self.cfg.data_dir / "qth" / "Alpha.json").exists())          # ไฟล์ที่ไม่อยู่ในรายการหายไป
+        self.assertEqual(self.store.get_qth("Beta"), edited)
+        self.assertEqual(self.store.get_qth("Gamma"), gamma)
+        self.assertEqual(self.store.default_qth(), "Gamma")
+        self.assertEqual(Store(self.cfg.data_dir).default_qth(), "Gamma")             # อยู่บนดิสก์ ไม่ใช่แค่ในหน่วยความจำ
+
+    def test_batch_delete_in_use_and_default(self):
+        """Review Focus 4: ลบสถานีตั้งต้นพร้อมสถานีที่ module ใช้ใน OK ครั้งเดียว ไม่ล้ม module เป็น ** DEFAULT ** และบันทึกทันที"""
+        self.put_module("Mir", "Alpha")                  # ใช้สถานีที่ถูกลบ
+        self.put_module("Nova", None)                    # ใช้ ** DEFAULT ** (= Alpha ที่ถูกลบ) ไฟล์ไม่ต้องเปลี่ยน
+        self.put_module("Kept", "Beta")                  # ใช้สถานีที่ยังอยู่
+        before = {n: self.module_file(n).read_bytes() for n in ("Nova", "Kept")}
+        with self.assertLogs("gpredict_web.store", "ERROR") as logs:
+            changed = self.store.replace_qth([self.beta], "Beta")
+        self.assertEqual(changed, ["Mir"])
+        self.assertEqual(len(logs.records), 1)
+        text = logs.records[0].getMessage()
+        self.assertIn("Mir", text)
+        self.assertIn("Alpha", text)
+        self.assertIsNone(self.store.get_module_own("Mir")["qth"])
+        self.assertIsNone(json.loads(self.module_file("Mir").read_text(encoding="utf-8"))["qth"])
+        self.assertEqual({n: self.module_file(n).read_bytes() for n in ("Nova", "Kept")}, before)
+        self.assertEqual(self.store.get_module("Kept").qth, "Beta")
+        self.assertEqual(self.store.get_module("Mir").satellites, [25544])             # ค่าอื่นของ module ไม่เปลี่ยน
+        self.assertEqual((self.store.qth_names(), self.store.default_qth()), (["Beta"], "Beta"))
+        self.assertEqual(self.store.modules_using_qth("Beta"), ["Kept", "Mir", "Nova"])
+
+    def test_batch_changed_modules_are_sorted_by_name(self):
+        for name in ("Zed", "Amy", "Bob"):
+            self.put_module(name, "Alpha")
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.store.replace_qth([self.beta], "Beta"), ["Amy", "Bob", "Zed"])
+
+    def test_batch_empty_is_qth_last(self):
+        self.put_module("Mir", "Alpha")
+        before = self.snapshot()
+        with self.assertRaises(ApiError) as cm:
+            self.store.replace_qth([], "Alpha")
+        self.assertEqual((cm.exception.code, cm.exception.status), ("QTH_LAST", 422))
+        self.assertRegex(cm.exception.text, r"[ก-๙]")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_batch_duplicate_names_invalid(self):
+        before = self.snapshot()
+        for names in (("abc", "ABC"), ("Beta", "Beta"), ("x", "y", "Y")):
+            with self.subTest(names=names), self.assertRaises(ApiError) as cm:
+                self.store.replace_qth([Qth(name=n) for n in names], names[0])
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("QTH_INVALID", 422, "name"))
+            self.assertEqual(self.snapshot(), before)               # ผิดแล้วไม่มีไฟล์ไหนถูกเขียน
+
+    def test_batch_default_must_be_in_the_list(self):
+        before = self.snapshot()
+        for default in ("Alpha", "beta", "", None, 5, ["Beta"]):     # "beta" ต่างตัวพิมพ์จาก Beta (เทียบชื่อเต็มตรงตัว)
+            with self.subTest(default=default), self.assertRaises(ApiError) as cm:
+                self.store.replace_qth([self.beta], default)
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("QTH_INVALID", 422, "default"))
+            self.assertEqual(self.snapshot(), before)
+
+    def test_batch_invalid_station_writes_nothing(self):
+        before = self.snapshot()
+        for bad, field in ((replace(self.beta, lat_deg=91), "lat_deg"), (replace(self.beta, alt_m="high"), "alt_m"),
+                           (Qth(name="bad name"), "name"), (replace(self.beta, location="x" * 51), "location")):
+            with self.subTest(field=field), self.assertRaises(ApiError) as cm:
+                self.store.replace_qth([Qth(name="Good"), bad], "Good")        # สถานีแรกถูก: ต้องไม่ถูกเขียนก่อนเจอตัวที่ผิด
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("QTH_INVALID", 422, field))
+            self.assertEqual(self.snapshot(), before)
+
+    def test_batch_dry_run_changes_nothing(self):
+        self.put_module("Mir", "Alpha")
+        before = self.snapshot()
+        with self.assertNoLogs("gpredict_web.store", "ERROR"):               # ยังไม่เกิดอะไรขึ้นจริง จึงไม่ log
+            self.assertEqual(self.store.replace_qth([replace(self.beta, lat_deg=1.0), Qth(name="Gamma")], "Gamma", True),
+                             ["Mir"])
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual((self.store.qth_names(), self.store.default_qth()), (["Alpha", "Beta"], "Alpha"))
+        for stations, default, code in (([], "Alpha", "QTH_LAST"), ([Qth(name="a"), Qth(name="A")], "a", "QTH_INVALID"),
+                                        ([self.beta], "Alpha", "QTH_INVALID")):
+            with self.subTest(code=code), self.assertRaises(ApiError) as cm:
+                self.store.replace_qth(stations, default, True)               # dry run ตรวจเหมือนจริง
+            self.assertEqual(cm.exception.code, code)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_default_matches_full_name(self):
+        """Gpredict เทียบท้ายชื่อไฟล์ ("xsample" ตรงกับ "sample") ของเราเทียบชื่อเต็ม (spec §11)"""
+        xsample, sample = Qth(name="xsample", location="X"), Qth(name="sample", location="S")
+        self.store.replace_qth([xsample, sample], "sample")
+        self.assertEqual(self.store.default_qth(), "sample")
+        self.store.replace_qth([xsample, sample], "xsample")
+        self.assertEqual(self.store.default_qth(), "xsample")
+        with self.assertRaises(ApiError) as cm:                              # "sample" ไม่ใช่ชื่อในรายการ แม้เป็นท้ายของ "xsample"
+            self.store.replace_qth([xsample], "sample")
+        self.assertEqual((cm.exception.code, cm.exception.object), ("QTH_INVALID", "default"))
+        self.assertEqual(self.store.default_qth(), "xsample")
+
+    def test_batch_rename_that_only_changes_case(self):
+        """ดิสก์ของ macOS ไม่แยกตัวพิมพ์: "abc" → "ABC" ต้องไม่ลบไฟล์ที่เพิ่งเขียน และไม่ทิ้งไฟล์ซ้ำบนดิสก์ที่แยกตัวพิมพ์"""
+        self.store.put_qth(Qth(name="abc", location="old"))
+        self.put_module("Mir", "abc")
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.store.replace_qth([Qth(name="ABC", location="new")], "ABC"), ["Mir"])
+        self.assertEqual(self.store.qth_names(), ["ABC"])
+        self.assertEqual(self.store.get_qth("ABC").location, "new")
+        self.assertEqual(self.store.default_qth(), "ABC")
+
+    def test_batch_rewrites_a_module_whose_other_fields_are_broken(self):
+        """module ที่ช่องอื่นผิดก็ต้องไม่ค้างชี้สถานีที่หาย (Gpredict ลบ key QTHFILE โดยไม่ตรวจช่องอื่น) ไฟล์ที่ไม่ใช่ JSON ไม่ถูกแตะ"""
+        modules = self.cfg.data_dir / "modules"
+        modules.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(modules / "Odd.json", {"version": 2, "name": "Odd", "qth": "Alpha", "satellites": "oops"})
+        (modules / "Junk.json").write_bytes(b"{")
+        with self.assertLogs("gpredict_web.store", "ERROR") as logs:
+            self.assertEqual(self.store.replace_qth([self.beta], "Beta"), ["Odd"])
+        self.assertEqual(json.loads((modules / "Odd.json").read_text(encoding="utf-8")),
+                         {"version": 2, "name": "Odd", "qth": None, "satellites": "oops"})
+        self.assertEqual((modules / "Junk.json").read_bytes(), b"{")
+        self.assertIn("Odd", logs.records[0].getMessage())
+
+    def test_batch_failure_never_leaves_a_module_on_a_missing_station(self):
+        """ลำดับเขียน: สถานีใหม่ → สถานีตั้งต้น → module → ลบไฟล์เก่า: ดิสก์ล้มกลางทางแล้วไม่มี module หรือสถานีตั้งต้นชี้ไฟล์ที่หาย"""
+        self.put_module("Mir", "Alpha")
+        with mock.patch.object(Store, "put_module_own", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.store.replace_qth([self.beta], "Beta")
+        self.assertIn(self.store.get_module("Mir").qth, self.store.qth_names())
+        self.assertIn(self.store.default_qth(), self.store.qth_names())
+        self.assertEqual(self.store.default_qth(), "Beta")
 
 
 class BootstrapFlagTests(StoreTestCase):

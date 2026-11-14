@@ -208,6 +208,70 @@ class Store:
                 self._write_default(remaining[0])
             path.unlink()
 
+    def replace_qth(self, stations: list[Qth], default: str, dry_run: bool = False) -> list[str]:
+        """แทนทั้งชุดสถานีและสถานีตั้งต้นในครั้งเดียวแบบ OK ของ Preferences → Ground Stations (spec งานย่อย 4 §4) คืนชื่อ module
+        (เรียงตามชื่อ) ที่ถูกเปลี่ยนเป็น ** DEFAULT ** เพราะสถานีของมันหายไป
+        - ตรวจทุกอย่างก่อนแตะดิสก์: ว่าง -> 422 QTH_LAST, สถานีผิดช่องใด/ชื่อซ้ำ (ไม่สนตัวพิมพ์) หรือ default ไม่ใช่ชื่อในรายการ
+          (เทียบชื่อเต็มตรงตัว) -> 422 QTH_INVALID dry_run=True ตรวจเหมือนกันและคืนรายการเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log
+        - ลำดับเขียน: สถานีทุกตัว -> สถานีตั้งต้น -> module ที่ใช้สถานีที่หาย (qth = None แล้ว log ERROR) -> ลบไฟล์สถานีที่ไม่อยู่ในรายการ
+          ไฟล์สถานีที่หายถูกลบหลังสุด ดิสก์ล้มกลางทางจึงไม่มี module หรือสถานีตั้งต้นที่ชี้ไฟล์ที่ไม่มี
+        - module ที่ช่องอื่นผิดก็เปลี่ยนเป็น ** DEFAULT ** (แก้เฉพาะ qth ในไฟล์) ไม่งั้น OK ของ Preferences จะค้างเพราะไฟล์ module เสีย
+          ไฟล์ที่ไม่ใช่ JSON object ไม่ถูกแตะ (modules_using_qth ก็ไม่นับ)
+        - ไม่แตะ runtime ที่เปิดอยู่: ผู้เรียกไม่ hub.reload module ที่เปิดอยู่ใช้สถานีเดิมจนกว่าจะถูกสร้างใหม่ (spec §4.2 เหมือน Gpredict)"""
+        if not stations:
+            raise ApiError("QTH_LAST", 422, "ลบสถานีทั้งหมดไม่ได้ ต้องมีสถานีอย่างน้อย 1 สถานี", "stations")
+        new = [validate_qth(q) for q in stations]
+        seen: dict[str, str] = {}
+        for q in new:
+            if q.name.casefold() in seen:
+                raise _invalid("name", f"ชื่อสถานี {q.name} ซ้ำกับ {seen[q.name.casefold()]} "
+                                       "ชื่อที่ต่างกันแค่ตัวพิมพ์เล็ก-ใหญ่ใช้ด้วยกันไม่ได้ (ดิสก์ของ macOS ไม่แยกตัวพิมพ์)")
+            seen[q.name.casefold()] = q.name
+        names = {q.name for q in new}
+        if not isinstance(default, str) or default not in names:
+            raise _invalid("default", "สถานีตั้งต้น (default) ต้องเป็นชื่อหนึ่งในรายการสถานี")
+        with self._lock:
+            gone = set(self._qth_names()) - names
+            users: dict[str, str] = {}                           # module ที่ใช้สถานีที่หาย -> ชื่อสถานีนั้น
+            for n in self._module_names():
+                ref = self._module_qth_ref(n)
+                if isinstance(ref, str) and ref in gone:
+                    users[n] = ref
+            if dry_run:
+                return list(users)
+            for q in new:
+                write_json_atomic(self._qth_path(q.name), asdict(q))
+            self._write_default(default)
+            for module, station in users.items():
+                self._use_default_qth(module)
+                # (ของเรา) Gpredict log ERROR ตอนสร้าง module ที่ใช้สถานีที่หาย แต่ module ที่เปิดอยู่ไม่ถูกสร้างใหม่ตอนกด OK จึง log ตอนลบ
+                _log.error("module %s ใช้สถานี %s ที่ถูกลบ จึงเปลี่ยนเป็น ** DEFAULT ** และบันทึกไฟล์ module แล้ว", module, station)
+            self._remove_stale_qth(names)
+            return list(users)
+
+    def _use_default_qth(self, name: str) -> None:
+        """qth ของ module เป็น None (** DEFAULT **) ค่าอื่นของไฟล์คงเดิม ผ่าน put_module_own (ตรวจค่าในไฟล์และค่าที่ใช้จริงก่อนเขียน)
+        ไฟล์ที่ผิดช่องอื่นแก้ qth ในเนื้อไฟล์ตรงๆ (เหมือน Gpredict ที่ลบ key QTHFILE โดยไม่ตรวจช่องอื่น)"""
+        try:
+            own = self.get_module_own(name)
+        except ApiError:
+            write_json_atomic(self._module_path(name), {**self._read_module(name), "qth": None})
+        else:
+            self.put_module_own(name, {**own, "qth": None})
+
+    def _remove_stale_qth(self, keep: set[str]) -> None:
+        """ลบไฟล์สถานีที่ชื่อไม่อยู่ใน keep ดิสก์ที่ไม่แยกตัวพิมพ์ (macOS) เขียน "ABC" ทับไฟล์ "abc" แล้วไฟล์ยังชื่อ "abc.json":
+        ไฟล์นั้นคือสถานีใหม่ ไม่ลบ แต่เปลี่ยนชื่อให้ตรงตัวพิมพ์ (ดิสก์ที่แยกตัวพิมพ์มีสองไฟล์ ลบ abc.json ตามปกติ)"""
+        by_fold = {n.casefold(): n for n in keep}
+        for n in self._qth_names():
+            if n in keep:
+                continue
+            path, right = self._qth_path(n), self._qth_path(by_fold.get(n.casefold(), n))
+            if right != path and right.exists() and path.samefile(right):
+                os.replace(path, right)
+            else:
+                path.unlink(missing_ok=True)
+
     # ---------- สถานีตั้งต้น ----------
 
     def _read_settings(self) -> dict:

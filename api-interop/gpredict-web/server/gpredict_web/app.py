@@ -3,7 +3,8 @@
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
   + GET/PUT /api/hwconf (Preferences → Interfaces: วิทยุและ rotator ตรวจและเก็บที่ hwconf.py)
-  PUT ทั้งสองรับ ?dry_run=true: ตรวจเหมือนจริงและตอบรูปเดียวกันแต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อนเขียนจริง)
+  + PUT /api/qth/batch (Preferences → Ground Stations: แทนทั้งชุดสถานีและสถานีตั้งต้น store.replace_qth)
+  PUT ทั้งสามรับ ?dry_run=true: ตรวจเหมือนจริงและตอบรูปเดียวกันแต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อนเขียนจริง)
   + POST /api/trsp/update และ GET /api/trsp/{norad} (Edit → Update transponder data และรายการ transponder ของดาว: trsp.py)
   + GET /api/controllers, POST /api/modules/{name}/target, /radio[/open|/close] และ /rotator[/open|/close] (Radio Control และ
     Antenna Control: controllers.py) PUT module ที่เปลี่ยน qth หรือ satellites ขณะ controller เปิดอยู่ตอบ 409 CONTROLLER_ACTIVE
@@ -621,6 +622,28 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.get("/api/qth/{name}")
     def get_qth(name: str):
         return asdict(store.get_qth(name))
+
+    @app.put("/api/qth/batch")          # ต้องมาก่อน /api/qth/{name} ไม่งั้น "batch" ถูกตีเป็นชื่อสถานี
+    def put_qth_batch(body: dict = Body(...), dry_run: bool = Query(False)):
+        """{"stations": [QTH], "default": ชื่อ} แทนทั้งชุดสถานีและสถานีตั้งต้นในครั้งเดียว (OK ของ Preferences → Ground Stations)
+        ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย: ว่าง -> QTH_LAST, ผิดช่อง/ชื่อซ้ำ/default ไม่อยู่ในรายการ -> QTH_INVALID
+        module ที่ใช้สถานีที่หายเปลี่ยนเป็น ** DEFAULT ** (changed_modules) ส่วน module ที่เปิดอยู่ไม่ถูก reload ใช้สถานีเดิมต่อจน
+        เปิดใหม่ รวมถึงที่มี controller เปิดอยู่ (spec §4.2) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log"""
+        stations = body.get("stations")
+        if not isinstance(stations, list):
+            raise ApiError("QTH_INVALID", 422, "รายการสถานี (stations) ต้องเป็นรายการของ object", "stations")
+        parsed = []
+        for i, item in enumerate(stations, 1):
+            try:
+                parsed.append(qth_from_dict(item))
+            except ApiError as exc:                       # บอกว่าสถานีไหน (หน้า Preferences ส่งมาทีละหลายตัว)
+                name = item.get("name") if isinstance(item, dict) else None
+                label = f"สถานีที่ {i}" + (f" ({name})" if isinstance(name, str) and name else "")
+                raise ApiError(exc.code, exc.status, f"{label}: {exc.text}", exc.object) from None
+        default = body.get("default")
+        changed = store.replace_qth(parsed, default, dry_run)
+        return {"qth": [asdict(q) for q in sorted(parsed, key=lambda q: q.name)], "default": default,
+                "changed_modules": changed}
 
     @app.put("/api/qth/{name}")
     def put_qth(name: str, body: dict = Body(...)):
