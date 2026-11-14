@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -745,6 +746,64 @@ class ModuleInheritanceStoreTests(unittest.TestCase):
                 self.store.put_module_own("M", bad)
             self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("MODULE_INVALID", 422, field))
         self.assertEqual(self.module_file("M").read_bytes(), before)
+
+    def test_put_module_window(self):
+        self.put("M", pin=["layout_code"], layout_code="1;0;2;0;1")
+        before = self.file_json("M")
+        got = self.store.put_module_window("M", {"state": 1, "width": 800})
+        self.assertEqual(got, {**WINDOW_DEFAULT, "state": 1, "width": 800})
+        self.assertEqual(self.store.put_module_window("M", {"x": 10, "y": 20, "height": 600}),
+                         {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600})     # ช่องที่ไม่ส่งคงเดิม
+        self.assertEqual(self.store.put_module_window("M", {"x": None})["x"], None)         # null = ไม่มีค่า
+        self.assertEqual(self.store.get_module("M").window, {"state": 1, "x": None, "y": 20, "width": 800, "height": 600})
+        self.assertEqual({**self.file_json("M"), "window": before["window"]}, before)       # ไฟล์เปลี่ยนเฉพาะ window (ไม่ตรึงค่ารวม)
+        self.assertEqual(self.store.put_module_window("M", {}), self.store.get_module("M").window)
+
+    def test_put_module_window_invalid_writes_nothing(self):
+        self.put("M")
+        file = self.module_file("M")
+        before = file.read_bytes()
+        for label, bad, field in (("too small", {"width": 99}, "window.width"), ("too big", {"height": 10001}, "window.height"),
+                                  ("negative", {"x": -1}, "window.x"), ("bad state", {"state": 2}, "window.state"),
+                                  ("bool state", {"state": True}, "window.state"), ("unknown", {"w": 1}, "w"),
+                                  ("one bad field spoils the rest", {"state": 1, "width": 1}, "window.width"),
+                                  ("not an object", [1], "window")):
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                self.store.put_module_window("M", bad)
+            self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("MODULE_INVALID", 422, field))
+        self.assertEqual(file.read_bytes(), before)
+
+    def test_put_module_window_missing_or_broken_module(self):
+        with self.assertRaises(ApiError) as cm:
+            self.store.put_module_window("Nope", {"state": 1})
+        self.assertEqual((cm.exception.code, cm.exception.status, cm.exception.object), ("NOT_FOUND", 404, "Nope"))
+        self.write_raw("M", b"{")
+        with self.assertRaises(ApiError) as cm:
+            self.store.put_module_window("M", {"state": 1})
+        self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+        self.assertEqual(self.module_file("M").read_bytes(), b"{")                           # ไม่เขียนทับไฟล์เสีย
+
+    def test_put_module_window_does_not_undo_a_put_module_made_meanwhile(self):
+        """อ่าน-แก้-เขียนอยู่ในล็อกเดียว: put_module ที่เริ่มตอน put_module_window อ่านไฟล์แล้วต้องรอ แล้วเขียนทับหลังจากนั้น
+        (ไม่ใช่ถูกทับด้วยไฟล์ที่อ่านไว้ก่อน)"""
+        self.put("M")
+        meanwhile = []
+        real_get_module = self.store.get_module
+
+        def get_module_then_put_elsewhere(name):
+            result = real_get_module(name)
+            if not meanwhile:                                      # ครั้งแรกหลังอ่านไฟล์ ก่อนเขียน
+                worker = threading.Thread(target=self.put, args=("M",), kwargs={"ground_track": [25544]})
+                worker.start()
+                worker.join(0.3)                                   # ล็อกไม่ได้ถือไว้ = จบทันที (ทับด้วยไฟล์ที่อ่านไว้) ถือไว้ = รอ
+                meanwhile.append(worker)
+            return result
+
+        with mock.patch.object(self.store, "get_module", get_module_then_put_elsewhere):
+            self.store.put_module_window("M", {"state": 1})
+        meanwhile[0].join(5)
+        own = self.store.get_module_own("M")
+        self.assertEqual((own["ground_track"], own["window"]["state"]), ([25544], 1))
 
     def test_hand_broken_own_section_is_invalid_not_ignored(self):
         self.put("M")

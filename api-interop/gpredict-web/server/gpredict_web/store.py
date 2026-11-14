@@ -21,8 +21,8 @@ from pathlib import Path
 
 from .config import NAME_RE
 from .errors import ApiError
-from .module import (MODULE_KEYS, OWN_VERSION, ModuleConfig, effective_dict, get_path, module_from_dict, module_to_dict,
-                     own_dict, strip_defaults)
+from .module import (MODULE_KEYS, OWN_VERSION, WINDOW_DEFAULT, ModuleConfig, effective_dict, get_path, module_from_dict,
+                     module_to_dict, own_dict, strip_defaults)
 
 SETTINGS_FILE = "settings.json"
 SESSION_FILE = "session.json"
@@ -418,6 +418,21 @@ class Store:
         own = {"version": OWN_VERSION, **{k: v for k, v in own.items() if k != "version"}}
         with self._lock:
             self._write_own(name, own, self._globals())
+
+    def put_module_window(self, name: str, given: dict) -> dict:
+        """เปลี่ยนช่อง window ของ module (หน้าต่างแยก) ตามช่องใน given (state, x, y, width, height) ช่องที่ไม่ส่งคงเดิม null = ไม่มีค่า
+        เขียนผ่าน put_module_own เฉพาะช่อง window ของไฟล์ (ไม่แตะค่าอื่น และไม่เขียนค่าที่ใช้จริงซึ่งจะตรึงค่ารวม) อ่านและเขียนในล็อกเดียว
+        จึงไม่ทับการบันทึก module ที่แทรกมา ช่องที่ไม่รู้จักหรือค่าผิด -> 422 MODULE_INVALID ไม่เขียนอะไร คืน window ที่บันทึก"""
+        if not isinstance(given, dict):
+            raise ApiError("MODULE_INVALID", 422, "ข้อมูลหน้าต่าง (window) ต้องเป็น JSON object", "window")
+        unknown = [k for k in given if k not in WINDOW_DEFAULT]
+        if unknown:
+            raise ApiError("MODULE_INVALID", 422,
+                           f"หน้าต่าง (window) ไม่มีช่อง {unknown[0]!r} (มี {', '.join(WINDOW_DEFAULT)})", str(unknown[0]))
+        with self._lock:
+            own = self.get_module_own(name)                       # ตรวจไฟล์ด้วย (เสีย -> 422)
+            self.put_module_own(name, {**own, "window": {**self.get_module(name).window, **given}})
+            return dict(self.get_module(name).window)
 
     def migrate_modules(self) -> list[str]:
         """ย้ายไฟล์ module ที่ไม่มี "version": 2 (ไฟล์เต็มแบบ core) เป็นแบบเก็บเฉพาะค่าที่ตั้งเอง ทำตอนเปิด server คืนชื่อที่ย้าย

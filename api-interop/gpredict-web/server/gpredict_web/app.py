@@ -12,7 +12,9 @@
   + POST /api/tle/local (Edit → Update TLE data from local files) POST /api/tle/update และ GET /api/tle/groups ตาม TLE sources ของ
     Preferences (tlesources.py: CelesTrak, ข้อความ TLE เช่น AMSAT, proxy)
   + WS /ws/app: เหตุการณ์ระดับโปรแกรมถึงทุก browser (appevents.py) prefs_changed หลัง PUT /api/prefs และ PUT /api/qth/batch ที่ไม่ใช่ dry run,
-    modules_changed หลัง PUT/DELETE/open/close/clone module, tle_old จากตัวตรวจอายุ TLE (tleage.py)
+    modules_changed หลัง PUT/DELETE/open/close/clone module และ PUT …/window, tle_old จากตัวตรวจอายุ TLE (tleage.py)
+  + PUT /api/modules/{name}/window (Detach/Attach และจำขนาด/ตำแหน่งหน้าต่างแยก) GET /api/modules มี windows = module ที่เปิดอยู่และเป็นหน้าต่างแยก
+    ตามลำดับ session (open ยังมีทุกตัวที่เปิดอยู่: หน้าเว็บกรองแท็บเอง) ไม่ผ่าน controllers.hold เพราะไม่แตะ qth หรือ satellites
 - module (spec งานย่อย 4 §9.1): ไฟล์เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ไม่ได้ตั้งสืบทอดค่ารวมของ Preferences → Modules
   PUT /api/modules/{name} รับ pin/unpin (รายการ path ใน module.MODULE_KEYS) ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
   GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
@@ -580,7 +582,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                   decorate=lambda name, tick: {**tick, **controllers.on_tick(name, tick)})
     controllers = ControllerHub(hub, hwconf, cfg.data_dir, pass_service, ticks.wake)
     events = AppEvents()                     # /ws/app: เหตุการณ์ระดับโปรแกรมถึงทุก browser (publish เรียกจาก thread ไหนก็ได้)
-    session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
+    session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ (และ windowed ให้ตรงกับไฟล์ของ module)
+    windowed: set[str] = set()               # module ที่เป็นหน้าต่างแยก (window.state == 1) แก้ใต้ session_lock; startup เริ่มจากไฟล์เมื่อ MOD_STATE เปิด
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine และของ tlesources ไม่มี lock)
     tle_opener_factory = make_opener if opener is urlopen else (lambda proxy: opener)       # opener ของ test ไม่ผ่าน proxy
     trsp_lock = threading.Lock()             # Update transponder ทีละครั้ง: คำขอที่ซ้อนรอตัวแรกจบแล้วได้ข้อมูลจาก cache (decision 13)
@@ -614,6 +617,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         t = now()
         ephem.prune(t)
         messages = bootstrap(store, satdb, cfg, t, opener)
+        restore_windows = prefs.get("GLOBAL/MOD_STATE")     # Restore the state of modules when reopened (docked or window)
         for name in store.session():
             try:
                 hub.open(name)
@@ -622,6 +626,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 session_remove(name)
                 messages.append(Message(exc.code, "error",
                                         f"เปิด module {name} ที่เปิดค้างไว้ไม่ได้ จึงเอาออกจากแท็บ: {exc.text}", name))
+            else:
+                if restore_windows and store.get_module(name).window["state"] == 1:
+                    with session_lock:
+                        windowed.add(name)
         return messages
 
     def shutdown() -> None:
@@ -914,7 +922,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/modules")
     def list_modules():
-        return {"modules": store.list_modules(), "open": open_list(),
+        opened = open_list()
+        return {"modules": store.list_modules(), "open": opened, "windows": [n for n in opened if n in windowed],
                 "messages": [m.to_dict() for m in app.state.startup_messages]}
 
     @app.get("/api/modules/{name}")
@@ -956,10 +965,34 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         events.publish({"type": EVENT_MODULES_CHANGED})
         return saved
 
+    def put_window_sync(name: str, body: dict) -> dict:
+        """เปลี่ยนเฉพาะช่อง window ของ module (store.put_module_window) แล้วให้ windowed และลำดับ session ตามสถานะใหม่
+        state 1 = หน้าต่างแยก (module ยังอยู่ใน session ตามเดิม หน้าเว็บกรองออกจากแท็บเอง) state 0 ของ module ที่เป็นหน้าต่างอยู่ = Attach:
+        เป็นแท็บสุดท้าย (ย้ายชื่อไปท้าย session เฉพาะที่อยู่ใน session แล้ว module ที่ปิดอยู่ไม่ถูกเติมเข้า session) ส่งแต่ขนาดหรือตำแหน่ง
+        หรือส่ง state 0 ซ้ำไม่ย้ายแท็บ ทั้งหมดใต้ session_lock สองคำขอซ้อนกันจึงไม่ทำให้ windowed ต่างจากไฟล์"""
+        with session_lock:
+            window = store.put_module_window(name, body)
+            if window["state"] == 1:
+                windowed.add(name)
+            elif name in windowed:
+                windowed.discard(name)
+                names = store.session()
+                if name in names:
+                    store.set_session([*(n for n in names if n != name), name])
+            return window
+
+    @app.put("/api/modules/{name}/window")
+    async def put_window(name: str, body: dict = Body(...)):
+        """ไม่ผ่าน controllers.hold: ไม่เปลี่ยน qth หรือ satellites จึงบันทึกได้ขณะ Radio/Antenna Control เปิดอยู่ ไม่ reload runtime"""
+        window = await asyncio.to_thread(put_window_sync, name, body)
+        events.publish({"type": EVENT_MODULES_CHANGED})
+        return window
+
     def delete_module_sync(name: str) -> None:
         hub.close(name)                      # เปิดอยู่: ปิดก่อน
         with session_lock:
             store.delete_module(name)        # เอาออกจาก session ด้วย
+            windowed.discard(name)           # ชื่อนี้สร้างใหม่ภายหลังต้องไม่เป็นหน้าต่างแยกตามของเก่า
 
     async def retire_module[T](name: str, work: Callable[[], T]) -> T:
         """ปิดหรือลบ module: ปลด controller ก่อน (S, q ถึงอุปกรณ์ขณะ runtime ยังอยู่) ทำ work (ปิด runtime) แล้วปิด WebSocket ของ module

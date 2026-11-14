@@ -752,11 +752,12 @@ class TrspApiTest(ApiTestBase):
 
 class ModuleApiTest(ApiTestBase):
     def test_list_modules(self):
-        self.assertEqual(self.client.get("/api/modules").json(), {"modules": [], "open": [], "messages": []})
+        self.assertEqual(self.client.get("/api/modules").json(), {"modules": [], "open": [], "windows": [], "messages": []})
         self.put_module("B")
         self.put_module("A")
         self.open_module("B")
-        self.assertEqual(self.client.get("/api/modules").json(), {"modules": ["A", "B"], "open": ["B"], "messages": []})
+        self.assertEqual(self.client.get("/api/modules").json(),
+                         {"modules": ["A", "B"], "open": ["B"], "windows": [], "messages": []})
 
     def test_put_get_delete_module(self):
         body = self.put_module(single={"selected": NORADS[1]})
@@ -1010,6 +1011,214 @@ class ModuleInheritanceApiTest(ApiTestBase):
         self.assertEqual(meta["module_keys"]["refresh"]["refresh.data_ms"], "MODULES/DATA_TIMEOUT")
         self.assertEqual(meta["global_layout_extra"], ["GLOBAL/MAIN_WIN_POS", "GLOBAL/MOD_WIN_POS", "GLOBAL/MOD_STATE"])
         self.assertEqual(meta["log_dir"], str(self.cfg.data_dir / "logs"))
+
+
+class ModuleWindowApiTest(ApiTestBase):
+    """PUT /api/modules/{name}/window, windows ใน GET /api/modules (spec งานย่อย 4 §8, §12): หน้าต่างแยกของ module"""
+
+    NO_GEOMETRY = {"x": None, "y": None, "width": None, "height": None}
+
+    def put_window(self, name: str = "A", **body):
+        return self.client.put(f"/api/modules/{name}/window", json=body)
+
+    def ok_window(self, name: str = "A", **body) -> dict:
+        r = self.put_window(name, **body)
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def listing(self) -> dict:
+        return self.client.get("/api/modules").json()
+
+    def file_json(self, name: str = "A") -> dict:
+        return json.loads((self.cfg.data_dir / "modules" / f"{name}.json").read_text(encoding="utf-8"))
+
+    def open_a_and_b(self) -> None:
+        for name in ("A", "B"):
+            self.put_module(name)
+            self.open_module(name)
+
+    def test_detach_then_attach(self):
+        self.open_a_and_b()
+        self.assertEqual(self.listing()["windows"], [])
+        self.assertEqual(self.ok_window(state=1), {"state": 1, **self.NO_GEOMETRY})              # คำตอบคือช่อง window หลังบันทึก
+        body = self.listing()
+        self.assertEqual((body["windows"], body["open"]), (["A"], ["A", "B"]))                   # แท็บของ A ยังอยู่ใน open (หน้าเว็บกรอง)
+        self.assertEqual(self.store.get_module_own("A")["window"]["state"], 1)
+        self.assertEqual(self.ok_window(state=0)["state"], 0)
+        body = self.listing()
+        self.assertEqual((body["windows"], body["open"]), ([], ["B", "A"]))                      # Attach: กลับเป็นแท็บสุดท้าย
+        self.assertEqual(self.store.session(), ["B", "A"])
+        self.assertEqual(self.hub.open_names(), ["A", "B"])                                       # ไม่ได้ปิด/เปิด runtime ใหม่
+        self.assertEqual(self.store.get_module_own("A")["window"]["state"], 0)
+
+    def test_windows_follow_session_order(self):
+        for name in ("A", "B", "C"):
+            self.put_module(name)
+            self.open_module(name)
+        self.ok_window("C", state=1)
+        self.ok_window("A", state=1)
+        self.assertEqual(self.listing()["windows"], ["A", "C"])                                   # ตามลำดับ session ไม่ใช่ลำดับที่ Detach
+        self.assertEqual(self.client.put("/api/session/tabs", json={"open": ["C", "B", "A"]}).status_code, 200)
+        self.assertEqual(self.listing()["windows"], ["C", "A"])
+
+    def test_attach_only_moves_a_detached_module(self):
+        """state 0 ของ module ที่เป็นแท็บอยู่แล้ว (ส่งซ้ำ หรือขนาดที่มาช้ากว่า Attach) ไม่ย้ายแท็บ"""
+        self.open_a_and_b()
+        self.ok_window(state=0)
+        self.assertEqual(self.listing()["open"], ["A", "B"])
+        self.ok_window(state=1)
+        self.ok_window(state=0)
+        self.ok_window(state=0)
+        self.client.put("/api/session/tabs", json={"open": ["A", "B"]})                          # ผู้ใช้เรียงแท็บใหม่หลัง Attach
+        self.ok_window(state=0)
+        self.assertEqual(self.listing()["open"], ["A", "B"])
+
+    def test_geometry_saved_in_module(self):
+        self.put_module("A")
+        self.ok_window(state=1)
+        got = self.ok_window(x=10, y=20, width=800, height=600)
+        self.assertEqual(got, {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600})       # state ที่ไม่ได้ส่งคงเดิม
+        self.assertEqual(self.store.get_module_own("A")["window"], got)
+        self.assertEqual(self.ok_window(width=900), {**got, "width": 900})                        # ช่องที่ไม่ส่งคงเดิม
+        self.assertEqual(self.ok_window(x=None, y=None),
+                         {"state": 1, "x": None, "y": None, "width": 900, "height": 600})         # null = ไม่มีค่าที่จำไว้
+        self.assertEqual(self.ok_window(), {"state": 1, "x": None, "y": None, "width": 900, "height": 600})   # ไม่ส่งอะไร = คงเดิม
+
+    def test_geometry_does_not_change_the_tabs(self):
+        self.open_a_and_b()
+        self.ok_window(width=500, height=400)
+        body = self.listing()
+        self.assertEqual((body["open"], body["windows"]), (["A", "B"], []))
+
+    def test_only_the_window_field_is_written(self):
+        """ไม่เขียนค่าที่ใช้จริง (จะตรึงค่ารวม): ไฟล์เปลี่ยนเฉพาะ window และยังสืบทอดค่ารวมต่อ"""
+        self.put_module("A")
+        before = self.file_json()
+        self.ok_window(state=1, x=1, y=2, width=300, height=200)
+        after = self.file_json()
+        self.assertEqual({**after, "window": before["window"]}, before)
+        self.assertEqual(after["window"], {"state": 1, "x": 1, "y": 2, "width": 300, "height": 200})
+        self.assertEqual(set(after), {"version", "name", "qth", "satellites", "list_sort", "single", "footprint_off",
+                                      "ground_track", "sky_track", "window"})
+        r = self.client.put("/api/prefs", json={"set": {"MODULES/GRID": "0;0;2;0;1"}})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.client.get("/api/modules/A").json()["layout_code"], "0;0;2;0;1")   # ยังสืบทอด
+
+    def test_window_invalid(self):
+        self.put_module("A")
+        self.ok_window(state=1, width=800)
+        file = self.cfg.data_dir / "modules" / "A.json"
+        before = file.read_bytes()
+        for body, field in [
+            ({"width": 10}, "window.width"),                       # ต่ำกว่า 100
+            ({"width": 10001}, "window.width"),
+            ({"height": 99}, "window.height"),
+            ({"width": "800"}, "window.width"),
+            ({"width": 800.5}, "window.width"),
+            ({"x": -1}, "window.x"),
+            ({"y": -1}, "window.y"),
+            ({"x": 1.5}, "window.x"),
+            ({"state": 2}, "window.state"),
+            ({"state": True}, "window.state"),
+            ({"state": None}, "window.state"),
+            ({"state": 1, "width": 10}, "window.width"),           # ผิดช่องเดียวก็ไม่บันทึกทั้งชุด
+            ({"w": 800}, "w"),                                     # ช่องที่ไม่รู้จัก
+        ]:
+            with self.subTest(body=body):
+                self.assert_error(self.put_window(**body), 422, "MODULE_INVALID", field)
+        self.assertEqual(file.read_bytes(), before)
+        self.assertEqual(self.listing()["windows"], [])
+        for bad in ([], [1], "state", 1, None):
+            with self.subTest(bad=bad):
+                self.assert_error(self.client.put("/api/modules/A/window", json=bad), 422, "REQUEST_INVALID")
+        self.assertEqual(file.read_bytes(), before)
+
+    def test_window_of_missing_module_is_404(self):
+        self.assert_error(self.put_window("Nope", state=1), 404, "NOT_FOUND", "Nope")
+        self.assert_error(self.put_window("bad name", state=1), 404, "NOT_FOUND")
+        self.assertEqual(self.store.list_modules(), [])
+
+    def test_window_of_closed_module_is_saved_but_not_listed(self):
+        self.put_module("A")
+        self.ok_window(state=1, width=640)
+        self.assertEqual(self.store.get_module_own("A")["window"]["width"], 640)
+        self.assertEqual(self.listing()["windows"], [])                                           # ไม่ได้เปิดอยู่
+        self.ok_window(state=0)                                                                   # ปิดอยู่: ไม่ถูกเติมเข้า session
+        self.assertEqual(self.store.session(), [])
+        self.assertEqual(self.listing()["open"], [])
+
+    def test_close_keeps_the_window_state_and_reopen_lists_it_again(self):
+        """ปิด module (เช่นปิดหน้าต่างแยกด้วยปุ่มของ browser หรือ F5) ไม่ล้างสถานะหน้าต่าง: เหมือน Gpredict ที่เก็บ STATE ตอน Detach เท่านั้น
+        หน้าแยกที่โหลดใหม่เรียก open แล้วยังเป็นหน้าต่าง"""
+        self.open_a_and_b()
+        self.ok_window(state=1)
+        self.assertEqual(self.client.post("/api/modules/A/close").status_code, 200)
+        self.assertEqual(self.listing()["windows"], [])
+        self.assertEqual(self.store.get_module_own("A")["window"]["state"], 1)
+        self.open_module("A")
+        self.assertEqual(self.listing()["windows"], ["A"])
+
+    def test_deleted_module_is_not_a_window_when_the_name_is_reused(self):
+        self.open_a_and_b()
+        self.ok_window(state=1)
+        self.assertEqual(self.client.delete("/api/modules/A").status_code, 204)
+        self.assertEqual(self.listing()["windows"], [])
+        self.put_module("A")
+        self.open_module("A")
+        self.assertEqual(self.listing()["windows"], [])
+        self.assertEqual(self.store.get_module_own("A")["window"], {"state": 0, **self.NO_GEOMETRY})
+
+    def test_put_module_does_not_touch_window(self):
+        self.open_a_and_b()
+        got = self.ok_window(state=1, x=5, y=6, width=700, height=500)
+        full = self.client.get("/api/modules/A").json()
+        self.assertEqual(full["window"], got)                                                     # GET module แสดง window ที่ใช้จริง
+        full["window"] = {"state": 0, "x": 99, "y": 99, "width": 123, "height": 456}
+        full["layout_code"] = "1;0;2;0;1"
+        r = self.client.put("/api/modules/A", json={**full, "pin": ["layout_code"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["layout_code"], "1;0;2;0;1")
+        self.assertEqual(r.json()["window"], got)
+        self.assertEqual(self.store.get_module_own("A")["window"], got)
+        body = self.listing()
+        self.assertEqual((body["windows"], body["open"]), (["A"], ["A", "B"]))
+
+    def test_window_put_does_not_undo_a_module_put(self):
+        """PUT module แล้ว PUT window: ค่าที่ PUT module ตั้ง (ตรึงไว้) ยังอยู่ ไม่ถูก PUT window เขียนทับด้วยค่าเดิมที่อ่านไว้"""
+        self.put_module("A", layout_code="1;0;2;0;1", pin=["layout_code"])
+        self.ok_window(state=1)
+        self.put_module("A", layout_code="0;0;2;0;1", pin=["layout_code"], ground_track=[NORADS[0]])
+        self.ok_window(width=400)
+        own = self.store.get_module_own("A")
+        self.assertEqual((own["layout_code"], own["ground_track"], own["window"]["state"], own["window"]["width"]),
+                         ("0;0;2;0;1", [NORADS[0]], 1, 400))
+
+    def test_concurrent_window_and_module_puts_keep_both(self):
+        """PUT window (อ่าน-แก้-เขียนไฟล์ของ module) พร้อม PUT module หลายรอบ: ผลสุดท้ายมีทั้งสองอย่าง ไม่มีฝั่งใดถูกทับด้วยค่าเก่า"""
+        self.put_module("A")
+        errors: list[str] = []
+
+        def window_loop() -> None:
+            for n in range(100, 140):
+                r = self.put_window(width=n + 100)
+                if r.status_code != 200:
+                    errors.append(r.text)
+
+        def module_loop() -> None:
+            for n in range(40):
+                r = self.client.put("/api/modules/A", json=self.module_body("A", ground_track=[NORADS[n % 2]]))
+                if r.status_code != 200:
+                    errors.append(r.text)
+
+        workers = [threading.Thread(target=window_loop), threading.Thread(target=module_loop)]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join(30)
+        self.assertEqual(errors, [])
+        own = self.store.get_module_own("A")
+        self.assertEqual(own["window"]["width"], 239)                                             # PUT window รอบสุดท้าย
+        self.assertEqual(own["ground_track"], [NORADS[39 % 2]])                                   # PUT module รอบสุดท้าย
 
 
 # ---------------------------------------------------------------- runtime: retry, นาฬิกา, track
@@ -2016,6 +2225,22 @@ class ControllerApiTest(ApiTestBase):
         self.open_ctl("radio")
         self.assert_error(self.client.put("/api/modules/M", json=self.module_body(qth="NOPE")), 422, "MODULE_INVALID", "qth")
 
+    def test_window_put_allowed_while_active(self):
+        """Detach/Attach และการจำขนาดหน้าต่างไม่เปลี่ยนสถานีหรือรายชื่อดาว: ไม่ใช่ 409 ขณะ Radio/Antenna Control เปิดอยู่ และ controller ไม่ถูกปิด"""
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        self.open_ctl("radio")
+        self.open_ctl("rotator")
+        both = [{"module": "M", "kind": "radio"}, {"module": "M", "kind": "rotator"}]
+        rt = self.hub.get("M")
+        for body in ({"state": 1}, {"x": 10, "y": 20, "width": 800, "height": 600}, {"state": 0}):
+            with self.subTest(body=body):
+                r = self.client.put("/api/modules/M/window", json=body)
+                self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.store.get_module_own("M")["window"], {"state": 0, "x": 10, "y": 20, "width": 800, "height": 600})
+        self.assertEqual(self.listed(), both)
+        self.assertIs(self.hub.get("M"), rt)
+
     def test_put_module_view_change_allowed_while_active(self):
         """Review Focus 2: เลือกดาวใน Map, Ground Track, Autotrack (PUT module ของ core) บันทึกได้ขณะ controller เปิดอยู่"""
         self.put_hw([self.radio("A")], [self.rotator("R")])
@@ -2592,7 +2817,8 @@ class LifespanTest(ApiTestBase):
     def test_first_start_creates_and_opens_amateur(self):
         self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
         client = self.start()
-        self.assertEqual(client.get("/api/modules").json(), {"modules": ["Amateur"], "open": ["Amateur"], "messages": []})
+        self.assertEqual(client.get("/api/modules").json(),
+                         {"modules": ["Amateur"], "open": ["Amateur"], "windows": [], "messages": []})
         self.assertIsNotNone(self.app.state.hub.get("Amateur"))
         self.assertEqual(client.get("/api/modules/Amateur").json()["qth"], None)
 
@@ -2603,7 +2829,7 @@ class LifespanTest(ApiTestBase):
         self.assertEqual(client.delete("/api/modules/Amateur").status_code, 204)
         self.opener.urls.clear()
         client = self.start()                                               # เริ่ม server ใหม่บน data dir เดิม
-        self.assertEqual(client.get("/api/modules").json(), {"modules": [], "open": [], "messages": []})
+        self.assertEqual(client.get("/api/modules").json(), {"modules": [], "open": [], "windows": [], "messages": []})
         self.assertEqual(self.opener.urls, [])
 
     def test_offline_first_start_then_online_start_creates_amateur(self):
@@ -2611,7 +2837,8 @@ class LifespanTest(ApiTestBase):
         self.assertEqual(client.get("/api/modules").json()["modules"], [])
         self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
         client = self.start()
-        self.assertEqual(client.get("/api/modules").json(), {"modules": ["Amateur"], "open": ["Amateur"], "messages": []})
+        self.assertEqual(client.get("/api/modules").json(),
+                         {"modules": ["Amateur"], "open": ["Amateur"], "windows": [], "messages": []})
 
     def test_startup_message_cleared_after_tle_update(self):
         client = self.start()
@@ -2638,6 +2865,50 @@ class LifespanTest(ApiTestBase):
         self.assertEqual(body["open"], ["B", "A"])
         self.assertEqual(self.store.session(), ["B", "A"])
         self.assertEqual([(m["code"], m["object"]) for m in body["messages"]], [("MODULE_INVALID", "Broken")])
+
+    def detached_session(self, window_of: dict[str, dict]) -> None:
+        """module ตามชื่อใน window_of (ค่า window ของแต่ละตัว) เปิดค้างใน session ตามลำดับนั้น"""
+        self.store.put_qth(ORIGIN)
+        self.store.set_default_qth("ORIGIN")
+        self.write_satdb([record(n) for n in NORADS])
+        for name, window in window_of.items():
+            self.store.put_module(module_from_dict({"name": name, "satellites": list(NORADS)}, None, None))
+            own = self.store.get_module_own(name)
+            self.store.put_module_own(name, {**own, "window": window})
+        self.store.set_session(list(window_of))
+
+    DETACHED = {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600}
+    DOCKED = {"state": 0, "x": None, "y": None, "width": None, "height": None}
+
+    def test_restore_state_needs_mod_state(self):
+        """ไฟล์ A state 1 ใน session: ปิด "Restore the state of modules when reopened" -> ไม่มีหน้าต่าง เปิด -> A เป็นหน้าต่างหลัง startup"""
+        self.detached_session({"A": self.DETACHED, "B": self.DOCKED})
+        self.assertFalse(self.app_prefs().get("GLOBAL/MOD_STATE"))
+        client = self.start()
+        self.assertEqual(client.get("/api/modules").json()["windows"], [])
+        self.assertEqual(client.get("/api/modules").json()["open"], ["A", "B"])
+        self.assertEqual(self.store.get_module_own("A")["window"], self.DETACHED)                  # ไม่ล้างไฟล์ แค่ไม่คืนสถานะ
+
+        self.app_prefs().update({"GLOBAL/MOD_STATE": True}, [])
+        client = self.start()                                                                     # เปิด server ใหม่บน data dir เดิม
+        body = client.get("/api/modules").json()
+        self.assertEqual((body["windows"], body["open"]), (["A"], ["A", "B"]))
+
+    def test_restore_follows_session_order_and_skips_what_did_not_open(self):
+        """windows ตามลำดับ session เฉพาะ module ที่เปิดได้ (module ที่เสียถูกเอาออกจาก session และไม่เป็นหน้าต่าง) และ module นอก session ไม่นับ"""
+        self.detached_session({"C": self.DETACHED, "B": self.DOCKED, "A": self.DETACHED, "Bad": self.DETACHED})
+        self.store.put_module(module_from_dict({"name": "Closed", "satellites": list(NORADS)}, None, None))
+        self.store.put_module_own("Closed", {**self.store.get_module_own("Closed"), "window": self.DETACHED})
+        (self.cfg.data_dir / "modules" / "Bad.json").write_text("{", encoding="utf-8")
+        self.app_prefs().update({"GLOBAL/MOD_STATE": True}, [])
+        with self.assertLogs("gpredict_web", "WARNING"):
+            client = self.start()
+        body = client.get("/api/modules").json()
+        self.assertEqual((body["windows"], body["open"]), (["C", "A"], ["C", "B", "A"]))
+
+    def app_prefs(self):
+        """Prefs ของ data dir นี้ (อ่านค่าใหม่จากไฟล์ทุกครั้ง: ตั้งก่อน start แล้ว app ที่สร้างทีหลังเห็น)"""
+        return Prefs(self.cfg.data_dir)
 
     def test_startup_migrates_core_module_files_before_opening_the_session(self):
         """Review Focus 1: เปิด server ครั้งแรกหลังอัปเกรด ไฟล์ module แบบ core ถูกย้ายก่อนเปิด module ที่ค้างใน session"""

@@ -265,6 +265,15 @@ class AppSocketTest(ApiTestBase):
         r = self.client.post("/api/modules/M/clone", json={"new_name": "C", "open": False})        # clone
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(ws_receive_json(ws), MODULES)
+        r = self.client.put("/api/modules/M/window", json={"state": 1})                           # Detach
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(ws_receive_json(ws), MODULES)
+        r = self.client.put("/api/modules/M/window", json={"width": 800, "height": 600})          # จำขนาดหน้าต่าง
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(ws_receive_json(ws), MODULES)
+        r = self.client.put("/api/modules/M/window", json={"state": 0})                           # Attach
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(ws_receive_json(ws), MODULES)
         self.assertEqual(self.client.post("/api/modules/M/close").status_code, 200)               # close
         self.assertEqual(ws_receive_json(ws), MODULES)
         self.assertEqual(self.client.delete("/api/modules/C").status_code, 204)                   # DELETE
@@ -280,6 +289,10 @@ class AppSocketTest(ApiTestBase):
         self.assert_error(self.client.post("/api/modules/NOPE/close"), 404, "NOT_FOUND")
         self.assert_error(self.client.post("/api/modules/M/clone", json={"new_name": "bad name"}), 422, "MODULE_INVALID")
         self.assert_error(self.client.post("/api/modules/M/clone", json={"new_name": "M"}), 422, "MODULE_INVALID")
+        self.assert_error(self.client.put("/api/modules/M/window", json={"width": 10}), 422, "MODULE_INVALID", "window.width")
+        self.assert_error(self.client.put("/api/modules/M/window", json={"state": 2}), 422, "MODULE_INVALID", "window.state")
+        self.assert_error(self.client.put("/api/modules/M/window", json=[1]), 422, "REQUEST_INVALID")
+        self.assert_error(self.client.put("/api/modules/NOPE/window", json={"state": 1}), 404, "NOT_FOUND")
         self.assertEqual(self.flush(ws), [])
 
     def test_events_reach_every_browser(self):
