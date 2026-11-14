@@ -252,4 +252,6 @@ export interface Meta {
     location: number;
     weather_station: number;
   };
+  /** the folder of the log files, which the Message Logs page names where Gpredict writes "<conf dir>/logs/" (plan decision 17) */
+  log_dir: string;
 }

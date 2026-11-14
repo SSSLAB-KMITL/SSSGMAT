@@ -13,9 +13,9 @@ describe("PREF_GROUPS (ref-D §1)", () => {
     ]);
   });
 
-  it("Interfaces and Predict have a page; General and Modules name the sub-project that adds them", () => {
+  it("General, Interfaces and Predict have a page; Modules names the sub-project that adds it", () => {
     expect(PREF_GROUPS.map((g) => [g.id, g.page === null, g.later])).toEqual([
-      ["general", true, 4],
+      ["general", false, undefined],
       ["modules", true, 4],
       ["interfaces", false, undefined],
       ["predict", false, undefined],
@@ -50,23 +50,23 @@ describe("firstView", () => {
     expect(firstView(all)).toEqual({ active: "general", visited: ["general"] });
   });
 
-  it("does not open on a group without a page: the first group that has one, until General has its page", () => {
+  it("does not open on a group without a page: the first group that has one, if General has none", () => {
     const noGeneral = all.map((g) => (g.id === "general" ? { ...g, page: null } : g));
     expect(firstView(noGeneral)).toEqual({ active: "modules", visited: ["modules"] });
     const onlyPredict = all.map((g) => (g.id === "predict" ? g : { ...g, page: null }));
     expect(firstView(onlyPredict)).toEqual({ active: "predict", visited: ["predict"] });
   });
 
-  it("in the window as it is, General and Modules have no page, so it opens at Interfaces", () => {
-    expect(PREF_GROUPS.find((g) => g.id === FIRST_GROUP)!.page).toBeNull();
-    expect(firstView()).toEqual({ active: "interfaces", visited: ["interfaces"] });
+  it("in the window as it is, General has its page, so it opens at General (Modules has none yet)", () => {
+    expect(PREF_GROUPS.find((g) => g.id === FIRST_GROUP)!.page).not.toBeNull();
+    expect(PREF_GROUPS.find((g) => g.id === "modules")!.page).toBeNull();
+    expect(firstView()).toEqual({ active: "general", visited: ["general"] });
   });
 });
 
 describe("switchGroup", () => {
-  // a window in which General has a page too (sub-project 4), shown at Predict
-  const page = () => null;
-  const groups: readonly PrefGroup[] = PREF_GROUPS.map((g) => (g.id === "general" ? { ...g, page, later: undefined } : g));
+  // the window as it is (General, Interfaces and Predict have a page), shown at Predict
+  const groups = PREF_GROUPS;
   const atPredict = (): GroupView => ({ active: "predict", visited: ["predict"] });
 
   it("shows the group and remembers it was shown, so that its page stays in the window (and its edits with it)", () => {
@@ -84,8 +84,7 @@ describe("switchGroup", () => {
 
   it("ignores a group without a page: it cannot be pressed", () => {
     const view = atPredict();
-    expect(switchGroup(view, "modules", groups)).toBe(view);
-    expect(switchGroup(view, "general")).toBe(view); // in this sub-project General has no page
+    expect(switchGroup(view, "modules", groups)).toBe(view); // in this sub-project Modules has no page
   });
 
   it("shows Interfaces, and keeps its page in the window when another group is chosen", () => {

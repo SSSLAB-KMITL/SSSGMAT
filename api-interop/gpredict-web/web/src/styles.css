@@ -989,6 +989,69 @@ body {
   color: var(--text-dim);
 }
 
+/* Preferences → General: the notebook and its pages (Number Formats, Message Logs): a box with a border of 20 and a spacing of 10 */
+.general-panel {
+  min-height: 400px;
+}
+.general-panel[hidden] {
+  display: none;
+}
+.general-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 400px;
+  padding: 20px;
+}
+.general-body > .check {
+  align-self: flex-start; /* the tooltip belongs to the box and its label, not to the whole row */
+}
+.general-body .props-separator {
+  width: 100%;
+  margin: 0;
+}
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.format-entry {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.format-preview {
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+.format-row .button {
+  margin-left: 5px;
+}
+.logs-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logs-combo {
+  margin-left: 10px;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.general-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
 /* Module properties */
 .dtabs {
   display: flex;

@@ -180,6 +180,7 @@ export const META: Meta = {
     location: 50,
     weather_station: 4,
   },
+  log_dir: "/x/logs",
 };
 
 export const DEFAULTS = META.module_defaults;
