@@ -120,6 +120,42 @@
       "status": "done"
     },
     {
+      "id": "qzss-igso",
+      "glb": "qzss-igso/qzss-igso.glb",
+      "blocks": ["QZS-2A", "QZS-2I", "QZS-1"],
+      "size_m": [2.854, 18.92, 6.205],
+      "triangles": 5170,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "qzss-geo",
+      "glb": "qzss-geo/qzss-geo.glb",
+      "blocks": ["QZS-2G", "QZS-3G"],
+      "size_m": [6.569, 18.92, 5.921],
+      "triangles": 3352,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "navic-irnss1",
+      "glb": "navic-irnss1/navic-irnss1.glb",
+      "blocks": ["IRS-1G", "IRS-1I"],
+      "size_m": [1.814, 6.92, 2.25],
+      "triangles": 3426,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "done"
+    },
+    {
+      "id": "navic-nvs",
+      "glb": "navic-nvs/navic-nvs.glb",
+      "blocks": ["IRS-2G", "IRS-2I"],
+      "size_m": [1.916, 13.11, 3.316],
+      "triangles": 2820,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "done"
+    },
+    {
       "id": "generic",
       "glb": "generic/generic.glb",
       "blocks": [],
@@ -139,15 +175,6 @@
     "GLO",
     "GPS-I",
     "GPS-II",
-    "GPS-IIA",
-    "IRS-1G",
-    "IRS-1I",
-    "IRS-2G",
-    "IRS-2I",
-    "QZS-1",
-    "QZS-2A",
-    "QZS-2G",
-    "QZS-2I",
-    "QZS-3G"
+    "GPS-IIA"
   ]
 }
