@@ -12,8 +12,6 @@ export type MenuSpec<A> =
       accel?: string;
       /** shown in bold (the satellite name at the top of a popup) */
       bold?: boolean;
-      /** a later sub-project has it: the item is disabled and its tooltip names the sub-project (none is since sub-project 4) */
-      later?: 2 | 3 | 4;
     }
   | { kind: "check"; label: string; checked: boolean; action?: A; disabled?: boolean; hint?: string }
   | { kind: "radio"; label: string; checked: boolean; action: A }
@@ -28,7 +26,7 @@ export function outline<A>(menu: readonly MenuSpec<A>[]): string[] {
       case "separator":
         return ["-"];
       case "item":
-        return [e.label + (e.accel === undefined ? "" : ` [${e.accel}]`) + (e.bold ? " (bold)" : "") + (e.later === undefined ? "" : ` (later ${e.later})`)];
+        return [e.label + (e.accel === undefined ? "" : ` [${e.accel}]`) + (e.bold ? " (bold)" : "")];
       case "check":
         return [`[${e.checked ? "x" : " "}] ${e.label}${e.disabled ? " (disabled)" : ""}`];
       case "radio":

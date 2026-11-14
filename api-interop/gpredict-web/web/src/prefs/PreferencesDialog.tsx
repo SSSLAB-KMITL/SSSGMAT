@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { errorText } from "../api";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Modal } from "../components/Modal";
-import { laterTooltip } from "../later";
 import type { PrefValue } from "../types";
 import { GROUND_STATIONS_TAB, STATIONS_KEY } from "./groundStations";
 import { COMMIT_ORDER, firstView, groupLabel, PREF_GROUPS, switchGroup } from "./prefGroups";
@@ -138,21 +137,7 @@ export function PreferencesDialog({ onClose }: Props) {
                   {g.label}
                 </>
               );
-              // a group without a page is shown and cannot be chosen: `aria-disabled` and not `disabled`, so that its tooltip shows in every browser
-              return g.page === null ? (
-                <button
-                  key={g.id}
-                  type="button"
-                  role="tab"
-                  className="button flat prefs-group later"
-                  aria-selected="false"
-                  aria-disabled="true"
-                  title={g.later === undefined ? undefined : laterTooltip(g.later)}
-                  onClick={(e) => e.preventDefault()}
-                >
-                  {icon}
-                </button>
-              ) : (
+              return (
                 <button
                   key={g.id}
                   type="button"
@@ -171,7 +156,7 @@ export function PreferencesDialog({ onClose }: Props) {
           </div>
           <div className="prefs-pages">
             {ready ? (
-              PREF_GROUPS.filter((g) => g.page !== null && view.visited.includes(g.id)).map((g) => (
+              PREF_GROUPS.filter((g) => view.visited.includes(g.id)).map((g) => (
                 <div
                   key={g.id}
                   id={`${id}-page-${g.id}`}
@@ -181,7 +166,7 @@ export function PreferencesDialog({ onClose }: Props) {
                   hidden={g.id !== view.active}
                 >
                   <ErrorBoundary text="หน้าอื่นของ Preferences ยังใช้ได้">
-                    <GroupPage page={g.page!} api={apis.get(g.id)!} />
+                    <GroupPage page={g.page} api={apis.get(g.id)!} />
                   </ErrorBoundary>
                 </div>
               ))

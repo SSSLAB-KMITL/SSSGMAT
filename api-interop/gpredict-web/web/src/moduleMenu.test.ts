@@ -88,15 +88,13 @@ describe("moduleMenu (ref §2)", () => {
     ]);
   });
 
-  it("module menu enables Sky at a glance: it is not a later item and its action opens the window", () => {
+  it("module menu enables Sky at a glance: its action opens the window", () => {
     const item = moduleMenu({ autotrack: false, choices, selected: null, ...docked }).find((e) => e.kind === "item" && e.label === "Sky at a glance");
     expect(item).toEqual({ kind: "item", label: "Sky at a glance", action: { type: "skyGlance" } });
-    expect(item).not.toHaveProperty("later");
   });
 
-  it("module menu enables Radio Control and Antenna Control: they are not later items and their actions open the windows", () => {
+  it("module menu enables Radio Control and Antenna Control: their actions open the windows", () => {
     const menu = moduleMenu({ autotrack: false, choices, selected: null, ...docked });
-    expect(outline(menu).filter((l) => l.includes("later 3"))).toEqual([]);
     expect(menu.find((e) => e.kind === "item" && e.label === "Radio Control")).toEqual({ kind: "item", label: "Radio Control", action: { type: "radio" } });
     expect(menu.find((e) => e.kind === "item" && e.label === "Antenna Control")).toEqual({ kind: "item", label: "Antenna Control", action: { type: "rotator" } });
   });
@@ -124,15 +122,6 @@ describe("moduleMenu (ref §2)", () => {
       ["Attach module", { type: "attach" }],
       ["Exit full screen", { type: "exitFullscreen" }],
     ]);
-  });
-
-  it("has no item of a later sub-project in any state", () => {
-    for (const place of ["docked", "window"] as const) {
-      for (const fullscreen of [false, true]) {
-        const lines = outline(moduleMenu({ autotrack: false, choices, selected: null, place, fullscreen }));
-        expect(lines.filter((l) => l.includes("(later")), `${place} ${fullscreen}`).toEqual([]);
-      }
-    }
   });
 
   it("turns Autotrack off when it is chosen while on", () => {

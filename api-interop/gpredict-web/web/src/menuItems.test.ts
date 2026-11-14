@@ -1,17 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { laterTooltip } from "./later";
 import type { MenuSpec } from "./menuSpec";
 import { barMenu, MENU_TITLES } from "./menus";
 import { moduleMenu } from "./moduleMenu";
 import { satPopup } from "./satPopup";
-
-describe("laterTooltip", () => {
-  it("names the sub-project that has the feature", () => {
-    expect(laterTooltip(2)).toBe("อยู่ในงานย่อยที่ 2: Pass predictions");
-    expect(laterTooltip(3)).toBe("อยู่ในงานย่อยที่ 3: Radio & Rotator");
-    expect(laterTooltip(4)).toBe("อยู่ในงานย่อยที่ 4: Data & Preferences");
-  });
-});
 
 /** Every item of a menu, those of its submenus too. */
 function items<A>(menu: readonly MenuSpec<A>[]): MenuSpec<A>[] {
@@ -20,10 +11,9 @@ function items<A>(menu: readonly MenuSpec<A>[]): MenuSpec<A>[] {
 
 /**
  * The column "กดไม่ได้" of the table in spec §8.2 is empty after sub-project 4: Detach module and Full screen, its last two rows, work
- * since Task 23 (Pass predictions came with sub-project 2, Radio & Rotator with 3, the rest of sub-project 4 with Tasks 18-20), so the
- * table of later items and the helpers that made such items are gone. No menu has a disabled item that names a sub-project.
+ * (Pass predictions came with sub-project 2, Radio & Rotator with 3, the rest with 4). No menu has an item that cannot be chosen.
  */
-describe("no Gpredict menu item is left for a later sub-project (spec §8.2)", () => {
+describe("every Gpredict menu item can be chosen (spec §8.2)", () => {
   const sat = { norad: 25544, name: "ISS", el: 10, dir: "↑" };
   const lists = { footprint_off: [], ground_track: [], sky_track: [] };
   const menus: [string, MenuSpec<unknown>[]][] = [
@@ -37,12 +27,9 @@ describe("no Gpredict menu item is left for a later sub-project (spec §8.2)", (
     ...(["list", "map", "polar", "single", "event"] as const).map((view): [string, MenuSpec<unknown>[]] => [`popup of ${view}`, satPopup(view, sat, lists)]),
   ];
 
-  it.each(menus)("%s: every item can be chosen and none names a later sub-project", (_, menu) => {
+  it.each(menus)("%s: every item can be chosen", (_, menu) => {
     for (const e of items(menu)) {
-      if (e.kind === "item") {
-        expect(e.later, e.label).toBeUndefined();
-        expect(e.action, e.label).toBeDefined();
-      }
+      if (e.kind === "item") expect(e.action, e.label).toBeDefined();
       if (e.kind === "check" || e.kind === "submenu") expect(e.disabled ?? false, e.label).toBe(false);
     }
   });

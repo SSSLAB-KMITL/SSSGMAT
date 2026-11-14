@@ -41,7 +41,7 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
     const find = (menu: ReturnType<typeof satPopup>, label: string) => menu.find((e) => e.kind === "item" && e.label === label);
     for (const view of ["list", "map", "polar", "single", "event"] as const) {
       const below = satPopup(view, sat({ el: -10 }), lists());
-      // enabled: an action and no `later`, so the menu does not grey them out
+      // enabled: an action, so the menu does not grey them out
       expect(find(below, "Show next pass"), view).toEqual({ kind: "item", label: "Show next pass", action: { type: "pass", kind: "next" } });
       expect(find(below, "Future passes"), view).toEqual({ kind: "item", label: "Future passes", action: { type: "pass", kind: "future" } });
       expect(find(below, "Show current pass"), view).toBeUndefined();

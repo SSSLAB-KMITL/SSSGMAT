@@ -52,11 +52,10 @@ describe("menu bar (ref §1, spec §8.2)", () => {
     expect(outline(barMenu("Help"))).toEqual(["Online help [F1]", "-", "License", "-", "About Gpredict Web"]);
   });
 
-  it("gives every working item an action, and no disabled item has one", () => {
+  it("gives every item an action", () => {
     for (const title of MENU_TITLES) {
       for (const item of barMenu(title)) {
-        if (item.kind !== "item") continue;
-        expect(item.action === undefined, item.label).toBe(item.later !== undefined);
+        if (item.kind === "item") expect(item.action, item.label).toBeDefined();
       }
     }
   });

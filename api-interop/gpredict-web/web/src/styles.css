@@ -826,7 +826,6 @@ body:has(.app.detached) #root,
 .spin-input.wide {
   width: 7em;
 }
-.button.later,
 .button[aria-disabled="true"] {
   color: var(--text-dim);
   background: var(--bar);
@@ -845,9 +844,6 @@ body:has(.app.detached) #root,
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-.check.later {
-  color: var(--text-dim);
 }
 .check-grid {
   display: grid;
@@ -1476,10 +1472,6 @@ body:has(.app.detached) #root,
 }
 .prefs-group.active {
   background: var(--pressed);
-}
-.prefs-group.later {
-  color: var(--text-dim);
-  background: transparent;
 }
 .prefs-icon {
   font-size: 24px;

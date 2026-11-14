@@ -38,9 +38,7 @@ export interface PrefGroup {
   label: string;
   /** the icon: Gpredict has a PNG for each, we have a symbol (ของเรา) */
   icon: string;
-  /** null: the group is shown and cannot be chosen yet, its tooltip names the sub-project `later` */
-  page: ((api: PrefsPageApi) => ReactNode) | null;
-  later?: 2 | 3 | 4;
+  page: (api: PrefsPageApi) => ReactNode;
 }
 
 /** In Gpredict's order. The icons are `gpredict-sat-pref.png`, `gpredict-sat-list.png`, `gpredict-oscilloscope.png` and `gpredict-calendar.png` there. */
@@ -69,18 +67,13 @@ export interface GroupView {
   visited: readonly PrefGroupId[];
 }
 
-/**
- * The view when the window opens: at General, or, if General has no page, at the first group that has one, never on one that is
- * disabled (every group has its page since sub-project 4; a window built with other groups can still lack it).
- */
-export function firstView(groups: readonly PrefGroup[] = PREF_GROUPS): GroupView {
-  const first = groups.find((g) => g.id === FIRST_GROUP && g.page !== null) ?? groups.find((g) => g.page !== null);
-  const active = first?.id ?? FIRST_GROUP; // (every group without a page: nothing to show, which does not happen)
-  return { active, visited: [active] };
+/** The view when the window opens: at General (spec §10). */
+export function firstView(): GroupView {
+  return { active: FIRST_GROUP, visited: [FIRST_GROUP] };
 }
 
-/** The view after choosing `id`; the same view if that group has no page (it cannot be chosen) or is shown already. */
-export function switchGroup(view: GroupView, id: PrefGroupId, groups: readonly PrefGroup[] = PREF_GROUPS): GroupView {
-  if (id === view.active || groups.find((g) => g.id === id)?.page == null) return view;
+/** The view after choosing `id`; the same view if it is shown already. */
+export function switchGroup(view: GroupView, id: PrefGroupId): GroupView {
+  if (id === view.active) return view;
   return { active: id, visited: view.visited.includes(id) ? view.visited : [...view.visited, id] };
 }
