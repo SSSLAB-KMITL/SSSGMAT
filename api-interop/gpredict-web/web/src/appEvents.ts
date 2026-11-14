@@ -153,6 +153,25 @@ export function withConfigReads(h: Omit<AppEventHandlers, "moduleConfigChanged">
 }
 
 /**
+ * `h` and the sync of the page's Radio Control and Antenna Control windows with the controllers the server has open (`sync`, GET
+ * /api/controllers): on every connect (a restarted server has none) and on every modules_changed. A controller opened in a module window
+ * keeps running when the module is attached again, and Attach publishes modules_changed: its window shows on the main page again.
+ */
+export function withControllerSync<H extends Pick<AppEventHandlers, "modulesChanged" | "connected">>(h: H, sync: () => void): H & { connected(): void } {
+  return {
+    ...h,
+    connected: () => {
+      h.connected?.();
+      sync();
+    },
+    modulesChanged: () => {
+      h.modulesChanged();
+      sync();
+    },
+  };
+}
+
+/**
  * `next`, or `previous` itself when `next` has the same content: a state set to what it already holds (React compares objects by
  * identity) re-renders nothing, so reading a list again after an event that changed nothing leaves the page as it is.
  */

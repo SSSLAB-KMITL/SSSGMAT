@@ -14,6 +14,8 @@ import { DETACH_POLL_MS, detachedTitle, DetachedSession, goneText, NO_GEOMETRY, 
 import type { DetachedDeps, GeometryWatch } from "./detach";
 import { closeDialog, showDialog } from "./dialogs";
 import type { Dialog } from "./dialogs";
+import { announceAttach } from "./handover";
+import type { Handover } from "./handover";
 import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, tickNotices, visibleNotices } from "./notices";
 import type { Notice } from "./notices";
@@ -47,6 +49,8 @@ interface Props {
   module: string;
   /** opened by the restore bar of the main page: Gpredict's title of a restored window */
   restored: boolean;
+  /** the selection and Autotrack Detach handed over (handover.ts), null without one */
+  handover: Handover | null;
 }
 
 /**
@@ -57,7 +61,7 @@ interface Props {
  * DetachedSession (detach.ts) opens the module every time the page loads (also after F5), follows the list of modules (/ws/app), and
  * sends the close of the module when the window is closed (pagehide), but not after Attach module, Close or Delete.
  */
-export function DetachedApp({ module, restored }: Props) {
+export function DetachedApp({ module, restored, handover }: Props) {
   const [session] = useState(() => new DetachedSession(module, BROWSER));
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [configRereads, setConfigRereads] = useState(0); // the reads of the module's configuration /ws/app asked for
@@ -113,12 +117,14 @@ export function DetachedApp({ module, restored }: Props) {
       </div>
     );
   }
-  // a new epoch (the module was opened again) makes the views, its socket and its configuration again
+  // a new epoch (the module was opened again) makes the views, its socket and its configuration again; what Detach handed over is for
+  // the first one only (the module opened again after it was closed starts as before)
   return (
     <DetachedModule
       key={state.epoch}
       module={module}
       restored={restored}
+      handover={state.epoch === 1 ? handover : null}
       session={session}
       modules={state.modules}
       configRereads={configRereads}
@@ -137,7 +143,7 @@ interface ModuleProps extends Props {
   configRereads: number;
 }
 
-function DetachedModule({ module, restored, session, modules, configRereads }: ModuleProps) {
+function DetachedModule({ module, restored, handover, session, modules, configRereads }: ModuleProps) {
   const [local, setLocal] = useState<Notice[]>([]); // errors of this page's own requests
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]);
@@ -159,8 +165,19 @@ function DetachedModule({ module, restored, session, modules, configRereads }: M
   const { tick, connected, closeCode } = useModuleSocket(module);
   const satNames = useSeenNames(module, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(module, configRereads);
-  const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(module, only, tick, config, saveConfig, addLocalError);
+  const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(
+    module,
+    only,
+    tick,
+    config,
+    saveConfig,
+    addLocalError,
+    handover,
+  );
   const ctl = useControllers(true, addLocalError, module);
+  // what Attach hands back to the main page (handover.ts): the newest, read when the server has answered the Attach
+  const handBack = useRef<Handover>({ selected, autotrack: autotracking });
+  handBack.current = { selected, autotrack: autotracking };
 
   // "GPREDICT: <module> (<station>)", or "Gpredict: …" for a window of the restore bar (ref §1, decision 10)
   const qth = tick?.qth.name ?? null;
@@ -217,7 +234,7 @@ function DetachedModule({ module, restored, session, modules, configRereads }: M
   const moduleAction = (action: ModuleAction) => {
     switch (action.type) {
       case "attach":
-        return void session.attach().catch((e: unknown) => addLocalError(errorText(e)));
+        return void session.attach(() => announceAttach(module, handBack.current)).catch((e: unknown) => addLocalError(errorText(e)));
       case "detach":
         return; // not in the menu of a window
       case "fullscreen":

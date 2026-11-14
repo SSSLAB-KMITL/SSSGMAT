@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { errorText } from "./api";
 import { autotrackTarget } from "./autotrack";
+import { AttachInbox, handoverStart, listenAttach, takeOver } from "./handover";
+import type { Handover } from "./handover";
 import { rememberNames } from "./notices";
 import type { SatNameMap } from "./notices";
 import { dropModule, dropRef, mergeOpen, openRefusalBox, refKey, sameRef, syncWindows, targetPosts } from "./radio/controllerWindows";
@@ -32,23 +34,35 @@ type SaveConfig = (change: (config: ModuleConfig) => ModuleConfig, opts?: Module
 
 /**
  * The selected satellite and Autotrack of the modules of a page (not saved), for the module `current` that is shown:
- * - forgotten for a module that is not in `open` any more;
+ * - kept for the modules of `held` only: the tabs of the main page (a module that is closed, deleted or detached is forgotten: its window
+ *   has it now), the module of a module window;
+ * - a module window starts with what Detach handed over (`initial`, handover.ts), and the main page takes over what the window had at
+ *   Attach (`takeOver`, through useAttachHandovers); a satellite handed over is the target the controllers follow already: nothing is sent;
  * - the target of a module follows its selection (Select satellite, a click in a view, Autotrack): its controllers follow it (spec §3.3);
  * - Edit module taking the selected satellite out of the module unselects it;
  * - Autotrack (ref §2): every tick, the target is the satellite above the horizon or else the one with the earliest AOS.
  */
-export function useSelection(current: string | null, open: readonly string[], tick: Tick | null, config: ModuleConfig | null, saveConfig: SaveConfig, onError: (text: string) => void) {
-  const [selections, setSelections] = useState<Selections>({});
-  const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set());
-  const targetsSent = useRef<Selections>({}); // the selections whose targets have been sent
+export function useSelection(
+  current: string | null,
+  held: readonly string[],
+  tick: Tick | null,
+  config: ModuleConfig | null,
+  saveConfig: SaveConfig,
+  onError: (text: string) => void,
+  initial: Handover | null = null,
+) {
+  const [start] = useState(() => (initial === null || current === null ? null : handoverStart(current, initial)));
+  const [selections, setSelections] = useState<Selections>(start?.selections ?? {});
+  const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(start?.autotrack ?? new Set());
+  const targetsSent = useRef<Selections>(selections); // the selections whose targets have been sent (at first: what was handed over)
 
   useEffect(() => {
-    setSelections((s) => pruneToOpen(s, open));
+    setSelections((s) => pruneToOpen(s, held));
     setAutotrack((a) => {
-      const kept = [...a].filter((m) => open.includes(m));
+      const kept = [...a].filter((m) => held.includes(m));
       return kept.length === a.size ? a : new Set(kept);
     });
-  }, [open]);
+  }, [held]);
 
   const selected = current === null ? null : (selections[current] ?? null);
   const select = useCallback(
@@ -98,14 +112,53 @@ export function useSelection(current: string | null, open: readonly string[], ti
     [current],
   );
 
-  return { selected, select, selectEverywhere, autotracking, setAutotracking };
+  /**
+   * Attach module: `module` gets the selection and Autotrack its window had (handover.ts). Its satellite counts as sent, so this sends no
+   * target. Call it from an effect that runs after this hook's (useAttachHandovers): the targets effect of the render before has run by
+   * then, and the next one compares with the satellite taken over.
+   */
+  const takeOverModule = useCallback((module: string, h: Handover) => {
+    const t = takeOver(module, h);
+    targetsSent.current = t.selections(targetsSent.current);
+    setSelections(t.selections);
+    setAutotrack(t.autotrack);
+  }, []);
+
+  /** Detach module: the window takes the module's Autotrack with it (handover.ts), so this page stops it at once. */
+  const release = useCallback((module: string) => setAutotrack((a) => withMember(a, module, false)), []);
+
+  return { selected, select, selectEverywhere, autotracking, setAutotracking, takeOver: takeOverModule, release };
+}
+
+/**
+ * The main page hears the Attach of the module windows (handover.ts) and gives each module back the selection and Autotrack its window
+ * had, once the module is one of its `tabs` (the message and the new list of modules can come in either order). `takeOver` is
+ * useSelection's; call this hook after it, so that its effect runs after useSelection's.
+ */
+export function useAttachHandovers(tabs: readonly string[], takeOver: (module: string, h: Handover) => void): void {
+  const [inbox] = useState(() => new AttachInbox());
+  const [heard, setHeard] = useState(0); // the messages heard so far: each one looks at the tabs again
+
+  useEffect(
+    () =>
+      listenAttach((module, h) => {
+        inbox.receive(module, h);
+        setHeard((n) => n + 1);
+      }),
+    [inbox],
+  );
+
+  useEffect(() => {
+    for (const [module, h] of inbox.arrived(tabs)) takeOver(module, h);
+  }, [inbox, tabs, heard, takeOver]);
 }
 
 /**
  * The Radio Control and Antenna Control windows of a page (ref-R §1, decision 2 of the radio plan): every module's on the main page,
  * only those of `only` on the page of a module window (the main page keeps showing them too: each window has its own socket).
  *
- * The page shows the windows of the controllers the server has open (GET /api/controllers) once `ready`, and after every open and close.
+ * The page shows the windows of the controllers the server has open (GET /api/controllers) once `ready`, after every open and close, and
+ * whenever the page calls `sync` (the main page: on every connect and modules_changed of /ws/app, appEvents.ts `withControllerSync`).
  * Only the answer of the last request counts: an older one can miss a controller this page has just opened.
  */
 export function useControllers(ready: boolean, onError: (text: string) => void, only: string | null = null) {
@@ -187,7 +240,7 @@ export function useControllers(ready: boolean, onError: (text: string) => void, 
   const dropModuleWindows = useCallback((module: string) => setControllers((l) => dropModule(l, module)), []);
   const closeBox = useCallback(() => setBox(null), []);
 
-  return { controllers, box, setBox, open, close, gone, dropModuleWindows, closeBox };
+  return { controllers, box, setBox, open, close, gone, dropModuleWindows, closeBox, sync };
 }
 
 // ---------------------------------------------------------------- full screen (spec §8.3)

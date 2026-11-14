@@ -55,9 +55,9 @@ describe("the address and the name of the window of a module", () => {
   });
 
   it("is read back by the page: the module and whether the window was restored", () => {
-    expect(detachedPage("?module=Amateur")).toEqual({ module: "Amateur", restored: false });
-    expect(detachedPage("?module=Amateur&restored=1")).toEqual({ module: "Amateur", restored: true });
-    expect(detachedPage(new URL(detachedUrl("a b"), "http://127.0.0.1:8740").search)).toEqual({ module: "a b", restored: false });
+    expect(detachedPage("?module=Amateur")).toEqual({ module: "Amateur", restored: false, handover: null });
+    expect(detachedPage("?module=Amateur&restored=1")).toEqual({ module: "Amateur", restored: true, handover: null });
+    expect(detachedPage(new URL(detachedUrl("a b"), "http://127.0.0.1:8740").search)).toEqual({ module: "a b", restored: false, handover: null });
     expect(detachedPage("")).toBeNull();
     expect(detachedPage("?module=")).toBeNull();
     expect(detachedPage("?other=1")).toBeNull();
@@ -178,6 +178,13 @@ describe("detach (Module menu → Detach module, in the main page)", () => {
     expect("window" in out && out.window).toBe(win);
     if ("window" in out) await out.saved;
     expect(p.calls).toEqual([["Amateur", { state: 1 }]]);
+  });
+
+  it("hands the selection and Autotrack of the tab to the window in its address (handover.ts)", () => {
+    const o = opener(popup());
+    const p = putLog();
+    detach({ open: o.open, putWindow: p.putWindow, host: "127.0.0.1:8740" }, "Amateur", null, { width: 900, height: 700 }, false, { selected: 25544, autotrack: true });
+    expect(o.calls[0]![0]).toBe("/?module=Amateur&sel=25544&autotrack=1");
   });
 
   it("blocked popup keeps the tab and shows the notice", () => {
@@ -344,13 +351,33 @@ describe("DetachedSession (the page /?module=<name>, spec §8.1-§8.2, decision 
     expect(srv.s.open).toEqual(["A"]);
   });
 
+  it("attach hands the selection and Autotrack over once the server has the module as a tab, before the window closes", async () => {
+    const srv = server({ open: ["A"], windows: ["A"] });
+    const page = new DetachedSession("A", srv.deps);
+    await page.start();
+    await page.attach(() => void srv.calls.push("hand over"));
+    expect(srv.calls).toEqual(["open A", 'window A {"state":0}', "hand over", "window.close"]);
+  });
+
+  it("a handover that fails does not stop the Attach (the main page then starts as without a partner)", async () => {
+    const srv = server({ open: ["A"], windows: ["A"] });
+    const page = new DetachedSession("A", srv.deps);
+    await page.start();
+    await page.attach(() => {
+      throw new Error("no channel");
+    });
+    expect(srv.calls).toEqual(["open A", 'window A {"state":0}', "window.close"]);
+    expect(page.getSnapshot()).toMatchObject({ phase: "gone", gone: "attached" });
+  });
+
   it("stays a window when the Attach is refused, and says why", async () => {
     const srv = server({ open: ["A"], windows: ["A"] });
     const page = new DetachedSession("A", srv.deps);
     await page.start();
     srv.failWindowWith(new ApiError("NETWORK_ERROR", "ติดต่อ server ไม่ได้", 0));
-    await expect(page.attach()).rejects.toThrow("ติดต่อ server ไม่ได้");
+    await expect(page.attach(() => void srv.calls.push("hand over"))).rejects.toThrow("ติดต่อ server ไม่ได้");
     expect(page.getSnapshot().phase).toBe("open");
+    expect(srv.calls).not.toContain("hand over"); // the module is still this window's: the main page takes nothing
     expect(srv.calls).not.toContain("window.close");
     page.pageHide();
     expect(srv.calls).toContain("keepalive close A"); // still the window of the module

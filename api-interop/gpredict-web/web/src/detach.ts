@@ -3,6 +3,8 @@
 // give these functions the browser's window.open, the API calls and the clock.
 
 import { errorText } from "./api";
+import { handoverQuery, readHandover } from "./handover";
+import type { Handover } from "./handover";
 import type { ModuleList, ModuleWindow } from "./types";
 
 /** How often a module window looks at its position and size: the browser has no "the window moved" event (spec §8.1). */
@@ -43,19 +45,22 @@ export type OpenWindow = (url: string, target: string, features: string) => Popu
 
 // ---------------------------------------------------------------- the address, the name, the size and the title
 
-/** The page of a module window; `restored` for one opened by the restore bar, whose title is Gpredict's of a restored window. */
-export function detachedUrl(module: string, restored = false): string {
-  return `/?module=${encodeURIComponent(module)}${restored ? "&restored=1" : ""}`;
+/**
+ * The page of a module window; `restored` for one opened by the restore bar, whose title is Gpredict's of a restored window; `handover`
+ * the selection and Autotrack that Detach hands to the window (handover.ts).
+ */
+export function detachedUrl(module: string, restored = false, handover: Handover | null = null): string {
+  return `/?module=${encodeURIComponent(module)}${restored ? "&restored=1" : ""}${handoverQuery(handover)}`;
 }
 
 /** The name of the window of a module: window.open with it reaches the module's window if it is open (decision 10). */
 export const detachTarget = (module: string): string => `gpredict-${module}`;
 
-/** What a page address says: the page of a module window (`?module=`), or null for the main page. */
-export function detachedPage(search: string): { module: string; restored: boolean } | null {
+/** What a page address says: the page of a module window (`?module=`) and what Detach handed it, or null for the main page. */
+export function detachedPage(search: string): { module: string; restored: boolean; handover: Handover | null } | null {
   const params = new URLSearchParams(search);
   const module = params.get("module");
-  return module === null || module === "" ? null : { module, restored: params.get("restored") === "1" };
+  return module === null || module === "" ? null : { module, restored: params.get("restored") === "1", handover: readHandover(params) };
 }
 
 /**
@@ -114,11 +119,19 @@ export type DetachOutcome = { window: PopupWindow; saved: Promise<unknown> } | {
 
 /**
  * Detach module (spec §8.1): open the page of the module in a window of its own (at once, in the click: a browser opens a window only
- * then), and once there is one tell the server that the module is a window (PUT …/window state 1: it leaves the tabs of every main
- * page through /ws/app). A blocked window sends nothing: the module stays in its tab, and `notice` says how to allow the window.
+ * then), with the selection and Autotrack of the tab (`handover`, handover.ts), and once there is one tell the server that the module is
+ * a window (PUT …/window state 1: it leaves the tabs of every main page through /ws/app). A blocked window sends nothing: the module
+ * stays in its tab, and `notice` says how to allow the window.
  */
-export function detach(deps: DetachDeps, module: string, win: ModuleWindow | null, fallback: Size, restorePos: boolean): DetachOutcome {
-  const opened = deps.open(detachedUrl(module), detachTarget(module), detachFeatures(win, fallback, restorePos));
+export function detach(
+  deps: DetachDeps,
+  module: string,
+  win: ModuleWindow | null,
+  fallback: Size,
+  restorePos: boolean,
+  handover: Handover | null = null,
+): DetachOutcome {
+  const opened = deps.open(detachedUrl(module, false, handover), detachTarget(module), detachFeatures(win, fallback, restorePos));
   if (opened === null) return { notice: popupBlockedText(module, deps.host) };
   return { window: opened, saved: deps.putWindow(module, { state: 1 }) };
 }
@@ -244,7 +257,8 @@ export function goneText(module: string, reason: GoneReason): string {
  * - `sync` reads the list again (on every modules_changed of /ws/app and when the module's socket closes for good) and follows
  *   `detachedStep`; calls that come while one runs are folded into one more run after it.
  * - `connected` (the /ws/app socket opened): the module is made a window again if the server lost that, or opened if it could not be.
- * - `attach` sends state 0 and closes the window; `closeModule` closes the module and the window; `deleted` closes the window.
+ * - `attach` sends state 0, hands the selection and Autotrack to the main pages (handover.ts) and closes the window; `closeModule`
+ *   closes the module and the window; `deleted` closes the window.
  * - `pageHide` sends the close of the module (keepalive) only while the page has it open as a window: never after Attach, Close or Delete.
  */
 export class DetachedSession {
@@ -295,7 +309,8 @@ export class DetachedSession {
     }
   }
 
-  async attach(): Promise<void> {
+  /** Attach module; `handOver` runs once the server has the module as a tab again, before the window goes. */
+  async attach(handOver: () => void = () => {}): Promise<void> {
     if (this.state.phase !== "open") return;
     this.set({ phase: "leaving" });
     try {
@@ -303,6 +318,11 @@ export class DetachedSession {
     } catch (e) {
       this.set({ phase: "open" });
       throw e;
+    }
+    try {
+      handOver();
+    } catch {
+      // nothing handed over: the main page has the module back with nothing selected, as without a partner page
     }
     this.leave("attached");
   }

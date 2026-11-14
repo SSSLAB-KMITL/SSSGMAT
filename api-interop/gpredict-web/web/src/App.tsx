@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { closeModule, errorText, getModules, putTabs, putWindow, quit as quitServer, resetClock, retryModule } from "./api";
-import { connectAppEvents, keepIfSame, withConfigReads } from "./appEvents";
+import { connectAppEvents, keepIfSame, withConfigReads, withControllerSync } from "./appEvents";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
 import { MessageBox } from "./components/MessageBox";
@@ -24,7 +24,7 @@ import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice } from "./notices";
 import { overlayFor } from "./overlay";
-import { enterFullscreen, leaveFullscreen, useControllers, useFullscreen, useSeenNames, useSelection } from "./pageHooks";
+import { enterFullscreen, leaveFullscreen, useAttachHandovers, useControllers, useFullscreen, useSeenNames, useSelection } from "./pageHooks";
 import { PassWindows } from "./passes/PassWindowsHost";
 import { closeWindow, openWindow } from "./passes/passWindows";
 import type { PassWindow } from "./passes/passWindows";
@@ -127,36 +127,41 @@ function Main({ onStopped }: { onStopped: () => void }) {
     void reloadModules();
   }, [reloadModules]);
 
+  // the Radio Control and Antenna Control windows of every module, the module windows' too (each has its own socket)
+  const ctl = useControllers(loaded, addLocalError);
+  const { sync: syncControllers } = ctl;
+
   // the events of the program (/ws/app, spec §12): the page follows what changes on the server, from another browser tab too. Events sent
   // while the socket was not connected are lost, so the page reads again every time it connects, the configuration of the module shown
-  // too (`withConfigReads`). A read that fails (the server is going away) leaves what the page holds: the socket's reconnect reads again.
+  // (`withConfigReads`) and the open controllers (`withControllerSync`: a controller opened in a module window shows here again after
+  // Attach) too. A read that fails (the server is going away) leaves what the page holds: the socket's reconnect reads again.
   useEffect(
     () =>
       connectAppEvents(
         withConfigReads(
-          {
-            connected: () => {
-              void reloadModules();
-              reloadPrefs().catch(() => {});
+          withControllerSync(
+            {
+              connected: () => {
+                void reloadModules();
+                reloadPrefs().catch(() => {});
+              },
+              // New Preferences do not read the open modules again: a module keeps the Modules values it was made with until it is made
+              // again (opened, Configure → OK, server restart), as in Gpredict (ref-D §10, spec §9.1 and §11); GET /api/modules/{name}
+              // answers what it runs with. Edit module reads its module freshly when it opens (moduleForm.ts `readEditOpening`), so
+              // Module properties shows and pins the current values, and its OK re-creates the module (the save's `recreate`, ref-D §9).
+              prefsChanged: () => void reloadPrefs().catch(() => {}),
+              modulesChanged: () => void reloadModules(),
+              // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
+              tleOld: setTleOld,
             },
-            // New Preferences do not read the open modules again: a module keeps the Modules values it was made with until it is made
-            // again (opened, Configure → OK, server restart), as in Gpredict (ref-D §10, spec §9.1 and §11); GET /api/modules/{name}
-            // answers what it runs with. Edit module reads its module freshly when it opens (moduleForm.ts `readEditOpening`), so Module
-            // properties shows and pins the current values, and its OK re-creates the module (the save's `recreate`, ref-D §9).
-            prefsChanged: () => void reloadPrefs().catch(() => {}),
-            modulesChanged: () => void reloadModules(),
-            // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
-            tleOld: setTleOld,
-          },
+            () => void syncControllers(),
+          ),
           // module_config_changed (a deleted ground station, a save of another page, Configure → OK) and every connect
           { shown: () => (shown.current === null ? [] : [shown.current]), reread: () => setConfigRereads((n) => n + 1) },
         ),
       ),
-    [reloadModules],
+    [reloadModules, syncControllers],
   );
-
-  // the Radio Control and Antenna Control windows of every module, the module windows' too (each has its own socket)
-  const ctl = useControllers(loaded, addLocalError);
 
   // the server is not there (yet): keep trying, so the page comes alive when it starts
   useEffect(() => {
@@ -199,8 +204,17 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const satNames = useSeenNames(current, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current, configRereads);
 
-  // the selection and Autotrack of each module (forgotten when it is not open any more), and the target its controllers follow
-  const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(current, open, tick, config, saveConfig, addLocalError);
+  // the selection and Autotrack of each tab's module (forgotten when it is not a tab any more: closed, deleted, or detached, its window has
+  // it then), and the target its controllers follow; at Attach the window hands its own back (handover.ts)
+  const { selected, select, selectEverywhere, autotracking, setAutotracking, takeOver, release } = useSelection(
+    current,
+    tabs,
+    tick,
+    config,
+    saveConfig,
+    addLocalError,
+  );
+  useAttachHandovers(tabs, takeOver);
 
   // the Sky at a glance window of a module that is not open any more is forgotten
   useEffect(() => setSkyGlance((s) => pruneSky(s, open)), [open]);
@@ -296,13 +310,17 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const restorePos = prefs?.values["GLOBAL/MOD_WIN_POS"] === true;
 
   /**
-   * Detach module (spec §8.1): the page of the module in a window of its own, `fallback` its size when none is stored. A blocked window
+   * Detach module (spec §8.1): the page of the module in a window of its own, `fallback` its size when none is stored, with the selection
+   * and Autotrack of the tab (handover.ts: this page stops the module's Autotrack at once, the window goes on with it). A blocked window
    * leaves the module in its tab and says how to allow it (ของเรา).
    */
   const detachTab = (name: string, fallback: Size) => {
     const win = config?.name === name ? (config.window ?? null) : null;
-    const out = detach({ open: (url, target, features) => window.open(url, target, features), putWindow, host: window.location.host }, name, win, fallback, restorePos);
+    const handover = name === current ? { selected, autotrack: autotracking } : null;
+    const browser = { open: (url: string, target: string, features: string) => window.open(url, target, features), putWindow, host: window.location.host };
+    const out = detach(browser, name, win, fallback, restorePos, handover);
     if ("notice" in out) return addLocalWarning(`popup:${name}`, out.notice);
+    release(name);
     setOwnWindows((m) => new Map(m).set(name, out.window));
     out.saved.then(
       () => reloadModules(), // it leaves the tabs (the modules_changed of /ws/app says so too)

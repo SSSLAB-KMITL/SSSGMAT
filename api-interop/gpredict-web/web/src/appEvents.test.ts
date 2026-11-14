@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { APP_WS_RETRY_MS, appSocketUrl, connectAppEvents, keepIfSame, withConfigReads } from "./appEvents";
+import { APP_WS_RETRY_MS, appSocketUrl, connectAppEvents, keepIfSame, withConfigReads, withControllerSync } from "./appEvents";
 import type { SocketLike } from "./useModuleSocket";
 
 // ---- fakes --------------------------------------------------------------------------------------
@@ -251,5 +251,42 @@ describe("withConfigReads (the pages read the configuration of the modules they 
     vi.advanceTimersByTime(APP_WS_RETRY_MS);
     sockets[2]!.open();
     expect(reads).toEqual(["M", "N"]);
+  });
+});
+
+describe("withControllerSync (the main page reads the open controllers again)", () => {
+  it("syncs the controller windows on every connect and every modules_changed, and still calls the page's handlers", () => {
+    const sockets: FakeSocket[] = [];
+    const calls: string[] = [];
+    const handlers = withControllerSync(
+      {
+        prefsChanged: () => void calls.push("prefs"),
+        modulesChanged: () => void calls.push("modules"),
+        moduleConfigChanged: () => void calls.push("config"),
+        tleOld: () => void calls.push("tle"),
+        connected: () => void calls.push("connected"),
+      },
+      () => void calls.push("sync"),
+    );
+    connectAppEvents(handlers, {
+      url: "ws://host/ws/app",
+      createSocket: (url) => (sockets[sockets.length] = new FakeSocket(url)),
+    });
+    sockets[0]!.open();
+    // Attach of a module window publishes modules_changed: a controller opened in that window shows on the main page again
+    sockets[0]!.send({ type: "modules_changed" });
+    sockets[0]!.send({ type: "prefs_changed" });
+    sockets[0]!.send({ type: "module_config_changed", modules: ["M"] });
+    sockets[0]!.serverClose(1001); // the server restarted: its controllers are read again
+    vi.advanceTimersByTime(APP_WS_RETRY_MS);
+    sockets[1]!.open();
+    expect(calls).toEqual(["connected", "sync", "modules", "sync", "prefs", "config", "connected", "sync"]);
+  });
+
+  it("works without a connected handler", () => {
+    const calls: string[] = [];
+    const h = withControllerSync({ prefsChanged: () => {}, modulesChanged: () => {}, tleOld: () => {} }, () => void calls.push("sync"));
+    h.connected?.();
+    expect(calls).toEqual(["sync"]);
   });
 });
