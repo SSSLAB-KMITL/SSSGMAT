@@ -44,7 +44,10 @@
 //   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
 //   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นชุดละ 100 ms: SatModelSource)
 //   Cesium โหลดโมเดลไม่สำเร็จ (errorEvent ของ primitive: watchModelErrors) = โมเดลนั้นล้มเหลวทั้งหน้าเว็บ ดาวกลับเป็นจุด + ข้อความไทยครั้งเดียวต่อโมเดล
-//   เลือกดาว (useSelection) = ขอบรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) Sensor View: โมเดลของดาวแม่ถูกซ่อนเหมือนจุดและป้าย (กล้องอยู่ในตัวดาว)
+//   เลือกดาว (useSelection) = ขอบหนาขึ้นรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) ดาวที่กล้องอยู่ในตัว (ดาวแม่ของ Sensor View หรือดาว From ของ
+//   View From/To: cameraSatellite) ถูกซ่อนทั้งโมเดล จุด และป้าย (วัสดุเป็น doubleSided กล้องในโมเดลเห็นแต่ผนังด้านใน) เข้าและออกจาก View From/To = restyle
+//   Model Detail Threshold (3D Graphics Window Properties → Details): ทุกรอบ throttle เดียวกับท่าทาง ดาวที่ห่างกล้องน้อยกว่าค่านี้เป็นโมเดล ไกลกว่าเป็นจุด
+//   (applyModelDetail: model.show = false ไม่มี draw call) กล้องขยับเกิน 5% (camera.changed, percentageChanged = 0.05) ขอรอบ throttle ด้วย
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
 
@@ -58,7 +61,8 @@ import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
-import { modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes, watchModelErrors } from "../../cesium/satModelGraphics";
+import { sunPositionEcef } from "../../cesium/attitude";
+import { applyModelDetail, modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes, watchModelErrors } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
@@ -109,6 +113,11 @@ const INERTIAL_INTERVAL_MS = 250;
 const INERTIAL_BY_WINDOW = "Inertial by Window";
 /** Sensor และท่าทางของโมเดลดาว: คำนวณใหม่ไม่เกิน 4 ครั้งต่อวินาทีขณะเวลาเปลี่ยน (เท่า Inertial by Window) */
 const SENSOR_INTERVAL_MS = 250;
+/**
+ * camera.percentageChanged ของหน้าต่าง 3D (ค่าตั้งต้นของ Cesium 0.5): camera.changed เกิดเมื่อกล้องขยับเกิน 5% แล้วรอบ throttle ของโมเดล
+ * ตัดสินใหม่ว่าดาวไหนอยู่ใน Model Detail Threshold
+ */
+export const CAMERA_CHANGE_FRACTION = 0.05;
 /**
  * จำนวนชิ้นของลูกโลกที่ Cesium เก็บไว้ในหน่วยความจำ (globe.tileCacheSize) ของหน้าต่าง 3D และ Sensor View ค่าตั้งต้นของ Cesium คือ 100
  * ซูมเข้าออกหรือภาพเคลื่อนตามดาวแล้วกลับมาที่เดิม: ชิ้นที่เคยโหลดยังอยู่ ไม่ต้องขอใหม่ (รอบเร่งความเร็ว)
@@ -268,6 +277,17 @@ export function placeSensorCamera(viewer: { trackedEntity: Entity | undefined; r
   }
 }
 
+/**
+ * flyToSatellite: offset ของกล้องจาก target ในกรอบ east-north-up ของ target (แบบที่ camera.lookAt รับ) = rangeM ไปทางดวงอาทิตย์ (sun: ECEF)
+ * กล้องจึงเห็นด้านที่ได้แสงของดาว
+ */
+export function sunSideOffset(target: Cartesian3, sun: Cartesian3, rangeM: number, result = new Cartesian3()): Cartesian3 {
+  const toSun = Cartesian3.normalize(Cartesian3.subtract(sun, target, new Cartesian3()), new Cartesian3());
+  const enuToFixed = Matrix4.getMatrix3(Transforms.eastNorthUpToFixedFrame(target), new Matrix3());
+  const local = Matrix3.multiplyByVector(Matrix3.transpose(enuToFixed, new Matrix3()), toSun, result);
+  return Cartesian3.multiplyByScalar(local, rangeM, local);
+}
+
 class Scene3D implements Scene3DHandle, SensorViewHandle {
   private readonly czml: CzmlScene;
   private destroyed = false;
@@ -315,6 +335,9 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     // โมเดลที่ Cesium โหลดไม่สำเร็จ: ดาวของโมเดลนั้นกลับเป็นจุด (ทุกหน้าต่าง) + ข้อความครั้งเดียวต่อโมเดล
     this.offs.push(watchModelErrors(scene, (_entity, uri, error) => this.models.modelFailed(uri, error)));
+    // Model Detail Threshold ตามกล้อง: กล้องขยับเกิน 5% = รอบ throttle ของโมเดล (ไม่เกิน 4 ครั้งต่อวินาที)
+    viewer.camera.percentageChanged = CAMERA_CHANGE_FRACTION;
+    this.offs.push(viewer.camera.changed.addEventListener(() => this.updateModels(false)));
     this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
     // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้ ด้านกลางคืนจางตาม Ambient Level เท่าภาพฐาน (applyProps ส่งค่าใหม่ทีหลัง)
@@ -354,7 +377,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
         this.applyProps();
         if (
           before.labelDeclutter !== this.props.labelDeclutter || before.satelliteModels !== this.props.satelliteModels
-          || before.modelPixelSize !== this.props.modelPixelSize
+          || before.modelPixelSize !== this.props.modelPixelSize || before.modelDetailThreshold !== this.props.modelDetailThreshold
         ) this.restyle();
       }),
     );
@@ -469,10 +492,14 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     else this.modelThrottle.request();
   }
 
+  /** Model Detail Threshold (ดาวใกล้กล้อง = โมเดล ไกล = จุด; ดาวที่กล้องอยู่ในตัวไม่ถูกแตะ) แล้วท่าทางของโมเดลที่แสดงอยู่ */
   private poseModels(): void {
     const ds = this.ds;
     if (ds === null || this.destroyed) return;
-    if (updateModelAttitudes(ds.entities, this.viewer.clock.currentTime) > 0) this.viewer.scene.requestRender();
+    const time = this.viewer.clock.currentTime;
+    const thresholdM = this.props.modelDetailThreshold * 1000;
+    const switched = this.props.satelliteModels ? applyModelDetail(ds.entities, this.viewer.camera.positionWC, thresholdM, time, this.cameraSatellite()) : 0;
+    if (updateModelAttitudes(ds.entities, time) > 0 || switched > 0) this.viewer.scene.requestRender();
   }
 
   modelCount(): number {
@@ -704,17 +731,20 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   // ---------- กล้อง ----------
 
-  /** ปล่อยกล้องจากการตาม object, จาก transform ของ View From/To และจากโหมด sensor (คืนการลาก/หมุน/ซูม fov, near, จุดและป้ายของดาวแม่) */
-  private release(): void {
-    const wasSensor = this.view.kind === "sensor";
+  /**
+   * ปล่อยกล้องจากการตาม object, จาก transform ของ View From/To และจากโหมด sensor (คืนการลาก/หมุน/ซูม fov, near)
+   * ออกจากโหมด sensor หรือ View From/To = restyle คืนจุด ป้าย และโมเดลของดาวที่กล้องเคยอยู่ในตัว (restyle = false: ผู้เรียก restyle เองต่อ)
+   */
+  private release(restyle = true): void {
+    const was = this.view.kind;
     this.viewer.trackedEntity = undefined;
     this.view = { kind: "free" };
     this.viewer.camera.lookAtTransform(Matrix4.IDENTITY);
-    if (wasSensor) {
+    if (was === "sensor") {
       this.lockCamera(false);
       this.applyDisplay(); // ไม่ใช่โหมด sensor แล้ว: คืน show ของคอลเลกชัน
-      this.restyle();
     }
+    if (restyle && (was === "sensor" || was === "fromTo")) this.restyle();
   }
 
   homeView(): void {
@@ -748,9 +778,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (this.destroyed) return "notFound";
     const result = fromToResult(this.entityForPath(req.from), this.entityForPath(req.to));
     if (result !== "ok") return result;
-    this.release();
+    this.release(false);
     this.view = { kind: "fromTo", req };
     if (req.frame === "inertial") this.preloadIcrf();
+    this.restyle(); // ซ่อนดาว From (กล้องอยู่ในตัวมัน) หรือคืนดาว From เดิม
     this.updateFromTo();
     return "ok";
   }
@@ -863,11 +894,21 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     return state === null ? null : { sensor, satellite: sensor.parent.split("/").at(-1) ?? "", state };
   }
 
-  /** P7: ดาวแม่อยู่ตรงตำแหน่งกล้อง ซ่อนจุด ป้าย และโมเดลของมัน (เส้นวงโคจรยังอยู่) applyGraphics สร้างจุดและป้ายใหม่ทุกครั้ง จึงเรียกต่อจากมันเสมอ */
+  /**
+   * ดาวที่กล้องอยู่ในตัว: ดาวแม่ของ sensor ในโหมด sensor (P7) หรือดาว From ของ View From/To (From เป็น Facility = ไม่มี)
+   * วัสดุของโมเดลเป็น doubleSided ทุกชิ้น กล้องที่อยู่ในโมเดลจึงเห็นแต่ผนังด้านใน
+   */
+  private cameraSatellite(): Entity | undefined {
+    const path = this.view.kind === "sensor" ? this.sensorObj(this.view.path)?.parent : this.view.kind === "fromTo" ? this.view.req.from : undefined;
+    return path === undefined || !path.startsWith("*/Satellite/") ? undefined : this.entityForPath(path);
+  }
+
+  /**
+   * ดาวที่กล้องอยู่ในตัว (cameraSatellite) ซ่อนจุด ป้าย และโมเดลของมัน (เส้นวงโคจรยังอยู่) applyGraphics สร้างจุดและป้ายใหม่ทุกครั้ง จึงเรียกต่อจากมันเสมอ
+   * รอบ Model Detail Threshold ไม่แตะดาวนี้ (applyModelDetail exclude)
+   */
   private hideCameraSatellite(): void {
-    if (this.view.kind !== "sensor") return;
-    const parent = this.sensorObj(this.view.path)?.parent;
-    const entity = parent === undefined ? undefined : this.entityForPath(parent);
+    const entity = this.cameraSatellite();
     if (entity?.point !== undefined) entity.point.show = new ConstantProperty(false);
     if (entity?.label !== undefined) entity.label.show = new ConstantProperty(false);
     if (entity?.model !== undefined) entity.model.show = new ConstantProperty(false);
@@ -1062,6 +1103,23 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const entity = this.entityByName(name);
     const a = entity === undefined || this.destroyed ? null : modelBodyAxes(entity, this.viewer.clock.currentTime);
     return a === null ? null : { x: [a.ex.x, a.ex.y, a.ex.z], y: [a.ey.x, a.ey.y, a.ey.z], z: [a.ez.x, a.ez.y, a.ez.z] };
+  }
+
+  flyToSatellite(name: string, rangeM: number): boolean {
+    if (this.destroyed || !(rangeM > 0)) return false;
+    const time = this.viewer.clock.currentTime;
+    const fixed = this.entityByName(name);
+    const at = fixed === undefined ? null : fixedPositionAt(fixed, time);
+    if (at === null) return false;
+    const target = cartesian(at);
+    this.release();
+    const camera = this.viewer.camera;
+    camera.cancelFlight();
+    camera.lookAt(target, sunSideOffset(target, sunPositionEcef(time), rangeM));
+    camera.lookAtTransform(Matrix4.IDENTITY); // ปล่อยกรอบของ lookAt: ตำแหน่งและทิศเดิมในพิกัดโลก เมาส์หมุนรอบโลกได้ตามปกติ
+    this.updateModels(true); // ดาวนั้นอยู่ใกล้กล้องแล้ว: เป็นโมเดลทันที ไม่รอ camera.changed
+    this.viewer.scene.requestRender();
+    return true;
   }
 
   pointShown(name: string): boolean | null {

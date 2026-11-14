@@ -3,7 +3,9 @@
 //   blob: URL ของ origin เดียวกัน (satModels.loadModelGlb) ตัวกัน request นอกเครื่องของ fixtures.ts อนุญาต blob: และ data: อยู่แล้ว จึงไม่แก้
 //   spec นี้นับ request ของ browser ที่ไป /models/catalog.json (ต้องครั้งเดียว) และ /models/<...>.glb (ไม่เกินครั้งเดียวต่อไฟล์) ตลอดทุก test
 // - data ของ e2e มีดาวชุดเล็ก (snapshot ทดสอบ) บางดวงถูกตัวกรองดาวซ่อน: "ดาวที่แสดง" = ดาวใน scenario ที่ป้ายชื่อแสดงอยู่ในหน้าต่าง 3D ตัวแรก (labelShown)
+//   test ที่นับโมเดลตั้ง Model Detail Threshold เป็น 200,000 km ก่อน (ค่าตั้งต้น 30,000 km: ดาวที่ห่างกล้อง Home View เกินนั้นเป็นจุด)
 //   modelCount() ต้องเท่าจำนวนนั้นพอดี (ดาวทุกดวงได้โมเดล: ตาม block, norad_ids หรือ generic) และจุดของดาวเหล่านั้นซ่อน
+// - Model Detail Threshold 1,000 km: ทุกดวงเป็นจุด แล้ว flyToSatellite (กล้องห่างดาว 100 km) ทำให้ดาวนั้นเป็นโมเดล
 // - ปิด Satellite Models ที่ 3D Graphics Window Properties (หน้า Details) -> modelCount() = 0 และจุดแสดง เปิดอีกครั้ง -> โมเดลกลับมาโดยไม่ fetch ไฟล์ใหม่
 // - ท่าทาง (ไม่ใช้ภาพจับหน้าจอ): satelliteOrientation(ชื่อดาว) ให้แกนตัวดาวใน ECEF +Z ต้องชี้ศูนย์กลางโลกคลาดไม่เกิน 0.5° ตั้งแต่เวลาเริ่มของ scenario
 //   (ขอบช่วงตัวอย่าง) และตามเวลาเมื่อ setTime
@@ -14,7 +16,7 @@ import { E2E_ORIGIN } from "./localRequest";
 import { expect, openScenario, test as base, waitForScene } from "./fixtures";
 
 const DEG = 180 / Math.PI;
-/** ครบเวลาที่รอโมเดล: glb 23 ไฟล์ รวมราว 14 MB และ render ด้วย SwiftShader (CPU) */
+/** ครบเวลาที่รอโมเดล: glb 23 ไฟล์และ catalog รวม 19.4 MB และ render ด้วย SwiftShader (CPU) */
 const MODELS_TIMEOUT_MS = 30_000;
 
 type Vec3 = readonly [number, number, number];
@@ -82,21 +84,36 @@ async function waitForModels(page: Page, names: string[]): Promise<string[]> {
 const pointsShown = (page: Page, names: string[]): Promise<number> =>
   page.evaluate((all) => all.filter((n) => window.__gnssStudioTest!.pointShown(n) === true).length, names);
 
-/** เปิด 3D Graphics Window Properties จากปุ่ม Properties ของแถบ 3D Window Defaults (ซ่อนอยู่ตั้งต้น: เปิดจาก View -> Toolbars) แล้วไปหน้า Details */
+/** เปิด 3D Graphics Window Properties จากปุ่ม Properties ของแถบ 3D Window Defaults (ซ่อนอยู่ตั้งต้น: เปิดจาก View -> Toolbars ถ้ายังไม่เปิด) แล้วไปหน้า Details */
 async function openDetails(page: Page) {
-  await page.getByRole("menuitem", { name: "View", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Toolbars", exact: true }).click();
-  await page.getByRole("menuitemcheckbox", { name: "3D Window Defaults", exact: true }).click();
-  await page.getByRole("toolbar", { name: "3D Window Defaults" }).getByRole("button", { name: "Properties", exact: true }).click();
+  const toolbar = page.getByRole("toolbar", { name: "3D Window Defaults" });
+  if (!(await toolbar.isVisible())) {
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Toolbars", exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: "3D Window Defaults", exact: true }).click();
+  }
+  await toolbar.getByRole("button", { name: "Properties", exact: true }).click();
   const props = page.locator(".props").filter({ has: page.getByRole("tab", { name: "Details", exact: true }) });
   await expect(props).toBeVisible();
   await props.getByRole("tab", { name: "Details", exact: true }).click();
   return props;
 }
 
+/** Model Detail Threshold (km) ของหน้าต่าง 3D ตัวแรก: พิมพ์ในหน้า Details แล้ว OK (ปิดหน้าต่าง Properties) */
+async function setDetailThreshold(page: Page, km: number): Promise<void> {
+  const props = await openDetails(page);
+  await props.getByLabel("Model Detail Threshold", { exact: true }).fill(String(km));
+  await props.getByRole("button", { name: "OK", exact: true }).click();
+  await expect(props).toBeHidden();
+}
+
+/** ดาวทุกดวงในรายชื่อ: เป็นโมเดลหรือจุดอย่างใดอย่างหนึ่งพอดี (modelCount + จุดที่แสดง = จำนวนดาว) */
+const modelsPlusPoints = async (page: Page, names: string[]): Promise<number> => (await modelCount(page)) + (await pointsShown(page, names));
+
 test("the 3D window draws every shown satellite as a model, hides their points, and fetches each model file once", async ({ page, modelRequests }) => {
   await openScenario(page, "E2E");
   const names = await satelliteNames(page, "E2E");
+  await setDetailThreshold(page, 200_000);
   const shown = await waitForModels(page, names);
   expect(shown.length, "the fixture has hidden satellites too (satellite filter), so shown < all").toBeLessThan(names.length);
 
@@ -123,6 +140,7 @@ test("Satellite Models off in 3D Graphics Window Properties: no models and every
 }) => {
   await openScenario(page, "E2E");
   const names = await satelliteNames(page, "E2E");
+  await setDetailThreshold(page, 200_000);
   const shown = await waitForModels(page, names);
   const fetched = [...modelRequests.glb];
 
@@ -150,6 +168,7 @@ test("Satellite Models off in 3D Graphics Window Properties: no models and every
 test("model attitude: body +Z of each shown satellite points to Earth (within 0.5 degrees), the axes are orthonormal, and it follows the animation time", async ({ page }) => {
   await openScenario(page, "E2E");
   const names = await satelliteNames(page, "E2E");
+  await setDetailThreshold(page, 200_000);
   const shown = await waitForModels(page, names);
 
   interface Pose {
@@ -195,4 +214,24 @@ test("model attitude: body +Z of each shown satellite points to Earth (within 0.
     if (turnedAxis > 5) moved++;
   }
   expect(moved, "satellites whose attitude moved with the time").toBeGreaterThan(0);
+});
+
+test("Model Detail Threshold: farther than the threshold from the camera a satellite is its point (no model drawn); flying close makes it a model", async ({ page }) => {
+  await openScenario(page, "E2E");
+  const names = await satelliteNames(page, "E2E");
+  await setDetailThreshold(page, 200_000);
+  const shown = await waitForModels(page, names);
+
+  // 1,000 km: กล้อง Home View ห่างทุกดวงหลายพัน km ขึ้นไป ทุกดวงเป็นจุด
+  await setDetailThreshold(page, 1_000);
+  await expect.poll(() => modelCount(page), { message: "every satellite beyond 1,000 km is a point", timeout: MODELS_TIMEOUT_MS }).toBe(0);
+  expect(await pointsShown(page, shown)).toBe(shown.length);
+
+  // กล้องห่างดาวดวงแรก 100 km ทางด้านดวงอาทิตย์: ดาวนั้นเป็นโมเดล ดวงอื่นตามระยะของมัน แต่ละดวงเป็นโมเดลหรือจุดอย่างใดอย่างหนึ่ง
+  const target = shown[0];
+  expect(await page.evaluate((n) => window.__gnssStudioTest!.flyToSatellite(n, 100_000), target)).toBe(true);
+  await expect.poll(() => page.evaluate((n) => window.__gnssStudioTest!.pointShown(n), target), { message: `${target} drawn as a model`, timeout: MODELS_TIMEOUT_MS }).toBe(false);
+  expect(await modelCount(page)).toBeGreaterThanOrEqual(1);
+  expect(await modelsPlusPoints(page, shown)).toBe(shown.length);
+  expect(await page.evaluate((n) => window.__gnssStudioTest!.satelliteOrientation(n), target)).not.toBeNull(); // โมเดลที่ใกล้มีท่าทาง
 });

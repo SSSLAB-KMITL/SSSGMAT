@@ -8,16 +8,16 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as Cesium from "cesium";
 import {
-  Axis, Camera, Cartesian3, Color, ColorBlendMode, ConstantPositionProperty, ConstantProperty, CzmlDataSource, Ellipsoid, Entity, EntityCollection, GeographicProjection, JulianDate,
-  Math as CMath, Matrix3, Matrix4, Quaternion, ReferenceFrame, SampledPositionProperty, SceneMode, ScreenSpaceEventHandler, type TranslationRotationScale,
+  Axis, Camera, Cartesian2, Cartesian3, Color, ColorBlendMode, ConstantPositionProperty, ConstantProperty, CzmlDataSource, Ellipsoid, Entity, EntityCollection, GeographicProjection, JulianDate,
+  Math as CMath, Matrix3, Matrix4, PerspectiveFrustum, Quaternion, ReferenceFrame, SampledPositionProperty, SceneMode, ScreenSpaceEventHandler, type TranslationRotationScale,
 } from "cesium";
 import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { bodyToEcefQuaternion, sunPositionEcef, yawSteeringFrame, type AttitudeFrame } from "../../src/cesium/attitude";
 import { applyGraphics, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import {
-  applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_MAXIMUM_SCALE, modelCountOf, modelOrientation, setModelSelection, updateModelAttitudes,
-  watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
+  applyModelDetail, applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_LIGHT_SCALE, MODEL_SILHOUETTE_PX, modelCountOf, modelOrientation,
+  SELECTED_SILHOUETTE_PX, setModelSelection, updateModelAttitudes, watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
 } from "../../src/cesium/satModelGraphics";
 import {
   CESIUM_GLTF_EXTENSIONS, DEFAULT_WING_ZERO_NORMAL, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
@@ -30,7 +30,8 @@ import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
-import { mountScene3D } from "../../src/windows/Graphics3D/scene3d";
+import { mountScene3D, sunSideOffset } from "../../src/windows/Graphics3D/scene3d";
+import type { SensorViewHandle } from "../../src/windows/SensorView/registry";
 import { MODEL_BATCH_MS, resetModelReports, SatModelSource } from "../../src/windows/Graphics3D/satModelSource";
 import { makeDoc } from "./helpers/chrome";
 import { areaByAxis, bodyOfGltf, faceNormal, gltfOfBody, makeGlb, MODELS_DIR, parents, readGlb, type V3 } from "./helpers/glb";
@@ -344,20 +345,29 @@ const at = JulianDate.fromIso8601("2026-11-11T06:00:00Z");
 const value = <T>(p: { getValue(t: JulianDate): unknown } | undefined): T => p?.getValue(at) as T;
 
 describe("satellite entities with models on and off", () => {
-  test("models on: the entity gets the model (uri, Model Pixel Size, maximumScale 20000, system colour mixed 0.3); point hidden, label and path kept", async () => {
+  test("models on: the entity gets the model (uri, Model Pixel Size, no maximumScale, system colour mixed 0.5); point hidden, label and path kept", async () => {
     const ds = await dataSource();
     applyGraphics(ds, DOC, ctx(true));
     const g01 = ds.entities.getById("sat/G01")!;
     const model = g01.model!;
     expect(value<string>(model.uri)).toBe("blob:test/gps-iif");
     expect(value<number>(model.minimumPixelSize)).toBe(48);
-    expect(value<number>(model.maximumScale)).toBe(MODEL_MAXIMUM_SCALE);
-    expect(MODEL_MAXIMUM_SCALE).toBe(20000);
+    expect(model.maximumScale).toBeUndefined(); // ไม่จำกัดการขยาย: Model Pixel Size ใช้ได้ทุกระยะ (ดู "minimum pixel size at GNSS distances")
     expect(value<ColorBlendMode>(model.colorBlendMode)).toBe(ColorBlendMode.MIX);
     expect(value<number>(model.colorBlendAmount)).toBe(MODEL_COLOR_BLEND);
-    expect(MODEL_COLOR_BLEND).toBe(0.3);
+    expect(MODEL_COLOR_BLEND).toBe(0.5);
     expect(value<Color>(model.color).toCssHexString()).toBe("#ffd23f");
-    expect(value<number>(model.silhouetteSize)).toBe(0);
+    // ขอบสีของระบบรอบโมเดลทุกดวง (ไม่ใช่เฉพาะดวงที่เลือก) อ่านง่ายบนพื้นอวกาศดำ
+    expect(value<number>(model.silhouetteSize)).toBe(MODEL_SILHOUETTE_PX);
+    expect(MODEL_SILHOUETTE_PX).toBe(1.5);
+    expect(value<Color>(model.silhouetteColor).toCssHexString()).toBe("#ffd23f");
+    // แสง: แสงอาทิตย์ของโมเดล 2 เท่า (ค่าตั้งต้นของ SunLight ใน Cesium; หน้าต่างตั้ง scene.light.intensity = Sun Level/100) และแสงรอบตัวคงที่
+    // (ไม่ใช้ environment map แบบ dynamic ที่ในอวกาศเกือบดำ และคำนวณใหม่ทุกครั้งที่ดาวเคลื่อนเกิน 1 km) ด้านกลางคืนจึงยังเห็น
+    const light = value<Color>(model.lightColor);
+    expect([light.red, light.green, light.blue]).toEqual([MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE]);
+    expect(MODEL_LIGHT_SCALE).toBeLessThanOrEqual(2);
+    expect(value<Cartesian2>(model.imageBasedLightingFactor)).toEqual(new Cartesian2(1, 1));
+    expect(value<{ enabled?: boolean }>(model.environmentMapOptions)).toMatchObject({ enabled: false });
     expect(value<boolean>(g01.point!.show)).toBe(false);
     expect(value<Color>(g01.point!.color).toCssHexString()).toBe("#ffd23f"); // สีของดาว (entityColor) ยังอ่านจากจุดได้
     expect(g01.label).toBeDefined();
@@ -407,12 +417,14 @@ describe("satellite entities with models on and off", () => {
     expect(g01.model).toBe(model);
     expect(Quaternion.equals(g01.orientation!.getValue(at) as Quaternion, q)).toBe(true);
     expect(value<number>(g01.model!.minimumPixelSize)).toBe(96);
-    expect(value<number>(g01.model!.silhouetteSize)).toBeGreaterThan(0);
+    expect(value<number>(g01.model!.silhouetteSize)).toBe(SELECTED_SILHOUETTE_PX);
+    expect(SELECTED_SILHOUETTE_PX).toBe(3);
     expect(value<Color>(g01.model!.silhouetteColor).toCssHexString()).toBe("#ffd23f");
-    expect(value<number>(ds.entities.getById("sat/E05")!.model!.silhouetteSize)).toBe(0);
+    expect(value<number>(ds.entities.getById("sat/E05")!.model!.silhouetteSize)).toBe(MODEL_SILHOUETTE_PX);
+    expect(value<Color>(ds.entities.getById("sat/E05")!.model!.silhouetteColor).toCssHexString()).toBe(TOKENS.galileo);
     setModelSelection(ds.entities, "sat/E05");
-    expect(value<number>(g01.model!.silhouetteSize)).toBe(0);
-    expect(value<number>(ds.entities.getById("sat/E05")!.model!.silhouetteSize)).toBeGreaterThan(0);
+    expect(value<number>(g01.model!.silhouetteSize)).toBe(MODEL_SILHOUETTE_PX);
+    expect(value<number>(ds.entities.getById("sat/E05")!.model!.silhouetteSize)).toBe(SELECTED_SILHOUETTE_PX);
   });
 
   test("orientation and wings are ConstantProperty values written in place; only shown satellites are updated, one change event per batch", async () => {
@@ -438,6 +450,92 @@ describe("satellite entities with models on and off", () => {
     g01.model!.show = new ConstantProperty(false);
     expect(updateModelAttitudes(ds.entities, JulianDate.addSeconds(at, 60, new JulianDate()))).toBe(1);
     expect(modelCountOf(ds.entities)).toBe(1);
+  });
+});
+
+// ---------- ขนาดขั้นต่ำบนจอที่ระยะของดาว GNSS ----------
+
+describe("minimum pixel size at GNSS distances", () => {
+  const modelSrc = readFileSync(resolve(import.meta.dirname, "../../node_modules/@cesium/engine/Source/Scene/Model/Model.js"), "utf8");
+
+  test("Cesium's updateComputedScale: scale = Model Pixel Size × metres per pixel / model diameter, then min(maximumScale, scale) when maximumScale is set", () => {
+    expect(modelSrc).toMatch(/scale\s*=\s*\(model\.minimumPixelSize \* metersPerPixel\)\s*\/\s*\(2\.0 \* model\._initialRadius\)/);
+    expect(modelSrc).toMatch(/_computedScale = defined\(model\.maximumScale\)\s*\?\s*Math\.min\(model\.maximumScale, scale\)\s*:\s*scale/);
+    expect(modelSrc).toMatch(/return frameState\.camera\.getPixelSize\(/);
+  });
+
+  test("a satellite model is at least Model Pixel Size across at 50,000 and 80,000 km (60° fov, 1000 px high), any model size", async () => {
+    const ds = await dataSource();
+    applyGraphics(ds, DOC, ctx(true));
+    const maximumScale = value<number | undefined>(ds.entities.getById("sat/G01")!.model!.maximumScale);
+    const frustum = new PerspectiveFrustum({ fov: CMath.toRadians(60), aspectRatio: 1, near: 1, far: 1e12 });
+    for (const distance of [50_000_000, 80_000_000]) {
+      for (const radius of [0.5, 8.5, 30]) {
+        for (const px of [16, 48, 256]) {
+          // Camera.getPixelSize: ระยะถึงผิวทรงกลมขอบเขต (รัศมีของโมเดลก่อนขยาย) แล้ว frustum.getPixelDimensions (pixelRatio 1)
+          const dims = frustum.getPixelDimensions(1000, 1000, distance - radius, 1, new Cartesian2());
+          const metersPerPixel = Math.max(dims.x, dims.y);
+          const scale = Math.min(2 * radius / metersPerPixel, 1000) < px ? (px * metersPerPixel) / (2 * radius) : 1;
+          const computed = maximumScale === undefined ? scale : Math.min(maximumScale, scale);
+          const rendered = (2 * radius * computed) / metersPerPixel;
+          expect(rendered, `${distance / 1000} km, radius ${radius} m, ${px} px`).toBeGreaterThanOrEqual(px * (1 - 1e-12));
+        }
+      }
+    }
+  });
+});
+
+// ---------- Model Detail Threshold (applyModelDetail) ----------
+
+describe("Model Detail Threshold: a model near the camera, the point farther away", () => {
+  const fixed = (e: Entity) => e.position!.getValueInReferenceFrame(at, ReferenceFrame.FIXED, new Cartesian3())!;
+  const shows = (e: Entity) => ({ model: value<boolean | undefined>(e.model!.show) ?? true, point: value<boolean | undefined>(e.point!.show) ?? true });
+
+  test("near = model (point hidden), far = point (model.show false: not drawn, not posed); threshold and camera changes switch them; hidden satellites are not touched", async () => {
+    const ds = await dataSource();
+    applyGraphics(ds, DOC, ctx(true, [40128])); // E05 ซ่อนตามธง
+    const g01 = ds.entities.getById("sat/G01")!;
+    const j09 = ds.entities.getById("sat/J09")!;
+    const e05 = ds.entities.getById("sat/E05")!;
+    const e05Before = shows(e05);
+    // กล้องเหนือ G01 1,000 km: G01 ใกล้, J09 ห่างราว 45,000 km (มุม 2 rad บนวงโคจรเดียวกัน)
+    const camera = Cartesian3.multiplyByScalar(Cartesian3.normalize(fixed(g01), new Cartesian3()), GPS_R + 1_000_000, new Cartesian3());
+    expect(Cartesian3.distance(camera, fixed(j09))).toBeGreaterThan(40_000_000);
+    expect(applyModelDetail(ds.entities, camera, 30_000_000, at)).toBe(1); // J09 เปลี่ยน
+    expect(shows(g01)).toEqual({ model: true, point: false });
+    expect(shows(j09)).toEqual({ model: false, point: true });
+    expect(modelCountOf(ds.entities, at)).toBe(1);
+    expect(updateModelAttitudes(ds.entities, at)).toBe(1); // ดาวไกลไม่คำนวณท่าทาง
+    expect(shows(e05)).toEqual(e05Before);
+    expect(e05.isShowing).toBe(false);
+    // ไม่มีอะไรเปลี่ยน: ไม่แตะ ไม่มี event
+    const changed = vi.fn();
+    ds.entities.collectionChanged.addEventListener(changed);
+    expect(applyModelDetail(ds.entities, camera, 30_000_000, at)).toBe(0);
+    expect(changed).not.toHaveBeenCalled();
+    // threshold ใหญ่ขึ้น: J09 กลับเป็นโมเดล
+    expect(applyModelDetail(ds.entities, camera, 200_000_000, at)).toBe(1);
+    expect(shows(j09)).toEqual({ model: true, point: false });
+    expect(changed).toHaveBeenCalledTimes(1); // หนึ่ง event ต่อรอบ
+    // กล้องไกลมาก: ทุกดวงเป็นจุด ดาวที่ซ่อนยังไม่ถูกแตะ
+    expect(applyModelDetail(ds.entities, new Cartesian3(0, 0, -1e9), 30_000_000, at)).toBe(2);
+    expect(shows(g01)).toEqual({ model: false, point: true });
+    expect(shows(j09)).toEqual({ model: false, point: true });
+    expect(shows(e05)).toEqual(e05Before);
+    expect(modelCountOf(ds.entities, at)).toBe(0);
+    // ดาวที่กล้องอยู่ในตัว (exclude) ไม่ถูกแตะ
+    expect(applyModelDetail(ds.entities, camera, 200_000_000, at, g01)).toBe(1); // J09 เท่านั้น
+    expect(shows(g01)).toEqual({ model: false, point: true });
+  });
+
+  test("restyle (applyGraphics) brings the model back until the next detail pass", async () => {
+    const ds = await dataSource();
+    applyGraphics(ds, DOC, ctx(true));
+    const g01 = ds.entities.getById("sat/G01")!;
+    applyModelDetail(ds.entities, new Cartesian3(0, 0, -1e9), 30_000_000, at);
+    expect(shows(g01)).toEqual({ model: false, point: true });
+    applyGraphics(ds, DOC, ctx(true));
+    expect(shows(g01)).toEqual({ model: true, point: false });
   });
 });
 
@@ -783,9 +881,9 @@ describe("3D window with models", () => {
     vi.mocked(destroyViewer).mockReset();
   });
 
-  async function mount(windowProps: Record<string, unknown> = {}) {
+  async function mount(windowProps: Record<string, unknown> = {}, sensors: Record<string, string[]> = {}) {
     stubModelFetch();
-    const doc = makeScenarioDoc();
+    const doc = makeScenarioDoc({}, sensors);
     for (const o of doc.objects as { name: string; graphics3d?: unknown }[]) if (o.name === "G05") o.graphics3d = { show: false };
     useScenario.setState({ name: "S1", doc, tree: null, catalog: new Map(CATALOG.map((e) => [e.norad, e])) });
     useTime.getState().init(doc);
@@ -880,14 +978,114 @@ describe("3D window with models", () => {
     expect(viewer.scene.preRender.numberOfListeners).toBe(0);
   });
 
+  const now = () => JulianDate.fromDate(useTime.getState().current);
+  const modelShows = (e: Entity) => (e.model?.show?.getValue(now()) ?? true) === true;
+
+  test("Model Detail Threshold (default 30,000 km): camera moves (camera.changed, 5%) and threshold edits switch models and points; hidden satellites stay hidden", async () => {
+    const { scene, viewer } = await mount();
+    expect(viewer.camera.percentageChanged).toBe(0.05);
+    // Home View: กล้องห่างศูนย์กลางโลก 5.5 รัศมี G01 และ G02 ห่างกล้องราว 25,000 km
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    expect(scene.pointShown("G01")).toBe(false);
+    // กล้องไกล (150,000 km จากศูนย์กลางโลก): ทุกดวงเป็นจุด หลังรอบ throttle ที่ camera.changed ขอ
+    viewer.camera.setView({ destination: new Cartesian3(0, 0, -1.5e8) });
+    viewer.camera.changed.raiseEvent(1);
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(0));
+    expect(scene.pointShown("G01")).toBe(true);
+    expect(scene.pointShown("G02")).toBe(true);
+    expect(scene.pointShown("G05")).toBe(false); // ปิด Show: ซ่อนต่อไป
+    expect(scene.labelShown("G05")).toBe(false);
+    // Window Properties: threshold 200,000 km = โมเดลทันที (restyle)
+    act(() => useLayout.getState().setWindowProps("graphics3d", { modelDetailThreshold: 200_000 }));
+    expect(scene.modelCount()).toBe(2);
+    expect(scene.pointShown("G01")).toBe(false);
+    expect(scene.pointShown("G05")).toBe(false);
+    act(() => useLayout.getState().setWindowProps("graphics3d", { modelDetailThreshold: 1_000 }));
+    expect(scene.modelCount()).toBe(0);
+    expect(scene.pointShown("G02")).toBe(true);
+    scene.destroy();
+  });
+
+  test("Sensor View camera mode still hides everything after detail passes", async () => {
+    const { scene, viewer } = await mount({}, { G01: ["Sensor1"] });
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    const sensorScene = scene as unknown as SensorViewHandle;
+    expect(sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1)).toBe("ok");
+    expect(sensorScene.sensorCamera()?.visibleEntityCount).toBe(0);
+    viewer.camera.changed.raiseEvent(1);
+    act(() => useTime.getState().setCurrent(new Date(useTime.getState().current.getTime() + 60_000)));
+    await new Promise((r) => setTimeout(r, 300)); // รอบ throttle ถัดไปผ่านไปแล้ว
+    expect(sensorScene.sensorCamera()?.visibleEntityCount).toBe(0);
+    expect(scene.modelCount()).toBe(0);
+    scene.destroy();
+  });
+
+  test("View From/To from a satellite hides its model, point and label (the camera is inside it); detail passes keep it hidden; leaving brings it back", async () => {
+    const { scene, ds, viewer } = await mount();
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    const g01 = ds.entities.getById("sat/G01")!;
+    expect(scene.viewFromTo({ from: "*/Satellite/G01", to: "*/Facility/THBK", frame: "fixed" })).toBe("ok");
+    expect(modelShows(g01)).toBe(false);
+    expect(scene.pointShown("G01")).toBe(false);
+    expect(scene.labelShown("G01")).toBe(false);
+    expect(scene.modelCount()).toBe(1); // G02
+    expect(scene.labelShown("G02")).toBe(true);
+    // กล้องอยู่ที่ G01: รอบ detail (G01 ใกล้กล้องที่สุด) ไม่ทำให้โมเดลหรือจุดของมันกลับมา
+    viewer.camera.changed.raiseEvent(1);
+    act(() => useTime.getState().setCurrent(new Date(useTime.getState().current.getTime() + 60_000)));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(modelShows(g01)).toBe(false);
+    expect(scene.pointShown("G01")).toBe(false);
+    // From เป็น Facility: ดาวไม่ถูกซ่อน
+    expect(scene.viewFromTo({ from: "*/Facility/THBK", to: "*/Satellite/G02", frame: "fixed" })).toBe("ok");
+    expect(scene.labelShown("G01")).toBe(true);
+    expect(scene.pointShown("G01") === true || modelShows(g01)).toBe(true);
+    // กลับไปมองจาก G01 แล้วออก (Home View)
+    expect(scene.viewFromTo({ from: "*/Satellite/G01", to: "*/Satellite/G02", frame: "fixed" })).toBe("ok");
+    expect(scene.labelShown("G01")).toBe(false);
+    scene.homeView();
+    expect(scene.labelShown("G01")).toBe(true);
+    expect(scene.modelCount()).toBe(2);
+    scene.destroy();
+  });
+
+  test("flyToSatellite (test hook): camera looks at the satellite from rangeM on its sun side, with the lookAt transform released", async () => {
+    const { scene, ds, viewer } = await mount();
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    expect(scene.flyToSatellite("NOPE", 50_000)).toBe(false);
+    expect(scene.flyToSatellite("G01", 50_000)).toBe(true);
+    const r = ds.entities.getById("sat/G01")!.position!.getValueInReferenceFrame(now(), ReferenceFrame.FIXED, new Cartesian3())!;
+    const toSun = Cartesian3.normalize(Cartesian3.subtract(sunPositionEcef(now()), r, new Cartesian3()), new Cartesian3());
+    const expected = Cartesian3.add(r, Cartesian3.multiplyByScalar(toSun, 50_000, new Cartesian3()), new Cartesian3());
+    expect(Matrix4.equals(viewer.camera.transform, Matrix4.IDENTITY)).toBe(true);
+    expect(Cartesian3.distance(viewer.camera.positionWC, expected)).toBeLessThan(1);
+    const look = Cartesian3.normalize(Cartesian3.subtract(r, viewer.camera.positionWC, new Cartesian3()), new Cartesian3());
+    expect(angleDeg(viewer.camera.directionWC, look)).toBeLessThan(1e-6);
+    expect(viewer.trackedEntity).toBeUndefined();
+    expect(scene.modelCount()).toBe(2); // 50 km: ใกล้ (โมเดล) ทันที ไม่รอ camera.changed
+    scene.destroy();
+  });
+
   test("picking and labels are unchanged with models on; selecting a satellite outlines its model", async () => {
     const { scene, ds } = await mount();
     await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
     expect(scene.labelShown("G01")).toBe(true);
     expect(scene.labelShown("G05")).toBe(false);
     act(() => useSelection.getState().select("*/Satellite/G02"));
-    expect(value<number>(ds.entities.getById("sat/G02")!.model!.silhouetteSize)).toBeGreaterThan(0);
-    expect(value<number>(ds.entities.getById("sat/G01")!.model!.silhouetteSize)).toBe(0);
+    expect(value<number>(ds.entities.getById("sat/G02")!.model!.silhouetteSize)).toBe(SELECTED_SILHOUETTE_PX);
+    expect(value<number>(ds.entities.getById("sat/G01")!.model!.silhouetteSize)).toBe(MODEL_SILHOUETTE_PX);
     scene.destroy();
+  });
+});
+
+describe("sunSideOffset (flyToSatellite)", () => {
+  test("the east-north-up offset of the camera is rangeM toward the sun from the target", () => {
+    const target = new Cartesian3(15e6, -9e6, 19e6);
+    const sun = sunPositionEcef(TIME);
+    const enu = sunSideOffset(target, sun, 50_000);
+    expect(Cartesian3.magnitude(enu)).toBeCloseTo(50_000, 6);
+    const rotation = Matrix4.getMatrix3(Cesium.Transforms.eastNorthUpToFixedFrame(target), new Matrix3());
+    const ecef = Matrix3.multiplyByVector(rotation, enu, new Cartesian3());
+    expect(angleDeg(ecef, Cartesian3.subtract(sun, target, new Cartesian3()))).toBeLessThan(1e-9);
   });
 });

@@ -359,6 +359,7 @@ const LABELS = {
   // โมเดล 3 มิติของดาว (ไม่มีใน STK reference: ชื่อของเราเอง)
   "field.satelliteModels": ours("Satellite Models"),
   "field.modelPixelSize": ours("Model Pixel Size"),
+  "field.modelDetailThreshold": ours("Model Detail Threshold"), // STK reference ไม่มีคำว่า detail threshold
   // 2D Graphics Window Properties
   "field.projection": stk("Projection", "E"),
   "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),

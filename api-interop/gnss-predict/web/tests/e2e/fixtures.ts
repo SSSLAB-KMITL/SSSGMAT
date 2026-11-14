@@ -43,15 +43,33 @@ export const test = base.extend<{ pageErrors: string[]; requestGuard: string[] }
 });
 export { expect };
 
+/**
+ * เปิด scenario ด้วย ?test แล้วรอจน (1) ต้นไม้ของ Object Browser ขึ้น (scenario เปิดแล้ว) และ (2) หน้าต่างถูกจัดตาม workbook เสร็จ
+ * (workbookRestoredAt มีค่า: File → Open จัดหน้าต่างหลังโหลด scenario และผลลัพธ์ หน้าต่างที่เห็นก่อนนั้นถูกแทนทั้งหมด)
+ */
 export async function openScenario(page: Page, name: string): Promise<void> {
   await page.goto(`/?sc=${encodeURIComponent(name)}&test`);
-  // ต้นไม้ของ Object Browser ขึ้น = scenario เปิดแล้ว
   await expect(page.getByRole("treeitem").first()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__gnssStudioTest?.workbookRestoredAt() ?? null), { message: "workbook restored" }).not.toBeNull();
 }
 
-/** รอจน scene ของหน้าต่าง 3D โหลดผลลัพธ์เสร็จ (sceneLoadedAt มีค่า: scene.czml ถูกใช้และ manifest มาแล้ว ดาวหาได้ตามชื่อ เช่น labelShown("G01")) */
+/**
+ * รอจน scene ของหน้าต่าง 3D ตัวแรกโหลดผลลัพธ์เสร็จ (sceneLoadedAt: scene.czml ถูกใช้และ manifest มาแล้ว ดาวหาได้ตามชื่อ เช่น labelShown("G01"))
+ * และเป็นหน้าต่างที่ workbook สร้าง: sceneLoadedAt ≥ workbookRestoredAt (หน้าต่างที่โหลดเสร็จก่อนการจัดหน้าต่างกำลังจะถูกแทนราว 1 วินาทีต่อมา)
+ */
 export async function waitForScene(page: Page): Promise<void> {
-  await expect.poll(() => page.evaluate(() => window.__gnssStudioTest?.sceneLoadedAt() ?? null), { message: "3D scene loaded" }).not.toBeNull();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const hooks = window.__gnssStudioTest;
+          const restored = hooks?.workbookRestoredAt() ?? null;
+          const loaded = hooks?.sceneLoadedAt() ?? null;
+          return restored !== null && loaded !== null && loaded >= restored;
+        }),
+      { message: "3D scene loaded after the workbook restore" },
+    )
+    .toBe(true);
 }
 
 // แถวของ Object Browser ตาม path (ราก = "*", Satellite G01 = "*" + "/Satellite/G01"); ต้นไม้เป็น virtual list: แถวนอกจอไม่อยู่ใน DOM

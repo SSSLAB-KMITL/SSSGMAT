@@ -63,6 +63,8 @@ export interface Scene3DHandle {
   satelliteOrientation(name: string): SatelliteAxes | null;
   /** จุดของดาวชื่อ name แสดงอยู่ไหม (ดาวแสดงเป็นโมเดล = จุดซ่อน) ไม่มีดาวนั้น = null */
   pointShown(name: string): boolean | null;
+  /** test hook: กล้องมองดาวชื่อ name จากระยะ rangeM ทางด้านดวงอาทิตย์ (ปล่อยกล้องจากการตาม object/View From/To) ไม่มีดาวหรือตำแหน่ง = false */
+  flyToSatellite(name: string, rangeM: number): boolean;
   /**
    * Facility หรือดาว (path ของ object) ที่จุดอยู่ใกล้จุด (x, y) ของภาพที่สุด และห่างไม่เกิน 8 px (พิกเซลใน canvas ของหน้าต่างนี้ มุมซ้ายบน = 0, 0)
    * ไม่มี = null; ที่ซ่อนอยู่ อยู่หลังโลก หรืออยู่นอกภาพไม่นับ sensor เส้น access และพื้นโลกไม่ใช่ object ที่เลือกได้ (คลิกซ้ายเลือก คลิกขวาเปิดเมนู)

@@ -10,8 +10,13 @@
 // และ modelCount(): จำนวน entity ดาวที่แสดงเป็นโมเดล 3 มิติอยู่ในหน้าต่าง 3D ตัวแรก (ไม่มีหน้าต่าง = 0) (models integration spec §5)
 // และ satelliteOrientation(ชื่อดาว): แกน +X, +Y, +Z ของตัวดาวในพิกัด ECEF (หน่วยหนึ่ง) จากท่าทางที่วาดอยู่ ไม่มีโมเดลที่แสดงหรือยังไม่เคยคำนวณท่าทาง = null
 //   และ pointShown(ชื่อดาว): จุดของดาวแสดงอยู่ไหม (แสดงเป็นโมเดล = false, ปิด Satellite Models = true) ไม่มีดาวนั้น = null
+// และ flyToSatellite(ชื่อดาว, rangeM): กล้องของหน้าต่าง 3D ตัวแรกมองดาวนั้นจากระยะ rangeM ทางด้านดวงอาทิตย์ (เห็นด้านสว่าง) ไว้ดูโมเดลด้วยตา
+//   ไม่มีหน้าต่าง ไม่มีดาว หรือไม่มีตำแหน่ง ณ เวลานี้ = false
+// และ workbookRestoredAt(): เวลา (performance.now) ที่ File → Open จัดหน้าต่างตาม workbook ครั้งล่าสุดเสร็จ (useLayout.restoredAt) รออยู่ = null
+//   หน้าต่าง 3D ที่ workbook สร้างใหม่โหลดเสร็จหลังเวลานี้ e2e (waitForScene) จึงรอ sceneLoadedAt() ≥ ค่านี้ ไม่อ่านหน้าต่างที่กำลังถูกแทน
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
+import { useLayout } from "../stores/layout";
 import { useTime } from "../stores/time";
 import { parseIsoUtc } from "../time/parse";
 import { firstScene2D } from "../windows/Graphics2D/registry2d";
@@ -32,6 +37,8 @@ export interface GnssStudioTestHooks {
   modelCount(): number;
   satelliteOrientation(name: string): SatelliteAxes | null;
   pointShown(name: string): boolean | null;
+  flyToSatellite(name: string, rangeM: number): boolean;
+  workbookRestoredAt(): number | null;
 }
 
 declare global {
@@ -66,5 +73,7 @@ export function installTestHooks(): void {
     modelCount: () => firstScene()?.modelCount() ?? 0,
     satelliteOrientation: (name) => firstScene()?.satelliteOrientation(name) ?? null,
     pointShown: (name) => firstScene()?.pointShown(name) ?? null,
+    flyToSatellite: (name, rangeM) => firstScene()?.flyToSatellite(name, rangeM) ?? false,
+    workbookRestoredAt: () => useLayout.getState().restoredAt,
   };
 }

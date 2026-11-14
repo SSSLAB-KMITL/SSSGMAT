@@ -4,6 +4,9 @@
 //   entityColor ของ test hook และการคลิกเลือกใช้ตำแหน่งของ entity ไม่ใช่ภาพ) ไม่มีโมเดล (ปิด Satellite Models, ยังโหลดไม่เสร็จ, โหลดล้มเหลว) = ลบโมเดล คืนจุด
 // - watchModelErrors: โมเดลที่ Cesium โหลดไม่สำเร็จหลังอ่าน JSON แล้ว (buffer, mesh, shader) แจ้งผ่าน errorEvent ของ primitive ที่ ModelVisualizer สร้าง
 //   (Model.id = entity, อยู่ใน scene.primitives) ผู้เรียกกลับไปวาดเป็นจุด ความล้มเหลวก่อนนั้น (Model.fromGltfAsync) ถูกกันไว้ด้วย satModels.glbProblem
+// - หน้าตา: ขอบ (silhouette) สีของระบบทุกโมเดล (ดวงที่เลือกหนากว่า) สีของระบบผสม 50% แสงอาทิตย์ 2 เท่า และแสงรอบตัวคงที่ (ด้านกลางคืนยังเห็น)
+//   ไม่ตั้ง maximumScale: Model Pixel Size ใช้ได้ทุกระยะ
+// - applyModelDetail: Model Detail Threshold ดาวที่ห่างกล้องเกินค่านี้กลับเป็นจุด (model.show = false: ไม่วาด ไม่คำนวณท่าทาง)
 // - updateModelAttitudes: ท่าทาง (attitude.ts) และมุมแผงของดาวที่แสดงอยู่ทุกดวง ณ เวลาหนึ่ง เขียนลง ConstantProperty เดิม (ไม่มี CallbackProperty:
 //   หน้าต่าง 3D ข้าม update ตอนอยู่เฉย ๆ ตาม event ของ EntityCollection: idleUpdates.ts) ผู้เรียกเรียกตามรอบ throttle 250 ms เดียวกับ sensor
 //   ไม่สร้างออบเจ็กต์ใหม่ต่อดวงต่อรอบ (scratch ของโมดูลและสถานะต่อ entity)
@@ -17,18 +20,34 @@
 //   ModelVisualizer ตั้ง node.matrix = originalMatrix · TRS: หมุนรอบจุด pivot ของ node ในแกน glTF แกน +Y ของตัวดาวคือ −Z ของ glTF (WING_AXIS_GLTF)
 
 import {
-  Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
-  ReferenceFrame, type EntityCollection, type Scene,
+  Cartesian2, Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
+  ReferenceFrame, type EntityCollection, type Property, type Scene,
 } from "cesium";
 import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
 import { VELOCITY_STEP_S, velocityOf } from "./sensorDraw";
 
-/** ขยายโมเดลได้ไม่เกินนี้เพื่อให้ได้ขนาดขั้นต่ำบนจอ (โมเดลยาวราว 15 m → ไม่เกินราว 300 km) */
-export const MODEL_MAXIMUM_SCALE = 20000;
+// ไม่ตั้ง maximumScale: Model.updateComputedScale ของ Cesium ขยายโมเดลเป็น Model Pixel Size × (เมตรต่อพิกเซล) / เส้นผ่านศูนย์กลางของโมเดล
+// แล้วจำกัดด้วย maximumScale ถ้ามี ค่าจำกัดใด ๆ ทำให้ขนาดขั้นต่ำหายไปเกินระยะหนึ่ง (เดิม 20000: โมเดลยาว 17 m ได้ 48 px ถึงราว 6,000 km เท่านั้น
+// ขณะที่ดาว GNSS ห่างกล้อง Home View 10,000–60,000 km) ไม่จำกัดจึงได้ Model Pixel Size ทุกระยะ (test: 50,000 และ 80,000 km)
+
 /** สีของระบบผสมกับสีของโมเดล (ColorBlendMode.MIX) ให้ยังแยกระบบได้ */
-export const MODEL_COLOR_BLEND = 0.3;
-/** ความหนาเส้นขอบ (silhouette) ของโมเดลดาวที่ถูกเลือก (พิกเซล) */
-export const SELECTED_SILHOUETTE_PX = 2;
+export const MODEL_COLOR_BLEND = 0.5;
+/** ขอบ (silhouette) สีของระบบรอบโมเดลดาวทุกดวง (พิกเซล): เห็นรูปร่างบนพื้นอวกาศดำและด้านกลางคืน */
+export const MODEL_SILHOUETTE_PX = 1.5;
+/** ขอบของโมเดลดาวที่ถูกเลือก (พิกเซล) */
+export const SELECTED_SILHOUETTE_PX = 3;
+/**
+ * แสงอาทิตย์ของโมเดล (ModelGraphics.lightColor = ขาว × ค่านี้ แทนสีและความแรงของแสงใน scene): 2 = ค่าตั้งต้นของ SunLight ใน Cesium
+ * หน้าต่าง 3D ตั้ง scene.light.intensity = Sun Level / 100 (ค่าตั้งต้น 1) ซึ่งทำให้โมเดลมืดครึ่งหนึ่งของที่ Cesium ออกแบบไว้
+ */
+export const MODEL_LIGHT_SCALE = 2;
+/**
+ * แสงรอบตัว (image-based lighting) เต็มที่ทั้ง diffuse และ specular จาก spherical harmonics ค่าคงที่ของ Cesium (DEFAULT_SPHERICAL_HARMONIC_COEFFICIENTS:
+ * ฟ้าสว่างเท่ากันทุกทิศ) แทน environment map แบบ dynamic: environment map นั้นคำนวณจากบรรยากาศที่ตำแหน่งของโมเดล ในอวกาศเกือบดำ
+ * (ด้านกลางคืนดำสนิท) และสร้างใหม่ทุกครั้งที่โมเดลเคลื่อนเกิน 1 km (ทุกเฟรมของ animation ทุกดวง)
+ */
+const MODEL_IBL_FACTOR: Readonly<Cartesian2> = Object.freeze(new Cartesian2(1, 1));
+const MODEL_ENVIRONMENT_MAP = Object.freeze({ enabled: false });
 
 /** การแก้แกนที่ต่อท้าย orientation: R_z(−90°) (ดูหัวไฟล์) */
 export const MODEL_AXIS_FIX: Readonly<Quaternion> = Object.freeze(Quaternion.fromAxisAngle(Cartesian3.UNIT_Z, -Math.PI / 2));
@@ -98,7 +117,10 @@ export function applySatelliteModel(entity: Entity, look: SatModelLook | null): 
   if (st === undefined || st.spec.uri !== spec.uri || entity.model === undefined) {
     const wings = spec.wingNodes.map(() => constant(Quaternion.clone(Quaternion.IDENTITY)));
     const nodes = new PropertyBag(Object.fromEntries(spec.wingNodes.map((name, i) => [name, new NodeTransformationProperty({ rotation: wings[i] })])));
-    entity.model = new ModelGraphics({ uri: spec.uri, nodeTransformations: nodes });
+    entity.model = new ModelGraphics({
+      uri: spec.uri, nodeTransformations: nodes, environmentMapOptions: { ...MODEL_ENVIRONMENT_MAP },
+      lightColor: new Color(MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE, MODEL_LIGHT_SCALE, 1), imageBasedLightingFactor: Cartesian2.clone(MODEL_IBL_FACTOR),
+    });
     st = { spec, frame: { ex: new Cartesian3(), ey: new Cartesian3(), ez: new Cartesian3() }, hasFrame: false, theta: 0, orientation: constant(Quaternion.clone(Quaternion.IDENTITY)), wings };
     entity.orientation = st.orientation;
     states.set(entity, st);
@@ -109,22 +131,23 @@ export function applySatelliteModel(entity: Entity, look: SatModelLook | null): 
   const model = entity.model!;
   model.show = constant(true);
   model.minimumPixelSize = constant(look.pixelSize);
-  model.maximumScale = constant(MODEL_MAXIMUM_SCALE);
   model.color = constant(look.color);
   model.colorBlendMode = constant(ColorBlendMode.MIX);
   model.colorBlendAmount = constant(MODEL_COLOR_BLEND);
   model.silhouetteColor = constant(look.color);
-  model.silhouetteSize = constant(look.selected ? SELECTED_SILHOUETTE_PX : 0);
+  model.silhouetteSize = constant(silhouettePx(look.selected));
   if (entity.point !== undefined) entity.point.show = constant(false);
 }
 
-/** ขอบของโมเดลที่ถูกเลือก: entity id selectedId (null = ไม่มี) มีขอบ ตัวอื่นไม่มี (ไม่แตะอย่างอื่น) */
+const silhouettePx = (selected: boolean): number => (selected ? SELECTED_SILHOUETTE_PX : MODEL_SILHOUETTE_PX);
+
+/** ขอบของโมเดล: entity id selectedId (null = ไม่มี) ขอบหนา SELECTED_SILHOUETTE_PX ตัวอื่น MODEL_SILHOUETTE_PX (ไม่แตะอย่างอื่น) */
 export function setModelSelection(entities: EntityCollection, selectedId: string | null): void {
   entities.suspendEvents();
   try {
     for (const entity of entities.values) {
       if (!states.has(entity) || entity.model === undefined) continue;
-      entity.model.silhouetteSize = constant(entity.id === selectedId ? SELECTED_SILHOUETTE_PX : 0);
+      entity.model.silhouetteSize = constant(silhouettePx(entity.id === selectedId));
     }
   } finally {
     entities.resumeEvents();
@@ -132,6 +155,7 @@ export function setModelSelection(entities: EntityCollection, selectedId: string
 }
 
 const scratchSun = new Cartesian3();
+const scratchDetail = new Cartesian3();
 const scratchR = new Cartesian3();
 const scratchBefore = new Cartesian3();
 const scratchAfter = new Cartesian3();
@@ -144,6 +168,50 @@ const scratchTimeAfter = new JulianDate();
 /** โมเดลที่แสดงอยู่จริง (entity แสดงรวมคอลเลกชัน/data source และโมเดลไม่ได้ถูกซ่อน เช่นดาวแม่ของ Sensor View) */
 function modelShown(entity: Entity, time: JulianDate): boolean {
   return entity.isShowing && entity.model !== undefined && entity.model.show?.getValue(time) !== false;
+}
+
+/** ตั้ง show ของกราฟิก (โมเดลหรือจุด) เป็น show ถ้ายังไม่ใช่ (ไม่ระบุ = แสดง) คืนว่าเปลี่ยนไหม */
+function setShow(g: { show: Property | undefined }, show: boolean, time: JulianDate): boolean {
+  if ((g.show?.getValue(time) ?? true) === show) return false;
+  if (g.show instanceof ConstantProperty) g.show.setValue(show);
+  else g.show = constant(show);
+  return true;
+}
+
+/**
+ * Model Detail Threshold: ดาวที่มีโมเดลและแสดงอยู่ซึ่งห่าง camera (ตำแหน่ง Earth-fixed ของกล้อง) น้อยกว่า thresholdM (เมตร) แสดงเป็นโมเดล (จุดซ่อน)
+ * ไกลกว่านั้นแสดงเป็นจุดเดิมของมัน และ model.show = false (Cesium ไม่วาดและ updateModelAttitudes ไม่คำนวณท่าทาง)
+ * ไม่แตะ: ดาวที่ไม่แสดง (entity หรือคอลเลกชันซ่อน เช่นโหมด Camera ของ Sensor View) ดาวที่ไม่มีตำแหน่ง ณ time และ exclude (ดาวที่กล้องอยู่ในตัว
+ * ซึ่งผู้เรียกซ่อนเอง) คืนจำนวนดาวที่เปลี่ยน ค่าที่ไม่เปลี่ยนไม่ส่ง event หลายดวงที่เปลี่ยนในรอบเดียว = event เดียว
+ * applySatelliteModel (restyle) คืนโมเดลให้ทุกดวง ผู้เรียกจึงเรียกฟังก์ชันนี้ต่อจาก restyle ทันที
+ */
+export function applyModelDetail(entities: EntityCollection, camera: Cartesian3, thresholdM: number, time: JulianDate, exclude?: Entity): number {
+  let n = 0;
+  let suspended = false;
+  try {
+    for (const entity of entities.values) {
+      const model = entity.model;
+      if (model === undefined || entity === exclude || !states.has(entity) || !entity.isShowing) continue;
+      if (entity.availability !== undefined && !entity.availability.contains(time)) continue;
+      const r = entity.position?.getValueInReferenceFrame(time, ReferenceFrame.FIXED, scratchDetail);
+      if (r === undefined) continue;
+      const near = Cartesian3.distance(r, camera) < thresholdM;
+      const point = entity.point;
+      const shown = (model.show?.getValue(time) ?? true) === true;
+      const pointShown = point === undefined ? !near : (point.show?.getValue(time) ?? true) === true;
+      if (shown === near && pointShown === !near) continue;
+      if (!suspended) {
+        entities.suspendEvents();
+        suspended = true;
+      }
+      setShow(model, near, time);
+      if (point !== undefined) setShow(point, !near, time);
+      n++;
+    }
+  } finally {
+    if (suspended) entities.resumeEvents();
+  }
+  return n;
 }
 
 /** ดวงอาทิตย์อยู่แนว ±Y ของตัวดาว (es ไม่มีส่วนในระนาบ X-Z): wingAngle ตอบ 0 ซึ่งไม่ใช่มุมจริง ให้คงมุมเดิม */

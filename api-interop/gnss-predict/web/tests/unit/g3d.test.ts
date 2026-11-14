@@ -47,6 +47,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     modelCount: () => 3,
     satelliteOrientation: (name: string) => (name === "G01" ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : null),
     pointShown: (name: string) => (name === "G01" ? false : null),
+    flyToSatellite: (name: string, rangeM: number) => { calls.push(["flyToSatellite", name, rangeM]); return name === "G01"; },
     pathAt: () => null,
     entityScreenPosition: (name: string) => (name === "G01" ? [320, 240] : null),
     ...over,
@@ -93,7 +94,7 @@ describe("3D Graphics Window Properties values", () => {
   test("stored values are used as they are", () => {
     const p = {
       enableLighting: true, ambientLevel: 10, sunLevel: 80, nightLightsLevel: 0, latLonLines: true, labelDeclutter: true, showTime: false,
-      satelliteModels: false, modelPixelSize: 100,
+      satelliteModels: false, modelPixelSize: 100, modelDetailThreshold: 50_000,
     };
     expect(props3d(p)).toEqual(p);
   });
@@ -105,6 +106,16 @@ describe("3D Graphics Window Properties values", () => {
     expect(props3d({ modelPixelSize: 1000 }).modelPixelSize).toBe(256);
     expect(props3d({ modelPixelSize: 63.6 }).modelPixelSize).toBe(64);
     expect(props3d({ modelPixelSize: "64", satelliteModels: "no" })).toMatchObject({ satelliteModels: true, modelPixelSize: 48 });
+  });
+
+  test("Model Detail Threshold is 30,000 km by default; a whole number of km kept within 1,000 to 200,000", () => {
+    expect(DEFAULT_PROPS_3D.modelDetailThreshold).toBe(30_000);
+    expect(props3d({}).modelDetailThreshold).toBe(30_000); // workbook รุ่นก่อนมีตัวเลือกนี้
+    expect(props3d({ modelDetailThreshold: 10 }).modelDetailThreshold).toBe(1_000);
+    expect(props3d({ modelDetailThreshold: 1e9 }).modelDetailThreshold).toBe(200_000);
+    expect(props3d({ modelDetailThreshold: 45_000.4 }).modelDetailThreshold).toBe(45_000);
+    expect(props3d({ modelDetailThreshold: "45000" }).modelDetailThreshold).toBe(30_000);
+    expect(props3d({ modelDetailThreshold: Number.NaN }).modelDetailThreshold).toBe(30_000);
   });
 });
 
@@ -373,6 +384,27 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.labelShown("NOPE")).toBeNull();
     expect(hooks.frameCount()).toBe(7);
     expect(hooks.sceneLoadedAt()).toBe(1234);
+  });
+
+  test("flyToSatellite asks the first 3D window to look at a satellite from rangeM away; no window = false", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.flyToSatellite("G01", 50_000)).toBe(false); // ยังไม่มีหน้าต่าง 3D
+    const first = fakeScene("graphics3d");
+    registerScene(first);
+    registerScene(fakeScene("graphics3d-2"));
+    expect(hooks.flyToSatellite("G01", 50_000)).toBe(true);
+    expect(hooks.flyToSatellite("NOPE", 50_000)).toBe(false);
+    expect(first.calls).toContainEqual(["flyToSatellite", "G01", 50_000]);
+  });
+
+  test("workbookRestoredAt: when the last workbook restore of File → Open finished (null while one is on its way)", async () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    useLayout.setState({ restoredAt: null });
+    expect(hooks.workbookRestoredAt()).toBeNull();
+    useLayout.setState({ restoredAt: 4321 });
+    expect(hooks.workbookRestoredAt()).toBe(4321);
   });
 
   test("sensorFootprint asks the first 3D or 2D window how many ring points it draws", () => {

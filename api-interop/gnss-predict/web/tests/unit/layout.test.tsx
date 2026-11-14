@@ -956,6 +956,40 @@ describe("restoreFor (spec §4.2)", () => {
     expect(fetch.calls.map((c) => c.path)).toEqual(["/api/scenarios/A%20B%2FC/workbook"]);
   });
 
+  test("restoredAt: null while the workbook is on its way, the time it was applied once done (default layout and errors too); an older answer never sets it", async () => {
+    await mount();
+    const slow = deferred<{ json: unknown }>();
+    stubFetch({
+      [url]: () => slow.promise,
+      "GET /api/scenarios/BAD/workbook": { status: 500, json: { code: "BOOM", text: "x", field: null, detail: null } },
+      "GET /api/scenarios/NONE/workbook": { text: "null" },
+    });
+    useLayout.setState({ restoredAt: 1 });
+    const restoring = st().restoreFor("E2E");
+    expect(st().restoredAt).toBeNull();
+    const before = performance.now();
+    slow.resolve({ json: { version: 7 } });
+    await restoring;
+    expect(st().restoredAt).toBeGreaterThanOrEqual(before);
+    for (const name of ["BAD", "NONE"]) {
+      useLayout.setState({ restoredAt: null });
+      await st().restoreFor(name);
+      expect(st().restoredAt, name).not.toBeNull();
+    }
+    // คำตอบของครั้งที่ถูกแซงไม่ตั้งค่า (ครั้งใหม่กว่าตั้งเอง)
+    const older = deferred<{ json: unknown }>();
+    const newer = deferred<{ json: unknown }>();
+    stubFetch({ "GET /api/scenarios/OLD/workbook": () => older.promise, "GET /api/scenarios/NEW/workbook": () => newer.promise });
+    const a = st().restoreFor("OLD");
+    const b = st().restoreFor("NEW");
+    older.resolve({ json: null });
+    await a;
+    expect(st().restoredAt).toBeNull();
+    newer.resolve({ json: null });
+    await b;
+    expect(st().restoredAt).not.toBeNull();
+  });
+
   test("the answer of an older call never overrides a newer one", async () => {
     const { api } = await mount();
     st().newGraphicsWindow("graphics3d");

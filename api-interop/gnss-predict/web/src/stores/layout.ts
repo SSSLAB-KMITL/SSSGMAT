@@ -52,6 +52,11 @@ interface LayoutState {
   windowProps: WindowProps;
   /** ชั้นภาพบนลูกโลกและ asset ของ Cesium ion (Globe Manager เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) ไม่แก้ตัวเดิม: เปลี่ยน = object ใหม่ */
   globe: GlobeSettings;
+  /**
+   * เวลา (performance.now) ที่ restoreFor ครั้งล่าสุดจัดหน้าต่างเสร็จ (workbook, layout ตั้งต้น หรือ layout ตั้งต้นเพราะ workbook ใช้ไม่ได้) null = กำลังรอ workbook
+   * หรือยังไม่เคย หน้าต่าง 3D ที่ workbook สร้างใหม่โหลดเสร็จหลังเวลานี้เสมอ: test hook workbookRestoredAt ให้ e2e (waitForScene) ไม่อ่านหน้าต่างที่กำลังถูกแทน
+   */
+  restoredAt: number | null;
 
   attach(api: DockviewApi): void;
   /** ปล่อย api (ระบุ api = ปล่อยเฉพาะเมื่อยังเป็นตัวนี้ กัน Workspace รอบเก่าปล่อยตัวของรอบใหม่) */
@@ -175,6 +180,7 @@ export const useLayout = create<LayoutState>()((set, get) => {
     timelineHidden: [],
     windowProps: {},
     globe: DEFAULT_GLOBE,
+    restoredAt: null,
 
     attach: (api) => {
       get().detach();
@@ -394,6 +400,8 @@ export const useLayout = create<LayoutState>()((set, get) => {
     restoreFor: async (name) => {
       if (get().api === null) return;
       const seq = ++restoreSeq;
+      set({ restoredAt: null });
+      const settled = (): void => set({ restoredAt: performance.now() });
       let data: unknown;
       try {
         ({ data } = await apiGet<unknown>(`/scenarios/${enc(name)}/workbook`));
@@ -401,11 +409,13 @@ export const useLayout = create<LayoutState>()((set, get) => {
         if (seq !== restoreSeq || get().api === null) return;
         report("warning", e instanceof ApiError ? e.code : "WORKBOOK_LOAD", msg("workbook.loadFailed", { name, message: errorText(e) }));
         get().applyDefault();
+        settled();
         return;
       }
-      if (seq !== restoreSeq || get().api === null) return; // เปิด scenario อื่นต่อหรือปิดหน้าไปแล้ว
+      if (seq !== restoreSeq || get().api === null) return; // เปิด scenario อื่นต่อหรือปิดหน้าไปแล้ว (ครั้งใหม่กว่าตั้ง restoredAt เอง)
       if (data === null || data === undefined) get().applyDefault();
       else get().fromWorkbook(data);
+      settled();
     },
 
     saveWorkbook: async () => {

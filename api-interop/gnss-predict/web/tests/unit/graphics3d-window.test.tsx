@@ -62,6 +62,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     modelCount: () => 0,
     satelliteOrientation: () => null,
     pointShown: () => null,
+    flyToSatellite: () => false,
     pathAt: () => null,
     entityScreenPosition: () => null,
     ...over,
@@ -414,7 +415,7 @@ describe("3D Graphics Window Properties", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(useLayout.getState().windowProps.graphics3d).toEqual({
       enableLighting: true, ambientLevel: 20, sunLevel: 100, nightLightsLevel: 50, latLonLines: true, labelDeclutter: false, showTime: true,
-      satelliteModels: true, modelPixelSize: 48,
+      satelliteModels: true, modelPixelSize: 48, modelDetailThreshold: 30_000,
     });
     expect(closePanel).not.toHaveBeenCalled();
     await user.click(screen.getByRole("tab", { name: "Annotation" }));
@@ -446,6 +447,27 @@ describe("3D Graphics Window Properties", () => {
     await user.click(models);
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(useLayout.getState().windowProps.graphics3d).toMatchObject({ satelliteModels: false, modelPixelSize: 96 });
+  });
+
+  test("Details: Model Detail Threshold (our label, km), a whole number from 1,000 to 200,000, default 30,000", async () => {
+    const user = userEvent.setup();
+    useLayout.setState({ api: fakeApi(["graphics3d"]) as never });
+    render(<WindowProperties3D panelId="windowProperties3d" params={{ target: "graphics3d" }} />);
+    await user.click(screen.getByRole("tab", { name: "Details" }));
+    const threshold = screen.getByLabelText("Model Detail Threshold") as HTMLInputElement;
+    expect(threshold.value).toBe("30000");
+    expect(screen.getByText("km")).toBeDefined();
+    for (const bad of ["999", "200001", "1500.5"]) {
+      await user.clear(threshold);
+      await user.type(threshold, bad);
+      await user.click(screen.getByRole("button", { name: "Apply" }));
+      expect(threshold.getAttribute("aria-invalid"), bad).toBe("true");
+      expect(useLayout.getState().windowProps.graphics3d).toBeUndefined();
+    }
+    await user.clear(threshold);
+    await user.type(threshold, "60000");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(useLayout.getState().windowProps.graphics3d).toMatchObject({ modelDetailThreshold: 60_000 });
   });
 
   test("a level outside 0–100 is refused at the field and nothing is stored", async () => {

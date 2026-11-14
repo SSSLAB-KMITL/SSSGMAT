@@ -1,6 +1,6 @@
 // 3D Graphics Window Properties (spec §9.2, STK ref §E): ค่าตั้งของหน้าต่าง 3D บานที่ params.target ชี้ (เปิดจากปุ่ม Properties ของแถบ 3D Window Defaults)
 // - หน้า Lighting (Enable Lighting, Ambient Level, Sun Level, Night Lights Level), Details (Lat/Lon Lines, Label Declutter, Satellite Models,
-//   Model Pixel Size: จำนวนเต็ม 16–256 พิกเซล), Annotation (Show Time)
+//   Model Pixel Size: จำนวนเต็ม 16–256 พิกเซล, Model Detail Threshold: จำนวนเต็ม 1,000–200,000 km), Annotation (Show Time)
 // - Apply เขียน useLayout.windowProps[target] (ไปกับ workbook เมื่อ Save) หน้าต่าง 3D อ่านค่าแล้วปรับภาพทันที ไม่โหลดอะไรใหม่
 //   OK = Apply แล้วปิด, Cancel = ปิดโดยไม่เปลี่ยน ระดับแสงเป็นเปอร์เซ็นต์ 0–100 ตรวจด้วยกติกาตัวเลขเดียวของแอป (parseDecimal)
 //   แท็บ ปุ่ม และกรณีหน้าต่างเป้าหมายถูกปิด อยู่ในกรอบร่วม graphics/WindowPropertiesShell.tsx (ใช้กับหน้าต่าง 2D ด้วย)
@@ -14,7 +14,9 @@ import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels
 import { useLayout } from "../../stores/layout";
 import { parseDecimal, parseInteger } from "../fieldRules";
 import { CheckField, useTargetWindow, WindowPropertiesShell } from "../graphics/WindowPropertiesShell";
-import { MODEL_PIXEL_SIZE_MAX, MODEL_PIXEL_SIZE_MIN, props3d, type LevelKey, type Props3D } from "./props";
+import {
+  MODEL_DETAIL_THRESHOLD_MAX_KM, MODEL_DETAIL_THRESHOLD_MIN_KM, MODEL_PIXEL_SIZE_MAX, MODEL_PIXEL_SIZE_MIN, props3d, type LevelKey, type Props3D,
+} from "./props";
 
 type PageId = "lighting" | "details" | "annotation";
 const PAGES: { id: PageId; title: LabelKey }[] = [
@@ -24,7 +26,7 @@ const PAGES: { id: PageId; title: LabelKey }[] = [
 ];
 
 type BoolKey = "enableLighting" | "latLonLines" | "labelDeclutter" | "showTime" | "satelliteModels";
-type TextKey = LevelKey | "modelPixelSize";
+type TextKey = LevelKey | "modelPixelSize" | "modelDetailThreshold";
 /** ค่าในฟอร์ม: ระดับและขนาดเป็นข้อความตามที่พิมพ์ ตรวจตอน Apply */
 type Draft = Record<BoolKey, boolean> & Record<TextKey, string>;
 
@@ -35,6 +37,7 @@ const draftOf = (p: Props3D): Draft => ({
   showTime: p.showTime,
   satelliteModels: p.satelliteModels,
   modelPixelSize: String(p.modelPixelSize),
+  modelDetailThreshold: String(p.modelDetailThreshold),
   ambientLevel: String(p.ambientLevel),
   sunLevel: String(p.sunLevel),
   nightLightsLevel: String(p.nightLightsLevel),
@@ -67,8 +70,10 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
     }
     const px = parseInteger(draft.modelPixelSize, { min: MODEL_PIXEL_SIZE_MIN, max: MODEL_PIXEL_SIZE_MAX });
     if (!px.ok) next.modelPixelSize = px.error;
+    const km = parseInteger(draft.modelDetailThreshold, { min: MODEL_DETAIL_THRESHOLD_MIN_KM, max: MODEL_DETAIL_THRESHOLD_MAX_KM });
+    if (!km.ok) next.modelDetailThreshold = km.error;
     setErrors(next);
-    if (Object.keys(next).length > 0 || !px.ok) {
+    if (Object.keys(next).length > 0 || !px.ok || !km.ok) {
       setPage(LEVELS.some((k) => next[k] !== undefined) ? "lighting" : "details");
       return false;
     }
@@ -82,6 +87,7 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
       showTime: draft.showTime,
       satelliteModels: draft.satelliteModels,
       modelPixelSize: px.value,
+      modelDetailThreshold: km.value,
     };
     useLayout.getState().setWindowProps(target, { ...value });
     return true;
@@ -139,6 +145,7 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
           {check("labelDeclutter", "field.labelDeclutter")}
           {check("satelliteModels", "field.satelliteModels")}
           {text("modelPixelSize", "field.modelPixelSize", t("field.unit.px"), "numeric")}
+          {text("modelDetailThreshold", "field.modelDetailThreshold", t("field.unit.km"), "numeric")}
         </>
       )}
       {page === "annotation" && check("showTime", "field.showTime")}
