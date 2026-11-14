@@ -291,7 +291,8 @@ class RotController:
       "---" หลัง Disengage หลัง Engage ข้อความคงเดิมจนอ่านได้ครั้งแรก (ของเรา: Gpredict แสดง 0.00° ของค่าที่ยังไม่เคยอ่าน)
       การเทียบ Threshold ใช้ค่าที่อ่านในหน่วยของอุปกรณ์ ไม่ห่อ (decision 10) ยังไม่รู้ตำแหน่ง = ต่างเกิน Threshold
     - pass: on_tick ตัดสินด้วย pass_needs_refresh ว่าต้องหา pass ใหม่ control_tick เรียก pass_for ใน thread ไม่เกินรอบละครั้ง
-      (รอบทำทีละรอบ จึงไม่มีสองคำขอซ้อนกัน) จนได้ "ok" แล้วตรวจ flip ใหม่ ไม่มี pass = ไม่ flip
+      (รอบทำทีละรอบ จึงไม่มีสองคำขอซ้อนกัน) ซ้ำระหว่าง "computing" จนได้ "ok" แล้วตรวจ flip ใหม่ ไม่มี pass = ไม่ flip
+      "failed" รอ tick ถัดไปของ module ขอใหม่
     - status (ของเรา): ข้อผิดพลาดล่าสุดเป็นภาษาไทย หายเมื่อรอบของ client ไม่มี error หรือ Engage ใหม่ และเหตุที่ปลด Engage เอง
     - act และ close ทำทีละคำขอ (ของเรา): engage off ต้องหยุดและปิดการเชื่อมต่อเดิมให้จบก่อน engage on ของอีกคำขอเริ่ม
       timer ไม่ใช้ lock ของ act หลัง close ทุก act ได้ CONTROLLER_INVALID close ซ้ำไม่ทำอะไร
@@ -354,6 +355,11 @@ class RotController:
         self._timer_task = asyncio.create_task(self._run_timer(), name=f"rot:{module}") if timer else None
 
     # ---------------------------------------------------------------- อ่านสถานะ
+
+    @property
+    def norad(self) -> int | None:
+        """ดาวที่เลือกอยู่ใน combo (ControllerHub ใช้หาแถวของดาวนี้ใน tick)"""
+        return self._norad
 
     def snapshot(self) -> dict:
         """ทุกค่าที่หน้าต่างแสดง knob/setpoint ในหน่วยของอุปกรณ์ setpoint คือวงกลม set-point บน Polar plot ซึ่ง Gpredict วาดที่ค่า
@@ -524,8 +530,9 @@ class RotController:
         self._flip = p is not None and is_flip_pass([p.aos_az, *(r["az"] for r in p.rows), p.los_az], self._range)
 
     async def _refresh_pass(self) -> None:
-        """ขอ pass ที่ on_tick ตัดสินว่าต้องหาใหม่จนได้ "ok" (ไม่มี pass ใน 3 วันก็ "ok" กับ None) ระหว่างนั้นใช้ pass เดิม
-        ผลของดาวที่ถูกเปลี่ยนไประหว่างรอถูกทิ้ง"""
+        """ขอ pass ที่ on_tick ตัดสินว่าต้องหาใหม่ (ไม่มี pass ใน 3 วันก็ "ok" กับ None) ระหว่างนั้นใช้ pass เดิม
+        "computing" ขอซ้ำทุกรอบของ timer จนได้ผล ส่วน "failed" และ exception เลิกขอจนกว่า tick ถัดไปของ module ตัดสินใหม่
+        (ของเรา: ไม่ถาม pass_for ทุก Cycle ซึ่งถี่ได้ถึง 100 ครั้งต่อวินาที) ผลของดาวที่ถูกเปลี่ยนไประหว่างรอถูกทิ้ง"""
         norad, t, qth = self._norad, self._t, self._qth
         if not self._want_pass or norad is None or self._sat is None:
             return
@@ -535,8 +542,10 @@ class RotController:
             _log.exception("หา pass ของดาว %d ให้ rotator ไม่ได้", norad)
             self._want_pass = False
             return
-        if status == "ok" and norad == self._norad:
-            self._want_pass = False
+        if status == "computing" or norad != self._norad:
+            return
+        self._want_pass = False
+        if status == "ok":
             self._store_pass(p, qth)
 
     # ---------------------------------------------------------------- timer ควบคุม (ref-R §6.2, §6.4)

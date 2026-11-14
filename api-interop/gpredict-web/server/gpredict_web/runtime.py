@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 
 from gnss_predict.astro import subpoint, sun_ecef_km
 from gnss_predict.errors import Message
+from gnss_predict.geometry import ecef_to_aer
 
 from .clock import BACKWARD, FORWARD, ModuleClock
 from .config import TLE_OLD_DAYS
@@ -149,6 +150,34 @@ class ModuleRuntime:
         with self._lock:
             self._check_open()
             return [(norad, s.record.name, s.cur.spec, s.cur.elements) for norad, s in self._sats.items()]
+
+    def sat_names(self) -> list[tuple[int, str]]:
+        """(NORAD, ชื่อ) ของทุกดาวใน module สำหรับ combo ดาวของ Radio/Antenna Control เรียงด้วย key เรียงชื่อเดียวกับ
+        Sky at a glance (decision 17 ของงานย่อย 3) ชื่อที่เท่ากันเรียงตาม NORAD module ที่ปิดแล้ว -> ModuleClosedError"""
+        from .pass_service import name_sort_key           # pass_service นำเข้าโมดูลนี้ จึงนำเข้าตอนเรียก (ไม่ให้ import วน)
+        with self._lock:
+            self._check_open()
+            names = [(norad, s.record.name) for norad, s in self._sats.items()]
+        return sorted(names, key=lambda item: (name_sort_key(item[1]), item[0]))
+
+    def azel_at(self, norad: int, t: datetime) -> tuple[float, float] | None:
+        """(Az, El) ของดาวที่เวลา t ใดก็ได้จากช่วงคำนวณปัจจุบัน (lead-ahead ของ Antenna Control มองล่วงหน้า) ค่าเดียวกับ az/el
+        ของ tick ที่เวลานั้น None ถ้า t อยู่นอกช่วงที่ interpolate ได้ ยังไม่มีค่าจาก GMAT ดาว decayed หรือ module ปิดแล้ว
+        NORAD ที่ไม่อยู่ใน module -> ApiError NOT_FOUND"""
+        with self._lock:
+            s = self._sats.get(norad)
+            if s is None:
+                raise ApiError("NOT_FOUND", 404, f"ไม่พบดาว NORAD {norad} ใน module {self._owner}", str(norad))
+            w = self._window
+            if w is None or not usable(w, t) or is_decayed(s.cur.elements, t):
+                return None
+            e, _ = self._resolve(s, w)
+            q = self._q
+        state = None if e is None else e.state_at(t)
+        if state is None:
+            return None
+        az, el, _ = ecef_to_aer(state[0], q.ecef_km, q.lat_deg, q.lon_deg)
+        return az, el
 
     def tick(self) -> dict:
         """tick ของ WebSocket ตามหัวข้อ 7.3 ของ spec (ไม่มี sats เมื่อ status ไม่ใช่ ok, ไม่ส่งดาวที่ decayed)"""

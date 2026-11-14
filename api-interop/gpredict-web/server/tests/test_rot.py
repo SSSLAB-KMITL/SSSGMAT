@@ -3,6 +3,7 @@
 (ยกเว้น test ของจังหวะ timer ที่ย่อค่าคงที่ให้สั้น) rotator อยู่ใน data dir ชั่วคราว Host "localhost" port ของ fake"""
 
 import asyncio
+import contextlib
 import gc
 import json
 import time
@@ -254,6 +255,32 @@ class ControlTimerTest(RotTestCase):
         self.assertEqual(len(calls), 3)
         await ctl.control_tick()                                                # ไม่มี tick ใหม่ของ module
         self.assertEqual(len(calls), 3)
+
+    async def test_failed_pass_waits_for_next_module_tick(self):
+        # "computing" ถามซ้ำทุกรอบของ timer แต่ "failed" และ exception รอ tick ถัดไปของ module ตัดสินใหม่
+        # (ไม่ถาม pass_for ทุก Cycle ซึ่งอาจถี่ถึง 100 ครั้งต่อวินาที)
+        failure = RuntimeError("หา pass ไม่ได้")
+        for answer in (("failed", None), failure):
+            with self.subTest(answer=answer):
+                calls = []
+
+                def pass_for(norad, t, answer=answer):
+                    calls.append(t)
+                    if isinstance(answer, Exception):
+                        raise answer
+                    return answer
+
+                ctl = self.controller(pass_for=pass_for)
+                with self.assertLogs(LOGGER, "ERROR") if answer is failure else contextlib.nullcontext():
+                    ctl.on_tick(T0, row(90.0, -5.0), QTH)
+                    for _ in range(3):
+                        await ctl.control_tick()
+                    self.assertEqual(len(calls), 1)
+                    ctl.on_tick(T0 + timedelta(seconds=1), row(90.0, -5.0), QTH)
+                    await ctl.control_tick()
+                    await ctl.control_tick()
+                self.assertEqual(calls, [T0, T0 + timedelta(seconds=1)])
+                self.assertIsNone(ctl.snapshot()["pass"])
 
 
 class ClientLoopTest(RotTestCase):

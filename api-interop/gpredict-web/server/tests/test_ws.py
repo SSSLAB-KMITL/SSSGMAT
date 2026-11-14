@@ -6,6 +6,7 @@ close code: 1000 เฉพาะ module ถูกปิดหรือลบ (�
 รอบที่พัง (tick, แปลงเป็น JSON, ส่ง) ถูกข้ามโดยไม่ปิด socket และ log ครั้งเดียวต่อการเปลี่ยนสถานะ"""
 
 import asyncio
+import json
 import logging
 import time
 import unittest
@@ -310,6 +311,67 @@ class WebSocketTest(ApiTestBase):
             self.assertEqual(list(ticks.producers()), ["M"])
         self.assertTrue(wait_for(lambda: list(ticks.producers()) == []))
         self.assertIsNotNone(self.hub.get("M"))                              # ไม่มีคนดูก็ยังเปิดอยู่
+
+
+class ControllerTickTest(ApiTestBase):
+    """tick ของ module ที่มี Radio/Antenna Control เปิดอยู่ (งานย่อย 3 Task 8): ControllerHub อยู่ใน event loop ของ app
+    test เรียกผ่าน portal ของ TestClient วิทยุและ rotator ไม่ถูก Engage จึงไม่ต้องมี rigctld/rotctld"""
+
+    def setUp(self):
+        super().setUp()
+        self.put_module(refresh={"data_ms": 100})
+        hw = self.cfg.data_dir / "hwconf"
+        hw.mkdir(parents=True, exist_ok=True)
+        (hw / "A.rig.json").write_text(json.dumps({"Host": "localhost", "Port": 4532, "Type": 0, "PTT": 0}),
+                                       encoding="utf-8")
+        (hw / "R.rot.json").write_text(json.dumps({"Host": "localhost", "Port": 4533, "Cycle": 30000}), encoding="utf-8")
+        self.controllers = self.app.state.controllers
+
+    def call(self, fn, *args):
+        """เรียกใน event loop ของ app (controller เป็นของ loop นั้น)"""
+        return self.client.portal.call(fn, *args)
+
+    def test_controller_runs_without_socket(self):
+        self.open_module()
+        ticks = self.app.state.ticks
+        self.assertEqual(ticks.producers(), [])
+        with mock.patch.object(self.controllers, "on_tick", wraps=self.controllers.on_tick) as on_tick:
+            self.call(self.controllers.open, "M", "radio")
+            self.assertEqual(ticks.producers(), ["M"])                       # ไม่มี socket ก็คำนวณต่อ
+            self.assertTrue(wait_for(lambda: on_tick.call_count >= 3))
+        self.assertTrue(all(c.args[0] == "M" and c.args[1]["status"] == "ok" for c in on_tick.call_args_list))
+        with self.client.websocket_connect("/ws/modules/M") as ws:           # socket มาแล้วไปก็ไม่หยุด producer
+            self.assertIn("radio", ws.receive_json())
+        time.sleep(0.3)
+        self.assertEqual(ticks.producers(), ["M"])
+        self.call(self.controllers.close, "M", "radio")
+        self.assertTrue(wait_for(lambda: ticks.producers() == []))           # ไม่มีทั้ง socket และ controller: หยุด
+
+    def test_tick_has_radio_and_rotator(self):
+        self.open_module()
+        with self.client.websocket_connect("/ws/modules/M") as ws:
+            tick = ws.receive_json()
+            self.assertEqual(list(tick), TICK_KEYS)
+            self.call(self.controllers.open, "M", "radio")
+            self.call(self.controllers.open, "M", "rotator")
+            tick = self.next_tick_where(ws, lambda t: "radio" in t and "rotator" in t)
+            self.assertEqual(list(tick), [*TICK_KEYS, "radio", "rotator"])
+            self.assertEqual(tick["radio"]["norad"], tick["rotator"]["norad"])
+            row = next(s for s in tick["sats"] if s["norad"] == tick["radio"]["norad"])
+            self.assertEqual((tick["radio"]["az"], tick["radio"]["el"]), (row["az"], row["el"]))      # แถวจาก tick เดียวกัน
+            self.assertEqual(tick["rotator"]["target"], {"az": row["az"], "el": row["el"]})
+            self.call(self.controllers.close, "M", "radio")
+            tick = self.next_tick_where(ws, lambda t: "radio" not in t)
+            self.assertIn("rotator", tick)
+            self.call(self.controllers.close, "M", "rotator")
+            self.assertEqual(list(self.next_tick_where(ws, lambda t: "rotator" not in t)), TICK_KEYS)
+
+    def next_tick_where(self, ws, predicate, limit: int = 50) -> dict:
+        for _ in range(limit):
+            tick = ws.receive_json()
+            if predicate(tick):
+                return tick
+        self.fail(f"ไม่ได้ tick ที่ต้องการภายใน {limit} tick")
 
 
 if __name__ == "__main__":

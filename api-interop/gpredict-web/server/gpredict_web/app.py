@@ -42,6 +42,7 @@ from . import trsp
 from .bootstrap import bootstrap
 from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_time
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
+from .controllers import ControllerHub
 from .ephem import EphemManager
 from .errors import ApiError
 from .hwconf import HwConf, radio_to_dict, rot_to_dict
@@ -233,11 +234,10 @@ def _tick_json(tick: dict) -> tuple[str, bool]:
         return json.dumps(_finite(tick), ensure_ascii=False, allow_nan=False, separators=(",", ":")), True
 
 
-def _compute_round(rt: ModuleRuntime) -> tuple[str, bool, int]:
-    """งานใน thread ของหนึ่งรอบ: tick, แปลงเป็น JSON และ refresh.data_ms ล่าสุด (อ่านใหม่ทุกรอบ)
+def _compute_round(rt: ModuleRuntime) -> tuple[dict, int]:
+    """งานใน thread ของหนึ่งรอบ: tick และ refresh.data_ms ล่าสุด (อ่านใหม่ทุกรอบ)
     ModuleClosedError และ error อื่นส่งต่อให้ producer ตัดสิน"""
-    text, nonfinite = _tick_json(rt.tick())
-    return text, nonfinite, rt.module.refresh["data_ms"]
+    return rt.tick(), rt.module.refresh["data_ms"]
 
 
 async def _close_all(sockets, code: int) -> None:
@@ -268,16 +268,21 @@ class _StateLog:
 
 class Ticks:
     """ส่ง tick ทาง WebSocket (หัวข้อ 6.4): producer หนึ่ง task ต่อ module ที่เปิดอยู่ขณะที่มี socket อย่างน้อยหนึ่งตัว
+    หรือ keep_alive(name) เป็นจริง (Radio/Antenna Control เปิดอยู่: คำนวณต่อแม้ไม่มี browser, spec §3.2 ของงานย่อย 3)
     tick() มีสถานะ (range rate ของ tick ก่อน, ช่วงถัดไป, การหา pass) จึงเรียกครั้งเดียวต่อรอบแล้วส่งก้อนเดียวกันให้ทุก socket
     ของ module นั้น ทุกรอบห่าง refresh.data_ms (อ่านใหม่ทุกรอบ) งาน tick และแปลง JSON ทำใน thread ด้วย asyncio.to_thread
-    ทุกเมธอดถูกเรียกใน event loop เดียวกัน จึงไม่ต้องมี lock
+    decorate(name, tick) คืน tick ที่จะส่ง (เติม radio/rotator) เรียกใน event loop ระหว่างสองงานนั้น (decision 3: controller
+    ไม่ถูกแตะจาก thread) รอบที่ไม่มี socket ไม่แปลง JSON ทุกเมธอดถูกเรียกใน event loop เดียวกัน จึงไม่ต้องมี lock
 
     close code ที่หน้าเว็บใช้ตัดสินว่าจะต่อใหม่หรือไม่: 1000 เฉพาะ module ถูกปิดหรือลบ (ไม่ต่อใหม่), 1008 module ไม่ได้เปิด,
     1001 server ปิด, 1011 producer หยุดเพราะ error ภายใน, 1013 ส่ง tick ให้ socket นั้นไม่ทันหรือไม่สำเร็จ
-    รอบที่พัง (tick, แปลง JSON, ส่ง) ถูกข้ามและ log ครั้งเดียว socket ไม่ถูกปิด"""
+    รอบที่พัง (tick, decorate, แปลง JSON, ส่ง) ถูกข้ามและ log ครั้งเดียว socket ไม่ถูกปิด"""
 
-    def __init__(self, hub: Hub):
+    def __init__(self, hub: Hub, keep_alive: Callable[[str], bool] = lambda name: False,
+                 decorate: Callable[[str, dict], dict] | None = None):
         self._hub = hub
+        self._keep_alive = keep_alive
+        self._decorate = decorate
         self._sockets: dict[str, set[WebSocket]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
 
@@ -291,17 +296,24 @@ class Ticks:
 
     def attach(self, name: str, ws: WebSocket) -> None:
         self._sockets.setdefault(name, set()).add(ws)
+        self.wake(name)
+
+    def wake(self, name: str) -> None:
+        """เริ่ม producer ของ module ถ้ายังไม่ทำงาน (socket แรก หรือ controller เพิ่งเปิดโดยไม่มี socket)
+        producer หยุดเองเมื่อไม่มีทั้ง socket และ keep_alive"""
         if name not in self._tasks:
             self._tasks[name] = asyncio.get_running_loop().create_task(self._produce(name), name=f"ticks:{name}")
 
     def detach(self, name: str, ws: WebSocket) -> None:
-        """socket หลุดหรือปิด: socket สุดท้ายของ module ออกแล้วหยุด producer (module ยังเปิดอยู่)"""
+        """socket หลุดหรือปิด: socket สุดท้ายของ module ออกแล้วหยุด producer (module ยังเปิดอยู่) ยกเว้น keep_alive"""
         sockets = self._sockets.get(name)
         if sockets is None:
             return
         sockets.discard(ws)
         if not sockets:
             del self._sockets[name]
+            if self._keep_alive(name):
+                return
             task = self._tasks.pop(name, None)
             if task is not None:
                 task.cancel()
@@ -324,14 +336,19 @@ class Ticks:
         data_ms = M.REFRESH_DEFAULT["data_ms"]          # ใช้ค่าล่าสุดที่อ่านได้ ถ้ารอบนี้พังก่อนอ่าน
         code = WS_MODULE_CLOSED
         try:
-            while self._sockets.get(name):
+            while self._sockets.get(name) or self._keep_alive(name):
                 rt = self._hub.get(name)
                 if rt is None:                   # ปิดแล้ว หรือกำลังสร้างใหม่ (socket ต้องต่อใหม่กับ runtime ตัวใหม่)
                     break
                 started = loop.time()
+                nonfinite = None                 # None = รอบนี้ไม่มี socket จึงไม่ได้แปลง JSON
                 try:
-                    text, nonfinite, data_ms = await asyncio.to_thread(_compute_round, rt)
-                    await self._broadcast(name, text)
+                    tick, data_ms = await asyncio.to_thread(_compute_round, rt)
+                    if self._decorate is not None:
+                        tick = self._decorate(name, tick)
+                    if self._sockets.get(name):
+                        text, nonfinite = await asyncio.to_thread(_tick_json, tick)
+                        await self._broadcast(name, text)
                 except ModuleClosedError:
                     break
                 except Exception:
@@ -340,7 +357,7 @@ class Ticks:
                     logs.leave("round", "ส่ง tick ได้อีกครั้ง")
                     if nonfinite:
                         logs.enter("nonfinite", logging.WARNING, "tick มีค่า NaN/Infinity ส่งเป็น null แทน")
-                    else:
+                    elif nonfinite is not None:
                         logs.leave("nonfinite", "tick ไม่มีค่า NaN/Infinity แล้ว")
                 await asyncio.sleep(max(0.0, data_ms / 1000.0 - (loop.time() - started)))
         except asyncio.CancelledError:
@@ -349,7 +366,7 @@ class Ticks:
             _log.exception("producer ของ module %s หยุดเพราะ error ที่ไม่คาดไว้", name)
             code = WS_INTERNAL_ERROR
         finally:
-            if self._tasks.get(name) is me:      # จบเอง (module ปิด, error, ไม่มี socket แล้ว) ไม่ใช่ถูก end/detach ยกเลิก
+            if self._tasks.get(name) is me:      # จบเอง (module ปิด, error, ไม่มี socket และ controller แล้ว) ไม่ใช่ถูกยกเลิก
                 del self._tasks[name]
                 await _close_all(self._sockets.pop(name, set()), code)
 
@@ -468,7 +485,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     hwconf = HwConf(cfg.data_dir)
     hub = Hub(store, satdb, ephem, now, prefs=prefs)
     pass_service = PassService(hub, ephem, prefs, now)
-    ticks = Ticks(hub)
+    # module ที่มี controller เปิดอยู่คำนวณต่อแม้ไม่มี socket และ tick ของมันมีสถานะของ controller (spec §3.2, §8 ของงานย่อย 3)
+    ticks = Ticks(hub, keep_alive=lambda name: controllers.active(name),
+                  decorate=lambda name, tick: {**tick, **controllers.on_tick(name, tick)})
+    controllers = ControllerHub(hub, hwconf, cfg.data_dir, pass_service, ticks.wake)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine ไม่มี lock)
     trsp_lock = threading.Lock()             # Update transponder ทีละครั้ง: คำขอที่ซ้อนรอตัวแรกจบแล้วได้ข้อมูลจาก cache (decision 13)
@@ -523,6 +543,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         try:
             yield
         finally:
+            await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
             await ticks.shutdown()
             await asyncio.to_thread(shutdown)
 
@@ -537,6 +558,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.hub = hub
     app.state.pass_service = pass_service
     app.state.ticks = ticks
+    app.state.controllers = controllers
     app.state.tle_lock = tle_lock
     app.state.trsp_lock = trsp_lock
     app.state.on_quit = on_quit

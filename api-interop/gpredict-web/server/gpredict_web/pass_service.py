@@ -9,7 +9,9 @@
 Sky at a glance ไม่รอ GMAT: sky() สั่ง block รายวันของทุกดาวใน module ภายใต้ owner sky:<module> (ถือไว้จนหน้าต่างปิด
 หรือ module ปิด หน้าเว็บถามซ้ำระหว่าง computing) แล้วตอบ status ทันที เมื่อ ok จึงหา pass ของทุกดวง
 
-find_passes ของทั้งสองทางผ่าน PassMemo: วาดใหม่หรือขอซ้ำในช่วงวันเดิมใช้ pass ที่หาไว้แล้ว **(ของเรา)**
+current_pass: pass ของ Antenna Control (owner rot:<module>) ไม่รอ GMAT แบบเดียวกับ Sky at a glance (งานย่อย 3)
+
+find_passes ของทุกทางผ่าน PassMemo: วาดใหม่หรือขอซ้ำในช่วงวันเดิมใช้ pass ที่หาไว้แล้ว **(ของเรา)**
 """
 
 import threading
@@ -26,7 +28,7 @@ from .config import PASS_MEMO_SIZE, STEP_S
 from .ephem import HALF_WINDOW, EphemManager, SatEphem, SatSpec, tle_key
 from .errors import ApiError
 from .observe import QthGeo, TleElements, qth_geo
-from .pass_predict import NEXT_PASS_OFFSET, describe, get_pass, get_passes, has_aos, pass_to_dict
+from .pass_predict import NEXT_PASS_OFFSET, PassData, describe, get_pass, get_passes, has_aos, pass_to_dict
 from .passes import Pass, elevation_at, find_passes, pass_containing
 from .prefs import Prefs
 from .runtime import COMPUTING_TEXT, Hub, ModuleClosedError, iso_ms, sky_owner
@@ -40,6 +42,7 @@ DATA_PAD = timedelta(days=1)                     # ข้อมูลเริ�
 AT_EDGE = timedelta(seconds=(HALF_WINDOW + 1) * STEP_S) + AT_TOLERANCE
 SKY_PASSES = 10                                  # pass ต่อดาวใน Sky at a glance (ref-P §7.2 ไม่ใช้ Number of passes to predict)
 SKY_COLOUR_KEYS = tuple(f"SKY_AT_GLANCE/COLOUR_{i:02d}" for i in range(1, 11))
+ROT_PASS_DAYS = 3                                # current_pass: pass ของ Antenna Control ภายในกี่วัน (ref-R §6.5)
 _UTC = timezone.utc
 _MISSING = "SAT_MISSING_FROM_GMAT"
 
@@ -201,12 +204,10 @@ class PassMemo:
 
     def passes(self, spec: SatSpec, first: date, last: date, q: QthGeo, eph: SatEphem) -> tuple[Pass, ...]:
         """pass ของ eph ซึ่งต้องเป็น get_days(spec, first, last) ที่สถานี q: ที่จำไว้ หรือ find_passes แล้วจำไว้"""
-        key = (tle_key(spec.tle_lines), first, last, q.lat_deg, q.lon_deg, q.alt_m)
-        with self._lock:
-            found = self._found.get(key)
-            if found is not None:
-                self._found.move_to_end(key)
-                return found
+        found = self.cached(spec, first, last, q)
+        if found is not None:
+            return found
+        key = self._key(spec, first, last, q)
         found = tuple(find_passes(eph, q))                     # นอก lock: thread อื่นไม่ต้องรอ (หาซ้ำพร้อมกันได้ผลเท่ากัน)
         with self._lock:
             self._found[key] = found
@@ -214,6 +215,19 @@ class PassMemo:
             while len(self._found) > self._size:
                 self._found.popitem(last=False)
         return found
+
+    def cached(self, spec: SatSpec, first: date, last: date, q: QthGeo) -> tuple[Pass, ...] | None:
+        """pass ที่จำไว้แล้วของ (TLE, วัน, สถานี) None ถ้ายังไม่เคยหา (ไม่ต้องมีตำแหน่งของดาว ผู้เรียกจึงไม่ต้องต่อ block)"""
+        key = self._key(spec, first, last, q)
+        with self._lock:
+            found = self._found.get(key)
+            if found is not None:
+                self._found.move_to_end(key)
+            return found
+
+    @staticmethod
+    def _key(spec: SatSpec, first: date, last: date, q: QthGeo) -> tuple:
+        return tle_key(spec.tle_lines), first, last, q.lat_deg, q.lon_deg, q.alt_m
 
 
 # ---------------------------------------------------------------- service
@@ -365,6 +379,58 @@ class PassService:
                                             f"ข้ามดาว {name} (NORAD {norad}) ใน Sky at a glance: {exc}", str(norad)))
             out["sats"].append({"norad": norad, "name": name, "colour": colours[k % len(colours)], "passes": passes})
         return {**out, "messages": [m.to_dict() for m in messages]}
+
+    def current_pass(self, owner: str, module: str, norad: int, t: datetime) -> tuple[str, PassData | None]:
+        """pass ของ Antenna Control (ref-R §6.5, decision 14 ของงานย่อย 3): pass ที่กำลังผ่านที่ t หรือ pass ถัดไปที่ AOS
+        ไม่เกิน t + ROT_PASS_DAYS วัน ที่ Max El ≥ 0 (ไม่ใช้ Minimum elevation) ไม่รอ GMAT: คืน (status, pass) ทันที
+        ผู้เรียก (RotController) ถามซ้ำระหว่าง "computing" "ok" กับ None คือไม่มี pass ในช่วงนั้น "failed" คือ GMAT ล้ม
+        หรือไม่มีตำแหน่งของดาวในช่วงที่ต้องใช้
+        - block รายวันของ (t − 1 วัน) ถึง t + ROT_PASS_DAYS + 1 วัน ภายใต้ owner (rot:<module>) คำขอใหม่แทนคำขอเดิม
+          ปล่อยด้วย release_current ดาวที่ has_aos เป็นเท็จได้ ("ok", None) ทันทีและปล่อยคำขอเดิมของ owner
+        - ดาวที่ไม่มี pass ถูกถามทุก tick ของ module (pass_needs_refresh ข้อ 1): pass ที่หาไว้แล้วอยู่ใน PassMemo จึงไม่ต่อ block
+          และไม่หา pass ใหม่ ต่อ block เฉพาะเมื่อต้องหา pass ครั้งแรกหรือต้องสร้างแถวของ pass ที่เจอ (describe)
+        ModuleClosedError เมื่อ module ไม่ได้เปิด, ApiError NOT_FOUND เมื่อดาวไม่อยู่ใน module"""
+        rt = self._hub.get(module)
+        if rt is None:
+            raise ModuleClosedError(f"module {module} ไม่ได้เปิดอยู่")
+        found = rt.sat_orbit(norad)
+        if found is None:
+            raise ApiError("NOT_FOUND", 404, f"ไม่พบดาว NORAD {norad} ใน module {module}", str(norad))
+        _, spec, elements = found
+        qth = rt.qth
+        if not has_aos(elements, qth.lat_deg, t):
+            self._ephem.release_days(owner)
+            return "ok", None
+        first, last = day_range(t, t + timedelta(days=ROT_PASS_DAYS) + DATA_PAD)
+        self._ephem.ensure_days(owner, [spec], first, last)
+        status, _ = self._ephem.days_status(owner)
+        if status != "ok":
+            return status, None
+        q = qth_geo(qth)
+        eph = None
+        passes = self._memo.cached(spec, first, last, q)
+        if passes is None:
+            eph = self._ephem.get_days(spec, first, last)
+            if eph is None:                                       # GMAT ตัดดาวทิ้ง หรือ block หาย
+                return "failed", None
+            passes = self._memo.passes(spec, first, last, q, eph)
+        p = get_pass(passes, t, ROT_PASS_DAYS, 0.0)
+        if p is None:
+            return "ok", None
+        if eph is None:
+            eph = self._ephem.get_days(spec, first, last)
+            if eph is None:
+                return "failed", None
+        get = self._prefs.get                                     # แถวของ pass ตาม Preferences เดียวกับ Pass details
+        try:
+            return "ok", describe(p, eph, q, elements, int(get("PREDICT/NUMBER_OF_ENTRIES")),
+                                  int(get("PREDICT/TIME_RESOLUTION")), float(get("PREDICT/TWILIGHT_THRESHOLD")))
+        except ValueError:                                        # ตำแหน่งที่ต้องใช้อยู่นอกข้อมูล
+            return "failed", None
+
+    def release_current(self, owner: str) -> None:
+        """ปล่อย block รายวันที่ current_pass ขอไว้ให้ owner (Antenna Control ปิด)"""
+        self._ephem.release_days(owner)
 
     # ---------------------------------------------------------------- ตัวช่วย
 

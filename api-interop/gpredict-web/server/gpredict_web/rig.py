@@ -349,6 +349,11 @@ class RigController:
 
     # ---------------------------------------------------------------- อ่านสถานะ
 
+    @property
+    def norad(self) -> int | None:
+        """ดาวที่เลือกอยู่ใน combo (ControllerHub ใช้หาแถวของดาวนี้ใน tick)"""
+        return self._norad
+
     def snapshot(self) -> dict:
         conf1, conf2 = self._conf1, self._conf2
         lo = conf1.lo if conf1 else 0.0

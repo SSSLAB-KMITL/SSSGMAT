@@ -16,7 +16,7 @@ from gpredict_web.ephem import EphemManager, SatSpec
 from gpredict_web.errors import ApiError
 from gpredict_web.module import module_from_dict
 from gpredict_web.observe import parse_tle
-from gpredict_web.pass_predict import NEXT_PASS_OFFSET, PASS_GAP
+from gpredict_web.pass_predict import NEXT_PASS_OFFSET, PASS_GAP, PassData
 from gpredict_web.pass_service import PASS_MEMO_SIZE, PassMemo, PassPlan, PassService, day_range, name_sort_key
 from gpredict_web.passes import find_passes
 from gpredict_web.prefs import Prefs
@@ -329,6 +329,84 @@ class AnswerTest(PassServiceTestBase):
         self.assertEqual((cm.exception.status, cm.exception.code, cm.exception.object),
                          (503, "GMAT_FAILED", str(NORADS[0])))
         self.assertRegex(cm.exception.text, r"[ก-๙]")
+
+
+class CurrentPassTest(PassServiceTestBase):
+    """PassService.current_pass ของ Antenna Control (decision 14): ไม่รอ GMAT ผู้เรียกถามซ้ำจนได้ ok (owner rot:M)"""
+
+    def current(self, norad: int, t: datetime):
+        return self.service.current_pass("rot:M", "M", norad, t)
+
+    def test_current_pass_nonblocking(self):
+        n = NORADS[0]
+        t = peak(n) - timedelta(minutes=30)                                   # ใต้ขอบฟ้า: pass ถัดไป
+        self.assertEqual(self.current(n, t), ("computing", None))             # ไม่รอ GMAT
+        self.assertEqual(self.ephem._day_pairs["rot:M"][1:], day_range(t, t + timedelta(days=4)))
+        self.ephem.drain()
+        status, p = self.current(n, t)
+        self.assertEqual(status, "ok")
+        self.assertIsInstance(p, PassData)
+        self.assertLess(t, p.aos)
+        self.assertLessEqual(p.aos, t + timedelta(days=3))
+        self.assertAlmostEqual(secs(p.aos, peak(n) - timedelta(seconds=half_pass_s())), 0.0, delta=1.0)
+        self.assertEqual(len(p.rows), 21)                                     # แถวตาม Number of entries
+        up = peak(n) + timedelta(seconds=60)                                  # เหนือขอบฟ้า: pass ที่กำลังผ่าน
+        status, p = self.current(n, up)
+        self.assertEqual(status, "ok")
+        self.assertLess(p.aos, up)
+        self.assertLess(up, p.los)
+
+    def test_current_pass_uses_zero_minimum_elevation(self):
+        self.prefs.update({"PREDICT/MINIMUM_ELEV": 89}, [])                   # ค่าของ Show next pass ไม่มีผล (ref-R §6.5)
+        t = peak(WOBBLE) - timedelta(minutes=30)
+        self.current(WOBBLE, t)
+        self.ephem.drain()
+        status, p = self.current(WOBBLE, t)
+        self.assertEqual(status, "ok")
+        self.assertLess(p.max_el, 89.0)
+        self.assertLess(t, p.aos)
+        self.assertLessEqual(p.aos, t + timedelta(minutes=30))
+
+    def test_no_aos_is_ok_without_gmat(self):
+        self.assertEqual(self.current(GEO, T0), ("ok", None))
+        self.assertNotIn("rot:M", self.ephem._day_pairs)
+        self.current(NORADS[0], T0)
+        self.assertEqual(self.current(GEO, T0), ("ok", None))                 # เปลี่ยนเป็นดาวที่ไม่ขึ้น: ปล่อยคำขอเดิม
+        self.assertNotIn("rot:M", self.ephem._day_pairs)
+        self.ephem.drain()
+        self.assertFalse([c for c in self.fake.calls if is_day_job(c)])
+
+    def test_no_pass_within_days_is_cheap_every_time(self):
+        # ดาวที่ไม่มี pass ใน 3 วันถูกถามทุก tick ของ module (pass_needs_refresh ข้อ 1): ไม่หา pass และไม่ต่อ block ใหม่
+        self.current(HIDDEN, T0)
+        self.ephem.drain()
+        self.assertEqual(self.current(HIDDEN, T0), ("ok", None))
+        with mock.patch("gpredict_web.pass_service.find_passes", wraps=find_passes) as found, \
+                mock.patch.object(self.ephem, "get_days", wraps=self.ephem.get_days) as get_days:
+            for k in range(5):
+                self.assertEqual(self.current(HIDDEN, T0 + timedelta(seconds=k)), ("ok", None))
+        self.assertEqual((found.call_count, get_days.call_count), (0, 0))
+
+    def test_failed_and_missing_data(self):
+        self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
+        self.current(NORADS[0], T0)
+        self.ephem.drain()
+        self.assertEqual(self.current(NORADS[0], T0), ("failed", None))
+        self.service.release_current("rot:M")
+        self.assertNotIn("rot:M", self.ephem._day_pairs)
+        self.fake.fail = None
+        self.current(NORADS[0], T0)
+        self.ephem.drain()
+        with mock.patch.object(self.ephem, "get_days", return_value=None):    # block หาย: ยังไม่มี pass ให้ใช้
+            self.assertEqual(self.current(NORADS[0], T0), ("failed", None))
+        self.assertEqual(self.current(NORADS[0], T0)[0], "ok")
+
+    def test_unknown_satellite_and_module(self):
+        with self.assertRaises(ApiError) as cm:
+            self.current(11111, T0)
+        self.assertEqual((cm.exception.status, cm.exception.code, cm.exception.object), (404, "NOT_FOUND", "11111"))
+        with self.assertRaises(ModuleClosedError):
+            self.service.current_pass("rot:Nope", "Nope", NORADS[0], T0)
 
 
 class NameSortKeyTest(unittest.TestCase):

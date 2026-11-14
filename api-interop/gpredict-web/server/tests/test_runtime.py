@@ -1,6 +1,7 @@
 """Runtime ของ module และ tick (Task 10): EphemManager จริงกับ propagate ปลอมที่ให้วงโคจรวงกลมสังเคราะห์ของ helpers
 (ระนาบศูนย์สูตร ผ่านเหนือ QTH ที่ (0°, 0°) ทุกรอบ จึงมีคำตอบ AOS/LOS แบบปิด) ใช้ start_worker=False แล้ว drain()"""
 
+import dataclasses
 import json
 import math
 import threading
@@ -516,6 +517,39 @@ class TrackTest(RuntimeTestBase):
             with self.assertRaises(ApiError) as ctx:
                 call(99999)
             self.assertEqual((ctx.exception.code, ctx.exception.status), ("NOT_FOUND", 404))
+
+
+class ControllerQueryTest(RuntimeTestBase):
+    """ค่าที่ Radio/Antenna Control ขอจาก module (งานย่อย 3 Task 8)"""
+
+    def test_sat_names_sorted(self):
+        names = {NORADS[0]: "ISS", NORADS[1]: "beidou 10", NORADS[2]: "Beidou 2"}
+        rt = self.runtime([dataclasses.replace(record(n), name=names[n]) for n in NORADS])
+        # แบบ satChoices ของ web (decision 17): ไม่สนตัวพิมพ์ เลขเทียบตามค่า
+        self.assertEqual(rt.sat_names(), [(NORADS[2], "Beidou 2"), (NORADS[1], "beidou 10"), (NORADS[0], "ISS")])
+        twins = [dataclasses.replace(record(n), name="SAME") for n in (43017, 7530)]
+        self.assertEqual(self.runtime(twins).sat_names(), [(7530, "SAME"), (43017, "SAME")])     # ชื่อซ้ำ: ตาม NORAD
+
+    def test_azel_at(self):
+        n = NORADS[0]
+        rt = self.runtime()
+        t = T0 + timedelta(minutes=10)
+        self.assertIsNone(rt.azel_at(n, t))                              # ยังคำนวณอยู่
+        self.ephem.drain()
+        self.wall.t = t
+        row = next(s for s in rt.tick()["sats"] if s["norad"] == n)
+        self.wall.t = T0                                                  # เวลาของ module ไม่เกี่ยว: ถามที่ t ใดก็ได้ในช่วง
+        self.assertEqual(rt.azel_at(n, t), (row["az"], row["el"]))       # ค่าเดียวกับ observe ใน tick ที่เวลานั้น
+        _, el, _ = ecef_to_aer(circular_state(peak(n), 0.0, t)[0], origin_qth().ecef_km, 0.0, 0.0)
+        self.assertAlmostEqual(rt.azel_at(n, t)[1], el, places=6)
+        for outside in (W0[0], W0[1], W0[1] + timedelta(hours=1), W0[0] - timedelta(days=1)):
+            with self.subTest(t=outside):
+                self.assertIsNone(rt.azel_at(n, outside))                 # นอกช่วงที่ interpolate ได้
+        with self.assertRaises(ApiError) as ctx:
+            rt.azel_at(99999, t)
+        self.assertEqual((ctx.exception.code, ctx.exception.status), ("NOT_FOUND", 404))
+        rt.close()
+        self.assertIsNone(rt.azel_at(n, t))                               # ปิดแล้ว: ไม่มีช่วงคำนวณ
 
 
 class HubTest(unittest.TestCase):
