@@ -11,6 +11,8 @@
 //     409 RESULTS_NOT_CURRENT = แถบเตือนเดียวกับหน้าต่าง 3D/2D (ResultsBanner) และ Refresh (หรือ Apply บนแถบ) สั่งคำนวณใหม่:
 //       object แบบ Access → POST /access/compute (If-Match) ของ access ที่มีอยู่แล้วซึ่งครอบดาวนั้น (ไม่มี = Facility → ดาวนั้น)
 //       ได้ job (202) = รอจน job สำเร็จแล้วสร้างรายงานใหม่ ไม่มี job (ผล current แล้ว) = สร้างใหม่ทันที; object ที่เป็นดาว = POST /propagate
+//       รายงานของ Facility ที่ยังไม่มี access = ถามก่อน (confirm) แล้ว Compute ไปทุก Constellation แบบไม่เพิ่มแถว Timeline (ไม่ propagate เพราะไม่ได้ dop.csv)
+//       แถบเตือนแสดงทั้งเมื่อ server ตอบ 409 และเมื่อ useResults บอกว่า bundle ของ object ไม่ current (staleStatus)
 //     422 STYLE_INVALID = ข้อความใน Message Viewer และตารางว่างพร้อมคำอธิบาย ข้อผิดพลาดอื่น = Message Viewer + ข้อความในหน้าต่าง
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -19,6 +21,7 @@ import { useVirtualizer, type Rect } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { ApiError, apiSend, errorText, isAbortError } from "../../api/client";
 import { recordQueuedJob, startJob } from "../../api/startJob";
+import { confirm } from "../../chrome/Dialogs";
 import { useThrottledTime, useTimeFormatter } from "../../chrome/hooks";
 import {
   downloadReport, fetchProviders, fetchReport, type ElementInfo, type ExportSetup, type ReportJson, type ReportRequest,
@@ -29,14 +32,14 @@ import { getPanelDef, isPanelKind, registerPanel, type PanelProps } from "../../
 import { useJobs } from "../../stores/jobs";
 import { useLayout } from "../../stores/layout";
 import { report as notify } from "../../stores/messages";
-import { useResults } from "../../stores/results";
+import { useResults, type ResultsInfo } from "../../stores/results";
 import { useScenario, type ScenarioDoc } from "../../stores/scenario";
 import { useTime } from "../../stores/time";
 import type { DateFormat } from "../../time/format";
 import { ResultsBanner } from "../graphics/GraphicsFrame";
 import { observeViewportWithFallback } from "../virtualList";
 import { ExportSetupDialog, parseExportSetup } from "./ExportSetupDialog";
-import { dynamicRows, flattenRows, prepareDynamic, registerShownRows, type DynamicSection, type FlatRow } from "./table";
+import { columnWidths, dynamicRows, flattenRows, prepareDynamic, registerShownRows, type DynamicSection, type FlatRow } from "./table";
 
 export type ReportParams = {
   style: string;
@@ -77,17 +80,39 @@ function objectClass(path: string): "Access" | "Facility" | "Satellite" | null {
   return null;
 }
 
-type Compute = { from: string; to: string[] };
+/** body ของ POST /access/compute (timeline: false = access ที่สร้างให้รายงานของ Facility ไม่เพิ่มแถวใน Timeline View) */
+type Compute = { from: string; to: string[]; timeline?: boolean };
+
+export interface RecomputePlan {
+  /** Compute ที่สั่งได้เลย (access ที่มีอยู่แล้ว หรือคู่ Facility–ดาวของรายงาน Access เมื่อ Facility นั้นยังไม่มี access เลย) */
+  computes: Compute[];
+  /** object ที่เป็นดาว: POST /propagate (ไม่ใช้กับ Facility เพราะ propagate ไม่สร้าง dop.csv) */
+  propagate: boolean;
+  /** รายงานของ Facility ที่ยังไม่มี access: ต้องถามผู้ใช้ก่อนสร้าง access ใหม่ (ไปทุก Constellation หรือทุกดาวถ้าไม่มี Constellation) */
+  needsAccess: Compute[];
+  /** Facility ที่คำนวณไม่ได้เพราะ scenario ไม่มีดาวเลย */
+  unreachable: string[];
+}
 
 /**
- * สิ่งที่ต้องคำนวณใหม่ให้ object ของรายงาน: Compute ของ access ต่อ Facility (ใช้ `to` ของ access ที่มีอยู่แล้วซึ่งครอบดาวนั้น ตรง ๆ หรือผ่าน
- * Constellation ไม่มี = ดาวนั้นเอง) และ propagate สำหรับ object ที่เป็นดาว (หรือ Facility ที่ไม่มี access ให้ Compute)
+ * สิ่งที่ต้องคำนวณใหม่ให้ object ของรายงาน
+ * - ดาวในคู่ Access: Compute ของ access ที่มีอยู่แล้วซึ่งครอบดาวนั้น (ตรง ๆ หรือผ่าน Constellation) ไม่มีตัวที่ครอบแต่ Facility มี access อื่น = ใช้ access
+ *   นั้น (analyze คำนวณทุกดาวของ Facility อยู่แล้ว ไม่สร้างรายการใหม่) Facility ไม่มี access เลย = Compute คู่นั้นเอง
+ * - Facility เปล่า (DOP, N Asset Coverage): access ใดก็ได้ของมัน ไม่มี = needsAccess (ผู้เรียกถามก่อน) ไม่มีดาวใน scenario = unreachable
+ * - ดาวเปล่า (LLA): propagate
  */
-export function recomputePlan(doc: ScenarioDoc | null, objects: readonly string[]): { computes: Compute[]; propagate: boolean } {
+export function recomputePlan(doc: ScenarioDoc | null, objects: readonly string[]): RecomputePlan {
   const accesses = doc?.accesses ?? [];
   const members = new Map<string, string[]>();
+  const constellations: string[] = [];
+  const satellites: string[] = [];
   for (const o of doc?.objects ?? []) {
-    if (o.class === "Constellation") members.set(`${CONSTELLATION}${o.name}`, (o as { assigned_objects?: string[] }).assigned_objects ?? []);
+    if (o.class === "Constellation") {
+      constellations.push(`${CONSTELLATION}${o.name}`);
+      members.set(`${CONSTELLATION}${o.name}`, (o as { assigned_objects?: string[] }).assigned_objects ?? []);
+    } else if (o.class === "Satellite") {
+      satellites.push(`${SATELLITE}${o.name}`);
+    }
   }
   const covers = (to: readonly string[], sat: string): boolean => to.some((p) => p === sat || (members.get(p)?.includes(sat) ?? false));
 
@@ -97,7 +122,7 @@ export function recomputePlan(doc: ScenarioDoc | null, objects: readonly string[
     const parts = obj.split(" ");
     const facility = parts.find((p) => p.startsWith(FACILITY));
     if (facility === undefined) {
-      propagate = true;
+      if (parts.some((p) => p.startsWith(SATELLITE))) propagate = true;
       continue;
     }
     const sats = byFacility.get(facility) ?? new Set<string>();
@@ -107,23 +132,38 @@ export function recomputePlan(doc: ScenarioDoc | null, objects: readonly string[
 
   const computes = new Map<string, Compute>();
   const add = (c: Compute): void => void computes.set(JSON.stringify(c), c);
+  const needsAccess: Compute[] = [];
+  const unreachable: string[] = [];
   for (const [facility, sats] of byFacility) {
     const own = accesses.filter((a) => a.from === facility && Array.isArray(a.to) && a.to.length > 0);
-    if (sats.size === 0) {
-      // รายงานของ Facility (DOP, N Asset Coverage): คำนวณผ่าน access ใดก็ได้ของมัน ไม่มี access = propagate (ได้แค่ ephem)
-      if (own.length > 0) add({ from: facility, to: [...own[0].to] });
-      else propagate = true;
+    if (own.length === 0) {
+      if (sats.size > 0) add({ from: facility, to: [...sats] });
+      else if (constellations.length > 0 || satellites.length > 0) {
+        needsAccess.push({ from: facility, to: constellations.length > 0 ? constellations : satellites, timeline: false });
+      } else unreachable.push(facility);
       continue;
     }
-    const loose: string[] = [];
-    for (const sat of sats) {
-      const entry = own.find((a) => covers(a.to, sat));
-      if (entry !== undefined) add({ from: facility, to: [...entry.to] });
-      else loose.push(sat);
-    }
-    if (loose.length > 0) add({ from: facility, to: loose });
+    if (sats.size === 0) add({ from: facility, to: [...own[0].to] });
+    for (const sat of sats) add({ from: facility, to: [...(own.find((a) => covers(a.to, sat)) ?? own[0]).to] });
   }
-  return { computes: [...computes.values()], propagate };
+  return { computes: [...computes.values()], propagate, needsAccess, unreachable };
+}
+
+/**
+ * สถานะของแถบเตือนผลลัพธ์ของรายงาน: จากสถานะ bundle ใน useResults (access ของ Facility สำหรับ object แบบ Access/Facility, ephem สำหรับดาว)
+ * missing ก่อน stale; ไม่มีตัวใดไม่ตรงแต่ server ตอบ 409 (notCurrent) = stale; ไม่งั้น null (ไม่แสดงแถบ)
+ */
+export function staleStatus(objects: readonly string[], info: ResultsInfo | null, notCurrent: boolean): "stale" | "missing" | null {
+  let stale = false;
+  for (const obj of objects) {
+    const parts = obj.split(" ");
+    const facility = parts.find((x) => x.startsWith(FACILITY));
+    const status = facility !== undefined ? info?.access[facility.slice(FACILITY.length)]?.status
+      : parts.some((x) => x.startsWith(SATELLITE)) ? info?.ephem.status : undefined;
+    if (status === "missing") return "missing";
+    if (status === "stale") stale = true;
+  }
+  return stale || notCurrent ? "stale" : null;
 }
 
 /** รอ job ทั้งหมดจบ: true = สำเร็จทุกตัว, false = ตัวใดล้มเหลว/ถูกยกเลิก หรือ signal ยกเลิก */
@@ -170,7 +210,7 @@ export function Report({ params, panelId }: PanelProps) {
   const key = p === null ? "" : JSON.stringify(requestOf(p));
   const sc = useScenario((s) => s.name);
   const stepS = useScenario((s) => s.doc?.step_s ?? 30);
-  const resultsStatus = useResults((s) => s.status);
+  const resultsInfo = useResults((s) => s.info);
   const { fmt, ltz } = useTimeFormatter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<string | null>(null);
@@ -182,6 +222,24 @@ export function Report({ params, panelId }: PanelProps) {
   const setup = useMemo(() => parseExportSetup(stored), [stored]);
   const latest = useRef({ p, sc });
   latest.current = { p, sc };
+  // โฟกัสหน้าต่างเมื่อเปิดหรือถูกเลือก (หลัง Generate F5 ใช้ได้ทันที) โฟกัสที่อยู่ในหน้าต่างแล้วไม่ย้าย
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const focus = (): void => {
+      const el = root.current;
+      if (el !== null && !el.contains(document.activeElement)) el.focus({ preventScroll: true });
+    };
+    const panel = useLayout.getState().api?.getPanel(panelId);
+    if (panel === undefined) {
+      focus();
+      return;
+    }
+    if (panel.api.isActive) focus();
+    const sub = panel.api.onDidActiveChange((e) => {
+      if (e.isActive) focus();
+    });
+    return () => sub.dispose();
+  }, [panelId]);
   /** ยกเลิกการรอ job ของ Refresh เมื่อหน้าต่างปิด */
   const life = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -241,11 +299,25 @@ export function Report({ params, panelId }: PanelProps) {
     if (cur === null || name === null || signal === undefined) return;
     const object = cur.objects.length === 1 ? cur.objects[0] : null;
     const plan = recomputePlan(useScenario.getState().doc, cur.objects);
+    const short = (path: string): string => path.slice(FACILITY.length);
     setComputing(true);
     try {
+      for (const facility of plan.unreachable) notify("error", "REPORT_NO_SATELLITES", msg("report.noSatellites", { facility: short(facility) }), facility);
+      const computes = [...plan.computes];
+      if (plan.needsAccess.length > 0) {
+        // รายงานของ Facility ที่ยังไม่มี access: การสร้าง access ใหม่แก้ scenario จึงถามก่อน ไม่ตกลง = หยุด (ไม่ propagate ไม่สร้างรายงานซ้ำวน)
+        const yes = await confirm(msg("report.needsAccess", { facility: plan.needsAccess.map((c) => short(c.from)).join(", ") }));
+        if (signal.aborted) return;
+        if (!yes) {
+          notify("info", "REPORT_NEEDS_ACCESS", msg("report.needsAccessDeclined"), object);
+          return;
+        }
+        computes.push(...plan.needsAccess);
+      }
+      if (computes.length === 0 && !plan.propagate) return; // ไม่มีอะไรคำนวณได้: ไม่สร้างรายงานซ้ำ (จะได้ 409 เดิม)
       const jobs: string[] = [];
       let etag = useScenario.getState().etag;
-      for (const body of plan.computes) {
+      for (const body of computes) {
         const res = await apiSend<{ job?: unknown; etag?: unknown }>("POST", `/scenarios/${encodeURIComponent(name)}/access/compute`, body, etag);
         etag = res.etag ?? (typeof res.data?.etag === "string" ? `"${res.data.etag}"` : etag);
         if (typeof res.data?.job === "string") {
@@ -265,9 +337,11 @@ export function Report({ params, panelId }: PanelProps) {
     }
   }, []);
 
+  const bannerStatus = p === null ? null : staleStatus(p.objects, resultsInfo, phase === "notCurrent");
+
   const refresh = (): void => {
     if (computing) return;
-    if (phase === "notCurrent") void recompute();
+    if (phase === "notCurrent" || bannerStatus !== null) void recompute();
     else setRevision((r) => r + 1);
   };
 
@@ -292,7 +366,6 @@ export function Report({ params, panelId }: PanelProps) {
     useLayout.getState().setWindowProps(panelId, { ...props, exportSetup: value });
   };
 
-  const bannerStatus = phase === "notCurrent" ? (resultsStatus === "missing" ? "missing" : "stale") : null;
   const maxGapMs = Math.max(p?.time?.step_s ?? 0, stepS) * 1.5 * 1000;
 
   let body: ReactNode;
@@ -312,7 +385,7 @@ export function Report({ params, panelId }: PanelProps) {
   }
 
   return (
-    <div className="rpt" tabIndex={-1} onKeyDown={onKeyDown}>
+    <div ref={root} className="rpt" tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="rpt-toolbar" role="toolbar" aria-label={t("window.report")}>
         <button
           type="button"
@@ -353,8 +426,8 @@ const ROW_HEIGHT = 20;
 /** ขนาดพื้นที่เห็นที่ใช้เมื่อยังวัดไม่ได้ (jsdom, หน้าต่างเพิ่งสร้าง) = ขนาดตั้งต้นของหน้าต่าง */
 const FALLBACK_RECT: Rect = { width: 720, height: 360 };
 const observeViewport = observeViewportWithFallback(FALLBACK_RECT);
-const TIME_WIDTH = 230;
-const VALUE_WIDTH = 130;
+/** padding ซ้าย + ขวาของแต่ละช่อง (px) ต้องตรงกับ .rpt-table td/th ใน theme.css */
+const CELL_PADDING_PX = 16;
 
 interface TableProps {
   panelId: string;
@@ -390,8 +463,10 @@ function RowsTable({ panelId, report, rows, timeAt }: { panelId: string; report:
   rowsRef.current = rows;
   useEffect(() => registerShownRows(panelId, () => rowsRef.current), [panelId]);
 
-  const columns = report.sections[0]?.columns ?? [];
   const width = Math.max(2, ...report.sections.map((s) => s.columns.length));
+  // ความกว้างจากข้อความที่ยาวที่สุดของแต่ละคอลัมน์ (เวลา LTZG ชื่อสถิติ หัวคอลัมน์) ตารางกว้างเท่าผลรวม เลื่อนแนวนอนได้เมื่อเกินหน้าต่าง
+  const widths = useMemo(() => columnWidths(rows, width), [rows, width]);
+  const totalCh = widths.reduce((a, b) => a + b, 0);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -428,10 +503,10 @@ function RowsTable({ panelId, report, rows, timeAt }: { panelId: string; report:
     >
       <ContextMenu.Trigger asChild>
         <div ref={scrollRef} className="rpt-scroll" tabIndex={0} onContextMenuCapture={onContextMenuCapture}>
-          <table className="rpt-table">
+          <table className="rpt-table" style={{ width: `calc(${totalCh}ch + ${widths.length * CELL_PADDING_PX}px)` }}>
             <colgroup>
-              {Array.from({ length: width }, (_, i) => (
-                <col key={i} style={{ width: columns[i]?.kind === "time" ? TIME_WIDTH : VALUE_WIDTH }} />
+              {widths.map((w, i) => (
+                <col key={i} style={{ width: `calc(${w}ch + ${CELL_PADDING_PX}px)` }} />
               ))}
             </colgroup>
             <tbody>
@@ -472,27 +547,27 @@ function ReportRow({ row, width, timeAt }: { row: FlatRow; width: number; timeAt
     case "title":
       return (
         <tr className={row.section < 0 ? "rpt-title rpt-global-title" : "rpt-title"} style={style}>
-          <th colSpan={width} scope="colgroup">{row.cells[0]}</th>
+          <th colSpan={width} scope="colgroup" title={row.cells[0]}>{row.cells[0]}</th>
         </tr>
       );
     case "header":
       return (
         <tr className="rpt-head" style={style}>
-          {row.cells.map((c, i) => <th key={i} scope="col">{c}</th>)}
+          {row.cells.map((c, i) => <th key={i} scope="col" title={c}>{c}</th>)}
         </tr>
       );
     case "nodata":
       return (
         <tr className="rpt-nodata" style={style}>
-          <td colSpan={width}>{row.cells[0]}</td>
+          <td colSpan={width} title={row.cells[0]}>{row.cells[0]}</td>
         </tr>
       );
     case "summary":
     case "global":
       return (
         <tr className="rpt-stat" style={style}>
-          <td>{row.cells[0]}</td>
-          <td className="rpt-num">{row.cells[1]}</td>
+          <td colSpan={width - 1} title={row.cells[0]}>{row.cells[0]}</td>
+          <td className="rpt-num" title={row.cells[1]}>{row.cells[1]}</td>
         </tr>
       );
     default:
@@ -501,8 +576,8 @@ function ReportRow({ row, width, timeAt }: { row: FlatRow; width: number; timeAt
           {row.cells.map((c, i) => {
             const ms = timeAt(row, i);
             return ms === null
-              ? <td key={i} className="rpt-num">{c}</td>
-              : <td key={i} className="rpt-time" data-time={ms}>{c}</td>;
+              ? <td key={i} className="rpt-num" title={c}>{c}</td>
+              : <td key={i} className="rpt-time" data-time={ms} title={c}>{c}</td>;
           })}
         </tr>
       );

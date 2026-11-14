@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
+import { confirm } from "../../src/chrome/Dialogs";
 import type { ReportJson } from "../../src/data/reports";
 import { labels, t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -12,12 +13,16 @@ import { getPanelDef } from "../../src/layout/panels";
 import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
+import { useResults, type ResultsInfo } from "../../src/stores/results";
 import { useTime } from "../../src/stores/time";
 import { formatTime } from "../../src/time/format";
-import { openReport, Report, registerReportPanel, type ReportParams } from "../../src/windows/Report/Report";
-import { flattenRows } from "../../src/windows/Report/table";
+import { openReport, recomputePlan, Report, registerReportPanel, type ReportParams } from "../../src/windows/Report/Report";
+import { columnWidths, dynamicRows, flattenRows, prepareDynamic } from "../../src/windows/Report/table";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 import { stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
+
+// กล่องยืนยันของแอป: test ตอบเองแทนการคลิกใน <Dialogs/>
+vi.mock("../../src/chrome/Dialogs", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/chrome/Dialogs")>()), confirm: vi.fn() }));
 
 const T0 = Date.UTC(2026, 10, 12);
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -103,6 +108,7 @@ let user: ReturnType<typeof userEvent.setup>;
 
 beforeEach(() => {
   resetAll();
+  vi.mocked(confirm).mockReset();
   user = userEvent.setup();
 });
 
@@ -396,4 +402,168 @@ test("labels", () => {
   expect(labels["report.globalStatistics"]).toEqual({ text: "Global Statistics", source: "stk", ref: "STK ref §F" });
   for (const k of ["report.export", "report.setup", "report.noData", "report.fieldDelimiter", "report.encloseHeaderFields", "report.writeReportTitle", "report.headers", "window.report"] as const)
     expect(labels[k].source, k).toBe("ours");
+});
+
+// ---------- fix round 1 ----------
+
+const THBK = "*/Facility/THBK";
+const DOP_PARAMS: ReportParams = { style: "All DOPs", kind: "report", objects: [THBK], time: { mode: "object" }, dynamic: false };
+const NOT_CURRENT = { status: 409, json: { code: "RESULTS_NOT_CURRENT", text: "x", field: null, detail: null } };
+
+function planDoc(accesses: object[], objects?: object[]) {
+  return makeDoc({
+    name: "S1",
+    objects: (objects ?? [
+      { class: "Facility", name: "THBK", position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 0 } },
+      { class: "Constellation", name: "GPS", system: "G", assigned_objects: ["*/Satellite/G01"] },
+      { class: "Constellation", name: "GAL", system: "E", assigned_objects: ["*/Satellite/E11"] },
+      { class: "Satellite", name: "G01", norad: 40101 },
+      { class: "Satellite", name: "E11", norad: 40102 },
+      { class: "Satellite", name: "G02", norad: 40103 },
+    ]) as never,
+    accesses: accesses as never,
+  });
+}
+
+describe("recomputePlan", () => {
+  const toGps = { from: THBK, to: ["*/Constellation/GPS"], computed: true };
+
+  test("a Facility report with an access computes through that access", () => {
+    expect(recomputePlan(planDoc([toGps]), [THBK])).toEqual({ computes: [{ from: THBK, to: ["*/Constellation/GPS"] }], propagate: false, needsAccess: [], unreachable: [] });
+  });
+
+  test("a Facility report without an access needs a new access to every Constellation (asked first), never propagate", () => {
+    expect(recomputePlan(planDoc([]), [THBK])).toEqual({
+      computes: [], propagate: false, unreachable: [],
+      needsAccess: [{ from: THBK, to: ["*/Constellation/GPS", "*/Constellation/GAL"], timeline: false }],
+    });
+  });
+
+  test("without Constellations the new access goes to every Satellite; without satellites the facility cannot be computed", () => {
+    const sats = planDoc([], [
+      { class: "Facility", name: "THBK", position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 0 } },
+      { class: "Satellite", name: "G01", norad: 40101 },
+      { class: "Satellite", name: "E11", norad: 40102 },
+    ]);
+    expect(recomputePlan(sats, [THBK]).needsAccess).toEqual([{ from: THBK, to: ["*/Satellite/G01", "*/Satellite/E11"], timeline: false }]);
+    const none = planDoc([], [{ class: "Facility", name: "THBK", position: { type: "Geodetic", lat_deg: 13.7, lon_deg: 100.5, alt_m: 0 } }]);
+    expect(recomputePlan(none, [THBK])).toEqual({ computes: [], propagate: false, needsAccess: [], unreachable: [THBK] });
+  });
+
+  test("a Satellite report propagates", () => {
+    expect(recomputePlan(planDoc([toGps]), ["*/Satellite/G01"])).toEqual({ computes: [], propagate: true, needsAccess: [], unreachable: [] });
+  });
+
+  test("a satellite no access covers reuses an existing access of its facility instead of creating one", () => {
+    expect(recomputePlan(planDoc([toGps]), [`${THBK} */Satellite/G02`]).computes).toEqual([{ from: THBK, to: ["*/Constellation/GPS"] }]);
+    // ไม่มี access ของ Facility เลย: Compute คู่นั้นเอง (รายงานของ access นั้นคือสิ่งที่ผู้ใช้ขอ)
+    expect(recomputePlan(planDoc([]), [`${THBK} */Satellite/G02`]).computes).toEqual([{ from: THBK, to: ["*/Satellite/G02"] }]);
+  });
+});
+
+describe("facility reports that need an access", () => {
+  test("confirm yes computes an access to every Constellation without a Timeline row, then regenerates", async () => {
+    openScenario(planDoc([]));
+    vi.mocked(confirm).mockResolvedValueOnce(true);
+    let reports = 0;
+    const f = stubFetch({
+      [REPORTS]: () => (++reports === 1 ? NOT_CURRENT : { json: accessReport() }),
+      [COMPUTE]: { status: 202, json: { job: "j-3", etag: "e2" } },
+      "POST /api/scenarios/S1/propagate": { status: 202, json: { job: "never" } },
+    });
+    mount(DOP_PARAMS);
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    expect(vi.mocked(confirm).mock.calls[0][0]).toBe(msg("report.needsAccess", { facility: "THBK" }));
+    expect(f.calls.find((c) => `${c.method} ${c.path}` === COMPUTE)!.body).toEqual({ from: THBK, to: ["*/Constellation/GPS", "*/Constellation/GAL"], timeline: false });
+    expect(f.count("POST /api/scenarios/S1/propagate")).toBe(0);
+    act(() => useJobs.getState().onJobEvent({ id: "j-3", kind: "analyze", scenario: "S1", state: "succeeded", progress: null }));
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(2);
+  });
+
+  test("confirm no says so and does nothing else", async () => {
+    openScenario(planDoc([]));
+    vi.mocked(confirm).mockResolvedValueOnce(false);
+    const f = stubFetch({ [REPORTS]: NOT_CURRENT });
+    mount(DOP_PARAMS);
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(useMessages.getState().items.map((m) => m.text)).toContain(msg("report.needsAccessDeclined")));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.count(REPORTS)).toBe(1);
+    expect(f.calls.every((c) => c.method !== "POST" || c.path.endsWith("/reports"))).toBe(true);
+    expect(screen.getByRole("button", { name: t("report.refresh") }).hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("column widths", () => {
+  test("columns are wide enough for the longest text: LTZG times, statistic names and headers", () => {
+    const report = accessReport();
+    report.global_statistics.push({ name: "Std Deviation Duration", value: 12.5 });
+    const rows = flattenRows(report, "LTZG", "+07:00");
+    const widths = columnWidths(rows, 4);
+    expect(widths[1]).toBeGreaterThanOrEqual("12 Nov 2026 13:00:00.000 LTZG+07:00".length);
+    expect(widths[1]).toBeGreaterThanOrEqual("Start Time (LTZG+07:00)".length);
+    expect(widths[3]).toBeGreaterThanOrEqual("Duration (sec)".length);
+    // ชื่อสถิติคร่อมคอลัมน์แรกถึงคอลัมน์ก่อนสุดท้าย ค่าอยู่คอลัมน์สุดท้าย
+    for (const r of rows.filter((x) => x.kind === "global" || x.kind === "summary")) {
+      expect(widths.slice(0, 3).reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(r.cells[0].length);
+      expect(widths[3]).toBeGreaterThanOrEqual(r.cells[1].length);
+    }
+  });
+
+  test("the table has an explicit width from its columns, cells carry their text as a title", async () => {
+    scenario({ units: { date_format: "LTZG", ltz_offset: "+07:00" } });
+    stubFetch({ [REPORTS]: { json: accessReport() } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    const table = container.querySelector("table")!;
+    expect(table.style.width).toMatch(/ch/);
+    const cols = [...container.querySelectorAll("col")].map((c) => (c as HTMLElement).style.width);
+    expect(cols[1]).toMatch(/^calc\((\d+)ch/);
+    expect(Number(/^calc\((\d+)ch/.exec(cols[1])![1])).toBeGreaterThanOrEqual("12 Nov 2026 13:00:00.000 LTZG+07:00".length);
+    const cell = screen.getByText("12 Nov 2026 13:00:00.000 LTZG+07:00");
+    expect(cell.getAttribute("title")).toBe("12 Nov 2026 13:00:00.000 LTZG+07:00");
+    const stat = screen.getByText("Min Duration");
+    expect(stat.getAttribute("colspan")).toBe("3");
+  });
+});
+
+describe("other fixes", () => {
+  test("the stale banner follows the results store, not only a 409", async () => {
+    scenario();
+    stubFetch({ [REPORTS]: { json: accessReport() } });
+    mount({ ...PARAMS, objects: [G01] });
+    await screen.findByText("THBK-To-G01");
+    expect(screen.queryByRole("status")).toBeNull();
+    const info = (status: "current" | "stale" | "missing"): ResultsInfo => ({
+      ephem: { hash: "h", status: "current", available: ["h"] }, access: { THBK: { hash: "a", status, available: [] } }, error: null,
+    });
+    act(() => useResults.setState({ status: "current", info: info("stale") }));
+    expect((await screen.findByRole("status")).textContent).toContain(msg("banner.stale"));
+    act(() => useResults.setState({ status: "current", info: info("missing") }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(msg("banner.missing")));
+    act(() => useResults.setState({ status: "current", info: info("current") }));
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+
+  test("the window takes focus when it opens so F5 works at once", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(container.querySelector(".rpt")!.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "F5" });
+    await waitFor(() => expect(f.count(REPORTS)).toBe(2));
+  });
+
+  test("dynamic display shows no whole-period statistics for a summary-only section", () => {
+    const report = accessReport();
+    report.global_statistics = [];
+    report.sections = [{ ...report.sections[0], summary_only: true, summary: [{ name: "Total Duration", value: 10800 }] }];
+    const rows = dynamicRows(report, prepareDynamic(report, []), T0 + 7 * HOUR, 45_000, "UTCG", "+07:00");
+    expect(rows.map((r) => r.kind)).toEqual(["title", "nodata"]);
+  });
 });

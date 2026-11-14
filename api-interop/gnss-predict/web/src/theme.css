@@ -1975,10 +1975,14 @@ body {
   white-space: nowrap;
 }
 
+/* ทุกแถวสูง ROW_HEIGHT (20px) พอดี ไม่มี padding/border แนวตั้ง: virtualizer คำนวณตำแหน่งจากความสูงคงที่ จึงไม่กระตุกเวลาเลื่อน
+   padding แนวนอน 8px + 8px ต้องตรงกับ CELL_PADDING_PX ใน Report.tsx */
 .rpt-table td,
 .rpt-table th {
   box-sizing: border-box;
+  height: 20px;
   padding: 0 8px;
+  border: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 20px;
@@ -1991,14 +1995,13 @@ body {
 .rpt-title th {
   text-align: left;
   font-weight: 600;
-  padding-top: 4px;
 }
 
 .rpt-head th {
   text-align: right;
   font-weight: 600;
   background: var(--titlebar-bg);
-  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 -1px 0 var(--border); /* เส้นใต้หัวคอลัมน์โดยไม่เพิ่มความสูงของแถว */
 }
 
 .rpt-head th:first-child {

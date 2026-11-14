@@ -258,6 +258,10 @@ const MESSAGES = {
   "report.providersFailed": "อ่านวิธีประมาณค่าของข้อมูลจาก server ไม่สำเร็จ Dynamic Display จึงประมาณค่าเชิงเส้นทุกคอลัมน์ (มุมที่ข้าม 0° อาจผิด): {message}",
   "report.export": "ส่งออกรายงานที่แสดงอยู่ทั้งช่วงเป็นไฟล์ CSV ตามค่าใน Setup...",
   "report.refreshHint": "สร้างรายงานใหม่จากผลลัพธ์ล่าสุด (F5)",
+  // รายงานของ Facility (DOP, N Asset Coverage) ที่ยังไม่มี access: {facility} = ชื่อ Facility
+  "report.needsAccess": "ต้องคำนวณ Access ของสถานี {facility} ก่อน จึงจะมีค่า DOP และจำนวนดาวให้รายงาน จะสร้าง access จาก {facility} ไปยังทุก Constellation (หรือทุกดาวถ้าไม่มี Constellation) โดยไม่เพิ่มแถวใน Timeline View แล้วคำนวณเลยไหม",
+  "report.needsAccessDeclined": "ยังไม่ได้คำนวณ เพราะสถานีนี้ยังไม่มี Access ใช้ Access tool คำนวณ Access ของสถานีนี้ก่อน แล้วกด Refresh",
+  "report.noSatellites": "คำนวณผลลัพธ์ของสถานี {facility} ไม่ได้ เพราะ scenario ยังไม่มีดาว เพิ่มดาวหรือ Constellation ก่อน",
 
   // Message Viewer (spec §11)
   "mv.empty": "ไม่มีข้อความในแท็บนี้",

@@ -147,7 +147,14 @@ export function dynamicRows(report: ReportJson, prepared: readonly DynamicSectio
   const out: FlatRow[] = [];
   report.sections.forEach((section, index) => {
     const prep = prepared[index];
-    if (prep === undefined || !sectionHead(section, index, unit, out)) return;
+    if (prep === undefined) return;
+    if (section.summary_only) {
+      // สถิติของ Summary Only เป็นของทั้งช่วง ไม่ใช่ของเวลาปัจจุบัน: ไม่แสดงใน Dynamic Display
+      out.push({ cells: [section.title], section: index, kind: "title" });
+      out.push({ cells: [t("report.noData")], section: index, kind: "nodata" });
+      return;
+    }
+    sectionHead(section, index, unit, out);
     const values = valueAt(section.rows, prep.times, at, prep.interps, maxGapMs);
     if (values === null) {
       out.push({ cells: [t("report.noData")], section: index, kind: "nodata" });
@@ -157,6 +164,39 @@ export function dynamicRows(report: ReportJson, prepared: readonly DynamicSectio
     out.push({ cells, section: index, kind: "row", at });
   });
   return out;
+}
+
+// ---------- ความกว้างคอลัมน์ ----------
+
+/** ความกว้างอย่างน้อยของคอลัมน์ (อักขระ) */
+const MIN_CH = 4;
+
+/**
+ * ความกว้างของแต่ละคอลัมน์ (หน่วย ch ของฟอนต์ความกว้างคงที่ของตาราง) จากข้อความที่ยาวที่สุดในคอลัมน์ของหัวคอลัมน์และแถวข้อมูล
+ * แถวสถิติวางชื่อคร่อมคอลัมน์แรกถึงก่อนสุดท้ายและค่าในคอลัมน์สุดท้าย: ชื่อยาวกว่าผลรวมขยายคอลัมน์แรก ค่ายาวกว่าขยายคอลัมน์สุดท้าย
+ * ชื่อส่วนและ No Data คร่อมทุกคอลัมน์: ยาวกว่าผลรวมขยายคอลัมน์แรก
+ */
+export function columnWidths(rows: readonly FlatRow[], width: number): number[] {
+  const w = Array.from({ length: Math.max(2, width) }, () => MIN_CH);
+  const last = w.length - 1;
+  for (const r of rows) {
+    if (r.kind !== "row" && r.kind !== "header") continue;
+    r.cells.forEach((c, i) => {
+      if (i < w.length && c.length > w[i]) w[i] = c.length;
+    });
+  }
+  const sum = (a: number, b: number): number => w.slice(a, b).reduce((x, y) => x + y, 0);
+  for (const r of rows) {
+    if (r.kind === "summary" || r.kind === "global") {
+      if (r.cells[1] !== undefined && r.cells[1].length > w[last]) w[last] = r.cells[1].length;
+      const name = r.cells[0]?.length ?? 0;
+      if (name > sum(0, last)) w[0] += name - sum(0, last);
+    } else if (r.kind === "title" || r.kind === "nodata") {
+      const text = r.cells[0]?.length ?? 0;
+      if (text > sum(0, w.length)) w[0] += text - sum(0, w.length);
+    }
+  }
+  return w;
 }
 
 // ---------- ทะเบียนให้ test hook ----------
