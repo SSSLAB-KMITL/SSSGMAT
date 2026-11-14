@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { errorText } from "../api";
+import { useCallback, useId, useMemo } from "react";
 import { cssRgba, POLAR_COLORS } from "../colors";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { RotKnob } from "../components/RotKnob";
+import { SatFilter } from "../components/SatFilter";
 import { SpinButton } from "../components/SpinButton";
 import { ToggleButton } from "../components/ToggleButton";
 import { PassPolarPlot } from "../passes/PassPolarPlot";
 import type { PolarScene } from "../passes/passPolar";
 import { strokeSegments } from "../passes/plotCommon";
 import type { Orientation } from "../views/polarGeom";
-import { beginEdit, editedValue, FILTER_DELAY_MS, filterSats, finishEdit, fmtAngle } from "./radioView";
-import type { Edit } from "./radioView";
+import { editedValue, fmtAngle } from "./radioView";
 import { crosshair, ROT_TOOLTIPS as TIPS, rotEnabled, rotMarkers, rotTitle, SETPOINT_RADIUS, targetRect } from "./rotView";
 import type { RotMarkers } from "./rotView";
 import type { RotatorState } from "./types";
+import { useControllerState } from "./useControllerState";
 
 interface Props {
   /** module name */
@@ -30,7 +30,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** The numbers whose steps the window keeps until the server has answered them (see radioView.ts, Edit). */
+/** The numbers whose steps the window keeps until the server has answered them (see useControllerState). */
 type EditKey = "az" | "el" | "cycle" | "threshold";
 
 /** The markers over the plot, all in the colour of a satellite (`col_sat`): a filled square, a circle and a cross-hair (`gtk-polar-plot.c:592-635`). */
@@ -59,42 +59,7 @@ function paintMarkers(ctx: CanvasRenderingContext2D, markers: RotMarkers): void 
  */
 export function RotatorControl({ module, state, orientation, qthName, onAction, onClose }: Props) {
   const id = useId();
-  const [seen, setSeen] = useState(state);
-  const [shown, setShown] = useState(state);
-  const [edits, setEdits] = useState<Partial<Record<EditKey, Edit>>>({});
-  const [problem, setProblem] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-  const filterTimer = useRef<number | undefined>(undefined);
-  const requests = useRef({ sent: 0, applied: 0 });
-
-  if (seen !== state) {
-    // a tick: show it. The numbers of an edit that has no answer yet are kept (editedValue)
-    setSeen(state);
-    setShown(state);
-  }
-
-  /**
-   * One action. An answer that is older than one already shown is dropped (two requests can come back in the other order). `edit` is a
-   * number the user made with it: shown until the last of its requests is answered, whatever a tick says in the meantime.
-   */
-  const send = async (body: Record<string, unknown>, edit?: { key: EditKey; value: number }) => {
-    const n = ++requests.current.sent;
-    setProblem(null);
-    if (edit !== undefined) setEdits((e) => ({ ...e, [edit.key]: beginEdit(e[edit.key], edit.value) }));
-    try {
-      const next = await onAction(body);
-      if (n > requests.current.applied) {
-        requests.current.applied = n;
-        setShown(next);
-      }
-    } catch (e) {
-      setProblem(errorText(e));
-    } finally {
-      if (edit !== undefined) setEdits((e) => ({ ...e, [edit.key]: finishEdit(e[edit.key]) }));
-    }
-  };
-  const act = (body: Record<string, unknown>) => void send(body);
-  useEffect(() => () => window.clearTimeout(filterTimer.current), []);
+  const { shown, edits, problem, send, act } = useControllerState<RotatorState, EditKey>(state, onAction);
 
   const az = editedValue(edits.az, shown.knob.az);
   const el = editedValue(edits.el, shown.knob.el);
@@ -107,21 +72,8 @@ export function RotatorControl({ module, state, orientation, qthName, onAction, 
     [marked, orientation],
   );
 
-  const sats = filterSats(shown.sats, filter);
-  const satInList = sats.some((s) => s.norad === shown.norad);
   const enabled = rotEnabled(shown);
   const { limits } = shown;
-
-  /** "search-changed": the combo is refilled and the first match is selected (`filter_text_changed_cb`) */
-  const changeFilter = (text: string) => {
-    setFilter(text);
-    window.clearTimeout(filterTimer.current);
-    const all = shown.sats;
-    filterTimer.current = window.setTimeout(() => {
-      const first = filterSats(all, text)[0];
-      if (first !== undefined) void send({ action: "satellite", norad: first.norad });
-    }, FILTER_DELAY_MS);
-  };
 
   const status = problem ?? shown.status;
 
@@ -167,35 +119,13 @@ export function RotatorControl({ module, state, orientation, qthName, onAction, 
           <fieldset className="rc-frame">
             <legend>Satellite</legend>
             <div className="ar-sat">
-              <input
-                type="search"
+              <SatFilter
+                sats={shown.sats}
+                norad={shown.norad}
+                tip={TIPS.satellite}
                 className="ar-wide"
-                placeholder="Filter..."
-                aria-label="Filter..."
-                value={filter}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => changeFilter(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && filter !== "") {
-                    e.preventDefault(); // GtkSearchEntry clears itself on Escape; the window stays
-                    changeFilter("");
-                  }
-                }}
+                onSelect={(norad) => act({ action: "satellite", norad })}
               />
-              <select
-                className="ar-wide"
-                title={TIPS.satellite}
-                value={satInList ? String(shown.norad) : ""}
-                onChange={(e) => act({ action: "satellite", norad: Number(e.target.value) })}
-              >
-                {!satInList && <option value="" disabled hidden />}
-                {sats.map((s) => (
-                  <option key={s.norad} value={s.norad}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
               <ToggleButton title={TIPS.track} pressed={shown.track} disabled={!enabled.track} onToggle={(on) => act({ action: "track", on })}>
                 Track
               </ToggleButton>

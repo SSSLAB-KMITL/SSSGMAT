@@ -1,17 +1,13 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { errorText } from "../api";
+import { useEffect, useId, useRef } from "react";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { FreqKnob } from "../components/FreqKnob";
+import { SatFilter } from "../components/SatFilter";
 import { SpinButton } from "../components/SpinButton";
 import { ToggleButton } from "../components/ToggleButton";
 import {
-  beginEdit,
   countdownSize,
   editedValue,
   ellipsize,
-  FILTER_DELAY_MS,
-  filterSats,
-  finishEdit,
   fmtAngle,
   fmtDoppler,
   fmtLo,
@@ -21,8 +17,8 @@ import {
   RADIO_TOOLTIPS as TIPS,
   radioTitle,
 } from "./radioView";
-import type { Edit } from "./radioView";
 import type { RadioLink, RadioState } from "./types";
+import { useControllerState } from "./useControllerState";
 
 interface Props {
   /** module name */
@@ -35,7 +31,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** The numbers whose steps the window keeps until the server has answered them (see radioView.ts, Edit). */
+/** The numbers whose steps the window keeps until the server has answered them (see useControllerState). */
 type EditKey = "down" | "up" | "cycle";
 
 const noChange = () => {};
@@ -48,41 +44,7 @@ const noChange = () => {};
 export function RadioControl({ module, state, onAction, onClose }: Props) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
-  const [seen, setSeen] = useState(state);
-  const [shown, setShown] = useState(state);
-  const [edits, setEdits] = useState<Partial<Record<EditKey, Edit>>>({});
-  const [problem, setProblem] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-  const filterTimer = useRef<number | undefined>(undefined);
-  const requests = useRef({ sent: 0, applied: 0 });
-
-  if (seen !== state) {
-    // a tick: show it. The numbers of an edit that has no answer yet are kept (editedValue)
-    setSeen(state);
-    setShown(state);
-  }
-
-  /**
-   * One action. An answer that is older than one already shown is dropped (two requests can come back in the other order). `edit` is a
-   * number the user made with it: shown until the last of its requests is answered, whatever a tick says in the meantime.
-   */
-  const send = async (body: Record<string, unknown>, edit?: { key: EditKey; value: number }) => {
-    const n = ++requests.current.sent;
-    setProblem(null);
-    if (edit !== undefined) setEdits((e) => ({ ...e, [edit.key]: beginEdit(e[edit.key], edit.value) }));
-    try {
-      const next = await onAction(body);
-      if (n > requests.current.applied) {
-        requests.current.applied = n;
-        setShown(next);
-      }
-    } catch (e) {
-      setProblem(errorText(e));
-    } finally {
-      if (edit !== undefined) setEdits((e) => ({ ...e, [edit.key]: finishEdit(e[edit.key]) }));
-    }
-  };
-  const act = (body: Record<string, unknown>) => void send(body);
+  const { shown, edits, problem, send, act } = useControllerState<RadioState, EditKey>(state, onAction);
 
   // SPACE: PTT of an FT817/857/897 (manual) radio, for a key pressed anywhere in this window (`key_press_cb`)
   const latest = useRef({ send, spacePtt: shown.space_ptt });
@@ -100,21 +62,6 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
     document.addEventListener("keydown", press);
     return () => document.removeEventListener("keydown", press);
   }, []);
-  useEffect(() => () => window.clearTimeout(filterTimer.current), []);
-
-  const sats = filterSats(shown.sats, filter);
-  const satInList = sats.some((s) => s.norad === shown.norad);
-
-  /** "search-changed": the combo is refilled and the first match is selected, which also loads its transponders (`filter_text_changed_cb`) */
-  const changeFilter = (text: string) => {
-    setFilter(text);
-    window.clearTimeout(filterTimer.current);
-    const all = shown.sats;
-    filterTimer.current = window.setTimeout(() => {
-      const first = filterSats(all, text)[0];
-      if (first !== undefined) void send({ action: "satellite", norad: first.norad });
-    }, FILTER_DELAY_MS);
-  };
 
   const down = editedValue(edits.down, shown.down.sat_hz);
   const up = editedValue(edits.up, shown.up.sat_hz);
@@ -143,35 +90,13 @@ export function RadioControl({ module, state, onAction, onClose }: Props) {
           <fieldset className="rc-frame">
             <legend>Satellite</legend>
             <div className="rc-sat">
-              <input
-                type="search"
+              <SatFilter
+                sats={shown.sats}
+                norad={shown.norad}
+                tip={TIPS.satellite}
                 className="rc-wide"
-                placeholder="Filter..."
-                aria-label="Filter..."
-                value={filter}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(e) => changeFilter(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && filter !== "") {
-                    e.preventDefault(); // GtkSearchEntry clears itself on Escape; the window stays
-                    changeFilter("");
-                  }
-                }}
+                onSelect={(norad) => act({ action: "satellite", norad })}
               />
-              <select
-                className="rc-wide"
-                title={TIPS.satellite}
-                value={satInList ? String(shown.norad) : ""}
-                onChange={(e) => act({ action: "satellite", norad: Number(e.target.value) })}
-              >
-                {!satInList && <option value="" disabled hidden />}
-                {sats.map((s) => (
-                  <option key={s.norad} value={s.norad}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
               <ToggleButton title={TIPS.track} pressed={shown.track} onToggle={(on) => act({ action: "track", on })}>
                 Track
               </ToggleButton>

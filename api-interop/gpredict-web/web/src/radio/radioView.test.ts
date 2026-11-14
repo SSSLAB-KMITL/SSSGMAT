@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  answerRequest,
   beginEdit,
+  beginEdits,
   countdownSize,
   editedValue,
   ellipsize,
   filterSats,
   finishEdit,
+  finishEdits,
   fmtAngle,
   fmtDoppler,
   fmtLo,
   fmtRange,
   fmtRate,
   isPttSpace,
+  NO_REQUESTS,
   RADIO_TOOLTIPS,
   radioTitle,
+  sendRequest,
   TRANSPONDER_CHARS,
 } from "./radioView";
 import type { Edit } from "./radioView";
@@ -199,5 +204,64 @@ describe("edits that the server has not answered", () => {
 
   it("finishing an edit that is not there changes nothing", () => {
     expect(finishEdit(undefined)).toBeUndefined();
+  });
+});
+
+describe("the edits of a window, by name", () => {
+  it("each number has its own edit: a step of Cycle does not touch the knob's", () => {
+    let e = beginEdits<"az" | "cycle">({}, "az", 10);
+    e = beginEdits(e, "cycle", 500);
+    e = beginEdits(e, "az", 11);
+    expect(e).toEqual({ az: { value: 11, inFlight: 2 }, cycle: { value: 500, inFlight: 1 } });
+    e = finishEdits(e, "az");
+    expect(e).toEqual({ az: { value: 11, inFlight: 1 }, cycle: { value: 500, inFlight: 1 } });
+    e = finishEdits(finishEdits<"az" | "cycle">(e, "az"), "cycle");
+    expect(editedValue(e.az, 0)).toBe(0);
+    expect(editedValue(e.cycle, 3)).toBe(3);
+  });
+
+  it("does not change the object it is given", () => {
+    const before = beginEdits<"az">({}, "az", 1);
+    beginEdits(before, "az", 2);
+    finishEdits(before, "az");
+    expect(before).toEqual({ az: { value: 1, inFlight: 1 } });
+  });
+});
+
+describe("the order of the requests and their answers", () => {
+  it("requests are numbered 1, 2, 3 ...", () => {
+    const a = sendRequest(NO_REQUESTS);
+    const b = sendRequest(a.order);
+    expect([a.n, b.n]).toEqual([1, 2]);
+  });
+
+  it("answers in the order of the requests are all shown", () => {
+    const a = sendRequest(NO_REQUESTS);
+    const b = sendRequest(a.order);
+    const first = answerRequest(b.order, a.n);
+    expect(first.show).toBe(true);
+    expect(answerRequest(first.order, b.n).show).toBe(true);
+  });
+
+  it("an answer that comes after the answer of a newer request is dropped", () => {
+    const a = sendRequest(NO_REQUESTS);
+    const b = sendRequest(a.order);
+    const newer = answerRequest(b.order, b.n);
+    expect(newer.show).toBe(true);
+    expect(answerRequest(newer.order, a.n).show).toBe(false);
+    // and the newest one that was shown stays the newest
+    expect(answerRequest(newer.order, a.n).order).toEqual(newer.order);
+  });
+
+  it("an answer is shown once", () => {
+    const a = sendRequest(NO_REQUESTS);
+    const shown = answerRequest(a.order, a.n);
+    expect(answerRequest(shown.order, a.n).show).toBe(false);
+  });
+
+  it("does not change the order it is given", () => {
+    sendRequest(NO_REQUESTS);
+    answerRequest(NO_REQUESTS, 1);
+    expect(NO_REQUESTS).toEqual({ sent: 0, applied: 0 });
   });
 });

@@ -117,6 +117,45 @@ export function editedValue(edit: Edit | undefined, server: number): number {
   return edit === undefined ? server : edit.value;
 }
 
+/** The edits of a window by name (the numbers a window lets the user change: its knobs, Cycle, Threshold). */
+export type Edits<K extends string> = Partial<Record<K, Edit>>;
+
+/** `beginEdit` for the number `key` of `edits`; the others and `edits` itself are not changed. */
+export function beginEdits<K extends string>(edits: Edits<K>, key: K, value: number): Edits<K> {
+  return { ...edits, [key]: beginEdit(edits[key], value) };
+}
+
+/** `finishEdit` for the number `key` of `edits`; the others and `edits` itself are not changed. */
+export function finishEdits<K extends string>(edits: Edits<K>, key: K): Edits<K> {
+  return { ...edits, [key]: finishEdit(edits[key]) };
+}
+
+// ---------------------------------------------------------------- the order of requests and answers
+
+/**
+ * The requests of a window are numbered, and an answer is shown only if no answer to a newer request has been shown: two requests can
+ * come back in the other order, and the older answer would put back a state that the newer one has already replaced.
+ */
+export interface RequestOrder {
+  /** the number of the newest request that was sent */
+  sent: number;
+  /** the number of the newest request whose answer was shown */
+  applied: number;
+}
+
+export const NO_REQUESTS: RequestOrder = { sent: 0, applied: 0 };
+
+/** A request is sent: its number and the order with it. */
+export function sendRequest(order: RequestOrder): { n: number; order: RequestOrder } {
+  const n = order.sent + 1;
+  return { n, order: { ...order, sent: n } };
+}
+
+/** The answer to request `n` has come: whether to show it (no newer one was shown) and the order after it. */
+export function answerRequest(order: RequestOrder, n: number): { show: boolean; order: RequestOrder } {
+  return n > order.applied ? { show: true, order: { ...order, applied: n } } : { show: false, order };
+}
+
 // ---------------------------------------------------------------- tooltips (ref-R §2.2 to §2.6, gtk-rig-ctrl.c)
 
 /**
