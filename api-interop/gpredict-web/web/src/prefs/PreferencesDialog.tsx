@@ -160,7 +160,7 @@ export function PreferencesDialog({ onClose }: Props) {
                   aria-labelledby={`${id}-tab-${g.id}`}
                   hidden={g.id !== view.active}
                 >
-                  <ErrorBoundary>
+                  <ErrorBoundary text="หน้าอื่นของ Preferences ยังใช้ได้">
                     <GroupPage page={g.page!} api={apis.get(g.id)!} />
                   </ErrorBoundary>
                 </div>

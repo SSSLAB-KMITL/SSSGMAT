@@ -8,9 +8,15 @@ describe("ErrorBoundary", () => {
     expect(ErrorBoundary.getDerivedStateFromError(error)).toEqual({ failed: true, error });
   });
 
-  it("says in Thai that the page failed, with the text of the error, and that the other pages still work", () => {
-    expect(pageFailedText(new Error("boom"))).toBe("หน้านี้ทำงานผิดพลาด จึงแสดงไม่ได้ (boom) หน้าอื่นของ Preferences ยังใช้ได้");
+  it("says in Thai that the part failed, with the text of the error, then the text of its window", () => {
+    expect(pageFailedText(new Error("boom"), "หน้าอื่นของ Preferences ยังใช้ได้")).toBe(
+      "หน้านี้ทำงานผิดพลาด จึงแสดงไม่ได้ (boom) หน้าอื่นของ Preferences ยังใช้ได้",
+    );
     expect(pageFailedText(new ApiError("X", "ข้อความไทย", 500))).toContain("(ข้อความไทย)");
     expect(pageFailedText("plain")).toContain("(plain)");
+  });
+
+  it("names no window of its own: without a text it ends with the error", () => {
+    expect(pageFailedText(new Error("boom"))).toBe("หน้านี้ทำงานผิดพลาด จึงแสดงไม่ได้ (boom)");
   });
 });
