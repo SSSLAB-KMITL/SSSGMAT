@@ -8,6 +8,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from http.client import IncompleteRead
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError, URLError
 
 from gpredict_web import trsp
@@ -174,6 +175,13 @@ class ConvertTest(unittest.TestCase):
     def test_empty_inputs(self):
         self.assertEqual(convert([], []), {})
 
+    def test_ints_too_large_for_a_float_are_not_numbers(self):
+        # JSON อ่านเลขจำนวนเต็มได้ทุกขนาด แต่ baud ถูกเขียนผ่าน float: เลขที่เกินช่วงของ float อ่านเป็น "ไม่มีค่า" ไม่ใช่ OverflowError
+        huge = 10 ** 400
+        out = convert([{"id": huge, "name": "HUGE"}], [{"description": "B", "norad_cat_id": 1, "baud": huge,
+                                                        "uplink_low": huge, "mode_id": huge, "invert": huge}])
+        self.assertEqual(out, {1: [item("B", mode="0")]})
+
 
 class NormaliseTest(unittest.TestCase):
     def test_normalise(self):
@@ -201,6 +209,7 @@ class NormaliseTest(unittest.TestCase):
     def test_bad_types_become_defaults(self):
         t = normalise({"name": "x", "up_low": "a", "down_low": None, "invert": "yes", "mode": None, "baud": "z"})
         self.assertEqual(t, item("x"))
+        self.assertEqual(normalise({"name": "x", "up_low": 10 ** 400, "baud": 10 ** 400}), item("x"))   # แก้ไฟล์ด้วยมือ
 
 
 class UpdateTest(TrspTestCase):
@@ -411,6 +420,24 @@ class UpdateTest(TrspTestCase):
         self.assertEqual(result.messages[1].level, "warning")
         self.assertEqual(self.read_sat(43770), EXPECTED[43770])
         self.assertTrue(logs.output[0].endswith("Could not open trsp file for write"))
+
+    def test_conversion_runs_before_the_cache_is_replaced(self):
+        # แปลงไม่ได้ (error ที่ไม่คาด): _cache เดิมต้องอยู่ ไม่เช่นนั้นทุกการ update ใน 2 ชม. จะแปลง cache ใหม่ที่พังซ้ำ
+        self.update(FakeSatnogs())
+        before = self.snapshot()
+        new_modes = json.dumps([{"id": 2, "name": "NEWFM"}]).encode()
+        with mock.patch.object(trsp, "convert", side_effect=RuntimeError("bug")), self.assertRaises(RuntimeError):
+            self.update(FakeSatnogs(modes=new_modes), T + timedelta(hours=3))
+        after = self.snapshot()
+        self.assertNotEqual(after.pop("_cache/state.json"), before.pop("_cache/state.json"))
+        self.assertEqual(after, before)
+        self.assertEqual(sorted(p.name for p in self.cache.iterdir()), ["modes.json", "state.json", "transmitters.json"])
+
+    def test_huge_baud_from_satnogs_updates(self):
+        transmitters = b'[{"description": "Huge", "norad_cat_id": 25544, "baud": 1' + b"0" * 400 + b"}]"
+        result = self.update(FakeSatnogs(transmitters=transmitters))
+        self.assertEqual([m.code for m in result.messages], ["TRSP_UPDATED"])
+        self.assertEqual(self.read_sat(25544), [item("Huge", mode="0")])
 
     def test_unchanged_satellite_files_are_not_rewritten(self):
         opener = FakeSatnogs()

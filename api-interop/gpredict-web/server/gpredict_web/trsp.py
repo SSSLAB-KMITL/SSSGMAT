@@ -5,7 +5,7 @@
   และ data/trsp/_cache/{modes.json, transmitters.json, state.json}
 - update_from_network (Edit -> Update transponder data): ส่ง request ได้ 1 ครั้งต่อ 2 ชม. (TRSP_MIN_INTERVAL) นับจาก requested_at ใน state.json
   ซึ่งบันทึกก่อนส่ง จึงนับทั้งที่ล้มเหลว ภายใน 2 ชม. ไม่ส่ง request แต่แปลงจาก _cache เดิม (ถ้ามี)
-  ดึง modes แล้ว transmitters ลงไฟล์ชั่วคราวใน _cache และ rename เข้าที่เมื่อสำเร็จทั้งคู่เท่านั้น แล้วบันทึก succeeded_at
+  ดึง modes แล้ว transmitters ลงไฟล์ชั่วคราวใน _cache และ rename เข้าที่เมื่อสำเร็จทั้งคู่และแปลงได้แล้วเท่านั้น แล้วบันทึก succeeded_at
   ล้มเหลว (ต่อเน็ตไม่ได้, HTTP error, timeout, คำตอบไม่ใช่ JSON ที่ใช้ได้): ไม่แตะไฟล์ต่อดาวและ _cache เดิม (Gpredict ล้าง cache ก่อนดึง) (ของเรา)
   ดาวที่ไม่อยู่ในข้อมูลใหม่คงไฟล์เดิมเหมือน Gpredict
 - request มี User-Agent "gpredict-web" อย่างเดียว ไม่มี header อื่น และ URL ไม่มีข้อมูลผู้ใช้
@@ -65,10 +65,14 @@ class TrspUpdateResult:
 # ---------------------------------------------------------------- แปลง JSON ของ SatNOGS (ref-R §11.3)
 
 def _number(v):
-    """int หรือ float ที่จำกัดค่า (ไม่รับ bool, nan, inf) ไม่เช่นนั้น None"""
-    if isinstance(v, bool) or not isinstance(v, (int, float)) or (isinstance(v, float) and not math.isfinite(v)):
+    """int หรือ float ที่จำกัดค่าและเป็น float ได้ (ไม่รับ bool, nan, inf และ int ที่เกินช่วงของ float ซึ่ง JSON อ่านได้) ไม่เช่นนั้น None"""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
         return None
-    return v
+    try:
+        finite = math.isfinite(v)                           # int ที่ใหญ่เกิน float: OverflowError
+    except OverflowError:
+        return None
+    return v if finite else None
 
 
 def _hz(v) -> int:
@@ -330,6 +334,7 @@ def update_from_network(data_dir: Path, now: datetime, opener=urlopen) -> TrspUp
         modes_temp, modes = _download(MODES_URL, opener, cache, temps)
         transmitters_temp, transmitters = _download(TRANSMITTERS_URL, opener, cache, temps)
         _log.info("Fetched %d files from network; updating...", len(temps))
+        converted = convert(modes, transmitters)               # แปลงก่อนแทน cache: ข้อมูลที่แปลงไม่ได้ไม่ทับ cache เดิม
         os.replace(modes_temp, cache / MODES_FILE)             # ถึงตรงนี้แปลว่าได้ครบทั้งคู่ จึงค่อยแทนของเดิม
         os.replace(transmitters_temp, cache / TRANSMITTERS_FILE)
     except _FetchError as exc:
@@ -349,7 +354,7 @@ def update_from_network(data_dir: Path, now: datetime, opener=urlopen) -> TrspUp
             temp.unlink(missing_ok=True)
 
     _write_state(cache, now, now)
-    satellites, problems = _apply(trsp_dir, convert(modes, transmitters))
+    satellites, problems = _apply(trsp_dir, converted)
     return TrspUpdateResult(False, now, satellites, [Message(
         "TRSP_UPDATED", "info",
         f"ดึงข้อมูล transponder จาก SatNOGS DB เมื่อ {_t(now)} อัปเดตไฟล์ของดาว {satellites} ดวง "
