@@ -226,6 +226,17 @@
       "status": "done"
     },
     {
+      "id": "noaa-21",
+      "glb": "noaa-21/noaa-21.glb",
+      "blocks": [],
+      "norad_ids": [54234],
+      "size_m": [4.3, 10.71, 3.118],
+      "triangles": 1982,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
       "id": "goes",
       "glb": "goes/goes.glb",
       "blocks": [],
