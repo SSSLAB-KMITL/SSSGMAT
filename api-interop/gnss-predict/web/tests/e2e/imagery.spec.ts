@@ -1,5 +1,6 @@
 // โหมด Camera ของ Sensor View และ Globe Manager (imagery spec §5.1, §5.3, §7): e2e ไม่ต่อเน็ตเลย
-// - server ของ e2e ตั้ง online_imagery.enabled = false (build_fixture.py) จึงไม่มี request ไป /api/imagery/tiles จากหน้าเว็บ และ server ไม่ส่งอะไรไป GIBS
+// - server ของ e2e ตั้ง online_imagery ทั้งสี่ช่อง (enabled = GIBS, eox, osm, ion) เป็น false (build_fixture.py) จึงไม่มี request ไป /api/imagery/tiles จากหน้าเว็บ
+//   และ server ไม่ส่งอะไรไป GIBS หรือ EOX ; osm กับ ion ปิด = browser ไม่ต่อ tile.openstreetmap.org / api.cesium.com (spec นี้ไม่เปิดแหล่งใดและไม่ยืนยันกล่องใด)
 //   ทุก test ตรวจตอนจบว่าไม่มี request ใดของ browser ไปที่ /api/imagery/tiles (ตัวกัน request นอกเครื่องของ fixtures.ts ยังทำงานด้วย)
 // - spec นี้เปิด Sensor View (สร้าง sensor ใน scenario E2E) แล้วคืนเอกสารเดิมทุก test เหมือน sensor.spec.ts (spec อื่นใช้ E2E ด้วย)
 //   ไม่เรียก tile ของ server เอง (ไม่มี request ไปที่ /api/imagery/tiles ทั้งจากหน้าเว็บและจาก test)
@@ -224,69 +225,108 @@ const GIBS_TITLES = [
 ];
 
 const EOX_TITLE = "Sentinel-2 cloudless 2024";
+const OSM_TITLE = "OpenStreetMap";
 
-const onlineSwitch = (page: Page) => page.getByRole("checkbox", { name: "Online imagery (NASA GIBS)", exact: true });
+/** สี่กลุ่มของ Globe Manager ตามลำดับบนจอ: ป้ายสวิตช์, host ในกล่องยืนยัน และช่องของสวิตช์ใน online_imagery (ของ server) */
+const SOURCES = [
+  { label: "Online imagery (NASA GIBS)", host: "gibs.earthdata.nasa.gov", field: "enabled" },
+  { label: "Online imagery (Sentinel-2 cloudless)", host: "tiles.maps.eox.at", field: "eox" },
+  { label: "Online imagery (OpenStreetMap)", host: "tile.openstreetmap.org", field: "osm" },
+  { label: "Online imagery (Cesium ion)", host: "api.cesium.com", field: "ion" },
+] as const;
+
+const onlineSwitch = (page: Page, label: string) => page.getByRole("checkbox", { name: label, exact: true });
 const globeRows = (page: Page) => page.locator(".globe-table tbody tr");
+const globeGroups = (page: Page) => page.locator(".globe-group");
 
 interface SettingsDoc {
-  online_imagery: { enabled: boolean };
+  online_imagery: { enabled: boolean; eox: boolean; osm: boolean; ion: boolean };
 }
 
-async function imageryEnabledOnServer(page: Page): Promise<boolean> {
+const ALL_OFF = { enabled: false, eox: false, osm: false, ion: false };
+
+async function onlineImageryOnServer(page: Page): Promise<SettingsDoc["online_imagery"]> {
   const reply = await page.request.get("/api/settings");
   expect(reply.ok()).toBe(true);
-  return ((await reply.json()) as SettingsDoc).online_imagery.enabled;
+  return ((await reply.json()) as SettingsDoc).online_imagery;
 }
 
 test.describe("Globe Manager", () => {
-  test("lists Natural Earth II and the 8 GIBS layers; ticking Online imagery asks for consent and Cancel changes nothing", async ({ page }) => {
+  test("has four source groups (GIBS, Sentinel-2 cloudless, OpenStreetMap, Cesium ion); every switch asks for its own consent and Cancel changes nothing", async ({ page }) => {
     await openScenario(page, "E2E");
-    expect(await imageryEnabledOnServer(page), "online_imagery.enabled in the e2e data").toBe(false);
+    expect(await onlineImageryOnServer(page), "online_imagery in the e2e data").toEqual(ALL_OFF);
     // รายการชั้นของ server ตรงกับที่หน้าต่างแสดง (GET /api/imagery/layers ไม่ต่อเน็ต: ใช้ได้เสมอแม้สวิตช์ปิด)
     const layersReply = await page.request.get("/api/imagery/layers");
     expect(layersReply.ok()).toBe(true);
-    const layers = (await layersReply.json()) as { enabled: boolean; layers: { title: string; source: string }[] };
+    const layers = (await layersReply.json()) as {
+      enabled: boolean;
+      sources: Record<string, boolean>;
+      layers: { title: string; source: string }[];
+    };
     expect(layers.enabled).toBe(false);
+    expect(layers.sources).toEqual({ gibs: false, eox: false, osm: false, ion: false });
+    // server ส่ง 9 ชั้น (GIBS 8 + EOX 1) ; OpenStreetMap และ Cesium ion ไม่มีใน catalog ของ server (browser ดึงตรง)
+    expect(layers.layers).toHaveLength(9);
     expect(layers.layers.filter((l) => l.source === "gibs").map((l) => l.title)).toEqual(GIBS_TITLES);
     expect(layers.layers.filter((l) => l.source === "eox").map((l) => l.title)).toEqual([EOX_TITLE]);
 
     await page.getByRole("menuitem", { name: "View", exact: true }).click();
     await page.getByRole("menuitem", { name: "Globe Manager", exact: true }).click();
 
-    // 10 แถว: Natural Earth II (ฐาน ปิดไม่ได้) + 8 ชั้น GIBS + Sentinel-2 cloudless ตามลำดับของ catalog (กลุ่มตามแหล่งเป็นงานของ Globe Manager รุ่นถัดไป)
-    await expect(onlineSwitch(page)).toBeVisible();
-    await expect(globeRows(page)).toHaveCount(10);
-    await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES, EOX_TITLE]);
-    await expect(onlineSwitch(page)).not.toBeChecked();
-    // สวิตช์ปิด: ชั้น GIBS ใช้ไม่ได้ (Show และ % Translucency ปิดใช้) ส่วน Natural Earth II ติ๊กไว้และปิดไม่ได้เสมอ
+    // สี่กลุ่มตามลำดับ แต่ละกลุ่มมีสวิตช์ของตัวเอง ปิดอยู่ทั้งหมด
+    await expect(globeGroups(page)).toHaveCount(4);
+    for (const [i, source] of SOURCES.entries()) {
+      await expect(globeGroups(page).nth(i)).toHaveAttribute("aria-label", source.label);
+      await expect(globeGroups(page).nth(i).getByRole("checkbox", { name: source.label, exact: true })).not.toBeChecked();
+    }
+    // 11 แถว: Natural Earth II (ฐาน ปิดไม่ได้ อยู่นอกกลุ่ม) + 8 ชั้น GIBS + Sentinel-2 cloudless + OpenStreetMap ตามลำดับของกลุ่ม; กลุ่ม Cesium ion ไม่มีตาราง
+    await expect(globeRows(page)).toHaveCount(11);
+    await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES, EOX_TITLE, OSM_TITLE]);
+    await expect(globeGroups(page).nth(0).locator("tbody th[scope=row]")).toHaveText(GIBS_TITLES);
+    await expect(globeGroups(page).nth(1).locator("tbody th[scope=row]")).toHaveText([EOX_TITLE]);
+    await expect(globeGroups(page).nth(2).locator("tbody th[scope=row]")).toHaveText([OSM_TITLE]);
+    await expect(globeGroups(page).nth(3).locator("table")).toHaveCount(0);
+    // สวิตช์ปิด: ชั้นของแหล่งนั้นใช้ไม่ได้ (Show ปิดใช้) ส่วน Natural Earth II ติ๊กไว้และปิดไม่ได้เสมอ
     await expect(page.getByRole("checkbox", { name: "Natural Earth II Show", exact: true })).toBeChecked();
     await expect(page.getByRole("checkbox", { name: "Natural Earth II Show", exact: true })).toBeDisabled();
-    for (const title of GIBS_TITLES) {
-      await expect(page.getByRole("checkbox", { name: `${title} Show`, exact: true }), `${title} Show while the switch is off`).toBeDisabled();
+    for (const title of [...GIBS_TITLES, EOX_TITLE, OSM_TITLE]) {
+      await expect(page.getByRole("checkbox", { name: `${title} Show`, exact: true }), `${title} Show while its switch is off`).toBeDisabled();
     }
+    // กลุ่ม Cesium ion: ช่อง token เป็นช่องรหัสผ่านที่ว่างอยู่ (ไม่แสดงค่าที่บันทึกไว้) และตัวเลือก asset ปิดใช้ขณะสวิตช์ปิด
+    await expect(page.getByLabel("Cesium Ion Token", { exact: true })).toHaveAttribute("type", "password");
+    await expect(page.getByLabel("Cesium Ion Token", { exact: true })).toHaveValue("");
+    await expect(page.getByRole("radiogroup", { name: "Cesium ion asset", exact: true }).getByRole("radio").first()).toBeDisabled();
 
-    // ติ๊ก -> กล่องยืนยันภาษาไทยที่บอก host ที่จะต่อ -> Cancel: ไม่เปลี่ยนค่า (server ยังปิด และช่องติ๊กกลับเป็นไม่ติ๊ก)
-    await onlineSwitch(page).click();
+    // ติ๊กสวิตช์ของแต่ละแหล่ง -> กล่องยืนยันภาษาไทยที่บอก host ของแหล่งนั้น -> Cancel: ไม่เปลี่ยนค่า (server ยังปิดทั้งสี่ช่อง และช่องติ๊กกลับเป็นไม่ติ๊ก)
     // หน้าต่างลอยของ Globe Manager ก็มี role dialog (dockview): เลือกกล่องยืนยันของแอปจากชื่อ "Confirm"
     const dialog = page.getByRole("dialog", { name: "Confirm", exact: true });
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("gibs.earthdata.nasa.gov");
+    for (const source of SOURCES) {
+      await onlineSwitch(page, source.label).click();
+      await expect(dialog, `${source.host} confirmation`).toBeVisible();
+      await expect(dialog).toContainText(source.host);
+      for (const other of SOURCES.filter((s) => s.host !== source.host)) await expect(dialog).not.toContainText(other.host);
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(onlineSwitch(page, source.label)).not.toBeChecked();
+      expect(await onlineImageryOnServer(page), `online_imagery after Cancel of ${source.host}`).toEqual(ALL_OFF);
+    }
+    // GIBS: บอกที่เก็บ data/imagery ; OpenStreetMap และ Cesium ion: browser ต่อเอง (ไม่มีที่เก็บของ server)
+    await onlineSwitch(page, SOURCES[0].label).click();
     await expect(dialog).toContainText("data/imagery");
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(dialog).toBeHidden();
-    await expect(onlineSwitch(page)).not.toBeChecked();
-    expect(await imageryEnabledOnServer(page), "online_imagery.enabled after Cancel").toBe(false);
-
-    // Esc = Cancel เช่นกัน
-    await onlineSwitch(page).click();
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("gibs.earthdata.nasa.gov");
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(onlineSwitch(page)).not.toBeChecked();
-    expect(await imageryEnabledOnServer(page), "online_imagery.enabled after Escape").toBe(false);
+    await onlineSwitch(page, SOURCES[2].label).click();
+    await expect(dialog).toContainText("browser");
+    await expect(dialog).not.toContainText("data/imagery");
+    // Esc = Cancel เช่นกัน
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    for (const source of SOURCES) await expect(onlineSwitch(page, source.label)).not.toBeChecked();
+    expect(await onlineImageryOnServer(page), "online_imagery after Escape").toEqual(ALL_OFF);
     const after = await page.request.get("/api/imagery/layers");
-    expect(((await after.json()) as { enabled: boolean }).enabled).toBe(false);
+    const afterDoc = (await after.json()) as { enabled: boolean; sources: Record<string, boolean> };
+    expect(afterDoc.enabled).toBe(false);
+    expect(afterDoc.sources).toEqual({ gibs: false, eox: false, osm: false, ion: false });
     // ทุกอย่างข้างบนเกิดโดยไม่มี request ใดไป /api/imagery/tiles (ตรวจตอนจบ test ด้วย fixture tileRequests)
   });
 });

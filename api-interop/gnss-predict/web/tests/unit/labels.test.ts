@@ -324,6 +324,17 @@ describe("Globe Manager labels", () => {
     expect(sections.get("H")!.heading).toMatch(/^Globe Manager\b/);
   });
 
+  test("the group switches, the ion asset and the token field are ours (STK has none), and the token field reuses the Daily window's label", () => {
+    for (const k of ["field.onlineImageryEox", "field.onlineImageryOsm", "field.onlineImageryIon", "field.ionAsset", "field.ionAssetId", "option.ionAsset.none"] as const) {
+      expect(labels[k].source, k).toBe("ours");
+    }
+    expect(labels["field.onlineImageryEox"].text).toBe("Online imagery (Sentinel-2 cloudless)");
+    expect(labels["field.onlineImageryOsm"].text).toBe("Online imagery (OpenStreetMap)");
+    expect(labels["field.onlineImageryIon"].text).toBe("Online imagery (Cesium ion)");
+    expect(labels["field.cesiumToken"].text).toBe("Cesium Ion Token");
+    expect(Object.entries(labels).filter(([, l]) => l.text === "Cesium Ion Token").map(([k]) => k)).toEqual(["field.cesiumToken"]);
+  });
+
   test("names the STK help does not use for these controls stay ours (STK shows an unlabeled check box and the word Translucency)", () => {
     for (const k of ["field.onlineImagery", "field.globeLayer", "option.globe.naturalEarthII"] as const) expect(labels[k].source, k).toBe("ours");
     expect(labels["field.onlineImagery"].text).toBe("Online imagery (NASA GIBS)");
@@ -640,6 +651,107 @@ describe("consent texts name every host that a download contacts", () => {
     expect(text).not.toMatch(/เท่านั้น/);
     // ไม่ใช่ข้อความของการดาวน์โหลดข้อมูลวงโคจร: ไม่อ้างแหล่งอื่นที่ไม่ได้ติดต่อ
     for (const host of HOSTS) expect(text, host).not.toContain(host);
+  });
+
+  describe("the other online imagery sources (spec ภาพละเอียด §4.3)", () => {
+    const imagery = readFileSync(resolve(__dirname, "../../../server/gnss_studio_server/imagery.py"), "utf8");
+    const imageryStore = readFileSync(resolve(__dirname, "../../src/stores/imagery.ts"), "utf8");
+    const cesiumIon = readFileSync(resolve(__dirname, "../../node_modules/@cesium/engine/Source/Core/Ion.js"), "utf8");
+    const hostIn = (source: string, name: string, what: string): string => {
+      const m = new RegExp(`^(?:export )?(?:const )?${name} = "https://([^/"]+)/`, "m").exec(source);
+      expect(m, `${name} not found in ${what}`).not.toBeNull();
+      return m![1];
+    };
+    const EOX_HOST = hostIn(imagery, "EOX_URL", "server/gnss_studio_server/imagery.py");
+    const GIBS_HOST = hostIn(imagery, "GIBS_URL", "server/gnss_studio_server/imagery.py");
+    const OSM_HOST = hostIn(imageryStore, "OSM_URL", "src/stores/imagery.ts");
+    const ION_HOST = "api.cesium.com";
+    const ua = /^USER_AGENT = "([^"]+)"/m.exec(imagery)![1];
+    const eox = msg("globe.consentEox");
+    const osm = msg("globe.consentOsm");
+    const ion = msg("globe.consentIon");
+    const THAI = /[\u0E00-\u0E7F]/;
+
+    test("the hosts are the ones the code really contacts", () => {
+      expect([EOX_HOST, OSM_HOST]).toEqual(["tiles.maps.eox.at", "tile.openstreetmap.org"]);
+      expect(cesiumIon).toContain(`https://${ION_HOST}/`);
+    });
+
+    test("Sentinel-2 cloudless: names the EOX host, says it goes through the local server, what is sent, the cache and its cap", () => {
+      expect(eox).toMatch(THAI);
+      expect(eox).toContain(EOX_HOST);
+      expect(eox).toMatch(/(?<!ไม่)ผ่าน server ในเครื่องนี้/);
+      expect(eox).toMatch(/ชื่อชั้นภาพ.*พิกัด/);
+      expect(eox).toContain(`User-Agent ${ua}`);
+      expect(eox).toMatch(/IP/);
+      expect(eox).toMatch(/EOX/);
+      expect(eox).toContain("data/imagery");
+      expect(eox).toContain("2 GB");
+      expect(eox).toMatch(/ไม่เชิงพาณิชย์/);
+      expect(eox).toMatch(/ปิดได้ทุกเมื่อ/);
+      expect(eox).not.toMatch(/เท่านั้น/);
+    });
+
+    test("OpenStreetMap: names the OSM host, says the browser connects directly and sends IP, its User-Agent and Referer, tiles are cached by the browser, and the OSM usage rules", () => {
+      expect(osm).toMatch(THAI);
+      expect(osm).toContain(OSM_HOST);
+      expect(osm).toMatch(/browser.*โดยตรง/);
+      expect(osm).toMatch(/ไม่ผ่าน server/);
+      expect(osm).toMatch(/IP/);
+      expect(osm).toMatch(/User-Agent ของ browser/);
+      expect(osm).toMatch(/Referer/);
+      expect(osm).toMatch(/แคชของ browser/);
+      expect(osm).toMatch(/เฉพาะชิ้นภาพที่กำลังแสดง/);
+      expect(osm).toMatch(/ออฟไลน์/);
+      expect(osm).toMatch(/จำนวนมาก/);
+      expect(osm).toContain("© OpenStreetMap contributors");
+      expect(osm).toMatch(/ปิดได้ทุกเมื่อ/);
+      // ไม่ใช่ข้อความของแหล่งที่ผ่าน server: ไม่อ้างที่เก็บของ server หรือ User-Agent ของ server
+      expect(osm).not.toContain("data/imagery");
+      expect(osm).not.toContain(ua);
+    });
+
+    test("Cesium ion: names api.cesium.com and the hosts it redirects to, says the browser connects directly and sends the token, IP, User-Agent and Referer, other layers hide, non-commercial terms", () => {
+      expect(ion).toMatch(THAI);
+      expect(ion).toContain(ION_HOST);
+      expect(ion).toMatch(/โฮสต์ภาพที่ Cesium ion ส่งต่อ/);
+      expect(ion).toMatch(/browser.*โดยตรง/);
+      expect(ion).toMatch(/ไม่ผ่าน server/);
+      expect(ion).toMatch(/token/);
+      expect(ion).toMatch(/ส่ง.*token|token.*ส่ง/);
+      expect(ion).toMatch(/IP/);
+      expect(ion).toMatch(/User-Agent ของ browser/);
+      expect(ion).toMatch(/Referer/);
+      expect(ion).toMatch(/Bing/);
+      expect(ion).toMatch(/Google/);
+      expect(ion).toMatch(/ซ้อน/);
+      expect(ion).toMatch(/ซ่อน/);
+      expect(ion).toMatch(/Natural Earth II/);
+      expect(ion).toMatch(/Community/);
+      expect(ion).toMatch(/ไม่เชิงพาณิชย์/);
+      expect(ion).toMatch(/ปิดได้ทุกเมื่อ/);
+      expect(ion).not.toContain("data/imagery");
+      expect(ion).not.toContain(ua);
+    });
+
+    test("each of the four confirmations names only its own host", () => {
+      const hosts = { gibs: GIBS_HOST, eox: EOX_HOST, osm: OSM_HOST, ion: ION_HOST };
+      const texts = { gibs: msg("globe.consent"), eox, osm, ion };
+      for (const [source, text] of Object.entries(texts)) {
+        expect(text, source).toContain(hosts[source as keyof typeof hosts]);
+        for (const [other, host] of Object.entries(hosts)) if (other !== source) expect(text, `${source} must not name ${other}'s host`).not.toContain(host);
+      }
+      // บอกตรง ๆ ว่าแหล่งไหนผ่าน server ในเครื่อง และแหล่งไหน browser ดึงเอง
+      const viaServer = /(?<!ไม่)ผ่าน server ในเครื่องนี้/;   // "ไม่ผ่าน server ในเครื่องนี้" (browser ดึงตรง) ต้องไม่นับ
+      expect(texts.gibs).toMatch(viaServer);
+      expect(texts.eox).toMatch(viaServer);
+      expect(texts.osm).not.toMatch(viaServer);
+      expect(texts.ion).not.toMatch(viaServer);
+    });
+
+    test("none of the messages contains a token-looking value, and the token text is only ever a description of the field", () => {
+      for (const k of MSG_KEYS.filter((key) => key.startsWith("globe."))) expect(msg(k), k).not.toMatch(/[A-Za-z0-9_-]{40,}/);
+    });
   });
 
   test("the Fetch Now confirmation says the other hosts may still be contacted when CelesTrak is rate-limited", () => {

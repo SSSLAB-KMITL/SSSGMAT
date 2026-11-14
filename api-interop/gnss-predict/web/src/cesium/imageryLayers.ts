@@ -50,6 +50,9 @@ import { useTime } from "../stores/time";
 import { Throttle } from "../windows/graphics/throttle";
 import { timeToken, tokenLabel } from "./imageryTime";
 import { ionAssetTitle } from "./ionAssets";
+import { getIonFailure, ionPlan, notifyIonListeners, onIonStatusChange, setIonFailure, type IonPlan } from "./ionState";
+
+export { ionStatus, onIonStatusChange, type IonStatus } from "./ionState";
 
 /** เปลี่ยนชั้นตามเวลาได้ไม่เกินหนึ่งครั้งต่อช่วงนี้ต่อ viewer */
 export const TOKEN_INTERVAL_MS = 1000;
@@ -94,54 +97,14 @@ interface Manager {
 
 const managers = new WeakMap<object, Manager>();
 
-// ---------- Cesium ion: สถานะร่วมของทุก viewer ----------
+// ---------- Cesium ion: สถานะร่วมของทุก viewer (ตัวแผน ionPlan/ionStatus อยู่ใน ionState.ts: ไม่ import cesium จึงให้ Globe Manager ใช้ได้) ----------
 
-type IonPlan =
-  | { kind: "off" }
-  | { kind: "waiting" }
-  | { kind: "noToken"; assetId: number }
-  | { kind: "failed"; assetId: number }
-  | { kind: "shown"; assetId: number; token: string };
-
-/** สถานะของ ion สำหรับหน้าต่างอื่น (Globe Manager) ไม่มี token */
-export type IonStatus =
-  | { kind: "off" }
-  | { kind: "waiting" }
-  | { kind: "noToken" | "failed" | "shown"; assetId: number };
-
-/** asset + token ที่ ion ปฏิเสธไปแล้ว (ไม่ลองซ้ำ) ลืมเมื่อเลิกขอ ion */
-let ionFailure: { assetId: number; token: string } | null = null;
 /** คำเตือน "ไม่มี token" ที่แจ้งไปแล้ว (แจ้งครั้งเดียวต่อการเข้าสถานะนี้ ไม่ว่ามีกี่ viewer) */
 let ionNotice: string | null = null;
-/** ตัวฟังการเปลี่ยนสถานะของ ion ที่ไม่ได้มาจาก store (ion ปฏิเสธ): ทุก viewer และหน้าต่างที่ต้องวาดใหม่ */
-const ionListeners = new Set<() => void>();
-
-function ionPlan(): IonPlan {
-  const assetId = useLayout.getState().globe.ion?.assetId ?? null;
-  if (!useImagery.getState().sources.ion || assetId === null) return { kind: "off" };
-  const settings = useSettings.getState().settings;
-  if (settings === null) return { kind: "waiting" };
-  const token = settings.cesium_ion_token.trim();
-  if (token === "") return { kind: "noToken", assetId };
-  if (ionFailure !== null && ionFailure.assetId === assetId && ionFailure.token === token) return { kind: "failed", assetId };
-  return { kind: "shown", assetId, token };
-}
-
-/** สถานะของ Cesium ion ตอนนี้ (shown = ชั้นอื่นทั้งหมดถูกซ่อนในทุก viewer) */
-export function ionStatus(): IonStatus {
-  const plan = ionPlan();
-  return plan.kind === "off" || plan.kind === "waiting" ? plan : { kind: plan.kind, assetId: plan.assetId };
-}
-
-/** ฟังการเปลี่ยนของ ionStatus ที่ไม่ได้มาจาก store (ion ปฏิเสธ asset/token) คืนฟังก์ชันเลิกฟัง */
-export function onIonStatusChange(listener: () => void): () => void {
-  ionListeners.add(listener);
-  return () => void ionListeners.delete(listener);
-}
 
 /** หลังอ่านแผน: ไม่ขอ ion แล้ว = ลืมการปฏิเสธ (แสดงใหม่ = ลองใหม่) ; ไม่มี token = คำเตือนไทยครั้งเดียว */
 function noteIon(plan: IonPlan): void {
-  if (plan.kind === "off") ionFailure = null;
+  if (plan.kind === "off") setIonFailure(null);
   if (plan.kind !== "noToken") {
     ionNotice = null;
     return;
@@ -170,10 +133,11 @@ function ionReason(error: unknown): string {
 
 /** ion ปฏิเสธ asset + token นี้: จำไว้ แจ้งครั้งเดียว แล้วบอกทุก viewer (ถอดชั้น ion คืนชั้นอื่น) */
 function failIon(assetId: number, token: string, error: unknown): void {
-  if (ionFailure !== null && ionFailure.assetId === assetId && ionFailure.token === token) return;
-  ionFailure = { assetId, token };
+  const failure = getIonFailure();
+  if (failure !== null && failure.assetId === assetId && failure.token === token) return;
+  setIonFailure({ assetId, token });
   report("warning", "IMAGERY_ION_FAILED", msg("imagery.ionFailed", { assetId, reason: ionReason(error) }));
-  for (const listener of [...ionListeners]) listener();
+  notifyIonListeners();
 }
 
 // ---------- ชั้นของ catalog และ OpenStreetMap ----------

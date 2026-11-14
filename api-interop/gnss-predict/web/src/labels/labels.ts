@@ -388,6 +388,13 @@ const LABELS = {
   // Globe Manager (STK ref §H: STK มีช่องติ๊กไม่มีป้ายและคำ Translucency ใช้ "Show" = ob.show และ "% Translucency" = field.translucency ที่มีอยู่)
   "field.onlineImagery": ours("Online imagery (NASA GIBS)"),
   "field.globeLayer": ours("Layer"),
+  // สวิตช์ของอีกสามแหล่ง (กลุ่มของ Globe Manager) ตั้งชื่อตามแบบของสวิตช์ GIBS; ช่อง token ใช้ field.cesiumToken เดิม ปุ่มบันทึกใช้ dialog.apply
+  "field.onlineImageryEox": ours("Online imagery (Sentinel-2 cloudless)"),
+  "field.onlineImageryOsm": ours("Online imagery (OpenStreetMap)"),
+  "field.onlineImageryIon": ours("Online imagery (Cesium ion)"),
+  "field.ionAsset": ours("Cesium ion asset"),
+  "field.ionAssetId": ours("Asset ID"),
+  "option.ionAsset.none": ours("None"),
   // หน่วยที่ต่อท้ายช่อง
   "field.unit.deg": ours("deg"),
   "field.unit.m": ours("m"),

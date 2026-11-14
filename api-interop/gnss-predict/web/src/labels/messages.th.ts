@@ -158,7 +158,7 @@ const MESSAGES = {
   "imagery.saveFailed": "เปลี่ยนสวิตช์ภาพพื้นโลกออนไลน์ ({source}) ไม่สำเร็จ ({message}) สวิตช์ยังเป็นค่าเดิม",
   // Cesium ion (spec ภาพละเอียด §4.1): ข้อความห้ามมี token (ไม่ใส่ข้อความ error ดิบของ Cesium ด้วย)
   "imagery.ionSettingsFailed": "อ่านค่าตั้งที่มี Cesium ion token จาก server ไม่สำเร็จ ({message}) จึงยังไม่แสดงชั้นภาพ Cesium ion",
-  "imagery.ionNoToken": "เปิด Cesium ion อยู่แต่ยังไม่ได้ใส่ Cesium ion token จึงไม่แสดงชั้นภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ได้ที่หน้าต่าง Daily Forecast Settings",
+  "imagery.ionNoToken": "เปิด Cesium ion อยู่แต่ยังไม่ได้ใส่ Cesium ion token จึงไม่แสดงชั้นภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ได้ที่กลุ่ม Cesium ion ในหน้าต่าง Globe Manager หรือที่หน้าต่าง Daily Forecast Settings",
   "imagery.ionFailed": "เปิดชั้นภาพ Cesium ion (Asset ID {assetId}) ไม่สำเร็จ: {reason} จึงถอดชั้นนี้ออกและแสดงชั้นภาพอื่นตามเดิม",
   "imagery.ionReasonToken": "Cesium ion ไม่รับ token นี้ (HTTP {status}) ตรวจว่า token ถูกต้องและยังไม่หมดอายุ",
   "imagery.ionReasonAsset": "ไม่พบ asset นี้ในบัญชี Cesium ion (HTTP 404) เพิ่ม asset เข้าบัญชีที่ ion.cesium.com หรือเลือก asset อื่น",
@@ -166,10 +166,28 @@ const MESSAGES = {
   "imagery.ionReasonNotImagery": "asset นี้ไม่ใช่ชั้นภาพ หรือเป็นชนิดภาพที่โปรแกรมไม่รู้จัก",
   "imagery.ionReasonNetwork": "เชื่อมต่อ api.cesium.com ไม่ได้ (ตรวจการเชื่อมต่ออินเทอร์เน็ต)",
 
-  // หน้าต่าง Globe Manager (spec imagery §5.1): กล่องยืนยันก่อนเปิดสวิตช์ต้องบอก host ที่ server ในเครื่องต่อจริง (gibs.earthdata.nasa.gov ตรงกับ GIBS_URL ใน server/imagery.py ซึ่ง test ตรวจ)
+  // หน้าต่าง Globe Manager (spec imagery §5.1, spec ภาพละเอียด §4.3): สี่กลุ่มตามแหล่ง แต่ละกลุ่มมีสวิตช์และกล่องยืนยันของตัวเอง
+  // กล่องยืนยันต้องบอก host ที่ติดต่อจริงและบอกว่าใครเป็นผู้ติดต่อ: GIBS และ EOX ผ่าน server ในเครื่องนี้ (host ตรงกับ GIBS_URL / EOX_URL ใน server/imagery.py ซึ่ง test ตรวจ)
+  // ส่วน OpenStreetMap (OSM_URL ใน stores/imagery.ts) และ Cesium ion (api.cesium.com) browser ดึงเอง (ข้อความต้องไม่บอกว่าเก็บที่ data/imagery หรือใช้ User-Agent ของ server)
   "globe.consent": "เปิดภาพพื้นโลกออนไลน์จาก NASA GIBS หรือไม่? โปรแกรมจะเชื่อมต่ออินเทอร์เน็ตไปที่ gibs.earthdata.nasa.gov ผ่าน server ในเครื่องนี้ คำขอที่ส่งออกไปมีชื่อชั้นภาพ เวลา และพิกัดชิ้นภาพ (tile) ไม่มี scenario หรือตำแหน่งของคุณ แต่ NASA จะเห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) และ User-Agent gnss-studio/0.1 เหมือนการเปิดเว็บทั่วไป ภาพที่ได้เก็บไว้ในเครื่องที่ data/imagery (ไม่เกิน 2 GB) และปิดได้ทุกเมื่อจากช่องนี้ในหน้าต่าง Globe Manager",
+  "globe.consentEox": "เปิดภาพ Sentinel-2 cloudless (EOX) หรือไม่? โปรแกรมจะเชื่อมต่ออินเทอร์เน็ตไปที่ tiles.maps.eox.at ผ่าน server ในเครื่องนี้ คำขอที่ส่งออกไปมีชื่อชั้นภาพและพิกัดชิ้นภาพ (tile) ไม่มี scenario หรือตำแหน่งของคุณ แต่ EOX จะเห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) และ User-Agent gnss-studio/0.1 เหมือนการเปิดเว็บทั่วไป ภาพที่ได้เก็บไว้ในเครื่องที่ data/imagery (รวมทุกแหล่งไม่เกิน 2 GB) ภาพนี้ใช้ได้เฉพาะงานไม่เชิงพาณิชย์และต้องแสดงเครดิต EOX (แสดงบนจอให้แล้ว) และปิดได้ทุกเมื่อจากช่องนี้ในหน้าต่าง Globe Manager",
+  "globe.consentOsm": "เปิดแผนที่ OpenStreetMap หรือไม่? browser ของคุณจะเชื่อมต่ออินเทอร์เน็ตไปที่ tile.openstreetmap.org โดยตรง ไม่ผ่าน server ในเครื่องนี้ คำขอที่ส่งออกไปมีพิกัดชิ้นภาพ (tile) ไม่มี scenario หรือตำแหน่งของคุณ แต่ OpenStreetMap จะเห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) User-Agent ของ browser และ Referer (ที่อยู่ของหน้านี้ http://127.0.0.1:<port>/) เหมือนการเปิดเว็บทั่วไป ชิ้นภาพถูกเก็บโดยแคชของ browser เอง ไม่ใช่โดยโปรแกรมนี้ ตามกติกาการใช้งานของ OpenStreetMap โปรแกรมขอเฉพาะชิ้นภาพที่กำลังแสดงอยู่ ห้ามนำไปดึงภาพจำนวนมากหรือเก็บไว้ใช้ออฟไลน์ และต้องแสดงเครดิต © OpenStreetMap contributors (แสดงบนจอให้แล้ว) ปิดได้ทุกเมื่อจากช่องนี้ในหน้าต่าง Globe Manager",
+  "globe.consentIon": "เปิดภาพจาก Cesium ion หรือไม่? browser ของคุณจะเชื่อมต่ออินเทอร์เน็ตไปที่ api.cesium.com โดยตรง ไม่ผ่าน server ในเครื่องนี้ เพื่อขอข้อมูลของ asset แล้วดึงชิ้นภาพจากโฮสต์ภาพที่ Cesium ion ส่งต่อไป (เช่น Bing Maps หรือ Google Maps ตาม asset ที่เลือก) คำขอที่ส่งออกไปมี Cesium ion token ที่คุณตั้งไว้ รหัส asset และพิกัดชิ้นภาพ ไม่มี scenario หรือตำแหน่งของคุณ แต่ผู้ให้บริการเหล่านั้นจะเห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) User-Agent ของ browser และ Referer (ที่อยู่ของหน้านี้ http://127.0.0.1:<port>/) ภาพของ Bing และ Google ห้ามนำมาซ้อนกับภาพแหล่งอื่น จึงขณะที่แสดงภาพ Cesium ion ชั้นภาพอื่นทั้งหมด (รวม Natural Earth II) จะถูกซ่อนไว้จนกว่าจะปิดสวิตช์นี้ บัญชี Community (ฟรี) ของ Cesium ion ใช้ได้เฉพาะงานไม่เชิงพาณิชย์ตามเงื่อนไขของ Cesium ปิดได้ทุกเมื่อจากช่องนี้ในหน้าต่าง Globe Manager",
   "globe.offHint": "สวิตช์ภาพออนไลน์ปิดอยู่ จึงใช้ชั้นภาพ NASA GIBS ด้านล่างไม่ได้ ตอนนี้แสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม (เปิดสวิตช์ด้านบนเพื่อใช้ชั้นภาพเหล่านี้)",
-  "globe.unavailable": "อ่านรายการชั้นภาพ NASA GIBS จาก server ไม่ได้ จึงใช้ภาพออนไลน์ไม่ได้ในตอนนี้ แสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม (ลองโหลดหน้าใหม่เมื่อ server พร้อม)",
+  "globe.offHintEox": "สวิตช์ Sentinel-2 cloudless ปิดอยู่ จึงใช้ชั้นภาพ Sentinel-2 cloudless ด้านล่างไม่ได้ (เปิดสวิตช์ด้านบนเพื่อใช้ชั้นภาพนี้)",
+  "globe.offHintOsm": "สวิตช์ OpenStreetMap ปิดอยู่ จึงใช้ชั้นแผนที่ OpenStreetMap ด้านล่างไม่ได้ (เปิดสวิตช์ด้านบนเพื่อใช้ชั้นนี้)",
+  "globe.offHintIon": "สวิตช์ Cesium ion ปิดอยู่ จึงยังไม่ใช้ภาพจาก Cesium ion (เปิดสวิตช์ด้านบน เลือก asset และใส่ token แล้วภาพ Cesium ion จะแสดงแทนชั้นภาพอื่นทั้งหมด)",
+  "globe.unavailable": "อ่านสวิตช์และรายการชั้นภาพออนไลน์จาก server ไม่ได้ จึงใช้ภาพออนไลน์ทุกแหล่งไม่ได้ในตอนนี้ แสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม (ลองโหลดหน้าใหม่เมื่อ server พร้อม)",
+  "globe.hiddenByIon": "ถูกซ่อนเพราะเปิด Cesium ion อยู่",
+  // Cesium ion: token (ไม่แสดงค่าบนจอ บอกแค่ว่ามีหรือไม่) และ asset
+  "globe.ionTokenSet": "มี Cesium ion token แล้ว (ไม่แสดงค่าบนจอ) พิมพ์ token ใหม่แล้วกด Apply เพื่อเปลี่ยน",
+  "globe.ionTokenUnset": "ยังไม่ได้ใส่ Cesium ion token ใส่ token ของบัญชี ion.cesium.com ในช่องด้านบนแล้วกด Apply",
+  "globe.ionTokenUnknown": "ยังอ่านค่าตั้งจาก server ไม่ได้ จึงยังไม่ทราบว่ามี token หรือไม่ (บันทึก token ใหม่ได้ตามปกติ)",
+  "globe.ionTokenSaveFailed": "บันทึก Cesium ion token ไม่สำเร็จ: {message} (token ที่บันทึกไว้ยังเป็นค่าเดิม)",
+  "globe.ionAssetInvalid": "Asset ID ต้องเป็นจำนวนเต็มบวก เช่น 3830182",
+  "globe.ionNoAsset": "ยังไม่ได้เลือก asset จึงยังไม่แสดงภาพ Cesium ion (เลือก asset ด้านล่าง)",
+  "globe.ionNoToken": "ยังไม่มี Cesium ion token จึงยังไม่แสดงภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ในช่องด้านบนแล้วกด Apply",
+  "globe.ionRejected": "Cesium ion ไม่รับ asset หรือ token นี้ จึงถอดภาพ Cesium ion ออกและแสดงชั้นภาพอื่นตามเดิม (ดูเหตุผลที่ Message Viewer) เลือก asset อื่นหรือเปลี่ยน token เพื่อลองใหม่",
 
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
   "fetch.confirm": `ดึงข้อมูลวงโคจรตอนนี้หรือไม่? โปรแกรมอาจเชื่อมต่ออินเทอร์เน็ตเพื่อดาวน์โหลดจาก ${SOURCES} (ข้อมูลวงโคจรจาก CelesTrak, ข้อมูลดาวเทียมจาก IGS, broadcast ephemeris จาก CDDIS) CelesTrak จำกัดความถี่ในการดึงและ IGS ดึงไม่เกินวันละครั้ง ส่วนที่ยังไม่ถึงเวลา server จะใช้ไฟล์เดิมแทน แต่แหล่งอื่นในรายการนี้ยังอาจถูกดาวน์โหลด`,

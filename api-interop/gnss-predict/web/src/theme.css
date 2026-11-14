@@ -1607,7 +1607,7 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* Globe Manager (src/windows/GlobeManager): สวิตช์ภาพออนไลน์ + ตารางชั้นภาพ */
+/* Globe Manager (src/windows/GlobeManager): ภาพฐาน + สี่กลุ่มตามแหล่ง (สวิตช์ + ตารางชั้นภาพ; กลุ่ม Cesium ion มีช่อง token และตัวเลือก asset) */
 .globe {
   box-sizing: border-box;
   display: flex;
@@ -1627,10 +1627,12 @@ body {
   overflow: auto;
 }
 
-.globe-online {
+.globe-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .globe-switch {
@@ -1685,6 +1687,51 @@ body {
   width: 5em;
   font-family: var(--font-mono);
   text-align: right;
+}
+
+/* ข้อความท้ายชื่อแถวที่ถูกซ่อนเพราะเปิด Cesium ion อยู่ */
+.globe-note {
+  display: block;
+  color: var(--warning);
+  font-size: 0.9em;
+}
+
+.globe-field-hint {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.globe-token {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.globe-token .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.globe-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.globe-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.globe-radio input[type="radio"] {
+  margin: 0;
+}
+
+.globe-id {
+  box-sizing: border-box;
+  width: 12em;
+  font-family: var(--font-mono);
 }
 
 /* ---------- หน้าต่าง 3D / 2D Graphics (src/windows/graphics: ส่วนร่วม, Graphics3D, Graphics2D) ---------- */
