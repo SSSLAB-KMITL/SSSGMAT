@@ -377,6 +377,7 @@ class MaterialStore:
             self.make("mli_white", (0.86, 0.86, 0.84), 0.0, 0.46, mli_w, mli_w_nrm, 0.75)
         foil_s, foil_s_nrm = tex_foil(texdir, "tex_foil_silver", (0.80, 0.80, 0.82), seed=20261114)
         self.make("ge_kapton_foil", (0.80, 0.80, 0.82), 0.72, 0.30, foil_s, foil_s_nrm, 0.55)
+        self.mats["mli_silver"] = self.mats["ge_kapton_foil"]
         osr_img = tex_osr(texdir, "tex_osr_tiles", tiles=4, seed=20261115)
         self.make("osr_radiator", (0.86, 0.87, 0.90), 0.75, 0.16, osr_img)
         if solar_front_img is None:
@@ -844,6 +845,7 @@ def build_sadm_and_wings(root_obj, store, hy, sadm_x=0.0, sadm_z=0.0,
 
 
 def export_and_render(root, model_id, scene, args, views=None):
+    bpy.context.view_layer.update()
     tri = 0
     per = []
     lo = Vector((1e9, 1e9, 1e9))
