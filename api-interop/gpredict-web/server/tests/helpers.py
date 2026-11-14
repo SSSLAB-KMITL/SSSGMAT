@@ -5,6 +5,7 @@ import atexit
 import math
 import shutil
 import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import TestCase
@@ -26,6 +27,28 @@ def temp_config(testcase: TestCase | None = None) -> Config:
     else:
         atexit.register(shutil.rmtree, root, ignore_errors=True)
     return Config(data_dir=root / "data", web_dist=root / "web_dist", omm_cache_dir=root / "omm_cache")
+
+
+def ws_receive_json(ws, timeout: float = 3.0):
+    """WebSocketTestSession.receive_json ที่ไม่ค้างตลอดไป: ไม่ได้ข้อความภายใน timeout วินาที = test ล้ม (AssertionError)
+    (thread ที่ยังรออยู่เป็น daemon และจบเองเมื่อ session ปิด)"""
+    box: list = []
+
+    def receive() -> None:
+        try:
+            box.append((True, ws.receive_json()))
+        except BaseException as exc:                 # WebSocketDisconnect ฯลฯ: ส่งต่อให้ test
+            box.append((False, exc))
+
+    worker = threading.Thread(target=receive, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if not box:
+        raise AssertionError(f"ไม่ได้รับข้อความทาง WebSocket ภายใน {timeout} วินาที")
+    ok, value = box[0]
+    if not ok:
+        raise value
+    return value
 
 
 # ---------------------------------------------------------------- ดาวสังเคราะห์สำหรับ test pass และ track

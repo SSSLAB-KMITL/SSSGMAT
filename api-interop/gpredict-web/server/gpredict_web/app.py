@@ -11,6 +11,8 @@
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
   + POST /api/tle/local (Edit → Update TLE data from local files) POST /api/tle/update และ GET /api/tle/groups ตาม TLE sources ของ
     Preferences (tlesources.py: CelesTrak, ข้อความ TLE เช่น AMSAT, proxy)
+  + WS /ws/app: เหตุการณ์ระดับโปรแกรมถึงทุก browser (appevents.py) prefs_changed หลัง PUT /api/prefs และ PUT /api/qth/batch ที่ไม่ใช่ dry run,
+    modules_changed หลัง PUT/DELETE/open/close/clone module, tle_old จากตัวตรวจอายุ TLE (tleage.py)
 - module (spec งานย่อย 4 §9.1): ไฟล์เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ไม่ได้ตั้งสืบทอดค่ารวมของ Preferences → Modules
   PUT /api/modules/{name} รับ pin/unpin (รายการ path ใน module.MODULE_KEYS) ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
   GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
@@ -18,9 +20,11 @@
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
   + GET /api/logs/current (ข้อความของ data/logs/gpredict.log ไม่มีไฟล์ = "") และ POST /api/log (ข้อความจากหน้าเว็บ: gplog.py)
 - ตอนเริ่ม (start_background=True): เปิด log session (gplog.start_session ระดับ LOG/LEVEL) ก่อนอย่างอื่น แล้วลบช่วงคำนวณเก่า,
-  bootstrap (หัวข้อ 7.1) และเปิด module ที่ค้างอยู่ใน session.json
-  ตอนปิด: ปลด controller ทุกตัว (S, q) -> หยุด tick -> ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT
-  อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป จบด้วยปิด log session (gplog.end_session หมุนไฟล์ตาม LOG/CLEAN_AGE ที่อ่านตอนนี้)
+  bootstrap (หัวข้อ 7.1) เปิด module ที่ค้างอยู่ใน session.json และเริ่ม task ตรวจอายุ TLE (ทุก tle_check_interval_s วินาที ครั้งแรกหลังครบช่วงแรก)
+  ช่องเหตุการณ์ /ws/app เริ่มทุกครั้ง (ไม่ขึ้นกับ start_background)
+  ตอนปิด: หยุด task ตรวจอายุ TLE (รอ update ที่กำลังทำอยู่ให้จบ เหมือน Gpredict) -> ปลด controller ทุกตัว (S, q) -> หยุด tick ->
+  ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป
+  จบด้วยปิด log session (gplog.end_session หมุนไฟล์ตาม LOG/CLEAN_AGE ที่อ่านตอนนี้) แล้วปิดช่อง /ws/app
 - dev: `uvicorn gpredict_web.app:app --reload --port 8740` (app สร้างเมื่อถูกอ่านครั้งแรก การ import เฉยๆ จึงไม่แตะ data จริง)
 """
 
@@ -52,6 +56,7 @@ from . import gplog
 from . import module as M
 from . import store as S
 from . import trsp
+from .appevents import AppEvents
 from .bootstrap import bootstrap
 from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_time
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
@@ -64,6 +69,7 @@ from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
 from .satdb import SatDb, SatRecord, UpdateResult
 from .store import Store, qth_from_dict
+from .tleage import TLE_CHECK_INTERVAL_S, TleAgeChecker
 from .tlesources import make_opener, source_times, update_from_files, update_from_sources
 
 SATDB_FILE = "satdb.json"
@@ -88,6 +94,9 @@ TLE_LOCAL_NAME_MAX = 255
 # function ในบรรทัด log ของ Update TLE ตามต้นฉบับ (tle-update.c): รวม TLE แล้ว / Update จาก network หยุดก่อนรวม
 TLE_LOG_FUNCTION = "tle_update_from_files"
 TLE_NET_LOG_FUNCTION = "tle_update_from_network"
+# เหตุการณ์ของ /ws/app ที่ route ส่ง (tle_old ส่งจาก tleage.py) หน้าเว็บโหลดค่าที่เกี่ยวข้องใหม่เมื่อได้รับ
+EVENT_PREFS_CHANGED = "prefs_changed"
+EVENT_MODULES_CHANGED = "modules_changed"
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -535,12 +544,13 @@ def _clock_args(body: dict) -> dict:
 
 def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: Callable[[], datetime] = utcnow,
                on_quit: Callable[[], None] | None = None, ephem: EphemManager | None = None,
-               allowed_hosts: Iterable[str] | None = None) -> FastAPI:
+               allowed_hosts: Iterable[str] | None = None, tle_check_interval_s: float = TLE_CHECK_INTERVAL_S) -> FastAPI:
     """- start_background=False (test): ไม่ prune/bootstrap/เปิด session ตอนเริ่ม และ EphemManager ที่สร้างเองไม่มี worker thread
     - opener: ใช้ดึง OMM และข้อมูล transponder จาก SatNOGS (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
       Update TLE ใช้ make_opener(TLE/PROXY) เมื่อ opener เป็น urlopen ส่วน opener อื่น (ตัวปลอมของ test) ใช้กับทุก TLE source แทน
     - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
-    - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)"""
+    - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)
+    - tle_check_interval_s: ช่วงตรวจอายุ TLE (ตั้งต้น 600 วินาทีแบบ Gpredict) test ส่งช่วงสั้นหรือยาวมาก task นี้เริ่มเฉพาะ start_background"""
     prefs = Prefs(cfg.data_dir)
     store = Store(cfg.data_dir, globals_=prefs.values)      # module ที่ไม่ได้ตั้งค่าเองใช้ค่ารวมของ Preferences → Modules
     satdb = SatDb(cfg.data_dir / SATDB_FILE)
@@ -552,6 +562,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     ticks = Ticks(hub, keep_alive=lambda name: controllers.active(name),
                   decorate=lambda name, tick: {**tick, **controllers.on_tick(name, tick)})
     controllers = ControllerHub(hub, hwconf, cfg.data_dir, pass_service, ticks.wake)
+    events = AppEvents()                     # /ws/app: เหตุการณ์ระดับโปรแกรมถึงทุก browser (publish เรียกจาก thread ไหนก็ได้)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine และของ tlesources ไม่มี lock)
     tle_opener_factory = make_opener if opener is urlopen else (lambda proxy: opener)       # opener ของ test ไม่ผ่าน proxy
@@ -604,26 +615,38 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 _log.exception("ปิด module %s ไม่สำเร็จ", name)
         ephem.close()
 
+    async def stop_services() -> None:
+        """ตอนปิดตามลำดับ ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ"""
+        try:
+            await stop_tle_age()             # ก่อนปิด module: update ที่ค้างอยู่ reload module ทุกตัวตอนจบ
+        finally:
+            try:
+                await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
+            finally:
+                try:
+                    await ticks.shutdown()
+                finally:
+                    await asyncio.to_thread(shutdown)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # log session ครอบทั้งชีวิตของ server: ระดับอ่านตอนเริ่มครั้งเดียว (มีผลครั้งถัดไปเหมือน Gpredict) ส่วน LOG/CLEAN_AGE อ่านตอนจบ
-        session = gplog.start_session(cfg.data_dir / LOG_DIR, prefs.get("LOG/LEVEL")) if start_background else None
+        events.bind(asyncio.get_running_loop())         # /ws/app รับเหตุการณ์ตั้งแต่ server เริ่ม (ไม่ขึ้นกับ start_background)
         try:
-            if start_background:
-                app.state.startup_messages = await asyncio.to_thread(startup)
+            # log session ครอบทั้งชีวิตของ server: ระดับอ่านตอนเริ่มครั้งเดียว (มีผลครั้งถัดไปเหมือน Gpredict) ส่วน LOG/CLEAN_AGE อ่านตอนจบ
+            session = gplog.start_session(cfg.data_dir / LOG_DIR, prefs.get("LOG/LEVEL")) if start_background else None
             try:
-                yield
-            finally:                             # ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ
+                if start_background:
+                    app.state.startup_messages = await asyncio.to_thread(startup)
+                    app.state.tle_age_task = asyncio.create_task(tle_age_loop(), name="tle-age")
                 try:
-                    await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
+                    yield
                 finally:
-                    try:
-                        await ticks.shutdown()
-                    finally:
-                        await asyncio.to_thread(shutdown)
+                    await stop_services()
+            finally:
+                if session is not None:
+                    gplog.end_session(session, prefs.get("LOG/CLEAN_AGE"), time.time())
         finally:
-            if session is not None:
-                gplog.end_session(session, prefs.get("LOG/CLEAN_AGE"), time.time())
+            await events.shutdown()
 
     app = FastAPI(title="Gpredict Web", lifespan=lifespan, openapi_url="/api/openapi.json", docs_url="/api/docs",
                   redoc_url=None)
@@ -637,6 +660,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.pass_service = pass_service
     app.state.ticks = ticks
     app.state.controllers = controllers
+    app.state.events = events
+    app.state.tle_age_task = None            # task ตรวจอายุ TLE (เฉพาะ start_background)
     app.state.tle_lock = tle_lock
     app.state.trsp_lock = trsp_lock
     app.state.on_quit = on_quit
@@ -677,7 +702,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย: ว่าง -> QTH_LAST, ผิดช่อง/ชื่อซ้ำ/default ไม่อยู่ในรายการ -> QTH_INVALID
         module ที่ใช้สถานีที่หายเปลี่ยนเป็น ** DEFAULT ** (changed_modules) ส่วน module ที่เปิดอยู่ไม่ถูก reload ใช้สถานีเดิมต่อจน
         เปิดใหม่ รวมถึงที่มี controller เปิดอยู่ (spec §4.2): hub.drop_qth_reference ตั้งอ้างอิง qth ของ runtime เป็น None ตามไฟล์
-        แต่เก็บสถานีที่ถืออยู่ (Hub.reload ครั้งหลังก็ไม่ย้าย) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log"""
+        แต่เก็บสถานีที่ถืออยู่ (Hub.reload ครั้งหลังก็ไม่ย้าย) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log ไม่ส่งเหตุการณ์
+        ที่เขียนจริงส่ง prefs_changed ทาง /ws/app"""
         stations = body.get("stations")
         if not isinstance(stations, list):
             raise ApiError("QTH_INVALID", 422, "รายการสถานี (stations) ต้องเป็นรายการของ object", "stations")
@@ -694,6 +720,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         if not dry_run:
             for name in changed:                          # module ที่เปิดอยู่ถือสถานีเดิมต่อ แต่อ้างอิง qth ตามไฟล์ (** DEFAULT **)
                 hub.drop_qth_reference(name)
+            events.publish({"type": EVENT_PREFS_CHANGED})
         return {"qth": [asdict(q) for q in sorted(parsed, key=lambda q: q.name)], "default": default,
                 "changed_modules": changed}
 
@@ -765,6 +792,37 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         """Edit → Update TLE data from network ตาม TLE sources และ proxy ของ Preferences (tlesources.update_from_sources)"""
         with tle_lock:
             return tle_result(update_from_sources(satdb, cfg, prefs, now(), tle_opener_factory))
+
+    # ตรวจอายุ TLE ทุก tle_check_interval_s วินาที (ref-D §5.1): Notify me ส่ง tle_old ทาง /ws/app (เก็บไว้ถ้ายังไม่มี browser)
+    # Perform automatic update in the background เรียก update_tle เดิม (ถือ tle_lock, ผลแล้ว reload module ทุกตัว, ติดกติกา 2 ชม. ต่อ source)
+    tle_checker = TleAgeChecker(prefs.values, update_tle, events.publish_or_hold, now)
+    app.state.tle_age_checker = tle_checker
+
+    async def tle_age_loop() -> None:
+        """sleep แล้วตรวจใน thread วนทุกช่วง (ไม่ตรวจตอนเริ่ม) รอบที่ล้มถูกบันทึกแล้วตรวจรอบต่อไป ยกเลิกตอนปิด server:
+        รอบที่กำลังทำอยู่ (update ที่ดึงจากเน็ต) ทำจนจบก่อน เหมือน Gpredict ที่รอ thread update ก่อนปิดโปรแกรม (main.c:558-564)
+        เพื่อไม่ให้ update reload module ที่กำลังถูกปิด"""
+        def failed(work: asyncio.Future) -> None:
+            if not work.cancelled() and work.exception() is not None:
+                _log.error("ตรวจอายุ TLE ไม่สำเร็จ จะตรวจใหม่ในรอบถัดไป", exc_info=work.exception())
+
+        while True:
+            await asyncio.sleep(tle_check_interval_s)
+            work = asyncio.ensure_future(asyncio.to_thread(tle_checker.check))
+            work.add_done_callback(failed)
+            try:
+                await asyncio.shield(work)
+            except asyncio.CancelledError:
+                await asyncio.wait([work])
+                raise
+            except Exception:
+                pass                         # failed() บันทึกไปแล้ว
+
+    async def stop_tle_age() -> None:
+        task = app.state.tle_age_task
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     @app.post("/api/tle/update")
     async def tle_update():
@@ -840,7 +898,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.put("/api/modules/{name}")
     async def put_module(name: str, body: dict = Body(...)):
         async with controllers.hold(name):   # controller ของ module นี้ไม่ถูกเปิดแทรกระหว่างตรวจกับเขียน
-            return await asyncio.to_thread(put_module_sync, name, body, controllers.active(name))
+            saved = await asyncio.to_thread(put_module_sync, name, body, controllers.active(name))
+        events.publish({"type": EVENT_MODULES_CHANGED})
+        return saved
 
     def delete_module_sync(name: str) -> None:
         hub.close(name)                      # เปิดอยู่: ปิดก่อน
@@ -860,12 +920,14 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.delete("/api/modules/{name}", status_code=204)
     async def delete_module(name: str):
         await retire_module(name, lambda: delete_module_sync(name))
+        events.publish({"type": EVENT_MODULES_CHANGED})
         return Response(status_code=204)
 
     @app.post("/api/modules/{name}/open")
     def open_module(name: str):
         hub.open(name)
         session_add(name)
+        events.publish({"type": EVENT_MODULES_CHANGED})
         return {"open": open_list()}
 
     def close_module_sync(name: str) -> list[str]:
@@ -877,7 +939,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.post("/api/modules/{name}/close")
     async def close_module(name: str):
-        return {"open": await retire_module(name, lambda: close_module_sync(name))}
+        opened = await retire_module(name, lambda: close_module_sync(name))
+        events.publish({"type": EVENT_MODULES_CHANGED})
+        return {"open": opened}
 
     @app.post("/api/modules/{name}/clone")
     def clone_module(name: str, body: dict = Body(...)):
@@ -899,6 +963,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         if want_open:
             hub.open(new_name)
             session_add(new_name)
+        events.publish({"type": EVENT_MODULES_CHANGED})
         return {"module": M.module_to_dict(store.get_module(new_name)), "open": open_list()}
 
     @app.put("/api/session/tabs")
@@ -1014,7 +1079,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.put("/api/prefs")
     def put_prefs(body: dict = Body(...), dry_run: bool = Query(False)):
         """{"set": {key: ค่า}, "remove": [key]} (ไม่ใส่ = ว่าง) ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย
-        ?dry_run=true: ตรวจเหมือนกันทุกอย่างและตอบรูปเดียวกัน (ค่าที่จะใช้หลังเขียน) แต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อน)"""
+        ?dry_run=true: ตรวจเหมือนกันทุกอย่างและตอบรูปเดียวกัน (ค่าที่จะใช้หลังเขียน) แต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อน)
+        ไม่ส่งเหตุการณ์ ที่เขียนจริงส่ง prefs_changed ทาง /ws/app"""
         set_ = body.get("set", {})
         remove = body.get("remove", [])
         if not isinstance(set_, dict):
@@ -1024,6 +1090,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         if dry_run:
             return _prefs_dict(prefs.preview(set_, remove))
         prefs.update(set_, remove)
+        events.publish({"type": EVENT_PREFS_CHANGED})
         return _prefs_dict(prefs)
 
     # ---------------- Preferences → Interfaces
@@ -1147,6 +1214,18 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 pass                             # ไม่มีคำสั่งจาก browser ทาง socket (ใช้ REST)
         finally:
             ticks.detach(name, ws)
+
+    @app.websocket("/ws/app")
+    async def app_socket(ws: WebSocket):
+        """เหตุการณ์ระดับโปรแกรม (appevents.py) ส่งทางเดียวจาก server ไม่มีคำสั่งจาก browser ทาง socket (ใช้ REST) Host และ Origin
+        ตรวจที่ _HostOriginGuard เหมือนทุก endpoint"""
+        await ws.accept()
+        await events.add(ws)
+        try:
+            while (await ws.receive())["type"] != "websocket.disconnect":
+                pass
+        finally:
+            events.remove(ws)
 
     return app
 
