@@ -16,6 +16,9 @@ import { setUrl } from "./helpers/files";
 import { takeReportedErrors } from "./helpers/reported-errors";
 
 const state = vi.hoisted(() => ({ crash: true }));
+/** GET /api/imagery/layers: the switch off, as on a fresh install */
+const IMAGERY_OFF = { json: { enabled: false, layers: [] } };
+
 vi.mock("../../src/time/clock", () => ({ startClock: () => () => undefined }));
 vi.mock("../../src/api/events", () => ({ startEventWiring: () => () => undefined }));
 vi.mock("../../src/chrome/StatusBar", () => ({
@@ -38,6 +41,7 @@ beforeEach(() => {
   useSettings.setState(useSettings.getInitialState(), true);
   useMessages.setState(useMessages.getInitialState(), true);
   stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
     "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
     "GET /api/scenarios": { json: [] },
   });

@@ -5,7 +5,7 @@ import { ApiError } from "../../src/api/client";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { getPanelDef, PANEL_KINDS, registerPanel, type PanelDef, type PanelKind } from "../../src/layout/panels";
-import { WORKBOOK_MAX_BYTES, validateWorkbook, workbookBytes, type Workbook } from "../../src/layout/workbook";
+import { DEFAULT_GLOBE, WORKBOOK_MAX_BYTES, validateWorkbook, workbookBytes, type Workbook } from "../../src/layout/workbook";
 import { useLayout, usePanelResize } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useScenario } from "../../src/stores/scenario";
@@ -590,6 +590,39 @@ describe("toWorkbook / fromWorkbook (W6)", () => {
     const w = st().toWorkbook();
     expect(w.timelineHidden).toEqual(["G05", "R03"]);
     expect(w.windowProps).toEqual(wire.windowProps);
+  });
+
+  test("globe (Globe Manager layers) is written, read back, and defaults when the workbook has none", async () => {
+    await mount();
+    expect(st().globe).toEqual(DEFAULT_GLOBE);
+    expect(st().toWorkbook().globe).toEqual(DEFAULT_GLOBE);
+    st().setGlobeLayer("MODIS_Terra_CorrectedReflectance_TrueColor", { show: true });
+    st().setGlobeLayer("BlueMarble_NextGeneration", { translucency: 30 });
+    const saved = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
+    expect(saved.globe?.layers.MODIS_Terra_CorrectedReflectance_TrueColor).toEqual({ show: true, translucency: 0 });
+    expect(saved.globe?.layers.BlueMarble_NextGeneration).toEqual({ show: true, translucency: 30 });
+
+    st().applyDefault();
+    expect(st().globe).toEqual(DEFAULT_GLOBE);
+    st().fromWorkbook(saved);
+    expect(st().globe).toEqual(saved.globe);
+    expect(st().toWorkbook().globe).toEqual(saved.globe);
+
+    const { globe: _g, ...old } = saved; // workbook ที่บันทึกก่อนมี Globe Manager
+    st().fromWorkbook(old);
+    expect(st().globe).toEqual(DEFAULT_GLOBE);
+    expect(warnings()).toEqual([]);
+  });
+
+  test("setGlobeLayer merges into the entry and never changes the object it replaced", async () => {
+    await mount();
+    const before = st().globe;
+    st().setGlobeLayer("GOES-East_ABI_GeoColor", { translucency: 50 });
+    expect(st().globe.layers["GOES-East_ABI_GeoColor"]).toEqual({ show: false, translucency: 50 });
+    st().setGlobeLayer("GOES-East_ABI_GeoColor", { show: true });
+    expect(st().globe.layers["GOES-East_ABI_GeoColor"]).toEqual({ show: true, translucency: 50 });
+    expect(before).toEqual(DEFAULT_GLOBE);
+    expect(st().globe).not.toBe(before);
   });
 
   test("window titles come from the labels table, not from the saved file", async () => {

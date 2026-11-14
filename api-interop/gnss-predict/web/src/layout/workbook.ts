@@ -1,6 +1,9 @@
 // workbook.json (W6): การจัดวางหน้าต่างที่บันทึกคู่กับ scenario.json
 //   {"version": 1, "dockview": <api.toJSON()>, "panels": {<panelId>: {"kind", "params"}},
-//    "toolbars": {"default", "animation", "graphics3d", "defaults3d", "defaults2d": bool}, "timelineHidden": [<ชื่อแถว>], "windowProps": {<panelId>: {...}}}
+//    "toolbars": {"default", "animation", "graphics3d", "defaults3d", "defaults2d": bool}, "timelineHidden": [<ชื่อแถว>], "windowProps": {<panelId>: {...}},
+//    "globe": {"layers": {<id ชั้นภาพ GIBS>: {"show": bool, "translucency": 0-100}}}}
+// globe (Globe Manager, spec imagery §5.1) ไม่บังคับ: workbook เก่าที่ไม่มีช่องนี้ใช้ได้ ช่องที่รูปร่างผิดถูกทิ้งทั้งช่อง รายการชั้นที่ค่าผิดถูกทิ้งเป็นรายการ
+// id ที่ catalog ไม่รู้จักเก็บไว้ตามเดิม (ข้ามตอนวาด)
 // ไม่เกิน 1,048,576 ไบต์ (server ตอบ 422 ถ้าเกิน)
 //
 // workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist) withoutPanels ตัดหน้าต่างอื่นออกจาก JSON ของ dockview ก่อนบันทึก
@@ -19,6 +22,25 @@ export const DEFAULT_TOOLBARS: Readonly<Toolbars> = { default: true, animation: 
 
 export type WindowProps = Record<string, Record<string, unknown>>;
 
+/** Show และ % Translucency (จำนวนเต็ม 0–100) ของชั้นภาพ GIBS หนึ่งชั้น ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View */
+export interface GlobeLayerSetting {
+  show: boolean;
+  translucency: number;
+}
+
+/** ชั้นที่ไม่มีในรายการ = ซ่อน */
+export interface GlobeSettings {
+  layers: Record<string, GlobeLayerSetting>;
+}
+
+/** ค่าตั้งต้นเมื่อ workbook ไม่มี globe (spec imagery §5.1): Blue Marble + VIIRS NOAA-20 True Color แสดง ชั้นอื่นซ่อน */
+export const DEFAULT_GLOBE: Readonly<GlobeSettings> = Object.freeze({
+  layers: Object.freeze({
+    BlueMarble_NextGeneration: Object.freeze({ show: true, translucency: 0 }),
+    VIIRS_NOAA20_CorrectedReflectance_TrueColor: Object.freeze({ show: true, translucency: 0 }),
+  }),
+});
+
 export interface WorkbookPanel {
   kind: string;
   params: Record<string, unknown>;
@@ -34,6 +56,8 @@ export interface Workbook {
   timelineHidden: string[];
   /** ตั้งค่าเฉพาะหน้าต่าง ตาม panelId (งานของหน้าต่าง 3D/2D) */
   windowProps: WindowProps;
+  /** ชั้นภาพ GIBS บนลูกโลก (Globe Manager) ไม่มี = workbook ก่อนมีช่องนี้ */
+  globe?: GlobeSettings;
 }
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
@@ -78,6 +102,19 @@ function parseWindowProps(x: unknown): WindowProps | null {
   return out;
 }
 
+const isTranslucency = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100;
+
+/** globe ที่ใช้ได้ หรือ undefined (ไม่มี หรือรูปร่างผิด: ทิ้งทั้งช่อง ไม่ทำให้ workbook ใช้ไม่ได้) รายการที่ค่าผิดถูกทิ้ง */
+function parseGlobe(x: unknown): GlobeSettings | undefined {
+  if (!isRecord(x) || !isRecord(x.layers)) return undefined;
+  const layers: Record<string, GlobeLayerSetting> = {};
+  for (const [id, entry] of Object.entries(x.layers)) {
+    if (!isRecord(entry) || typeof entry.show !== "boolean" || !isTranslucency(entry.translucency)) continue;
+    layers[id] = { show: entry.show, translucency: entry.translucency };
+  }
+  return { layers };
+}
+
 /** workbook ที่ใช้ได้ (เติมช่องที่ขาดด้วยค่าตั้งต้น) หรือ null: ไม่ใช่ object, version ไม่ใช่ 1, รูปร่างผิด หรือเกิน 1,048,576 ไบต์ */
 export function validateWorkbook(x: unknown): Workbook | null {
   if (!isRecord(x) || x.version !== 1 || !isRecord(x.dockview)) return null;
@@ -88,6 +125,8 @@ export function validateWorkbook(x: unknown): Workbook | null {
   const hidden = x.timelineHidden ?? [];
   if (!Array.isArray(hidden) || !hidden.every((n) => typeof n === "string")) return null;
   const w: Workbook = { version: 1, dockview: x.dockview, panels, toolbars, timelineHidden: [...hidden], windowProps };
+  const globe = parseGlobe(x.globe);
+  if (globe !== undefined) w.globe = globe;
   return workbookBytes(w) > WORKBOOK_MAX_BYTES ? null : w;
 }
 

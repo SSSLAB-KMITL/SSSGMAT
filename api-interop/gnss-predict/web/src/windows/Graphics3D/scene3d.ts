@@ -31,6 +31,8 @@
 //   ไม่อ่าน 3D Graphics Window Properties (P8)
 //   คลิกและดับเบิลคลิกตั้งต้นของ Viewer (เลือก entity / ตามหรือบินไปหา entity) ถูกถอดจาก viewer ของ Sensor View (enableInputs ไม่ได้ปิดสองอย่างนี้)
 //   และทุกครั้งที่วางกล้องจะเลิกตาม entity ยกเลิกการบิน และคืน transform เป็น identity ก่อน (placeSensorCamera)
+// - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
+//   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
 
 import {
   ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, EllipsoidalOccluder, JulianDate,
@@ -41,6 +43,7 @@ import {
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
+import { attachImageryLayers } from "../../cesium/imageryLayers";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SceneObject, type SceneStyle, type SensorCtx,
@@ -279,6 +282,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
     this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
+    this.offs.push(attachImageryLayers(viewer)); // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้
 
     this.zoom = new ZoomBox(el);
     this.handler = new ScreenSpaceEventHandler(scene.canvas);

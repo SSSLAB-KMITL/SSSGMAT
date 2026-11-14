@@ -5,6 +5,7 @@
 // - คำสั่งเมนู Window (Windows..., Cascade, Tile) เรียกผ่านที่นี่; เมนูบาร์มาในงานถัดไป
 // - workbook (W6): toWorkbook / fromWorkbook / applyDefault / restoreFor(name) (เรียกหลัง useScenario.load สำเร็จ) / saveWorkbook (File → Save)
 //   workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist): หน้าต่างลอยและชั่วคราวไม่ถูกบันทึกพร้อม windowProps ของมัน และถูกข้ามตอนจัดกลับ
+//   globe (ชั้นภาพ GIBS ของ Globe Manager) ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View: workbook ที่ไม่มีช่องนี้และ layout ตั้งต้น = DEFAULT_GLOBE
 //   restoreFor ที่ค้างอยู่ถูกทิ้งเมื่อ scenario ปิดหรือเปลี่ยนระหว่างรอ workbook (ไม่งั้นคำตอบเก่าแทนที่ทุกหน้าต่าง รวม Welcome ที่เพิ่งเปิด)
 // - หน้าต่างที่มี Cesium ต้องแจ้ง viewer.resize() เมื่อ panel เปลี่ยนขนาด: ใช้ onPanelResize(id, cb) หรือ hook usePanelResize(panelId, cb)
 
@@ -20,8 +21,8 @@ import {
 } from "../layout/panels";
 import { cascadeIntegrated, centrePanel, moveToType, revealPanel, tileIntegrated, windowTypeOf, type MoveHints } from "../layout/placement";
 import {
-  DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes,
-  type ToolbarName, type Toolbars, type Workbook, type WindowProps,
+  DEFAULT_GLOBE, DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes,
+  type GlobeLayerSetting, type GlobeSettings, type ToolbarName, type Toolbars, type Workbook, type WindowProps,
 } from "../layout/workbook";
 import { report } from "./messages";
 import { useScenario } from "./scenario";
@@ -49,6 +50,8 @@ interface LayoutState {
   timelineHidden: string[];
   /** ตั้งค่าเฉพาะหน้าต่างตาม panelId (งานหน้าต่าง 3D/2D เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) */
   windowProps: WindowProps;
+  /** ชั้นภาพ GIBS บนลูกโลก (Globe Manager เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) ไม่แก้ตัวเดิม: เปลี่ยน = object ใหม่ */
+  globe: GlobeSettings;
 
   attach(api: DockviewApi): void;
   /** ปล่อย api (ระบุ api = ปล่อยเฉพาะเมื่อยังเป็นตัวนี้ กัน Workspace รอบเก่าปล่อยตัวของรอบใหม่) */
@@ -73,6 +76,8 @@ interface LayoutState {
   setToolbar(name: ToolbarName, visible: boolean): void;
   setTimelineHidden(rows: string[]): void;
   setWindowProps(panelId: string, props: Record<string, unknown>): void;
+  /** แก้ Show หรือ Translucency ของชั้นหนึ่ง (ชั้นที่ยังไม่มีในรายการเริ่มจากซ่อน โปร่งแสง 0) */
+  setGlobeLayer(id: string, patch: Partial<GlobeLayerSetting>): void;
 
   toWorkbook(): Workbook;
   /** สร้างหน้าต่างตาม workbook (ใช้ไม่ได้ = layout ตั้งต้นพร้อมข้อความเตือน) */
@@ -167,6 +172,7 @@ export const useLayout = create<LayoutState>()((set, get) => {
     toolbars: { ...DEFAULT_TOOLBARS },
     timelineHidden: [],
     windowProps: {},
+    globe: DEFAULT_GLOBE,
 
     attach: (api) => {
       get().detach();
@@ -292,6 +298,11 @@ export const useLayout = create<LayoutState>()((set, get) => {
     setToolbar: (name, visible) => set((s) => ({ toolbars: { ...s.toolbars, [name]: visible } })),
     setTimelineHidden: (rows) => set({ timelineHidden: [...rows] }),
     setWindowProps: (panelId, props) => set((s) => ({ windowProps: { ...s.windowProps, [panelId]: props } })),
+    setGlobeLayer: (id, patch) =>
+      set((s) => {
+        const before = s.globe.layers[id] ?? { show: false, translucency: 0 };
+        return { globe: { layers: { ...s.globe.layers, [id]: { ...before, ...patch } } } };
+      }),
 
     toWorkbook: () => {
       const api = need();
@@ -307,12 +318,13 @@ export const useLayout = create<LayoutState>()((set, get) => {
         toolbars: { ...s.toolbars },
         timelineHidden: [...s.timelineHidden],
         windowProps: Object.fromEntries(Object.entries(clone(s.windowProps)).filter(([id]) => !drop.has(id))),
+        globe: clone(s.globe),
       };
     },
 
     applyDefault: () => {
       applyDefaultLayout(need());
-      set({ toolbars: { ...DEFAULT_TOOLBARS }, timelineHidden: [], windowProps: {} });
+      set({ toolbars: { ...DEFAULT_TOOLBARS }, timelineHidden: [], windowProps: {}, globe: DEFAULT_GLOBE });
       bump();
     },
 
@@ -368,6 +380,7 @@ export const useLayout = create<LayoutState>()((set, get) => {
         toolbars: w.toolbars,
         timelineHidden: w.timelineHidden,
         windowProps: Object.fromEntries(Object.entries(w.windowProps).filter(([id]) => !droppedIds.has(id))),
+        globe: w.globe ?? DEFAULT_GLOBE,
       });
       bump();
     },

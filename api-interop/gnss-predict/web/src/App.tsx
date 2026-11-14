@@ -11,6 +11,7 @@ import { StatusBar } from "./chrome/StatusBar";
 import { Toolbars } from "./chrome/Toolbars";
 import { installTestHooks, testModeRequested } from "./cesium/testHooks";
 import { startWorkspaceFlow } from "./scenarioFiles";
+import { useImagery } from "./stores/imagery";
 import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
 import { registerDataCommands } from "./windows/dataCommands";
@@ -74,6 +75,8 @@ export function App() {
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
     const stopFlow = startWorkspaceFlow();
+    // สวิตช์และรายการภาพพื้นโลกออนไลน์ (GIBS) ไม่ผูก scenario: อ่านครั้งเดียว ล้มเหลว = ปิดไว้พร้อมคำเตือนไทย (stores/imagery.ts)
+    void useImagery.getState().load();
     return () => {
       stopFlow();
       stopShortcuts();

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { nextGraphicsTitle, PANEL_KINDS } from "../../src/layout/panels";
-import { WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes, type Workbook } from "../../src/layout/workbook";
+import { DEFAULT_GLOBE, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes, type Workbook } from "../../src/layout/workbook";
 
 /** workbook ที่ใช้ได้เล็กที่สุด (dockview เป็น object ใดก็ได้ เพราะ validate ตรวจแค่รูปร่าง ไม่ได้ให้ dockview ตรวจ) */
 const valid = (): Workbook => ({
@@ -99,6 +99,69 @@ describe("validateWorkbook", () => {
     const over = withPad(WORKBOOK_MAX_BYTES - base + 1);
     expect(workbookBytes(over)).toBe(WORKBOOK_MAX_BYTES + 1);
     expect(validateWorkbook(over)).toBeNull();
+  });
+});
+
+describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", () => {
+  const BM = "BlueMarble_NextGeneration";
+  const VIIRS = "VIIRS_NOAA20_CorrectedReflectance_TrueColor";
+
+  test("globe survives JSON (what the server stores) unchanged", () => {
+    const w: Workbook = { ...valid(), globe: { layers: { [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: false, translucency: 40 } } } };
+    expect(validateWorkbook(JSON.parse(JSON.stringify(w)))).toEqual(w);
+  });
+
+  test("a workbook without globe (saved before this feature) is valid and has no globe", () => {
+    const w = validateWorkbook(valid());
+    expect(w).not.toBeNull();
+    expect(w?.globe).toBeUndefined();
+  });
+
+  test("bad layer entries are dropped, the good ones and the rest of the workbook are kept", () => {
+    const layers: Record<string, unknown> = {
+      good: { show: true, translucency: 25 },
+      edgeLow: { show: false, translucency: 0 },
+      edgeHigh: { show: true, translucency: 100 },
+      tooHigh: { show: true, translucency: 101 },
+      negative: { show: true, translucency: -1 },
+      fraction: { show: true, translucency: 12.5 },
+      text: { show: true, translucency: "25" },
+      nan: { show: true, translucency: null },
+      noShow: { translucency: 10 },
+      showText: { show: "yes", translucency: 10 },
+      notObject: 3,
+      array: [true, 10],
+    };
+    const w = validateWorkbook({ ...valid(), globe: { layers } });
+    expect(w).not.toBeNull();
+    expect(w?.globe?.layers).toEqual({
+      good: { show: true, translucency: 25 },
+      edgeLow: { show: false, translucency: 0 },
+      edgeHigh: { show: true, translucency: 100 },
+    });
+    expect(w?.panels).toEqual(valid().panels);
+  });
+
+  test("an id the catalog does not know is kept (ignored when drawing)", () => {
+    const w = validateWorkbook({ ...valid(), globe: { layers: { Future_Layer_v2: { show: true, translucency: 10 } } } });
+    expect(w?.globe?.layers).toEqual({ Future_Layer_v2: { show: true, translucency: 10 } });
+  });
+
+  test("a globe that is not the right shape is dropped as if absent; the workbook stays valid", () => {
+    for (const globe of [null, 3, "x", [], { layers: [] }, { layers: null }, {}]) {
+      const w = validateWorkbook({ ...valid(), globe });
+      expect(w, JSON.stringify(globe)).not.toBeNull();
+      expect(w?.globe, JSON.stringify(globe)).toBeUndefined();
+    }
+  });
+
+  test("extra fields in an entry are not carried over", () => {
+    const w = validateWorkbook({ ...valid(), globe: { layers: { [BM]: { show: true, translucency: 5, extra: 1 } }, other: 2 } });
+    expect(w?.globe).toEqual({ layers: { [BM]: { show: true, translucency: 5 } } });
+  });
+
+  test("DEFAULT_GLOBE shows Blue Marble and VIIRS NOAA-20 opaque and nothing else", () => {
+    expect(DEFAULT_GLOBE).toEqual({ layers: { [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } } });
   });
 });
 

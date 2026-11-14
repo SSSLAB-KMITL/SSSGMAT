@@ -9,6 +9,7 @@ import { startClock } from "../../src/time/clock";
 import { useLayout } from "../../src/stores/layout";
 import { App } from "../../src/App";
 import { useSaveAs } from "../../src/chrome/SaveAsDialog";
+import { useImagery } from "../../src/stores/imagery";
 import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useSettings } from "../../src/stores/settings";
@@ -16,6 +17,9 @@ import { openScenario } from "./helpers/chrome";
 import { loadObjects } from "./helpers/objects";
 import { stubFetch } from "./helpers/fake-fetch";
 import { setUrl } from "./helpers/files";
+
+/** GET /api/imagery/layers: the switch off, as on a fresh install */
+const IMAGERY_OFF = { json: { enabled: false, layers: [] } };
 
 vi.mock("../../src/time/clock", () => ({ startClock: vi.fn() }));
 vi.mock("../../src/api/events", () => ({ startEventWiring: vi.fn() }));
@@ -36,6 +40,7 @@ beforeEach(() => {
   useSaveAs.setState({ open: false });
   useSettings.setState(useSettings.getInitialState(), true);
   stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
     "GET /api/health": { status: 500, json: { code: "X", text: "x" } }, // the health banner polls; keep it off the network
     "GET /api/scenarios": { json: SCENARIOS }, // Welcome lists them
   });
@@ -65,6 +70,22 @@ test("App starts the clock and the event wiring once and stops both on unmount",
   unmount();
   expect(stopClock).toHaveBeenCalledTimes(1);
   expect(stopEvents).toHaveBeenCalledTimes(1);
+});
+
+test("App reads the online imagery switch and catalog once at start, with no scenario open", async () => {
+  useImagery.setState(useImagery.getInitialState(), true);
+  const layers = [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS" }];
+  const f = stubFetch({
+    "GET /api/imagery/layers": { json: { enabled: true, layers } },
+    "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
+    "GET /api/scenarios": { json: SCENARIOS },
+  });
+  render(<App />);
+  await waitFor(() => expect(useImagery.getState().loaded).toBe(true));
+  expect(useImagery.getState().enabled).toBe(true);
+  expect(useImagery.getState().layers).toEqual(layers);
+  expect(f.count("GET /api/imagery/layers")).toBe(1);
+  useImagery.setState(useImagery.getInitialState(), true);
 });
 
 test("under StrictMode every start is matched by a stop", async () => {
@@ -125,6 +146,7 @@ test("Object → Properties opens the real Properties Browser as a floating wind
     constraints: {},
   };
   stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
     "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
     "GET /api/scenarios": { json: SCENARIOS },
     "GET /api/scenarios/S1/objects/Satellite/G01": { json: pages, headers: { ETag: '"e1"' } },
@@ -144,6 +166,7 @@ test("Object → Properties opens the real Properties Browser as a floating wind
 
 test("Utilities opens the real Fetch Orbit Data and Daily Forecast Settings windows with no scenario open, and Insert needs a scenario", async () => {
   const f = stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
     "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
     "GET /api/scenarios": { json: SCENARIOS },
     "GET /api/orbits": { json: [{ name: "20261112T0000Z", time_utc: "2026-11-12T00:00:00Z", groups: { G: 31 }, has_brdc: true }] },
@@ -190,7 +213,7 @@ test("App installs the shortcuts once: Ctrl+S is kept from the browser while mou
 });
 
 test("App shows the disk warning when the server reports a read-only disk", async () => {
-  stubFetch({ "GET /api/health": { json: { engine_version: "1", gmat_found: true, data_dir: "/d", free_bytes: 5e9, writable: false, daily: { state: "idle", last_run_utc: null, next_run_utc: null, for_date: null } } } });
+  stubFetch({ "GET /api/imagery/layers": IMAGERY_OFF, "GET /api/health": { json: { engine_version: "1", gmat_found: true, data_dir: "/d", free_bytes: 5e9, writable: false, daily: { state: "idle", last_run_utc: null, next_run_utc: null, for_date: null } } } });
   render(<App />);
   // (dockview มี live region role="alert" ของตัวเองอยู่แล้ว จึงหาแถบจาก class)
   await waitFor(() => expect(document.querySelector(".health-banner")?.textContent).toContain("เขียนไฟล์ลงดิสก์ไม่ได้"));
@@ -227,6 +250,7 @@ describe("starting the page", () => {
 
   test("File → New opens the real New Scenario Wizard, which asks the server for the snapshots", async () => {
     const f = stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
       "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
       "GET /api/scenarios": { json: [] },
       "GET /api/orbits": { json: [{ name: "20261112T0000Z", time_utc: "2026-11-12T00:00:00Z", groups: {}, has_brdc: true }] },
