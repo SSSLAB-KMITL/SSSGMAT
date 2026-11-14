@@ -212,7 +212,6 @@
       "triangles": 12977,
       "wing_nodes": ["wing-Y"],
       "cell_normal": "+X",
-      "confidence": "low",
       "status": "done"
     },
     {
