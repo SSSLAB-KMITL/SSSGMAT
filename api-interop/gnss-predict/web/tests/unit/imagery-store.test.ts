@@ -10,10 +10,11 @@ import { stubFetch } from "./helpers/fake-fetch";
 
 const THAI = /[฀-๿]/;
 
+const IMAGERY_OFF = { enabled: false, eox: false, osm: false, ion: false };
 const SETTINGS: Settings = {
   daily: { enabled: true, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 },
   cesium_ion_token: "tok",
-  online_imagery: { enabled: false },
+  online_imagery: IMAGERY_OFF,
 };
 
 const LAYERS = {
@@ -64,7 +65,7 @@ describe("useImagery", () => {
     const f = stubFetch({ "GET /api/settings": { json: SETTINGS }, "PUT /api/settings": (c) => ({ json: c.body }) });
     await useImagery.getState().setEnabled(true);
     expect(f.calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /api/settings", "PUT /api/settings"]);
-    expect(f.calls[1].body).toEqual({ ...SETTINGS, online_imagery: { enabled: true } });
+    expect(f.calls[1].body).toEqual({ ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } });
     expect(useImagery.getState().enabled).toBe(true);
     // ค่าตั้งที่ store ของค่าตั้งถือไว้ตามทัน (Daily Forecast Settings ส่งค่าที่ store ถือคืนไปตอน Apply ไม่ทับสวิตช์กลับ)
     expect(useSettings.getState().settings?.online_imagery.enabled).toBe(true);
@@ -73,10 +74,22 @@ describe("useImagery", () => {
 
   test("setEnabled(false) PUTs enabled false and turns the switch off", async () => {
     useImagery.setState({ enabled: true });
-    const f = stubFetch({ "GET /api/settings": { json: { ...SETTINGS, online_imagery: { enabled: true } } }, "PUT /api/settings": (c) => ({ json: c.body }) });
+    const f = stubFetch({ "GET /api/settings": { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } } }, "PUT /api/settings": (c) => ({ json: c.body }) });
     await useImagery.getState().setEnabled(false);
-    expect(f.calls[1].body).toEqual({ ...SETTINGS, online_imagery: { enabled: false } });
+    expect(f.calls[1].body).toEqual({ ...SETTINGS, online_imagery: IMAGERY_OFF });
     expect(useImagery.getState().enabled).toBe(false);
+  });
+
+  test("setEnabled changes only the GIBS flag: the eox, osm and ion flags and the token travel back as loaded", async () => {
+    const others = { eox: true, osm: false, ion: true };
+    const loaded = { ...SETTINGS, cesium_ion_token: "tok-keep", online_imagery: { enabled: false, ...others } };
+    const f = stubFetch({ "GET /api/settings": { json: loaded }, "PUT /api/settings": (c) => ({ json: c.body }) });
+    await useImagery.getState().setEnabled(true);
+    expect(f.calls[1].body).toEqual({ ...loaded, online_imagery: { enabled: true, ...others } });
+    expect(useSettings.getState().settings?.online_imagery).toEqual({ enabled: true, ...others });
+    f.calls.length = 0;
+    await useImagery.getState().setEnabled(false);
+    expect(f.calls[1].body).toEqual({ ...loaded, online_imagery: { enabled: false, ...others } });
   });
 
   test("a PUT that fails keeps the switch off and reports a Thai warning", async () => {

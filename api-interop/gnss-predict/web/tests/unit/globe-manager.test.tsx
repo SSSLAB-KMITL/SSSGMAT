@@ -35,10 +35,11 @@ const TITLES = LAYERS.map((l) => l.title);
 const SHOWN_BY_DEFAULT = ["Blue Marble", "VIIRS NOAA-20 True Color"];
 const NATURAL_EARTH = "Natural Earth II";
 
+const IMAGERY_OFF = { enabled: false, eox: false, osm: false, ion: false };
 const SETTINGS: Settings = {
   daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 },
   cesium_ion_token: "tok-abc",
-  online_imagery: { enabled: false },
+  online_imagery: IMAGERY_OFF,
 };
 const GET_SETTINGS = "GET /api/settings";
 const PUT = "PUT /api/settings";
@@ -188,7 +189,7 @@ describe("turning the switch on", () => {
     await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
     await settle();
     expect(puts(f)).toHaveLength(1);
-    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: { enabled: true } });
+    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } });
     expect(online().checked).toBe(true);
     for (const title of TITLES) {
       expect(show(title).disabled, title).toBe(false);
@@ -246,7 +247,7 @@ describe("turning the switch on", () => {
     expect(online().disabled).toBe(true);
     await user.click(online());
     expect(screen.queryByRole("dialog")).toBeNull();
-    gate.resolve({ json: { ...SETTINGS, online_imagery: { enabled: true } } });
+    gate.resolve({ json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } } });
     await settle();
     expect(online().disabled).toBe(false);
     expect(puts(f)).toHaveLength(1);
@@ -257,20 +258,20 @@ describe("turning the switch off", () => {
   beforeEach(() => useImagery.setState({ enabled: true }));
 
   test("PUTs enabled false at once, with no confirmation, and disables the rows again", async () => {
-    const f = server({ [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { enabled: true } } } });
+    const f = server({ [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } } } });
     mount();
     expect(online().checked).toBe(true);
     await user.click(online());
     await waitFor(() => expect(useImagery.getState().enabled).toBe(false));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(puts(f)).toHaveLength(1);
-    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: { enabled: false } });
+    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: IMAGERY_OFF });
     expect(online().checked).toBe(false);
     for (const title of TITLES) expect(show(title).disabled, title).toBe(true);
   });
 
   test("keeps the user's Show and % Translucency choices for the next time", async () => {
-    server({ [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { enabled: true } } } });
+    server({ [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } } } });
     mount();
     await user.click(show("GOES-East GeoColor"));
     await typeInto(translucency("GOES-East GeoColor"), "40");

@@ -1108,6 +1108,11 @@ export interface components {
              * @enum {string}
              */
             period: "static" | "daily" | "10min";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "gibs" | "eox";
             /** Title */
             title: string;
         };
@@ -1117,6 +1122,7 @@ export interface components {
             enabled: boolean;
             /** Layers */
             layers: components["schemas"]["LayerOut"][];
+            sources: components["schemas"]["SourcesOut"];
         };
         /** NewScenario */
         NewScenario: {
@@ -1141,6 +1147,21 @@ export interface components {
              * @default false
              */
             enabled?: boolean;
+            /**
+             * Eox
+             * @default false
+             */
+            eox?: boolean;
+            /**
+             * Ion
+             * @default false
+             */
+            ion?: boolean;
+            /**
+             * Osm
+             * @default false
+             */
+            osm?: boolean;
         };
         /** PassSettings */
         PassSettings: {
@@ -1410,6 +1431,17 @@ export interface components {
             cesium_ion_token?: string;
             daily?: components["schemas"]["DailyIn"];
             online_imagery?: components["schemas"]["OnlineImageryIn"];
+        };
+        /** SourcesOut */
+        SourcesOut: {
+            /** Eox */
+            eox: boolean;
+            /** Gibs */
+            gibs: boolean;
+            /** Ion */
+            ion: boolean;
+            /** Osm */
+            osm: boolean;
         };
         /** SwathSettings */
         SwathSettings: {

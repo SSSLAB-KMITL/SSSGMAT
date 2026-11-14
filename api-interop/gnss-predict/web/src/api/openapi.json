@@ -929,6 +929,14 @@
             "title": "Period",
             "type": "string"
           },
+          "source": {
+            "enum": [
+              "gibs",
+              "eox"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -940,7 +948,8 @@
           "period",
           "max_level",
           "format",
-          "credit"
+          "credit",
+          "source"
         ],
         "title": "LayerOut",
         "type": "object"
@@ -957,10 +966,14 @@
             },
             "title": "Layers",
             "type": "array"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/SourcesOut"
           }
         },
         "required": [
           "enabled",
+          "sources",
           "layers"
         ],
         "title": "LayersOut",
@@ -1015,6 +1028,21 @@
           "enabled": {
             "default": false,
             "title": "Enabled",
+            "type": "boolean"
+          },
+          "eox": {
+            "default": false,
+            "title": "Eox",
+            "type": "boolean"
+          },
+          "ion": {
+            "default": false,
+            "title": "Ion",
+            "type": "boolean"
+          },
+          "osm": {
+            "default": false,
+            "title": "Osm",
             "type": "boolean"
           }
         },
@@ -1553,6 +1581,34 @@
           }
         },
         "title": "SettingsIn",
+        "type": "object"
+      },
+      "SourcesOut": {
+        "properties": {
+          "eox": {
+            "title": "Eox",
+            "type": "boolean"
+          },
+          "gibs": {
+            "title": "Gibs",
+            "type": "boolean"
+          },
+          "ion": {
+            "title": "Ion",
+            "type": "boolean"
+          },
+          "osm": {
+            "title": "Osm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gibs",
+          "eox",
+          "osm",
+          "ion"
+        ],
+        "title": "SourcesOut",
         "type": "object"
       },
       "SwathSettings": {

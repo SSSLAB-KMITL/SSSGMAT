@@ -24,11 +24,13 @@ ERROR_KEYS = {"code", "text", "field", "detail"}
 THAI = re.compile("[฀-๿]")
 DEFAULT_DAILY = {"enabled": True, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
                  "validation_retry_hours": 3, "validation_give_up_days": 14}
-DEFAULTS = {"daily": DEFAULT_DAILY, "cesium_ion_token": "", "online_imagery": {"enabled": False}}
+IMAGERY_OFF = {"enabled": False, "eox": False, "osm": False, "ion": False}               # ภาพออนไลน์ทุกแหล่งปิด (enabled = NASA GIBS)
+DEFAULTS = {"daily": DEFAULT_DAILY, "cesium_ion_token": "", "online_imagery": IMAGERY_OFF}
 FAIL_SAFE = {**DEFAULTS, "daily": {**DEFAULT_DAILY, "enabled": False}}       # ไฟล์ค่าตั้งเสีย: ไม่เปิดงานดึงข้อมูลเอง
 CUSTOM = {"daily": {"enabled": False, "run_at_utc": "06:05", "facility": "BKK_2", "retention_days": 7,
                     "validation_retry_hours": 12, "validation_give_up_days": 3},
-          "cesium_ion_token": "tok-123", "online_imagery": {"enabled": True}}
+          "cesium_ion_token": "tok-123",
+          "online_imagery": {"enabled": True, "eox": False, "osm": True, "ion": False}}
 DAY_RECORD = {"day": DAY, "scenario": SC, "ephem_hash": "0123456789ab", "facility": "THBK", "pass": True,
               "systems": {"G": {"n": 2}}, "failing": [], "created_utc": "2026-11-11T01:00:00Z"}
 
@@ -194,7 +196,8 @@ def test_settings_put_requires_the_whole_document(client, data_dir):
     assert client.get("/api/settings").json() == CUSTOM
 
 
-MISSING_PATHS = ["daily", "cesium_ion_token", "online_imagery", "online_imagery.enabled", *(f"daily.{name}" for name in DEFAULT_DAILY)]
+MISSING_PATHS = ["daily", "cesium_ion_token", "online_imagery", *(f"online_imagery.{name}" for name in IMAGERY_OFF),
+                 *(f"daily.{name}" for name in DEFAULT_DAILY)]
 
 
 @pytest.mark.parametrize("path", MISSING_PATHS)
@@ -223,14 +226,16 @@ def test_settings_keeps_non_ascii_token_intact(client, data_dir):
     assert r.status_code == 200 and client.get("/api/settings").json()["cesium_ion_token"] == "โทเคน-ü"
 
 
-# ---------- settings: online_imagery (ภาพออนไลน์ NASA GIBS ปิดไว้ก่อน) ----------
+# ---------- settings: online_imagery (ภาพออนไลน์ปิดไว้ก่อนทุกแหล่ง: enabled = NASA GIBS, eox, osm, ion) ----------
 
 OLD_DOCUMENT = {"daily": {**DEFAULT_DAILY, "enabled": False}, "cesium_ion_token": ""}   # ไฟล์ที่รุ่นก่อนเขียน (ไม่มี online_imagery)
+FLAGS = list(IMAGERY_OFF)                                                            # ลำดับช่องของ online_imagery
 
 
 def test_settings_default_has_online_imagery_off(client, data_dir):
     r = client.get("/api/settings")
-    assert r.status_code == 200 and r.json()["online_imagery"] == {"enabled": False}
+    assert r.status_code == 200 and r.json()["online_imagery"] == IMAGERY_OFF
+    assert list(r.json()["online_imagery"]) == ["enabled", "eox", "osm", "ion"]
     assert not (data_dir / "settings.json").exists()
 
 
@@ -240,17 +245,34 @@ def test_old_settings_file_without_online_imagery_loads_off(client, data_dir):
     before = path.read_bytes()
     r = client.get("/api/settings")
     assert r.status_code == 200
-    assert r.json()["online_imagery"]["enabled"] is False
+    assert r.json()["online_imagery"] == IMAGERY_OFF
     assert r.json()["daily"] == OLD_DOCUMENT["daily"]
     assert path.read_bytes() == before                                                # โหลดแล้วไม่เขียนไฟล์
     assert "settings.json" not in server_log(data_dir)                                # ไฟล์เก่าไม่ใช่ไฟล์เสีย: ไม่เตือน
+
+
+@pytest.mark.parametrize("online, expected", [
+    ({"enabled": True}, {**IMAGERY_OFF, "enabled": True}),                           # ไฟล์ที่รุ่น GIBS เขียน: GIBS ยังเปิด อีกสามแหล่งปิด
+    ({"enabled": False}, IMAGERY_OFF),
+    ({"enabled": True, "eox": True}, {**IMAGERY_OFF, "enabled": True, "eox": True}),
+    ({"eox": True}, {**IMAGERY_OFF, "eox": True}),
+    ({"osm": True, "ion": True}, {**IMAGERY_OFF, "osm": True, "ion": True}),
+    ({}, IMAGERY_OFF),
+])
+def test_old_online_imagery_object_loads_missing_flags_off(client, data_dir, online, expected):
+    path = data_dir / "settings.json"
+    path.write_text(json.dumps({**OLD_DOCUMENT, "online_imagery": online}), encoding="utf-8")
+    before = path.read_bytes()
+    assert client.get("/api/settings").json()["online_imagery"] == expected
+    assert path.read_bytes() == before
+    assert "settings.json" not in server_log(data_dir)
 
 
 def test_hand_edited_online_imagery_is_read_and_never_written_on_load(client, data_dir):
     path = data_dir / "settings.json"
     path.write_text(json.dumps({"daily": {"enabled": False}, "online_imagery": {"enabled": True}}), encoding="utf-8")
     before = path.read_bytes()
-    assert client.get("/api/settings").json()["online_imagery"] == {"enabled": True}
+    assert client.get("/api/settings").json()["online_imagery"] == {**IMAGERY_OFF, "enabled": True}
     assert path.read_bytes() == before
 
 
@@ -263,17 +285,54 @@ def test_put_requires_online_imagery(client, data_dir):
     assert not (data_dir / "settings.json").exists() and calls == []                  # ไม่บันทึก ไม่แจ้งใคร
 
 
-def test_put_online_imagery_strict_bool(client, data_dir):
-    for bad in ("true", 1, None):
-        assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": bad}}), 422,
-                     "SCENARIO_INVALID", "online_imagery.enabled")
-    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": True, "x": 1}}), 422,
-                 "SCENARIO_INVALID", "online_imagery.x")
+@pytest.mark.parametrize("missing", FLAGS)
+def test_put_requires_every_online_imagery_flag(client, data_dir, missing):          # เอกสารรุ่นเก่า (ขาด eox/osm/ion) ต้องไม่ผ่าน
+    calls = []
+    client.app.state.settings_on_change = calls.append
+    online = {name: True for name in FLAGS if name != missing}
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": online}), 422, "SCENARIO_INVALID",
+                 f"online_imagery.{missing}")
+    assert not (data_dir / "settings.json").exists() and calls == []
+
+
+def test_put_old_shape_online_imagery_reports_the_first_new_flag(client, data_dir):
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": True}}), 422, "SCENARIO_INVALID",
+                 "online_imagery.eox")
     assert not (data_dir / "settings.json").exists()
-    r = client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": True}})
-    assert r.status_code == 200 and r.json()["online_imagery"] == {"enabled": True}
-    assert json.loads((data_dir / "settings.json").read_text(encoding="utf-8"))["online_imagery"] == {"enabled": True}
-    assert client.get("/api/settings").json()["online_imagery"] == {"enabled": True}
+
+
+@pytest.mark.parametrize("flag", FLAGS)
+def test_put_online_imagery_strict_bool(client, data_dir, flag):
+    for bad in ("true", 1, 0, None, "false", [], {}):
+        assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {**IMAGERY_OFF, flag: bad}}), 422,
+                     "SCENARIO_INVALID", f"online_imagery.{flag}")
+    assert not (data_dir / "settings.json").exists()
+    r = client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {**IMAGERY_OFF, flag: True}})
+    assert r.status_code == 200 and r.json()["online_imagery"] == {**IMAGERY_OFF, flag: True}
+    assert json.loads((data_dir / "settings.json").read_text(encoding="utf-8"))["online_imagery"] == {**IMAGERY_OFF, flag: True}
+    assert client.get("/api/settings").json()["online_imagery"] == {**IMAGERY_OFF, flag: True}
+
+
+def test_put_online_imagery_rejects_unknown_fields(client, data_dir):
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {**IMAGERY_OFF, "x": 1}}), 422,
+                 "SCENARIO_INVALID", "online_imagery.x")
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {**IMAGERY_OFF, "osn": True}}), 422,
+                 "SCENARIO_INVALID", "online_imagery.osn")
+    assert not (data_dir / "settings.json").exists()
+
+
+def test_put_online_imagery_round_trips_all_four_flags_and_the_token(client, data_dir):
+    body = {**OLD_DOCUMENT, "cesium_ion_token": "tok-xyz", "online_imagery": {"enabled": True, "eox": False, "osm": True, "ion": True}}
+    r = client.put("/api/settings", json=body)
+    assert r.status_code == 200 and r.json() == body
+    assert json.loads((data_dir / "settings.json").read_text(encoding="utf-8")) == body
+    assert client.get("/api/settings").json() == body
+
+
+def test_turning_one_source_on_never_turns_another_on(client, data_dir):
+    for flag in FLAGS:
+        client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {**IMAGERY_OFF, flag: True}})
+        assert client.get("/api/settings").json()["online_imagery"] == {**IMAGERY_OFF, flag: True}
 
 
 # ---------- settings: callback ไปยังตัวตั้งเวลา ----------
@@ -375,6 +434,8 @@ def test_settings_save_then_load_roundtrip_is_atomic(data_dir):
     b'{"daily": {"enabled": true, "retention_days": "30"}}', b'{"daily": {"enabled": false, "facility": "a b"}}',
     b'{"daily": {"enabled": true}, "online_imagery": {"enabled": "true"}}', b'{"daily": {"enabled": true}, "online_imagery": 1}',
     b'{"daily": {"enabled": false}, "online_imagery": {"enabled": 1}}',                 # ภาพออนไลน์ผิดชนิด: ทั้งไฟล์ fail safe (ปิดทั้งคู่)
+    b'{"daily": {"enabled": false}, "online_imagery": {"eox": "true"}}', b'{"daily": {"enabled": true}, "online_imagery": {"osm": 1}}',
+    b'{"daily": {"enabled": true}, "online_imagery": {"enabled": true, "ion": null}}',
 ])
 def test_settings_corrupt_or_invalid_file_fails_safe_and_logs(client, data_dir, content):
     (data_dir / "settings.json").write_bytes(content)
@@ -413,7 +474,7 @@ def test_settings_partial_file_fills_missing_fields_with_defaults(client, data_d
     assert client.get("/api/settings").json() == DEFAULTS
     path.write_text(json.dumps({"daily": {"enabled": False, "facility": "BKK"}, "cesium_ion_token": "t"}))
     assert client.get("/api/settings").json() == {"daily": {**DEFAULT_DAILY, "enabled": False, "facility": "BKK"},
-                                                  "cesium_ion_token": "t", "online_imagery": {"enabled": False}}
+                                                  "cesium_ion_token": "t", "online_imagery": IMAGERY_OFF}
 
 
 @pytest.mark.parametrize("content", [

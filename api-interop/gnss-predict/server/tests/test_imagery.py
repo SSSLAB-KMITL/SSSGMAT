@@ -22,32 +22,37 @@ from conftest import make_client
 from gnss_studio_server import imagery, settings
 from gnss_studio_server.app import create_app
 from gnss_studio_server.config import Config
-from gnss_studio_server.imagery import (CATALOG, TileCache, TileFetcher, is_settled, layer_by_id, make_opener, upstream_url,
-                                        valid_time)
+from gnss_studio_server.imagery import (CATALOG, SOURCES, TileCache, TileFetcher, is_settled, layer_by_id, make_opener,
+                                        upstream_url, valid_time)
 
 ERROR_KEYS = {"code", "text", "field", "detail"}
 THAI = re.compile("[฀-๿]")
 
-# ตาราง catalog ของ Global Constraints (คัดลอกตรงตัว: test นี้ล็อกค่าที่ B0 จะมาแก้ทีหลังที่เดียว)
+# ตาราง catalog ของ Global Constraints (คัดลอกตรงตัว: test นี้ล็อกค่าที่ B0 จะมาแก้ทีหลังที่เดียว) คอลัมน์สุดท้ายคือแหล่ง
 TABLE = [
-    ("BlueMarble_NextGeneration", "Blue Marble", "static", "GoogleMapsCompatible_Level8", 8, "jpg", "NASA GIBS / EOSDIS"),
+    ("BlueMarble_NextGeneration", "Blue Marble", "static", "GoogleMapsCompatible_Level8", 8, "jpg", "NASA GIBS / EOSDIS", "gibs"),
     ("VIIRS_NOAA20_CorrectedReflectance_TrueColor", "VIIRS NOAA-20 True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-     "NASA GIBS / EOSDIS"),
+     "NASA GIBS / EOSDIS", "gibs"),
     ("VIIRS_SNPP_CorrectedReflectance_TrueColor", "VIIRS Suomi NPP True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-     "NASA GIBS / EOSDIS"),
+     "NASA GIBS / EOSDIS", "gibs"),
     ("MODIS_Terra_CorrectedReflectance_TrueColor", "MODIS Terra True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-     "NASA GIBS / EOSDIS"),
+     "NASA GIBS / EOSDIS", "gibs"),
     ("Himawari_AHI_Band3_Red_Visible_1km", "Himawari-9 Red Visible", "10min", "GoogleMapsCompatible_Level7", 7, "png",
-     "NASA GIBS / EOSDIS, JMA"),
+     "NASA GIBS / EOSDIS, JMA", "gibs"),
     ("Himawari_AHI_Band13_Clean_Infrared", "Himawari-9 Clean Infrared", "10min", "GoogleMapsCompatible_Level6", 6, "png",
-     "NASA GIBS / EOSDIS, JMA"),
-    ("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA"),
-    ("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA"),
+     "NASA GIBS / EOSDIS, JMA", "gibs"),
+    ("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+     "gibs"),
+    ("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+     "gibs"),
+    ("s2cloudless-2024_3857", "Sentinel-2 cloudless 2024", "static", "g", 15, "jpg",
+     "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)", "eox"),
 ]
 
 BM = "BlueMarble_NextGeneration"                         # static, ระดับสูงสุด 8, jpg
 VI = "VIIRS_NOAA20_CorrectedReflectance_TrueColor"      # daily, ระดับสูงสุด 9, jpg
 HW = "Himawari_AHI_Band3_Red_Visible_1km"               # 10min, ระดับสูงสุด 7, png
+EO = "s2cloudless-2024_3857"                            # EOX Sentinel-2 cloudless: static, ระดับสูงสุด 15, jpg
 DAY = "2026-11-11"
 SLOT = "2026-11-11T00:10:00Z"
 
@@ -144,13 +149,15 @@ class Env:
         self.opener, self.clock, self.wall = FakeOpener(), Clock(), Wall()
         logger = self.app.state.logger
         self.fetcher = TileFetcher(data_dir, opener=self.opener, now=self.clock, logger=logger, utcnow=self.wall,
-                                   enabled=lambda: settings.load(data_dir, logger).online_imagery.enabled)
+                                   enabled=lambda source: getattr(settings.load(data_dir, logger).online_imagery,
+                                                                  SOURCES[source].switch))
         self.app.state.imagery = self.fetcher
         self.client = make_client(self.app)
 
-    def enable(self, on=True):
+    def enable(self, on=True, *, eox=False, osm=False, ion=False):
+        """เขียน settings.json: `on` = สวิตช์ GIBS (`online_imagery.enabled`); eox/osm/ion เป็นสวิตช์ของแหล่งนั้น (ตั้งต้นปิดทั้งหมด)"""
         settings.save(self.data_dir, settings.Settings(daily=settings.Daily(enabled=False),
-                                                       online_imagery=settings.OnlineImagery(enabled=on)))
+                                                       online_imagery=settings.OnlineImagery(enabled=on, eox=eox, osm=osm, ion=ion)))
 
     def tile(self, layer, time, z, y, x):
         return self.client.get(f"/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}")
@@ -195,7 +202,26 @@ def tile_files(env):
 # ---------- catalog และฟังก์ชันบริสุทธิ์ ----------
 
 def test_catalog_matches_global_constraints_table():
-    assert [(layer.id, layer.title, layer.period, layer.tms, layer.max_level, layer.ext, layer.credit) for layer in CATALOG] == TABLE
+    assert [(layer.id, layer.title, layer.period, layer.tms, layer.max_level, layer.ext, layer.credit, layer.source)
+            for layer in CATALOG] == TABLE
+
+
+def test_sources_table():
+    assert set(SOURCES) == {"gibs", "eox"}
+    assert {layer.source for layer in CATALOG} == set(SOURCES)
+    assert (SOURCES["gibs"].switch, SOURCES["gibs"].concurrency) == ("enabled", 4)
+    assert (SOURCES["eox"].switch, SOURCES["eox"].concurrency) == ("eox", 2)
+    assert SOURCES["gibs"].url == imagery.GIBS_URL
+    assert SOURCES["eox"].url == imagery.EOX_URL
+    assert imagery.EOX_URL == "https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/{tms}/{z}/{y}/{x}.{ext}"
+    for source in SOURCES.values():                               # ข้อความไทยของแต่ละแหล่งบอกชื่อแหล่ง
+        assert all(THAI.search(t) for t in (source.disabled_text, source.failed_text, source.paused_text))
+    assert SOURCES["gibs"].disabled_text == "ภาพออนไลน์ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+    assert SOURCES["gibs"].failed_text == "ดึงภาพจาก NASA GIBS ไม่สำเร็จ"
+    assert SOURCES["gibs"].paused_text == "หยุดดึงภาพจาก NASA GIBS ชั่วคราว"
+    assert SOURCES["eox"].disabled_text == "ภาพ Sentinel-2 (EOX) ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+    assert SOURCES["eox"].failed_text == "ดึงภาพจาก Sentinel-2 (EOX) ไม่สำเร็จ"
+    assert SOURCES["eox"].paused_text == "หยุดดึงภาพจาก Sentinel-2 (EOX) ชั่วคราว"
 
 
 def test_layer_by_id_is_exact_and_case_sensitive():
@@ -207,6 +233,7 @@ def test_layer_by_id_is_exact_and_case_sensitive():
 def test_limits_match_global_constraints():
     assert imagery.FETCH_TIMEOUT_S == 20
     assert imagery.MAX_CONCURRENT == 4
+    assert imagery.EOX_MAX_CONCURRENT == 2
     assert imagery.QUEUE_WAIT_S == 15
     assert imagery.PAUSE_FORBIDDEN_S == 15 * 60
     assert imagery.FAILURE_LIMIT == 20
@@ -223,6 +250,9 @@ def test_limits_match_global_constraints():
     (BM, "default", True),
     (BM, "2026-11-11", False),
     (BM, "", False),
+    (EO, "default", True),
+    (EO, "2026-11-11", False),
+    (EO, "", False),
     (VI, "2026-11-11", True),
     (VI, "2024-02-29", True),
     (VI, "2026-02-29", False),
@@ -253,6 +283,7 @@ def test_valid_time(layer_id, time, ok):
 # today = 2026-11-14 12:00 UTC (NOW): daily ไม่นิ่งตั้งแต่เมื่อวาน (>= วันนี้ - 1 วัน) เป็นต้นไป; 10min ไม่นิ่งถ้าเวลาของ token >= ตอนนี้ - 3 ชั่วโมง
 @pytest.mark.parametrize("layer_id, time, settled", [
     (BM, "default", True),
+    (EO, "default", True),
     (VI, "2026-11-10", True),
     (VI, "2026-11-12", True),                         # 2 วันก่อน: นิ่ง
     (VI, "2026-11-13", False),                        # เมื่อวาน
@@ -293,24 +324,64 @@ def test_upstream_url_exact():
         "GoogleMapsCompatible_Level8/0/0/0.jpg")
 
 
+def test_upstream_url_exact_eox():
+    assert upstream_url(layer_by_id(EO), "default", 3, 2, 5) == (
+        "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/3/2/5.jpg")
+    assert upstream_url(layer_by_id(EO), "default", 15, 16383, 0) == (
+        "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/15/16383/0.jpg")
+
+
 # ---------- /api/imagery/layers ----------
 
+EOX_CREDIT = "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)"
+
+
 def test_layers_lists_catalog_in_order_and_enabled_flag(env):
-    r = env.client.get("/api/imagery/layers")                     # ไม่มี settings.json: ปิด
+    r = env.client.get("/api/imagery/layers")                     # ไม่มี settings.json: ปิดทุกแหล่ง
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["enabled"] is False
     assert [layer["id"] for layer in body["layers"]] == [row[0] for row in TABLE]
     assert body["layers"][0] == {"id": BM, "title": "Blue Marble", "period": "static", "max_level": 8, "format": "jpg",
-                                 "credit": "NASA GIBS / EOSDIS"}
+                                 "credit": "NASA GIBS / EOSDIS", "source": "gibs"}
     assert body["layers"][4] == {"id": HW, "title": "Himawari-9 Red Visible", "period": "10min", "max_level": 7,
-                                 "format": "png", "credit": "NASA GIBS / EOSDIS, JMA"}
-    assert all(set(layer) == {"id", "title", "period", "max_level", "format", "credit"} for layer in body["layers"])
+                                 "format": "png", "credit": "NASA GIBS / EOSDIS, JMA", "source": "gibs"}
+    assert body["layers"][-1] == {"id": EO, "title": "Sentinel-2 cloudless 2024", "period": "static", "max_level": 15,
+                                  "format": "jpg", "credit": EOX_CREDIT, "source": "eox"}
+    assert all(set(layer) == {"id", "title", "period", "max_level", "format", "credit", "source"} for layer in body["layers"])
     env.enable()
     assert env.client.get("/api/imagery/layers").json()["enabled"] is True
     env.enable(False)
     assert env.client.get("/api/imagery/layers").json()["enabled"] is False
     assert env.opener.calls == []                                  # ไม่ต่อเน็ตเลย
+
+
+def test_layers_payload_exact(env):
+    expected_layers = [{"id": row[0], "title": row[1], "period": row[2], "max_level": row[4], "format": row[5], "credit": row[6],
+                        "source": row[7]} for row in TABLE]
+    off = {"gibs": False, "eox": False, "osm": False, "ion": False}
+    assert env.client.get("/api/imagery/layers").json() == {"enabled": False, "sources": off, "layers": expected_layers}
+    env.enable(True)
+    assert env.client.get("/api/imagery/layers").json() == {"enabled": True, "sources": {**off, "gibs": True},
+                                                            "layers": expected_layers}
+    env.enable(False, eox=True)
+    assert env.client.get("/api/imagery/layers").json() == {"enabled": False, "sources": {**off, "eox": True},
+                                                            "layers": expected_layers}
+    env.enable(False, osm=True)
+    assert env.client.get("/api/imagery/layers").json()["sources"] == {**off, "osm": True}
+    env.enable(False, ion=True)
+    assert env.client.get("/api/imagery/layers").json()["sources"] == {**off, "ion": True}
+    env.enable(True, eox=True, osm=True, ion=True)
+    assert env.client.get("/api/imagery/layers").json() == {"enabled": True, "sources": {k: True for k in off},
+                                                            "layers": expected_layers}
+    assert env.opener.calls == []
+
+
+def test_layers_openapi_declares_sources_and_layer_source(env):
+    schemas = env.client.get("/api/openapi.json").json()["components"]["schemas"]
+    assert "sources" in schemas["LayersOut"]["properties"]
+    assert "source" in schemas["LayerOut"]["properties"]
+    assert set(schemas["SourcesOut"]["properties"]) == {"gibs", "eox", "osm", "ion"}
 
 
 def test_routes_are_in_openapi(env):
@@ -410,6 +481,11 @@ def test_bad_time_422(env, layer_id, time):
     (VI, "1000", "0", "0", "z"),
     (VI, "٣", "0", "0", "z"),
     (VI, "3", "0", "8", "x"),                     # 2**z
+    (VI, "9", "99999", "0", "y"),                 # 5 หลักยังเป็นตัวเลขที่ถูกรูปแบบ (EOX ระดับ 15 ต้องใช้) แต่เกินช่วงของ GIBS
+    (VI, "9", "0", "32767", "x"),
+    (VI, "3", "100000", "0", "y"),                # 6 หลัก: ผิดรูปแบบ
+    (EO, "15", "0", "100000", "x"),
+    (EO, "15", "32768", "0", "y"),
     (VI, "3", "8", "0", "y"),
     (VI, "3", "0", "+2", "x"),
     (VI, "3", "-1", "0", "y"),
@@ -418,8 +494,8 @@ def test_bad_time_422(env, layer_id, time):
     (VI, "3", "2", "%2e%2e", "x"),                # `..` ที่ถูกถอดรหัสแล้วมาถึง route เป็นค่าของ x
 ])
 def test_bad_tile_coords_422(env, layer_id, z, y, x, field):
-    env.enable()
-    assert_error(env.tile(layer_id, DAY if layer_id != BM else "default", z, y, x), 422, "SCENARIO_INVALID", field)
+    env.enable(True, eox=True)
+    assert_error(env.tile(layer_id, "default" if layer_id in (BM, EO) else DAY, z, y, x), 422, "SCENARIO_INVALID", field)
     assert env.opener.calls == []
     assert not (env.data_dir / "imagery").exists()
 
@@ -923,7 +999,7 @@ class SpySlots:
 
 def test_switch_is_rechecked_after_waiting_for_a_slot(env, monkeypatch):
     env.enable()
-    slots = env.fetcher._slots = SpySlots(env.fetcher._slots)
+    slots = env.fetcher._slots["gibs"] = SpySlots(env.fetcher._slots["gibs"])
     gate, entered = threading.Event(), threading.Semaphore(0)
 
     def blocking(request):
@@ -959,31 +1035,328 @@ def test_switch_is_rechecked_after_waiting_for_a_slot(env, monkeypatch):
 
 def test_switch_recheck_error_is_not_counted_or_remembered(env):
     env.enable()
-    env.fetcher.enabled = lambda: False
+    env.fetcher.enabled = lambda source: False
     with pytest.raises(imagery.ApiError) as exc:
         env.fetcher.get(layer_by_id(VI), DAY, 9, 0, 0)
     assert (exc.value.status, exc.value.code) == (403, "IMAGERY_DISABLED")
     assert env.opener.calls == []
-    env.fetcher.enabled = lambda: True
+    env.fetcher.enabled = lambda source: True
     assert env.fetcher.get(layer_by_id(VI), DAY, 9, 0, 0)[1] == "image/jpeg"     # ไม่ถูกจำ ไม่พัก
     assert len(env.opener.calls) == 1
 
 
 def test_fetcher_without_enabled_callable_is_always_enabled(tmp_path):
     fetcher = TileFetcher(tmp_path, opener=FakeOpener())
-    assert fetcher.enabled() is True
+    assert fetcher.enabled("gibs") is True
+    assert fetcher.enabled("eox") is True
 
 
 def test_app_wires_fetcher_enabled_to_the_settings_switch(tmp_path):
     app = create_app(Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-dist"), start_background=False)
     fetcher = app.state.imagery
-    assert fetcher.enabled() is False                              # ไม่มี settings.json
-    settings.save(tmp_path / "data", settings.Settings(daily=settings.Daily(enabled=False),
-                                                       online_imagery=settings.OnlineImagery(enabled=True)))
-    assert fetcher.enabled() is True
-    settings.save(tmp_path / "data", settings.Settings(daily=settings.Daily(enabled=False),
-                                                       online_imagery=settings.OnlineImagery(enabled=False)))
-    assert fetcher.enabled() is False
+    assert (fetcher.enabled("gibs"), fetcher.enabled("eox")) == (False, False)      # ไม่มี settings.json
+    data = tmp_path / "data"
+    daily = settings.Daily(enabled=False)
+    settings.save(data, settings.Settings(daily=daily, online_imagery=settings.OnlineImagery(enabled=True)))
+    assert (fetcher.enabled("gibs"), fetcher.enabled("eox")) == (True, False)       # เปิด GIBS ไม่เปิด EOX
+    settings.save(data, settings.Settings(daily=daily, online_imagery=settings.OnlineImagery(eox=True)))
+    assert (fetcher.enabled("gibs"), fetcher.enabled("eox")) == (False, True)       # เปิด EOX ไม่เปิด GIBS
+    settings.save(data, settings.Settings(daily=daily, online_imagery=settings.OnlineImagery(osm=True, ion=True)))
+    assert (fetcher.enabled("gibs"), fetcher.enabled("eox")) == (False, False)      # osm/ion ไม่ผ่าน server
+    settings.save(data, settings.Settings(daily=daily, online_imagery=settings.OnlineImagery(enabled=True, eox=True)))
+    assert (fetcher.enabled("gibs"), fetcher.enabled("eox")) == (True, True)
+
+
+# ---------- Sentinel-2 cloudless (EOX): สวิตช์ ตัวนับ และคิวแยกต่อแหล่ง ----------
+
+GIBS_DISABLED = "ภาพออนไลน์ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+EOX_DISABLED = "ภาพ Sentinel-2 (EOX) ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+EOX_FAILED = "ดึงภาพจาก Sentinel-2 (EOX) ไม่สำเร็จ"
+EOX_PAUSED = "หยุดดึงภาพจาก Sentinel-2 (EOX) ชั่วคราว"
+EOX_URL_353 = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/3/2/5.jpg"
+
+
+def _fail(request):
+    return URLError("connection refused")
+
+
+def test_eox_tile_is_fetched_cached_and_sent_as_settled(env):
+    env.enable(False, eox=True)
+    r1 = env.tile(EO, "default", 3, 2, 5)
+    assert r1.status_code == 200, r1.text
+    assert r1.content == JPEG
+    assert r1.headers["content-type"] == "image/jpeg"
+    assert r1.headers["x-content-type-options"] == "nosniff"
+    assert r1.headers["cache-control"] == SETTLED_CC               # static: นิ่งเสมอ
+    assert len(env.opener.calls) == 1
+    call = env.opener.calls[0]
+    assert call.url == EOX_URL_353
+    assert call.user_agent == "gnss-studio/0.1"
+    assert call.timeout == 20
+    cached = env.data_dir / "imagery" / "tiles" / EO / "default" / "3" / "2" / "5.jpg"
+    assert cached.read_bytes() == JPEG
+    assert tile_files(env) == [cached]
+    r2 = env.tile(EO, "default", 3, 2, 5)
+    assert (r2.status_code, r2.content, r2.headers["cache-control"]) == (200, JPEG, SETTLED_CC)
+    assert len(env.opener.calls) == 1                              # ครั้งที่สองส่งจาก cache
+
+
+def test_eox_deepest_level_is_15(env):
+    env.enable(False, eox=True)
+    assert env.tile(EO, "default", 15, 32767, 32767).status_code == 200
+    assert env.opener.calls[0].url == "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/15/32767/32767.jpg"
+    assert_error(env.tile(EO, "default", 16, 0, 0), 422, "SCENARIO_INVALID", "z")
+    assert_error(env.tile(EO, "default", 15, 32768, 0), 422, "SCENARIO_INVALID", "y")
+    assert_error(env.tile(EO, "default", 15, 0, 32768), 422, "SCENARIO_INVALID", "x")
+    assert len(env.opener.calls) == 1
+
+
+def test_eox_checks_run_in_spec_order(env):
+    env.enable(False, eox=True)
+    assert_error(env.tile(EO, "2026-11-11", "-1", "9", "9"), 422, "SCENARIO_INVALID", "time")      # EOX ใช้เวลา default เท่านั้น
+    assert_error(env.tile(EO, "latest", 3, 2, 5), 422, "SCENARIO_INVALID", "time")
+    assert_error(env.tile(EO, "default", "16", "9", "9"), 422, "SCENARIO_INVALID", "z")
+    assert_error(env.tile(EO, "default", "3", "9", "9"), 422, "SCENARIO_INVALID", "y")
+    assert_error(env.tile(EO, "default", "3", "1", "9"), 422, "SCENARIO_INVALID", "x")
+    assert env.opener.calls == []
+
+
+def test_eox_tile_with_eox_off_is_403_even_when_gibs_is_on(env):
+    env.enable(True, eox=False)
+    j = assert_error(env.tile(EO, "default", 3, 2, 5), 403, "IMAGERY_DISABLED")
+    assert j["text"] == EOX_DISABLED
+    assert env.opener.calls == []
+    assert not (env.data_dir / "imagery").exists()
+
+
+def test_gibs_tile_with_gibs_off_is_403_even_when_eox_is_on(env):
+    env.enable(False, eox=True)
+    j = assert_error(env.tile(VI, DAY, 3, 2, 5), 403, "IMAGERY_DISABLED")
+    assert j["text"] == GIBS_DISABLED                              # ข้อความ GIBS ไม่เปลี่ยน
+    assert env.opener.calls == []
+    assert not (env.data_dir / "imagery").exists()
+    assert env.tile(EO, "default", 3, 2, 5).status_code == 200     # ในขณะที่ EOX ยังใช้ได้
+    assert [c.url for c in env.opener.calls] == [EOX_URL_353]
+
+
+def test_osm_and_ion_switches_never_enable_a_server_source(env):
+    env.enable(False, osm=True, ion=True)
+    assert_error(env.tile(VI, DAY, 3, 2, 5), 403, "IMAGERY_DISABLED")
+    assert_error(env.tile(EO, "default", 3, 2, 5), 403, "IMAGERY_DISABLED")
+    assert env.opener.calls == []
+
+
+def test_eox_tile_disabled_even_when_cached(env):
+    env.enable(False, eox=True)
+    assert env.tile(EO, "default", 3, 2, 5).status_code == 200
+    assert env.path(EO, "default", 3, 2, 5).is_file()
+    env.enable(True, eox=False)                                    # ปิด EOX (GIBS เปิดอยู่): มีผลทันที
+    assert_error(env.tile(EO, "default", 3, 2, 5), 403, "IMAGERY_DISABLED")
+    assert env.path(EO, "default", 3, 2, 5).is_file()
+    env.enable(False, eox=True)
+    assert env.tile(EO, "default", 3, 2, 5).status_code == 200
+    assert len(env.opener.calls) == 1
+
+
+def test_unknown_layer_is_403_only_when_every_proxied_source_is_off(env):
+    j = assert_error(env.tile("nope", "garbage", "-1", "x", "y"), 403, "IMAGERY_DISABLED")
+    assert j["text"] == GIBS_DISABLED                              # ปิดหมด: เหมือนเดิมทุกประการ
+    env.enable(False, osm=True, ion=True)
+    assert_error(env.tile("nope", "garbage", "-1", "x", "y"), 403, "IMAGERY_DISABLED")
+    env.enable(False, eox=True)
+    assert_error(env.tile("nope", DAY, 3, 2, 5), 404, "IMAGERY_UNKNOWN_LAYER")
+    env.enable(True)
+    assert_error(env.tile("nope", DAY, 3, 2, 5), 404, "IMAGERY_UNKNOWN_LAYER")
+    assert env.opener.calls == []
+
+
+def test_eox_rejects_png_body(env):
+    env.enable(False, eox=True)
+    env.opener.script = [FakeResponse(PNG)]
+    j = assert_error(env.tile(EO, "default", 3, 2, 5), 502, "IMAGERY_FETCH_FAILED")
+    assert j["text"] == EOX_FAILED
+    assert tile_files(env) == []
+
+
+def test_eox_not_available_is_memoized_for_an_hour_and_per_layer(env):
+    env.enable(True, eox=True)
+    env.opener.script = [http_error(404)]
+    j = assert_error(env.tile(EO, "default", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert j["text"] == "ไม่มีภาพของชั้นนี้ ณ เวลานี้"
+    assert_error(env.tile(EO, "default", 3, 2, 5), 404, "IMAGERY_NOT_AVAILABLE")
+    assert len(env.opener.calls) == 1
+    assert env.tile(BM, "default", 3, 2, 5).status_code == 200      # ตำแหน่งเดียวกันของชั้นอื่น: ไม่เกี่ยวกัน
+    env.clock.advance(3601)
+    assert env.tile(EO, "default", 3, 2, 5).status_code == 200
+    assert len(env.opener.calls) == 3
+
+
+@pytest.mark.parametrize("code", [403, 429])
+def test_eox_pause_does_not_pause_gibs(env, code):
+    env.enable(True, eox=True)
+    assert env.tile(EO, "default", 9, 0, 0).status_code == 200      # อยู่ใน cache แล้ว
+    env.opener.script = [http_error(code)]
+    started = env.wall()
+    j = assert_error(env.tile(EO, "default", 9, 0, 1), 502, "IMAGERY_FETCH_FAILED")
+    assert j["text"] == EOX_FAILED and str(code) in j["detail"]
+    j = assert_error(env.tile(EO, "default", 9, 0, 2), 503, "IMAGERY_PAUSED")
+    assert j["text"] == EOX_PAUSED
+    assert timedelta(minutes=14) < _resume_time(j) - started < timedelta(minutes=16)
+    assert len(env.opener.calls) == 2
+    assert env.tile(EO, "default", 9, 0, 0).status_code == 200      # ชิ้นใน cache ส่งได้ระหว่างพัก
+    assert env.tile(VI, DAY, 9, 0, 0).status_code == 200            # GIBS ยังดึงได้ตามปกติ
+    assert len(env.opener.calls) == 3
+    env.clock.advance(899)
+    assert_error(env.tile(EO, "default", 9, 0, 2), 503, "IMAGERY_PAUSED")
+    env.clock.advance(2)
+    assert env.tile(EO, "default", 9, 0, 2).status_code == 200
+    log = env.log()
+    assert log.count("หยุดดึงภาพจาก Sentinel-2 (EOX)") == 1
+    assert "หยุดดึงภาพจาก NASA GIBS" not in log
+
+
+@pytest.mark.parametrize("code", [403, 429])
+def test_gibs_pause_does_not_pause_eox(env, code):
+    env.enable(True, eox=True)
+    env.opener.script = [http_error(code)]
+    j = assert_error(env.tile(VI, DAY, 9, 0, 1), 502, "IMAGERY_FETCH_FAILED")
+    assert j["text"] == "ดึงภาพจาก NASA GIBS ไม่สำเร็จ"
+    j = assert_error(env.tile(VI, DAY, 9, 0, 2), 503, "IMAGERY_PAUSED")
+    assert j["text"] == "หยุดดึงภาพจาก NASA GIBS ชั่วคราว"
+    assert env.tile(EO, "default", 9, 0, 1).status_code == 200      # EOX ยังดึงได้
+    assert len(env.opener.calls) == 2
+    log = env.log()
+    assert log.count("หยุดดึงภาพจาก NASA GIBS") == 1
+    assert "หยุดดึงภาพจาก Sentinel-2 (EOX)" not in log
+
+
+def test_failure_counters_are_separate_per_source(env):
+    env.enable(True, eox=True)
+    env.opener.default = _fail
+    for x in range(19):                                              # 19 + 19 = 38 > 20: ถ้านับรวมกันต้องพักไปแล้ว
+        assert_error(env.tile(VI, DAY, 9, 0, x), 502, "IMAGERY_FETCH_FAILED")
+        assert_error(env.tile(EO, "default", 9, 0, x), 502, "IMAGERY_FETCH_FAILED")
+    assert len(env.opener.calls) == 38
+    env.opener.default = _default_response
+    assert env.tile(VI, DAY, 9, 1, 0).status_code == 200            # สำเร็จของ GIBS ล้างตัวนับของ GIBS เท่านั้น
+    env.opener.default = _fail
+    assert_error(env.tile(EO, "default", 9, 1, 0), 502, "IMAGERY_FETCH_FAILED")     # ครั้งที่ 20 ของ EOX: ยังถึง opener
+    j = assert_error(env.tile(EO, "default", 9, 1, 1), 503, "IMAGERY_PAUSED")       # EOX พัก 5 นาที
+    assert j["text"] == EOX_PAUSED
+    assert len(env.opener.calls) == 40
+    env.opener.default = _default_response
+    assert env.tile(VI, DAY, 9, 1, 1).status_code == 200            # GIBS ไม่ถูกพักตาม
+    assert len(env.opener.calls) == 41
+    env.clock.advance(301)
+    assert env.tile(EO, "default", 9, 1, 1).status_code == 200
+
+
+def _blocking_for(env, host_marker, entered, gate):
+    """opener ที่ค้างเฉพาะคำขอที่ URL มี host_marker (คำขอแหล่งอื่นตอบทันที)"""
+    def opener(request):
+        if host_marker in request.full_url:
+            entered.release()
+            assert gate.wait(10)
+        return _default_response(request)
+    env.opener.default = opener
+
+
+def test_eox_concurrency_limit_is_2_and_gibs_has_its_own_slots(env, monkeypatch):
+    env.enable(True, eox=True)
+    monkeypatch.setattr(imagery, "QUEUE_WAIT_S", 0.05)
+    gate, entered = threading.Event(), threading.Semaphore(0)
+    _blocking_for(env, "tiles.maps.eox.at", entered, gate)
+    layer, results = layer_by_id(EO), []
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(2)]
+    for t in threads:
+        t.start()
+    try:
+        for _ in range(2):
+            assert entered.acquire(timeout=10)                       # EOX ทั้ง 2 อยู่ใน opener พร้อมกัน
+        j = assert_error(env.tile(EO, "default", 9, 0, 2), 503, "IMAGERY_BUSY")      # ที่ 3 รอคิวเกินเวลา
+        assert j["text"] == "มีคำขอภาพค้างอยู่มาก ลองใหม่อีกครั้ง"
+        assert len(env.opener.calls) == 2
+        assert env.tile(VI, DAY, 9, 0, 0).status_code == 200         # GIBS มีที่ว่างของตัวเอง ไม่ต้องรอ EOX
+        assert len(env.opener.calls) == 3
+    finally:
+        gate.set()
+        for t in threads:
+            t.join(10)
+    assert [r[1] for r in results] == ["image/jpeg"] * 2
+    assert env.tile(EO, "default", 9, 0, 3).status_code == 200      # ที่ว่างคืนแล้ว
+
+
+def test_gibs_slots_are_not_used_by_eox(env, monkeypatch):
+    env.enable(True, eox=True)
+    monkeypatch.setattr(imagery, "QUEUE_WAIT_S", 0.05)
+    gate, entered = threading.Event(), threading.Semaphore(0)
+    _blocking_for(env, "gibs.earthdata.nasa.gov", entered, gate)
+    layer, results = layer_by_id(VI), []
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, DAY, 9, 0, x))) for x in range(4)]
+    for t in threads:
+        t.start()
+    try:
+        for _ in range(4):
+            assert entered.acquire(timeout=10)
+        assert_error(env.tile(VI, DAY, 9, 0, 4), 503, "IMAGERY_BUSY")
+        assert env.tile(EO, "default", 9, 0, 0).status_code == 200   # GIBS เต็ม 4 แต่ EOX ไม่ต้องรอ
+    finally:
+        gate.set()
+        for t in threads:
+            t.join(10)
+    assert len(results) == 4
+
+
+def test_eox_switch_is_rechecked_after_waiting_for_a_slot(env, monkeypatch):
+    env.enable(True, eox=True)
+    slots = env.fetcher._slots["eox"] = SpySlots(env.fetcher._slots["eox"])
+    gate, entered = threading.Event(), threading.Semaphore(0)
+    _blocking_for(env, "tiles.maps.eox.at", entered, gate)
+    layer, results = layer_by_id(EO), []
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(2)]
+    third = []
+    queued_request = threading.Thread(target=lambda: third.append(env.tile(EO, "default", 9, 0, 2)))
+    for t in threads:
+        t.start()
+    try:
+        for _ in range(2):
+            assert entered.acquire(timeout=10)
+        queued_request.start()                                       # ผ่านสวิตช์ของ route (เปิดอยู่) แล้วรอคิว
+        assert slots.queued.wait(10)
+        assert len(env.opener.calls) == 2
+        env.enable(True, eox=False)                                  # ปิด EOX (GIBS ยังเปิด) ระหว่างที่คำขอที่ 3 รออยู่
+    finally:
+        gate.set()
+        for t in threads + [queued_request]:
+            t.join(10)
+    assert len(third) == 1
+    j = assert_error(third[0], 403, "IMAGERY_DISABLED")
+    assert j["text"] == EOX_DISABLED
+    assert len(env.opener.calls) == 2                                # ที่ 3 ไม่ถึง opener
+    assert not env.path(EO, "default", 9, 0, 2).exists()
+    assert [r[1] for r in results] == ["image/jpeg"] * 2
+
+
+def test_switch_recheck_is_asked_about_the_layers_own_source(env):
+    asked = []
+
+    def only_gibs(source):
+        asked.append(source)
+        return source == "gibs"
+
+    env.fetcher.enabled = only_gibs
+    with pytest.raises(imagery.ApiError) as exc:
+        env.fetcher.get(layer_by_id(EO), "default", 3, 2, 5)
+    assert (exc.value.status, exc.value.code, exc.value.text) == (403, "IMAGERY_DISABLED", EOX_DISABLED)
+    assert env.opener.calls == []
+    assert env.fetcher.get(layer_by_id(VI), DAY, 3, 2, 5)[1] == "image/jpeg"
+    assert asked == ["eox", "gibs"]
+    env.fetcher.enabled = lambda source: source == "eox"
+    with pytest.raises(imagery.ApiError) as exc:
+        env.fetcher.get(layer_by_id(BM), "default", 3, 2, 5)
+    assert (exc.value.status, exc.value.code, exc.value.text) == (403, "IMAGERY_DISABLED", GIBS_DISABLED)
+    assert env.fetcher.get(layer_by_id(EO), "default", 3, 2, 5)[1] == "image/jpeg"
+    assert [c.url for c in env.opener.calls] == [upstream_url(layer_by_id(VI), DAY, 3, 2, 5), EOX_URL_353]
 
 
 # ---------- เพดาน cache ----------

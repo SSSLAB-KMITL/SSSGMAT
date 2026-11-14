@@ -22,9 +22,16 @@ export interface DailySettings {
   validation_give_up_days: number;
 }
 
-/** ภาพออนไลน์ NASA GIBS (spec imagery §4.1): ค่าตั้งต้นปิด server ไม่ต่อเน็ตเองจนกว่าผู้ใช้เปิด */
+/**
+ * สวิตช์ภาพออนไลน์ แยกต่อแหล่ง (spec imagery §4.1, spec ภาพละเอียด §2): ค่าตั้งต้นปิดทุกช่อง ไม่ต่อเน็ตเองจนกว่าผู้ใช้เปิดแหล่งนั้น
+ * `enabled` = NASA GIBS (ชื่อเดิม), `eox` = Sentinel-2 cloudless ผ่าน server, `osm` / `ion` = OpenStreetMap / Cesium ion ที่ browser ดึงตรง
+ * PUT ต้องส่งครบทั้งสี่ช่อง (server ไม่เติมค่าให้): ผู้เรียกที่แก้ช่องเดียวต้องกระจายค่าที่ถืออยู่คืนไปทั้งก้อน
+ */
 export interface OnlineImagerySettings {
   enabled: boolean;
+  eox: boolean;
+  osm: boolean;
+  ion: boolean;
 }
 
 export interface Settings {

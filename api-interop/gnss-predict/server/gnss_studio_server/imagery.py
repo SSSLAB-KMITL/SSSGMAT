@@ -1,21 +1,25 @@
-"""ภาพถ่ายออนไลน์จาก NASA GIBS: รายการชั้นภาพ ตัวดึงชิ้นภาพ และ cache บนดิสก์ (spec ภาพออนไลน์ §3, §4, §6)
+"""ภาพถ่ายออนไลน์จาก NASA GIBS และ Sentinel-2 cloudless (EOX): รายการชั้นภาพ ตัวดึงชิ้นภาพ และ cache บนดิสก์
+(spec ภาพออนไลน์ §3, §4, §6; spec ภาพละเอียด §3)
 
-server เป็นจุดเดียวที่ต่อ GIBS: URL ปลายทางประกอบจาก `CATALOG` กับค่าที่ผ่าน `valid_time` / `tile_in_range` เท่านั้น ไม่รับ URL, host หรือ path จากผู้ใช้
-สวิตช์ `online_imagery.enabled` ตรวจที่ route ทุกคำขอ (อ่านจาก settings.json) และตัวดึงตรวจซ้ำอีกครั้งด้วย `enabled` ที่ฉีดเข้ามา
-หลังได้คิวและก่อนต่อเน็ตเสมอ (คำขอที่รอคิวอยู่ตอนผู้ใช้ปิดสวิตช์ต้องไม่ถูกส่งไป GIBS) แต่ยังห้ามเรียก `TileFetcher.get` นอก route ที่ตรวจสวิตช์แล้ว
+server เป็นจุดเดียวที่ต่อ GIBS และ EOX: URL ปลายทางประกอบจาก `CATALOG` กับค่าที่ผ่าน `valid_time` / `tile_in_range` เท่านั้น
+ไม่รับ URL, host หรือ path จากผู้ใช้ สวิตช์ของแหล่งที่ชั้นภาพนั้นสังกัด (`SOURCES[layer.source].switch` ในค่าตั้ง `online_imagery`:
+GIBS = `enabled`, EOX = `eox`) ตรวจที่ route ทุกคำขอ (อ่านจาก settings.json) และตัวดึงตรวจซ้ำอีกครั้งด้วย `enabled(source)` ที่ฉีดเข้ามา
+หลังได้คิวและก่อนต่อเน็ตเสมอ (คำขอที่รอคิวอยู่ตอนผู้ใช้ปิดสวิตช์ต้องไม่ถูกส่งไปที่นั่น) แต่ยังห้ามเรียก `TileFetcher.get` นอก route ที่ตรวจสวิตช์แล้ว
 
-- `CATALOG`: ตารางเดียวของชั้นภาพ (ลำดับ = ลำดับวาด ชั้นหลังทับชั้นก่อน) ค่า TileMatrixSet / ext / รูปแบบเวลายังรอยืนยันกับ GIBS จริง (ขั้น B0)
-  แก้ที่ตารางนี้ที่เดียว
+- `SOURCES`: แหล่งภาพที่ server ต่อได้ (`gibs`, `eox`) แต่ละแหล่งมีแม่แบบ URL, สวิตช์, เพดานดึงพร้อมกัน (GIBS 4, EOX 2) และข้อความไทยของตัวเอง
+  การพัก ตัวนับความล้มเหลว และคิวแยกต่อแหล่ง (แหล่งหนึ่งโดนบล็อกหรือล่ม อีกแหล่งยังใช้ได้); memo ของ "ไม่มีภาพ" กับ cache ใช้ร่วมกัน (key มีรหัสชั้นภาพอยู่แล้ว)
+- `CATALOG`: ตารางเดียวของชั้นภาพ (ลำดับ = ลำดับวาด ชั้นหลังทับชั้นก่อน; แต่ละแถวบอก `source`) ค่า TileMatrixSet / ext / รูปแบบเวลายังรอยืนยันกับของจริง
+  (GIBS ขั้น B0, EOX ขั้นยืนยันจริงของ spec ภาพละเอียด §5) แก้ที่ตารางนี้ที่เดียว
 - `TileFetcher.get(layer, time, z, y, x)` -> (ไบต์, media type) หรือ `ApiError`:
   1. ชิ้นที่อยู่ใน cache ส่งเลย (แตะ mtime) แม้กำลังพักการดึง; ชิ้นที่ cache เสีย (ไม่ใช่ JPEG/PNG ตาม ext) ถูกลบแล้วนับเป็นไม่มี
   2. ชิ้นที่ GIBS เคยตอบ 400/404 ไม่ถามซ้ำ 1 ชั่วโมง (จำในหน่วยความจำ สูงสุด 10,000 รายการ) -> 404 `IMAGERY_NOT_AVAILABLE`
-  3. กำลังพัก -> 503 `IMAGERY_PAUSED` (detail = เวลา UTC ที่ลองได้อีก)
-  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ แล้วตรวจสวิตช์อีกครั้ง
-     ปิดอยู่ -> 403 `IMAGERY_DISABLED` ไม่ต่อเน็ต)
+  3. แหล่งของชั้นนี้กำลังพัก -> 503 `IMAGERY_PAUSED` (detail = เวลา UTC ที่ลองได้อีก)
+  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้นต่อ GIBS และ 2 ชิ้นต่อ EOX รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ
+     แล้วตรวจสวิตช์ของแหล่งนั้นอีกครั้ง ปิดอยู่ -> 403 `IMAGERY_DISABLED` ไม่ต่อเน็ต)
   5. ดึงครั้งเดียว ไม่ลองซ้ำ timeout 20 วินาที ไม่ตาม redirect (3xx = ล้มเหลว) อ่านไม่เกิน 2 MB + 1 ไบต์
-     400/404 -> จำว่าไม่มีภาพ; 403/429 -> พักทุกชั้นภาพ 15 นาที (log ครั้งเดียวต่อการพัก);
+     400/404 -> จำว่าไม่มีภาพ; 403/429 -> พักทุกชั้นภาพของแหล่งนั้น 15 นาที (log ครั้งเดียวต่อการพัก);
      ผิดพลาดอื่น (เครือข่าย timeout 5xx redirect ตอบผิดรูป ภาพที่ตัดกลางทาง ภาพเกิน 2 MB ไม่ใช่ JPEG/PNG ตรงกับ ext) -> 502 `IMAGERY_FETCH_FAILED`
-     และนับ: ติดกัน 20 ครั้ง -> พัก 5 นาที (ตัวนับกลับเป็น 0 เมื่อพัก และเมื่อได้ภาพที่ใช้ได้หนึ่งชิ้น)
+     และนับ (ต่อแหล่ง): ติดกัน 20 ครั้ง -> พักแหล่งนั้น 5 นาที (ตัวนับกลับเป็น 0 เมื่อพัก และเมื่อได้ภาพที่ใช้ได้หนึ่งชิ้นจากแหล่งนั้น)
   6. ภาพที่ผ่านการตรวจเขียน cache แบบ atomic (เขียนไม่ได้ = log เตือนครั้งเดียว ส่งภาพให้อยู่ดี)
   ชิ้นที่ "ยังไม่นิ่ง" (`is_settled` เป็นเท็จ: daily ที่วันที่ UTC >= วันนี้ - 1 วัน, 10min ที่เวลาของ token >= ตอนนี้ - 3 ชั่วโมง รวมอนาคต)
   ดึงและส่งได้ตามปกติแต่ไม่เขียน cache ไม่อ่านจาก cache (ไฟล์เก่าของ token นั้นถูกมองข้าม) และ "ไม่มีภาพ" จำแค่ 10 นาที: GIBS
@@ -46,9 +50,11 @@ from .store import write_atomic
 # ---------- ค่าคงที่ (Global Constraints) ----------
 
 GIBS_URL = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/{layer}/default/{time}/{tms}/{z}/{y}/{x}.{ext}"
+EOX_URL = "https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/{tms}/{z}/{y}/{x}.{ext}"   # EOX ไม่มีมิติเวลาใน URL (token เวลาคือ `default`)
 USER_AGENT = "gnss-studio/0.1"
 FETCH_TIMEOUT_S = 20
-MAX_CONCURRENT = 4
+MAX_CONCURRENT = 4                             # ต่อ GIBS
+EOX_MAX_CONCURRENT = 2                         # ต่อ EOX (ผู้ให้บริการภาพฟรีรายเล็ก: ขอเบากว่า)
 QUEUE_WAIT_S = 15
 PAUSE_FORBIDDEN_S = 15 * 60                    # GIBS ตอบ 403 หรือ 429
 FAILURE_LIMIT = 20                             # ผิดพลาดติดกันกี่ครั้งถึงพัก
@@ -65,15 +71,39 @@ SETTLE_10MIN_HOURS = 3                         # 10min นิ่งเมื่�
 MEDIA_TYPES = {"jpg": "image/jpeg", "png": "image/png"}
 
 NOT_AVAILABLE_TEXT = "ไม่มีภาพของชั้นนี้ ณ เวลานี้"
-FETCH_FAILED_TEXT = "ดึงภาพจาก NASA GIBS ไม่สำเร็จ"
 BUSY_TEXT = "มีคำขอภาพค้างอยู่มาก ลองใหม่อีกครั้ง"
-PAUSED_TEXT = "หยุดดึงภาพจาก NASA GIBS ชั่วคราว"
 TIME_TEXT = "เวลาของภาพไม่ถูกต้องสำหรับชั้นภาพนี้"
 COORD_TEXT = "{name} ต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง {top}"
+FETCH_FAILED_TEXT = "ดึงภาพจาก NASA GIBS ไม่สำเร็จ"
+PAUSED_TEXT = "หยุดดึงภาพจาก NASA GIBS ชั่วคราว"
 DISABLED_TEXT = "ภาพออนไลน์ปิดอยู่ เปิดได้ที่ View → Globe Manager"
+EOX_FETCH_FAILED_TEXT = "ดึงภาพจาก Sentinel-2 (EOX) ไม่สำเร็จ"
+EOX_PAUSED_TEXT = "หยุดดึงภาพจาก Sentinel-2 (EOX) ชั่วคราว"
+EOX_DISABLED_TEXT = "ภาพ Sentinel-2 (EOX) ปิดอยู่ เปิดได้ที่ View → Globe Manager"
 
 
-# ---------- catalog ----------
+# ---------- แหล่งภาพและ catalog ----------
+
+SourceId = Literal["gibs", "eox"]
+
+
+@dataclass(frozen=True)
+class Source:
+    """แหล่งภาพที่ server ต่อได้: แม่แบบ URL, ช่องสวิตช์ใน `online_imagery` ของค่าตั้ง, เพดานดึงพร้อมกัน และข้อความไทยที่บอกชื่อแหล่ง"""
+    id: SourceId
+    url: str
+    switch: str
+    concurrency: int
+    disabled_text: str
+    failed_text: str
+    paused_text: str
+
+
+SOURCES: dict[str, Source] = {
+    "gibs": Source("gibs", GIBS_URL, "enabled", MAX_CONCURRENT, DISABLED_TEXT, FETCH_FAILED_TEXT, PAUSED_TEXT),
+    "eox": Source("eox", EOX_URL, "eox", EOX_MAX_CONCURRENT, EOX_DISABLED_TEXT, EOX_FETCH_FAILED_TEXT, EOX_PAUSED_TEXT),
+}
+
 
 @dataclass(frozen=True)
 class Layer:
@@ -84,22 +114,28 @@ class Layer:
     max_level: int
     ext: Literal["jpg", "png"]
     credit: str
+    source: SourceId
 
 
 CATALOG: tuple[Layer, ...] = (
-    Layer("BlueMarble_NextGeneration", "Blue Marble", "static", "GoogleMapsCompatible_Level8", 8, "jpg", "NASA GIBS / EOSDIS"),
+    Layer("BlueMarble_NextGeneration", "Blue Marble", "static", "GoogleMapsCompatible_Level8", 8, "jpg", "NASA GIBS / EOSDIS", "gibs"),
     Layer("VIIRS_NOAA20_CorrectedReflectance_TrueColor", "VIIRS NOAA-20 True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-          "NASA GIBS / EOSDIS"),
+          "NASA GIBS / EOSDIS", "gibs"),
     Layer("VIIRS_SNPP_CorrectedReflectance_TrueColor", "VIIRS Suomi NPP True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-          "NASA GIBS / EOSDIS"),
+          "NASA GIBS / EOSDIS", "gibs"),
     Layer("MODIS_Terra_CorrectedReflectance_TrueColor", "MODIS Terra True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
-          "NASA GIBS / EOSDIS"),
+          "NASA GIBS / EOSDIS", "gibs"),
     Layer("Himawari_AHI_Band3_Red_Visible_1km", "Himawari-9 Red Visible", "10min", "GoogleMapsCompatible_Level7", 7, "png",
-          "NASA GIBS / EOSDIS, JMA"),
+          "NASA GIBS / EOSDIS, JMA", "gibs"),
     Layer("Himawari_AHI_Band13_Clean_Infrared", "Himawari-9 Clean Infrared", "10min", "GoogleMapsCompatible_Level6", 6, "png",
-          "NASA GIBS / EOSDIS, JMA"),
-    Layer("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA"),
-    Layer("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA"),
+          "NASA GIBS / EOSDIS, JMA", "gibs"),
+    Layer("GOES-East_ABI_GeoColor", "GOES-East GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+          "gibs"),
+    Layer("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "jpg", "NASA GIBS / EOSDIS, NOAA",
+          "gibs"),
+    # EOX: TileMatrixSet `g`, ชื่อชั้น และระดับสูงสุด 15 ตาม spec ยังรอยืนยันกับของจริง; ภาพคงที่รายปี เวลา = `default`
+    Layer("s2cloudless-2024_3857", "Sentinel-2 cloudless 2024", "static", "g", 15, "jpg",
+          "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)", "eox"),
 )
 _BY_ID = {layer.id: layer for layer in CATALOG}
 
@@ -114,7 +150,7 @@ def layer_by_id(id: str) -> Layer | None:
 
 _DAY_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _SLOT_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-5]0:00Z")
-_COORD_RE = re.compile(r"[0-9]{1,3}")
+_COORD_RE = re.compile(r"[0-9]{1,5}")                 # 2^15 - 1 = 32767 (EOX ระดับ 15) มี 5 หลัก; ช่วงจริงตรวจที่ `_coord`
 
 
 def valid_time(layer: Layer, time: str) -> bool:
@@ -166,14 +202,14 @@ def _coord(raw: str, name: str, limit: int) -> int:
 
 
 def parse_tile_coords(layer: Layer, z: str, y: str, x: str) -> tuple[int, int, int]:
-    """z, y, x จาก path (สตริง) เป็น int: ตัวเลขทศนิยม ASCII 1-3 หลักเท่านั้นและอยู่ในช่วง ไม่ตรง -> ApiError 422 ที่ field นั้น (ตรวจ z ก่อน y และ x)"""
+    """z, y, x จาก path (สตริง) เป็น int: ตัวเลขทศนิยม ASCII 1-5 หลักเท่านั้นและอยู่ในช่วง ไม่ตรง -> ApiError 422 ที่ field นั้น (ตรวจ z ก่อน y และ x)"""
     zi = _coord(z, "z", layer.max_level + 1)
     return zi, _coord(y, "y", 2 ** zi), _coord(x, "x", 2 ** zi)
 
 
 def upstream_url(layer: Layer, time: str, z: int, y: int, x: int) -> str:
-    """URL ของชิ้นภาพบน GIBS (WMTS REST, EPSG:3857) ประกอบจากชั้นภาพและค่าที่ตรวจแล้วเท่านั้น"""
-    return GIBS_URL.format(layer=layer.id, time=time, tms=layer.tms, z=z, y=y, x=x, ext=layer.ext)
+    """URL ของชิ้นภาพบนแหล่งของชั้นนั้น (WMTS REST, EPSG:3857) ประกอบจากชั้นภาพและค่าที่ตรวจแล้วเท่านั้น (EOX ไม่ใช้ `time` ใน URL)"""
+    return SOURCES[layer.source].url.format(layer=layer.id, time=time, tms=layer.tms, z=z, y=y, x=x, ext=layer.ext)
 
 
 def detect_format(data: bytes) -> str | None:
@@ -317,26 +353,28 @@ class TileCache:
 # ---------- ตัวดึง ----------
 
 class TileFetcher:
-    """ดึงชิ้นภาพ GIBS ตามกติกาที่หัวไฟล์ (ตัวเดียวต่อแอป: เก็บสถานะการพัก ตัวนับ และ "ไม่มีภาพ" ที่จำไว้)
+    """ดึงชิ้นภาพจาก GIBS และ EOX ตามกติกาที่หัวไฟล์ (ตัวเดียวต่อแอป: เก็บสถานะการพัก ตัวนับ และ "ไม่มีภาพ" ที่จำไว้)
 
     opener: callable(request, timeout=...) -> response ที่มี `.read(n)` (และ `.status`, `.headers`, `.close()` ถ้ามี) ตั้งต้นคือ `make_opener().open`
     now: นาฬิกา monotonic เป็นวินาที (การพักและอายุของ "ไม่มีภาพ")
     utcnow: นาฬิกาเวลาจริง คืน datetime ที่มี tzinfo ตั้งต้น `datetime.now(timezone.utc)` (ตัดสินว่าชิ้นภาพนิ่งหรือยัง)
-    enabled: callable() -> bool อ่านสวิตช์ `online_imagery.enabled` ตอนนั้น (app ต่อเข้ากับ settings.json); ตั้งต้นเปิดเสมอ"""
+    enabled: callable(source_id) -> bool อ่านสวิตช์ของแหล่งนั้น (`gibs` -> `online_imagery.enabled`, `eox` -> `online_imagery.eox`) ตอนนั้น
+    (app ต่อเข้ากับ settings.json); ตั้งต้นเปิดทุกแหล่งเสมอ
+    คิว การพัก และตัวนับความล้มเหลวแยกต่อแหล่ง: `_slots`, `_paused_until`, `_failures` เป็น dict ที่ key คือรหัสแหล่ง"""
 
     def __init__(self, data_dir: Path, opener=None, now=time.monotonic, logger: logging.Logger | None = None,
-                 utcnow: Callable[[], datetime] | None = None, enabled: Callable[[], bool] | None = None):
+                 utcnow: Callable[[], datetime] | None = None, enabled: Callable[[str], bool] | None = None):
         self.opener = opener if opener is not None else make_opener().open
         self.now = now
         self.utcnow = utcnow if utcnow is not None else (lambda: datetime.now(timezone.utc))
-        self.enabled = enabled if enabled is not None else (lambda: True)
+        self.enabled = enabled if enabled is not None else (lambda source: True)
         self.logger = logger or logging.getLogger(__name__)
         self.cache = TileCache(Path(data_dir) / "imagery" / "tiles")
-        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+        self._slots = {source.id: threading.BoundedSemaphore(source.concurrency) for source in SOURCES.values()}
         self._lock = threading.Lock()                         # ปกป้อง _memo, _paused_until, _failures, _cache_ok
         self._memo: dict[tuple, float] = {}                   # ที่อยู่ของชิ้น -> เวลาหมดอายุ (เรียงตามการใส่)
-        self._paused_until = 0.0
-        self._failures = 0
+        self._paused_until = {source.id: 0.0 for source in SOURCES.values()}
+        self._failures = {source.id: 0 for source in SOURCES.values()}
         self._cache_ok = True
 
     def get(self, layer: Layer, time: str, z: int, y: int, x: int) -> tuple[bytes, str]:
@@ -356,7 +394,7 @@ class TileFetcher:
         return is_settled(layer, time, self.utcnow())
 
     def _local(self, layer: Layer, key: tuple, path: Path, settled: bool) -> bytes | None:
-        """คำตอบที่ไม่ต้องต่อเน็ต: ไบต์จาก cache (เฉพาะชิ้นที่นิ่ง), หรือ ApiError (จำว่าไม่มีภาพ / กำลังพัก) ไม่มีคำตอบ = None"""
+        """คำตอบที่ไม่ต้องต่อเน็ต: ไบต์จาก cache (เฉพาะชิ้นที่นิ่ง), หรือ ApiError (จำว่าไม่มีภาพ / แหล่งของชั้นนี้กำลังพัก) ไม่มีคำตอบ = None"""
         data = self.cache.read(path, layer.ext) if settled else None
         if data is not None:
             return data
@@ -367,28 +405,31 @@ class TileFetcher:
                 if now < expires:
                     raise ApiError(404, "IMAGERY_NOT_AVAILABLE", NOT_AVAILABLE_TEXT)
                 del self._memo[key]
-            if now < self._paused_until:
-                raise self._paused_error(now)
+            if now < self._paused_until[layer.source]:
+                raise self._paused_error(layer.source, now)
         return None
 
     def _fetch(self, layer: Layer, key: tuple, path: Path, time: str, z: int, y: int, x: int, settled: bool) -> bytes:
-        if not self._slots.acquire(timeout=QUEUE_WAIT_S):
+        source = SOURCES[layer.source]
+        slots = self._slots[source.id]
+        if not slots.acquire(timeout=QUEUE_WAIT_S):
             raise ApiError(503, "IMAGERY_BUSY", BUSY_TEXT)
         try:
             data = self._local(layer, key, path, settled)     # ระหว่างรอคิว อีกคำขอเก็บชิ้นนี้ไว้แล้ว หรือเกิดการพักขึ้น
             if data is not None:
                 return data
-            if not self.enabled():                            # ระหว่างรอคิว ผู้ใช้อาจปิดสวิตช์: ต้องไม่ต่อเน็ตหลังปิด
-                raise ApiError(403, "IMAGERY_DISABLED", DISABLED_TEXT)
+            if not self.enabled(source.id):                   # ระหว่างรอคิว ผู้ใช้อาจปิดสวิตช์ของแหล่งนี้: ต้องไม่ต่อเน็ตหลังปิด
+                raise ApiError(403, "IMAGERY_DISABLED", source.disabled_text)
             data = self._download(layer, key, upstream_url(layer, time, z, y, x), settled)
             if settled:                                       # ชิ้นที่ยังไม่นิ่งส่งได้แต่ไม่เก็บ: GIBS ยังเติมภาพช่วงนี้อยู่
                 self._store(path, data)
             return data
         finally:
-            self._slots.release()
+            slots.release()
 
     def _download(self, layer: Layer, key: tuple, url: str, settled: bool) -> bytes:
         """ดึงหนึ่งครั้งแล้วตรวจ: ได้ไบต์ของภาพที่ใช้ได้ หรือ ApiError"""
+        source = layer.source
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         try:
             resp = self.opener(request, timeout=FETCH_TIMEOUT_S)
@@ -408,22 +449,22 @@ class TileFetcher:
                 raise ApiError(404, "IMAGERY_NOT_AVAILABLE", NOT_AVAILABLE_TEXT) from None
             if code in (403, 429):
                 with self._lock:
-                    self._pause_locked(PAUSE_FORBIDDEN_S, f"HTTP {code}")
-                raise self._fail(f"HTTP {code}", count=False) from None
-            raise self._fail(f"HTTP {code}") from None
+                    self._pause_locked(source, PAUSE_FORBIDDEN_S, f"HTTP {code}")
+                raise self._fail(source, f"HTTP {code}", count=False) from None
+            raise self._fail(source, f"HTTP {code}") from None
         except (OSError, http.client.HTTPException) as exc:   # URLError, timeout, connection reset, IncompleteRead ฯลฯ
             reason = exc.reason if isinstance(exc, urllib.error.URLError) else (str(exc) or type(exc).__name__)
-            raise self._fail(f"network error: {_short(reason)}") from None
+            raise self._fail(source, f"network error: {_short(reason)}") from None
         if status != 200:
-            raise self._fail(f"HTTP {status}")
+            raise self._fail(source, f"HTTP {status}")
         if len(body) > MAX_BODY_BYTES:
-            raise self._fail(f"body larger than {MAX_BODY_BYTES} bytes")
+            raise self._fail(source, f"body larger than {MAX_BODY_BYTES} bytes")
         if announced is not None and announced != len(body):
-            raise self._fail(f"truncated body ({len(body)} of {announced} bytes)")
+            raise self._fail(source, f"truncated body ({len(body)} of {announced} bytes)")
         if detect_format(body) != layer.ext:
-            raise self._fail(f"body is not a {layer.ext} image")
+            raise self._fail(source, f"body is not a {layer.ext} image")
         with self._lock:
-            self._failures = 0
+            self._failures[source] = 0
         return body
 
     def _store(self, path: Path, data: bytes) -> None:
@@ -446,24 +487,24 @@ class TileFetcher:
                 del self._memo[next(iter(self._memo))]
             self._memo[key] = self.now() + ttl
 
-    def _fail(self, reason: str, count: bool = True) -> ApiError:
-        """502 `IMAGERY_FETCH_FAILED` และนับความล้มเหลว (ติดกัน FAILURE_LIMIT ครั้ง = พัก) 403/429 ไม่นับ: มีการพักของตัวเอง"""
+    def _fail(self, source: str, reason: str, count: bool = True) -> ApiError:
+        """502 `IMAGERY_FETCH_FAILED` และนับความล้มเหลวของแหล่งนั้น (ติดกัน FAILURE_LIMIT ครั้ง = พักแหล่งนั้น) 403/429 ไม่นับ: มีการพักของตัวเอง"""
         if count:
             with self._lock:
-                self._failures += 1
-                if self._failures >= FAILURE_LIMIT:
-                    self._failures = 0
-                    self._pause_locked(PAUSE_FAILURES_S, f"{FAILURE_LIMIT} consecutive failures, last: {reason}")
-        return ApiError(502, "IMAGERY_FETCH_FAILED", FETCH_FAILED_TEXT, detail=reason)
+                self._failures[source] += 1
+                if self._failures[source] >= FAILURE_LIMIT:
+                    self._failures[source] = 0
+                    self._pause_locked(source, PAUSE_FAILURES_S, f"{FAILURE_LIMIT} consecutive failures, last: {reason}")
+        return ApiError(502, "IMAGERY_FETCH_FAILED", SOURCES[source].failed_text, detail=reason)
 
-    def _pause_locked(self, seconds: float, why: str) -> None:
-        """พักการดึงทุกชั้นภาพ (เรียกขณะถือ _lock) log ครั้งเดียวต่อการพัก: ผู้ที่ล้มเหลวพร้อมกันระหว่างพักอยู่แล้วไม่ log ซ้ำ"""
+    def _pause_locked(self, source: str, seconds: float, why: str) -> None:
+        """พักการดึงทุกชั้นภาพของแหล่งนั้น (เรียกขณะถือ _lock) log ครั้งเดียวต่อการพัก: ผู้ที่ล้มเหลวพร้อมกันระหว่างพักอยู่แล้วไม่ log ซ้ำ"""
         now = self.now()
-        was_paused = now < self._paused_until
-        self._paused_until = max(self._paused_until, now + seconds)
+        was_paused = now < self._paused_until[source]
+        self._paused_until[source] = max(self._paused_until[source], now + seconds)
         if not was_paused:
-            self.logger.warning("%s %d นาที (%s)", PAUSED_TEXT, seconds // 60, why)
+            self.logger.warning("%s %d นาที (%s)", SOURCES[source].paused_text, seconds // 60, why)
 
-    def _paused_error(self, now: float) -> ApiError:
-        resume = self.utcnow() + timedelta(seconds=self._paused_until - now)
-        return ApiError(503, "IMAGERY_PAUSED", PAUSED_TEXT, detail=resume.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    def _paused_error(self, source: str, now: float) -> ApiError:
+        resume = self.utcnow() + timedelta(seconds=self._paused_until[source] - now)
+        return ApiError(503, "IMAGERY_PAUSED", SOURCES[source].paused_text, detail=resume.strftime("%Y-%m-%dT%H:%M:%SZ"))

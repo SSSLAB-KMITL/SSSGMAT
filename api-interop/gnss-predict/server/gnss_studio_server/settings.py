@@ -1,10 +1,12 @@
 """ค่าตั้งงานประจำวัน `data/settings.json` (หัวข้อ 9.1 ของ spec server)
 
 - `Settings` (pydantic) รูปแบบตรง 9.1: `{"daily": {enabled, run_at_utc, facility, retention_days, validation_retry_hours,
-  validation_give_up_days}, "cesium_ion_token": "", "online_imagery": {"enabled": false}}` ทุกช่องมีค่าตั้งต้นของ 9.1 ตรวจแบบ strict
-  (ชนิดต้องตรง ไม่แปลง "30" เป็น 30)
-  - `online_imagery.enabled`: ภาพออนไลน์ NASA GIBS ค่าตั้งต้น `false` ทุกกรณี (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์รุ่นเก่าที่ไม่มีช่องนี้):
-    ต่างจาก `daily.enabled` ตรงที่ไม่มีค่า "อนุมัติแล้ว" ให้เปิดเอง ผู้ใช้ต้องเปิดเองเท่านั้น
+  validation_give_up_days}, "cesium_ion_token": "", "online_imagery": {"enabled": false, "eox": false, "osm": false, "ion": false}}`
+  ทุกช่องมีค่าตั้งต้นของ 9.1 ตรวจแบบ strict (ชนิดต้องตรง ไม่แปลง "30" เป็น 30)
+  - `online_imagery`: สวิตช์ภาพออนไลน์ แยกต่อแหล่ง ค่าตั้งต้น `false` ทุกช่องทุกกรณี (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์รุ่นเก่าที่ไม่มีช่องนั้น):
+    ต่างจาก `daily.enabled` ตรงที่ไม่มีค่า "อนุมัติแล้ว" ให้เปิดเอง ผู้ใช้ต้องเปิดเองเท่านั้น และเปิดแหล่งหนึ่งไม่เปิดแหล่งอื่น
+    `enabled` = NASA GIBS (คงความหมายเดิมไว้ไม่ให้ไฟล์เก่าเสีย), `eox` = Sentinel-2 cloudless ผ่าน server,
+    `osm` และ `ion` = OpenStreetMap และ Cesium ion ที่ browser ดึงตรง (server แค่เก็บค่าให้หน้าเว็บอ่าน ไม่ต่อเน็ตให้)
   - `run_at_utc`: `HH:MM` ชั่วโมง 00-23 นาที 00-59, `facility`: ตรงกติกาชื่อ object, `retention_days` 1-3650,
     `validation_retry_hours` 1-168, `validation_give_up_days` 1-365
 - `SettingsIn` / `DailyIn` / `OnlineImageryIn` คือรูปแบบของ body ที่ PUT: ไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422) และ `missing_field` บอกช่องแรกที่
@@ -55,7 +57,10 @@ class Daily(_Model):
 
 
 class OnlineImagery(_Model):
-    enabled: bool = False
+    enabled: bool = False                                       # NASA GIBS (ชื่อเดิม)
+    eox: bool = False                                           # Sentinel-2 cloudless (EOX) ผ่าน server
+    osm: bool = False                                           # OpenStreetMap: browser ดึงตรง
+    ion: bool = False                                           # Cesium ion: browser ดึงตรงด้วย token ของผู้ใช้
 
 
 class Settings(_Model):

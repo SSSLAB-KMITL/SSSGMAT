@@ -290,7 +290,7 @@ FOREIGN_ORIGIN = "http://evil.example"
 def _settings_doc(enabled: bool) -> dict:
     return {"daily": {"enabled": enabled, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
                       "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "secret",
-            "online_imagery": {"enabled": False}}
+            "online_imagery": {"enabled": False, "eox": False, "osm": False, "ion": False}}
 
 
 @pytest.mark.parametrize("host", ["rebind.evil.example", "rebind.evil.example:8000", "testserver", "127.0.0.2:8000",

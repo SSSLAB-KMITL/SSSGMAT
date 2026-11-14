@@ -55,7 +55,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.state.plans = PlanCache(app.state.store, app.state.logger)
     app.state.digests = FileDigests()
     app.state.imagery = TileFetcher(config.data_dir, logger=app.state.logger,   # ตัวเดียวต่อแอป; test แทน opener/นาฬิกาได้
-                                    enabled=lambda: imagery.imagery_enabled(config, app.state.logger))   # ตรวจสวิตช์ซ้ำก่อนต่อเน็ต
+                                    enabled=lambda source: imagery.source_enabled(config, app.state.logger, source))   # ตรวจสวิตช์ของแหล่งซ้ำก่อนต่อเน็ต
     app.state.bus = EventBus(app.state.logger)
     app.state.jobs = JobManager(config.data_dir, app.state.bus, runner=ProcessRunner(gmat_bin=config.gmat_bin),
                                 logger=app.state.logger)

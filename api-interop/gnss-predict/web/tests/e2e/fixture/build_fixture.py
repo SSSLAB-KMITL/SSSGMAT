@@ -45,7 +45,7 @@ SETTINGS = {
     "daily": {"enabled": False, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
               "validation_retry_hours": 3, "validation_give_up_days": 14},
     "cesium_ion_token": "",
-    "online_imagery": {"enabled": False},
+    "online_imagery": {"enabled": False, "eox": False, "osm": False, "ion": False},
 }
 
 # ---------- made-up orbits ----------
