@@ -182,6 +182,9 @@ const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "option.aboutBoresight.rotate": "About Boresight (Rotate default)",
   // หน้า 2D Graphics ของ Sensor ใช้ชื่อ "กลุ่ม - หน้า" เดียวกับของ Satellite และ Facility (§C "Page naming"); §G เขียนแค่ "Attributes" ใต้ "2D Graphics pages"
   "page.sensor.attributes2d": "Satellite 2D Graphics - Attributes",
+  // กราฟ (STK ref §F แถว Graph time cursor): ชื่อปุ่มและเมนูอยู่กลางประโยค ตามด้วย/นำด้วยคำอื่น
+  "graph.toggleAnimationTimeline": "Toggle Animation Timeline button",
+  "graph.showAnimationTimeLine": "right-click Show Animation Time Line",
 };
 
 describe("stk labels are real STK terms", () => {
@@ -411,6 +414,8 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
                                                                                   "GPS", "GLONASS", "Galileo", "BeiDou"]],
   ["§6.1 report window", ["report."], ["Refresh", "Export", "To CSV Format...", "Setup...", "Set Animation Time", "Global Statistics",
                                        "Field Delimiter", "Enclose Header Fields in Quotes", "Write Report Title", "Headers"]],
+  ["§6.2 graph window", ["graph.", "report."], ["Save", "Copy to Clipboard", "Zoom Out", "Refresh", "Toggle Animation Timeline", "Crosshair Cursor",
+                                              "Show Animation Time Line", "Set Animation Time", "Export Dialog..."]],
   ["§11 Message Viewer", ["mv."], ["All Messages", "Errors", "Infos", "Warnings", "Time", "Level", "Code", "Object", "Message", "Details", "Clear this Tab", "Clear all Tabs"]],
   ["§11 About / Help table", ["help."], ["Engine Version", "GMAT Version", "Text", "Source", "STK ref"]],
   ["§12 status bar", ["status."], ["Active Object", "Lat/Lon", "Animation Time", "Time Step", "Stop", "Usable Satellites", "PDOP", "Max Data Age",
@@ -428,7 +433,7 @@ describe("every name in spec §4-§13 has a key", () => {
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 

@@ -58,7 +58,9 @@ test("text tokens meet WCAG AA on their backgrounds", () => {
                           // แท็บหน้าต่าง dockview ที่ไม่ได้เลือก (วางบนแถบชื่อ)
                           ["--text", "--titlebar-bg"], ["--text-muted", "--titlebar-bg"],
                           // เวลาบนภาพ 3D (Show Time) บนพื้นของภาพ
-                          ["--scene-overlay-text", "--scene-bg"]])
+                          ["--scene-overlay-text", "--scene-bg"],
+                          // หน้าต่างกราฟ: ป้ายแกนและคำอธิบายบนพื้นของกราฟ
+                          ["--graph-text", "--graph-bg"], ["--graph-text-muted", "--graph-bg"]])
     expect(contrast(v[fg], v[bg]), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
 });
 

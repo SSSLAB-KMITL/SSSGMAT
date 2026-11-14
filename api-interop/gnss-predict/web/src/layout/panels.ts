@@ -13,7 +13,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView", "globeManager", "report",
+  "stkReference", "sensorView", "globeManager", "report", "graph",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -180,6 +180,12 @@ const BASE: Record<PanelKind, Base> = {
   report: {
     label: "window.report", type: "integrated", size: { width: 720, height: 420 }, persist: true, scenarioBound: true,
     title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.report")),
+    instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
+  },
+  // หน้าต่างกราฟ (spec §6.2, P11): เหมือนหน้าต่างรายงานทุกอย่าง (ชื่อ กุญแจ หนึ่งบานต่อกุญแจ บันทึกใน workbook ปิดพร้อม scenario) ต่างแค่ชื่อชนิด
+  graph: {
+    label: "window.graph", type: "integrated", size: { width: 720, height: 420 }, persist: true, scenarioBound: true,
+    title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.graph")),
     instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
   },
 };

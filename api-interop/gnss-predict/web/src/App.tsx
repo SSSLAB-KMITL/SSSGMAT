@@ -19,6 +19,7 @@ import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSetti
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
 import { registerFilePanels } from "./windows/filePanels";
 import { registerGlobeManagerPanel } from "./windows/GlobeManager/GlobeManager";
+import { registerGraphPanel } from "./windows/Graph/Graph";
 import { registerGraphics2DCommands } from "./windows/Graphics2D/commands2d";
 import { registerGraphics2DPanel } from "./windows/Graphics2D/Graphics2D";
 import { registerWindowProperties2DPanel } from "./windows/Graphics2D/WindowProperties2D";
@@ -47,7 +48,7 @@ export function App() {
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
-  // หน้าต่างรายงาน (เปิดด้วย openReport ของ windows/Report/Report.tsx),
+  // หน้าต่างรายงานและหน้าต่างกราฟ (เปิดด้วย openReport ของ windows/Report/Report.tsx: style ชนิด graph ไปหน้าต่างกราฟ),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -77,6 +78,7 @@ export function App() {
     registerWindowProperties2DPanel();
     registerSensorViewPanel();
     registerReportPanel();
+    registerGraphPanel();
     const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();

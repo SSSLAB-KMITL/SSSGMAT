@@ -92,6 +92,15 @@
   --timeline-now: #ff8a5c;
   --timeline-hatch: #ffffff40;
   --timeline-bar-outline: #000000;
+
+  /* หน้าต่างกราฟ (ECharts, src/windows/Graph/options.ts readGraphTheme อ่านตอนเปิดหน้าต่าง): พื้นเข้มแบบ Timeline View เพื่อให้สีของ object
+     และสีของระบบ (เหลือง เขียวอ่อน) ยังเห็นชัด เส้นเวลา animation สีเดียวกับเวลาปัจจุบันของ Timeline ข้อความผ่าน WCAG AA (tests/unit/theme.test.ts) */
+  --graph-bg: #1c222c;
+  --graph-text: #e6eaf0;
+  --graph-text-muted: #aeb8c6;
+  --graph-grid: #ffffff26;
+  --graph-axis: #8a94a3;
+  --graph-now: #ff8a5c;
 }
 
 html,
@@ -2023,6 +2032,32 @@ body {
 
 .rpt-nodata td {
   font-style: italic;
+}
+
+/* ---------- หน้าต่างกราฟ (src/windows/Graph/Graph.tsx) ---------- */
+/* แถบเครื่องมือและกรอบใช้ของหน้าต่างรายงาน (.rpt) พื้นที่ ECharts เต็ม .rpt-body; ข้อความแทนกราฟ (กำลังโหลด ผลลัพธ์ไม่ตรง) ซ้อนอยู่ด้านบน */
+.graph-chart {
+  position: absolute;
+  inset: 0;
+  background: var(--graph-bg);
+}
+
+.graph-note {
+  position: absolute;
+  inset: 0 0 auto 0;
+}
+
+.graph-toggle[aria-pressed="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.graph-alert {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 /* ---------- Timeline View (src/windows/TimelineView) ---------- */

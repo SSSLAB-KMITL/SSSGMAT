@@ -14,11 +14,12 @@
 //       รายงานของ Facility ที่ยังไม่มี access = ถามก่อน (confirm) แล้ว Compute ไปทุก Constellation แบบไม่เพิ่มแถว Timeline (ไม่ propagate เพราะไม่ได้ dop.csv)
 //       แถบเตือนแสดงทั้งเมื่อ server ตอบ 409 และเมื่อ useResults บอกว่า bundle ของ object ไม่ current (staleStatus)
 //     422 STYLE_INVALID = ข้อความใน Message Viewer และตารางว่างพร้อมคำอธิบาย ข้อผิดพลาดอื่น = Message Viewer + ข้อความในหน้าต่าง
+// - การโหลด Refresh/F5 แถบเตือน และการคำนวณใหม่อยู่ใน useReportLoader ซึ่งหน้าต่างกราฟ (windows/Graph/Graph.tsx) ใช้ร่วม
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Menubar from "@radix-ui/react-menubar";
 import { useVirtualizer, type Rect } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import { ApiError, apiSend, errorText, isAbortError } from "../../api/client";
 import { recordQueuedJob, startJob } from "../../api/startJob";
 import { confirm } from "../../chrome/Dialogs";
@@ -27,7 +28,7 @@ import {
   downloadReport, fetchProviders, fetchReport, type ElementInfo, type ExportSetup, type ReportJson, type ReportRequest,
 } from "../../data/reports";
 import { t } from "../../labels/labels";
-import { msg } from "../../labels/messages.th";
+import { msg, type MsgKey } from "../../labels/messages.th";
 import { getPanelDef, isPanelKind, registerPanel, type PanelProps } from "../../layout/panels";
 import { useJobs } from "../../stores/jobs";
 import { useLayout } from "../../stores/layout";
@@ -66,7 +67,7 @@ export function parseReportParams(x: unknown): ReportParams | null {
   return { style: p.style, kind: p.kind === "graph" ? "graph" : "report", objects: [...(p.objects as string[])], time, dynamic: p.dynamic === true };
 }
 
-const requestOf = (p: ReportParams): ReportRequest => ({ style: p.style, kind: p.kind, objects: p.objects, time: p.time, dynamic: p.dynamic });
+export const requestOf = (p: ReportParams): ReportRequest => ({ style: p.style, kind: p.kind, objects: p.objects, time: p.time, dynamic: p.dynamic });
 
 const FACILITY = "*/Facility/";
 const SATELLITE = "*/Satellite/";
@@ -199,29 +200,53 @@ async function providerElements(sc: string, objects: readonly string[], signal: 
 
 type Phase = "loading" | "ready" | "notCurrent" | "styleInvalid" | "failed";
 
-interface Loaded {
-  report: ReportJson;
-  /** Dynamic Display เท่านั้น */
-  dynamic: DynamicSection[] | null;
+/** ข้อความไทยที่ต่างกันระหว่างหน้าต่างรายงานกับหน้าต่างกราฟ */
+export interface LoaderMessages {
+  failed: MsgKey;
+  computeFailed: MsgKey;
+  computeJobFailed: MsgKey;
 }
 
-export function Report({ params, panelId }: PanelProps) {
-  const p = useMemo(() => parseReportParams(params), [params]);
+/** สิ่งที่หน้าต่างเตรียมเพิ่มหลังได้รายงาน (Dynamic Display: วิธีประมาณค่า) ก่อนแสดง ยกเลิกด้วย signal */
+export type PrepareReport<T> = (report: ReportJson, sc: string, signal: AbortSignal, object: string | null) => Promise<T>;
+
+export interface ReportLoader<T> {
+  sc: string | null;
+  phase: Phase;
+  /** ข้อความของ phase failed */
+  failure: string | null;
+  loaded: { report: ReportJson; extra: T } | null;
+  /** กำลัง Compute / propagate ให้ผลลัพธ์ตรง */
+  computing: boolean;
+  /** สถานะของ ResultsBanner (null = ไม่แสดง) */
+  bannerStatus: "stale" | "missing" | null;
+  /** onApply ของ ResultsBanner */
+  recompute(): Promise<void>;
+  /** Refresh / F5: ผลลัพธ์ไม่ตรง = คำนวณใหม่ก่อน ไม่งั้นสร้างรายงานใหม่ */
+  refresh(): void;
+  /** ref ของกรอบหน้าต่าง: ได้โฟกัสเมื่อหน้าต่างเปิดหรือถูกเลือก (F5 ใช้ได้ทันทีหลัง Generate) */
+  root: RefObject<HTMLDivElement>;
+  /** onKeyDown ของกรอบหน้าต่าง: F5 = refresh */
+  onKeyDown(e: KeyboardEvent): void;
+}
+
+/**
+ * โหลดรายงานของหน้าต่างรายงานและหน้าต่างกราฟ (spec §6, §8): POST /reports แบบ JSON ครั้งเดียวต่อ (scenario, params, Refresh)
+ * ไม่ขึ้นกับเวลา animation, 409 RESULTS_NOT_CURRENT = แถบเตือน + Refresh/Apply สั่งคำนวณใหม่ (recomputePlan) แล้วสร้างใหม่เมื่อ job สำเร็จ,
+ * 422 STYLE_INVALID = Message Viewer, อื่น ๆ = Message Viewer + ข้อความในหน้าต่าง; F5 ในหน้าต่าง = Refresh
+ * prepare อ่านจาก ref (ไม่ต้องคงที่)
+ */
+export function useReportLoader<T>(p: ReportParams | null, panelId: string, prepare: PrepareReport<T>, messages: LoaderMessages): ReportLoader<T> {
   const key = p === null ? "" : JSON.stringify(requestOf(p));
   const sc = useScenario((s) => s.name);
-  const stepS = useScenario((s) => s.doc?.step_s ?? 30);
   const resultsInfo = useResults((s) => s.info);
-  const { fmt, ltz } = useTimeFormatter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [loaded, setLoaded] = useState<{ report: ReportJson; extra: T } | null>(null);
   const [revision, setRevision] = useState(0);
   const [computing, setComputing] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
-  const stored = useLayout((s) => s.windowProps[panelId]?.exportSetup);
-  const setup = useMemo(() => parseExportSetup(stored), [stored]);
-  const latest = useRef({ p, sc });
-  latest.current = { p, sc };
+  const latest = useRef({ p, sc, prepare, messages });
+  latest.current = { p, sc, prepare, messages };
   // โฟกัสหน้าต่างเมื่อเปิดหรือถูกเลือก (หลัง Generate F5 ใช้ได้ทันที) โฟกัสที่อยู่ในหน้าต่างแล้วไม่ย้าย
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -250,7 +275,7 @@ export function Report({ params, panelId }: PanelProps) {
 
   // สร้างรายงาน: ตอนเปิด, เมื่อ scenario/params เปลี่ยน และเมื่อ Refresh (revision) ไม่ขึ้นกับเวลา animation
   useEffect(() => {
-    const cur = latest.current.p;
+    const { p: cur, prepare: prep, messages: text } = latest.current;
     if (cur === null || sc === null) return;
     const ctrl = new AbortController();
     const object = cur.objects.length === 1 ? cur.objects[0] : null;
@@ -258,19 +283,9 @@ export function Report({ params, panelId }: PanelProps) {
     void (async () => {
       try {
         const report = await fetchReport(sc, requestOf(cur), ctrl.signal);
-        let dynamic: DynamicSection[] | null = null;
-        if (cur.dynamic) {
-          let elements: ElementInfo[] = [];
-          try {
-            elements = await providerElements(sc, cur.objects, ctrl.signal);
-          } catch (e) {
-            if (isAbortError(e) || ctrl.signal.aborted) return;
-            notify("warning", e instanceof ApiError ? e.code : "REPORT_PROVIDERS", msg("report.providersFailed", { message: errorText(e) }), object);
-          }
-          dynamic = prepareDynamic(report, elements);
-        }
+        const extra = await prep(report, sc, ctrl.signal, object);
         if (ctrl.signal.aborted) return;
-        setLoaded({ report, dynamic });
+        setLoaded({ report, extra });
         setFailure(null);
         setPhase("ready");
       } catch (e) {
@@ -282,9 +297,9 @@ export function Report({ params, panelId }: PanelProps) {
           notify("error", e.code, e.text, object);
           setPhase("styleInvalid");
         } else {
-          const text = msg("report.failed", { message: errorText(e) });
-          notify("error", e instanceof ApiError ? e.code : "REPORT_FAILED", text, object);
-          setFailure(text);
+          const failed = msg(text.failed, { message: errorText(e) });
+          notify("error", e instanceof ApiError ? e.code : "REPORT_FAILED", failed, object);
+          setFailure(failed);
           setPhase("failed");
         }
       }
@@ -294,7 +309,7 @@ export function Report({ params, panelId }: PanelProps) {
 
   /** ผลลัพธ์ไม่ตรง: Compute / propagate แล้วรอ job จบก่อนสร้างรายงานใหม่ (ผู้เรียกแจ้งข้อผิดพลาดเอง) */
   const recompute = useCallback(async (): Promise<void> => {
-    const { p: cur, sc: name } = latest.current;
+    const { p: cur, sc: name, messages: text } = latest.current;
     const signal = life.current?.signal;
     if (cur === null || name === null || signal === undefined) return;
     const object = cur.objects.length === 1 ? cur.objects[0] : null;
@@ -329,9 +344,9 @@ export function Report({ params, panelId }: PanelProps) {
       const ok = await waitForJobs(jobs, signal);
       if (signal.aborted) return;
       if (ok) setRevision((r) => r + 1);
-      else notify("error", "REPORT_COMPUTE", msg("report.computeJobFailed"), object);
+      else notify("error", "REPORT_COMPUTE", msg(text.computeJobFailed), object);
     } catch (e) {
-      if (!signal.aborted) notify("error", e instanceof ApiError ? e.code : "REPORT_COMPUTE", msg("report.computeFailed", { message: errorText(e) }), object);
+      if (!signal.aborted) notify("error", e instanceof ApiError ? e.code : "REPORT_COMPUTE", msg(text.computeFailed, { message: errorText(e) }), object);
     } finally {
       if (!signal.aborted) setComputing(false);
     }
@@ -351,6 +366,34 @@ export function Report({ params, panelId }: PanelProps) {
     e.stopPropagation();
     refresh();
   };
+
+  return { sc, phase, failure, loaded, computing, bannerStatus, recompute, refresh, root, onKeyDown };
+}
+
+const REPORT_MESSAGES: LoaderMessages = { failed: "report.failed", computeFailed: "report.computeFailed", computeJobFailed: "report.computeJobFailed" };
+
+/** Dynamic Display: วิธีประมาณค่าของแต่ละคอลัมน์จาก /dataproviders (อ่านไม่ได้ = คำเตือนแล้วประมาณตามชนิดคอลัมน์) รายงานธรรมดา = null */
+const prepareReport = (p: ReportParams | null): PrepareReport<DynamicSection[] | null> => async (report, sc, signal, object) => {
+  if (p === null || !p.dynamic) return null;
+  let elements: ElementInfo[] = [];
+  try {
+    elements = await providerElements(sc, p.objects, signal);
+  } catch (e) {
+    if (isAbortError(e) || signal.aborted) throw e;
+    notify("warning", e instanceof ApiError ? e.code : "REPORT_PROVIDERS", msg("report.providersFailed", { message: errorText(e) }), object);
+  }
+  return prepareDynamic(report, elements);
+};
+
+export function Report({ params, panelId }: PanelProps) {
+  const p = useMemo(() => parseReportParams(params), [params]);
+  const stepS = useScenario((s) => s.doc?.step_s ?? 30);
+  const { fmt, ltz } = useTimeFormatter();
+  const { sc, phase, failure, loaded, computing, bannerStatus, recompute, refresh, root, onKeyDown } =
+    useReportLoader(p, panelId, prepareReport(p), REPORT_MESSAGES);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const stored = useLayout((s) => s.windowProps[panelId]?.exportSetup);
+  const setup = useMemo(() => parseExportSetup(stored), [stored]);
 
   const exportCsv = async (): Promise<void> => {
     if (p === null || sc === null) return;
@@ -372,9 +415,9 @@ export function Report({ params, panelId }: PanelProps) {
   if (p === null) body = <p className="rpt-note">{msg("report.badParams")}</p>;
   else if (sc === null) body = <p className="rpt-note">{msg("tooltip.noScenario")}</p>;
   else if (loaded !== null && phase !== "notCurrent" && phase !== "styleInvalid" && phase !== "failed") {
-    body = loaded.dynamic === null
+    body = loaded.extra === null
       ? <StaticTable panelId={panelId} report={loaded.report} fmt={fmt} ltz={ltz} />
-      : <DynamicTable panelId={panelId} report={loaded.report} prepared={loaded.dynamic} maxGapMs={maxGapMs} fmt={fmt} ltz={ltz} />;
+      : <DynamicTable panelId={panelId} report={loaded.report} prepared={loaded.extra} maxGapMs={maxGapMs} fmt={fmt} ltz={ltz} />;
   } else {
     const note = computing ? msg("report.computing")
       : phase === "notCurrent" ? msg("report.notCurrent")

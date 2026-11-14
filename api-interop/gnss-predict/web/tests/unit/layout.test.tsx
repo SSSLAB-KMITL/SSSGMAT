@@ -91,19 +91,19 @@ describe("registry", () => {
   test("every panel kind has a placeholder with the spec §4.1 window type", () => {
     for (const kind of PANEL_KINDS) expect(getPanelDef(kind), kind).toBeDefined();
     for (const kind of ["objectBrowser", "timelineView", "messageViewer"] as const) expect(getPanelDef(kind)?.type, kind).toBe("dockable");
-    for (const kind of ["graphics3d", "graphics2d", "sensorView", "report"] as const) expect(getPanelDef(kind)?.type, kind).toBe("integrated");
+    for (const kind of ["graphics3d", "graphics2d", "sensorView", "report", "graph"] as const) expect(getPanelDef(kind)?.type, kind).toBe("integrated");
     for (const kind of FLOATING) expect(getPanelDef(kind)?.type, kind).toBe("floating");
   });
 
-  test("only the five workspace windows, the Sensor Views and the report windows are saved in the workbook (persist)", () => {
+  test("only the five workspace windows, the Sensor Views and the report/graph windows are saved in the workbook (persist)", () => {
     const persisted = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.persist === true).sort();
-    expect(persisted).toEqual(["graphics2d", "graphics3d", "messageViewer", "objectBrowser", "report", "sensorView", "timelineView"]);
+    expect(persisted).toEqual(["graph", "graphics2d", "graphics3d", "messageViewer", "objectBrowser", "report", "sensorView", "timelineView"]);
     for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.persist, kind).toBe("boolean");
   });
 
   test("the windows that depend on the open scenario are the ones closed with it (scenarioBound)", () => {
     const bound = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.scenarioBound === true).sort();
-    expect(bound).toEqual(["insertObjects", "propertiesBrowser", "report", "satelliteCatalog", "sensorView", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
+    expect(bound).toEqual(["graph", "insertObjects", "propertiesBrowser", "report", "satelliteCatalog", "sensorView", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
     for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.scenarioBound, kind).toBe("boolean");
   });
 

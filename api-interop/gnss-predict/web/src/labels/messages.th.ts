@@ -263,6 +263,28 @@ const MESSAGES = {
   "report.needsAccessDeclined": "ยังไม่ได้คำนวณ เพราะสถานีนี้ยังไม่มี Access ใช้ Access tool คำนวณ Access ของสถานีนี้ก่อน แล้วกด Refresh",
   "report.noSatellites": "คำนวณผลลัพธ์ของสถานี {facility} ไม่ได้ เพราะ scenario ยังไม่มีดาว เพิ่มดาวหรือ Constellation ก่อน",
 
+  // หน้าต่างกราฟ (spec §6.2, §8)
+  "graph.loading": "กำลังสร้างกราฟ...",
+  "graph.badParams": "หน้าต่างกราฟนี้ไม่มีข้อมูลว่าจะสร้างกราฟอะไร ปิดหน้าต่างแล้วสร้างใหม่จาก Report & Graph Manager",
+  "graph.styleInvalid": "สร้างกราฟไม่ได้ เพราะ style นี้อ้างข้อมูลที่ไม่มี ดูรายละเอียดใน Message Viewer แล้วแก้ style ก่อนกด Refresh",
+  "graph.failed": "สร้างกราฟไม่สำเร็จ: {message}",
+  "graph.notCurrent": "ผลลัพธ์ไม่ตรงกับ scenario ปัจจุบันหรือยังไม่มี กด Refresh เพื่อคำนวณใหม่แล้วสร้างกราฟอีกครั้ง",
+  "graph.computing": "กำลังคำนวณผลลัพธ์ใหม่ กราฟจะสร้างใหม่เองเมื่อคำนวณเสร็จ",
+  "graph.computeFailed": "สั่งคำนวณผลลัพธ์ใหม่ให้กราฟไม่สำเร็จ: {message}",
+  "graph.computeJobFailed": "คำนวณผลลัพธ์ใหม่ไม่สำเร็จ จึงยังสร้างกราฟไม่ได้ ดูสาเหตุในข้อความของงานใน Message Viewer",
+  "graph.noGraph": "style นี้ไม่มีนิยามกราฟ จึงวาดเป็นกราฟไม่ได้ สร้างเป็นรายงานแทนจาก Report & Graph Manager",
+  "graph.chunkFailed": "โหลดส่วนที่ใช้วาดกราฟ (ECharts) ไม่สำเร็จ อาจเพราะเชื่อมต่อ server ไม่ได้หรือหน้าเว็บเพิ่งถูกอัปเดต กด Refresh เพื่อลองใหม่ หรือโหลดหน้าเว็บใหม่",
+  "graph.saveFailed": "บันทึกกราฟเป็นไฟล์ PNG ไม่สำเร็จ: {message}",
+  "graph.copyFailed": "คัดลอกภาพกราฟไปยัง clipboard ไม่สำเร็จ: {message}",
+  "graph.clipboardUnavailable": "เบราว์เซอร์นี้ไม่อนุญาตให้คัดลอกภาพไปยัง clipboard (ต้องเปิดหน้าเว็บผ่าน HTTPS หรือ localhost) ใช้ Save แทน",
+  "graph.exportFailed": "ส่งออกข้อมูลกราฟเป็นไฟล์ CSV ไม่สำเร็จ: {message}",
+  "graph.refreshHint": "สร้างกราฟใหม่จากผลลัพธ์ล่าสุด (F5)",
+  "graph.saveHint": "บันทึกภาพกราฟเป็นไฟล์ PNG",
+  "graph.copyHint": "คัดลอกภาพกราฟไปยัง clipboard",
+  "graph.zoomOutHint": "ยกเลิกการซูม แสดงทั้งช่วง (หมุนล้อเมาส์บนกราฟเพื่อซูม)",
+  "graph.timelineHint": "แสดง/ซ่อนเส้นเวลา animation (กราฟ polar: จุดตำแหน่งปัจจุบัน)",
+  "graph.crosshairHint": "แสดงเส้นกากบาทตามเมาส์พร้อมค่าบนแกน",
+
   // Message Viewer (spec §11)
   "mv.empty": "ไม่มีข้อความในแท็บนี้",
   "mv.noDetail": "ข้อความนี้ไม่มีรายละเอียดเพิ่มเติม",

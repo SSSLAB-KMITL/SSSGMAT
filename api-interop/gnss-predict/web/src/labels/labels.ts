@@ -171,6 +171,8 @@ const LABELS = {
   "window.multipleObjects": ours("Multiple Objects"),
   // ชื่อชนิดหน้าต่างรายงาน (ชื่อบนแท็บของแต่ละบานมาจาก reportTitle: `THBK-To-G01: Access`) reference ไม่มีคำนี้เดี่ยว ๆ
   "window.report": ours("Report"),
+  // ชื่อชนิดหน้าต่างกราฟ (ชื่อบนแท็บมาจาก reportTitle แบบเดียวกับรายงาน) reference ไม่มีคำนี้เดี่ยว ๆ
+  "window.graph": ours("Graph"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),
@@ -562,6 +564,17 @@ const LABELS = {
   // ค่าในตาราง: ส่วนที่ไม่มีแถว และค่าที่ไม่มี (เหมือนไฟล์ .txt ของ engine)
   "report.noData": ours("No Data"),
   "report.notAvailable": ours("N/A"),
+
+  // ---------- หน้าต่างกราฟ (spec §6.2, STK ref §F) ----------
+  // §F: "Toggle Animation Timeline button; right-click Show Animation Time Line, Set Animation Time" (Refresh และ Set Animation Time ใช้ report.*)
+  "graph.toggleAnimationTimeline": stk("Toggle Animation Timeline", "F"),
+  "graph.showAnimationTimeLine": stk("Show Animation Time Line", "F"),
+  // ปุ่มอื่นของแถบเครื่องมือและเมนูคลิกขวาของกราฟ reference ไม่ยืนยัน จึงเป็น ours
+  "graph.save": ours("Save"),
+  "graph.copyToClipboard": ours("Copy to Clipboard"),
+  "graph.zoomOut": ours("Zoom Out"),
+  "graph.crosshairCursor": ours("Crosshair Cursor"),
+  "graph.exportDialog": ours("Export Dialog..."),
 
   // ---------- Message Viewer (spec §11, STK ref §A) ----------
   "mv.tab.all": stk("All Messages", "A"),
