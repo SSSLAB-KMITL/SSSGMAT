@@ -309,6 +309,8 @@ const MESSAGES = {
   // คำแนะนำของช่อง Width บนแถบ Sensor View (ความกว้างพื้นที่ที่จุดใต้ดาว → ระดับซูม)
   "sensorView.widthInvalid": "ใส่ความกว้างเป็นตัวเลขที่มากกว่า 0 ตามด้วย m หรือ km เช่น 500 m หรือ 1.5 km (ไม่ใส่หน่วย = m)",
   "sensorView.widthNoPosition": "ตั้งความกว้างไม่ได้ ดาวยังไม่มีตำแหน่ง ณ เวลานี้",
+  // ความกว้างที่พิมพ์เกินช่วงที่ซูมถึง ({min} {max} = ความกว้างแคบสุด/กว้างสุดที่ความสูงตอนนี้ พร้อมหน่วย) ตั้งเป็นปลายช่วงที่ใกล้ที่สุดให้แล้ว
+  "sensorView.widthClamped": "ความกว้างที่ความสูงนี้ตั้งได้ตั้งแต่ {min} ถึง {max} จึงตั้งเป็นค่าที่ใกล้ที่สุดให้",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;

@@ -8,7 +8,7 @@ import { dirname, resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { sensorViewGroundWidthM, sensorViewShortFovDeg, sensorViewZoomForGroundWidth } from "../../src/cesium/sensorGeometry";
+import { sensorViewGroundWidthM, sensorViewGroundWidthRangeM, sensorViewShortFovDeg, sensorViewZoomForGroundWidth } from "../../src/cesium/sensorGeometry";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { runCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
@@ -318,6 +318,97 @@ describe("the window", () => {
     await user.type(box(), "500{Enter}");
     expect(views()[0].params?.zoom).toBe(1);
     expect(screen.getByText(msg("sensorView.widthNoPosition"))).toBeDefined();
+  });
+
+  test("the Width box: a width the current altitude cannot reach is clamped with a Thai hint naming the reachable min and max; a width in range gives no hint", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    const box = () => within(bar).getByRole("textbox", { name: t("sensorView.width") }) as HTMLInputElement;
+    const range = sensorViewGroundWidthRangeM(HUD.altKm, HUD.coneHalfAngle, 1, ZOOM_MAX)!;
+    const text = (metres: number) => {
+      const { unit, width } = groundWidthText(metres);
+      return `${width} ${unit}`;
+    };
+    const hint = msg("sensorView.widthClamped", { min: text(range.minM), max: text(range.maxM) });
+    expect(hint).toMatch(/[฀-๿]/);
+    expect(hint).toContain(text(range.minM));
+    expect(hint).toContain(text(range.maxM));
+    await user.clear(box());
+    await user.type(box(), "1.5 km{Enter}");
+    expect(screen.queryByText(hint)).toBeNull();
+    await user.clear(box());
+    await user.type(box(), "1 m{Enter}");
+    expect(views()[0].params?.zoom).toBe(ZOOM_MAX);
+    expect(screen.getByText(hint)).toBeDefined();
+    await user.clear(box());
+    await user.type(box(), "100000 km{Enter}");
+    expect(views()[0].params?.zoom).toBe(1);
+    expect(screen.getByText(hint)).toBeDefined();
+    // ค่าที่ปลายช่วงพอดีเอื้อมถึง = ไม่ต้องบอก
+    await user.clear(box());
+    await user.type(box(), `${range.maxM}{Enter}`);
+    expect(views()[0].params?.zoom).toBe(1);
+    expect(screen.queryByText(hint)).toBeNull();
+  });
+
+  test("the Width hint goes away when the zoom changes by the buttons or by the wheel (also the invalid-input and no-position hints)", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    const box = () => within(bar).getByRole("textbox", { name: t("sensorView.width") }) as HTMLInputElement;
+    const range = sensorViewGroundWidthRangeM(HUD.altKm, HUD.coneHalfAngle, 1, ZOOM_MAX)!;
+    const text = (metres: number) => {
+      const { unit, width } = groundWidthText(metres);
+      return `${width} ${unit}`;
+    };
+    const clamped = msg("sensorView.widthClamped", { min: text(range.minM), max: text(range.maxM) });
+    const typeWidth = async (value: string) => {
+      await user.clear(box());
+      await user.type(box(), `${value}{Enter}`);
+    };
+    let clock = 10_000;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const stage = screen.getByTestId("sensor-view");
+    const notch = (deltaY: number) => {
+      clock += 300;
+      act(() => void fireEvent.wheel(stage, { deltaY }));
+    };
+    // ปุ่ม Zoom Out หลังถูกบีบที่ ×262144
+    await typeWidth("1 m");
+    expect(screen.getByText(clamped)).toBeDefined();
+    await user.click(screen.getByRole("button", { name: t("toolbar.zoomOut") }));
+    expect(screen.queryByText(clamped)).toBeNull();
+    // ปุ่ม Zoom In หลังคำแนะนำพิมพ์ผิด (ซูมไม่เปลี่ยนตอนแสดงคำแนะนำ)
+    await typeWidth("abc");
+    expect(screen.getByText(msg("sensorView.widthInvalid"))).toBeDefined();
+    await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    expect(screen.queryByText(msg("sensorView.widthInvalid"))).toBeNull();
+    // ล้อเมาส์หลังถูกบีบที่ ×1
+    await typeWidth("100000 km");
+    expect(views()[0].params?.zoom).toBe(1);
+    expect(screen.getByText(clamped)).toBeDefined();
+    notch(-100);
+    expect(views()[0].params?.zoom).toBe(Math.SQRT2);
+    expect(screen.queryByText(clamped)).toBeNull();
+    // ล้อเมาส์หลังคำแนะนำ "ไม่มีตำแหน่ง"
+    fake.hud = null;
+    act(() => sensorViewScenes.notify());
+    await typeWidth("500");
+    expect(screen.getByText(msg("sensorView.widthNoPosition"))).toBeDefined();
+    notch(-100);
+    expect(screen.queryByText(msg("sensorView.widthNoPosition"))).toBeNull();
+    // ตั้งความกว้างซ้ำที่ซูมเดิมยังแสดงคำแนะนำ (ซูมไม่เปลี่ยนก็ไม่ถูกล้างเอง)
+    fake.hud = HUD;
+    act(() => sensorViewScenes.notify());
+    await typeWidth("1 m");
+    expect(screen.getByText(clamped)).toBeDefined();
+    await typeWidth("1 m");
+    expect(screen.getByText(clamped)).toBeDefined();
   });
 
   test("the mouse wheel without Shift zooms (and does not scroll the page); with Shift it does not zoom", async () => {

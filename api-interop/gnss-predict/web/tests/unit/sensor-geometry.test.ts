@@ -16,6 +16,7 @@ import {
   sensorFootprint,
   sensorViewGroundWidthM,
   sensorViewFovDeg,
+  sensorViewGroundWidthRangeM,
   sensorViewShortFovDeg,
   sensorViewZoomForGroundWidth,
 } from "../../src/cesium/sensorGeometry";
@@ -297,4 +298,19 @@ test("sensorViewZoomForGroundWidth inverts the ground width within 1 % and clamp
   expect(sensorViewZoomForGroundWidth(0, 14.4, 500)).toBeNull();
   expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, 0)).toBeNull();
   expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, Number.NaN)).toBeNull();
+});
+
+test("sensorViewGroundWidthRangeM gives the widest (at the min zoom) and narrowest (at the max zoom) width reachable at an altitude", () => {
+  const widthAt = (alt: number, alpha: number, zoom: number) => sensorViewGroundWidthM(alt, sensorViewShortFovDeg(alpha, zoom));
+  const range = sensorViewGroundWidthRangeM(GPS_H, 14.4, 1, 262144);
+  expect(range).toEqual({ minM: widthAt(GPS_H, 14.4, 262144), maxM: widthAt(GPS_H, 14.4, 1) });
+  expect(range!.minM).toBeLessThan(range!.maxM);
+  // ช่วงที่ส่งเอง
+  expect(sensorViewGroundWidthRangeM(800, 30, 1, 8192)).toEqual({ minM: widthAt(800, 30, 8192), maxM: widthAt(800, 30, 1) });
+  // ตรงกับตัวผกผัน: ความกว้างที่ปลายทั้งสองไม่ถูกบีบ
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, range!.maxM)).toBe(1);
+  expect(sensorViewZoomForGroundWidth(GPS_H, 14.4, range!.minM)).toBe(262144);
+  // ไม่มีช่วง: ดาวไม่อยู่เหนือพื้น หรือกรวยไม่มีขนาด
+  expect(sensorViewGroundWidthRangeM(0, 14.4)).toBeNull();
+  expect(sensorViewGroundWidthRangeM(GPS_H, 0)).toBeNull();
 });

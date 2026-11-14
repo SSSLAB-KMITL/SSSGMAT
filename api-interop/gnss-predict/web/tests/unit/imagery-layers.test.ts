@@ -687,6 +687,155 @@ describe("occlusion: layers under an opaque shown layer are not created", () => 
   });
 });
 
+// ชั้นทึบบนสุดที่โหลดชิ้นไม่ได้ (OSM ถูกบล็อก/เน็ตหลุด, EOX หยุด/ไม่ว่าง) ต้องไม่บังชั้นข้างใต้ที่ยังไม่ถูกสร้าง: เกินเกณฑ์ tilesFailing แล้วไม่นับเป็นชั้นทึบบน viewer นั้นอีก
+describe("occlusion: an opaque layer whose tiles fail stops hiding the layers below it", () => {
+  beforeEach(() => useImagery.setState({ sources: { gibs: true, eox: true, osm: true, ion: false }, layers: [...CATALOG, EOX_LAYER] }));
+  const providerOf = (v: ReturnType<typeof fakeViewer>, id: string) => v.gibs().find((l) => idOf(l) === id)!.imageryProvider;
+  const fail = (p: FakeProvider, n: number, error: Record<string, unknown> = {}) => {
+    for (let i = 0; i < n; i++) p.errorEvent.raiseEvent({ retry: true, ...error });
+  };
+  const succeed = async (p: FakeProvider, n: number) => {
+    for (let i = 0; i < n; i++) await p.requestImage(0, 0, 1);
+  };
+  /** EOX 40 % = ไม่ทึบ: ถ้า OSM ที่ทึบบนสุดล้ม ทั้ง EOX และ Blue Marble ต้องถูกสร้าง */
+  const SEE_THROUGH_EOX = { [BM]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 40 }, [OSM]: { show: true, translucency: 0 } };
+  const OPAQUE_STACK = { [BM]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 }, [OSM]: { show: true, translucency: 0 } };
+
+  test("OSM on top with Blue Marble and a see-through EOX below: 8 failed OSM tiles create EOX and Blue Marble under it", async () => {
+    show(SEE_THROUGH_EOX);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([OSM]);
+    const osmLayer = v.gibs()[0];
+    fail(providerOf(v, OSM), TILE_FAILURE_MIN_SETTLED - 1);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([OSM]); // 7 ชิ้น: ยังไม่ครบเกณฑ์
+    fail(providerOf(v, OSM), 1);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    expect(v.gibs()[2]).toBe(osmLayer); // ชั้น OSM เดิมยังอยู่บนสุด ไม่ถูกสร้างใหม่
+    expect(v.list[0]).toBe(v.base);
+    expect(v.list.at(-1)).toBe(v.grid);
+    expect(v.scene.requestRender).toHaveBeenCalled();
+    // HUD ยังบอกชั้นบนสุดที่แสดงอยู่ (OSM) พร้อมสัดส่วนชิ้นที่ขาด
+    expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: OSM, missingRatio: 1 });
+  });
+
+  test("cascade: with an opaque EOX under the failing OSM only EOX is created; EOX failing too brings Blue Marble in", async () => {
+    show(OPAQUE_STACK);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([OSM]);
+    fail(providerOf(v, OSM), TILE_FAILURE_MIN_SETTLED);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([EOX, OSM]);
+    expect(providersOf(BM)).toHaveLength(0);
+    // EOX หยุด/ไม่ว่าง (503) ที่ server: เกินเกณฑ์เดียวกัน Blue Marble จึงถูกสร้าง ลำดับวาดยังเป็น GIBS, EOX, OSM
+    fail(providersOf(EOX)[0], TILE_FAILURE_MIN_SETTLED, { error: { statusCode: 503 } });
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    expect(v.list.at(-1)).toBe(v.grid);
+  });
+
+  test("an EOX that is the top opaque layer and fails (paused / offline) brings Blue Marble and VIIRS in below it", async () => {
+    sources({ gibs: true, eox: true });
+    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([EOX]);
+    fail(providersOf(EOX)[0], 8, { error: { statusCode: 503 } });
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, VIIRS, EOX]);
+  });
+
+  test("tiles that load keep the occlusion: failures under 75 % of the settled tiles never create the layers below", async () => {
+    show(SEE_THROUGH_EOX);
+    const v = fakeViewer();
+    attach(v.viewer);
+    const p = providerOf(v, OSM);
+    await succeed(p, 8);
+    fail(p, 7); // 7 พลาดจาก 15 ที่ได้ผล
+    await Promise.resolve();
+    expect(v.ids()).toEqual([OSM]);
+    await succeed(p, 20);
+    fail(p, 10);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([OSM]);
+    expect(providers()).toHaveLength(1);
+    // เกณฑ์เดียวกับ HUD/ion: 8 ชิ้นได้ผลพลาด 6 (75 %) = พลาดเกินเกณฑ์ แต่ 7 ชิ้นพลาด 7 = ยังไม่ครบ 8 ชิ้น
+    const w = fakeViewer();
+    attach(w.viewer);
+    const q = w.gibs()[0].imageryProvider;
+    await succeed(q, 2);
+    fail(q, 5);
+    await Promise.resolve();
+    expect(w.ids()).toEqual([OSM]);
+    fail(q, 1); // 8 ชิ้น พลาด 6 = 75 %
+    await Promise.resolve();
+    expect(w.ids()).toEqual([BM, EOX, OSM]);
+  });
+
+  test("a see-through top layer never counted as opaque: its failures change nothing", async () => {
+    show({ ...SEE_THROUGH_EOX, [OSM]: { show: true, translucency: 30 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    const count = providers().length;
+    fail(providerOf(v, OSM), 20);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    expect(providers()).toHaveLength(count);
+  });
+
+  test("the failure is per viewer: another viewer whose OSM tiles load keeps its occlusion", async () => {
+    show(SEE_THROUGH_EOX);
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    fail(a.gibs()[0].imageryProvider, 8);
+    await succeed(b.gibs()[0].imageryProvider, 8);
+    await Promise.resolve();
+    expect(a.ids()).toEqual([BM, EOX, OSM]);
+    expect(b.ids()).toEqual([OSM]);
+  });
+
+  test("toggling OSM off and on (its switch, or its Show row) resets the failure: it is opaque again and the layers below go", async () => {
+    show(SEE_THROUGH_EOX);
+    const v = fakeViewer();
+    attach(v.viewer);
+    fail(providerOf(v, OSM), 8);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    sources({ gibs: true, eox: true, osm: false });
+    expect(v.ids()).toEqual([BM, EOX]);
+    sources({ gibs: true, eox: true, osm: true });
+    expect(v.ids()).toEqual([OSM]); // ใหม่: นับชิ้นใหม่ ยังไม่พลาด
+    fail(providerOf(v, OSM), 8);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]); // พลาดใหม่ได้อีกครั้งหลังรีเซ็ต
+    show({ ...SEE_THROUGH_EOX, [OSM]: { show: false, translucency: 0 } });
+    show(SEE_THROUGH_EOX);
+    expect(v.ids()).toEqual([OSM]);
+  });
+
+  test("a layer that failed and was dropped by the plan (ion shown) comes back opaque after ion goes away", async () => {
+    show(SEE_THROUGH_EOX);
+    const v = fakeViewer();
+    attach(v.viewer);
+    fail(providerOf(v, OSM), 8);
+    await Promise.resolve();
+    expect(v.ids()).toEqual([BM, EOX, OSM]);
+    setToken(TOKEN);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(3830182);
+    expect(v.ids()).toEqual([]);
+    await resolveIon();
+    sources({ gibs: true, eox: true, osm: true });
+    expect(v.ids()).toEqual([OSM]);
+  });
+});
+
 describe("sources: OpenStreetMap straight from the browser", () => {
   beforeEach(() => useImagery.setState({ layers: [...CATALOG, EOX_LAYER] }));
 

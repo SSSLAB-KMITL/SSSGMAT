@@ -10,7 +10,8 @@
 // - โหมดกล้อง (imagery spec §5.3): แถบ Display (Camera ตั้งต้น | Sensor) และ Zoom In / Zoom Out พร้อม "×n" เก็บใน params (display, zoom) แบบ Up
 //   zoom ต่อเนื่องใน [1, 262144] ปุ่มและล้อก้าวทีละ ×√2 บนตาราง 2^(k/2) (zoom.ts) ป้าย "×n" ตาม zoomText
 //   ช่อง Width (ours): ความกว้างพื้นที่ที่จุดใต้ดาวตอนนี้ พิมพ์ "500 m" / "1.5 km" / "500" แล้ว Enter = zoom ที่ให้ความกว้างนั้น
-//   (sensorViewZoomForGroundWidth: แบ่งครึ่งบน zoom ไม่เกินช่วง) พิมพ์ผิด = กลับเป็นค่าเดิมพร้อมคำแนะนำไทย
+//   (sensorViewZoomForGroundWidth: แบ่งครึ่งบน zoom ไม่เกินช่วง) พิมพ์ผิด = กลับเป็นค่าเดิมพร้อมคำแนะนำไทย ; ความกว้างที่เกินช่วงที่ความสูงนี้ซูมถึง = ตั้งเป็นปลายช่วงให้
+//   พร้อมคำแนะนำไทยที่บอกความกว้างแคบสุด/กว้างสุดที่ตั้งได้ (sensorViewGroundWidthRangeM) คำแนะนำหายเมื่อซูมเปลี่ยนด้วยปุ่มหรือล้อ (ผูกกับ zoom ตอนแสดง)
 //   ล้อเมาส์ไม่กด Shift บนภาพ (รวม pinch) = ซูมตามยอดสะสม (wheelZoom.ts: trackpad ไม่กระโดดจาก ×1 ไปสุดทาง, deltaY < 0 = เข้า)
 //   ตัวฟังแบบ capture ไม่ passive: preventDefault (หน้าไม่เลื่อน) และไม่ส่งต่อถึง canvas
 //   Camera ไม่วาดวงขอบกรวย; วงในโหมด Sensor ใช้ fov ด้านสั้นที่หารด้วย zoom แล้ว
@@ -25,7 +26,7 @@ import { ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject } from "react";
 import { objectPath } from "../../cesium/colors";
 import { sensorColor, type SensorObj } from "../../cesium/sensorDraw";
-import { neededImageryLevel, sensorViewGroundWidthM, sensorViewShortFovDeg, sensorViewZoomForGroundWidth } from "../../cesium/sensorGeometry";
+import { neededImageryLevel, sensorViewGroundWidthM, sensorViewGroundWidthRangeM, sensorViewShortFovDeg, sensorViewZoomForGroundWidth } from "../../cesium/sensorGeometry";
 import { useThrottledTime, useTimeFormatter } from "../../chrome/hooks";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
@@ -66,19 +67,33 @@ function fixed(value: number, digits: number): string {
 
 const nameOf = (path: string | null): string => (path === null ? "?" : (path.split("/").at(-1) ?? "?"));
 
-/** ผลของการตั้งความกว้างพื้นที่จากช่อง Width: ok, หรือดาวยังไม่มีตำแหน่ง (ไม่รู้ความสูง) */
-type WidthResult = "ok" | "noPosition";
+/**
+ * ผลของการตั้งความกว้างพื้นที่จากช่อง Width: ok, ดาวยังไม่มีตำแหน่ง (ไม่รู้ความสูง),
+ * หรือเกินช่วงที่ซูมถึงที่ความสูงนี้ (zoom = ปลายช่วงที่ตั้งให้, minM/maxM = ความกว้างแคบสุด/กว้างสุดที่ตั้งได้)
+ */
+type WidthResult = { kind: "ok" } | { kind: "noPosition" } | { kind: "clamped"; zoom: number; minM: number; maxM: number };
+
+/** ความกว้างพร้อมหน่วยสำหรับข้อความ ("500 m", "1.30 km") */
+const widthWithUnit = (widthM: number): string => {
+  const { unit, width } = groundWidthText(widthM);
+  return `${width} ${unit}`;
+};
 
 /**
  * ช่อง Width (ours): แสดงความกว้างพื้นที่ที่จุดใต้ดาวตอนนี้ (รูปแบบเดียวกับ HUD) ไม่มีตำแหน่ง = ว่าง
  * พิมพ์แล้ว Enter = ตั้ง zoom ให้ได้ความกว้างนั้น (parseGroundWidth: "500 m", "1.5 km", "500" = m) อ่านไม่ได้ = กลับเป็นค่าเดิมพร้อมคำแนะนำไทย
  * Escape หรือออกจากช่อง = ทิ้งที่พิมพ์ (ไม่ตั้ง)
  */
-function WidthBox({ panelId, onWidth }: { panelId: string; onWidth(widthM: number): WidthResult }) {
+function WidthBox({ panelId, zoom, onWidth }: { panelId: string; zoom: number; onWidth(widthM: number): WidthResult }) {
   useThrottledTime();
   useSyncExternalStore(sensorViewScenes.subscribe, sensorViewScenes.version);
   const [draft, setDraft] = useState<string | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
+  /** คำแนะนำพร้อม zoom ที่มันเป็นจริงด้วย (ปลายช่วงที่ตั้งให้ หรือ zoom ตอนนี้): zoom เปลี่ยนไปจากนั้น (ปุ่ม ล้อ) = หาย */
+  const [hintState, setHintState] = useState<{ text: string; zoom: number } | null>(null);
+  const hint = hintState !== null && hintState.zoom === zoom ? hintState.text : null;
+  useEffect(() => {
+    setHintState((h) => (h !== null && h.zoom !== zoom ? null : h));
+  }, [zoom]);
   const hud = sensorViewScenes.get(panelId)?.sensorHud() ?? null;
   const widthM = hud === null ? 0 : sensorViewGroundWidthM(hud.altKm, hud.fovDeg);
   const now = widthM > 0 ? (({ unit, width }) => `${width} ${unit}`)(groundWidthText(widthM)) : "";
@@ -91,10 +106,13 @@ function WidthBox({ panelId, onWidth }: { panelId: string; onWidth(widthM: numbe
     const metres = parseGroundWidth(draft);
     setDraft(null);
     if (metres === null) {
-      setHint(msg("sensorView.widthInvalid"));
+      setHintState({ text: msg("sensorView.widthInvalid"), zoom });
       return;
     }
-    setHint(onWidth(metres) === "ok" ? null : msg("sensorView.widthNoPosition"));
+    const result = onWidth(metres);
+    if (result.kind === "ok") setHintState(null);
+    else if (result.kind === "noPosition") setHintState({ text: msg("sensorView.widthNoPosition"), zoom });
+    else setHintState({ text: msg("sensorView.widthClamped", { min: widthWithUnit(result.minM), max: widthWithUnit(result.maxM) }), zoom: result.zoom });
   };
   return (
     <>
@@ -103,7 +121,7 @@ function WidthBox({ panelId, onWidth }: { panelId: string; onWidth(widthM: numbe
         <input type="text" className="sensor-view-width" aria-label={t("sensorView.width")} spellCheck={false} value={draft ?? now}
           onChange={(e) => {
             setDraft(e.target.value);
-            setHint(null);
+            setHintState(null);
           }}
           onKeyDown={onKeyDown} onBlur={() => setDraft(null)} />
       </label>
@@ -151,7 +169,7 @@ function SensorViewBar({ panelId, params, onChange, onWidth }: {
           <ZoomOut size={16} aria-hidden="true" />
         </button>
         <span className="sensor-view-zoom-value">{`×${zoomText(zoom)}`}</span>
-        <WidthBox panelId={panelId} onWidth={onWidth} />
+        <WidthBox panelId={panelId} zoom={zoom} onWidth={onWidth} />
       </div>
     </div>
   );
@@ -311,9 +329,11 @@ export function SensorView({ panelId, params }: PanelProps) {
   const setWidth = (widthM: number): WidthResult => {
     const hud = scene.current?.sensorHud() ?? null;
     const next = hud === null ? null : sensorViewZoomForGroundWidth(hud.altKm, hud.coneHalfAngle, widthM, ZOOM_MIN, ZOOM_MAX);
-    if (next === null) return "noPosition";
+    const range = hud === null ? null : sensorViewGroundWidthRangeM(hud.altKm, hud.coneHalfAngle, ZOOM_MIN, ZOOM_MAX);
+    if (next === null || range === null) return { kind: "noPosition" };
     update({ zoom: next });
-    return "ok";
+    // เกินช่วงที่ซูมถึง (กว้างกว่าที่ ×1 เห็น หรือแคบกว่าที่ ×262144 เห็น): ตั้งเป็นปลายช่วงไปแล้ว บอกช่วงที่ตั้งได้
+    return widthM > range.maxM || widthM < range.minM ? { kind: "clamped", zoom: next, ...range } : { kind: "ok" };
   };
 
   return (

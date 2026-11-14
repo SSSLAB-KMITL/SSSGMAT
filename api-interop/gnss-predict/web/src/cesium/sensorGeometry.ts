@@ -211,6 +211,17 @@ export function sensorViewGroundWidthM(altKm: number, shortFovDeg: number): numb
 }
 
 /**
+ * ช่วงความกว้างพื้นที่ที่ช่อง Width ตั้งได้ที่ความสูงและกรวยนี้: กว้างสุดที่ minZoom (maxM) แคบสุดที่ maxZoom (minM) ตัวเดียวกับที่ sensorViewZoomForGroundWidth บีบเข้าหา
+ * ดาวไม่อยู่เหนือผิวโลกหรือกรวยไม่มีขนาด (ความกว้าง 0) = null
+ */
+export function sensorViewGroundWidthRangeM(altKm: number, halfAngleDeg: number, minZoom = 1, maxZoom = 262_144): { minM: number; maxM: number } | null {
+  const widthAt = (zoom: number): number => sensorViewGroundWidthM(altKm, sensorViewShortFovDeg(halfAngleDeg, zoom));
+  const maxM = widthAt(minZoom);
+  const minM = widthAt(maxZoom);
+  return maxM > 0 && minM > 0 ? { minM, maxM } : null;
+}
+
+/**
  * zoom ของ Sensor View ที่ภาพเห็นพื้นกว้าง widthM เมตรตามด้านสั้นที่จุดใต้ดาว (ตัวผกผันของ sensorViewGroundWidthM กับ sensorViewShortFovDeg):
  * ค้นแบบแบ่งครึ่งบน log2(zoom) ใน [minZoom, maxZoom] (ความกว้างลดลงเมื่อ zoom เพิ่ม ช่วงที่ภาพกว้างเกินจานโลกความกว้างคงที่ที่ขอบฟ้า)
  * กว้างเท่าหรือมากกว่าที่ minZoom เห็น = minZoom ; แคบเท่าหรือน้อยกว่าที่ maxZoom เห็น = maxZoom

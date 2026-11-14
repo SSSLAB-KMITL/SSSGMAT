@@ -7,6 +7,8 @@
 //   id ใน globe ที่ catalog ไม่รู้จักข้ามไป
 //   การบัง (occlusion): วาดเฉพาะชั้นทึบบนสุดที่แสดงอยู่กับชั้นที่อยู่เหนือมัน ชั้นทึบ = translucency 0 และ jpg ภาพคงที่ (Blue Marble, EOX) หรือ OSM (isOpaqueLayer)
 //   ชั้นข้างใต้ไม่ถูกสร้าง จึงไม่มีคำขอชิ้นภาพของมันเลย (วัดบน SE Asia: ราวครึ่งของคำขอไปที่ชั้นที่ OSM ทึบทับอยู่) Natural Earth II ยังเป็นฐานเสมอ (ออฟไลน์ ถูก)
+//   ชั้นทึบที่โหลดชิ้นไม่ได้ (OSM ถูกบล็อก/เน็ตหลุด, EOX หยุด/ไม่ว่าง/ออฟไลน์) ไม่บังอะไรอีกบน viewer นั้น: ชิ้นพลาดเกินเกณฑ์ tilesFailing (เกณฑ์เดียวกับ HUD และ ion)
+//   = ไม่นับเป็นชั้นทึบ (ค้างไว้จนชั้นนั้นถูกเอาออก/เปลี่ยน token หรือแผนของ ion เปลี่ยน) แล้ว sync: ชั้นข้างใต้ลงไปถึงชั้นทึบถัดไปถูกสร้าง (ล้มซ้อนกันได้ทีละชั้น)
 //   คิดใหม่ทุกครั้งที่ Show / Translucency (useLayout.globe) หรือสวิตช์ของแหล่งเปลี่ยน ชั้นที่โผล่กลับมาวางตามลำดับวาดเดิม
 // - ตำแหน่ง: เหนือ index 0 (Natural Earth II: applyProps ของ scene3d.ts ใช้ index 0 เป็นภาพฐานของกลางวัน/กลางคืน ห้ามแทรกที่ 0)
 //   ลำดับวาด: GIBS ตาม catalog → EOX → OpenStreetMap (ชั้นหลังทับชั้นก่อน) ชั้นของ id หนึ่งวางต่อจากชั้นบนสุดของ id ก่อนหน้าที่วาดอยู่ (ไม่มี = index 1)
@@ -226,15 +228,16 @@ export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
 /**
  * ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด: ชั้นที่แสดงอยู่ตั้งแต่ชั้นทึบบนสุด (isOpaqueLayer) ขึ้นไป
  * ชั้นใต้ชั้นทึบมองไม่เห็นอยู่แล้ว จึงไม่สร้าง (ไม่มีคำขอชิ้นภาพของมัน) Natural Earth II (index 0) ไม่อยู่ในรายการนี้ ยังเป็นภาพฐานเสมอ
+ * failed(id): ชั้นนี้โหลดชิ้นไม่ได้เกินเกณฑ์บน viewer นี้ = ไม่นับเป็นชั้นทึบ (ยังอยู่ในรายการ แต่ชั้นข้างใต้ถูกรวมเพราะภาพของมันไม่ได้บังอะไร)
  */
-const shownLayers = (): ImageryLayerInfo[] => {
+const shownLayers = (failed: (id: string) => boolean = () => false): ImageryLayerInfo[] => {
   if (ionPlan().kind === "shown") return [];
   const { sources, layers } = useImagery.getState();
   const globe = useLayout.getState().globe;
   const order = [...layers, OSM_LAYER]
     .filter((l) => sources[l.source] && globe.layers[l.id]?.show === true)
     .sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
-  for (let i = order.length - 1; i > 0; i--) if (isOpaqueLayer(order[i], alphaOf(order[i].id))) return order.slice(i);
+  for (let i = order.length - 1; i > 0; i--) if (isOpaqueLayer(order[i], alphaOf(order[i].id)) && !failed(order[i].id)) return order.slice(i);
   return order;
 };
 
@@ -262,6 +265,12 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   let baseAlpha: number | null = null;
   let ion: IonManaged | null = null;
   const managed = new Map<string, Managed>();
+  /** ชั้นทึบที่ชิ้นพลาดเกินเกณฑ์บน viewer นี้: id → คีย์ "id/token" ตอนพลาด (token เปลี่ยน = คีย์ไม่ตรง = นับเป็นทึบได้อีก) */
+  const failedOpaque = new Map<string, string>();
+  const opaqueFailed = (id: string): boolean => {
+    const m = managed.get(id);
+    return m !== undefined && failedOpaque.get(id) === `${id}/${m.token}`;
+  };
   /** จำนวนชิ้นต่อ "id/token" ของชั้นปัจจุบันและชั้นเดิมที่ยังแสดงอยู่ */
   const counts = new Map<string, TileCounts>();
   let detached = false;
@@ -309,9 +318,19 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       ? new UrlTemplateImageryProvider({ url: OSM_URL, ...common })
       : new UrlTemplateImageryProvider({ url: `/api/imagery/tiles/${info.id}/${token}/{z}/{y}/{x}`, ...common, tileDiscardPolicy: new NeverTileDiscardPolicy() });
     const tiles = countsFor(info.id, token);
-    /** OSM: ชิ้นพลาดเกินเกณฑ์ = ข้อความไทย (ครั้งเดียวต่อหน้า) */
+    const key = `${info.id}/${token}`;
+    /**
+     * ชิ้นพลาดเกินเกณฑ์: OSM = ข้อความไทย (ครั้งเดียวต่อหน้า) ; ชั้นที่ทึบ (ไม่ว่า translucency ตอนนี้) = จำว่าล้มบน viewer นี้ แล้ว sync หลังตัวแจ้งของ Cesium จบ
+     * ชั้นข้างใต้ที่ไม่เคยถูกสร้างจะถูกสร้างตอนนั้น (ไม่ทำใน errorEvent ตรง ๆ: ไม่แก้รายการชั้นระหว่างที่ Cesium ยังอยู่ในตัวจัดการข้อผิดพลาดของตัวเอง)
+     */
     const checkFailing = (): void => {
-      if (info.source === "osm" && tilesFailing(tiles)) noteOsmFailing();
+      if (!tilesFailing(tiles)) return;
+      if (info.source === "osm") noteOsmFailing();
+      if (!isOpaqueLayer(info, 1) || failedOpaque.get(info.id) === key) return;
+      failedOpaque.set(info.id, key);
+      queueMicrotask(() => {
+        if (!detached && failedOpaque.get(info.id) === key) sync();
+      });
     };
     const started = (): void => {
       const m = managed.get(info.id);
@@ -364,6 +383,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     drop(m.retiring);
     drop(m.layer);
     managed.delete(id);
+    failedOpaque.delete(id);
     for (const key of [...counts.keys()]) if (key.startsWith(`${id}/`)) counts.delete(key);
   };
 
@@ -404,6 +424,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   const syncIon = (plan: IonPlan): boolean => {
     const key = plan.kind === "shown" ? `${plan.assetId}\n${plan.token}` : null;
     if (ion === null ? key === null : ion.key === key) return false;
+    failedOpaque.clear(); // แผนของ ion เปลี่ยน: ชั้นอื่นเริ่มใหม่ (ชั้นที่ล้มถูกเอาออกอยู่แล้วเมื่อ ion shown) ชั้นทึบกลับมานับเป็นทึบได้อีก
     if (ion !== null) {
       drop(ion.layer);
       ion = null;
@@ -477,7 +498,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     noteIon(plan);
     let changed = syncIon(plan);
     if (syncBase(plan.kind === "shown")) changed = true;
-    const order = shownLayers();
+    const order = shownLayers(opaqueFailed);
     const wanted = new Set(order.map((l) => l.id));
     for (const id of [...managed.keys()]) {
       if (!wanted.has(id)) {
@@ -546,7 +567,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
           topLayer: { id: "ion", title: ionAssetTitle(ion.assetId), label: "", missingRatio: missingRatioOf(ion.tiles, "ion"), source: "ion", max_level: ion.maxLevel },
         };
       }
-      const order = shownLayers();
+      const order = shownLayers(opaqueFailed);
       for (let i = order.length - 1; i >= 0; i--) {
         const m = managed.get(order[i].id);
         if (m === undefined) continue;
