@@ -2,13 +2,17 @@
 ตรวจ schema ที่เดียว ค่าผิดตอบ PREFS_INVALID ข้อความไทยที่มีป้ายของ Gpredict และช่วง ใช้ data dir ชั่วคราวเสมอ"""
 
 import json
+import re
 import threading
 import unittest
+from pathlib import Path
 from unittest import mock
 
+from gpredict_web import module as mod
 from gpredict_web import prefs as prefs_module
 from gpredict_web.errors import ApiError
-from gpredict_web.prefs import MULTI_PASS_COLUMNS, PREFS, SINGLE_PASS_COLUMNS, PrefSpec, Prefs, validate
+from gpredict_web.prefs import (LOG_CLEAN_AGES, MULTI_PASS_COLUMNS, PREFS, SINGLE_PASS_COLUMNS, TIME_FORMAT_MAX, PrefSpec,
+                                Prefs, validate)
 from tests.helpers import temp_config
 
 MIN_ELEV = "PREDICT/MINIMUM_ELEV"
@@ -31,6 +35,69 @@ INT_ROWS = [
 # ref-P §7.4: สีของดาวลำดับที่ 1..10
 SKY_COLOURS = ["#3c46c8", "#00500a", "#d5472b", "#d06b38", "#cf477a",
                "#bf041f", "#688522", "#0420bf", "#a304bf", "#04bdbf"]
+
+
+# ---- งานย่อย 4: key ของ General และ Modules (ค่าตั้งต้นจาก sat-cfg.c และ ref-D §14 พิมพ์ซ้ำที่นี่โดยตั้งใจ ไม่อ่านจาก module.py)
+DATA_BOOLS = {
+    "GLOBAL/USE_LOCAL_TIME": False, "GLOBAL/USE_NSEW": False, "GLOBAL/USE_IMPERIAL": False,
+    "GLOBAL/MAIN_WIN_POS": False, "GLOBAL/MOD_WIN_POS": False, "GLOBAL/MOD_STATE": False,
+    "TLE/ADD_NEW_SATS": True,
+    "MODULES/MAP_SAT_NAME": True, "MODULES/MAP_SAT_FOTPRINT": True, "MODULES/MAP_SAT_MARKER": True,
+    "MODULES/MAP_QTH_INFO": True, "MODULES/MAP_NEXT_EVENT": True, "MODULES/MAP_CURSOR_TRACK": False,
+    "MODULES/MAP_SHOW_GRID": True, "MODULES/MAP_SHOW_TERMINATOR": False,
+    "MODULES/POLAR_SAT_NAME": True, "MODULES/POLAR_SAT_MARKER": True, "MODULES/POLAR_QTH_INFO": True,
+    "MODULES/POLAR_NEXT_EVENT": True, "MODULES/POLAR_CURSOR_TRACK": True, "MODULES/POLAR_EXTRA_AZ_TICKS": False,
+    "MODULES/POLAR_SHOW_TRACK_AUTO": False,
+}
+# (key, lo, hi, default) ของแถวจำนวนเต็มแบบช่วง
+DATA_INT_ROWS = [
+    ("GLOBAL/CURRENT_PAGE", -1, 999, -1),
+    ("LOG/LEVEL", 0, 4, 2),
+    ("MODULES/DATA_TIMEOUT", 100, 10000, 300),
+    ("MODULES/LIST_REFRESH", 1, 50, 1),
+    ("MODULES/MAP_REFRESH", 1, 50, 10),
+    ("MODULES/POLAR_REFRESH", 1, 50, 3),
+    ("MODULES/SINGLE_SAT_REFRESH", 1, 50, 1),
+    ("MODULES/EVENT_LIST_REFRESH", 1, 50, 1),
+    ("MODULES/MAP_TRACK_NUM", 1, 10, 3),
+    ("MODULES/MAP_CENTER", -180, 180, 0),
+    ("MODULES/MAP_SHADOW_ALPHA", 0, 255, 0xDD),
+]
+# สีเป็น int 0xRRGGBBAA (sat-cfg.c:166-180)
+MAP_COLOUR_DEFAULTS = {
+    "MODULES/MAP_QTH_COLOUR": 0x00FFFFFF, "MODULES/MAP_GRID_COLOUR": 0x7F7F7FC8, "MODULES/MAP_TICK_COLOUR": 0x7F7F7FC8,
+    "MODULES/MAP_SAT_COLOUR": 0xF0F000FF, "MODULES/MAP_SELECTED_SAT_COLOUR": 0xFFFFFFFF,
+    "MODULES/MAP_TRACK_COLOUR": 0xFF1200BB, "MODULES/MAP_COV_AREA_COLOUR": 0xFFFFFF1F,
+    "MODULES/MAP_INFO_COLOUR": 0x00FF00FF, "MODULES/MAP_INFO_BGD_COLOUR": 0x000000FF,
+    "MODULES/MAP_TERMINATOR_COLOUR": 0xFFFF0080, "MODULES/MAP_EARTH_SHADOW_COLOUR": 0x00000060,
+}
+POLAR_COLOUR_DEFAULTS = {
+    "MODULES/POLAR_BGD_COLOUR": 0xFFFFFFFF, "MODULES/POLAR_AXIS_COLOUR": 0x0F0F0F7F, "MODULES/POLAR_TICK_COLOUR": 0x007F00FF,
+    "MODULES/POLAR_SAT_COLOUR": 0x8F0000FF, "MODULES/POLAR_SELECTED_SAT_COL": 0xFF0D0BFF,
+    "MODULES/POLAR_TRACK_COLOUR": 0x0000FFFF, "MODULES/POLAR_INFO_COLOUR": 0x00007FFF,
+}
+RGBA_KEYS = [*MAP_COLOUR_DEFAULTS, *POLAR_COLOUR_DEFAULTS]
+# ref-D §4 / sat-cfg.c:235-246: 1 AMSAT + 10 CelesTrak (ตัวที่ 6 สะกด tlet ตามต้นฉบับ)
+TLE_URLS = [
+    "https://www.amsat.org/amsat/ftp/keps/current/nasabare.txt",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=cubesat&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=galileo&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=glo-ops&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tlet",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=iridium-NEXT&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=science&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=tle",
+    "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle",
+]
+# key ใหม่ทั้งหมดของงานย่อย 4 (ไม่รวมแถวที่งานย่อย 2 มีอยู่แล้ว) 63 ตัว
+DATA_KEYS = [
+    *DATA_BOOLS, *(k for k, *_ in DATA_INT_ROWS), "GLOBAL/TIME_FORMAT", "TLE/AUTO_UPDATE_FREQ", "TLE/AUTO_UPDATE_ACTION",
+    "TLE/PROXY", "TLE/URLS", "TLE/LAST_UPDATE", "LOG/CLEAN_AGE", "MODULES/GRID", "MODULES/LIST_COLUMNS",
+    "MODULES/SINGLE_SAT_FIELDS", "MODULES/MAP_FILE", "MODULES/POLAR_CHART_ORIENT", *RGBA_KEYS,
+]
+WEB_COLORS = Path(__file__).resolve().parents[2] / "web" / "src" / "colors.ts"
 
 
 class PrefsTestCase(unittest.TestCase):
@@ -217,8 +284,9 @@ class PrefsSchemaTest(PrefsTestCase):
 
     def test_table_has_exactly_the_spec_rows(self):
         expected = {k for k, *_ in INT_ROWS} | {"PREDICT/USE_REAL_T0", SINGLE, MULTI, *COLOUR_KEYS}
-        self.assertEqual(set(PREFS), expected)
-        self.assertEqual(len(PREFS), 21)
+        self.assertEqual(set(PREFS), expected | set(DATA_KEYS))               # งานย่อย 4 เพิ่ม 63 key
+        self.assertEqual(len(PREFS), 21 + len(DATA_KEYS))
+        self.assertEqual(set(list(PREFS)[:21]), expected)                     # แถวของงานย่อย 2 อยู่ก่อน
 
     def test_every_default_is_valid_and_normalised(self):
         for key, spec in PREFS.items():
@@ -327,6 +395,321 @@ class PrefsSchemaTest(PrefsTestCase):
     def test_label_falls_back_to_key(self):
         with mock.patch.dict(PREFS, {"X/NOLABEL": PrefSpec("bool", False)}):
             self.assert_invalid("X/NOLABEL", 1, "X/NOLABEL")
+
+
+def ts_colours(block: str) -> dict[str, int]:
+    """ค่า 0xRRGGBBAA ของ `export const <block> = {...}` ใน web/src/colors.ts"""
+    text = WEB_COLORS.read_text(encoding="utf-8")
+    body = re.search(rf"export const {block} = \{{(.*?)\}} as const;", text, re.S).group(1)
+    return {name: int(value, 16) for name, value in re.findall(r"(\w+):\s*0x([0-9a-fA-F]{8})", body)}
+
+
+class PrefsDataKeysTest(PrefsTestCase):
+    """งานย่อย 4 task 1: key ของ General, TLE, LOG และ Modules (ref-D §14, sat-cfg.c)"""
+
+    def test_tle_urls_default_is_gpredict_list(self):
+        urls = Prefs(self.cfg.data_dir).get("TLE/URLS")
+        self.assertEqual(len(urls), 11)
+        self.assertEqual(urls[0], "https://www.amsat.org/amsat/ftp/keps/current/nasabare.txt")
+        self.assertEqual(urls[5], "https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tlet")
+        self.assertEqual(urls, TLE_URLS)                                      # ครบทั้ง 11 ตัว ตามลำดับ ทุกตัวอักษร
+        self.assertEqual(validate("TLE/URLS", urls), urls)
+
+    def test_defaults_match_gpredict(self):
+        for key, default in DATA_BOOLS.items():
+            self.assertIs(PREFS[key].default, default, key)
+        for key, _, _, default in DATA_INT_ROWS:
+            self.assertEqual(PREFS[key].default, default, key)
+        for key, default in {**MAP_COLOUR_DEFAULTS, **POLAR_COLOUR_DEFAULTS}.items():
+            self.assertEqual(PREFS[key].default, default, key)
+        for key, default in (("GLOBAL/TIME_FORMAT", "%Y/%m/%d %H:%M:%S"), ("TLE/AUTO_UPDATE_FREQ", 2),
+                             ("TLE/AUTO_UPDATE_ACTION", 1), ("TLE/PROXY", ""), ("TLE/LAST_UPDATE", 0), ("LOG/CLEAN_AGE", 0),
+                             ("MODULES/GRID", "1;0;2;0;1;2;0;1;1;2;3;1;2;1;2"), ("MODULES/MAP_FILE", "nasa-bmng-07_1024.jpg"),
+                             ("MODULES/POLAR_CHART_ORIENT", "N/E/S/W")):
+            self.assertEqual(PREFS[key].default, default, key)
+        self.assertEqual(Prefs(self.cfg.data_dir).get("MODULES/LIST_COLUMNS"), mod.LIST_DEFAULT)
+        self.assertEqual(len(DATA_KEYS), 63)
+        self.assertEqual(len(set(DATA_KEYS)), 63)
+
+    def test_module_defaults_match_module_py(self):
+        p = self.prefs()
+        self.assertEqual(p.get("MODULES/GRID"), mod.DEFAULT_LAYOUT_CODE)
+        self.assertEqual(p.get("MODULES/LIST_COLUMNS"), mod.LIST_DEFAULT)
+        self.assertEqual(p.get("MODULES/SINGLE_SAT_FIELDS"), mod.SINGLE_DEFAULT)
+        self.assertEqual(PREFS["MODULES/LIST_COLUMNS"].choices, mod.LIST_COLUMNS)
+        self.assertEqual(PREFS["MODULES/SINGLE_SAT_FIELDS"].choices, mod.SINGLE_FIELDS)
+        self.assertEqual(PREFS["MODULES/POLAR_CHART_ORIENT"].choices, mod.POLAR_ORIENTATIONS)
+        self.assertEqual(p.get("MODULES/DATA_TIMEOUT"), mod.REFRESH_DEFAULT["data_ms"])
+        for key, name in (("LIST_REFRESH", "list"), ("MAP_REFRESH", "map"), ("POLAR_REFRESH", "polar"),
+                          ("SINGLE_SAT_REFRESH", "single"), ("EVENT_LIST_REFRESH", "event")):
+            self.assertEqual(p.get(f"MODULES/{key}"), mod.REFRESH_DEFAULT[name], key)
+            self.assertEqual((PREFS[f"MODULES/{key}"].lo, PREFS[f"MODULES/{key}"].hi), mod.CYCLE_RANGE, key)
+        self.assertEqual((PREFS["MODULES/DATA_TIMEOUT"].lo, PREFS["MODULES/DATA_TIMEOUT"].hi), mod.DATA_MS_RANGE)
+        self.assertEqual((PREFS["MODULES/MAP_TRACK_NUM"].lo, PREFS["MODULES/MAP_TRACK_NUM"].hi), mod.TRACK_ORBITS_RANGE)
+        self.assertEqual((PREFS["MODULES/MAP_CENTER"].lo, PREFS["MODULES/MAP_CENTER"].hi), mod.CENTER_LON_RANGE)
+        self.assertIs(p.get("MODULES/MAP_SAT_FOTPRINT"), True)                 # สะกดตาม Gpredict
+        self.assertIs(p.get("MODULES/MAP_CURSOR_TRACK"), False)
+        self.assertIs(p.get("MODULES/POLAR_CURSOR_TRACK"), True)
+        map_keys = ("MAP_SAT_NAME", "MAP_SAT_FOTPRINT", "MAP_SAT_MARKER", "MAP_QTH_INFO", "MAP_NEXT_EVENT", "MAP_CURSOR_TRACK",
+                    "MAP_SHOW_GRID", "MAP_SHOW_TERMINATOR")
+        self.assertEqual({k: p.get(f"MODULES/{k}") for k in map_keys},
+                         {k: n not in mod.MAP_DEFAULT_OFF for k, n in zip(map_keys, mod.MAP_CONTENTS)})
+        polar_keys = ("POLAR_SAT_NAME", "POLAR_SAT_MARKER", "POLAR_QTH_INFO", "POLAR_NEXT_EVENT", "POLAR_CURSOR_TRACK",
+                      "POLAR_EXTRA_AZ_TICKS")
+        self.assertEqual({k: p.get(f"MODULES/{k}") for k in polar_keys},
+                         {k: n not in mod.POLAR_DEFAULT_OFF for k, n in zip(polar_keys, mod.POLAR_CONTENTS)})
+        self.assertEqual(p.get("MODULES/POLAR_SHOW_TRACK_AUTO"), mod.ModuleConfig("M").polar["auto_skytrack"])
+        self.assertEqual(p.get("MODULES/POLAR_CHART_ORIENT"), mod.POLAR_ORIENTATIONS[0])
+        self.assertEqual(p.get("MODULES/MAP_FILE"), mod.DEFAULT_MAP)
+        self.assertEqual(p.get("MODULES/MAP_SHADOW_ALPHA"), mod.MAP_SHADOW_DEFAULT)
+        self.assertEqual(p.get("MODULES/MAP_TRACK_NUM"), mod.TRACK_ORBITS_DEFAULT)
+        self.assertEqual(p.get("MODULES/MAP_CENTER"), mod.CENTER_LON_DEFAULT)
+
+    def test_colour_defaults_match_module_py_and_web_colors_ts(self):
+        self.assertEqual(mod.MAP_SHADOW_DEFAULT, 0xDD)
+        self.assertEqual(mod.DEFAULT_MAP, "nasa-bmng-07_1024.jpg")
+        self.assertEqual(mod.MAP_COLOURS_DEFAULT, ts_colours("MAP_COLORS"))
+        self.assertEqual(mod.POLAR_COLOURS_DEFAULT, ts_colours("POLAR_COLORS"))
+        self.assertEqual((len(mod.MAP_COLOURS_DEFAULT), len(mod.POLAR_COLOURS_DEFAULT)), (11, 7))
+        self.assertEqual(int(re.search(r"MAP_SHADOW_ALPHA = (0x[0-9a-fA-F]+)", WEB_COLORS.read_text()).group(1), 16),
+                         mod.MAP_SHADOW_DEFAULT)
+        # ชื่อสีของ decision 5 และ key ของ Gpredict (sat-cfg.c) ชี้ไปที่ค่าเดียวกัน
+        by_name = {"MAP_QTH_COLOUR": "groundStation", "MAP_GRID_COLOUR": "grid", "MAP_TICK_COLOUR": "tick",
+                   "MAP_SAT_COLOUR": "satellite", "MAP_SELECTED_SAT_COLOUR": "selected", "MAP_TRACK_COLOUR": "track",
+                   "MAP_COV_AREA_COLOUR": "footprint", "MAP_INFO_COLOUR": "infoFg", "MAP_INFO_BGD_COLOUR": "infoBg",
+                   "MAP_TERMINATOR_COLOUR": "terminator", "MAP_EARTH_SHADOW_COLOUR": "earthShadow"}
+        self.assertEqual({f"MODULES/{k}": mod.MAP_COLOURS_DEFAULT[n] for k, n in by_name.items()}, MAP_COLOUR_DEFAULTS)
+        by_name = {"POLAR_BGD_COLOUR": "background", "POLAR_AXIS_COLOUR": "axes", "POLAR_TICK_COLOUR": "tick",
+                   "POLAR_SAT_COLOUR": "satellite", "POLAR_SELECTED_SAT_COL": "selected", "POLAR_TRACK_COLOUR": "track",
+                   "POLAR_INFO_COLOUR": "info"}
+        self.assertEqual({f"MODULES/{k}": mod.POLAR_COLOURS_DEFAULT[n] for k, n in by_name.items()}, POLAR_COLOUR_DEFAULTS)
+
+    def test_every_new_default_is_valid_and_normalised(self):
+        for key in DATA_KEYS:
+            self.assertEqual(validate(key, PREFS[key].default), PREFS[key].default, key)
+
+    def test_defaults_are_not_shared_with_module_py(self):
+        p = self.prefs()
+        p.get("MODULES/LIST_COLUMNS").append("Bogus")
+        p.defaults()["MODULES/SINGLE_SAT_FIELDS"].clear()
+        p.values()["TLE/URLS"].clear()
+        self.assertEqual(mod.LIST_DEFAULT[-1], "Orbit")
+        self.assertEqual(len(mod.SINGLE_DEFAULT), 16)
+        self.assertEqual(len(p.get("TLE/URLS")), 11)
+
+    def test_rgba_kind(self):
+        key = "MODULES/MAP_QTH_COLOUR"
+        for ok in (0, 0xFFFFFFFF, 0x00FFFFFF, 1, 0xFF1200BB):
+            self.assertEqual(validate(key, ok), ok)
+        for bad in (-1, 2 ** 32, True, False, "0xff", "255", 1.0, 0.5, None, [1], {"v": 1}, float("nan"), 10 ** 400):
+            self.assert_invalid(key, bad)
+        err = self.assert_invalid(key, -1, "Ground Station", "0xRRGGBBAA")
+        self.assertRegex(err.text, r"[ก-๙]")
+        for polar in ("MODULES/POLAR_BGD_COLOUR", "MODULES/POLAR_INFO_COLOUR"):
+            self.assert_invalid(polar, 2 ** 32)
+        self.prefs().update({key: 0x11223344}, [])
+        self.assertEqual(self.raw()["values"], {key: 0x11223344})              # เก็บเป็น int ธรรมดา
+        self.assertEqual(self.prefs().get(key), 0x11223344)
+
+    def test_allowed_values(self):
+        for age in LOG_CLEAN_AGES:
+            self.assertEqual(validate("LOG/CLEAN_AGE", age), age)
+        self.assertEqual(LOG_CLEAN_AGES, (0, 86400, 604800, 2592000))
+        self.assertEqual(validate("LOG/CLEAN_AGE", 2592000), 2592000)
+        err = self.assert_invalid("LOG/CLEAN_AGE", 18144000, "Delete log files older than", "0, 86400, 604800, 2592000")
+        self.assertRegex(err.text, r"[ก-๙]")                                  # "1 month" ของ Gpredict (210 วัน) ไม่รับ
+        for bad in (1, -1, 3600, True, False, 86400.0, "0", None):
+            self.assert_invalid("LOG/CLEAN_AGE", bad)
+        for freq in (0, 1, 2, 3):
+            self.assertEqual(validate("TLE/AUTO_UPDATE_FREQ", freq), freq)
+        for bad in (-1, 4, True, 2.0, "2"):
+            self.assert_invalid("TLE/AUTO_UPDATE_FREQ", bad, "Check the age of TLE data")
+        for action in (1, 2):
+            self.assertEqual(validate("TLE/AUTO_UPDATE_ACTION", action), action)
+        for bad in (0, 3, -1, True, 1.0, None):
+            self.assert_invalid("TLE/AUTO_UPDATE_ACTION", bad, "If TLEs are too old")
+
+    def test_urls_kind(self):
+        key = "TLE/URLS"
+        one = ["http://server.com/file.txt"]
+        self.assertEqual(validate(key, one), one)
+        self.assertEqual(validate(key, ["https://a/b?x=1&y=2", "http://c"]), ["https://a/b?x=1&y=2", "http://c"])
+        self.assertEqual(validate(key, ["http://" + "a" * 493]), ["http://" + "a" * 493])        # 500 ตัวพอดี
+        fifty = [f"https://h{i}.example/t" for i in range(50)]
+        self.assertEqual(validate(key, fifty), fifty)
+        for bad in ([], ["ftp://x"], ["https://a/b;c"], [fifty[0]] * 51, ["http://" + "a" * 494], ["https://a b"], ["https://a\n"],
+                    ["https://a\tb"], ["http://"], ["https://"], ["HTTP://x"], ["x.com/y"], [""], [None], [5], [["http://a"]],
+                    ["http://a", "ftp://b"], "http://a", None, 5, {"u": "http://a"}, ("http://a",), ["http://a\u00a0b"]):
+            with self.subTest(bad=bad):
+                self.assert_invalid(key, bad)
+        err = self.assert_invalid(key, [], "TLE sources")
+        self.assertRegex(err.text, r"[ก-๙]")
+        self.assert_invalid(key, ["https://a/b;c"], "https://a/b;c")           # บอกว่า URL ไหนผิด
+        self.prefs().update({key: one}, [])
+        self.assertEqual(self.raw()["values"], {key: one})
+
+    def test_time_format_max_len(self):
+        key = "GLOBAL/TIME_FORMAT"
+        self.assertEqual(TIME_FORMAT_MAX, 50)
+        self.assertEqual(validate(key, "%" * 50), "%" * 50)
+        self.assertEqual(validate(key, "ก" * 50), "ก" * 50)                    # นับตัวอักษร ไม่ใช่ไบต์
+        self.assertEqual(validate(key, ""), "")
+        self.assertEqual(validate(key, "%Y/%m/%d %H:%M:%S%"), "%Y/%m/%d %H:%M:%S%")
+        err = self.assert_invalid(key, "%" * 51, "Time format", "50")
+        self.assertRegex(err.text, r"[ก-๙]")
+        for bad in (None, 5, ["%Y"], True):
+            self.assert_invalid(key, bad, "Time format")
+
+    def test_layout_kind(self):
+        key = "MODULES/GRID"
+        self.assertEqual(validate(key, "1;0;2;0;1"), "1;0;2;0;1")
+        for _, code in mod.LAYOUT_PRESETS:
+            self.assertEqual(validate(key, code), code)
+        for bad in ("1;0;2", "", "1;0;2;0;1;", "5;0;2;0;1", "1;2;2;0;1", "1;0;2;1;1", "1;0;a;0;1", "1;0;2;0;-1", " 1;0;2;0;1",
+                    "1;0;2;0;1\n", None, 5, ["1;0;2;0;1"], True, "1;0;2;0;" + "9" * 5000):
+            with self.subTest(bad=bad):
+                err = self.assert_invalid(key, bad, "Module layout")
+                self.assertRegex(err.text, r"[ก-๙]")
+        self.prefs().update({key: "1;0;2;0;1"}, [])
+        self.assertEqual(self.prefs().get(key), "1;0;2;0;1")
+
+    def test_new_int_ranges(self):
+        for key, lo, hi, _ in DATA_INT_ROWS:
+            with self.subTest(key=key):
+                self.assertEqual(validate(key, lo), lo)
+                self.assertEqual(validate(key, hi), hi)
+                self.assert_invalid(key, lo - 1)
+                self.assert_invalid(key, hi + 1)
+                for bad in (True, False, float(lo), lo + 0.5, str(lo), None, [lo], float("nan")):
+                    self.assert_invalid(key, bad)
+        self.assertEqual(self.assert_invalid("LOG/LEVEL", 5, "Debug level").text, "Debug level ต้องเป็นจำนวนเต็ม 0–4")
+        self.assert_invalid("MODULES/DATA_TIMEOUT", 99, "Refresh data every", "100–10000")
+        self.assert_invalid("MODULES/MAP_TRACK_NUM", 11, "Display ground track for", "1–10")
+        self.assert_invalid("MODULES/MAP_CENTER", 181, "Center map at longitude", "-180–180")
+        self.assert_invalid("MODULES/MAP_SHADOW_ALPHA", 256, "Shadow", "0–255")
+
+    def test_last_update_is_a_non_negative_int(self):
+        key = "TLE/LAST_UPDATE"
+        for ok in (0, 1, 1_763_000_000, 2 ** 40):
+            self.assertEqual(validate(key, ok), ok)
+        for bad in (-1, True, 1.5, 0.0, "0", None):
+            self.assert_invalid(key, bad)
+        self.assertRegex(self.assert_invalid(key, -1).text, r"0 ขึ้นไป")
+
+    def test_bool_rows_are_strict(self):
+        for key in DATA_BOOLS:
+            self.assertIs(validate(key, True), True)
+            self.assertIs(validate(key, False), False)
+            for bad in (0, 1, "true", None, 1.0):
+                self.assert_invalid(key, bad)
+        self.assert_invalid("GLOBAL/USE_LOCAL_TIME", 1, "Show local time instead of UTC.", "true", "false")
+        self.assert_invalid("MODULES/MAP_SAT_FOTPRINT", 1, "Satellite Footprint")
+
+    def test_str_rows(self):
+        orient = "MODULES/POLAR_CHART_ORIENT"
+        for o in mod.POLAR_ORIENTATIONS:
+            self.assertEqual(validate(orient, o), o)
+        for bad in ("n/e/s/w", "N/E/S/W ", "N/S/E/W", "", 0, None, ["N/E/S/W"]):
+            self.assert_invalid(orient, bad, "Orientation")
+        self.assert_invalid(orient, "x", "N/E/S/W, N/W/S/E, S/E/N/W, S/W/N/E")
+        file = "MODULES/MAP_FILE"
+        self.assertEqual(validate(file, "x" * 100), "x" * 100)
+        self.assertEqual(validate(file, "แผนที่.jpg"), "แผนที่.jpg")
+        self.assert_invalid(file, "x" * 101, "100")
+        for bad in (None, 5, ["a.jpg"]):
+            self.assert_invalid(file, bad)
+        proxy = "TLE/PROXY"
+        for ok in ("", "http://my.proxy.com", "http://user:pw@my.proxy.com:3128", "x" * 200):
+            self.assertEqual(validate(proxy, ok), ok)
+        for bad in ("x" * 201, "http://my proxy", " http://p", "http://p ", "http://a;http://b", "http://p\n", "http://p\tq",
+                    ";", "http://p\u3000q", None, 5, ["http://p"]):
+            with self.subTest(bad=bad):
+                err = self.assert_invalid(proxy, bad, "Proxy server")
+                self.assertRegex(err.text, r"[ก-๙]")
+
+    def test_list_and_single_columns(self):
+        key = "MODULES/LIST_COLUMNS"
+        self.assertEqual(validate(key, ["Orbit", "Satellite"]), ["Satellite", "Orbit"])      # เรียงตามลำดับคอลัมน์
+        self.assertEqual(validate(key, []), [])
+        self.assert_invalid(key, ["Satellite", "Bogus"], "List View", "Bogus")
+        self.assert_invalid(key, ["Azimuth"])                                              # ชื่อช่องของ Single sat ใช้ไม่ได้
+        key = "MODULES/SINGLE_SAT_FIELDS"
+        self.assertEqual(validate(key, ["Visibility", "Azimuth"]), ["Azimuth", "Visibility"])
+        self.assert_invalid(key, ["Az"], "Single Sat View")
+
+    def test_values_defaults_and_user_cover_the_new_keys(self):
+        p = self.prefs()
+        p.update({"GLOBAL/USE_IMPERIAL": True, "MODULES/MAP_QTH_COLOUR": 5, "TLE/PROXY": "http://p"}, [])
+        self.assertEqual(list(p.values()), list(PREFS))
+        self.assertEqual(p.values()["GLOBAL/USE_IMPERIAL"], True)
+        self.assertEqual(p.defaults()["GLOBAL/USE_IMPERIAL"], False)
+        self.assertEqual(p.user_keys(), ["GLOBAL/USE_IMPERIAL", "TLE/PROXY", "MODULES/MAP_QTH_COLOUR"])
+        self.assertEqual(self.prefs().get("TLE/PROXY"), "http://p")
+
+    def test_a_bad_new_value_in_the_file_falls_back_to_its_default(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps({"version": 1, "values": {"MODULES/MAP_QTH_COLOUR": 2 ** 32, "LOG/LEVEL": 4,
+                                                                  "TLE/URLS": ["ftp://x"]}}), encoding="utf-8")
+        with self.assertLogs("gpredict_web.prefs", "WARNING") as logs:
+            p = self.prefs()
+        self.assertEqual((p.get("MODULES/MAP_QTH_COLOUR"), p.get("LOG/LEVEL")), (0x00FFFFFF, 4))
+        self.assertEqual(p.get("TLE/URLS"), TLE_URLS)
+        self.assertEqual(len(logs.output), 2)
+
+    def test_pref_spec_has_optional_max_len_and_allowed(self):
+        self.assertEqual(PrefSpec("str", "", max_len=5), PrefSpec("str", "", None, None, None, 5))
+        self.assertEqual(PrefSpec("int", 1, allowed=(1, 2)), PrefSpec("int", 1, None, None, None, None, (1, 2)))
+        self.assertEqual(PrefSpec("str", "").max_len, None)
+        self.assertEqual(PrefSpec("int", 1).allowed, None)
+        with self.assertRaises(TypeError):                                   # label ยังต้องระบุด้วยชื่อ
+            PrefSpec("bool", True, None, None, None, None, None, "Label")
+        self.assertEqual(PrefSpec("bool", True, label="L").label, "L")
+
+
+class PrefsPreviewTest(PrefsTestCase):
+    """dry run ของ PUT /api/prefs: ค่าหลังเปลี่ยนโดยไม่เขียนและไม่แตะค่าที่ใช้อยู่"""
+
+    def test_preview_shows_the_values_after_update_without_writing(self):
+        p = self.prefs()
+        p.update({MIN_ELEV: 30, LOOK_AHEAD: 7}, [])
+        before = self.path.read_bytes()
+        view = p.preview({MIN_ELEV: 31, "GLOBAL/USE_NSEW": True}, [LOOK_AHEAD])
+        self.assertEqual(view.get(MIN_ELEV), 31)
+        self.assertEqual(view.get(LOOK_AHEAD), 3)
+        self.assertEqual(view.user_keys(), [MIN_ELEV, "GLOBAL/USE_NSEW"])
+        self.assertEqual(view.values()[MIN_ELEV], 31)
+        self.assertEqual(view.defaults(), p.defaults())
+        self.assertEqual((p.get(MIN_ELEV), p.get(LOOK_AHEAD), p.get("GLOBAL/USE_NSEW")), (30, 7, False))
+        self.assertEqual(p.user_keys(), [MIN_ELEV, LOOK_AHEAD])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_preview_equals_what_update_then_gives(self):
+        set_, remove = {MIN_ELEV: 31, COLOUR_KEYS[0]: "#ABCDEF", SINGLE: ["El", "Time"]}, ["PREDICT/NUMBER_OF_PASSES"]
+        p = self.prefs()
+        p.update({"PREDICT/NUMBER_OF_PASSES": 20}, [])
+        view = p.preview(set_, remove)
+        p.update(set_, remove)
+        self.assertEqual(view.values(), p.values())
+        self.assertEqual(view.user_keys(), p.user_keys())
+
+    def test_preview_validates_like_update(self):
+        p = self.prefs()
+        for set_, remove in (({"PREDICT/NOPE": 1}, []), ({MIN_ELEV: 0}, []), ({}, ["PREDICT/NOPE"]), ({MIN_ELEV: 3}, [MIN_ELEV]),
+                             ({MIN_ELEV: 30, LOOK_AHEAD: 99}, [])):
+            with self.subTest(set_=set_, remove=remove):
+                with self.assertRaises(ApiError) as cm:
+                    p.preview(set_, remove)
+                self.assertEqual((cm.exception.code, cm.exception.status), ("PREFS_INVALID", 422))
+        self.assertFalse(self.path.exists())
+
+    def test_preview_does_not_create_the_file_and_cannot_be_updated(self):
+        p = self.prefs()
+        view = p.preview({MIN_ELEV: 30}, [])
+        self.assertFalse(self.path.exists())
+        with self.assertRaises(TypeError):
+            view.update({MIN_ELEV: 31}, [])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(p.get(MIN_ELEV), 5)
 
 
 if __name__ == "__main__":

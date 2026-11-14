@@ -3,6 +3,7 @@
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
   + GET/PUT /api/hwconf (Preferences → Interfaces: วิทยุและ rotator ตรวจและเก็บที่ hwconf.py)
+  PUT ทั้งสองรับ ?dry_run=true: ตรวจเหมือนจริงและตอบรูปเดียวกันแต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อนเขียนจริง)
   + POST /api/trsp/update และ GET /api/trsp/{norad} (Edit → Update transponder data และรายการ transponder ของดาว: trsp.py)
   + GET /api/controllers, POST /api/modules/{name}/target, /radio[/open|/close] และ /rotator[/open|/close] (Radio Control และ
     Antenna Control: controllers.py) PUT module ที่เปลี่ยน qth หรือ satellites ขณะ controller เปิดอยู่ตอบ 409 CONTROLLER_ACTIVE
@@ -408,9 +409,9 @@ def _prefs_dict(prefs: Prefs) -> dict:
     return {"values": prefs.values(), "defaults": prefs.defaults(), "user": prefs.user_keys()}
 
 
-def _hwconf_dict(hwconf: HwConf) -> dict:
-    """GET และ PUT /api/hwconf: วิทยุและ rotator ที่อ่านได้ เรียงตามชื่อ (key ของ Gpredict บวก name)"""
-    return {"radios": [radio_to_dict(r) for r in hwconf.radios()], "rotators": [rot_to_dict(r) for r in hwconf.rotators()]}
+def _hwconf_dict(radios, rotators) -> dict:
+    """GET และ PUT /api/hwconf: วิทยุและ rotator เรียงตามชื่อ (key ของ Gpredict บวก name)"""
+    return {"radios": [radio_to_dict(r) for r in radios], "rotators": [rot_to_dict(r) for r in rotators]}
 
 
 def _meta() -> dict:
@@ -887,14 +888,17 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         return _prefs_dict(prefs)
 
     @app.put("/api/prefs")
-    def put_prefs(body: dict = Body(...)):
-        """{"set": {key: ค่า}, "remove": [key]} (ไม่ใส่ = ว่าง) ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย"""
+    def put_prefs(body: dict = Body(...), dry_run: bool = Query(False)):
+        """{"set": {key: ค่า}, "remove": [key]} (ไม่ใส่ = ว่าง) ตรวจทุก key ก่อนเขียน ผิดตัวเดียวไม่เขียนเลย
+        ?dry_run=true: ตรวจเหมือนกันทุกอย่างและตอบรูปเดียวกัน (ค่าที่จะใช้หลังเขียน) แต่ไม่เขียนไฟล์ (OK ของ Preferences ตรวจทุกส่วนก่อน)"""
         set_ = body.get("set", {})
         remove = body.get("remove", [])
         if not isinstance(set_, dict):
             raise ApiError("PREFS_INVALID", 422, "ค่าที่จะตั้ง (set) ต้องเป็น object ที่มี key ของ Preferences เป็นชื่อ", "set")
         if not isinstance(remove, list) or not all(isinstance(k, str) for k in remove):
             raise ApiError("PREFS_INVALID", 422, "รายการที่จะลบ (remove) ต้องเป็นรายการชื่อ key ของ Preferences", "remove")
+        if dry_run:
+            return _prefs_dict(prefs.preview(set_, remove))
         prefs.update(set_, remove)
         return _prefs_dict(prefs)
 
@@ -902,18 +906,21 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/hwconf")
     def get_hwconf():
-        return _hwconf_dict(hwconf)
+        return _hwconf_dict(hwconf.radios(), hwconf.rotators())
 
     @app.put("/api/hwconf")
-    def put_hwconf(body: dict = Body(...)):
+    def put_hwconf(body: dict = Body(...), dry_run: bool = Query(False)):
         """{"radios": [...], "rotators": [...]} แทนทั้งชุด (ต้องมีทั้งสอง key ไม่งั้นการลืมส่งฝั่งหนึ่งจะลบอุปกรณ์ทั้งฝั่ง)
-        ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย"""
+        ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย
+        ?dry_run=true: ตรวจเหมือนกันทุกอย่างและตอบรูปเดียวกัน (ชุดที่จะอ่านได้หลังเขียน) แต่ไม่เขียนหรือลบไฟล์ใด"""
         radios, rotators = body.get("radios"), body.get("rotators")
         for key, value in (("radios", radios), ("rotators", rotators)):
             if not isinstance(value, list):
                 raise ApiError("HWCONF_INVALID", 422, f"รายการ {key} ต้องเป็นรายการของ object (ส่งมาทั้งชุดที่จะเก็บ)", key)
+        if dry_run:
+            return _hwconf_dict(*hwconf.preview(radios, rotators))
         hwconf.replace(radios, rotators)
-        return _hwconf_dict(hwconf)
+        return _hwconf_dict(hwconf.radios(), hwconf.rotators())
 
     # ---------------- Radio Control และ Antenna Control (spec §8)
 

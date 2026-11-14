@@ -881,6 +881,86 @@ class PrefsApiTest(ApiTestBase):
                 self.assert_error(self.client.put("/api/prefs", json=bad), 422, "PREFS_INVALID", obj)
         self.assertFalse(self.prefs_file.exists())
 
+    def test_put_prefs_dry_run_writes_nothing(self):
+        body = {"set": {"PREDICT/MINIMUM_ELEV": 30, "GLOBAL/USE_IMPERIAL": True, "MODULES/MAP_QTH_COLOUR": 0x11223344,
+                        "SKY_AT_GLANCE/COLOUR_01": "#ABCDEF"}, "remove": []}
+        before = self.client.get("/api/prefs").json()
+        r = self.client.put("/api/prefs?dry_run=true", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        dry = r.json()
+        self.assertEqual(list(dry), ["values", "defaults", "user"])                       # รูปเดียวกับ PUT จริง
+        self.assertEqual(dry["values"]["PREDICT/MINIMUM_ELEV"], 30)
+        self.assertIs(dry["values"]["GLOBAL/USE_IMPERIAL"], True)
+        self.assertEqual(dry["values"]["MODULES/MAP_QTH_COLOUR"], 0x11223344)
+        self.assertEqual(dry["values"]["SKY_AT_GLANCE/COLOUR_01"], "#abcdef")             # ปรับรูปแล้วเหมือนจริง
+        self.assertEqual(dry["defaults"], before["defaults"])
+        self.assertEqual(dry["user"], ["PREDICT/MINIMUM_ELEV", "SKY_AT_GLANCE/COLOUR_01", "GLOBAL/USE_IMPERIAL",
+                                       "MODULES/MAP_QTH_COLOUR"])
+        self.assertEqual(self.client.get("/api/prefs").json(), before)                    # ค่าเดิมยังอยู่
+        self.assertEqual(self.app.state.prefs.get("PREDICT/MINIMUM_ELEV"), 5)
+        self.assertFalse(self.prefs_file.exists())
+        # PUT จริงด้วย body เดียวกันได้คำตอบเดียวกับ dry run
+        real = self.client.put("/api/prefs", json=body)
+        self.assertEqual(real.status_code, 200, real.text)
+        self.assertEqual(real.json(), dry)
+        self.assertEqual(self.client.get("/api/prefs").json(), dry)
+
+    def test_put_prefs_dry_run_leaves_an_existing_file_byte_for_byte(self):
+        self.client.put("/api/prefs", json={"set": {"PREDICT/MINIMUM_ELEV": 30, "PREDICT/LOOK_AHEAD": 7}})
+        before, file_before = self.client.get("/api/prefs").json(), self.prefs_file.read_bytes()
+        r = self.client.put("/api/prefs?dry_run=true", json={"set": {"PREDICT/NUMBER_OF_PASSES": 25},
+                                                             "remove": ["PREDICT/MINIMUM_ELEV"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["values"]["PREDICT/MINIMUM_ELEV"], r.json()["values"]["PREDICT/NUMBER_OF_PASSES"]), (5, 25))
+        self.assertEqual(r.json()["user"], ["PREDICT/NUMBER_OF_PASSES", "PREDICT/LOOK_AHEAD"])
+        self.assertEqual(self.prefs_file.read_bytes(), file_before)
+        self.assertEqual(self.client.get("/api/prefs").json(), before)
+        self.assertEqual(sorted(p.name for p in self.cfg.data_dir.iterdir() if p.name.startswith("preferences")),
+                         ["preferences.json"])                                              # ไม่มีไฟล์ชั่วคราวค้าง
+
+    def test_put_prefs_dry_run_validates_like_a_real_put(self):
+        self.client.put("/api/prefs", json={"set": {"PREDICT/MINIMUM_ELEV": 30}})
+        before, file_before = self.client.get("/api/prefs").json(), self.prefs_file.read_bytes()
+        for bad, code, obj in (({"set": {"PREDICT/NUMBER_OF_PASSES": 20, "PREDICT/LOOK_AHEAD": 15}}, "PREFS_INVALID", "PREDICT/LOOK_AHEAD"),
+                               ({"set": {"MODULES/MAP_QTH_COLOUR": 2 ** 32}}, "PREFS_INVALID", "MODULES/MAP_QTH_COLOUR"),
+                               ({"set": {"TLE/URLS": []}}, "PREFS_INVALID", "TLE/URLS"),
+                               ({"set": {"PREDICT/NOPE": 1}}, "PREFS_INVALID", "PREDICT/NOPE"),
+                               ({"remove": ["PREDICT/NOPE"]}, "PREFS_INVALID", "PREDICT/NOPE"),
+                               ({"set": {"PREDICT/LOOK_AHEAD": 3}, "remove": ["PREDICT/LOOK_AHEAD"]}, "PREFS_INVALID", "PREDICT/LOOK_AHEAD"),
+                               ({"set": [1]}, "PREFS_INVALID", "set"), ({"remove": "x"}, "PREFS_INVALID", "remove")):
+            with self.subTest(bad=bad):
+                dry = self.client.put("/api/prefs?dry_run=true", json=bad)
+                real = self.client.put("/api/prefs", json=bad)
+                self.assert_error(dry, 422, code, obj)
+                self.assertEqual(dry.json(), real.json())                                 # ข้อความเดียวกับของจริง
+        self.assert_error(self.client.put("/api/prefs?dry_run=true", json=[1]), 422, "REQUEST_INVALID", None)
+        self.assertEqual(self.client.get("/api/prefs").json(), before)
+        self.assertEqual(self.prefs_file.read_bytes(), file_before)
+
+    def test_put_prefs_dry_run_flag_values(self):
+        for flag in ("false", "0", "False"):
+            with self.subTest(dry_run=flag):
+                self.assertEqual(self.client.put(f"/api/prefs?dry_run={flag}", json={"set": {"PREDICT/LOOK_AHEAD": 7}}).status_code, 200)
+                self.assertEqual(self.app.state.prefs.get("PREDICT/LOOK_AHEAD"), 7)       # dry_run=false = PUT จริง
+                self.client.put("/api/prefs", json={"remove": ["PREDICT/LOOK_AHEAD"]})
+        self.assertEqual(self.client.put("/api/prefs?dry_run=1", json={"set": {"PREDICT/LOOK_AHEAD": 7}}).status_code, 200)
+        self.assertEqual(self.app.state.prefs.get("PREDICT/LOOK_AHEAD"), 3)
+        self.assert_error(self.client.put("/api/prefs?dry_run=maybe", json={"set": {"PREDICT/LOOK_AHEAD": 7}}), 422,
+                          "REQUEST_INVALID", "dry_run")
+        self.assertEqual(self.app.state.prefs.get("PREDICT/LOOK_AHEAD"), 3)               # ค่าผิดไม่เขียนเช่นกัน
+
+    def test_put_prefs_accepts_the_data_keys(self):
+        body = {"set": {"TLE/URLS": ["http://server.com/file.txt"], "LOG/CLEAN_AGE": 604800, "MODULES/GRID": "1;0;2;0;1",
+                        "MODULES/POLAR_CHART_ORIENT": "S/E/N/W", "MODULES/LIST_COLUMNS": ["Orbit", "Satellite"]}}
+        r = self.client.put("/api/prefs", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        values = r.json()["values"]
+        self.assertEqual((values["TLE/URLS"], values["LOG/CLEAN_AGE"], values["MODULES/GRID"]),
+                         (["http://server.com/file.txt"], 604800, "1;0;2;0;1"))
+        self.assertEqual((values["MODULES/POLAR_CHART_ORIENT"], values["MODULES/LIST_COLUMNS"]), ("S/E/N/W", ["Satellite", "Orbit"]))
+        self.assertEqual(len(values["TLE/URLS"]), 1)
+        self.assertEqual(len(r.json()["defaults"]["TLE/URLS"]), 11)
+
     def test_put_prefs_twilight_threshold_changes_the_open_module_tick(self):
         """Hub ของ app ได้ Prefs ตัวเดียวกับ /api/prefs: ตั้ง Twilight threshold แล้ว tick ถัดไปของ module ที่เปิดอยู่ใช้ค่าใหม่"""
         dusk, t = dusk_station(NORADS[0], -8.0)                          # ดวงอาทิตย์ที่ QTH −8° ดาวอยู่เหนือขอบฟ้า
@@ -983,6 +1063,68 @@ class HwconfApiTest(ApiTestBase):
             with self.subTest(body=bad):
                 self.assert_error(self.client.put("/api/hwconf", json=bad), 422, "REQUEST_INVALID", None)
         self.assertEqual(self.hwconf_files(), files)
+
+    def test_put_hwconf_dry_run_writes_nothing(self):
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        self.app.state.hwconf.save_radio_cycle("DUMMY", 500)
+        self.app.state.hwconf.save_rotator_runtime("ROT", 200, 2.5)
+        before, files = self.client.get("/api/hwconf").json(), self.hwconf_files()
+        body = {"radios": [{**HW_RADIO, "Port": 4600}, {**HW_RADIO, "name": "AAA", "Type": 0, "PTT": 2}],
+                "rotators": [{**HW_ROTATOR, "Cycle": 77, "Threshold": 9.0, "MaxEl": 80.0}, {**HW_ROTATOR, "name": "NEWROT"}]}
+        r = self.client.put("/api/hwconf?dry_run=true", json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        dry = r.json()
+        self.assertEqual(list(dry), ["radios", "rotators"])
+        self.assertEqual([x["name"] for x in dry["radios"]], ["AAA", "DUMMY"])                 # เรียงตามชื่อเหมือนจริง
+        self.assertEqual(dry["radios"][1]["Port"], 4600)
+        self.assertEqual(dry["radios"][1]["Cycle"], 500)                                       # Cycle ใช้ค่าในไฟล์เดิม
+        self.assertEqual(dry["radios"][0]["Cycle"], 1000)                                      # อุปกรณ์ใหม่ได้ค่าตั้งต้น
+        self.assertNotIn("VFO_UP", dry["radios"][0])
+        self.assertEqual([x["name"] for x in dry["rotators"]], ["NEWROT", "ROT"])
+        self.assertEqual((dry["rotators"][1]["Cycle"], dry["rotators"][1]["Threshold"], dry["rotators"][1]["MaxEl"]),
+                         (200, 2.5, 80.0))                                                     # ไม่ใช้ Cycle/Threshold ใน body
+        self.assertEqual((dry["rotators"][0]["Cycle"], dry["rotators"][0]["Threshold"]), (1000, 5.0))
+        self.assertEqual(self.client.get("/api/hwconf").json(), before)                        # ของเดิมยังอยู่
+        self.assertEqual(self.hwconf_files(), files)
+        self.assertEqual(self.app.state.hwconf.radio("DUMMY").port, 4532)
+        # PUT จริงด้วย body เดียวกันได้คำตอบเดียวกับ dry run
+        real = self.client.put("/api/hwconf", json=body)
+        self.assertEqual(real.status_code, 200, real.text)
+        self.assertEqual(real.json(), dry)
+        self.assertNotEqual(self.hwconf_files(), files)
+
+    def test_put_hwconf_dry_run_on_a_fresh_install_creates_nothing(self):
+        r = self.client.put("/api/hwconf?dry_run=true", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        self.assertFalse(self.hwconf_dir.exists())
+        self.assertEqual(self.client.get("/api/hwconf").json(), {"radios": [], "rotators": []})
+
+    def test_put_hwconf_dry_run_validates_like_a_real_put(self):
+        self.client.put("/api/hwconf", json={"radios": [HW_RADIO], "rotators": [HW_ROTATOR]})
+        before, files = self.client.get("/api/hwconf").json(), self.hwconf_files()
+        for bad, obj in (({"radios": [{**HW_RADIO, "Port": 80}], "rotators": []}, "Port"),
+                         ({"radios": [], "rotators": [{**HW_ROTATOR, "MinAz": -201}]}, "MinAz"),
+                         ({"radios": [HW_RADIO, {**HW_RADIO, "name": "dummy"}], "rotators": []}, "name"),
+                         ({"radios": [{**HW_RADIO, "name": "bad name"}], "rotators": []}, "name"),
+                         ({"radios": [], "rotators": [HW_ROTATOR, HW_ROTATOR]}, "name"),
+                         ({}, "radios"), ({"radios": []}, "rotators"), ({"radios": [], "rotators": "x"}, "rotators"),
+                         ({"radios": [5], "rotators": []}, None)):
+            with self.subTest(body=bad):
+                dry = self.client.put("/api/hwconf?dry_run=true", json=bad)
+                real = self.client.put("/api/hwconf", json=bad)
+                self.assert_error(dry, 422, "HWCONF_INVALID", obj)
+                self.assertEqual(dry.json(), real.json())                                      # รหัสและข้อความเดียวกับของจริง
+        self.assert_error(self.client.put("/api/hwconf?dry_run=true", json=[1]), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.client.put("/api/hwconf?dry_run=maybe", json={"radios": [], "rotators": []}), 422,
+                          "REQUEST_INVALID", "dry_run")
+        self.assertEqual(self.client.get("/api/hwconf").json(), before)
+        self.assertEqual(self.hwconf_files(), files)
+
+    def test_put_hwconf_dry_run_false_is_a_real_put(self):
+        r = self.client.put("/api/hwconf?dry_run=false", json={"radios": [HW_RADIO], "rotators": []})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(sorted(self.hwconf_files()), ["DUMMY.rig.json"])
 
     def test_get_hwconf_skips_a_broken_file(self):
         """แก้ไฟล์ด้วยมือจนพัง: GET ยังตอบได้ ข้ามไฟล์นั้นพร้อม log (ไม่ใช่ 500)"""

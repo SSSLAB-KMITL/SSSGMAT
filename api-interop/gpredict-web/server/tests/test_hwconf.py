@@ -298,6 +298,40 @@ class HwconfStoreTest(HwconfTestCase):
         self.assertEqual(self.read("A.rig.json")["Cycle"], 500)
         self.assertNotIn("Cycle", self.read("NEW.rig.json"))
 
+    def test_preview_gives_what_replace_would_read_without_touching_files(self):
+        """dry run ของ PUT /api/hwconf: ตรวจเหมือน replace ผลเหมือนที่อ่านได้หลัง replace แต่ไม่เขียนไม่ลบไฟล์ใดเลย"""
+        self.hw.replace([radio("A"), radio("B")], [rot("R")])
+        self.hw.save_radio_cycle("A", 500)
+        self.hw.save_rotator_runtime("R", 200, 2.5)
+        self.put("BROKEN.rig.json", "{not json")
+        self.put("notes.txt", "mine")
+        before = {name: (self.dir / name).read_bytes() for name in self.files()}
+        radios, rotators = [radio("Z", Type=0), radio("A", Port=4600, Cycle=77)], [rot("R", MinAz=-20.0, Threshold=9.0), rot("Q")]
+        with self.assertLogs(LOGGER, "WARNING"):                            # อ่านไฟล์เดิมเพื่อหา Cycle จึงเห็นไฟล์พังเหมือน replace
+            got_radios, got_rotators = self.hw.preview(radios, rotators)
+        self.assertEqual([r.name for r in got_radios], ["A", "Z"])           # เรียงตามชื่อ
+        self.assertEqual([r.name for r in got_rotators], ["Q", "R"])
+        self.assertEqual({name: (self.dir / name).read_bytes() for name in self.files()}, before)    # ไม่มีอะไรเปลี่ยน
+        self.assertEqual([r.name for r in self.hw.radios()], ["A", "B"])
+        self.hw.replace(radios, rotators)                                    # ไฟล์พังถูกจำไว้แล้วจึงไม่ log ซ้ำ
+        self.assertEqual((got_radios, got_rotators), (self.hw.radios(), self.hw.rotators()))
+        self.assertEqual((got_radios[0].cycle, got_radios[1].cycle), (500, 1000))
+        self.assertEqual((got_rotators[1].cycle, got_rotators[1].threshold, got_rotators[1].min_az), (200, 2.5, -20.0))
+
+    def test_preview_validates_like_replace(self):
+        self.hw.replace([radio("A")], [rot("R")])
+        before = {name: (self.dir / name).read_bytes() for name in self.files()}
+        for radios, rotators in (([radio("A", Port=1)], []), ([], [rot("R", MinAz=-500)]), ([radio("A"), radio("a")], []),
+                                 ([], [rot("R"), rot("r")]), ([5], []), ([], [None])):
+            with self.assertRaises(ApiError) as cm:
+                self.hw.preview(radios, rotators)
+            self.assertEqual((cm.exception.code, cm.exception.status), ("HWCONF_INVALID", 422))
+        self.assertEqual({name: (self.dir / name).read_bytes() for name in self.files()}, before)
+
+    def test_preview_on_a_fresh_install_creates_no_directory(self):
+        self.assertEqual(self.hw.preview([radio("A")], [rot("R")]), ([radio_from_dict(radio("A"))], [rot_from_dict(rot("R"))]))
+        self.assertFalse(self.dir.exists())
+
     def test_save_runtime(self):
         self.hw.replace([radio("A", Port=4600)], [rot("R", MinAz=-20.0)])
         self.hw.save_radio_cycle("A", 2000)

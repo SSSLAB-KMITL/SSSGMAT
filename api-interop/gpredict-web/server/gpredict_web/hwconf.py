@@ -387,24 +387,39 @@ class HwConf:
         """ทิ้งผลที่จำไว้หลังเขียน (ไม่พึ่งว่า mtime จะต่างจากครั้งก่อน)"""
         self._parsed = {RIG_SUFFIX: {}, ROT_SUFFIX: {}}
 
+    @staticmethod
+    def _checked(radios: list[dict], rotators: list[dict]) -> list[tuple[_Kind, list]]:
+        """ตรวจทุกตัวและชื่อซ้ำ (ผิดตัวเดียว raise 422 HWCONF_INVALID) แล้วคืนชุดใหม่แยกตามชนิด"""
+        new = [(_RADIO, [radio_from_dict(d) for d in radios]), (_ROTATOR, [rot_from_dict(d) for d in rotators])]
+        for kind, confs in new:
+            _reject_duplicates(confs, kind)
+        return new
+
+    def _with_runtime_values(self, new: list[tuple[_Kind, list]]) -> list[tuple[_Kind, list]]:
+        """ชุดใหม่ที่ใช้ Cycle และ Threshold ในไฟล์เดิมของชื่อเดียวกัน (อุปกรณ์ใหม่ได้ 1000 และ 5.0) ผู้เรียกถือ lock"""
+        out = []
+        for kind, confs in new:
+            old = {c.name: c for c in self._confs(kind)}
+            kept = []
+            for c in confs:
+                before = old.get(c.name)
+                keep = {"cycle": before.cycle if before else CYCLE_DEFAULT_MS}
+                if kind is _ROTATOR:
+                    keep["threshold"] = before.threshold if before else THRESHOLD_DEFAULT_DEG
+                kept.append(dataclasses.replace(c, **keep))
+            out.append((kind, kept))
+        return out
+
     def replace(self, radios: list[dict], rotators: list[dict]) -> None:
         """แทนทั้งชุด: ตรวจทุกตัวและชื่อซ้ำก่อน (ผิดตัวเดียว raise 422 HWCONF_INVALID และไม่แตะไฟล์ใดเลย) แล้วเขียนทุกไฟล์
         แล้วลบไฟล์ .rig.json/.rot.json ที่ชื่อไม่อยู่ในชุด (รวมไฟล์ที่พัง) Cycle และ Threshold ใน dict ถูกละเสมอ ใช้ค่าในไฟล์เดิมของชื่อเดียวกัน
         (อุปกรณ์ใหม่ได้ 1000 และ 5.0) เขียนไฟล์ไม่สำเร็จ: raise OSError"""
-        new = [(_RADIO, [radio_from_dict(d) for d in radios]), (_ROTATOR, [rot_from_dict(d) for d in rotators])]
-        for kind, confs in new:
-            _reject_duplicates(confs, kind)
+        new = self._checked(radios, rotators)
         with self._lock:
             try:
                 written: list[Path] = []
-                for kind, confs in new:
-                    old = {c.name: c for c in self._confs(kind)}
-                    for c in confs:
-                        before = old.get(c.name)
-                        keep = {"cycle": before.cycle if before else CYCLE_DEFAULT_MS}
-                        if kind is _ROTATOR:
-                            keep["threshold"] = before.threshold if before else THRESHOLD_DEFAULT_DEG
-                        written.append(self._write(kind, dataclasses.replace(c, **keep)))
+                for kind, confs in self._with_runtime_values(new):
+                    written.extend(self._write(kind, c) for c in confs)
                 for kind, confs in new:
                     names = {c.name for c in confs}
                     for filename in self._filenames(kind):
@@ -415,6 +430,14 @@ class HwConf:
                             path.unlink(missing_ok=True)
             finally:
                 self._forget()
+
+    def preview(self, radios: list[dict], rotators: list[dict]) -> tuple[list[RadioConf], list[RotConf]]:
+        """(ของเรา) dry run ของ replace: ตรวจเหมือนกันทุกอย่าง แล้วคืน (วิทยุ, rotator) ที่จะอ่านได้หลัง replace เรียงตามชื่อ
+        ไม่เขียนและไม่ลบไฟล์ใด (OK ของ Preferences ตรวจทุกส่วนก่อนเขียนจริง)"""
+        new = self._checked(radios, rotators)
+        with self._lock:
+            (_, radio_confs), (_, rot_confs) = self._with_runtime_values(new)
+        return sorted(radio_confs, key=lambda c: c.name), sorted(rot_confs, key=lambda c: c.name)
 
     def save_radio_cycle(self, name: str, cycle: int) -> None:
         """หน้าต่าง Radio Control ปิด: เก็บ Cycle ปัจจุบันลงไฟล์ของ "1. Device" (ref-R §9.3) ไม่มีไฟล์ (ผู้ใช้ลบอุปกรณ์แล้ว) = ไม่ทำอะไร"""

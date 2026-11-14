@@ -58,11 +58,25 @@ TRACK_ORBITS_RANGE = (1, 10)
 TRACK_ORBITS_DEFAULT = 3
 CENTER_LON_RANGE = (-180, 180)
 CENTER_LON_DEFAULT = 0
+DEFAULT_MAP = "nasa-bmng-07_1024.jpg"              # ภาพพื้นหลังตั้งต้น (ref-D §11, sat-cfg.c MAP_FILE)
+MAP_SHADOW_DEFAULT = 0xDD                          # "Shadow:" ความทึบของเงาใต้ดาว 0-255 (ref §5)
+# สีตั้งต้นของ Map view เป็น 0xRRGGBBAA (ref §5, sat-cfg.c) ต้องเท่ากับ MAP_COLORS ใน web/src/colors.ts ชื่อสีตามไฟล์นั้น
+MAP_COLOURS_DEFAULT = {
+    "infoFg": 0x00FF00FF, "infoBg": 0x000000FF, "groundStation": 0x00FFFFFF, "satellite": 0xF0F000FF,
+    "selected": 0xFFFFFFFF, "footprint": 0xFFFFFF1F, "grid": 0x7F7F7FC8, "terminator": 0xFFFF0080,
+    "earthShadow": 0x00000060, "tick": 0x7F7F7FC8, "track": 0xFF1200BB,
+}
 
 # §6 Polar view
 POLAR_ORIENTATIONS = ("N/E/S/W", "N/W/S/E", "S/E/N/W", "S/W/N/E")
 POLAR_CONTENTS = ("Satellite Name", "Satellite Marker", "QTH Info", "Next Event", "Cursor Position", "Extra Az Ticks")
 POLAR_DEFAULT_OFF = {"Extra Az Ticks"}
+POLAR_AUTO_SKYTRACK_DEFAULT = False                # "Show the sky tracks automatically"
+# สีตั้งต้นของ Polar view เป็น 0xRRGGBBAA (ref §6) ต้องเท่ากับ POLAR_COLORS ใน web/src/colors.ts
+POLAR_COLOURS_DEFAULT = {
+    "background": 0xFFFFFFFF, "axes": 0x0F0F0F7F, "tick": 0x007F00FF, "satellite": 0x8F0000FF,
+    "selected": 0xFF0D0BFF, "track": 0x0000FFFF, "info": 0x00007FFF,
+}
 
 # §7 Single-sat view: (ชื่อช่อง, hint)
 _SINGLE = (
@@ -133,7 +147,7 @@ def _default_map() -> dict:
 
 def _default_polar() -> dict:
     return {"orientation": POLAR_ORIENTATIONS[0], "contents": _default_contents(POLAR_CONTENTS, POLAR_DEFAULT_OFF),
-            "auto_skytrack": False}
+            "auto_skytrack": POLAR_AUTO_SKYTRACK_DEFAULT}
 
 
 @dataclass
