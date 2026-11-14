@@ -152,12 +152,23 @@ export function propsChange(initial: ModuleProps, draft: ModuleProps): (config: 
 
 // ---------------------------------------------------------------- the paths of the server (meta.module_keys)
 
-/** The keys into ModuleProps of a path of the server's ("map.contents.Grid Lines"); Single Sat's fields are `single_fields` here. */
-function propsKeys(path: string): string[] {
-  if (path === "single.fields") return ["single_fields"];
+/** The keys into a ModuleConfig of a path of the server's ("map.contents.Grid Lines" → map, contents, Grid Lines). */
+function pathKeys(path: string): string[] {
   const [head, ...rest] = path.split(".");
   // (the last part is a name, which may have a space; the server's paths have at most three parts)
   return rest.length <= 1 ? [head!, ...rest] : [head!, rest[0]!, rest.slice(1).join(".")];
+}
+
+/** The keys into ModuleProps of a path of the server's; Single Sat's fields are `single_fields` here. */
+const propsKeys = (path: string): string[] => (path === "single.fields" ? ["single_fields"] : pathKeys(path));
+
+/** `obj` with the value at `keys` replaced by `value`: the objects on the way are copies, everything else is shared. */
+function setIn<T>(obj: T, keys: readonly string[], value: unknown): T {
+  const put = (o: unknown, [key, ...rest]: readonly string[]): unknown => {
+    const r = isRecord(o) ? o : {};
+    return { ...r, [key!]: rest.length === 0 ? value : put(r[key!], rest) };
+  };
+  return put(obj, keys) as T;
 }
 
 /** The value at `path` (a path of `meta.module_keys`) in the properties; undefined for one they do not hold (the event list's refresh). */
@@ -172,12 +183,7 @@ export function propsValue(props: ModuleProps, path: string): unknown {
 
 /** `props` with the value at `path` replaced by `value`: the objects on the path are copies, everything else is shared. */
 export function withPropsValue(props: ModuleProps, path: string, value: unknown): ModuleProps {
-  const put = (obj: unknown, keys: readonly string[]): unknown => {
-    const [key, ...rest] = keys;
-    const o = isRecord(obj) ? obj : {};
-    return { ...o, [key!]: rest.length === 0 ? value : put(o[key!], rest) };
-  };
-  return put(props, propsKeys(path)) as ModuleProps;
+  return setIn(props, propsKeys(path), value);
 }
 
 /**
@@ -222,7 +228,7 @@ const FIELD_PAGES: Partial<Record<PropsTab, (p: ModuleProps) => unknown>> = {
 };
 
 export interface PropsSave {
-  /** the change of the configuration (`propsChange`) */
+  /** the change of the configuration: every value of the pages pinned or unpinned as the dialog shows it, the rest `propsChange` */
   change: (config: ModuleConfig) => ModuleConfig;
   /** the paths of the pages that were changed: the module keeps all of the page's values as its own */
   pin: string[];
@@ -231,10 +237,14 @@ export interface PropsSave {
 }
 
 /**
- * OK of Module properties as a save of the module (ref-D §10 "What OK writes"): the change of the values that differ, and for each
- * page in the order of the notebook: a dirty page pins all its paths, even the values left as they were; a page that was Reset and
- * is not dirty unpins them; a page the user did not touch is neither (a value it inherits goes on being inherited). List View and
- * Single Sat View are dirty only while their fields differ from `initial`, so ticking a box and clearing it again changes nothing.
+ * OK of Module properties as a save of the module (ref-D §10 "What OK writes"), for each page in the order of the notebook: a dirty
+ * page pins all its paths, even the values left as they were; a page that was Reset and is not dirty unpins them; a page the user did
+ * not touch is neither (a value it inherits goes on being inherited). List View and Single Sat View are dirty only while their fields
+ * differ from `initial`, so ticking a box and clearing it again changes nothing.
+ *
+ * The change writes every value of a pinned or unpinned page from `draft`, what the dialog showed, and not only the differences: the
+ * configuration it is applied to may hold an inherited value the page read before the global one changed, and a pin must never keep
+ * that one (plan decision 3). Other pages get only what differs (`propsChange`).
  */
 export function propsSave(
   initial: ModuleProps,
@@ -250,16 +260,23 @@ export function propsSave(
     if (dirty.has(id) && (fields === undefined || !same(fields(initial), fields(draft)))) pin.push(...pagePaths(id, meta));
     else if (reset.has(id)) unpin.push(...pagePaths(id, meta));
   }
-  return { change: propsChange(initial, draft), pin, unpin };
+  const differences = propsChange(initial, draft);
+  const written = [...pin, ...unpin];
+  const change =
+    written.length === 0
+      ? differences
+      : (config: ModuleConfig) =>
+          written.reduce((c, path) => setIn(c, pathKeys(path), structuredClone(propsValue(draft, path))), differences(config));
+  return { change, pin, unpin };
 }
 
 /**
  * The pins of Create new module, also over a closed module of that name: the paths of `pin` (the pages the user changed) and every
- * other path unpinned, so that the module has only what it was given, as Gpredict's new .mod file (mod-cfg.c:769-824), and keeps
- * nothing of the file it replaces.
+ * other path of `meta.module_keys` unpinned (the event list's refresh too, which no page has but an old file can), so that the module
+ * has only what it was given, as Gpredict's new .mod file (mod-cfg.c:769-824), and keeps nothing of the file it replaces.
  */
 export function newModulePins(pin: readonly string[], meta: Meta): { pin: string[]; unpin: string[] } {
-  const all = PROPS_TABS.flatMap((t) => pagePaths(t.id, meta));
+  const all = Object.values(meta.module_keys).flatMap((page) => Object.keys(page));
   return { pin: [...pin], unpin: all.filter((path) => !pin.includes(path)) };
 }
 

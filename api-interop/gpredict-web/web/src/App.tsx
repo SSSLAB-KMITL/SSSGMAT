@@ -146,24 +146,6 @@ function Main({ onStopped }: { onStopped: () => void }) {
     void reloadModules();
   }, [reloadModules]);
 
-  // the events of the program (/ws/app, spec §12): the page follows what changes on the server, from another browser tab too. Events sent
-  // while the socket was not connected are lost, so the page reads again every time it connects. A read that fails (the server is
-  // going away) leaves what the page holds: the socket's reconnect reads again.
-  useEffect(
-    () =>
-      connectAppEvents({
-        connected: () => {
-          void reloadModules();
-          reloadPrefs().catch(() => {});
-        },
-        prefsChanged: () => void reloadPrefs().catch(() => {}),
-        modulesChanged: () => void reloadModules(),
-        // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
-        tleOld: setTleOld,
-      }),
-    [reloadModules],
-  );
-
   /**
    * Show the windows of the controllers the server has open (GET /api/controllers), at page load and after every open and close
    * (decision 2 of the plan). Only the answer of the last request counts: an older one can miss a controller this page has just opened.
@@ -199,6 +181,30 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const { tick, connected, closeCode } = useModuleSocket(current);
   const satNames = useSeenNames(current, tick);
   const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current);
+
+  // the events of the program (/ws/app, spec §12): the page follows what changes on the server, from another browser tab too. Events sent
+  // while the socket was not connected are lost, so the page reads again every time it connects. A read that fails (the server is
+  // going away) leaves what the page holds: the socket's reconnect reads again. New Preferences also read the shown module's
+  // configuration again: the server resolves the values the module inherits when it is read, so the copy the page holds would keep
+  // the old global ones, which Module properties would show and could pin (each read only replaces the copy: reading twice is harmless).
+  useEffect(
+    () =>
+      connectAppEvents({
+        connected: () => {
+          void reloadModules();
+          reloadPrefs().catch(() => {});
+          reloadConfig();
+        },
+        prefsChanged: () => {
+          reloadPrefs().catch(() => {});
+          reloadConfig();
+        },
+        modulesChanged: () => void reloadModules(),
+        // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
+        tleOld: setTleOld,
+      }),
+    [reloadModules, reloadConfig],
+  );
 
   // the selection, Autotrack and the Sky at a glance window of a module that is not open any more are forgotten
   useEffect(() => {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, errorText, getModules, getQthList, getSatellite, getTleGroups, openModule, putModule } from "../api";
+import { ApiError, errorText, getModule, getModules, getQthList, getSatellite, getTleGroups, openModule, putModule } from "../api";
 import {
   editModuleChange,
+  editOpening,
   hasModuleChanges,
   newModuleConfig,
   NO_SATS_ERROR,
@@ -12,7 +13,7 @@ import {
 } from "../moduleForm";
 import type { ModuleDraft, SelectedSat } from "../moduleForm";
 import { MODULE_NAME_MAX, NAME_TIP, sanitizeModuleName } from "../moduleName";
-import { newModulePins, NO_MARKS, propsOf, propsSave } from "../moduleProps";
+import { newModulePins, NO_MARKS, propsSave } from "../moduleProps";
 import type { ModuleProps, PropsMarks } from "../moduleProps";
 import { useNumberFormat } from "../numfmt";
 import { globalProps } from "../prefs/modulesPrefs";
@@ -71,10 +72,8 @@ export function ModuleDialog({ target, onClose }: Props) {
   const editing = target.kind === "edit";
   const config = target.kind === "edit" ? target.config : null;
 
-  // what the dialog opened with (Edit module): the changes are the differences from this
-  const [initial] = useState<ModuleDraft | null>(() =>
-    config === null ? null : { qth: config.qth, satellites: [...config.satellites], props: propsOf(config) },
-  );
+  // what the dialog opened with (Edit module): the changes are the differences from this; null until the module has been read again
+  const [initial, setInitial] = useState<ModuleDraft | null>(null);
 
   const [name, setName] = useState(config?.name ?? "");
   const [qth, setQth] = useState<string | null>(config?.qth ?? null);
@@ -114,6 +113,21 @@ export function ModuleDialog({ target, onClose }: Props) {
     };
   }, []);
 
+  // Edit module: the properties as the server resolves them now (`editOpening`): the page's copy can hold the global values of when
+  // the module was loaded, which Module properties would show and pin. Properties and OK wait for it; a failure is shown and they stay off.
+  useEffect(() => {
+    if (config === null) return;
+    let alive = true;
+    getModule(config.name).then(
+      (fresh) => alive && setInitial(editOpening(config, fresh)),
+      (e: unknown) => alive && setFailure(errorText(e)),
+    );
+    return () => {
+      alive = false;
+    };
+    // (only for the configuration the dialog opened with)
+  }, []);
+
   // Edit module: the module keeps NORAD numbers, the list shows names
   useEffect(() => {
     if (config === null) return;
@@ -135,8 +149,8 @@ export function ModuleDialog({ target, onClose }: Props) {
   const choices = useMemo(() => qthChoices(qth !== null && !qthNames.includes(qth) ? [...qthNames, qth] : qthNames), [qthNames, qth]);
   // the global values (Preferences → Modules): what a new module inherits, and what Reset in Module properties loads
   const global = useMemo(() => (meta === null || prefs === null ? null : globalProps(prefs.values, meta)), [meta, prefs]);
-  /** the properties before Module properties changed them: the module's, or for a new module the global ones */
-  const opened = initial?.props ?? global;
+  /** the properties before Module properties changed them: the module's (once read), or for a new module the global ones */
+  const opened = editing ? (initial?.props ?? null) : global;
   const props = edited ?? opened;
 
   const finish = async (confirmed: boolean) => {
@@ -255,7 +269,7 @@ export function ModuleDialog({ target, onClose }: Props) {
             <b className="props-header">Satellites</b>
             <SatSelector groups={groups} selected={sats} onChange={setSats} loading={!namesLoaded} />
           </fieldset>
-          {(meta === null || global === null) && <p className="dialog-text">กำลังโหลดค่าตั้งต้นของ module จาก server...</p>}
+          {(meta === null || global === null || opened === null) && <p className="dialog-text">กำลังโหลดค่าของ module จาก server...</p>}
           {failure !== null && (
             <p className="dialog-error" role="alert">
               {failure}

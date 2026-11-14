@@ -2,7 +2,7 @@
 // lists, and how the form becomes a configuration or a change of an open module's configuration. Pure; ModuleDialog.tsx shows it.
 
 import { isModuleName } from "./moduleName";
-import { applyProps, propsChange, propsEqual } from "./moduleProps";
+import { applyProps, propsChange, propsEqual, propsOf } from "./moduleProps";
 import type { ModuleProps, PropsSource } from "./moduleProps";
 import type { ModuleConfig, SatRecord, TleGroup } from "./types";
 import { compareNames } from "./views/cells";
@@ -150,6 +150,16 @@ export interface ModuleDraft {
   qth: string | null;
   satellites: readonly number[];
   props: ModuleProps;
+}
+
+/**
+ * What Edit module opens with: the ground station and the satellites of the page's configuration (with the saves still pending on it),
+ * and the properties of `fresh`, the module read from the server when the dialog opens. The server resolves an inherited value when it
+ * is read, so `fresh` has the current global values; the page's copy can still hold the ones of when the module was loaded, which
+ * Module properties must neither show nor pin (ref-D §10: a page shows the module's value, else the current global one).
+ */
+export function editOpening(config: ModuleConfig, fresh: ModuleConfig): ModuleDraft {
+  return { qth: config.qth, satellites: [...config.satellites], props: propsOf(fresh) };
 }
 
 /** The same satellites, whatever the order. */

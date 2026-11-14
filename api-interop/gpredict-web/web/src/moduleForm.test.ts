@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS } from "./moduleDefaults.fixture";
+import { DEFAULTS, META } from "./moduleDefaults.fixture";
 import {
   addSat,
   availableSats,
   DEFAULT_QTH,
   editModuleChange,
+  editOpening,
   GROUP_ALL,
   groupOptions,
   hasModuleChanges,
@@ -17,7 +18,7 @@ import {
   tleGroupNames,
 } from "./moduleForm";
 import type { ModuleDraft, SelectedSat } from "./moduleForm";
-import { propsOf } from "./moduleProps";
+import { markEdited, NO_MARKS, propsOf, propsSave } from "./moduleProps";
 import type { ModuleConfig, SatRecord } from "./types";
 
 const sat = (norad: number, name: string): SelectedSat => ({ norad, name });
@@ -185,6 +186,33 @@ describe("editModuleChange (OK of Edit module: a change of the open module's con
   it("treats the same satellites in another order as no change", () => {
     const c = base();
     expect(hasModuleChanges(draftOf(c), { ...draftOf(c), satellites: [3, 2, 1] })).toBe(false);
+  });
+
+  it("opens with the page's ground station and satellites and with the properties as the server resolves them now", () => {
+    const page = base({ qth: "OTHER", satellites: [3, 1] });
+    const fresh = base({ qth: "THBK", satellites: [9] });
+    fresh.map.track_orbits = 5;
+    const d = editOpening(page, fresh);
+    expect([d.qth, d.satellites]).toEqual(["OTHER", [3, 1]]);
+    expect(d.props).toEqual(propsOf(fresh));
+    expect(d.satellites).not.toBe(page.satellites);
+  });
+
+  it("does not pin an old global value the page still holds (Preferences → Modules changed it after the module was read)", () => {
+    // M inherits MAP_TRACK_NUM: the page read 3, then the global became 5; Configure → Properties → Map, tick Cursor Position, OK, OK
+    const page = base(); // track_orbits 3, as read when the module was loaded
+    const fresh = base();
+    fresh.map.track_orbits = 5; // GET /api/modules/M when Edit module opens
+    const initial = editOpening(page, fresh);
+    expect(initial.props.map.track_orbits).toBe(5); // Properties shows the current global value, as Reset would
+    const props = structuredClone(initial.props);
+    props.map.contents["Cursor Position"] = true;
+    const marks = markEdited(NO_MARKS, "map");
+    const saving = propsSave(initial.props, props, marks.dirty, marks.reset, META);
+    expect(saving.pin).toContain("map.track_orbits");
+    const body = editModuleChange(initial, { ...initial, props }, saving.change)(page);
+    expect(body.map.track_orbits).toBe(5);
+    expect(body.map.contents["Cursor Position"]).toBe(true);
   });
 
   it("applies the change of the properties it is given (propsSave's) with the ground station", () => {

@@ -337,6 +337,34 @@ describe("propsSave (OK of Module properties: the change, and which pages are pi
     expect(s.change(c)).toBe(c);
   });
 
+  it("a dirty page writes all its values from the draft, not the out-of-date ones of the configuration it is applied to", () => {
+    // the dialog opened with the module as the server resolves it now (orbits 5, the new global value); the page still holds 3
+    const now = config();
+    now.map.track_orbits = 5;
+    now.map.colours.grid = 0x01020304;
+    const draft = propsOf(now);
+    draft.map.contents["Cursor Position"] = true;
+    const s = propsSave(propsOf(now), draft, new Set(["map"]), new Set(), META);
+    const stale = config(); // track_orbits 3, the default grid colour
+    stale.list_sort = { column: "El", ascending: false };
+    const c = s.change(stale);
+    expect(c.map.track_orbits).toBe(5); // untouched in the dialog, but pinned: the value the user saw
+    expect(c.map.colours.grid).toBe(0x01020304);
+    expect(c.map.contents["Cursor Position"]).toBe(true);
+    expect(c.list_sort).toEqual({ column: "El", ascending: false }); // what is not a pinned page stays as the configuration has it
+    expect(c.polar).toBe(stale.polar);
+  });
+
+  it("a page that was Reset shows the global values it goes back to, whatever the configuration held", () => {
+    const own = config();
+    own.polar.orientation = "S/W/N/E";
+    const draft = resetTab(propsOf(own), "polar", global());
+    const stale = config();
+    stale.polar.orientation = "N/W/S/E";
+    const c = propsSave(propsOf(own), draft, new Set(), new Set(["polar"]), META).change(stale);
+    expect(c.polar.orientation).toBe("S/E/N/W");
+  });
+
   it("pins and unpins several pages at once, page by page in the order of the notebook", () => {
     const marks = markReset(markEdited(markEdited(NO_MARKS, "single"), "layout"), "list");
     const draft = opened();
@@ -369,7 +397,9 @@ describe("newModulePins (Create new module: a fresh module, also over a closed o
     const { pin, unpin } = newModulePins(["layout_code"], META);
     expect(pin).toEqual(["layout_code"]);
     expect(unpin).not.toContain("layout_code");
-    const all = PROPS_TABS.flatMap((t) => pagePaths(t.id, META));
+    // every path of the server's, the event list's refresh too (no page has it, but an old file can)
+    expect(unpin).toContain("refresh.event");
+    const all = Object.values(META.module_keys).flatMap((page) => Object.keys(page));
     expect([...pin, ...unpin].sort()).toEqual([...all].sort());
   });
 });
