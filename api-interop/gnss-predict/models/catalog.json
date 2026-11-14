@@ -16,7 +16,7 @@
       "id": "gps-iif",
       "glb": "gps-iif/gps-iif.glb",
       "blocks": ["GPS-IIF"],
-      "size_m": [2.3, 16.63, 2.875],
+      "size_m": [2.3, 13.11, 2.889],
       "triangles": 3538,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",

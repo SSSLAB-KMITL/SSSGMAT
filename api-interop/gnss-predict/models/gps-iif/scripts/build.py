@@ -20,16 +20,18 @@ scene = pl.init_scene()
 # Dimensions (metres). official / derived / est.
 # Sources:
 #   - Boeing GPS IIF Fact Sheet & USAF Space Force sheets (bus 1.98 x 2.49 x 2.23 m)
+#   - ESA eoPortal & InsideGNSS (deployed solar array span 13.11 m / ~43.0 ft;
+#     Air & Space Forces Magazine lists 43.1 ft = 13.14 m)
 #   - Rodriguez-Solano et al. (2012, 2014) / IGS repro3 PROPBOXW.f (solar array 22.25 m^2)
 #   - InsideGNSS / ION GPS IIF L-band array (12 helical elements: 4 inner + 8 outer ring)
 # --------------------------------------------------------------------------------------
 BUS = (1.980, 2.490, 2.230)                 # official/literature (X, Y, Z) m
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
-N_PANELS = 3                                # 3 hinged panels per wing (Boeing GPS IIF)
-PANEL_L, PANEL_W, PANEL_T = 1.940, 1.880, 0.025  # 3 * 1.94 * 1.88 = 10.94 m^2/wing (~22.25 m^2 total)
-PANEL_GAP = 0.050                           # est. inter-panel hinge gap
-YOKE_LEN = 1.150                            # derived from span (~16.63 m tip-to-tip)
+N_PANELS = 3                                # official: 3 hinged panels per wing (Boeing GPS IIF)
+PANEL_L, PANEL_W, PANEL_T = 1.600, 2.318, 0.025  # derived: 2 * 3 * 1.600 * 2.318 = 22.25 m^2 (PROPBOXW.f), fitted to 13.11 m span
+PANEL_GAP = 0.030                           # est. inter-panel hinge gap
+YOKE_LEN = 0.450                            # derived: 2 * (1.245 + 0.450 + 3*1.600 + 2*0.030) = 13.110 m span
 SADM_X, SADM_Z = 0.0, -0.15                 # est. from Boeing GPS IIF drawings
 
 INNER_RING_R = 0.250                        # 4 inner L-band helical elements (derived from deck size)
