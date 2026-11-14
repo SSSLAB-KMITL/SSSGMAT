@@ -1,6 +1,7 @@
 // สวิตช์ต่อแหล่งและรายการชั้นภาพออนไลน์ของหน้าเว็บ (spec imagery §5.1, spec ภาพละเอียด §2, §4, src/stores/imagery.ts)
 // - load = GET /api/imagery/layers ครั้งเดียวตอนเริ่มแอป ล้มเหลว = ปิดทุกแหล่งพร้อมคำเตือนไทย
 // - setSource(id, on) = GET /api/settings แล้ว PUT ทั้งเอกสารที่แก้แค่สวิตช์ของแหล่งนั้น (server ไม่รับเอกสารไม่ครบ)
+// - updateSettings(patch) = ตัวช่วยเดียวกันที่ setSource ใช้ (GET แล้ว PUT ทั้งเอกสารที่แก้ด้วย patch แล้วตั้งสวิตช์ตามเอกสารที่ server ตอบ) ใช้กับ token ของ Cesium ion ด้วย
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useImagery } from "../../src/stores/imagery";
@@ -155,5 +156,36 @@ describe("useImagery", () => {
     expect(warnings()).toHaveLength(1);
     expect(warnings()[0].text).toMatch(THAI);
     expect(warnings()[0].text).toContain("NASA GIBS");
+  });
+});
+
+describe("useImagery.updateSettings", () => {
+  test("reads the settings, PUTs the whole document changed by the patch, and takes every switch from the document the server answered", async () => {
+    // อีกเครื่อง/หน้าต่างเปิด eox ไว้ที่ server แล้ว: store ของสวิตช์ยังเป็นปิด การบันทึก token ต้องตามให้ทัน
+    const onServer = { ...SETTINGS, online_imagery: { enabled: false, eox: true, osm: false, ion: true } };
+    const f = stubFetch({ "GET /api/settings": { json: onServer }, "PUT /api/settings": (c) => ({ json: c.body }) });
+    await useImagery.getState().updateSettings((current) => ({ ...current, cesium_ion_token: "tok-new" }));
+    expect(f.calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /api/settings", "PUT /api/settings"]);
+    expect(f.calls[1].body).toEqual({ ...onServer, cesium_ion_token: "tok-new" });
+    expect(useImagery.getState().sources).toEqual({ gibs: false, eox: true, osm: false, ion: true });
+    expect(useSettings.getState().settings?.cesium_ion_token).toBe("tok-new");
+    expect(warnings()).toEqual([]);
+  });
+
+  test("a failed PUT throws, leaves the switches as they were and reports nothing (the caller shows it)", async () => {
+    useImagery.setState({ sources: { ...SOURCES_OFF, gibs: true } });
+    stubFetch({
+      "GET /api/settings": { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, eox: true } } },
+      "PUT /api/settings": { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } },
+    });
+    await expect(useImagery.getState().updateSettings((c) => ({ ...c, cesium_ion_token: "t" }))).rejects.toMatchObject({ text: "พัง" });
+    expect(useImagery.getState().sources).toEqual({ ...SOURCES_OFF, gibs: true });
+    expect(warnings()).toEqual([]);
+  });
+
+  test("a failed GET throws before any PUT", async () => {
+    const f = stubFetch({ "GET /api/settings": { status: 500, text: "boom" } });
+    await expect(useImagery.getState().updateSettings((c) => c)).rejects.toBeDefined();
+    expect(f.count("PUT /api/settings")).toBe(0);
   });
 });

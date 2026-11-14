@@ -4,7 +4,9 @@
 // - load: GET /api/imagery/layers ครั้งเดียวตอนเริ่มแอป (App.tsx) ล้มเหลว = ทุกแหล่งปิดไว้ (ไม่มีชั้นออนไลน์) พร้อมคำเตือนไทย
 //   สวิตช์ที่ไม่ใช่ true ตรง ๆ = ปิด ; ชั้นที่ไม่มี source = gibs (payload ก่อนมีช่องนี้) ; source ที่ไม่รู้จักทิ้ง
 //   ion เปิดอยู่ = อ่าน /api/settings ด้วย (token อยู่ใน cesium_ion_token ของ store ค่าตั้ง) อ่านไม่ได้ = คำเตือนไทย ชั้น ion รอจนอ่านได้
-// - setSource(id, on): GET /api/settings แล้ว PUT ทั้งเอกสาร (server ไม่รับเอกสารไม่ครบ) ที่แก้แค่สวิตช์ของแหล่งนั้น ผ่าน store ของค่าตั้ง
+// - updateSettings(patch): GET /api/settings แล้ว PUT ทั้งเอกสาร (server ไม่รับเอกสารไม่ครบ) ที่แก้ด้วย patch ผ่าน store ของค่าตั้ง แล้วตั้งสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ
+//   (ตัวช่วยเดียวสำหรับการบันทึกจาก Globe Manager: สวิตช์และ token ของ Cesium ion) ล้มเหลว = โยนต่อ ไม่รายงาน (ผู้เรียกแสดงเอง)
+// - setSource(id, on): updateSettings ที่แก้แค่สวิตช์ของแหล่งนั้น
 //   store ของค่าตั้งจึงถือค่าล่าสุด (Daily Forecast Settings ส่งค่าที่ store ถือคืนตอน Apply ไม่ทับสวิตช์กลับ) token และสวิตช์อื่นกลับไปตามที่อ่านมา
 //   สวิตช์ทุกแหล่งที่นี่ตามเอกสารที่ server ตอบ ล้มเหลว = สวิตช์คงค่าเดิม คำเตือนไทย (บอกชื่อแหล่ง) ใน Message Viewer แล้ว resolve (ผู้เรียกไม่ต้องแสดงซ้ำ)
 // ชั้นไหนแสดงและโปร่งแสงเท่าไร (Show, Translucency) และ asset ของ ion อยู่ใน workbook ของ scenario (useLayout.globe) ไม่ใช่ที่นี่
@@ -14,7 +16,7 @@ import { ApiError, apiGet, errorText } from "../api/client";
 import type { ImageryPeriod } from "../cesium/imageryTime";
 import { msg } from "../labels/messages.th";
 import { report } from "./messages";
-import { useSettings, type OnlineImagerySettings } from "./settings";
+import { useSettings, type OnlineImagerySettings, type Settings } from "./settings";
 
 export type { ImageryPeriod };
 
@@ -62,6 +64,8 @@ interface ImageryState {
   /** อ่านรายการจาก server สำเร็จแล้ว */
   loaded: boolean;
   load(): Promise<void>;
+  /** GET แล้ว PUT ทั้งเอกสารที่แก้ด้วย patch แล้วตั้งสวิตช์ตามเอกสารที่ server ตอบ ล้มเหลวโยนต่อ (สวิตช์และค่าเดิมไม่เปลี่ยน ไม่รายงาน) */
+  updateSettings(patch: (current: Settings) => Settings): Promise<void>;
   setSource(id: ImagerySourceId, on: boolean): Promise<void>;
 }
 
@@ -116,15 +120,19 @@ export const useImagery = create<ImageryState>()((set) => ({
     }
   },
 
+  updateSettings: async (patch) => {
+    const settings = useSettings.getState();
+    await settings.loadSettings();
+    const current = useSettings.getState().settings;
+    if (current === null) throw new Error("no settings");
+    await settings.saveSettings(patch(current));
+    const saved = useSettings.getState().settings;
+    if (saved !== null) set({ sources: fromSettings(saved.online_imagery) });
+  },
+
   setSource: async (id, on) => {
     try {
-      const settings = useSettings.getState();
-      await settings.loadSettings();
-      const current = useSettings.getState().settings;
-      if (current === null) throw new Error("no settings");
-      await settings.saveSettings({ ...current, online_imagery: { ...current.online_imagery, [SETTING_FIELD[id]]: on } });
-      const saved = useSettings.getState().settings;
-      if (saved !== null) set({ sources: fromSettings(saved.online_imagery) });
+      await useImagery.getState().updateSettings((current) => ({ ...current, online_imagery: { ...current.online_imagery, [SETTING_FIELD[id]]: on } }));
     } catch (e) {
       report("warning", codeOf(e, "IMAGERY_SAVE"), msg("imagery.saveFailed", { source: SOURCE_NAMES[id], message: errorText(e) }));
     }

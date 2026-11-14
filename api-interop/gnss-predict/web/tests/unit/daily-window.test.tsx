@@ -5,10 +5,12 @@ import { Dialogs } from "../../src/chrome/Dialogs";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { getPanelDef } from "../../src/layout/panels";
+import { useImagery } from "../../src/stores/imagery";
 import { useJobs, type JobEvent } from "../../src/stores/jobs";
 import { useMessages } from "../../src/stores/messages";
 import { useSettings } from "../../src/stores/settings";
 import { DailyForecastSettings, registerDailyForecastSettingsPanel } from "../../src/windows/DailyForecastSettings/DailyForecastSettings";
+import { GlobeManager } from "../../src/windows/GlobeManager/GlobeManager";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 import { deferred, stubFetch, type Handler } from "./helpers/fake-fetch";
 import { fakeFlow, type FakeFlow } from "./helpers/files";
@@ -815,6 +817,87 @@ describe("Run Now", () => {
     await user.click(apply());
     await waitFor(() => expect(puts(f)).toHaveLength(1));
     expect(f.count(RUN)).toBe(0);
+  });
+});
+
+describe("a token saved elsewhere while this window is open (Globe Manager)", () => {
+  /** server ที่จำเอกสารล่าสุด: GET ตอบสิ่งที่ PUT ครั้งก่อนบันทึก (ต่างจาก server() ที่ตอบค่าเดิมเสมอ) */
+  function statefulServer() {
+    let doc: unknown = SETTINGS;
+    return server({
+      "GET /api/settings": () => ({ json: doc }),
+      [PUT]: (call) => {
+        doc = call.body;
+        return { json: doc };
+      },
+    });
+  }
+
+  /** เปิดทั้งสองหน้าต่างพร้อมกัน (Daily อ่านค่าตั้งแล้วจึงถือ token เดิมไว้ในฟอร์ม) แล้วบันทึก token ใหม่จาก Globe Manager ด้วยหน้าต่างจริง */
+  async function saveTokenFromGlobeManager(newToken: string) {
+    const daily = await mounted();
+    useImagery.setState({ loaded: true, layers: [], sources: { gibs: false, eox: false, osm: false, ion: false } });
+    const globe = render(<GlobeManager params={{}} panelId="globeManager" />);
+    const field = within(globe.container).getByLabelText(t("field.cesiumToken")) as HTMLInputElement;
+    await user.type(field, newToken);
+    await user.click(within(globe.container).getByRole("button", { name: t("dialog.apply") }));
+    await waitFor(() => expect(useSettings.getState().settings?.cesium_ion_token).toBe(newToken));
+    await waitFor(() => expect(field.value).toBe(""));
+    return { daily, globe };
+  }
+
+  const dailyApply = (container: HTMLElement) => within(container).getByRole("button", { name: t("dialog.apply") }) as HTMLButtonElement;
+  const dailyToken = (container: HTMLElement) => within(container).getByLabelText(t("field.cesiumToken")) as HTMLInputElement;
+
+  test("editing another field and pressing Apply sends the token saved in the Globe Manager, not the one the form loaded", async () => {
+    const f = statefulServer();
+    const { daily } = await saveTokenFromGlobeManager("tok-new");
+    expect(puts(f)).toHaveLength(1); // the Globe Manager's own save
+    await replace(within(daily.container).getByLabelText(t("field.retention")) as HTMLInputElement, "45");
+    await user.click(dailyApply(daily.container));
+    await waitFor(() => expect(puts(f)).toHaveLength(2));
+    expect((puts(f)[1].body as { cesium_ion_token: unknown }).cesium_ion_token).toBe("tok-new");
+    expect(puts(f)[1].body).toEqual({ daily: { ...SETTINGS.daily, retention_days: 45 }, cesium_ion_token: "tok-new", online_imagery: IMAGERY_OFF });
+    expect(useSettings.getState().settings?.cesium_ion_token).toBe("tok-new");
+  });
+
+  test("the token field follows the store while the user has not edited it, and that is not an edit (Apply stays off)", async () => {
+    statefulServer();
+    const { daily } = await saveTokenFromGlobeManager("tok-new");
+    expect(dailyToken(daily.container).value).toBe("tok-new");
+    expect(dailyApply(daily.container).disabled).toBe(true);
+  });
+
+  test("a token the user typed in this window is kept and sent when the store's token changes meanwhile", async () => {
+    const f = statefulServer();
+    const daily = await mounted();
+    await replace(dailyToken(daily.container), "typed-here");
+    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-elsewhere" } }));
+    expect(dailyToken(daily.container).value).toBe("typed-here");
+    await user.click(dailyApply(daily.container));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { cesium_ion_token: unknown }).cesium_ion_token).toBe("typed-here");
+  });
+
+  test("clearing the token in this window still sends the empty string after another window changed it", async () => {
+    const f = statefulServer();
+    const daily = await mounted();
+    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-elsewhere" } }));
+    await replace(dailyToken(daily.container), "");
+    await user.click(dailyApply(daily.container));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { cesium_ion_token: unknown }).cesium_ion_token).toBe("");
+  });
+
+  test("a token changed in the store after the other fields were edited reaches the PUT (the other edits stay)", async () => {
+    const f = statefulServer();
+    const daily = await mounted();
+    await replace(within(daily.container).getByLabelText(t("field.retention")) as HTMLInputElement, "45");
+    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-late" } }));
+    expect((within(daily.container).getByLabelText(t("field.retention")) as HTMLInputElement).value).toBe("45");
+    await user.click(dailyApply(daily.container));
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(puts(f)[0].body).toEqual({ daily: { ...SETTINGS.daily, retention_days: 45 }, cesium_ion_token: "tok-late", online_imagery: IMAGERY_OFF });
   });
 });
 

@@ -2,7 +2,9 @@
 // - ช่องครบทุกตัวของ §9.1: enabled, run_at_utc (HH:MM), facility (กติกาชื่อ object), retention_days 1-3650, validation_retry_hours 1-168,
 //   validation_give_up_days 1-365 และ Cesium Ion token (ช่องรหัสผ่าน) ตรวจก่อนส่งด้วยกติกาเดียวกับ server ข้อความไทยขึ้นที่ช่อง
 // - Apply = PUT /settings ทั้งก้อน (server ต้องการครบทุกช่อง) 422 ที่ field แบบ `daily.run_at_utc` ขึ้นที่ช่องนั้น (ขอบแดง) OK = Apply แล้วปิด
-// - `online_imagery` (สวิตช์ภาพออนไลน์ GIBS) ไม่ใช่ช่องของหน้าต่างนี้ แต่ PUT ต้องส่งครบทั้งเอกสาร: Apply ส่งค่าที่ store ถืออยู่คืนไปตามเดิมเสมอ ไม่เปิดและไม่ปิดให้
+// - `online_imagery` (สวิตช์ภาพออนไลน์ทั้งสี่แหล่ง) ไม่ใช่ช่องของหน้าต่างนี้ แต่ PUT ต้องส่งครบทั้งเอกสาร: Apply ส่งค่าที่ store ถืออยู่คืนไปตามเดิมเสมอ ไม่เปิดและไม่ปิดให้
+// - token ของ Cesium ion แก้ได้จาก Globe Manager ด้วย (บันทึกลง store ตัวเดียวกัน): ช่อง token ที่ผู้ใช้ยังไม่ได้แก้ในหน้าต่างนี้ตามค่าที่ store ถืออยู่เสมอ
+//   (store เปลี่ยนระหว่างที่หน้าต่างเปิดอยู่ = ช่องเปลี่ยนตาม และไม่นับเป็นการแก้) Apply จึงไม่ส่ง token เก่าที่ฟอร์มอ่านมาตอนเปิดไปทับ token ใหม่ ; token ที่ผู้ใช้พิมพ์เองในหน้านี้ถูกเก็บและส่งตามที่พิมพ์
 // - แสดงเวลาตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี = UTCG) สถานะมาจาก event `daily` ของ SSE (useJobs.daily) หรือ /health ตอนเปิดหน้าต่าง
 //   ที่อยู่ CSV = `<data_dir>/daily/latest.csv` แสดงเป็นข้อความ (data_dir มาจาก /health)
 // - ผู้ใช้ห้ามถูกดาวน์โหลดโดยไม่ยินยอม: การเปิดหน้าต่างไม่ดึงอะไร Apply ถามยืนยันก่อนเมื่อการบันทึกอาจให้ server เริ่มดาวน์โหลดเอง (เปิดงาน = ตรวจย้อนหลังจาก CDDIS เสมอ,
@@ -10,7 +12,7 @@
 //   (ไม่มี body = วันถัดไปตาม UTC) ใส่ job เป็น queued ใน useJobs; 409 (มี job ของวันนั้นอยู่แล้ว) ได้ข้อความไทย Run Now ใช้ค่าที่บันทึกแล้ว ไม่ใช่ค่าที่แก้ค้าง
 // - เปิดงานประจำวัน (enabled) แล้วแสดงคำเตือนไทยว่า ถ้า server เริ่มหลังเวลา run_at_utc (ก่อน 24:00 UTC) จะดาวน์โหลดทันที (server §9.3)
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, errorText } from "../../api/client";
 import { isObjectName } from "../../api/names";
 import { startJob } from "../../api/startJob";
@@ -176,6 +178,17 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
     };
   }, []);
 
+  // token ที่ store ถืออยู่ (Globe Manager บันทึกลง store ตัวนี้เหมือนกัน): ช่องที่ผู้ใช้ยังไม่ได้แก้ (ค่าในช่อง = ค่าฐาน) ตามไปทั้งฐานและช่อง ช่องที่แก้แล้วไม่ถูกแตะ
+  const storeToken = useSettings((s) => s.settings?.cesium_ion_token);
+  const baseToken = useRef(base.token);
+  baseToken.current = base.token;
+  useEffect(() => {
+    if (storeToken === undefined || storeToken === baseToken.current) return;
+    const before = baseToken.current;
+    setBase((b) => ({ ...b, token: storeToken }));
+    setDraft((d) => (d.token === before ? { ...d, token: storeToken } : d));
+  }, [storeToken]);
+
   const dirty = !sameDraft(draft, base);
   const ready = phase === "ready";
 
@@ -193,7 +206,8 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
     if (!dirty) return true;
     const current = useSettings.getState().settings;    // ค่าล่าสุดที่ store ถือ: ถ้าสวิตช์ภาพออนไลน์ถูกเปลี่ยนที่อื่นระหว่างที่หน้าต่างนี้เปิดอยู่ ไม่ถูกทับกลับ
     if (current === null) return false;
-    const result = validate(draft, current.online_imagery);
+    // token ที่ไม่ได้แก้ในหน้านี้ = ค่าที่ store ถืออยู่ตอนนี้ (กัน token ที่ฟอร์มอ่านมาตอนเปิดไปทับ token ที่บันทึกจากที่อื่นไปแล้ว)
+    const result = validate(draft.token === base.token ? { ...draft, token: current.cesium_ion_token } : draft, current.online_imagery);
     setErrors(result.errors);
     setGeneral(null);
     setNotice(null);

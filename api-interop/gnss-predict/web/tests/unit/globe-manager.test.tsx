@@ -7,7 +7,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Dialogs } from "../../src/chrome/Dialogs";
-import { setIonFailure, notifyIonListeners } from "../../src/cesium/ionState";
+import { getIonFailure, ionStatus, notifyIonListeners, setIonFailure } from "../../src/cesium/ionState";
 import { ION_PRESETS } from "../../src/cesium/ionAssets";
 import { COMMAND_LABELS, isEnabled, isRegistered, runCommand } from "../../src/commands";
 import { t, type LabelKey } from "../../src/labels/labels";
@@ -609,6 +609,53 @@ describe("Cesium ion: switching on", () => {
     expect(useLayout.getState().globe.ion.assetId).toBeNull();
   });
 
+  test("turning ion off forgets that ion refused the asset and token, so turning it on again tries again (even with no 3D window open)", async () => {
+    const on = { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, ion: true } };
+    const f = server({ [GET_SETTINGS]: { json: on } });
+    useImagery.setState({ sources: { ...SOURCES_OFF, ion: true } });
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: FIRST_PRESET.id } } });
+    setIonFailure({ assetId: FIRST_PRESET.id, token: "tok-abc" });
+    mount();
+    expect(ionStatus()).toEqual({ kind: "failed", assetId: FIRST_PRESET.id });
+    expect(groupOf("ion").getByText(msg("globe.ionRejected"))).toBeDefined();
+    await user.click(sourceSwitch("ion"));
+    await waitFor(() => expect(useImagery.getState().sources.ion).toBe(false));
+    expect(getIonFailure()).toBeNull();
+    // เปิดอีกครั้ง (ยืนยัน) : ion ไม่ใช่ "ถูกปฏิเสธ" แล้ว = ลองแสดงใหม่ (shown) และคำอธิบายการปฏิเสธหายไป
+    server({ [GET_SETTINGS]: { json: { ...on, online_imagery: IMAGERY_OFF } } });
+    await user.click(sourceSwitch("ion"));
+    await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(useImagery.getState().sources.ion).toBe(true));
+    expect(ionStatus()).toEqual({ kind: "shown", assetId: FIRST_PRESET.id });
+    expect(screen.queryByText(msg("globe.ionRejected"))).toBeNull();
+    expect(puts(f)).toHaveLength(1);
+  });
+
+  test("a failed save of turning ion off keeps the refusal (ion is still on)", async () => {
+    const on = { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, ion: true } };
+    server({ [GET_SETTINGS]: { json: on }, [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } });
+    useImagery.setState({ sources: { ...SOURCES_OFF, ion: true } });
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: FIRST_PRESET.id } } });
+    setIonFailure({ assetId: FIRST_PRESET.id, token: "tok-abc" });
+    mount();
+    await user.click(sourceSwitch("ion"));
+    await waitFor(() => expect(useMessages.getState().items.filter((m) => m.level === "warning")).toHaveLength(1));
+    expect(useImagery.getState().sources.ion).toBe(true);
+    expect(getIonFailure()).toEqual({ assetId: FIRST_PRESET.id, token: "tok-abc" });
+  });
+
+  test("turning another source off does not touch the ion refusal", async () => {
+    const on = { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, eox: true, ion: true } };
+    server({ [GET_SETTINGS]: { json: on } });
+    useImagery.setState({ sources: { ...SOURCES_OFF, eox: true, ion: true } });
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: FIRST_PRESET.id } } });
+    setIonFailure({ assetId: FIRST_PRESET.id, token: "tok-abc" });
+    mount();
+    await user.click(sourceSwitch("eox"));
+    await waitFor(() => expect(useImagery.getState().sources.eox).toBe(false));
+    expect(getIonFailure()).not.toBeNull();
+  });
+
   test("turning ion off keeps the chosen asset for the next time", async () => {
     const on = { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, ion: true } };
     server({ [GET_SETTINGS]: { json: on } });
@@ -676,6 +723,33 @@ describe("Cesium ion: token", () => {
     await user.type(tokenInput(), "via-enter{Enter}");
     await waitFor(() => expect(puts(f)).toHaveLength(1));
     expect((puts(f)[0].body as Settings).cesium_ion_token).toBe("via-enter");
+  });
+
+  test("after the save the switches are taken from the document the server answered, as for a switch (a flag changed elsewhere is not shown stale)", async () => {
+    const onServer = { ...SETTINGS, online_imagery: { enabled: false, eox: true, osm: false, ion: false } };
+    const f = server({ [GET_SETTINGS]: { json: onServer } });
+    mount();
+    expect(sourceSwitch("eox").checked).toBe(false);
+    await user.type(tokenInput(), "resync");
+    await user.click(applyToken());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect(puts(f)[0].body).toEqual({ ...onServer, cesium_ion_token: "resync" });
+    await waitFor(() => expect(sourceSwitch("eox").checked).toBe(true));
+    expect(useImagery.getState().sources).toEqual({ ...SOURCES_OFF, eox: true });
+    expect(sourceSwitch("gibs").checked).toBe(false);
+  });
+
+  test("a failed token save does not change the switches", async () => {
+    server({
+      [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, eox: true } } },
+      [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } },
+    });
+    mount();
+    await user.type(tokenInput(), "nope");
+    await user.click(applyToken());
+    await screen.findByRole("alert");
+    expect(useImagery.getState().sources).toEqual(SOURCES_OFF);
+    expect(sourceSwitch("eox").checked).toBe(false);
   });
 
   test("saving the token does not turn any source on or off", async () => {
