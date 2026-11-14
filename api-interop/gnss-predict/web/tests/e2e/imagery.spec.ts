@@ -223,6 +223,8 @@ const GIBS_TITLES = [
   "GOES-West GeoColor",
 ];
 
+const EOX_TITLE = "Sentinel-2 cloudless 2024";
+
 const onlineSwitch = (page: Page) => page.getByRole("checkbox", { name: "Online imagery (NASA GIBS)", exact: true });
 const globeRows = (page: Page) => page.locator(".globe-table tbody tr");
 
@@ -243,17 +245,18 @@ test.describe("Globe Manager", () => {
     // รายการชั้นของ server ตรงกับที่หน้าต่างแสดง (GET /api/imagery/layers ไม่ต่อเน็ต: ใช้ได้เสมอแม้สวิตช์ปิด)
     const layersReply = await page.request.get("/api/imagery/layers");
     expect(layersReply.ok()).toBe(true);
-    const layers = (await layersReply.json()) as { enabled: boolean; layers: { title: string }[] };
+    const layers = (await layersReply.json()) as { enabled: boolean; layers: { title: string; source: string }[] };
     expect(layers.enabled).toBe(false);
-    expect(layers.layers.map((l) => l.title)).toEqual(GIBS_TITLES);
+    expect(layers.layers.filter((l) => l.source === "gibs").map((l) => l.title)).toEqual(GIBS_TITLES);
+    expect(layers.layers.filter((l) => l.source === "eox").map((l) => l.title)).toEqual([EOX_TITLE]);
 
     await page.getByRole("menuitem", { name: "View", exact: true }).click();
     await page.getByRole("menuitem", { name: "Globe Manager", exact: true }).click();
 
-    // 9 แถว: Natural Earth II (ฐาน ปิดไม่ได้) + 8 ชั้นของ catalog ตามลำดับ
+    // 10 แถว: Natural Earth II (ฐาน ปิดไม่ได้) + 8 ชั้น GIBS + Sentinel-2 cloudless ตามลำดับของ catalog (กลุ่มตามแหล่งเป็นงานของ Globe Manager รุ่นถัดไป)
     await expect(onlineSwitch(page)).toBeVisible();
-    await expect(globeRows(page)).toHaveCount(9);
-    await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES]);
+    await expect(globeRows(page)).toHaveCount(10);
+    await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES, EOX_TITLE]);
     await expect(onlineSwitch(page)).not.toBeChecked();
     // สวิตช์ปิด: ชั้น GIBS ใช้ไม่ได้ (Show และ % Translucency ปิดใช้) ส่วน Natural Earth II ติ๊กไว้และปิดไม่ได้เสมอ
     await expect(page.getByRole("checkbox", { name: "Natural Earth II Show", exact: true })).toBeChecked();

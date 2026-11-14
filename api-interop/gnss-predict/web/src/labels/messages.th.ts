@@ -153,9 +153,18 @@ const MESSAGES = {
   "daily.runFailed": "สั่งรันงานประจำวันไม่สำเร็จ: {message}",
   "daily.runNowHint": "Run Now ใช้ค่าตั้งที่บันทึกไว้แล้ว ถ้าเพิ่งแก้ค่าให้กด Apply ก่อน",
 
-  // ภาพพื้นโลกออนไลน์ NASA GIBS (spec imagery §5): สวิตช์และรายการชั้นภาพจาก server ในเครื่อง
+  // ภาพพื้นโลกออนไลน์ (spec imagery §5, spec ภาพละเอียด §4): สวิตช์ต่อแหล่งและรายการชั้นภาพจาก server ในเครื่อง {source} = ชื่อแหล่ง (stores/imagery.ts SOURCE_NAMES)
   "imagery.loadFailed": "อ่านรายการภาพพื้นโลกออนไลน์ (NASA GIBS) จาก server ไม่สำเร็จ ({message}) จึงแสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม",
-  "imagery.saveFailed": "เปลี่ยนสวิตช์ภาพพื้นโลกออนไลน์ (NASA GIBS) ไม่สำเร็จ ({message}) สวิตช์ยังเป็นค่าเดิม",
+  "imagery.saveFailed": "เปลี่ยนสวิตช์ภาพพื้นโลกออนไลน์ ({source}) ไม่สำเร็จ ({message}) สวิตช์ยังเป็นค่าเดิม",
+  // Cesium ion (spec ภาพละเอียด §4.1): ข้อความห้ามมี token (ไม่ใส่ข้อความ error ดิบของ Cesium ด้วย)
+  "imagery.ionSettingsFailed": "อ่านค่าตั้งที่มี Cesium ion token จาก server ไม่สำเร็จ ({message}) จึงยังไม่แสดงชั้นภาพ Cesium ion",
+  "imagery.ionNoToken": "เปิด Cesium ion อยู่แต่ยังไม่ได้ใส่ Cesium ion token จึงไม่แสดงชั้นภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ได้ที่หน้าต่าง Daily Forecast Settings",
+  "imagery.ionFailed": "เปิดชั้นภาพ Cesium ion (Asset ID {assetId}) ไม่สำเร็จ: {reason} จึงถอดชั้นนี้ออกและแสดงชั้นภาพอื่นตามเดิม",
+  "imagery.ionReasonToken": "Cesium ion ไม่รับ token นี้ (HTTP {status}) ตรวจว่า token ถูกต้องและยังไม่หมดอายุ",
+  "imagery.ionReasonAsset": "ไม่พบ asset นี้ในบัญชี Cesium ion (HTTP 404) เพิ่ม asset เข้าบัญชีที่ ion.cesium.com หรือเลือก asset อื่น",
+  "imagery.ionReasonOther": "Cesium ion ตอบกลับด้วยรหัส HTTP {status}",
+  "imagery.ionReasonNotImagery": "asset นี้ไม่ใช่ชั้นภาพ หรือเป็นชนิดภาพที่โปรแกรมไม่รู้จัก",
+  "imagery.ionReasonNetwork": "เชื่อมต่อ api.cesium.com ไม่ได้ (ตรวจการเชื่อมต่ออินเทอร์เน็ต)",
 
   // หน้าต่าง Globe Manager (spec imagery §5.1): กล่องยืนยันก่อนเปิดสวิตช์ต้องบอก host ที่ server ในเครื่องต่อจริง (gibs.earthdata.nasa.gov ตรงกับ GIBS_URL ใน server/imagery.py ซึ่ง test ตรวจ)
   "globe.consent": "เปิดภาพพื้นโลกออนไลน์จาก NASA GIBS หรือไม่? โปรแกรมจะเชื่อมต่ออินเทอร์เน็ตไปที่ gibs.earthdata.nasa.gov ผ่าน server ในเครื่องนี้ คำขอที่ส่งออกไปมีชื่อชั้นภาพ เวลา และพิกัดชิ้นภาพ (tile) ไม่มี scenario หรือตำแหน่งของคุณ แต่ NASA จะเห็นหมายเลข IP ของเครื่องนี้ (หรือของเครือข่ายที่ใช้ออกอินเทอร์เน็ต) และ User-Agent gnss-studio/0.1 เหมือนการเปิดเว็บทั่วไป ภาพที่ได้เก็บไว้ในเครื่องที่ data/imagery (ไม่เกิน 2 GB) และปิดได้ทุกเมื่อจากช่องนี้ในหน้าต่าง Globe Manager",

@@ -104,7 +104,7 @@ function imageryLine(imagery: SensorHudImagery | null): string {
   return msg(imagery.missing ? "sensorView.hudImageryMissing" : "sensorView.hudImagery", { image });
 }
 
-/** สวิตช์ภาพออนไลน์เปิดอยู่: วาดใหม่ทุก IMAGERY_POLL_MS (HUD อ่านสถานะชั้นภาพใหม่) */
+/** สวิตช์ภาพออนไลน์แหล่งใดเปิดอยู่: วาดใหม่ทุก IMAGERY_POLL_MS (HUD อ่านสถานะชั้นภาพใหม่) */
 function useImageryPoll(enabled: boolean): void {
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -147,7 +147,7 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
   const { format } = useTimeFormatter();
   useSyncExternalStore(sensorViewScenes.subscribe, sensorViewScenes.version);
   const doc = useScenario((s) => s.doc);
-  const online = useImagery((s) => s.enabled);
+  const online = useImagery((s) => Object.values(s.sources).some(Boolean));
   useImageryPoll(online);
   const hud = sensorViewScenes.get(panelId)?.sensorHud() ?? null;
   if (hud === null) {

@@ -1,16 +1,29 @@
-// ชั้นภาพ NASA GIBS บน viewer 3D หนึ่งตัว (spec imagery §5.2) หน้าต่าง 3D และ Sensor View ต่อผ่าน scene3d.ts mount (attachImageryLayers)
+// ชั้นภาพออนไลน์บน viewer 3D หนึ่งตัว (spec imagery §5.2, spec ภาพละเอียด §4) หน้าต่าง 3D และ Sensor View ต่อผ่าน scene3d.ts mount (attachImageryLayers)
 //
-// - ตามสาม store: useImagery (สวิตช์ + catalog), useLayout.globe (Show / Translucency จาก Globe Manager), useTime (เวลา Animation)
-// - ชั้นที่วาด = ชั้นใน catalog ที่ globe บอกว่าแสดง เฉพาะเมื่อสวิตช์เปิด (ปิด = ไม่มีชั้น GIBS เลย ไม่มีคำขอชิ้นภาพจาก browser)
+// - ตามสี่ store: useImagery (สวิตช์ต่อแหล่ง + catalog), useLayout.globe (Show / Translucency และ asset ของ ion จาก Globe Manager),
+//   useTime (เวลา Animation), useSettings (Cesium ion token)
+// - แหล่ง (provider kinds): gibs และ eox = ชั้นใน catalog ผ่าน server ในเครื่อง (proxy) ; osm = OSM_LAYER ที่ browser ดึงตรง ; ion = Cesium ion ที่ browser ดึงตรง
+// - ชั้นที่วาด = ชั้นที่ globe บอกว่าแสดง เฉพาะของแหล่งที่สวิตช์เปิด (ปิด = ไม่มีชั้นของแหล่งนั้นเลย ไม่มีคำขอไปโฮสต์นั้นจาก browser)
 //   id ใน globe ที่ catalog ไม่รู้จักข้ามไป
 // - ตำแหน่ง: เหนือ index 0 (Natural Earth II: applyProps ของ scene3d.ts ใช้ index 0 เป็นภาพฐานของกลางวัน/กลางคืน ห้ามแทรกที่ 0)
-//   เรียงตาม catalog (ชั้นหลังทับชั้นก่อน) ชั้นของ id หนึ่งวางต่อจากชั้นบนสุดของ id ก่อนหน้าใน catalog ที่วาดอยู่ (ไม่มี = index 1)
+//   ลำดับวาด: GIBS ตาม catalog → EOX → OpenStreetMap (ชั้นหลังทับชั้นก่อน) ชั้นของ id หนึ่งวางต่อจากชั้นบนสุดของ id ก่อนหน้าที่วาดอยู่ (ไม่มี = index 1)
 //   ชั้นใหม่จึงอยู่ใต้เส้น Lat/Lon ที่วางไว้ก่อนเสมอ ส่วนเส้น Lat/Lon ที่เปิดทีหลัง scene3d.ts ต่อท้ายรายการ (บนสุด) เอง
-// - ชั้นละหนึ่ง UrlTemplateImageryProvider ของ viewer นี้เอง (ไม่ใช้ร่วมกับ viewer อื่น): url /api/imagery/tiles/{id}/{token}/{z}/{y}/{x} (same-origin)
-//   Web Mercator, maximumLevel = max_level (ซูมลึกกว่านั้น Cesium ขยายจากระดับสูงสุด)
-//   credit ของชั้น (NASA GIBS / EOSDIS, JMA, NOAA) เป็น Credit ที่แสดงบนภาพ (showOnScreen) ไม่ใช่แค่ในกล่อง Data attribution ของ Cesium
+// - ชั้นละหนึ่ง UrlTemplateImageryProvider ของ viewer นี้เอง (ไม่ใช้ร่วมกับ viewer อื่น) Web Mercator, maximumLevel = max_level (ซูมลึกกว่านั้น Cesium ขยายจากระดับสูงสุด)
+//   credit ของชั้น (NASA GIBS / EOSDIS, JMA, NOAA, EOX, © OpenStreetMap contributors) เป็น Credit ที่แสดงบนภาพ (showOnScreen) ไม่ใช่แค่ในกล่อง Data attribution
+//   proxy: url /api/imagery/tiles/{id}/{token}/{z}/{y}/{x} (same-origin)
 //   tileDiscardPolicy = NeverTileDiscardPolicy: ไม่ทิ้งชิ้นใด แต่ทำให้ ImageryProvider.loadImage ของ Cesium โหลดด้วย XHR (preferBlob)
 //   ทุก browser รหัส HTTP จึงมาถึง errorEvent ด้วย (ไม่มี policy: Safari/Firefox ที่ createImageBitmap ไม่รับ option โหลดด้วย <img> ไม่มีรหัส HTTP)
+//   osm: url OSM_URL (https://tile.openstreetmap.org/{z}/{x}/{y}.png) maximumLevel 19 นโยบายเดิมของ Cesium (ขอเฉพาะชิ้นที่มองเห็น ไม่โหลดล่วงหน้า
+//   ไม่มี tileDiscardPolicy ไม่เพิ่ม header) แอปไม่ตั้ง Referrer-Policy (browser ส่ง Referer ตามค่าปกติ ตามนโยบายของ OSM)
+// - Cesium ion (spec ภาพละเอียด §4.1–§4.2): แสดงเมื่อสวิตช์ ion เปิด + globe.ion.assetId ไม่ใช่ null + token ไม่ว่าง (ion "shown")
+//   IonImageryProvider.fromAssetId(assetId, { accessToken }) ของ viewer นี้เอง ไม่ตั้ง Ion.defaultAccessToken ทั่วแอป token ไม่อยู่ใน url ใดที่โค้ดนี้สร้าง
+//   (Cesium เองส่ง token ให้ api.cesium.com ตอนขอ endpoint ของ asset) ชั้น ion วางที่ index 1 alpha 1 ด้านกลางคืนจางตาม Ambient Level เหมือนชั้นอื่น
+//   ion shown = ชั้นอื่นทั้งหมดถูกเอาออก (ไม่มีคำขอไปแหล่งอื่น) และ alpha ของ Natural Earth II = 0 ในทุก viewer (ทุก viewer อ่าน store ชุดเดียวกัน)
+//   ตั้งแต่ขอ provider (ไม่รอให้ ion ตอบ) จนเลิกแสดง ion แล้วคืนชั้นเดิมตาม store และ alpha เดิมของ Natural Earth II
+//   token ว่าง (หลังอ่านค่าตั้งแล้ว) = ไม่มีชั้น ion ชั้นอื่นแสดงตามเดิม คำเตือนไทยครั้งเดียว ; ยังไม่ได้อ่านค่าตั้ง = รอ (ไม่ทำอะไร)
+//   ion ปฏิเสธ (401/404, ไม่ใช่ภาพ, เครือข่าย) = ถอดชั้น ion ทุก viewer ข้อความไทยครั้งเดียว (ไม่มี token) แล้วไม่ลองซ้ำกับ asset + token เดิม
+//   จนกว่าจะเปลี่ยน asset หรือ token หรือเลิกแสดง ion แล้วแสดงใหม่ (IonImageryProvider ของ Cesium จำผลของ endpoint ต่อ asset + token ไว้:
+//   ล้มเหลวเพราะเครือข่ายแล้วลองซ้ำด้วยค่าเดิมจะได้ผลเดิมจนโหลดหน้าใหม่)
 // - alpha = 1 − translucency/100 ; Ambient Level แบบภาพฐาน (scene3d.ts applyProps): dayAlpha = 1, nightAlpha = ระดับ/100
 //   (Cesium คูณ alpha ด้วย mix(dayAlpha, nightAlpha) ด้านกลางคืนจึงจางเท่าภาพฐานโดยไม่แตะ translucency) ค่าจาก opts.nightAlpha และ setImageryNightAlpha
 // - token ของเวลา (imageryTime.ts) เปลี่ยน → เปลี่ยนชั้นนั้นเป็น provider ของ token ใหม่ ไม่เกิน 1 ครั้งต่อ TOKEN_INTERVAL_MS ต่อ viewer
@@ -19,17 +32,24 @@
 //   ชั้นที่ยังไม่เริ่มโหลดแล้วถูกแทนอีก (animation เร็ว) เอาออกทันที: id หนึ่งมีไม่เกินสองชั้น (ชั้นที่รอ + ชั้นเดิมที่ยังแสดงอยู่)
 //   ระหว่างนั้น HUD (imageryStatus) บอกเวลาและสัดส่วนชิ้นของชั้นเดิม เพราะเป็นภาพที่อยู่บนจอ
 // - ชิ้นที่โหลดไม่ได้ (errorEvent ของ provider): ไม่ลองซ้ำ (retry = false) มีตัวฟังแล้ว Cesium จึงไม่พิมพ์ error ของมันเอง ชิ้นนั้นโปร่งใส
-//   404 = ไม่มีภาพเวลานี้ นับต่อ (ชั้น, token) ไว้ให้ HUD (imageryStatus) ; 403 = server ปิดสวิตช์ (IMAGERY_DISABLED) → useImagery.enabled = false
-//   ทุก viewer เอาชั้น GIBS ออก ; ข้อผิดพลาดอื่น (503 BUSY/PAUSED, เครือข่าย) ไม่นับเป็นไม่มีภาพ
+//   404 = ไม่มีภาพเวลานี้ นับต่อ (ชั้น, token) ไว้ให้ HUD (imageryStatus) ; 403 ของ proxy = server ปิดสวิตช์ของแหล่งนั้น (IMAGERY_DISABLED)
+//   → useImagery.sources[แหล่งของชั้น] = false ทุก viewer เอาชั้นของแหล่งนั้นออก (403 ของ OpenStreetMap ไม่แตะสวิตช์ใด)
+//   ข้อผิดพลาดอื่น (503 BUSY/PAUSED, เครือข่าย) ไม่นับเป็นไม่มีภาพ
 //   รหัส HTTP มาจาก RequestErrorEvent.statusCode (XHR ของ preferBlob ข้างบน)
 // - ทุกการเปลี่ยนเรียก scene.requestRender() (viewer ใช้ requestRenderMode)
 
-import { Credit, ImageryLayer, NeverTileDiscardPolicy, UrlTemplateImageryProvider, WebMercatorTilingScheme, type Viewer } from "cesium";
-import { useImagery, type ImageryLayerInfo } from "../stores/imagery";
+import {
+  Credit, ImageryLayer, IonImageryProvider, NeverTileDiscardPolicy, RuntimeError, UrlTemplateImageryProvider, WebMercatorTilingScheme, type Viewer,
+} from "cesium";
+import { msg } from "../labels/messages.th";
+import { OSM_LAYER, OSM_URL, useImagery, type ImageryLayerInfo, type ImagerySourceId, type LayerSourceId } from "../stores/imagery";
 import { useLayout } from "../stores/layout";
+import { report } from "../stores/messages";
+import { useSettings } from "../stores/settings";
 import { useTime } from "../stores/time";
 import { Throttle } from "../windows/graphics/throttle";
 import { timeToken, tokenLabel } from "./imageryTime";
+import { ionAssetTitle } from "./ionAssets";
 
 /** เปลี่ยนชั้นตามเวลาได้ไม่เกินหนึ่งครั้งต่อช่วงนี้ต่อ viewer */
 export const TOKEN_INTERVAL_MS = 1000;
@@ -44,6 +64,9 @@ export interface ImageryTopLayer {
   label: string;
   /** สัดส่วนชิ้นที่ server ตอบ 404 (ไม่มีภาพเวลานี้) ในชิ้นที่ได้ผลแล้วของ token ที่แสดงอยู่ ยังไม่มีชิ้นใด = 0 */
   missingRatio: number;
+  source: ImagerySourceId;
+  /** ระดับซูมละเอียดสุดของชั้น null = ยังไม่รู้ (ชั้น ion ที่ยังไม่ได้ provider) */
+  max_level: number | null;
 }
 
 interface TileCounts {
@@ -71,11 +94,101 @@ interface Manager {
 
 const managers = new WeakMap<object, Manager>();
 
+// ---------- Cesium ion: สถานะร่วมของทุก viewer ----------
+
+type IonPlan =
+  | { kind: "off" }
+  | { kind: "waiting" }
+  | { kind: "noToken"; assetId: number }
+  | { kind: "failed"; assetId: number }
+  | { kind: "shown"; assetId: number; token: string };
+
+/** สถานะของ ion สำหรับหน้าต่างอื่น (Globe Manager) ไม่มี token */
+export type IonStatus =
+  | { kind: "off" }
+  | { kind: "waiting" }
+  | { kind: "noToken" | "failed" | "shown"; assetId: number };
+
+/** asset + token ที่ ion ปฏิเสธไปแล้ว (ไม่ลองซ้ำ) ลืมเมื่อเลิกขอ ion */
+let ionFailure: { assetId: number; token: string } | null = null;
+/** คำเตือน "ไม่มี token" ที่แจ้งไปแล้ว (แจ้งครั้งเดียวต่อการเข้าสถานะนี้ ไม่ว่ามีกี่ viewer) */
+let ionNotice: string | null = null;
+/** ตัวฟังการเปลี่ยนสถานะของ ion ที่ไม่ได้มาจาก store (ion ปฏิเสธ): ทุก viewer และหน้าต่างที่ต้องวาดใหม่ */
+const ionListeners = new Set<() => void>();
+
+function ionPlan(): IonPlan {
+  const assetId = useLayout.getState().globe.ion?.assetId ?? null;
+  if (!useImagery.getState().sources.ion || assetId === null) return { kind: "off" };
+  const settings = useSettings.getState().settings;
+  if (settings === null) return { kind: "waiting" };
+  const token = settings.cesium_ion_token.trim();
+  if (token === "") return { kind: "noToken", assetId };
+  if (ionFailure !== null && ionFailure.assetId === assetId && ionFailure.token === token) return { kind: "failed", assetId };
+  return { kind: "shown", assetId, token };
+}
+
+/** สถานะของ Cesium ion ตอนนี้ (shown = ชั้นอื่นทั้งหมดถูกซ่อนในทุก viewer) */
+export function ionStatus(): IonStatus {
+  const plan = ionPlan();
+  return plan.kind === "off" || plan.kind === "waiting" ? plan : { kind: plan.kind, assetId: plan.assetId };
+}
+
+/** ฟังการเปลี่ยนของ ionStatus ที่ไม่ได้มาจาก store (ion ปฏิเสธ asset/token) คืนฟังก์ชันเลิกฟัง */
+export function onIonStatusChange(listener: () => void): () => void {
+  ionListeners.add(listener);
+  return () => void ionListeners.delete(listener);
+}
+
+/** หลังอ่านแผน: ไม่ขอ ion แล้ว = ลืมการปฏิเสธ (แสดงใหม่ = ลองใหม่) ; ไม่มี token = คำเตือนไทยครั้งเดียว */
+function noteIon(plan: IonPlan): void {
+  if (plan.kind === "off") ionFailure = null;
+  if (plan.kind !== "noToken") {
+    ionNotice = null;
+    return;
+  }
+  const key = String(plan.assetId);
+  if (ionNotice === key) return;
+  ionNotice = key;
+  report("warning", "IMAGERY_ION_TOKEN", msg("imagery.ionNoToken"));
+}
+
+const statusOf = (e: unknown): number | undefined => {
+  const o = e as { statusCode?: unknown; error?: { statusCode?: unknown } } | null;
+  const code = o?.statusCode ?? o?.error?.statusCode;
+  return typeof code === "number" ? code : undefined;
+};
+
+/** เหตุผลภาษาไทยของการปฏิเสธ (ไม่ใช้ข้อความดิบของ Cesium: กันไม่ให้มีอะไรของคำขอหลุดเข้า Message Viewer) */
+function ionReason(error: unknown): string {
+  const status = statusOf(error);
+  if (status === 401 || status === 403) return msg("imagery.ionReasonToken", { status });
+  if (status === 404) return msg("imagery.ionReasonAsset");
+  if (status !== undefined) return msg("imagery.ionReasonOther", { status });
+  if (error instanceof RuntimeError) return msg("imagery.ionReasonNotImagery");
+  return msg("imagery.ionReasonNetwork");
+}
+
+/** ion ปฏิเสธ asset + token นี้: จำไว้ แจ้งครั้งเดียว แล้วบอกทุก viewer (ถอดชั้น ion คืนชั้นอื่น) */
+function failIon(assetId: number, token: string, error: unknown): void {
+  if (ionFailure !== null && ionFailure.assetId === assetId && ionFailure.token === token) return;
+  ionFailure = { assetId, token };
+  report("warning", "IMAGERY_ION_FAILED", msg("imagery.ionFailed", { assetId, reason: ionReason(error) }));
+  for (const listener of [...ionListeners]) listener();
+}
+
+// ---------- ชั้นของ catalog และ OpenStreetMap ----------
+
+/** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) ภายในแหล่งเดียวกันตามลำดับ catalog */
+const SOURCE_ORDER: Readonly<Record<LayerSourceId, number>> = { gibs: 0, eox: 1, osm: 2 };
+
+/** ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด */
 const shownLayers = (): ImageryLayerInfo[] => {
-  const { enabled, layers } = useImagery.getState();
-  if (!enabled) return [];
+  if (ionPlan().kind === "shown") return [];
+  const { sources, layers } = useImagery.getState();
   const globe = useLayout.getState().globe;
-  return layers.filter((l) => globe.layers[l.id]?.show === true);
+  return [...layers, OSM_LAYER]
+    .filter((l) => sources[l.source] && globe.layers[l.id]?.show === true)
+    .sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
 };
 
 const alphaOf = (id: string): number => {
@@ -86,17 +199,25 @@ const alphaOf = (id: string): number => {
 /** ข้อความเครดิตเป็น HTML ของ Credit: กันอักขระพิเศษไว้ (ค่ามาจาก catalog ของ server) */
 const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const statusOf = (e: unknown): number | undefined => {
-  const code = (e as { error?: { statusCode?: unknown } } | null)?.error?.statusCode;
-  return typeof code === "number" ? code : undefined;
-};
+/** ชั้น ion บน viewer: layer = null ระหว่างรอ provider */
+interface IonManaged {
+  key: string;
+  assetId: number;
+  layer: ImageryLayer | null;
+  maxLevel: number | null;
+}
 
 /**
- * ต่อชั้นภาพ GIBS เข้ากับ viewer ตามสวิตช์ globe และเวลา คืนฟังก์ชันถอด (เอาชั้นออกและเลิกฟัง) เรียกก่อนทำลาย viewer
+ * ต่อชั้นภาพออนไลน์เข้ากับ viewer ตามสวิตช์ globe และเวลา คืนฟังก์ชันถอด (เอาชั้นออก คืน alpha ของภาพฐาน และเลิกฟัง) เรียกก่อนทำลาย viewer
  * opts.now: นาฬิกาของ Throttle (test ฉีดได้) ; opts.nightAlpha: Ambient Level/100 ของหน้าต่าง (ไม่ระบุ = 1) เปลี่ยนทีหลังด้วย setImageryNightAlpha
  */
 export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => number; nightAlpha?: number } = {}): () => void {
   const layers = viewer.imageryLayers;
+  /** Natural Earth II (index 0 ตอนต่อ ชั้นของที่นี่ไม่แทรกที่ 0 จึงยังเป็นตัวเดิม) */
+  const base: ImageryLayer | undefined = layers.length > 0 ? layers.get(0) : undefined;
+  /** alpha ของภาพฐานก่อน ion ซ่อน (null = ไม่ได้ซ่อนอยู่) */
+  let baseAlpha: number | null = null;
+  let ion: IonManaged | null = null;
   const managed = new Map<string, Managed>();
   /** จำนวนชิ้นต่อ "id/token" ของชั้นปัจจุบันและชั้นเดิมที่ยังแสดงอยู่ */
   const counts = new Map<string, TileCounts>();
@@ -139,13 +260,10 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   };
 
   const makeLayer = (info: ImageryLayerInfo, token: string): ImageryLayer => {
-    const provider = new UrlTemplateImageryProvider({
-      url: `/api/imagery/tiles/${info.id}/${token}/{z}/{y}/{x}`,
-      tilingScheme: new WebMercatorTilingScheme(),
-      maximumLevel: info.max_level,
-      credit: new Credit(escapeHtml(info.credit), true),
-      tileDiscardPolicy: new NeverTileDiscardPolicy(),
-    });
+    const common = { tilingScheme: new WebMercatorTilingScheme(), maximumLevel: info.max_level, credit: new Credit(escapeHtml(info.credit), true) };
+    const provider = info.source === "osm"
+      ? new UrlTemplateImageryProvider({ url: OSM_URL, ...common })
+      : new UrlTemplateImageryProvider({ url: `/api/imagery/tiles/${info.id}/${token}/{z}/{y}/{x}`, ...common, tileDiscardPolicy: new NeverTileDiscardPolicy() });
     const tiles = countsFor(info.id, token);
     const started = (): void => {
       const m = managed.get(info.id);
@@ -173,9 +291,10 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       error.retry = false;
       if (detached) return;
       const code = statusOf(error);
-      if (code === 403) {
+      const source = info.source;
+      if (code === 403 && source !== "osm") {
         // หลังตัวแจ้งของ Cesium จบ: ไม่เอาชั้นออกระหว่างที่ ImageryLayer ของมันยังอยู่ในตัวจัดการข้อผิดพลาดของตัวเอง
-        queueMicrotask(() => useImagery.setState({ enabled: false }));
+        queueMicrotask(() => useImagery.setState((s) => ({ sources: { ...s.sources, [source]: false } })));
         return;
       }
       if (code === 404) tiles.missing++;
@@ -215,12 +334,74 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     m.started = false;
   };
 
+  /** ion shown = alpha ของภาพฐาน 0 (จำค่าเดิมไว้) เลิกแสดง = คืนค่าเดิม คืนว่าเปลี่ยนไหม */
+  const syncBase = (hide: boolean): boolean => {
+    if (base === undefined) return false;
+    if (hide && baseAlpha === null) {
+      baseAlpha = base.alpha;
+      base.alpha = 0;
+      return true;
+    }
+    if (!hide && baseAlpha !== null) {
+      base.alpha = baseAlpha;
+      baseAlpha = null;
+      return true;
+    }
+    return false;
+  };
+
+  /** ชั้น ion ตรงกับแผน: asset/token เปลี่ยน = ชั้นใหม่ ; ไม่ shown = เอาออก คืนว่าเปลี่ยนไหม */
+  const syncIon = (plan: IonPlan): boolean => {
+    const key = plan.kind === "shown" ? `${plan.assetId}\n${plan.token}` : null;
+    if (ion === null ? key === null : ion.key === key) return false;
+    if (ion !== null) {
+      drop(ion.layer);
+      ion = null;
+    }
+    if (plan.kind !== "shown" || key === null) return true;
+    const { assetId, token } = plan;
+    const cur: IonManaged = { key, assetId, layer: null, maxLevel: null };
+    ion = cur;
+    let pending: Promise<IonImageryProvider>;
+    try {
+      pending = IonImageryProvider.fromAssetId(assetId, { accessToken: token });
+    } catch (e) {
+      pending = Promise.reject(e);
+    }
+    pending.then(
+      (provider) => {
+        if (detached || ion !== cur) return; // เลิกต้องการแล้ว (asset/token เปลี่ยน, เลิกแสดง, ถอด viewer)
+        provider.errorEvent.addEventListener((error: { retry?: boolean }) => {
+          error.retry = false; // ชิ้นที่โหลดไม่ได้ไม่ลองซ้ำ (มีตัวฟังแล้ว Cesium จึงไม่พิมพ์ error เอง)
+        });
+        const layer = new ImageryLayer(provider);
+        layer.alpha = 1;
+        layer.dayAlpha = 1;
+        layer.nightAlpha = nightAlpha;
+        layers.add(layer, Math.min(1, layers.length));
+        cur.layer = layer;
+        cur.maxLevel = provider.maximumLevel ?? null;
+        viewer.scene.requestRender();
+      },
+      (error: unknown) => {
+        if (detached || ion !== cur) return;
+        ion = null;
+        failIon(assetId, token, error);
+        sync(); // viewer อื่นบันทึกการปฏิเสธไปก่อนแล้ว: failIon ไม่แจ้งซ้ำ viewer นี้คืนชั้นเอง
+      },
+    );
+    return true;
+  };
+
   /** ทำให้ชั้นบน viewer ตรงกับ store; replaceTokens = false: ชั้นที่ token เก่าแล้วยังไม่เปลี่ยน (รอ Throttle) คืนว่ามีชั้นที่ token เก่าอยู่ไหม */
   const reconcile = (replaceTokens: boolean): boolean => {
     if (detached) return false;
+    const plan = ionPlan();
+    noteIon(plan);
+    let changed = syncIon(plan);
+    if (syncBase(plan.kind === "shown")) changed = true;
     const order = shownLayers();
     const wanted = new Set(order.map((l) => l.id));
-    let changed = false;
     for (const id of [...managed.keys()]) {
       if (!wanted.has(id)) {
         remove(id);
@@ -258,17 +439,21 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   };
 
   const throttle = new Throttle(TOKEN_INTERVAL_MS, () => void reconcile(true), opts.now);
-  const sync = (): void => {
+  function sync(): void {
     if (reconcile(false)) throttle.request();
-  };
+  }
 
   // ชั้นแรกใช้ token ของเวลาตอนนี้ ไม่ใช่การเปลี่ยน token จึงไม่นับเป็นครั้งของ Throttle
   reconcile(true);
 
   const offs = [
     useImagery.subscribe((s, prev) => {
-      if (s.enabled !== prev.enabled || s.layers !== prev.layers) sync();
+      if (s.sources !== prev.sources || s.layers !== prev.layers) sync();
     }),
+    useSettings.subscribe((s, prev) => {
+      if (s.settings !== prev.settings) sync(); // Cesium ion token
+    }),
+    onIonStatusChange(sync),
     useLayout.subscribe((s, prev) => {
       if (s.globe !== prev.globe) sync();
     }),
@@ -279,6 +464,9 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
 
   const manager: Manager = {
     status: () => {
+      if (ion !== null) {
+        return { topLayer: { id: "ion", title: ionAssetTitle(ion.assetId), label: "", missingRatio: 0, source: "ion", max_level: ion.maxLevel } };
+      }
       const order = shownLayers();
       for (let i = order.length - 1; i >= 0; i--) {
         const m = managed.get(order[i].id);
@@ -290,6 +478,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
         return {
           topLayer: {
             id: m.info.id, title: m.info.title, label: tokenLabel(m.info.period, token), missingRatio: settled === 0 ? 0 : c.missing / settled,
+            source: m.info.source, max_level: m.info.max_level,
           },
         };
       }
@@ -302,6 +491,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
         m.layer.nightAlpha = alpha;
         if (m.retiring !== null) m.retiring.nightAlpha = alpha;
       }
+      if (ion?.layer) ion.layer.nightAlpha = alpha;
       viewer.scene.requestRender();
     },
   };
@@ -312,18 +502,24 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     for (const off of offs) off();
     throttle.dispose();
     for (const id of [...managed.keys()]) remove(id);
+    if (ion !== null) drop(ion.layer);
+    ion = null;
+    syncBase(false);
     detached = true;
     if (managers.get(viewer) === manager) managers.delete(viewer);
     viewer.scene.requestRender();
   };
 }
 
-/** Ambient Level ของหน้าต่างเปลี่ยน (scene3d.ts applyProps): nightAlpha ของทุกชั้น GIBS บน viewer นี้ (viewer ที่ไม่ได้ต่อ = ไม่ทำอะไร) */
+/** Ambient Level ของหน้าต่างเปลี่ยน (scene3d.ts applyProps): nightAlpha ของทุกชั้นออนไลน์บน viewer นี้ (viewer ที่ไม่ได้ต่อ = ไม่ทำอะไร) */
 export function setImageryNightAlpha(viewer: object, alpha: number): void {
   managers.get(viewer)?.setNightAlpha(alpha);
 }
 
-/** สถานะสำหรับ HUD ของ Sensor View: ชั้นบนสุดที่แสดงอยู่ (ชั้นสุดท้ายตามลำดับ catalog) null = ไม่มี (Natural Earth II) หรือ viewer ไม่ได้ต่อ */
+/**
+ * สถานะสำหรับ HUD ของ Sensor View: ชั้นบนสุดที่แสดงอยู่ (ชั้น ion เมื่อแสดง ion แม้ยังรอ provider, ไม่งั้นชั้นสุดท้ายตามลำดับวาด)
+ * null = ไม่มี (Natural Earth II) หรือ viewer ไม่ได้ต่อ
+ */
 export function imageryStatus(viewer: object): { topLayer: ImageryTopLayer | null } {
   return managers.get(viewer)?.status() ?? { topLayer: null };
 }

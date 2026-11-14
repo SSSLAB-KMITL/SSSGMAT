@@ -300,11 +300,11 @@ describe("Camera display of a Sensor View", () => {
   // Ambient Level (3D Graphics Window Properties) ทำให้ด้านกลางคืนจาง: ชั้น GIBS ต้องจางเท่าภาพฐาน (index 0) ไม่ใช่สว่างทั้งลูก
   test("Ambient Level sets the night alpha of the GIBS layers like the base layer, at mount and when the window properties change", async () => {
     useImagery.setState({
-      enabled: true,
-      layers: [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS" }],
+      sources: { gibs: true, eox: false, osm: false, ion: false },
+      layers: [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" }],
       loaded: true,
     });
-    useLayout.setState({ globe: { layers: { BlueMarble_NextGeneration: { show: true, translucency: 20 } } }, windowProps: { graphics3d: { enableLighting: true, ambientLevel: 30, latLonLines: false } } });
+    useLayout.setState({ globe: { layers: { BlueMarble_NextGeneration: { show: true, translucency: 20 } }, ion: { assetId: null } }, windowProps: { graphics3d: { enableLighting: true, ambientLevel: 30, latLonLines: false } } });
     const viewer = fakeViewer();
     const base = new Cesium.ImageryLayer(new Cesium.UrlTemplateImageryProvider({ url: "/base/{z}/{x}/{y}.png" })); // ภาพฐาน (Natural Earth II) ปลอม ไม่โหลดชิ้นใด
     viewer.imageryLayers.add(base);

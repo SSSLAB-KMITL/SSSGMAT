@@ -22,20 +22,21 @@ import { deferred, stubFetch } from "./helpers/fake-fetch";
 
 const GIBS = "NASA GIBS / EOSDIS";
 const LAYERS: ImageryLayerInfo[] = [
-  { id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: GIBS },
-  { id: "VIIRS_NOAA20_CorrectedReflectance_TrueColor", title: "VIIRS NOAA-20 True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS },
-  { id: "VIIRS_SNPP_CorrectedReflectance_TrueColor", title: "VIIRS Suomi NPP True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS },
-  { id: "MODIS_Terra_CorrectedReflectance_TrueColor", title: "MODIS Terra True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS },
-  { id: "Himawari_AHI_Band3_Red_Visible_1km", title: "Himawari-9 Red Visible", period: "10min", max_level: 7, format: "png", credit: `${GIBS}, JMA` },
-  { id: "Himawari_AHI_Band13_Clean_Infrared", title: "Himawari-9 Clean Infrared", period: "10min", max_level: 6, format: "png", credit: `${GIBS}, JMA` },
-  { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: `${GIBS}, NOAA` },
-  { id: "GOES-West_ABI_GeoColor", title: "GOES-West GeoColor", period: "10min", max_level: 7, format: "jpg", credit: `${GIBS}, NOAA` },
+  { id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: GIBS, source: "gibs" },
+  { id: "VIIRS_NOAA20_CorrectedReflectance_TrueColor", title: "VIIRS NOAA-20 True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
+  { id: "VIIRS_SNPP_CorrectedReflectance_TrueColor", title: "VIIRS Suomi NPP True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
+  { id: "MODIS_Terra_CorrectedReflectance_TrueColor", title: "MODIS Terra True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
+  { id: "Himawari_AHI_Band3_Red_Visible_1km", title: "Himawari-9 Red Visible", period: "10min", max_level: 7, format: "png", credit: `${GIBS}, JMA`, source: "gibs" },
+  { id: "Himawari_AHI_Band13_Clean_Infrared", title: "Himawari-9 Clean Infrared", period: "10min", max_level: 6, format: "png", credit: `${GIBS}, JMA`, source: "gibs" },
+  { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: `${GIBS}, NOAA`, source: "gibs" },
+  { id: "GOES-West_ABI_GeoColor", title: "GOES-West GeoColor", period: "10min", max_level: 7, format: "jpg", credit: `${GIBS}, NOAA`, source: "gibs" },
 ];
 const TITLES = LAYERS.map((l) => l.title);
 const SHOWN_BY_DEFAULT = ["Blue Marble", "VIIRS NOAA-20 True Color"];
 const NATURAL_EARTH = "Natural Earth II";
 
 const IMAGERY_OFF = { enabled: false, eox: false, osm: false, ion: false };
+const SOURCES_OFF = { gibs: false, eox: false, osm: false, ion: false };
 const SETTINGS: Settings = {
   daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 },
   cesium_ion_token: "tok-abc",
@@ -66,7 +67,7 @@ const show = (title: string) => screen.getByRole("checkbox", { name: `${title} $
 const translucency = (title: string) => screen.getByRole("textbox", { name: `${title} ${t("field.translucency")}` }) as HTMLInputElement;
 const rowTitles = () => screen.getAllByRole("rowheader").map((r) => r.textContent);
 const dialog = () => screen.getByRole("dialog");
-const settle = () => waitFor(() => expect(useImagery.getState().enabled).toBe(true));
+const settle = () => waitFor(() => expect(useImagery.getState().sources.gibs).toBe(true));
 const shownTitles = () => TITLES.filter((title) => show(title).checked);
 
 async function typeInto(input: HTMLInputElement, text: string) {
@@ -77,7 +78,7 @@ async function typeInto(input: HTMLInputElement, text: string) {
 beforeEach(() => {
   resetAll();
   useImagery.setState(useImagery.getInitialState(), true);
-  useImagery.setState({ loaded: true, layers: LAYERS, enabled: false });
+  useImagery.setState({ loaded: true, layers: LAYERS, sources: SOURCES_OFF });
   user = userEvent.setup();
 });
 afterEach(() => {
@@ -90,6 +91,22 @@ describe("the layer list", () => {
     mount();
     expect(rowTitles()).toEqual([NATURAL_EARTH, ...TITLES]);
     expect(rowTitles()).toHaveLength(9);
+  });
+
+  test("a Sentinel-2 cloudless (EOX) row follows the EOX switch, not the GIBS switch", () => {
+    const eox: ImageryLayerInfo = {
+      id: "s2cloudless-2024_3857", title: "Sentinel-2 cloudless 2024", period: "static", max_level: 15, format: "jpg", credit: "EOX", source: "eox",
+    };
+    useImagery.setState({ layers: [...LAYERS, eox], sources: { ...SOURCES_OFF, gibs: true } });
+    const { unmount } = mount();
+    expect(show("Blue Marble").disabled).toBe(false);
+    expect(show("Sentinel-2 cloudless 2024").disabled).toBe(true);
+    unmount();
+    useImagery.setState({ sources: { ...SOURCES_OFF, eox: true } });
+    mount();
+    expect(show("Blue Marble").disabled).toBe(true);
+    expect(show("Sentinel-2 cloudless 2024").disabled).toBe(false);
+    expect(translucency("Sentinel-2 cloudless 2024").disabled).toBe(false);
   });
 
   test("has the columns Layer, Show and % Translucency", () => {
@@ -110,7 +127,7 @@ describe("the layer list", () => {
     mount();
     expect(shownTitles()).toEqual(SHOWN_BY_DEFAULT);
     for (const title of TITLES) expect(translucency(title).value, title).toBe("0");
-    useLayout.setState({ globe: { layers: { GOES_nope: { show: true, translucency: 5 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 35 } } } });
+    useLayout.setState({ globe: { layers: { GOES_nope: { show: true, translucency: 5 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 35 } }, ion: { assetId: null } } });
     return waitFor(() => {
       expect(shownTitles()).toEqual(["GOES-East GeoColor"]);
       expect(translucency("GOES-East GeoColor").value).toBe("35");
@@ -168,7 +185,7 @@ describe("turning the switch on", () => {
     expect(f.calls).toEqual([]);
     expect(puts(f)).toHaveLength(0);
     expect(online().checked).toBe(false);
-    expect(useImagery.getState().enabled).toBe(false);
+    expect(useImagery.getState().sources.gibs).toBe(false);
     expect(show("Blue Marble").disabled).toBe(true);
   });
 
@@ -207,14 +224,15 @@ describe("turning the switch on", () => {
     await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
     await settle();
     expect(shownTitles()).toEqual(SHOWN_BY_DEFAULT);
+    // ชั้นของแหล่งอื่น (Sentinel-2 cloudless, OpenStreetMap) อยู่ในค่าตั้งต้นด้วย แต่ไม่มีผลจนกว่าจะเปิดสวิตช์ของแหล่งนั้น
     expect(Object.keys(useLayout.getState().globe.layers).sort()).toEqual(
-      ["BlueMarble_NextGeneration", "VIIRS_NOAA20_CorrectedReflectance_TrueColor"].sort(),
+      ["BlueMarble_NextGeneration", "VIIRS_NOAA20_CorrectedReflectance_TrueColor", "osm", "s2cloudless-2024_3857"].sort(),
     );
   });
 
   test("a selection the user already saved (e.g. in the workbook) is not overwritten by enabling", async () => {
     server();
-    const saved = { layers: { "GOES-West_ABI_GeoColor": { show: true, translucency: 60 } } };
+    const saved = { layers: { "GOES-West_ABI_GeoColor": { show: true, translucency: 60 } }, ion: { assetId: null } };
     useLayout.setState({ globe: saved });
     mount();
     await user.click(online());
@@ -232,7 +250,7 @@ describe("turning the switch on", () => {
     await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
     await waitFor(() => expect(useMessages.getState().items.filter((m) => m.level === "warning")).toHaveLength(1));
     expect(online().checked).toBe(false);
-    expect(useImagery.getState().enabled).toBe(false);
+    expect(useImagery.getState().sources.gibs).toBe(false);
     expect(show("Blue Marble").disabled).toBe(true);
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -255,14 +273,14 @@ describe("turning the switch on", () => {
 });
 
 describe("turning the switch off", () => {
-  beforeEach(() => useImagery.setState({ enabled: true }));
+  beforeEach(() => useImagery.setState({ sources: { ...SOURCES_OFF, gibs: true } }));
 
   test("PUTs enabled false at once, with no confirmation, and disables the rows again", async () => {
     const f = server({ [GET_SETTINGS]: { json: { ...SETTINGS, online_imagery: { ...IMAGERY_OFF, enabled: true } } } });
     mount();
     expect(online().checked).toBe(true);
     await user.click(online());
-    await waitFor(() => expect(useImagery.getState().enabled).toBe(false));
+    await waitFor(() => expect(useImagery.getState().sources.gibs).toBe(false));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(puts(f)).toHaveLength(1);
     expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: IMAGERY_OFF });
@@ -278,7 +296,7 @@ describe("turning the switch off", () => {
     await user.tab();
     const before = useLayout.getState().globe;
     await user.click(online());
-    await waitFor(() => expect(useImagery.getState().enabled).toBe(false));
+    await waitFor(() => expect(useImagery.getState().sources.gibs).toBe(false));
     expect(useLayout.getState().globe).toBe(before);
     expect(show("GOES-East GeoColor").checked).toBe(true);
     expect(translucency("GOES-East GeoColor").value).toBe("40");
@@ -286,7 +304,7 @@ describe("turning the switch off", () => {
 });
 
 describe("Show and % Translucency", () => {
-  beforeEach(() => useImagery.setState({ enabled: true }));
+  beforeEach(() => useImagery.setState({ sources: { ...SOURCES_OFF, gibs: true } }));
 
   test("Show writes the layer's show into the layout's globe settings, keeping its translucency", async () => {
     mount();
@@ -384,7 +402,7 @@ describe("Show and % Translucency", () => {
 
 describe("when the layer list could not be read", () => {
   test("the GIBS part is shown as unavailable with a Thai message, the switch is disabled and only Natural Earth II remains", () => {
-    useImagery.setState({ loaded: false, layers: [], enabled: false });
+    useImagery.setState({ loaded: false, layers: [], sources: SOURCES_OFF });
     mount();
     expect(screen.getByText(msg("globe.unavailable"))).toBeDefined();
     expect(msg("globe.unavailable")).toMatch(/[฀-๿]/);

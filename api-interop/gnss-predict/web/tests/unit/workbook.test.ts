@@ -107,7 +107,10 @@ describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", (
   const VIIRS = "VIIRS_NOAA20_CorrectedReflectance_TrueColor";
 
   test("globe survives JSON (what the server stores) unchanged", () => {
-    const w: Workbook = { ...valid(), globe: { layers: { [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: false, translucency: 40 } } } };
+    const w: Workbook = {
+      ...valid(),
+      globe: { layers: { [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: false, translucency: 40 }, osm: { show: true, translucency: 0 } }, ion: { assetId: 3830182 } },
+    };
     expect(validateWorkbook(JSON.parse(JSON.stringify(w)))).toEqual(w);
   });
 
@@ -157,11 +160,30 @@ describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", (
 
   test("extra fields in an entry are not carried over", () => {
     const w = validateWorkbook({ ...valid(), globe: { layers: { [BM]: { show: true, translucency: 5, extra: 1 } }, other: 2 } });
-    expect(w?.globe).toEqual({ layers: { [BM]: { show: true, translucency: 5 } } });
+    expect(w?.globe).toEqual({ layers: { [BM]: { show: true, translucency: 5 } }, ion: { assetId: null } });
   });
 
-  test("DEFAULT_GLOBE shows Blue Marble and VIIRS NOAA-20 opaque and nothing else", () => {
-    expect(DEFAULT_GLOBE).toEqual({ layers: { [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } } });
+  test("ion (the Cesium ion asset shown, spec ภาพละเอียด §4.2): missing or not a whole number > 0 = none (null), the rest of globe is kept", () => {
+    const layers = { [BM]: { show: true, translucency: 0 } };
+    for (const ion of [undefined, null, 3, "x", [], {}, { assetId: 0 }, { assetId: -2 }, { assetId: 1.5 }, { assetId: "2" }, { assetId: null }, { assetId: 2 ** 53 }, { assetId: Number.NaN }]) {
+      const w = validateWorkbook({ ...valid(), globe: { layers, ion } });
+      expect(w, String(JSON.stringify(ion))).not.toBeNull();
+      expect(w?.globe, String(JSON.stringify(ion))).toEqual({ layers, ion: { assetId: null } });
+    }
+    expect(validateWorkbook({ ...valid(), globe: { layers, ion: { assetId: 1, extra: true } } })?.globe?.ion).toEqual({ assetId: 1 });
+    expect(validateWorkbook({ ...valid(), globe: { layers, ion: { assetId: 3830184 } } })?.globe?.ion).toEqual({ assetId: 3830184 });
+  });
+
+  test("DEFAULT_GLOBE shows Blue Marble, VIIRS NOAA-20, Sentinel-2 cloudless and OpenStreetMap opaque (each only once its source is on) and no Cesium ion asset", () => {
+    expect(DEFAULT_GLOBE).toEqual({
+      layers: {
+        [BM]: { show: true, translucency: 0 },
+        [VIIRS]: { show: true, translucency: 0 },
+        "s2cloudless-2024_3857": { show: true, translucency: 0 },
+        osm: { show: true, translucency: 0 },
+      },
+      ion: { assetId: null },
+    });
   });
 });
 

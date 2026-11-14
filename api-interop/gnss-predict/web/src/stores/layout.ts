@@ -5,7 +5,7 @@
 // - คำสั่งเมนู Window (Windows..., Cascade, Tile) เรียกผ่านที่นี่; เมนูบาร์มาในงานถัดไป
 // - workbook (W6): toWorkbook / fromWorkbook / applyDefault / restoreFor(name) (เรียกหลัง useScenario.load สำเร็จ) / saveWorkbook (File → Save)
 //   workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist): หน้าต่างลอยและชั่วคราวไม่ถูกบันทึกพร้อม windowProps ของมัน และถูกข้ามตอนจัดกลับ
-//   globe (ชั้นภาพ GIBS ของ Globe Manager) ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View: workbook ที่ไม่มีช่องนี้และ layout ตั้งต้น = DEFAULT_GLOBE
+//   globe (ชั้นภาพและ asset ของ Cesium ion ของ Globe Manager) ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View: workbook ที่ไม่มีช่องนี้และ layout ตั้งต้น = DEFAULT_GLOBE
 //   restoreFor ที่ค้างอยู่ถูกทิ้งเมื่อ scenario ปิดหรือเปลี่ยนระหว่างรอ workbook (ไม่งั้นคำตอบเก่าแทนที่ทุกหน้าต่าง รวม Welcome ที่เพิ่งเปิด)
 // - หน้าต่างที่มี Cesium ต้องแจ้ง viewer.resize() เมื่อ panel เปลี่ยนขนาด: ใช้ onPanelResize(id, cb) หรือ hook usePanelResize(panelId, cb)
 
@@ -21,7 +21,7 @@ import {
 } from "../layout/panels";
 import { cascadeIntegrated, centrePanel, moveToType, revealPanel, tileIntegrated, windowTypeOf, type MoveHints } from "../layout/placement";
 import {
-  DEFAULT_GLOBE, DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes,
+  DEFAULT_GLOBE, DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, isIonAssetId, validateWorkbook, withoutPanels, workbookBytes,
   type GlobeLayerSetting, type GlobeSettings, type ToolbarName, type Toolbars, type Workbook, type WindowProps,
 } from "../layout/workbook";
 import { report } from "./messages";
@@ -50,7 +50,7 @@ interface LayoutState {
   timelineHidden: string[];
   /** ตั้งค่าเฉพาะหน้าต่างตาม panelId (งานหน้าต่าง 3D/2D เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) */
   windowProps: WindowProps;
-  /** ชั้นภาพ GIBS บนลูกโลก (Globe Manager เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) ไม่แก้ตัวเดิม: เปลี่ยน = object ใหม่ */
+  /** ชั้นภาพบนลูกโลกและ asset ของ Cesium ion (Globe Manager เป็นเจ้าของ; ที่นี่เก็บและเขียนลง workbook) ไม่แก้ตัวเดิม: เปลี่ยน = object ใหม่ */
   globe: GlobeSettings;
 
   attach(api: DockviewApi): void;
@@ -78,6 +78,8 @@ interface LayoutState {
   setWindowProps(panelId: string, props: Record<string, unknown>): void;
   /** แก้ Show หรือ Translucency ของชั้นหนึ่ง (ชั้นที่ยังไม่มีในรายการเริ่มจากซ่อน โปร่งแสง 0) */
   setGlobeLayer(id: string, patch: Partial<GlobeLayerSetting>): void;
+  /** asset ของ Cesium ion ที่แสดง (null = ไม่แสดง) ค่าที่ไม่ใช่จำนวนเต็ม > 0 ไม่เปลี่ยนอะไร */
+  setGlobeIon(assetId: number | null): void;
 
   toWorkbook(): Workbook;
   /** สร้างหน้าต่างตาม workbook (ใช้ไม่ได้ = layout ตั้งต้นพร้อมข้อความเตือน) */
@@ -301,8 +303,12 @@ export const useLayout = create<LayoutState>()((set, get) => {
     setGlobeLayer: (id, patch) =>
       set((s) => {
         const before = s.globe.layers[id] ?? { show: false, translucency: 0 };
-        return { globe: { layers: { ...s.globe.layers, [id]: { ...before, ...patch } } } };
+        return { globe: { ...s.globe, layers: { ...s.globe.layers, [id]: { ...before, ...patch } } } };
       }),
+    setGlobeIon: (assetId) => {
+      if (assetId !== null && !isIonAssetId(assetId)) return;
+      set((s) => ({ globe: { ...s.globe, ion: { assetId } } }));
+    },
 
     toWorkbook: () => {
       const api = need();

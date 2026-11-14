@@ -346,14 +346,14 @@ describe("the window", () => {
     await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
     // สวิตช์เปิด: ชั้นบนสุดที่แสดง ไม่มีคำแนะนำ
     fake.hud = { ...fake.hud, imagery: { title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missing: false } };
-    act(() => useImagery.setState({ enabled: true }));
+    act(() => useImagery.setState({ sources: { gibs: true, eox: false, osm: false, ion: false } }));
     await waitFor(() => expect(lines()).toContain(msg("sensorView.hudImagery", { image: "VIIRS NOAA-20 True Color 2026-11-11" })));
     expect(lines()).toContain("ภาพพื้นโลก: VIIRS NOAA-20 True Color 2026-11-11");
     expect(lines()).not.toContain(msg("sensorView.hintGlobeManager"));
     // ชั้นบนสุดไม่มีภาพเกินครึ่ง: ต่อท้าย (HUD อ่านใหม่เองเป็นระยะ ไม่ต้องรอเวลาเปลี่ยน)
     fake.hud = { ...fake.hud, imagery: { title: "Blue Marble", label: "", missing: true } };
     await waitFor(() => expect(lines()).toContain("ภาพพื้นโลก: Blue Marble — ไม่มีภาพเวลานี้"), { timeout: 3000 });
-    act(() => useImagery.setState({ enabled: false }));
+    act(() => useImagery.setState({ sources: { gibs: false, eox: false, osm: false, ion: false } }));
   });
 
   test("the HUD is read again when the time moves and when the scene says it changed", async () => {

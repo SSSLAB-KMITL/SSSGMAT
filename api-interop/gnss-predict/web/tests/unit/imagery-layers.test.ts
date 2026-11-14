@@ -1,11 +1,16 @@
-// ชั้นภาพ GIBS บน viewer 3D (spec imagery §5.2, src/cesium/imageryLayers.ts) โดยไม่มี WebGL และไม่ต่อเน็ต:
-// ImageryLayer, UrlTemplateImageryProvider และ WebMercatorTilingScheme ของ Cesium ถูกแทนด้วยตัวปลอมที่จำ option ไว้
+// ชั้นภาพออนไลน์บน viewer 3D (spec imagery §5.2, spec ภาพละเอียด §4, src/cesium/imageryLayers.ts) โดยไม่มี WebGL และไม่ต่อเน็ต:
+// ImageryLayer, UrlTemplateImageryProvider, WebMercatorTilingScheme และ IonImageryProvider.fromAssetId ของ Cesium ถูกแทนด้วยตัวปลอมที่จำ option ไว้
+// (fromAssetId ปลอมคืน promise ที่ test ตัดสินเอง: ไม่มีคำขอไป api.cesium.com)
 // viewer ปลอมมีแค่ imageryLayers (รายการธรรมดา: index 0 = Natural Earth II, ท้ายสุด = เส้น Lat/Lon) กับ scene.requestRender
 // - สวิตช์ปิด = ไม่มีชั้น GIBS; ชั้นที่แสดงอยู่เหนือ index 0 เรียงตาม catalog และอยู่ใต้เส้น Lat/Lon เสมอ
 // - token ของเวลาเปลี่ยน = เปลี่ยนชั้นนั้นใหม่ ไม่เกิน 1 ครั้งต่อวินาทีต่อ viewer (ครั้งท้ายตามมาเสมอ) ชั้นเดิมอยู่จนชั้นใหม่เริ่มโหลด
-// - provider ของแต่ละ viewer เป็นคนละตัว; ชิ้น 404 ไม่ลองซ้ำและนับเป็นไม่มีภาพ; 403 = server ปิดสวิตช์ เอาชั้นออกทั้งหมด
+// - provider ของแต่ละ viewer เป็นคนละตัว; ชิ้น 404 ไม่ลองซ้ำและนับเป็นไม่มีภาพ; 403 = server ปิดสวิตช์ของแหล่งนั้น เอาชั้นของแหล่งนั้นออกทั้งหมด
+// - แหล่ง: GIBS และ EOX ผ่าน server, OpenStreetMap browser ดึงตรง (ตามลำดับนี้ใต้เส้น Lat/Lon) แต่ละแหล่งมีสวิตช์ของตัวเอง
+// - Cesium ion แสดงอยู่ = ชั้นอื่นทั้งหมดถูกเอาออกและ Natural Earth II alpha 0 ในทุก viewer จนกว่าจะเลิกแสดง ion
 
 import { Event as CesiumEvent } from "cesium";
+import { readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 interface FakeProvider {
@@ -20,7 +25,13 @@ interface FakeLayer {
   nightAlpha: number;
 }
 
-const made = vi.hoisted(() => ({ providers: [] as unknown[], schemes: [] as unknown[] }));
+interface IonCall {
+  assetId: number;
+  options: Record<string, unknown>;
+  resolve(p: unknown): void;
+  reject(e: unknown): void;
+}
+const made = vi.hoisted(() => ({ providers: [] as unknown[], schemes: [] as unknown[], ion: [] as IonCall[] }));
 
 vi.mock("cesium", async (importOriginal) => {
   const actual = await importOriginal<typeof import("cesium")>();
@@ -42,12 +53,18 @@ vi.mock("cesium", async (importOriginal) => {
     nightAlpha = 1;
     constructor(public imageryProvider: unknown, _options?: unknown) {}
   }
-  return { ...actual, UrlTemplateImageryProvider, WebMercatorTilingScheme, ImageryLayer };
+  const IonImageryProvider = {
+    fromAssetId: vi.fn((assetId: number, options: Record<string, unknown>) =>
+      new Promise((resolve, reject) => made.ion.push({ assetId, options, resolve, reject }))),
+  };
+  return { ...actual, UrlTemplateImageryProvider, WebMercatorTilingScheme, ImageryLayer, IonImageryProvider };
 });
 
-const { Credit, ImageryProvider, NeverTileDiscardPolicy, Resource, WebMercatorTilingScheme } = await import("cesium");
+const { Credit, Event: CEvent, ImageryProvider, Ion, IonImageryProvider, NeverTileDiscardPolicy, Resource, WebMercatorTilingScheme } = await import("cesium");
 const { attachImageryLayers, imageryStatus, setImageryNightAlpha, TOKEN_INTERVAL_MS } = await import("../../src/cesium/imageryLayers");
 const { useImagery } = await import("../../src/stores/imagery");
+const { useSettings } = await import("../../src/stores/settings");
+const { useMessages } = await import("../../src/stores/messages");
 const { useLayout } = await import("../../src/stores/layout");
 const { useTime } = await import("../../src/stores/time");
 const { DEFAULT_GLOBE } = await import("../../src/layout/workbook");
@@ -56,17 +73,25 @@ const BM = "BlueMarble_NextGeneration";
 const VIIRS = "VIIRS_NOAA20_CorrectedReflectance_TrueColor";
 const MODIS = "MODIS_Terra_CorrectedReflectance_TrueColor";
 const HIMA = "Himawari_AHI_Band3_Red_Visible_1km";
+const EOX = "s2cloudless-2024_3857";
+const OSM = "osm";
+const ION = "ion";
+const TOKEN = "tok-SECRET-1234";
+const EOX_CREDIT = "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)";
+const OFF = { gibs: false, eox: false, osm: false, ion: false };
+const GIBS_ON = { ...OFF, gibs: true };
 
 const CATALOG = [
-  { id: BM, title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS" },
-  { id: VIIRS, title: "VIIRS NOAA-20 True Color", period: "daily", max_level: 9, format: "jpg", credit: "NASA GIBS / EOSDIS" },
-  { id: MODIS, title: "MODIS Terra True Color", period: "daily", max_level: 9, format: "jpg", credit: "NASA GIBS / EOSDIS" },
-  { id: HIMA, title: "Himawari-9 Red Visible", period: "10min", max_level: 7, format: "png", credit: "NASA GIBS / EOSDIS, JMA" },
+  { id: BM, title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" },
+  { id: VIIRS, title: "VIIRS NOAA-20 True Color", period: "daily", max_level: 9, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" },
+  { id: MODIS, title: "MODIS Terra True Color", period: "daily", max_level: 9, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" },
+  { id: HIMA, title: "Himawari-9 Red Visible", period: "10min", max_level: 7, format: "png", credit: "NASA GIBS / EOSDIS, JMA", source: "gibs" },
 ] as const;
+const EOX_LAYER = { id: EOX, title: "Sentinel-2 cloudless 2024", period: "static", max_level: 15, format: "jpg", credit: EOX_CREDIT, source: "eox" } as const;
 
 /** viewer ปลอม: imageryLayers แบบ ImageryLayerCollection (add ที่ index แทรก, remove เอาออก) เริ่มด้วยฐานและเส้น Lat/Lon */
 function fakeViewer() {
-  const base = { name: "NaturalEarthII" };
+  const base = { name: "NaturalEarthII", alpha: 1, dayAlpha: 1, nightAlpha: 1 };
   const grid = { name: "grid" };
   const list: unknown[] = [base, grid];
   const imageryLayers = {
@@ -98,13 +123,19 @@ function fakeViewer() {
   return { viewer: viewer as never, list, base, grid, gibs, ids, scene };
 }
 
-const idOf = (l: FakeLayer): string => String(l.imageryProvider.options.url).split("/")[4];
+/** id ของชั้นจาก url ของ provider (OSM = "osm") ชั้น ion (provider ไม่มี options) = "ion" */
+const idOf = (l: FakeLayer): string => {
+  const url = l.imageryProvider.options?.url;
+  if (url === undefined) return ION;
+  return String(url).startsWith("https://tile.openstreetmap.org/") ? OSM : String(url).split("/")[4];
+};
 const tokenOf = (l: FakeLayer): string => String(l.imageryProvider.options.url).split("/")[5];
 const providers = () => made.providers as FakeProvider[];
 const providersOf = (id: string) => providers().filter((p) => String(p.options.url).split("/")[4] === id);
 
 const setTime = (iso: string) => useTime.setState({ current: new Date(iso) });
-const show = (layers: Record<string, { show: boolean; translucency: number }>) => useLayout.setState({ globe: { layers } });
+const show = (layers: Record<string, { show: boolean; translucency: number }>) => useLayout.setState((s) => ({ globe: { ...s.globe, layers } }));
+const sources = (on: Partial<typeof OFF>) => useImagery.setState({ sources: { ...OFF, ...on } });
 
 const offs: (() => void)[] = [];
 function attach(viewer: never, nightAlpha?: number) {
@@ -118,7 +149,10 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-11-14T00:00:00Z"));
   made.providers.length = 0;
   made.schemes.length = 0;
-  useImagery.setState({ enabled: true, layers: [...CATALOG], loaded: true });
+  made.ion.length = 0;
+  vi.mocked(IonImageryProvider.fromAssetId).mockClear();
+  useImagery.setState({ sources: GIBS_ON, layers: [...CATALOG], loaded: true });
+  useMessages.setState(useMessages.getInitialState(), true);
   useLayout.setState({ globe: DEFAULT_GLOBE });
   setTime("2026-11-11T12:00:00Z");
 });
@@ -126,11 +160,12 @@ afterEach(() => {
   for (const off of offs.splice(0)) off();
   vi.useRealTimers();
   useImagery.setState(useImagery.getInitialState(), true);
+  useSettings.setState(useSettings.getInitialState(), true);
 });
 
 describe("attachImageryLayers", () => {
   test("switch off: no GIBS layer is added, not even for shown layers", () => {
-    useImagery.setState({ enabled: false });
+    useImagery.setState({ sources: OFF });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.list).toEqual([v.base, v.grid]);
@@ -169,7 +204,7 @@ describe("attachImageryLayers", () => {
     expect(v.ids()).toEqual([]);
     useImagery.setState({ layers: [...CATALOG] });
     expect(v.ids()).toEqual([BM]);
-    useImagery.setState({ enabled: false });
+    useImagery.setState({ sources: OFF });
     expect(v.list).toEqual([v.base, v.grid]);
   });
 
@@ -206,7 +241,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("each layer's credit (NASA GIBS / EOSDIS, JMA, NOAA) is shown on screen, not only in Cesium's Data attribution box", () => {
-    useImagery.setState({ layers: [...CATALOG, { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: "NASA GIBS / EOSDIS, NOAA" }] });
+    useImagery.setState({ layers: [...CATALOG, { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: "NASA GIBS / EOSDIS, NOAA", source: "gibs" }] });
     show({ [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 0 } });
     const v = fakeViewer();
     attach(v.viewer);
@@ -375,8 +410,8 @@ describe("attachImageryLayers", () => {
     const count = providers().length;
     show({ [MODIS]: { show: true, translucency: 0 } });
     setTime("2026-11-20T00:00:00Z");
-    useImagery.setState({ enabled: false });
-    useImagery.setState({ enabled: true });
+    useImagery.setState({ sources: OFF });
+    useImagery.setState({ sources: GIBS_ON });
     vi.advanceTimersByTime(5000);
     expect(providers()).toHaveLength(count);
     expect(v.list).toEqual([v.base, v.grid]);
@@ -412,7 +447,7 @@ describe("attachImageryLayers", () => {
       expect(error.retry).toBe(false);
     }
     expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBe(0);
-    expect(useImagery.getState().enabled).toBe(true);
+    expect(useImagery.getState().sources).toEqual(GIBS_ON);
   });
 
   test("a 403 tile (server switch is off) turns the switch off here and takes every GIBS layer off every viewer", async () => {
@@ -422,7 +457,7 @@ describe("attachImageryLayers", () => {
     attach(b.viewer);
     a.gibs()[0].imageryProvider.errorEvent.raiseEvent({ retry: true, error: { statusCode: 403 } });
     await Promise.resolve();
-    expect(useImagery.getState().enabled).toBe(false);
+    expect(useImagery.getState().sources).toEqual(OFF);
     expect(a.list).toEqual([a.base, a.grid]);
     expect(b.list).toEqual([b.base, b.grid]);
   });
@@ -433,7 +468,7 @@ describe("imageryStatus", () => {
     show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } });
     const v = fakeViewer();
     attach(v.viewer);
-    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0 });
+    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0, source: "gibs", max_level: 9 });
     show({ [BM]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 } });
     expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: HIMA, label: "2026-11-11 12:00 UTC" });
     show({ [BM]: { show: true, translucency: 0 } });
@@ -449,7 +484,7 @@ describe("imageryStatus", () => {
     p.errorEvent.raiseEvent({ retry: true, error: { statusCode: 404 } });
     setTime("2026-11-12T12:00:00Z");
     expect(v.gibs()).toHaveLength(2);
-    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0.5 });
+    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0.5, source: "gibs", max_level: 9 });
     // อีกชั้นที่ยังไม่เริ่มโหลดแทนอีกครั้ง: ภาพบนจอยังเป็นชั้นเดิม
     vi.advanceTimersByTime(TOKEN_INTERVAL_MS);
     setTime("2026-11-13T12:00:00Z");
@@ -466,7 +501,375 @@ describe("imageryStatus", () => {
     show({});
     expect(imageryStatus(v.viewer).topLayer).toBeNull();
     show(DEFAULT_GLOBE.layers);
-    useImagery.setState({ enabled: false });
+    useImagery.setState({ sources: OFF });
     expect(imageryStatus(v.viewer).topLayer).toBeNull();
+  });
+});
+
+// ---------- แหล่งภาพ: Sentinel-2 cloudless (EOX), OpenStreetMap, Cesium ion (spec ภาพละเอียด §4) ----------
+
+const SETTINGS = {
+  daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 1 },
+  cesium_ion_token: TOKEN,
+  online_imagery: { enabled: true, eox: true, osm: true, ion: true },
+};
+const setToken = (token: string) => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: token } });
+const ionAsset = (id: number | null) => useLayout.getState().setGlobeIon(id);
+const warnings = () => useMessages.getState().items.filter((m) => m.level === "warning");
+const fakeIonProvider = () => ({ errorEvent: new CEvent(), maximumLevel: 20 });
+/** ทุก promise ของ fromAssetId ที่ค้างอยู่สำเร็จ แล้วรอ then ของ manager */
+async function resolveIon() {
+  for (const c of made.ion.splice(0)) c.resolve(fakeIonProvider());
+  await vi.advanceTimersByTimeAsync(0);
+}
+async function rejectIon(error: unknown) {
+  for (const c of made.ion.splice(0)) c.reject(error);
+  await vi.advanceTimersByTimeAsync(0);
+}
+const ALL_SHOWN = {
+  [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 }, [OSM]: { show: true, translucency: 30 },
+};
+
+describe("sources: Sentinel-2 cloudless (EOX) through the server", () => {
+  beforeEach(() => useImagery.setState({ layers: [EOX_LAYER, ...CATALOG] })); // EOX มาก่อนใน catalog: ลำดับวาดยังเป็น GIBS แล้ว EOX
+
+  test("EOX is drawn above every GIBS layer whatever the catalog order, with the same-origin url, max level 15 and its credit on screen", () => {
+    sources({ gibs: true, eox: true });
+    show(ALL_SHOWN);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([BM, VIIRS, EOX]);
+    expect(v.list.at(-1)).toBe(v.grid);
+    const o = v.gibs()[2].imageryProvider.options;
+    expect(o.url).toBe("/api/imagery/tiles/s2cloudless-2024_3857/default/{z}/{y}/{x}");
+    expect(o.maximumLevel).toBe(15);
+    expect(o.tilingScheme).toBeInstanceOf(WebMercatorTilingScheme);
+    expect(o.tileDiscardPolicy).toBeInstanceOf(NeverTileDiscardPolicy);
+    expect((o.credit as InstanceType<typeof Credit>).html).toBe(EOX_CREDIT);
+    expect((o.credit as InstanceType<typeof Credit>).showOnScreen).toBe(true);
+  });
+
+  test("each proxied source follows only its own switch", () => {
+    show(ALL_SHOWN);
+    sources({ gibs: true });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([BM, VIIRS]);
+    sources({ eox: true });
+    expect(v.ids()).toEqual([EOX]);
+    sources({});
+    expect(v.list).toEqual([v.base, v.grid]);
+    expect(providersOf(EOX)).toHaveLength(1);
+  });
+
+  test("a 403 on an EOX tile turns off only the EOX switch here; GIBS layers stay", async () => {
+    sources({ gibs: true, eox: true, osm: true });
+    show(ALL_SHOWN);
+    const v = fakeViewer();
+    attach(v.viewer);
+    v.gibs()[2].imageryProvider.errorEvent.raiseEvent({ retry: true, error: { statusCode: 403 } });
+    await Promise.resolve();
+    expect(useImagery.getState().sources).toEqual({ gibs: true, eox: false, osm: true, ion: false });
+    expect(v.ids()).toEqual([BM, VIIRS, OSM]);
+  });
+
+  test("the HUD's top layer names its source and finest level", () => {
+    sources({ gibs: true, eox: true });
+    show(ALL_SHOWN);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: EOX, title: "Sentinel-2 cloudless 2024", label: "", missingRatio: 0, source: "eox", max_level: 15 });
+  });
+});
+
+describe("sources: OpenStreetMap straight from the browser", () => {
+  beforeEach(() => useImagery.setState({ layers: [...CATALOG, EOX_LAYER] }));
+
+  test("switch off: no OpenStreetMap provider even with its row shown", () => {
+    sources({ gibs: true, eox: true });
+    show(ALL_SHOWN);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).not.toContain(OSM);
+    expect(providers().filter((p) => String(p.options.url).includes("openstreetmap"))).toHaveLength(0);
+  });
+
+  test("switch on and shown: the exact tile url, Web Mercator, max level 19, credit on screen, above EOX and GIBS and below the grid", () => {
+    sources({ gibs: true, eox: true, osm: true });
+    show(ALL_SHOWN);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+    expect(v.list.at(-1)).toBe(v.grid);
+    const layer = v.gibs()[3];
+    const o = layer.imageryProvider.options;
+    expect(o.url).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+    expect(o.tilingScheme).toBeInstanceOf(WebMercatorTilingScheme);
+    expect(o.maximumLevel).toBe(19);
+    expect((o.credit as InstanceType<typeof Credit>).html).toBe("© OpenStreetMap contributors");
+    expect((o.credit as InstanceType<typeof Credit>).showOnScreen).toBe(true);
+    // นโยบายเดิมของ Cesium (ไม่ตั้งตัวทิ้งชิ้น ไม่ส่ง header เพิ่ม) และ translucency ของแถว osm
+    expect(o.tileDiscardPolicy).toBeUndefined();
+    expect(layer.alpha).toBeCloseTo(0.7, 12);
+    expect(imageryStatus(v.viewer).topLayer).toEqual({ id: OSM, title: "OpenStreetMap", label: "", missingRatio: 0, source: "osm", max_level: 19 });
+  });
+
+  test("OSM on alone, shown later or hidden again; its row hidden = no provider", () => {
+    sources({ osm: true });
+    show({ [OSM]: { show: false, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([]);
+    show({ [OSM]: { show: true, translucency: 0 } });
+    expect(v.ids()).toEqual([OSM]);
+    expect(v.list.indexOf(v.gibs()[0])).toBe(1);
+    show({});
+    expect(v.list).toEqual([v.base, v.grid]);
+  });
+
+  test("an OpenStreetMap tile error (even 403) is not retried and never turns any switch off", async () => {
+    sources({ osm: true });
+    show({ [OSM]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    for (const error of [{ retry: true, error: { statusCode: 403 } }, { retry: true, error: { statusCode: 429 } }, { retry: true }]) {
+      v.gibs()[0].imageryProvider.errorEvent.raiseEvent(error);
+      expect(error.retry).toBe(false);
+    }
+    await Promise.resolve();
+    expect(useImagery.getState().sources).toEqual({ ...OFF, osm: true });
+    expect(v.ids()).toEqual([OSM]);
+  });
+
+  test("the app sets no Referrer-Policy (index.html meta or server header), so tile.openstreetmap.org gets the browser's default Referer", () => {
+    const root = resolve(__dirname, "../..");
+    expect(readFileSync(resolve(root, "index.html"), "utf8").toLowerCase()).not.toContain("referrer");
+    const server = resolve(root, "../server/gnss_studio_server");
+    const py = readdirSync(server, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".py"));
+    expect(py.length).toBeGreaterThan(0);
+    for (const f of py) expect(readFileSync(resolve(server, f), "utf8").toLowerCase(), f).not.toContain("referrer-policy");
+  });
+});
+
+describe("sources: Cesium ion (exclusive)", () => {
+  beforeEach(() => {
+    useImagery.setState({ layers: [...CATALOG, EOX_LAYER] });
+    sources({ gibs: true, eox: true, osm: true });
+    show(ALL_SHOWN);
+    setToken(TOKEN);
+  });
+
+  test("ion shown with a token: fromAssetId(asset, { accessToken }) per viewer, every other layer goes and Natural Earth II alpha is 0 in every viewer", async () => {
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    expect(a.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled(); // ยังไม่ได้เลือก asset
+    ionAsset(3830182);
+    expect(vi.mocked(IonImageryProvider.fromAssetId).mock.calls).toEqual([[3830182, { accessToken: TOKEN }], [3830182, { accessToken: TOKEN }]]);
+    for (const v of [a, b]) {
+      expect(v.ids()).toEqual([]);
+      expect(v.base.alpha).toBe(0);
+    }
+    await resolveIon();
+    for (const v of [a, b]) {
+      expect(v.ids()).toEqual([ION]);
+      expect(v.list).toEqual([v.base, v.gibs()[0], v.grid]);
+      expect(v.base.alpha).toBe(0);
+      expect(v.gibs()[0].alpha).toBe(1);
+      expect(imageryStatus(v.viewer).topLayer).toEqual({ id: ION, title: "Google Maps Satellite", label: "", missingRatio: 0, source: "ion", max_level: 20 });
+    }
+    expect(a.gibs()[0].imageryProvider).not.toBe(b.gibs()[0].imageryProvider);
+    expect(warnings()).toEqual([]);
+  });
+
+  test("while ion is shown, time-token changes and Globe Manager edits never bring another layer back", async () => {
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(2);
+    const v = fakeViewer();
+    attach(v.viewer);
+    await resolveIon();
+    const count = providers().length;
+    setTime("2026-11-12T12:00:00Z");
+    vi.advanceTimersByTime(5000);
+    show({ ...ALL_SHOWN, [MODIS]: { show: true, translucency: 10 } });
+    useImagery.setState({ layers: [...CATALOG, EOX_LAYER] });
+    expect(providers()).toHaveLength(count);
+    expect(v.ids()).toEqual([ION]);
+    expect(v.base.alpha).toBe(0);
+    expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: ION, title: "Bing Maps Aerial" });
+  });
+
+  test("ion hidden (no asset) or its switch off: the ion layer goes, the other layers come back in order and the base alpha is what it was", async () => {
+    const v = fakeViewer();
+    v.base.alpha = 0.8;
+    attach(v.viewer);
+    for (const hide of [() => ionAsset(null), () => sources({ gibs: true, eox: true, osm: true })]) {
+      sources({ gibs: true, eox: true, osm: true, ion: true });
+      ionAsset(3830184);
+      await resolveIon();
+      expect(v.ids()).toEqual([ION]);
+      expect(v.base.alpha).toBe(0);
+      hide();
+      expect(v.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+      expect(v.list.at(-1)).toBe(v.grid);
+      expect(v.base.alpha).toBe(0.8);
+      expect(v.gibs()[3].alpha).toBeCloseTo(0.7, 12);
+    }
+  });
+
+  test("another asset replaces the ion layer; a provider that arrives after it is no longer wanted is never added", async () => {
+    sources({ ion: true });
+    ionAsset(3830182);
+    const v = fakeViewer();
+    attach(v.viewer);
+    const first = made.ion.splice(0);
+    ionAsset(3830183);
+    first[0].resolve(fakeIonProvider());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(v.ids()).toEqual([]);
+    await resolveIon();
+    expect(v.ids()).toEqual([ION]);
+    expect(imageryStatus(v.viewer).topLayer?.title).toBe("Google Maps Satellite with Labels");
+    ionAsset(55555);
+    await resolveIon();
+    expect(v.ids()).toEqual([ION]);
+    expect(imageryStatus(v.viewer).topLayer?.title).toBe("Cesium ion 55555");
+  });
+
+  test("an empty token: no provider, the other layers and the base stay, one Thai warning however many viewers", () => {
+    setToken("   ");
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(3830182);
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled();
+    for (const v of [a, b]) {
+      expect(v.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+      expect(v.base.alpha).toBe(1);
+    }
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0].text).toMatch(/[฀-๿]/);
+    // token ที่ใส่ทีหลังใช้ทันที
+    setToken(TOKEN);
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(2);
+    expect(a.ids()).toEqual([]);
+  });
+
+  test("settings not read yet: nothing happens until the token is known (no provider, no warning)", () => {
+    useSettings.setState({ settings: null });
+    sources({ ion: true });
+    ionAsset(3830182);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled();
+    expect(warnings()).toEqual([]);
+    setToken(TOKEN);
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    [401, { statusCode: 401 }],
+    [404, { statusCode: 404 }],
+    ["network", new Error("Failed to fetch")],
+  ])("ion refuses (%s): the layer goes in every viewer, the others come back, one Thai message without the token, no retry", async (_name, error) => {
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(3830182);
+    expect(a.ids()).toEqual([]);
+    await rejectIon(error);
+    for (const v of [a, b]) {
+      expect(v.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+      expect(v.base.alpha).toBe(1);
+      expect(imageryStatus(v.viewer).topLayer?.source).toBe("osm");
+    }
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0].text).toMatch(/[฀-๿]/);
+    expect(warnings()[0].text).toContain("3830182");
+    expect(warnings()[0].text).not.toContain(TOKEN);
+    expect(JSON.stringify(useMessages.getState().items)).not.toContain(TOKEN);
+    // ไม่ลองซ้ำเองกับ asset และ token เดิม
+    setTime("2026-11-12T12:00:00Z");
+    vi.advanceTimersByTime(5000);
+    show({ ...ALL_SHOWN, [MODIS]: { show: true, translucency: 0 } });
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(2);
+    // token ใหม่ หรือปิดแล้วเปิดสวิตช์ ion ใหม่ = ลองใหม่
+    setToken("tok-other");
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(4);
+    await rejectIon({ statusCode: 401 });
+    sources({ gibs: true, eox: true, osm: true });
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(6);
+  });
+
+  test("the 401 message says the token was refused; the 404 message says the asset was not found", async () => {
+    sources({ ion: true });
+    ionAsset(3830182);
+    attach(fakeViewer().viewer);
+    await rejectIon({ statusCode: 401 });
+    ionAsset(77);
+    await rejectIon({ statusCode: 404 });
+    const [refused, missing] = warnings().map((m) => m.text);
+    expect(refused).toContain("token");
+    expect(refused).toContain("401");
+    expect(missing).toContain("404");
+    expect(missing).toContain("77");
+  });
+
+  test("the token is never put in any url we build and Ion.defaultAccessToken is never set", async () => {
+    const before = Ion.defaultAccessToken;
+    const v = fakeViewer();
+    attach(v.viewer);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(3830182);
+    await resolveIon();
+    ionAsset(null);
+    expect(providers().length).toBeGreaterThan(0);
+    for (const p of providers()) expect(JSON.stringify(p.options)).not.toContain(TOKEN);
+    for (const [assetId, options] of vi.mocked(IonImageryProvider.fromAssetId).mock.calls) {
+      expect(typeof assetId).toBe("number");
+      expect(options).toEqual({ accessToken: TOKEN });
+    }
+    expect(Ion.defaultAccessToken).toBe(before);
+  });
+
+  test("the ion layer follows Ambient Level like the others, and its tile errors are not retried", async () => {
+    sources({ ion: true });
+    ionAsset(3830182);
+    const v = fakeViewer();
+    attach(v.viewer, 0.4);
+    await resolveIon();
+    expect([v.gibs()[0].dayAlpha, v.gibs()[0].nightAlpha]).toEqual([1, 0.4]);
+    setImageryNightAlpha(v.viewer, 0.9);
+    expect(v.gibs()[0].nightAlpha).toBe(0.9);
+    const error = { retry: true, error: { statusCode: 500 } };
+    v.gibs()[0].imageryProvider.errorEvent.raiseEvent(error);
+    expect(error.retry).toBe(false);
+    expect(useImagery.getState().sources.ion).toBe(true);
+  });
+
+  test("detach while ion is shown: the ion layer goes, the base alpha comes back, and a late provider adds nothing", async () => {
+    sources({ ion: true });
+    ionAsset(3830182);
+    const v = fakeViewer();
+    const off = attach(v.viewer);
+    off();
+    expect(v.base.alpha).toBe(1);
+    await resolveIon();
+    expect(v.list).toEqual([v.base, v.grid]);
+    const w = fakeViewer();
+    const off2 = attach(w.viewer);
+    await resolveIon();
+    expect(w.ids()).toEqual([ION]);
+    off2();
+    expect(w.list).toEqual([w.base, w.grid]);
+    expect(w.base.alpha).toBe(1);
   });
 });

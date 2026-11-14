@@ -623,6 +623,32 @@ describe("toWorkbook / fromWorkbook (W6)", () => {
     expect(st().globe.layers["GOES-East_ABI_GeoColor"]).toEqual({ show: true, translucency: 50 });
     expect(before).toEqual(DEFAULT_GLOBE);
     expect(st().globe).not.toBe(before);
+    expect(st().globe.ion).toEqual({ assetId: null });
+  });
+
+  test("setGlobeIon picks the Cesium ion asset (null = none), keeps the layers, and is written and read back", async () => {
+    await mount();
+    st().setGlobeLayer("osm", { translucency: 20 });
+    const before = st().globe;
+    st().setGlobeIon(3830182);
+    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    expect(st().globe.layers).toEqual(before.layers);
+    expect(before.ion).toEqual({ assetId: null });
+    // ค่าที่ไม่ใช่จำนวนเต็มบวกไม่เปลี่ยนอะไร
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      st().setGlobeIon(bad);
+      expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    }
+    st().setGlobeLayer("osm", { show: false });
+    expect(st().globe.ion).toEqual({ assetId: 3830182 }); // setGlobeLayer ไม่ทิ้ง ion
+    const saved = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
+    expect(saved.globe?.ion).toEqual({ assetId: 3830182 });
+    st().applyDefault();
+    expect(st().globe.ion).toEqual({ assetId: null });
+    st().fromWorkbook(saved);
+    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    st().setGlobeIon(null);
+    expect(st().globe.ion).toEqual({ assetId: null });
   });
 
   test("window titles come from the labels table, not from the saved file", async () => {

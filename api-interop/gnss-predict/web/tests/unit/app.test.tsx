@@ -74,15 +74,15 @@ test("App starts the clock and the event wiring once and stops both on unmount",
 
 test("App reads the online imagery switch and catalog once at start, with no scenario open", async () => {
   useImagery.setState(useImagery.getInitialState(), true);
-  const layers = [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS" }];
+  const layers = [{ id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" }];
   const f = stubFetch({
-    "GET /api/imagery/layers": { json: { enabled: true, layers } },
+    "GET /api/imagery/layers": { json: { enabled: true, sources: { gibs: true, eox: false, osm: false, ion: false }, layers } },
     "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
     "GET /api/scenarios": { json: SCENARIOS },
   });
   render(<App />);
   await waitFor(() => expect(useImagery.getState().loaded).toBe(true));
-  expect(useImagery.getState().enabled).toBe(true);
+  expect(useImagery.getState().sources).toEqual({ gibs: true, eox: false, osm: false, ion: false });
   expect(useImagery.getState().layers).toEqual(layers);
   expect(f.count("GET /api/imagery/layers")).toBe(1);
   useImagery.setState(useImagery.getInitialState(), true);

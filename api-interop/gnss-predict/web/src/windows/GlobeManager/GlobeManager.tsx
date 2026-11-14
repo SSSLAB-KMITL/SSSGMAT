@@ -1,12 +1,13 @@
 // Globe Manager (imagery spec §5.1): สวิตช์ภาพพื้นโลกออนไลน์ NASA GIBS และรายการชั้นภาพ (Show, % Translucency)
-// - สวิตช์ "Online imagery (NASA GIBS)" เป็นของ server (settings.json) เปลี่ยนผ่าน useImagery.setEnabled (GET แล้ว PUT /settings ทั้งเอกสาร)
+// - สวิตช์ "Online imagery (NASA GIBS)" เป็นของ server (settings.json) เปลี่ยนผ่าน useImagery.setSource("gibs", on) (GET แล้ว PUT /settings ทั้งเอกสาร)
 //   เปิด = ถามยืนยันภาษาไทยก่อนทุกครั้ง (กล่องเดียวกับ confirm ของแอป) บอก host gibs.earthdata.nasa.gov สิ่งที่ส่งออก ที่เก็บ data/imagery และเพดาน 2 GB
 //   ยกเลิก (หรือ Esc) = ไม่ส่งอะไรเลย ปิด = PUT ทันทีไม่ถาม ล้มเหลว = store รายงานคำเตือนไทยเองและสวิตช์คงค่าเดิม (ที่นี่ไม่แสดงซ้ำ)
 // - รายการชั้น: แถวแรก Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้) แล้วชั้นของ catalog ตามลำดับที่ server ส่ง (ชั้นหลังทับชั้นก่อน)
 //   Show และ % Translucency ของแต่ละชั้นอยู่ใน workbook (useLayout.globe: ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View) ที่นี่ไม่เก็บค่าเอง
 //   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 แสดง) มาจาก DEFAULT_GLOBE ที่ layout ถืออยู่แล้ว: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
 // - % Translucency ส่งเข้า setGlobeLayer เฉพาะจำนวนเต็ม 0-100 (store ไม่ตรวจเอง): พิมพ์แล้วบันทึกเมื่อออกจากช่องหรือกด Enter, ค่าไม่ถูกต้องคืนค่าเดิม, Escape ยกเลิก
-// - สวิตช์ปิด = แถวของ GIBS ทุกแถวปิดใช้พร้อมคำอธิบาย; อ่านรายการจาก server ไม่ได้ (loaded = false) = ส่วน GIBS ใช้ไม่ได้พร้อมข้อความไทย เหลือแต่ Natural Earth II
+// - แต่ละแถวใช้ได้เมื่อสวิตช์ของแหล่งของแถวนั้นเปิด (ชั้น EOX ตามสวิตช์ eox ไม่ใช่สวิตช์ GIBS: กลุ่มและสวิตช์ของแหล่งอื่นเป็นงานถัดไป)
+//   สวิตช์ GIBS ปิด = แถวของ GIBS ทุกแถวปิดใช้พร้อมคำอธิบาย; อ่านรายการจาก server ไม่ได้ (loaded = false) = ส่วนออนไลน์ใช้ไม่ได้พร้อมข้อความไทย เหลือแต่ Natural Earth II
 
 import { useState } from "react";
 import { confirm } from "../../chrome/Dialogs";
@@ -95,11 +96,11 @@ function LayerRow({ info, disabled }: { info: ImageryLayerInfo; disabled: boolea
 }
 
 export function GlobeManager(_props: Partial<PanelProps>) {
-  const enabled = useImagery((s) => s.enabled);
+  const sources = useImagery((s) => s.sources);
+  const enabled = sources.gibs;
   const layers = useImagery((s) => s.layers);
   const loaded = useImagery((s) => s.loaded);
   const [busy, setBusy] = useState(false);
-  const rowsDisabled = !loaded || !enabled;
 
   /** เปิด = ถามก่อน (ยกเลิก = ไม่ทำอะไร) ปิด = ทำทันที; ระหว่างถามและระหว่างบันทึกกดซ้ำไม่ได้ */
   const switchTo = async (on: boolean): Promise<void> => {
@@ -107,7 +108,7 @@ export function GlobeManager(_props: Partial<PanelProps>) {
     setBusy(true);
     try {
       if (on && !(await confirm(msg("globe.consent")))) return;
-      await useImagery.getState().setEnabled(on);
+      await useImagery.getState().setSource("gibs", on);
     } finally {
       setBusy(false);
     }
@@ -161,7 +162,7 @@ export function GlobeManager(_props: Partial<PanelProps>) {
               </td>
             </tr>
             {layers.map((info) => (
-              <LayerRow key={info.id} info={info} disabled={rowsDisabled} />
+              <LayerRow key={info.id} info={info} disabled={!loaded || !sources[info.source]} />
             ))}
           </tbody>
         </table>
