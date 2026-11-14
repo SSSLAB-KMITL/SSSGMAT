@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { POLAR_COLORS, cssRgba } from "../colors";
+import { pinTimeZone } from "../pinTimeZone";
 import { azElToXY, cardinalLabels, POLAR_ORIENTATIONS } from "../views/polarGeom";
 import { passPolarScene, polarMouseText } from "./passPolar";
 import { AOS_MS, makePass, sample } from "./passPlots.fixture";
@@ -173,5 +174,27 @@ describe("polarMouseText", () => {
     expect(polarMouseText(CX + R + 1, CY, SIZE, "N/E/S/W")).toBeNull();
     expect(polarMouseText(0, 0, SIZE, "N/E/S/W")).toBeNull();
     expect(polarMouseText(CX, CY, { width: 30, height: 30 }, "N/E/S/W")).toBeNull(); // no circle at all
+  });
+});
+
+describe("passPolarScene time labels in local time (ref-D §2.1)", () => {
+  pinTimeZone("Asia/Kolkata"); // UTC+5:30, no daylight saving: the minutes move too
+
+  it("the labels are %H:%M of the local time, and UTC without it", () => {
+    const p = makePass(30, 150);
+    expect(passPolarScene(p, SIZE, "N/E/S/W", null, true).ticks.map((t) => t.text)).toEqual(["15:30", "15:32", "15:34", "15:36", "15:38"]);
+    expect(passPolarScene(p, SIZE, "N/E/S/W", null, false).ticks.map((t) => t.text)).toEqual(["10:00", "10:02", "10:04", "10:06", "10:08"]);
+    expect(passPolarScene(p, SIZE, "N/E/S/W", null).ticks.map((t) => t.text)).toEqual(["10:00", "10:02", "10:04", "10:06", "10:08"]);
+  });
+
+  it("where the labels stand does not depend on the zone", () => {
+    const p = makePass(30, 150);
+    const [utc, local] = [passPolarScene(p, SIZE, "N/E/S/W", "Home"), passPolarScene(p, SIZE, "N/E/S/W", "Home", true)];
+    expect(local.ticks.map(({ text: _, ...at }) => at)).toEqual(utc.ticks.map(({ text: _, ...at }) => at));
+    expect(local.track).toEqual(utc.track);
+  });
+
+  it("a scene with no pass still takes the four arguments of Antenna Control", () => {
+    expect(passPolarScene(null, SIZE, "N/E/S/W", null)).toMatchObject({ track: [], ticks: [], cx: CX, cy: CY, r: R });
   });
 });

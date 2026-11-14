@@ -86,18 +86,19 @@ function skyTrack(p: PassInfo, cx: number, cy: number, r: number, orientation: O
 
 /**
  * The time labels of `track` (ref-P §5.3): the first at AOS, then four more, at every `floor((samples - 2) / 4)` samples, using
- * that sample's time and point. Gpredict divides by zero for fewer than 6 samples (UNVERIFIED in the reference); here the step is
+ * that sample's time and point. The text is `%H:%M` whatever the Time format of Preferences, in local time when `local` (ref-D §2.1).
+ * Gpredict divides by zero for fewer than 6 samples (UNVERIFIED in the reference); here the step is
  * 1 then, so every inner sample gets one. A label is vertically centred on its point; right of the centre of the plot its text
  * ends 5 px before the point, otherwise it starts 5 px after it.
  */
-function timeLabels(p: PassInfo, track: readonly Point[], cx: number): TextMark[] {
+function timeLabels(p: PassInfo, track: readonly Point[], cx: number, local: boolean): TextMark[] {
   const n = track.length;
   if (n < 2) return [];
   const color = cssRgba(POLAR_COLORS.track); // the labels have the track colour
   const label = (iso: string, [x, y]: Point, first: boolean): TextMark => {
     const px = first ? x : x > cx ? x - LABEL_SHIFT : x + LABEL_SHIFT;
     const before = px > cx;
-    return { text: formatTime(new Date(iso), "%H:%M"), x: before ? px - LABEL_GAP : px + LABEL_GAP, y, align: before ? "right" : "left", baseline: "middle", color };
+    return { text: formatTime(new Date(iso), "%H:%M", local), x: before ? px - LABEL_GAP : px + LABEL_GAP, y, align: before ? "right" : "left", baseline: "middle", color };
   };
   const labels = [label(p.aos, track[0]!, true)];
   const step = Math.max(1, Math.floor((n - 2) / (PASS_POLAR_TICKS - 1)));
@@ -108,9 +109,9 @@ function timeLabels(p: PassInfo, track: readonly Point[], cx: number): TextMark[
 /**
  * The Polar plot of `p` in a plot of `size` (ref-P §5). `orientation` is the Polar View's setting ("N/E/S/W", ...); `qthName` is
  * the station name drawn above the top left of the circle, null to leave it out (the "QTH Info" setting is off). `p` null gives
- * the circles, the axes and the letters only.
+ * the circles, the axes and the letters only. `local` is "Show local time instead of UTC": the time labels are those of the machine's zone.
  */
-export function passPolarScene(p: PassInfo | null, size: PlotSize, orientation: string, qthName: string | null): PolarScene {
+export function passPolarScene(p: PassInfo | null, size: PlotSize, orientation: string, qthName: string | null, local = false): PolarScene {
   const o = orientationOf(orientation);
   const { cx, cy, r } = geometry(size);
   const info = cssRgba(POLAR_COLORS.info);
@@ -133,7 +134,7 @@ export function passPolarScene(p: PassInfo | null, size: PlotSize, orientation: 
     cursor: { x: cx - r - TEXT_GAP, y: cy + r + AXIS_EXTRA, align: "left", baseline: "top", color: info },
     track,
     trackColor: cssRgba(POLAR_COLORS.track),
-    ticks: p === null ? [] : timeLabels(p, track, cx),
+    ticks: p === null ? [] : timeLabels(p, track, cx, local),
   };
 }
 

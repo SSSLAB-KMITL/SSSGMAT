@@ -2,11 +2,13 @@
 // save-pass.c (ref-P §8): every space, separator and header is as Gpredict writes it. The builders are pure; `downloadText` at
 // the end is the only function here that touches the page.
 //
-// Numbers are never converted (km, km/s), Lat and Lon are signed degrees, and the times are UTC in the default time format: the
-// preferences "Use Imperial units", "Use N/S/E/W", "Show local time instead of UTC" and "Time format" come with sub-project 4
-// (as in passCells.ts, whose cells this file reuses). Gpredict has no case where a number is missing; the "-" of passCells would
-// show there (ของเรา).
+// Numbers are never converted (km, km/s) and Lat and Lon are signed degrees, whatever "Use Imperial units" and "Use N/S/E/W" say
+// (ref-D §2.1 "Not affected"); the times follow "Time format" and "Show local time instead of UTC", and the header says which of the
+// two with the word `Local` or `UTC`. The cells are those of passCells.ts, made with `textFormat(nf)`. Gpredict has no case where a
+// number is missing; the "-" of passCells would show there (ของเรา).
 
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import { passCell, rowCell } from "./passCells";
 import type { PassInfo, PassQth, PassRow, PassSat } from "./types";
 
@@ -71,6 +73,12 @@ const LIST_COLUMNS: readonly TextColumn[] = [
 
 const spaces = (n: number): string => " ".repeat(Math.max(0, n));
 
+/** The number format of a file: the time format and zone of `nf`, and km and signed Lat and Lon in any case (`pass-to-txt.c:310-378`). */
+const textFormat = (nf: NumberFormat): NumberFormat => ({ ...nf, imperial: false, nsew: false });
+
+/** The word after the times of the page header: "Local" when the times are local, else "UTC" (`pass-to-txt.c:129-177`). */
+const zoneWord = (nf: NumberFormat): string => (nf.local ? "Local" : "UTC");
+
 /** A cell of passCells as a bare number: no degree sign, and none of the space after it that stands for N/S/E/W. */
 const bare = (cell: string): string => cell.replace(/°\s*$/, "");
 
@@ -81,8 +89,8 @@ const tableHead = (title: string, length: number): string => `${"-".repeat(lengt
 const lines = (rows: readonly string[]): string => rows.map((r) => `${r}\n`).join("");
 
 /** The three lines of the table header of one pass (`pass_to_txt_tblheader`): the Time column, then each of `columns` in the fixed order. */
-function oneTableHeader(pass: PassInfo, columns: readonly string[]): string {
-  const size = passCell(pass, "AOS").length; // the time of AOS gives the width of the Time column
+function oneTableHeader(pass: PassInfo, columns: readonly string[], nf: NumberFormat): string {
+  const size = passCell(pass, "AOS", nf).length; // the time of AOS gives the width of the Time column
   let title = ` Time${spaces(size - 4)}`;
   let length = size + 1;
   for (const c of ONE_COLUMNS) {
@@ -94,21 +102,21 @@ function oneTableHeader(pass: PassInfo, columns: readonly string[]): string {
 }
 
 /** One cell of a row of one pass, with its separator, or "" for a column that has nothing to write (an SSP that could not be found). */
-function oneCell(row: PassRow, c: TextColumn): string {
+function oneCell(row: PassRow, c: TextColumn, nf: NumberFormat): string {
   switch (c.title) {
     case "SSP":
       return row.ssp === "" ? "" : ` ${row.ssp}`; // no padding when there is no locator
     case "Vis":
       return `  ${row.vis}`; // two spaces and the character
     default:
-      return ` ${bare(rowCell(row, c.title)).padStart(c.width)}`;
+      return ` ${bare(rowCell(row, c.title, nf)).padStart(c.width)}`;
   }
 }
 
 /** The rows of one pass (`pass_to_txt_tblcontents`). */
-function oneRows(pass: PassInfo, columns: readonly string[]): string {
+function oneRows(pass: PassInfo, columns: readonly string[], nf: NumberFormat): string {
   const shown = ONE_COLUMNS.filter((c) => columns.includes(c.title));
-  return lines(pass.rows.map((row) => ` ${rowCell(row, "Time")}${shown.map((c) => oneCell(row, c)).join("")}`));
+  return lines(pass.rows.map((row) => ` ${rowCell(row, "Time", nf)}${shown.map((c) => oneCell(row, c, nf)).join("")}`));
 }
 
 /** The "Observer:" and "LAT:" lines that both page headers have. */
@@ -119,27 +127,34 @@ const observerLines = (qth: PassQth): string => `Observer: ${qth.name}, ${qth.lo
 /**
  * The file of Save Pass Details. `columns` are the titles of the Single Pass columns that are on (`PREDICT/SINGLE_PASS_COL`);
  * Time is always written, and the order is Gpredict's whatever the order of `columns`. `contents` is `PREDICT/SAVE_CONTENTS`:
- * 0 the page header (5 lines), the table header and the rows; 1 the table header and the rows; 2 the rows.
+ * 0 the page header (5 lines), the table header and the rows; 1 the table header and the rows; 2 the rows. `nf` is the number format of
+ * Preferences: its time format and zone are the times' (the header ends them with "Local" or "UTC"); the numbers do not change with it.
  */
-export function onePassText(a: { sat: PassSat; qth: PassQth; pass: PassInfo }, columns: readonly string[], contents: OneContents): string {
+export function onePassText(
+  a: { sat: PassSat; qth: PassQth; pass: PassInfo },
+  columns: readonly string[],
+  contents: OneContents,
+  nf: NumberFormat = DEFAULT_NF,
+): string {
   const { sat, qth, pass } = a;
-  const rows = oneRows(pass, columns);
+  const f = textFormat(nf);
+  const rows = oneRows(pass, columns, f);
   if (contents === 2) return rows;
-  const table = oneTableHeader(pass, columns) + rows;
+  const table = oneTableHeader(pass, columns, f) + rows;
   if (contents === 1) return table;
   const header =
     `Pass details for ${sat.name} (orbit ${pass.orbit})\n` +
     observerLines(qth) +
-    `AOS: ${passCell(pass, "AOS")} UTC\n` +
-    `LOS: ${passCell(pass, "LOS")} UTC\n`;
+    `AOS: ${passCell(pass, "AOS", f)} ${zoneWord(f)}\n` +
+    `LOS: ${passCell(pass, "LOS", f)} ${zoneWord(f)}\n`;
   return header + table;
 }
 
 // ---------------------------------------------------------------- the pass list (ref-P §8.4)
 
 /** The table header of the list (`passes_to_txt_tblheader`): AOS, TCA and LOS, then each of `columns` from Duration on, in the fixed order. */
-function listTableHeader(first: PassInfo, columns: readonly string[]): string {
-  const size = passCell(first, "AOS").length; // the width of the three time columns comes from the AOS of the first pass
+function listTableHeader(first: PassInfo, columns: readonly string[], nf: NumberFormat): string {
+  const size = passCell(first, "AOS", nf).length; // the width of the three time columns comes from the AOS of the first pass
   const pad = spaces(size - 3);
   let title = ` AOS${pad}  TCA${pad}  LOS${pad}`;
   let length = 3 * (size + 2);
@@ -152,13 +167,13 @@ function listTableHeader(first: PassInfo, columns: readonly string[]): string {
 }
 
 /** The rows of the list (`passes_to_txt_tblcontents`): a line for each pass. */
-function listRows(passes: readonly PassInfo[], columns: readonly string[]): string {
+function listRows(passes: readonly PassInfo[], columns: readonly string[], nf: NumberFormat): string {
   const shown = LIST_COLUMNS.filter((c) => columns.includes(c.title));
   return lines(
     passes.map(
       (p) =>
-        ` ${passCell(p, "AOS")}  ${passCell(p, "TCA")}  ${passCell(p, "LOS")}` +
-        shown.map((c) => `  ${bare(passCell(p, c.title)).padStart(c.width)}`).join(""),
+        ` ${passCell(p, "AOS", nf)}  ${passCell(p, "TCA", nf)}  ${passCell(p, "LOS", nf)}` +
+        shown.map((c) => `  ${bare(passCell(p, c.title, nf)).padStart(c.width)}`).join(""),
     ),
   );
 }
@@ -168,6 +183,7 @@ function listRows(passes: readonly PassInfo[], columns: readonly string[]): stri
  * always written); `singleColumns` are the Single Pass columns, for the block of every pass in the complete report. `contents`:
  * 0 the complete report (the summary, then for each pass an empty line, " Orbit <n>" and that pass's table of §8.3), 1 the summary
  * (the page header of 3 lines, the table header and a line for each pass). An empty list gives no text: the server never sends one.
+ * `nf` is the number format of Preferences, which gives the time format and zone of the times as in `onePassText`.
  *
  * The complete report needs both sets of columns (`save-pass.c:448-480`), so there are two. Nothing in the file is the current time:
  * Gpredict writes no date, every time is the pass's own.
@@ -177,13 +193,15 @@ export function passListText(
   columns: readonly string[],
   contents: 0 | 1,
   singleColumns: readonly string[],
+  nf: NumberFormat = DEFAULT_NF,
 ): string {
   const { sat, qth, passes } = a;
   const first = passes[0];
   if (first === undefined) return "";
-  let text = `Upcoming passes for ${sat.name}\n${observerLines(qth)}${listTableHeader(first, columns)}${listRows(passes, columns)}`;
+  const f = textFormat(nf);
+  let text = `Upcoming passes for ${sat.name}\n${observerLines(qth)}${listTableHeader(first, columns, f)}${listRows(passes, columns, f)}`;
   if (contents === 0) {
-    for (const pass of passes) text += `\n Orbit ${pass.orbit}\n${oneTableHeader(pass, singleColumns)}${oneRows(pass, singleColumns)}`;
+    for (const pass of passes) text += `\n Orbit ${pass.orbit}\n${oneTableHeader(pass, singleColumns, f)}${oneRows(pass, singleColumns, f)}`;
   }
   return text;
 }

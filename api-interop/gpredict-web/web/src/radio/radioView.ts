@@ -1,6 +1,8 @@
 // The logic of the Radio Control window that has no DOM (ref-R §2): the read-out formats, the tooltips, the Filter, the edits that
 // the server has not answered yet. RadioControl.tsx shows it. Pure functions: nothing here reads the page or calls the server.
 
+import { DEFAULT_NF, distance } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import { compareNames } from "../views/cells";
 import type { ControllerSat } from "./types";
 
@@ -31,14 +33,17 @@ export function fmtAngle(v: number | null): string {
   return `${fixed(measured(v) ? v : 0, 2).padStart(7)}°`;
 }
 
-/** `%.0f km`; "0 km", what Gpredict starts with, while there is no value (decision 16 of the plan: km until Imperial units come). */
-export function fmtRange(km: number | null): string {
-  return measured(km) ? `${fixed(km, 0)} km` : "0 km";
+/**
+ * `%.0f km`, or `%.0f mi` with "Use Imperial units" in `nf` (the number format of Preferences, `gtk-rig-ctrl.c:283-292`); "0 km", what
+ * Gpredict starts with, while there is no value (the unit is set by the first number, which is what Gpredict does too).
+ */
+export function fmtRange(km: number | null, nf: NumberFormat = DEFAULT_NF): string {
+  return measured(km) ? `${fixed(distance(km, nf)!, 0)} ${nf.imperial ? "mi" : "km"}` : "0 km";
 }
 
-/** `%.3f km/s`; "0.0 km/s", what Gpredict starts with (one decimal, unlike the format), while there is no value. */
-export function fmtRate(kms: number | null): string {
-  return measured(kms) ? `${fixed(kms, 3)} km/s` : "0.0 km/s";
+/** `%.3f km/s`, or `%.3f mi/s` with Imperial units (`:294-304`); "0.0 km/s", what Gpredict starts with (one decimal, unlike the format), while there is no value. */
+export function fmtRate(kms: number | null, nf: NumberFormat = DEFAULT_NF): string {
+  return measured(kms) ? `${fixed(distance(kms, nf)!, 3)} ${nf.imperial ? "mi" : "km"}/s` : "0.0 km/s";
 }
 
 // ---------------------------------------------------------------- the satellite and transponder combos (ref-R §2.4)

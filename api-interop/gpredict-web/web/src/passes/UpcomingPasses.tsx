@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { PopupMenu } from "../components/PopupMenu";
+import { useNumberFormat } from "../numfmt";
 import { usePrefs } from "../prefs/prefsStore";
 import { MULTI_COLUMNS, passCell } from "./passCells";
 import { columnTitles, moveRow, newId, upcomingMenu, upcomingTitle, visibleColumns } from "./passWindows";
@@ -33,6 +34,7 @@ interface Props {
 export function UpcomingPasses({ id, answer, onOpen, onClose, position }: Props) {
   const { sat, qth, passes } = answer;
   const prefs = usePrefs();
+  const nf = useNumberFormat();
   const titles = prefs === null ? null : columnTitles(prefs.values[MULTI_COLUMNS_KEY]);
   const columns = visibleColumns(MULTI_COLUMNS, titles ?? []);
   const [selected, setSelected] = useState<number | null>(null);
@@ -101,7 +103,7 @@ export function UpcomingPasses({ id, answer, onOpen, onClose, position }: Props)
                   >
                     {columns.map((c) => (
                       <td key={c.title} className={`align-${c.align}`}>
-                        {passCell(p, c.title)}
+                        {passCell(p, c.title, nf)}
                       </td>
                     ))}
                   </tr>

@@ -2,6 +2,8 @@
 // under a grey header band with the title and the page number. A browser cannot ask how many lines fit a page, so the page is split
 // here, 50 lines to a page (A4, 10 mm margins, a 10 mm band), which lets the band say `n/N`. Everything but `printPass` is pure.
 
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
 import { onePassText } from "./passText";
 import type { PassInfo, PassQth, PassSat } from "./types";
 
@@ -18,10 +20,11 @@ export function printPages(lines: readonly string[], perPage = LINES_PER_PAGE): 
 
 /**
  * What Gpredict prints: the table header (separator, title line, separator) and the rows of the pass, which are the lines of the
- * file of Save Pass Details without its 5 header lines (ref-P §8.3, §8.5). `columns` are the Single Pass columns that are on.
+ * file of Save Pass Details without its 5 header lines (ref-P §8.3, §8.5). `columns` are the Single Pass columns that are on; `nf` is
+ * the number format of Preferences (the time format and zone of the times, as in the file).
  */
-export function printLines(answer: { sat: PassSat; qth: PassQth; pass: PassInfo }, columns: readonly string[]): string[] {
-  return onePassText(answer, columns, 1).replace(/\n$/, "").split("\n");
+export function printLines(answer: { sat: PassSat; qth: PassQth; pass: PassInfo }, columns: readonly string[], nf: NumberFormat = DEFAULT_NF): string[] {
+  return onePassText(answer, columns, 1, nf).replace(/\n$/, "").split("\n");
 }
 
 const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

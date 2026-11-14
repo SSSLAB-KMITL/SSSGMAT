@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNumberFormat } from "../numfmt";
 import { prepareCanvas, useElementSize } from "../views/canvasHooks";
 import { POLAR_ORIENTATIONS } from "../views/polarGeom";
 import { passPolarScene, polarMouseText } from "./passPolar";
@@ -48,17 +49,18 @@ export interface PassPolarPlotProps {
  * The Polar plot of one pass (Pass details, "Polar" tab; ref-P §5): white, 200 x 200 px at least in Gpredict, here as big as its
  * parent (which must have a height). The mouse text `AZ: %.0f°  EL: %.0f°` shows the Az and El under the pointer inside the
  * circle; as in Gpredict it stays where it was when the pointer leaves the plot, and goes when the pointer moves out of the
- * circle (ref-P §5.4). There are no clicks.
+ * circle (ref-P §5.4). There are no clicks. The time labels of the track are local times with "Show local time instead of UTC".
  */
 export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[0], overlay }: PassPolarPlotProps) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useElementSize(holder);
   const [cursorText, setCursorText] = useState<string | null>(null);
+  const { local } = useNumberFormat();
 
   const scene = useMemo(
-    () => passPolarScene(pass, { width: size.w, height: size.h }, orientation, qthName),
-    [pass, size.w, size.h, orientation, qthName],
+    () => passPolarScene(pass, { width: size.w, height: size.h }, orientation, qthName, local),
+    [pass, size.w, size.h, orientation, qthName, local],
   );
 
   useEffect(() => {

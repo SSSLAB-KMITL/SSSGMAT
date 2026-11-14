@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
 import { LINES_PER_PAGE, printDocument, printLines, printPages } from "./printPass";
 import type { PassInfo, PassQth, PassSat } from "./types";
 
@@ -81,6 +82,13 @@ describe("printLines", () => {
     const lines = printLines({ sat: SAT, qth: QTH, pass: PASS }, ["Vis", "Time", "SSP"]);
     expect(lines[1]).toBe(` Time${" ".repeat(15)}  SSP   Vis`); // " Time" is padded to the width of the time, then the titles of SSP and Vis
     expect(lines[3]).toBe(" 2026/11/12 10:00:00 OK03ab  V");
+  });
+
+  it("have the time format of Preferences, and km and signed Lat and Lon whatever else is set", () => {
+    const f = { ...DEFAULT_NF, timeFormat: "%d %H:%M", imperial: true, nsew: true };
+    const lines = printLines({ sat: SAT, qth: QTH, pass: PASS }, ["Time", "Range", "Lat"], f);
+    expect(lines[1]).toBe(` Time${" ".repeat(4)} Range   Lat `); // the Time column is the width of "12 10:00"
+    expect(lines[3]).toBe(" 12 10:00  1234  13.75");
   });
 });
 

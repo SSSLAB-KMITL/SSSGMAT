@@ -1,9 +1,12 @@
 // The text of the cells of the Data tab of Pass details and of Upcoming passes (ref-P §2.2, §3.2). Pure functions, no DOM and
 // no React. Every number comes from the server; a missing one (null) shows as "-" like the cells of the core views.
-// Number Formats of Gpredict ("Use Imperial units", "Use N/S/E/W", "Show local time instead of UTC") come with sub-project 4 (spec §5):
-// until then every distance is km, Lat/Lon are signed and every time is UTC in the default time format.
+// The Number Formats of Preferences (ref-D §2.1) shape the cells: the time format and zone of every time, N/S/E/W for Lat and Lon (off,
+// they end in a space), miles for Range, Rate, Footp, Alt and Vel (no unit text in a cell). With the default `nf` a cell is as before.
 
-import { fmtFixed, formatTime } from "../format";
+import { fmtFixed } from "../format";
+import { DEFAULT_NF, fmtLatLon, fmtTimeNf } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
+import { lengthText } from "../views/cells";
 import type { Align } from "../views/cells";
 import type { PassRow, PassSummary } from "./types";
 
@@ -58,23 +61,15 @@ function degrees(x: number | null): string {
   return text === "-" ? text : `${text}°`;
 }
 
-/** `%.2f°` followed by the space Gpredict puts where the N/S/E/W letter goes when that is off; "-" if missing. */
-function signedDegrees(x: number | null): string {
-  const text = degrees(x);
-  return text === "-" ? text : `${text} `;
-}
-
-/** A time in the default time format (UTC). */
-const time = (iso: string): string => formatTime(new Date(iso));
-
 /**
  * The text of one cell of the Data tab (ref-P §2.2). `title` is the column's title; a title that is not one of the 19 gives "".
  * Gpredict's "--- N/A ---" for a time that is exactly 0 never comes: the server always sends the time of a row.
+ * `nf` is the number format of Preferences (the default: UTC, signs, km).
  */
-export function rowCell(row: PassRow, title: string): string {
+export function rowCell(row: PassRow, title: string, nf: NumberFormat = DEFAULT_NF): string {
   switch (title) {
     case "Time":
-      return time(row.t);
+      return fmtTimeNf(row.t, nf);
     case "Az":
       return degrees(row.az);
     case "El":
@@ -84,21 +79,21 @@ export function rowCell(row: PassRow, title: string): string {
     case "Dec":
       return degrees(row.dec);
     case "Range":
-      return fmtFixed(row.range_km, 0);
+      return lengthText(row.range_km, 0, nf);
     case "Rate":
-      return fmtFixed(row.rate_kms, 3);
+      return lengthText(row.rate_kms, 3, nf);
     case "Lat":
-      return signedDegrees(row.lat_deg);
+      return fmtLatLon(row.lat_deg, "lat", 2, nf);
     case "Lon":
-      return signedDegrees(row.lon_deg);
+      return fmtLatLon(row.lon_deg, "lon", 2, nf);
     case "SSP":
       return row.ssp;
     case "Footp":
-      return fmtFixed(row.footprint_km, 0);
+      return lengthText(row.footprint_km, 0, nf);
     case "Alt":
-      return fmtFixed(row.alt_km, 0);
+      return lengthText(row.alt_km, 0, nf);
     case "Vel":
-      return fmtFixed(row.vel_kms, 3);
+      return lengthText(row.vel_kms, 3, nf);
     case "Dop":
       return fmtFixed(row.doppler_hz, 0);
     case "Loss":
@@ -126,15 +121,18 @@ export function fmtDuration(seconds: number): string {
   return `${two(Math.floor(total / 3600))}:${two(Math.floor((total % 3600) / 60))}:${two(total % 60)}`;
 }
 
-/** The text of one cell of Upcoming passes (ref-P §3.2). `title` is the column's title; a title that is not one of the 10 gives "". */
-export function passCell(p: PassSummary, title: string): string {
+/**
+ * The text of one cell of Upcoming passes (ref-P §3.2). `title` is the column's title; a title that is not one of the 10 gives "".
+ * `nf` is the number format of Preferences: it gives the time format and zone of AOS, TCA and LOS.
+ */
+export function passCell(p: PassSummary, title: string, nf: NumberFormat = DEFAULT_NF): string {
   switch (title) {
     case "AOS":
-      return time(p.aos);
+      return fmtTimeNf(p.aos, nf);
     case "TCA":
-      return time(p.tca);
+      return fmtTimeNf(p.tca, nf);
     case "LOS":
-      return time(p.los);
+      return fmtTimeNf(p.los, nf);
     case "Duration":
       return fmtDuration((Date.parse(p.los) - Date.parse(p.aos)) / 1000);
     case "Max El":

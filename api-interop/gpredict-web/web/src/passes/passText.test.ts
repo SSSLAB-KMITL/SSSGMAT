@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
+import { pinTimeZone } from "../pinTimeZone";
 import { MULTI_COLUMNS, SINGLE_COLUMNS } from "./passCells";
 import {
   cleanFileName,
@@ -57,9 +60,11 @@ const PASS_B: PassInfo = {
   ],
 };
 
-const one = (pass: PassInfo, columns: readonly string[], contents: OneContents): string => onePassText({ sat: SAT, qth: QTH, pass }, columns, contents);
-const list = (passes: PassInfo[], columns: readonly string[], contents: 0 | 1, single: readonly string[]): string =>
-  passListText({ sat: SAT, qth: QTH, passes }, columns, contents, single);
+const nf = (over: Partial<NumberFormat> = {}): NumberFormat => ({ ...DEFAULT_NF, ...over });
+const one = (pass: PassInfo, columns: readonly string[], contents: OneContents, f: NumberFormat = DEFAULT_NF): string =>
+  onePassText({ sat: SAT, qth: QTH, pass }, columns, contents, f);
+const list = (passes: PassInfo[], columns: readonly string[], contents: 0 | 1, single: readonly string[], f: NumberFormat = DEFAULT_NF): string =>
+  passListText({ sat: SAT, qth: QTH, passes }, columns, contents, single, f);
 
 /** Lines of a file; every line ends with a newline, as in Gpredict's files (the quotes make the trailing spaces visible). */
 const file = (...lines: string[]): string => lines.map((l) => `${l}\n`).join("");
@@ -290,6 +295,60 @@ describe("passListText", () => {
 
   it("no passes gives no text", () => {
     expect(list([], MULTI, 0, SINGLE)).toBe("");
+  });
+});
+
+describe("number formats in the saved text (ref-D §2.1, ref-P §8.3)", () => {
+  pinTimeZone("Asia/Bangkok"); // UTC+7, no daylight saving
+
+  it("saved text keeps km and signed lat/lon", () => {
+    // Imperial and N/S/E/W change nothing in a file: every number is what DEFAULT_NF writes ("Not affected")
+    const both = nf({ imperial: true, nsew: true });
+    expect(one(PASS_A, ALL_SINGLE, 0, both)).toBe(one(PASS_A, ALL_SINGLE, 0, DEFAULT_NF));
+    expect(one(PASS_A, ALL_SINGLE, 0, both)).toContain(" 1234 -3.457  13.75  100.50 OK03ab  4567   420 7.654");
+    expect(list([PASS_A, PASS_B], ALL_MULTI, 0, ALL_SINGLE, both)).toBe(list([PASS_A, PASS_B], ALL_MULTI, 0, ALL_SINGLE, DEFAULT_NF));
+    expect(list([PASS_A, PASS_B], ALL_MULTI, 1, ALL_SINGLE, both)).toBe(list([PASS_A, PASS_B], ALL_MULTI, 1, ALL_SINGLE, DEFAULT_NF));
+    expect(one(PASS_A, ALL_SINGLE, 0, both)).not.toMatch(/[NSEW]/); // the observer line has its words, but no number has a letter
+  });
+
+  it("saved text says Local or UTC", () => {
+    const local = one(PASS_A, SINGLE, 0, nf({ local: true })).split("\n");
+    expect(local.slice(3, 5)).toEqual(["AOS: 2026/11/12 17:00:00 Local", "LOS: 2026/11/12 17:10:00 Local"]);
+    // the table times are local too
+    expect(local[8]).toBe(" 2026/11/12 17:00:00 123.45  12.34  1234  4567");
+    const utc = one(PASS_A, SINGLE, 0, nf({ local: false })).split("\n");
+    expect(utc.slice(3, 5)).toEqual(["AOS: 2026/11/12 10:00:00 UTC", "LOS: 2026/11/12 10:10:00 UTC"]);
+  });
+
+  it("the time format is the one of Preferences, and the Time column is as wide as the time", () => {
+    const f = nf({ timeFormat: "%H:%M", local: true });
+    expect(one(PASS_A, ["Az"], 0, f)).toBe(
+      file(
+        ...PAGE_HEADER_A.slice(0, 3),
+        "AOS: 17:00 Local",
+        "LOS: 17:10 Local",
+        "-------------",
+        " Time    Az  ",
+        "-------------",
+        " 17:00 123.45",
+        " 17:05 150.01",
+        " 17:10 200.00",
+      ),
+    );
+  });
+
+  it("the pass list has the time format and zone in every time column", () => {
+    const f = nf({ timeFormat: "%d %H:%M", local: true });
+    expect(list([PASS_A, PASS_B], [], 1, SINGLE, f)).toBe(
+      file(
+        ...LIST_HEADER,
+        "-".repeat(30), // 3 x (8 + 2): "12 17:00" is 8 characters
+        ` AOS${" ".repeat(5)}  TCA${" ".repeat(5)}  LOS${" ".repeat(5)}`,
+        "-".repeat(30),
+        " 12 17:00  12 17:05  12 17:10",
+        " 12 18:40  12 18:46  12 18:52",
+      ),
+    );
   });
 });
 

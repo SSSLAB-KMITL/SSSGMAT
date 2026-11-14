@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import { Modal } from "../components/Modal";
+import { useNumberFormat } from "../numfmt";
 import { savePrefs, usePrefs } from "../prefs/prefsStore";
 import {
   cleanFileName,
@@ -45,6 +46,7 @@ export function SavePassDialog(props: Props) {
   const { columns, onClose } = props;
   const id = useId();
   const prefs = usePrefs();
+  const nf = useNumberFormat();
   const [name, setName] = useState(() =>
     props.kind === "one" ? defaultFileName("one", props.answer.sat.name, props.answer.pass.orbit) : defaultFileName("list", props.answer.sat.name),
   );
@@ -62,13 +64,13 @@ export function SavePassDialog(props: Props) {
     e.preventDefault();
     if (!canSave) return;
     if (props.kind === "one") {
-      downloadText(name, onePassText(props.answer, columns, choice));
+      downloadText(name, onePassText(props.answer, columns, choice, nf));
       if (stored !== null && choice !== stored) {
         // The file is saved; the choice is a convenience for the next time, and nobody is left to tell if it cannot be kept.
         savePrefs({ [CONTENTS_KEY]: choice }, []).catch(() => undefined);
       }
     } else if (blocks !== null) {
-      downloadText(name, passListText(props.answer, columns, listContents(choice), blocks));
+      downloadText(name, passListText(props.answer, columns, listContents(choice), blocks, nf));
     }
     onClose();
   };

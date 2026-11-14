@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pinTimeZone } from "../pinTimeZone";
 import { azElMouseText, azElScene } from "./passAzEl";
 import { AOS_MS, makePass, sample } from "./passPlots.fixture";
 import type { PassInfo } from "./types";
@@ -219,5 +220,36 @@ describe("azElMouseText", () => {
     expect(azElMouseText(midX, BOTTOM, p, SIZE)).toBeNull();
     expect(azElMouseText(10, 10, p, SIZE)).toBeNull();
     expect(azElMouseText(midX, 280, p, SIZE)).toBeNull();
+  });
+});
+
+describe("the Az/El plot in local time (ref-D §2.1)", () => {
+  pinTimeZone("Asia/Kolkata"); // UTC+5:30, no daylight saving: the minutes move too
+  const p = lasting(makePass(30, 150), 12);
+  const midX = (LEFT + RIGHT) / 2;
+
+  it("az/el legend", () => {
+    expect(azElScene(p, SIZE, true).xLegend.text).toBe("Local Time");
+    expect(azElScene(p, SIZE, false).xLegend.text).toBe("UTC");
+    expect(azElScene(p, SIZE).xLegend.text).toBe("UTC");
+    // only the text changes: it stays centred under the frame
+    expect(azElScene(p, SIZE, true).xLegend).toEqual({ ...azElScene(p, SIZE).xLegend, text: "Local Time" });
+  });
+
+  it("the time labels are %H:%M of the local time", () => {
+    expect(azElScene(p, SIZE, true).xLabels.map((l) => l.text)).toEqual(["15:32", "15:34", "15:36", "15:38", "15:40"]);
+    expect(azElScene(p, SIZE, false).xLabels.map((l) => l.text)).toEqual(["10:02", "10:04", "10:06", "10:08", "10:10"]);
+  });
+
+  it("the text under the pointer has the local time as %H:%M:%S", () => {
+    expect(azElMouseText(midX, (TOP + BOTTOM) / 2, p, SIZE, true)).toBe("T: 15:36:00, AZ: 90°, EL: 45°");
+    expect(azElMouseText(midX, (TOP + BOTTOM) / 2, p, SIZE, false)).toBe("T: 10:06:00, AZ: 90°, EL: 45°");
+    expect(azElMouseText(midX, (TOP + BOTTOM) / 2, p, SIZE)).toBe("T: 10:06:00, AZ: 90°, EL: 45°");
+  });
+
+  it("the curves do not move with the zone", () => {
+    const [utc, local] = [azElScene(p, SIZE), azElScene(p, SIZE, true)];
+    expect(local.azCurve).toEqual(utc.azCurve);
+    expect(local.elCurve).toEqual(utc.elCurve);
   });
 });

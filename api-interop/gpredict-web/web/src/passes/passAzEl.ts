@@ -44,7 +44,7 @@ export interface AzElScene {
   elLabels: TextMark[];
   /** "Az" left of the top of the frame and "El" right of it */
   legends: TextMark[];
-  /** "UTC", under the frame */
+  /** "UTC", or "Local Time" when the times are local, under the frame */
   xLegend: TextMark;
   /** where the text under the pointer goes (top centre); the text itself comes from `azElMouseText` */
   cursor: TextAnchor;
@@ -113,10 +113,10 @@ function tickMarks(f: Frame, xstep: number, ystep: number): Segment[] {
 }
 
 /**
- * The Az/El plot of `p` in a plot of `size` (ref-P §6). The time is UTC (the "Local Time" setting comes with the preferences
- * of sub-project 4).
+ * The Az/El plot of `p` in a plot of `size` (ref-P §6). The time labels are `%H:%M` and the legend "UTC"; with `local` ("Show local time
+ * instead of UTC") they are local times of the machine and the legend is "Local Time" (ref-D §2.1).
  */
-export function azElScene(p: PassInfo, size: PlotSize): AzElScene {
+export function azElScene(p: PassInfo, size: PlotSize, local = false): AzElScene {
   const f = azElFrame(size);
   const maxAz = maxAzimuth(p);
   const xstep = (f.right - f.left) / (AZEL_TICKS + 1);
@@ -135,7 +135,7 @@ export function azElScene(p: PassInfo, size: PlotSize): AzElScene {
     maxAz,
     // the time at k/6 of AOS to LOS, centred under the frame, 5 px below it
     xLabels: ks.map((k) => ({
-      text: formatTime(new Date(timeAcross(p, k / (AZEL_TICKS + 1))), "%H:%M"),
+      text: formatTime(new Date(timeAcross(p, k / (AZEL_TICKS + 1))), "%H:%M", local),
       x: f.left + k * xstep,
       y: f.bottom + 5,
       align: "center",
@@ -150,7 +150,7 @@ export function azElScene(p: PassInfo, size: PlotSize): AzElScene {
       { text: "Az", x: f.left - 7, y: f.top, align: "right", baseline: "top", color: blue },
       { text: "El", x: f.right + 7, y: f.top, align: "left", baseline: "top", color: red },
     ],
-    xLegend: { text: "UTC", x: centre, y: size.height - 5, align: "center", baseline: "bottom", color: black },
+    xLegend: { text: local ? "Local Time" : "UTC", x: centre, y: size.height - 5, align: "center", baseline: "bottom", color: black },
     cursor: { x: centre, y: 5, align: "center", baseline: "top", color: black },
     azColor: blue,
     elColor: red,
@@ -162,12 +162,12 @@ export function azElScene(p: PassInfo, size: PlotSize): AzElScene {
 /**
  * The text for the pointer at (x, y) px (ref-P §6.3): "T: %s, AZ: %.0f°, EL: %.0f°" with the time as %H:%M:%S, for a pointer
  * strictly inside the frame, null otherwise. As in Gpredict the time comes from X and both Az and El from Y, on the left
- * and the right scale: nothing is read from the curves.
+ * and the right scale: nothing is read from the curves. The time is local when `local`, as the labels of `azElScene`.
  */
-export function azElMouseText(x: number, y: number, p: PassInfo, size: PlotSize): string | null {
+export function azElMouseText(x: number, y: number, p: PassInfo, size: PlotSize, local = false): string | null {
   const f = azElFrame(size);
   if (!(x > f.left && x < f.right && y > f.top && y < f.bottom)) return null;
   const up = (f.bottom - y) / (f.bottom - f.top);
-  const time = formatTime(new Date(timeAcross(p, (x - f.left) / (f.right - f.left))), "%H:%M:%S");
+  const time = formatTime(new Date(timeAcross(p, (x - f.left) / (f.right - f.left))), "%H:%M:%S", local);
   return `T: ${time}, AZ: ${fmtFixed(maxAzimuth(p) * up, 0)}°, EL: ${fmtFixed(90 * up, 0)}°`;
 }

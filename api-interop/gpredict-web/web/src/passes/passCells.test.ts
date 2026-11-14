@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
+import { pinTimeZone } from "../pinTimeZone";
 import { MULTI_PASS_CHECKS, SINGLE_PASS_CHECKS } from "../prefs/predictPrefs";
 import { fmtDuration, MULTI_COLUMNS, passCell, rowCell, SINGLE_COLUMNS } from "./passCells";
 import type { PassRow, PassSummary } from "./types";
+
+const nf = (over: Partial<NumberFormat> = {}): NumberFormat => ({ ...DEFAULT_NF, ...over });
 
 /** A row of the Data tab with a value in every column. */
 function row(over: Partial<PassRow> = {}): PassRow {
@@ -158,6 +163,61 @@ describe("passCell", () => {
   it("every column of the table has a cell and an unknown one is empty", () => {
     for (const c of MULTI_COLUMNS) expect(passCell(pass(), c.title), c.title).not.toBe("");
     expect(passCell(pass(), "Nope")).toBe("");
+  });
+});
+
+describe("number formats (ref-D §2.1)", () => {
+  pinTimeZone("Asia/Bangkok"); // UTC+7, no daylight saving
+
+  it("pass data imperial and nsew", () => {
+    const miles = nf({ imperial: true });
+    const r = row({ range_km: 1609.344, footprint_km: 3218.688, alt_km: 804.672, rate_kms: 1.609344 * 2.5, vel_kms: 1.609344 * 4.5 });
+    // converted, and no unit text in the cell
+    expect(rowCell(r, "Range", miles)).toBe("1000");
+    expect(rowCell(r, "Footp", miles)).toBe("2000");
+    expect(rowCell(r, "Alt", miles)).toBe("500");
+    expect(rowCell(r, "Rate", miles)).toBe("2.500");
+    expect(rowCell(r, "Vel", miles)).toBe("4.500");
+    // metric stays as it was, and so does what Imperial does not touch
+    expect(rowCell(r, "Range")).toBe("1609");
+    expect(rowCell(r, "Range", DEFAULT_NF)).toBe("1609");
+    expect(rowCell(r, "Dop", miles)).toBe(rowCell(r, "Dop"));
+    expect(rowCell(r, "Az", miles)).toBe(rowCell(r, "Az"));
+    // N/S/E/W: the letter by the sign before rounding; off, the sign stays and a space ends the text
+    const letters = nf({ nsew: true });
+    expect(rowCell(row({ lat_deg: 13.75, lon_deg: 100.5 }), "Lat", letters)).toBe("13.75°N");
+    expect(rowCell(row({ lat_deg: -13.75, lon_deg: -100.5 }), "Lat", letters)).toBe("13.75°S");
+    expect(rowCell(row({ lat_deg: -13.75, lon_deg: -100.5 }), "Lon", letters)).toBe("100.50°W");
+    expect(rowCell(row({ lat_deg: 13.75, lon_deg: 100.5 }), "Lon", letters)).toBe("100.50°E");
+    expect(rowCell(row({ lat_deg: 13.75 }), "Lat", DEFAULT_NF)).toBe("13.75° ");
+    expect(rowCell(row({ lat_deg: null, lon_deg: null }), "Lat", letters)).toBe("-");
+    expect(rowCell(row({ lat_deg: null, lon_deg: null }), "Lon", letters)).toBe("-");
+  });
+
+  it("a missing distance is - in miles too", () => {
+    const r = row({ range_km: null, rate_kms: null, footprint_km: null, alt_km: null, vel_kms: null });
+    for (const title of ["Range", "Rate", "Footp", "Alt", "Vel"]) expect(rowCell(r, title, nf({ imperial: true })), title).toBe("-");
+  });
+
+  it("the time column has the time format and zone of the number format", () => {
+    expect(rowCell(row(), "Time", nf({ timeFormat: "%d %b %H:%M" }))).toBe("12 Nov 05:06");
+    expect(rowCell(row(), "Time", nf({ local: true }))).toBe("2026/11/12 12:06:07");
+    expect(rowCell(row({ t: "2026-11-12T20:06:07.000Z" }), "Time", nf({ local: true, timeFormat: "%d %H" }))).toBe("13 03"); // over midnight
+  });
+
+  it("the times of Upcoming passes follow the number format, and so do no other cells", () => {
+    const f = nf({ local: true, timeFormat: "%H:%M", imperial: true, nsew: true });
+    expect(passCell(pass(), "AOS", f)).toBe("12:00");
+    expect(passCell(pass(), "TCA", f)).toBe("12:31");
+    expect(passCell(pass(), "LOS", f)).toBe("13:02");
+    expect(passCell(pass(), "Duration", f)).toBe("01:02:05");
+    expect(passCell(pass(), "Max El", f)).toBe("67.89°");
+    expect(passCell(pass(), "AOS Az", f)).toBe("10.00°");
+    expect(passCell(pass(), "AOS", DEFAULT_NF)).toBe("2026/11/12 05:00:00");
+  });
+
+  it("a format that is cut at 49 characters is cut in the cells", () => {
+    expect(rowCell(row(), "Time", nf({ timeFormat: "%Y".repeat(20) }))).toHaveLength(49);
   });
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
 import {
   answerRequest,
   beginEdit,
@@ -65,6 +66,28 @@ describe("read-out formats", () => {
     expect(fmtAngle(null)).toBe("   0.00°");
     expect(fmtRange(null)).toBe("0 km");
     expect(fmtRate(null)).toBe("0.0 km/s");
+  });
+
+  it("radio range and rate in miles", () => {
+    const miles = { ...DEFAULT_NF, imperial: true };
+    expect(fmtRange(1609.344, miles)).toBe("1000 mi");
+    expect(fmtRange(2345.67, miles)).toBe("1458 mi");
+    expect(fmtRate(1.609344 * 4.5, miles)).toBe("4.500 mi/s");
+    expect(fmtRate(-0.5, miles)).toBe("-0.311 mi/s");
+    // metric, with or without the number format
+    expect(fmtRange(2345.67, DEFAULT_NF)).toBe("2346 km");
+    expect(fmtRate(7.1234, DEFAULT_NF)).toBe("7.123 km/s");
+    // the other settings change nothing here
+    expect(fmtRange(2345.67, { ...DEFAULT_NF, nsew: true, local: true })).toBe("2346 km");
+  });
+
+  it("miles keep C's minus sign of a negative zero and the placeholders of Gpredict", () => {
+    const miles = { ...DEFAULT_NF, imperial: true };
+    expect(fmtRate(-0, miles)).toBe("-0.000 mi/s");
+    expect(fmtRate(-0.0001, miles)).toBe("-0.000 mi/s");
+    expect(fmtRange(null, miles)).toBe("0 km"); // the text the labels are made with: Gpredict sets the unit when the first number comes
+    expect(fmtRate(null, miles)).toBe("0.0 km/s");
+    expect(fmtDoppler(-0)).toBe("-0 Hz"); // no unit conversion for the Doppler shift
   });
 });
 

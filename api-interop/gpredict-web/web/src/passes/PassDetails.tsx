@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { FloatingWindow } from "../components/FloatingWindow";
+import { useNumberFormat } from "../numfmt";
 import { usePrefs } from "../prefs/prefsStore";
 import { PassAzElPlot } from "./PassAzElPlot";
 import { PassPolarPlot } from "./PassPolarPlot";
@@ -53,6 +54,7 @@ interface Props {
 export function PassDetails({ answer, onClose, position }: Props) {
   const { sat, qth, pass } = answer;
   const prefs = usePrefs();
+  const nf = useNumberFormat();
   const titles = prefs === null ? null : columnTitles(prefs.values[SINGLE_COLUMNS_KEY]);
   const columns = visibleColumns(SINGLE_COLUMNS, titles ?? []);
   const [tab, setTab] = useState<TabId>("data");
@@ -60,7 +62,7 @@ export function PassDetails({ answer, onClose, position }: Props) {
   const title = detailsTitle(sat, pass);
 
   const print = () => {
-    if (titles !== null) printPass(title, printLines(answer, titles));
+    if (titles !== null) printPass(title, printLines(answer, titles, nf));
   };
   const tabKey = (e: ReactKeyboardEvent, i: number) => {
     const to = e.key === "ArrowLeft" ? i - 1 : e.key === "ArrowRight" ? i + 1 : null;
@@ -111,7 +113,7 @@ export function PassDetails({ answer, onClose, position }: Props) {
                     <tr key={i}>
                       {columns.map((c) => (
                         <td key={c.title} className={`align-${c.align}`}>
-                          {rowCell(row, c.title)}
+                          {rowCell(row, c.title, nf)}
                         </td>
                       ))}
                     </tr>

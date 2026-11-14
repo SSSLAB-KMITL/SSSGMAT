@@ -4,6 +4,7 @@ import { FreqKnob } from "../components/FreqKnob";
 import { SatFilter } from "../components/SatFilter";
 import { SpinButton } from "../components/SpinButton";
 import { ToggleButton } from "../components/ToggleButton";
+import { useNumberFormat } from "../numfmt";
 import {
   countdownSize,
   editedValue,
@@ -47,6 +48,7 @@ export function RadioControl({ module, state, onAction, onClose, raiseToken }: P
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const { shown, edits, problem, send, act } = useControllerState<RadioState, EditKey>(state, onAction);
+  const nf = useNumberFormat(); // Range and Rate are in miles with "Use Imperial units"
 
   // SPACE: PTT of an FT817/857/897 (manual) radio, for a key pressed anywhere in this window (`key_press_cb`)
   const latest = useRef({ send, spacePtt: shown.space_ptt });
@@ -135,7 +137,7 @@ export function RadioControl({ module, state, onAction, onClose, raiseToken }: P
                 {" Range:"}
               </span>
               <span className="rc-value" title={TIPS.range}>
-                {fmtRange(shown.range_km)}
+                {fmtRange(shown.range_km, nf)}
               </span>
               <span className="rc-label right">El:</span>
               <span className="rc-value">{fmtAngle(shown.el)}</span>
@@ -143,7 +145,7 @@ export function RadioControl({ module, state, onAction, onClose, raiseToken }: P
                 {" Rate:"}
               </span>
               <span className="rc-value" title={TIPS.rate}>
-                {fmtRate(shown.rate_kms)}
+                {fmtRate(shown.rate_kms, nf)}
               </span>
             </div>
           </fieldset>

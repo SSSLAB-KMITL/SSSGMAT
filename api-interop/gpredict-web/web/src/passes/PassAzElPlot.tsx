@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNumberFormat } from "../numfmt";
 import { prepareCanvas, useElementSize } from "../views/canvasHooks";
 import { azElMouseText, azElScene } from "./passAzEl";
 import type { AzElScene } from "./passAzEl";
@@ -27,15 +28,16 @@ export function drawAzElScene(ctx: CanvasRenderingContext2D, scene: AzElScene, d
  * The Az/El plot of one pass (Pass details, "Az/El" tab; ref-P §6): white, 300 x 300 px at least in Gpredict, here as big as its
  * parent (which must have a height). The mouse text `T: %s, AZ: %.0f°, EL: %.0f°` is shown while the pointer is strictly inside the
  * frame; as in Gpredict it stays where it was when the pointer leaves the plot, and goes when the pointer moves out of the frame
- * (ref-P §6.3). There are no clicks.
+ * (ref-P §6.3). There are no clicks. The times are local, and the legend says "Local Time", with "Show local time instead of UTC".
  */
 export function PassAzElPlot({ pass }: { pass: PassInfo }) {
   const holder = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useElementSize(holder);
   const [cursorText, setCursorText] = useState<string | null>(null);
+  const { local } = useNumberFormat();
 
-  const scene = useMemo(() => azElScene(pass, { width: size.w, height: size.h }), [pass, size.w, size.h]);
+  const scene = useMemo(() => azElScene(pass, { width: size.w, height: size.h }, local), [pass, size.w, size.h, local]);
 
   useEffect(() => {
     const target = prepareCanvas(canvas.current, size);
@@ -51,7 +53,7 @@ export function PassAzElPlot({ pass }: { pass: PassInfo }) {
         style={{ display: "block", width: size.w, height: size.h }}
         onMouseMove={(e) => {
           const { x, y } = canvasPosition(e.currentTarget, e);
-          setCursorText(azElMouseText(x, y, pass, { width: size.w, height: size.h }));
+          setCursorText(azElMouseText(x, y, pass, { width: size.w, height: size.h }, local));
         }}
       />
     </div>

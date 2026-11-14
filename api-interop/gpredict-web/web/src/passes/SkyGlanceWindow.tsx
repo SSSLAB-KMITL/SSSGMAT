@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FloatingWindow } from "../components/FloatingWindow";
+import { useNumberFormat } from "../numfmt";
 import type { Tick } from "../types";
 import { prepareCanvas, useElementSize } from "../views/canvasHooks";
 import { NoPassMessage } from "./NoPassMessage";
@@ -23,12 +24,6 @@ import { releaseOnPageHide, SkyGlanceFeed } from "./skyGlanceFeed";
 import type { SkyView } from "./skyGlanceFeed";
 import type { SkyGlanceAnswer } from "./types";
 import { usePassRequest } from "./usePassRequest";
-
-/**
- * (ของเรา) The times of the chart are UTC. "Show local time instead of UTC" is a setting of Preferences (sub-project 4); `skyScene`
- * has the local-time version ready, like the Az/El plot.
- */
-const UTC = true;
 
 /** Nothing asked yet: the window says that it is waiting for the first tick. */
 const NOTHING_YET: SkyView = { answer: null, computing: false, error: null };
@@ -82,10 +77,11 @@ function SkyChart({ view, count, onRetry, onPass }: ChartProps) {
   const layout = skyLayout(count);
   const answer = view.answer;
   const [pointer, setPointer] = useState<{ x: number; answer: SkyGlanceAnswer } | null>(null);
+  const { local } = useNumberFormat(); // the hour labels, the time at the pointer and the caption ("UTC" or "TIME") follow it
 
   const scene = useMemo(
-    () => (answer === null || size.w === 0 || size.h === 0 ? null : skyScene(answer, { width: size.w, height: size.h }, UTC)),
-    [answer, size.w, size.h],
+    () => (answer === null || size.w === 0 || size.h === 0 ? null : skyScene(answer, { width: size.w, height: size.h }, !local)),
+    [answer, size.w, size.h, local],
   );
   const cursor = useMemo(() => (scene === null || pointer === null || pointer.answer !== answer ? null : skyCursor(scene, pointer.x)), [scene, pointer, answer]);
 

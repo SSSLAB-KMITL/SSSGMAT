@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_NF } from "../numfmt";
+import type { NumberFormat } from "../numfmt";
+import { pinTimeZone } from "../pinTimeZone";
 import {
   closeSky,
   hitPass,
@@ -401,5 +404,36 @@ describe("the windows that are open (ref-P §7.1: one window per module, pressin
 describe("skyTitle (ref-P §7.1)", () => {
   it("is The sky at a glance (<module>)", () => {
     expect(skyTitle("Amateur")).toBe("The sky at a glance (Amateur)");
+  });
+});
+
+describe("sky at a glance and the number format (ref-D §2.1)", () => {
+  pinTimeZone("Asia/Kolkata"); // UTC+5:30, no daylight saving: a local hour is not the UTC hour with a whole offset
+  const nfOf = (over: Partial<NumberFormat>): NumberFormat => ({ ...DEFAULT_NF, ...over });
+  /** how the window builds the scene: `utc` is the opposite of "Show local time instead of UTC" */
+  const sceneFor = (nf: NumberFormat) => skyScene(ONE, skyLayout(1), !nf.local);
+
+  it("sky at a glance label", () => {
+    expect(sceneFor(nfOf({ local: true })).caption.text).toBe("TIME");
+    expect(sceneFor(nfOf({ local: false })).caption.text).toBe("UTC");
+    expect(sceneFor(DEFAULT_NF).caption.text).toBe("UTC");
+  });
+
+  it("the hour labels are the local hours, in the local zone, of the ticks that stay where they are", () => {
+    const utc = sceneFor(DEFAULT_NF);
+    const local = sceneFor(nfOf({ local: true }));
+    expect(utc.hours.slice(0, 3).map((h) => h.label.text)).toEqual(["10", "11", "12"]);
+    expect(local.hours.slice(0, 3).map((h) => h.label.text)).toEqual(["15", "16", "17"]); // 15:31 local at the first tick
+    expect(local.hours.map((h) => h.x)).toEqual(utc.hours.map((h) => h.x));
+  });
+
+  it("the time beside the cursor is the local %H:%M", () => {
+    expect(skyCursor(sceneFor(DEFAULT_NF), 150)!.label.text).toBe("12:00");
+    expect(skyCursor(sceneFor(nfOf({ local: true })), 150)!.label.text).toBe("17:30");
+  });
+
+  it("Imperial, N/S/E/W and the time format change nothing in the chart", () => {
+    const f = nfOf({ imperial: true, nsew: true, timeFormat: "%d" });
+    expect(sceneFor(f)).toEqual(sceneFor(DEFAULT_NF));
   });
 });

@@ -40,7 +40,7 @@ function withUnit(value: number | null, decimals: number, unit: string): string 
 }
 
 /** A distance of the server (km) in the unit of `nf`, with `decimals` decimals and no unit text ("-" if missing): the List and the pass tables. */
-function lengthText(km: number | null, decimals: number, nf: NumberFormat): string {
+export function lengthText(km: number | null, decimals: number, nf: NumberFormat): string {
   return fmtFixed(distance(km, nf), decimals);
 }
 
