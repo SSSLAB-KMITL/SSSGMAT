@@ -15,73 +15,73 @@
       "id": "gps-iif",
       "glb": "gps-iif/gps-iif.glb",
       "blocks": ["GPS-IIF"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.3, 16.63, 2.875],
+      "triangles": 3538,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "gps-iii",
       "glb": "gps-iii/gps-iii.glb",
       "blocks": ["GPS-III", "GPS-IIIA", "GPS-III-1"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.508, 18.92, 4.11],
+      "triangles": 4070,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "bds3-meo-cast",
       "glb": "bds3-meo-cast/bds3-meo-cast.glb",
       "blocks": ["BDS-3M-CAST", "BDS-3SM-CAST"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [1.97, 14.46, 1.955],
+      "triangles": 3230,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "glonass-m",
       "glb": "glonass-m/glonass-m.glb",
       "blocks": ["GLO-M", "GLO-M+"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.16, 16.0, 3.9],
+      "triangles": 4646,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "bds3-meo-secm",
       "glb": "bds3-meo-secm/bds3-meo-secm.glb",
       "blocks": ["BDS-3M-SECM-A", "BDS-3M-SECM-B", "BDS-3SM-SECM"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.21, 11.36, 1.404],
+      "triangles": 4432,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "gps-iir",
       "glb": "gps-iir/gps-iir.glb",
       "blocks": ["GPS-IIR-A", "GPS-IIR-B", "GPS-IIR-M"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.04, 11.81, 2.72],
+      "triangles": 3146,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "glonass-k1",
       "glb": "glonass-k1/glonass-k1.glb",
       "blocks": ["GLO-K1", "GLO-K1+", "GLO-K1A", "GLO-K1B"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [1.52, 10.76, 2.98],
+      "triangles": 3976,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "galileo-iov",
       "glb": "galileo-iov/galileo-iov.glb",
       "blocks": ["GAL-1"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.669, 14.5, 1.439],
+      "triangles": 2722,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "bds3-geo-igso",
