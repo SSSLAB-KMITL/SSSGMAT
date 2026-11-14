@@ -3,6 +3,7 @@
 - route ตามตารางหัวข้อ 7.3 ทุกบรรทัด + GET /api/meta (ค่าคงที่ของ module.py ให้หน้าเว็บ) + GET /api/license + GET /api/readme (Help → Online help)
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
   + GET/PUT /api/hwconf (Preferences → Interfaces: วิทยุและ rotator ตรวจและเก็บที่ hwconf.py)
+  + POST /api/trsp/update และ GET /api/trsp/{norad} (Edit → Update transponder data และรายการ transponder ของดาว: trsp.py)
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
@@ -37,6 +38,7 @@ from gnss_predict.errors import Message
 
 from . import module as M
 from . import store as S
+from . import trsp
 from .bootstrap import bootstrap
 from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_time
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
@@ -456,7 +458,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                on_quit: Callable[[], None] | None = None, ephem: EphemManager | None = None,
                allowed_hosts: Iterable[str] | None = None) -> FastAPI:
     """- start_background=False (test): ไม่ prune/bootstrap/เปิด session ตอนเริ่ม และ EphemManager ที่สร้างเองไม่มี worker thread
-    - opener: ใช้ดึง OMM (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
+    - opener: ใช้ดึง OMM และข้อมูล transponder จาก SatNOGS (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
     - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
     - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)"""
     store = Store(cfg.data_dir)
@@ -469,6 +471,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     ticks = Ticks(hub)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
     tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine ไม่มี lock)
+    trsp_lock = threading.Lock()             # Update transponder ทีละครั้ง: คำขอที่ซ้อนรอตัวแรกจบแล้วได้ข้อมูลจาก cache (decision 13)
 
     def open_list() -> list[str]:
         """module ที่เปิดอยู่ตามลำดับแท็บ"""
@@ -535,6 +538,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.pass_service = pass_service
     app.state.ticks = ticks
     app.state.tle_lock = tle_lock
+    app.state.trsp_lock = trsp_lock
     app.state.on_quit = on_quit
     app.state.startup_messages = []
     app.state.allowed_hosts = (host_allow_list() if allowed_hosts is None
@@ -626,6 +630,23 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.post("/api/tle/update")
     async def tle_update():
         return await asyncio.to_thread(update_tle)
+
+    # ---------------- transponder (Edit -> Update transponder data, spec §7)
+
+    def update_trsp() -> dict:
+        with trsp_lock:
+            result = trsp.update_from_network(cfg.data_dir, now(), opener)
+        # status เป็น "Finished" เสมอ เหมือน Gpredict ที่แสดง "Finished" แม้ดึงไม่ได้ (ref-R §11.1) เหตุผลอยู่ใน messages
+        return {"status": "Finished", "cached": result.cached, "fetched_at": iso_ms(result.fetched_at),
+                "satellites": result.satellites, "messages": [m.to_dict() for m in result.messages]}
+
+    @app.post("/api/trsp/update")
+    async def trsp_update():
+        return await asyncio.to_thread(update_trsp)
+
+    @app.get("/api/trsp/{norad}")
+    def get_trsp(norad: int):
+        return {"norad": norad, "transponders": trsp.load_transponders(cfg.data_dir, norad)}
 
     # ---------------- module
 

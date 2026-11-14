@@ -25,12 +25,14 @@ from gpredict_web.observe import qth_geo
 from gpredict_web.passes import find_passes
 from gpredict_web.prefs import PREFS
 from gpredict_web.store import Store
+from gpredict_web.trsp import MODES_URL, TRANSMITTERS_URL
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
 from tests.helpers import TEST_HOSTS, FakeNow, half_pass_s, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
 from tests.test_pass_service import GEO, HIDDEN, WOBBLE, PassPropagate, is_day_job, pass_records
 from tests.test_runtime import ISO_MS, NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
+from tests.test_trsp import FakeSatnogs
 
 ERROR_KEYS = ["code", "level", "text", "object"]
 
@@ -290,6 +292,110 @@ class TleApiTest(ApiTestBase):
         reload.assert_called_once_with("M")
         self.assertEqual(self.client.get(f"/api/satellites/{SAMPLE[0]['NORAD_CAT_ID']}").status_code, 200)
         self.assertEqual(self.client.get("/api/tle/groups").json()["groups"][0]["last_success"], iso(T0))
+
+
+class TrspApiTest(ApiTestBase):
+    """Edit -> Update transponder data และรายการ transponder ของดาว (spec §7, §8) opener เป็น SatNOGS ปลอมจาก fixture"""
+
+    UPDATE_KEYS = ["status", "cached", "fetched_at", "satellites", "messages"]
+    TRSP_KEYS = ["name", "up_low", "up_high", "down_low", "down_high", "invert", "mode", "baud"]
+
+    def make_app(self, **kw):
+        self.satnogs = FakeSatnogs()
+        return super().make_app(opener=self.satnogs, **kw)
+
+    def test_trsp_update_route(self):
+        self.satnogs.on_call = lambda request: self.assertTrue(self.app.state.trsp_lock.locked())   # ทีละงาน
+        r = self.client.post("/api/trsp/update")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), self.UPDATE_KEYS)
+        self.assertEqual((body["status"], body["cached"], body["fetched_at"], body["satellites"]),
+                         ("Finished", False, iso(T0), 3))
+        self.assertRegex(body["fetched_at"], ISO_MS)
+        self.assertEqual([m["code"] for m in body["messages"]], ["TRSP_UPDATED"])
+        for m in body["messages"]:
+            self.assertEqual(list(m), ERROR_KEYS)
+            self.assertRegex(m["text"], r"[ก-๙]")
+        self.assertEqual(len(self.satnogs.calls), 2)
+        self.assertTrue((self.cfg.data_dir / "trsp" / "25544.json").is_file())
+
+        again = self.client.post("/api/trsp/update").json()                      # ภายใน 2 ชม.: ใช้ cache ไม่ส่ง request
+        self.assertEqual((again["status"], again["cached"], again["fetched_at"], again["satellites"]),
+                         ("Finished", True, iso(T0), 3))
+        self.assertEqual([m["code"] for m in again["messages"]], ["TRSP_RATE_LIMITED_LOCAL"])
+        self.assertEqual(len(self.satnogs.calls), 2)
+
+        self.wall.advance(2 * 3600 + 1)
+        third = self.client.post("/api/trsp/update").json()
+        self.assertEqual((third["cached"], len(self.satnogs.calls)), (False, 4))
+
+    def test_overlapping_trsp_updates_run_one_at_a_time(self):
+        second: list = []
+        workers: list[threading.Thread] = []
+
+        def start_second_request(request):
+            if not workers:                                        # ระหว่างที่คำขอแรกกำลังดึง modes
+                workers.append(threading.Thread(target=lambda: second.append(self.client.post("/api/trsp/update").json())))
+                workers[0].start()
+                time.sleep(0.3)                                    # ให้คำขอที่สองถึง server และรอ lock
+
+        self.satnogs.on_call = start_second_request
+        first = self.client.post("/api/trsp/update").json()
+        workers[0].join(10)
+        self.assertEqual((first["cached"], first["satellites"]), (False, 3))
+        self.assertEqual(len(second), 1)
+        self.assertEqual((second[0]["cached"], second[0]["satellites"]), (True, 3))     # รอคำขอแรกจบแล้วได้ข้อมูลจาก cache
+        self.assertEqual(len(self.satnogs.calls), 2)                                    # ไม่ส่ง request ซ้ำ
+
+    def test_trsp_update_failure_is_finished_with_a_warning(self):
+        self.client.post("/api/trsp/update")
+        before = self.client.get("/api/trsp/25544").json()
+        self.wall.advance(3 * 3600)
+        self.satnogs.replies[TRANSMITTERS_URL] = b"<html>"
+        with self.assertLogs("gpredict_web.trsp", "WARNING"):
+            r = self.client.post("/api/trsp/update")
+        self.assertEqual(r.status_code, 200, r.text)                              # Gpredict แสดง "Finished" แม้ดึงไม่ได้
+        body = r.json()
+        self.assertEqual((body["status"], body["cached"], body["fetched_at"], body["satellites"]),
+                         ("Finished", True, iso(T0), 0))
+        self.assertEqual([(m["code"], m["level"]) for m in body["messages"]], [("TRSP_DOWNLOAD_FAILED", "warning")])
+        self.assertRegex(body["messages"][0]["text"], r"[ก-๙]")
+        self.assertEqual(self.client.get("/api/trsp/25544").json(), before)       # transponder เดิมอยู่ครบ
+
+    def test_trsp_update_failure_without_any_data(self):
+        self.satnogs.replies[MODES_URL] = URLError("ไม่มีเน็ตใน test")
+        with self.assertLogs("gpredict_web.trsp", "WARNING"):
+            body = self.client.post("/api/trsp/update").json()
+        self.assertEqual((body["status"], body["cached"], body["fetched_at"], body["satellites"]),
+                         ("Finished", True, None, 0))
+        self.assertEqual(body["messages"][0]["code"], "TRSP_DOWNLOAD_FAILED")
+
+    def test_trsp_update_uses_only_satnogs_with_no_user_data(self):
+        self.client.post("/api/trsp/update", headers={"Origin": "http://localhost", "Cookie": "a=b"})
+        self.assertEqual([r.header_items() for r, _ in self.satnogs.calls], [[("User-agent", "gpredict-web")]] * 2)
+
+    def test_get_trsp_route_shape(self):
+        empty = self.client.get("/api/trsp/25544")
+        self.assertEqual(empty.status_code, 200, empty.text)
+        self.assertEqual(empty.json(), {"norad": 25544, "transponders": []})        # ไม่มีไฟล์ -> รายการว่าง ไม่ใช่ 404
+        self.client.post("/api/trsp/update")
+        body = self.client.get("/api/trsp/25544").json()
+        self.assertEqual(list(body), ["norad", "transponders"])
+        self.assertEqual(body["norad"], 25544)
+        self.assertEqual(len(body["transponders"]), 4)
+        for t in body["transponders"]:
+            self.assertEqual(list(t), self.TRSP_KEYS)
+        first = body["transponders"][0]
+        self.assertEqual((first["name"], first["mode"], first["invert"], first["baud"]),
+                         ("Mode V/U FM Voice Repeater", "FM", False, 0))
+        self.assertEqual((first["up_low"], first["up_high"]), (145_990_000, 145_990_000))   # ค่าเดียวถูกคัดลอกตอนอ่าน (ref-R §10.1)
+        self.assertEqual((first["down_low"], first["down_high"]), (437_800_000, 437_800_000))
+        self.assertEqual(self.client.get("/api/trsp/43770").json()["transponders"][0]["invert"], True)
+
+    def test_get_trsp_route_rejects_a_non_number(self):
+        self.assert_error(self.client.get("/api/trsp/abc"), 422, "REQUEST_INVALID", "norad")
+        self.assert_error(self.client.get("/api/trsp/update"), 422, "REQUEST_INVALID", "norad")
 
 
 # ---------------------------------------------------------------- module
