@@ -185,6 +185,10 @@ const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
   // กราฟ (STK ref §F แถว Graph time cursor): ชื่อปุ่มและเมนูอยู่กลางประโยค ตามด้วย/นำด้วยคำอื่น
   "graph.toggleAnimationTimeline": "Toggle Animation Timeline button",
   "graph.showAnimationTimeLine": "right-click Show Animation Time Line",
+  // Access tool (STK ref §F แถว Access reports/graphs): ชื่อกลุ่มกับปุ่มแรกคั่นด้วย ":" ซึ่งไม่ใช่ตัวคั่น
+  "access.reports": "Reports: Access..., AER...; Graphs: Access..., AER...",
+  "access.graphs": "Reports: Access..., AER...; Graphs: Access..., AER...",
+  "access.accessDots": "Reports: Access..., AER...; Graphs: Access..., AER...",
 };
 
 describe("stk labels are real STK terms", () => {
@@ -412,6 +416,13 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§11 Catalog / New Scenario / Fetch / Daily fields", ["field.", "option."], ["Name", "Location", "Template", "System", "Status", "Orbit Data",
                                                                                   "Latest Snapshot", "Groups", "Next Fetch Available", "Last Run", "CSV for TEC",
                                                                                   "GPS", "GLONASS", "Galileo", "BeiDou"]],
+  ["§4 Access tool", ["access.", "ob.", "field.", "toolbar.", "menu.analysis."], ["Access", "Access For", "Select Object...", "Associated Objects",
+                                                                              "Compute", "Clear", "Clear All", "Remove", "Remove All", "Time Period",
+                                                                              "Use Object Time Period", "Specify Time Period", "Start", "Stop", "Reports",
+                                                                              "Graphs", "Access...", "AER...", "Report & Graph Manager...", "Add Timeline",
+                                                                              "Auto Add to Timeline", "Animation Graphics", "Show", "Static Highlight",
+                                                                              "Animate Highlight", "Show Animate Line", "Use Object Colors", "Use Custom Color",
+                                                                              "Color", "Inherit Settings from Scenario", "Select All"]],
   ["§6.1 report window", ["report."], ["Refresh", "Export", "To CSV Format...", "Setup...", "Set Animation Time", "Global Statistics",
                                        "Field Delimiter", "Enclose Header Fields in Quotes", "Write Report Title", "Headers"]],
   ["§6.2 graph window", ["graph.", "report."], ["Save", "Copy to Clipboard", "Zoom Out", "Refresh", "Toggle Animation Timeline", "Crosshair Cursor",
@@ -433,7 +444,7 @@ describe("every name in spec §4-§13 has a key", () => {
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 

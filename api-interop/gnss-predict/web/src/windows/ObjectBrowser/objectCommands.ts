@@ -3,7 +3,7 @@
 // เมนู Edit, ปุ่ม Delete และปุ่ม ⚠ บนแถบสถานะต้องยังใช้ได้ คำสั่งทำกับการเลือกปัจจุบันของแอป (useSelection) และสถานะใน state.ts
 // คำสั่งที่ต้องมีหน้าจอ (Find, New Group, Rename, ตัวกรองธง) เปิดหรือโฟกัสหน้าต่าง Object Browser ให้ แล้วหน้าต่างแสดงสถานะที่ตั้งไว้
 // enabled() ขึ้นกับการเลือก คลิปบอร์ด และต้นไม้ ซึ่งทะเบียนไม่รู้ว่าเปลี่ยน: ที่นี่ฟัง store เหล่านั้นแล้วเรียก invalidateCommands()
-// object.zoomTo เป็นของหน้าต่าง 3D; object.access / object.reportGraphManager ยังไม่ทำ (รายการเมนูจึงปิดใช้อยู่)
+// object.zoomTo เป็นของหน้าต่าง 3D, object.access ของ Access tool (windows/AccessTool/commands.ts); object.reportGraphManager ยังไม่ทำ (ปิดใช้อยู่)
 
 import { COMMAND_LABELS, invalidateCommands, registerCommand, type CommandDef, type CommandId } from "../../commands";
 import { msg } from "../../labels/messages.th";

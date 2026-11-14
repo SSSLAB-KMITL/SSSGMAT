@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { startEventWiring } from "../../src/api/events";
-import { isEnabled, resetCommands, runCommand } from "../../src/commands";
+import { commandTooltip, isEnabled, isRegistered, resetCommands, runCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { startClock } from "../../src/time/clock";
@@ -110,7 +110,7 @@ test("App puts the menu bar, both toolbars and the status bar around the windows
   expect(footer.querySelector('[data-field="activeObject"]')).not.toBeNull();
 });
 
-test("App registers the view, window, animation, file and help commands, and the others stay disabled", async () => {
+test("App registers the view, window, animation, file, help and Access commands, and the others stay disabled", async () => {
   render(<App />);
   await waitFor(() => expect(useLayout.getState().api).not.toBeNull());
   await waitFor(() => expect(isEnabled("view.new3d")).toBe(true));
@@ -118,7 +118,12 @@ test("App registers the view, window, animation, file and help commands, and the
   expect(isEnabled("file.new")).toBe(true);
   expect(isEnabled("help.about")).toBe(true);
   expect(isEnabled("file.save")).toBe(false); // registered, but only usable once a scenario is open
+  // Access tool: registered by App, usable only once a scenario is open (the reason says so); Report & Graph Manager still waits
+  expect(isRegistered("analysis.access")).toBe(true);
   expect(isEnabled("analysis.access")).toBe(false);
+  expect(commandTooltip("analysis.access")).toBe(msg("tooltip.noScenario"));
+  expect(isRegistered("analysis.reportGraphManager")).toBe(false);
+  expect(isEnabled("analysis.reportGraphManager")).toBe(false);
   // และเมนูตามทัน: รายการ View ที่ลงทะเบียนแล้วไม่ aria-disabled
   expect(screen.getByRole("menubar")).toBeDefined();
 });

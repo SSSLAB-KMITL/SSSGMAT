@@ -2306,3 +2306,90 @@ body {
   margin: 0;
   color: var(--text-muted);
 }
+
+/* ---------- Access tool (spec §4) ---------- */
+.access-tool {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.access-for {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.access-for .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.access-main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 160px;
+}
+
+.access-assoc {
+  flex: 1 1 auto;
+}
+
+.access-tree {
+  flex: 1 1 auto;
+  min-height: 120px;
+  padding: 2px 4px;
+  overflow: auto;
+  border: 1px solid var(--border);
+}
+
+.access-row.access-child {
+  padding-left: 18px;
+}
+
+.access-computed {
+  font-weight: 700;
+}
+
+.access-buttons,
+.access-other,
+.access-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.access-buttons {
+  width: 110px;
+}
+
+.access-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-columns > * {
+  flex: 1 1 0;
+}
+
+.access-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.access-times {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  gap: 4px 8px;
+}

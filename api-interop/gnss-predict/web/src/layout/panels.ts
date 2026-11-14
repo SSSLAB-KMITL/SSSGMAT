@@ -13,7 +13,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView", "globeManager", "report", "graph",
+  "stkReference", "sensorView", "globeManager", "report", "graph", "accessTool",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -188,6 +188,9 @@ const BASE: Record<PanelKind, Base> = {
     title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.graph")),
     instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
   },
+  // Access tool (spec §4): หน้าต่างลอยบานเดียว params {from: path ของ Access For | null} เปิดซ้ำด้วย from ใหม่ = เปลี่ยน Access For ของบานเดิม
+  // ไม่บันทึกใน workbook (เครื่องมือชั่วคราวแบบ Properties Browser) ปิดพร้อม scenario
+  accessTool: { label: "toolbar.access", type: "floating", size: { width: 640, height: 560 }, persist: false, scenarioBound: true },
 };
 
 // ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")

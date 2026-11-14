@@ -14,6 +14,8 @@ import { startWorkspaceFlow } from "./scenarioFiles";
 import { useImagery } from "./stores/imagery";
 import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
+import { registerAccessToolPanel } from "./windows/AccessTool/AccessTool";
+import { registerAccessCommands } from "./windows/AccessTool/commands";
 import { registerDataCommands } from "./windows/dataCommands";
 import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSettings/DailyForecastSettings";
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
@@ -49,6 +51,7 @@ export function App() {
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
   // หน้าต่างรายงานและหน้าต่างกราฟ (เปิดด้วย openReport ของ windows/Report/Report.tsx: style ชนิด graph ไปหน้าต่างกราฟ),
+  // Access tool (คำสั่ง analysis.access / object.access ระดับแอป: เปิดหน้าต่างนี้),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -61,6 +64,7 @@ export function App() {
     const unregisterGraphics3DCommands = registerGraphics3DCommands();
     const unregisterGraphics2DCommands = registerGraphics2DCommands();
     const unregisterSensorViewCommands = registerSensorViewCommands();
+    const unregisterAccessCommands = registerAccessCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerTimelineViewPanel();
@@ -79,6 +83,7 @@ export function App() {
     registerSensorViewPanel();
     registerReportPanel();
     registerGraphPanel();
+    registerAccessToolPanel();
     const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
@@ -89,6 +94,7 @@ export function App() {
       stopFlow();
       stopShortcuts();
       stopSensorViewTracking();
+      unregisterAccessCommands();
       unregisterSensorViewCommands();
       unregisterGraphics2DCommands();
       unregisterGraphics3DCommands();

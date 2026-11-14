@@ -11,7 +11,8 @@
 // test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
 //
 // การตั้งชื่อคีย์: `<กลุ่ม>.<ที่ใช้>.<ชื่อ>` แบบ camelCase กลุ่มที่ใช้: menu anim toolbar window page field option ob
-// timeline report (หน้าต่างรายงาน) mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View) คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
+// timeline report (หน้าต่างรายงาน) graph (หน้าต่างกราฟ) access (Access tool) mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View)
+// คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
 //   - เมนูย่อย View → Toolbars ใช้ toolbar.* เป็นชื่อแถบ
 //   - เมนูคลิกขวาของ Object Browser ใช้ menu.object.* ชุดเดียวกับเมนูที่ตั้งชื่อตามชนิด object
 //   - ช่อง Time Step และ X Real Time Multiplier ในหน้า Basic - Time ใช้ anim.timeStep / anim.xRealTimeMultiplier
@@ -575,6 +576,37 @@ const LABELS = {
   "graph.zoomOut": ours("Zoom Out"),
   "graph.crosshairCursor": ours("Crosshair Cursor"),
   "graph.exportDialog": ours("Export Dialog..."),
+
+  // ---------- Access tool (spec §4, STK ref §F) ----------
+  // ชื่อหน้าต่างใช้ toolbar.access; ช่อง Show ของกราฟิกใช้ ob.show, Color ใช้ field.color, Start/Stop ใช้ field.analysisStart/Stop
+  // ปุ่ม Report & Graph Manager... ใช้ menu.analysis.reportGraphManager (คำสั่งเดียวกัน)
+  "access.accessFor": stk("Access For", "F"),
+  "access.selectObject": stk("Select Object...", "F"),
+  "access.associatedObjects": stk("Associated Objects", "F"),
+  "access.compute": stk("Compute", "F"),
+  "access.clear": stk("Clear", "F"),
+  "access.clearAll": stk("Clear All", "F"),
+  "access.remove": stk("Remove", "F"),
+  "access.removeAll": stk("Remove All", "F"),
+  "access.useObjectTimePeriod": stk("Use Object Time Period", "F"),
+  "access.specifyTimePeriod": stk("Specify Time Period", "F"),
+  // §F: "Reports: Access..., AER...; Graphs: Access..., AER..." (ชื่อกลุ่มและ Access... อยู่ติด ":" จึงอ้างข้อความใน test)
+  "access.reports": stk("Reports", "F"),
+  "access.graphs": stk("Graphs", "F"),
+  "access.accessDots": stk("Access...", "F"),
+  "access.aerDots": stk("AER...", "F"),
+  "access.addTimeline": stk("Add Timeline", "F"),
+  "access.autoAddToTimeline": stk("Auto Add to Timeline", "F"),
+  "access.staticHighlight": stk("Static Highlight", "F"),
+  "access.animateHighlight": stk("Animate Highlight", "F"),
+  "access.showAnimateLine": stk("Show Animate Line", "F"),
+  "access.useObjectColors": stk("Use Object Colors", "F"),
+  "access.useCustomColor": stk("Use Custom Color", "F"),
+  // reference ไม่มีชื่อกลุ่มและตัวเลือกเหล่านี้ (spec §4 ใช้คำเหล่านี้เอง) จึงเป็น ours
+  "access.timePeriod": ours("Time Period"),
+  "access.animationGraphics": ours("Animation Graphics"),
+  "access.inheritSettings": ours("Inherit Settings from Scenario"),
+  "access.selectAll": ours("Select All"),
 
   // ---------- Message Viewer (spec §11, STK ref §A) ----------
   "mv.tab.all": stk("All Messages", "A"),

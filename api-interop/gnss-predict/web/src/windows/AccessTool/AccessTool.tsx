@@ -1,0 +1,397 @@
+// หน้าต่าง Access tool (spec §4, STK ref §F): หน้าต่างลอยบานเดียว params {from} = path ของ Access For (Facility หรือ Satellite)
+//
+// - Associated Objects: ต้นไม้จาก state.ts ติ๊กได้ทั้งกลุ่มและรายดวง ตัวหนา = access ที่ computed และผลของ Facility current
+//   คลิกขวา: Select All; เปลี่ยน Access For = ล้างที่ติ๊ก
+// - Compute / Clear / Clear All / Remove / Remove All: POST /access/compute|clear|remove พร้อม If-Match (server §6.6)
+//   Access For เป็นดาว = หนึ่งคำขอต่อ Facility (ส่ง ETag ใหม่ของคำขอก่อนหน้าต่อ) เขียนสำเร็จแล้วดึง doc ใหม่ (resync) ก่อนปลดปุ่ม
+//   202 = job analyze (recordQueuedJob) ปุ่มทั้งชุดเป็นสีเทาระหว่างที่มี job ใดของ scenario นี้รอหรือรันอยู่ (แถบสถานะแสดงความคืบหน้า)
+//   Clear / Remove ที่ไม่มีรายการตรง (n = 0) = ข้อความ info ไม่ใช่ error (P8)
+//   412 = กล่อง Reload / Cancel ของทั้งแอป (useScenario.conflict) ไม่ลง Message Viewer; ข้อผิดพลาดอื่น = Message Viewer
+// - Time Period: Use Object Time Period ({mode: "object"}) / Specify Time Period (Start, Stop ตาม DateFormat ของ scenario) อ่านไม่ได้หรือ
+//   Stop ไม่หลัง Start = กรอบแดงและ Compute ใช้ไม่ได้
+// - Auto Add to Timeline (ติ๊กไว้ตั้งต้น) = `timeline` ของ Compute; Add Timeline = Compute รายการที่เลือกด้วย `timeline: true` อย่างเดียว
+// - Animation Graphics ส่งทั้งก้อนใน `graphics` ของ Compute (ชื่อช่องตรงกับ AccessGraphics ของ server)
+// - Reports / Graphs: Access..., AER... เปิดหน้าต่างรายงาน/กราฟของคู่ P1 ที่ติ๊ก (openReport) Report & Graph Manager... เรียกคำสั่งเดียวกับเมนู
+
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ApiError, apiSend, errorText } from "../../api/client";
+import { recordQueuedJob } from "../../api/startJob";
+import { useCommands, useTimeFormatter } from "../../chrome/hooks";
+import { commandTooltip, isEnabled, runCommand } from "../../commands";
+import { t } from "../../labels/labels";
+import { msg } from "../../labels/messages.th";
+import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
+import { useJobs } from "../../stores/jobs";
+import { report as notify } from "../../stores/messages";
+import { useResults } from "../../stores/results";
+import { useScenario, type ScenarioDoc } from "../../stores/scenario";
+import { parseIsoUtc, parseTime } from "../../time/parse";
+import { SelectObjectDialog } from "../InsertObjects/SelectObjectDialog";
+import { openReport } from "../Report/Report";
+import { ACCESS_TOOL_KIND, openAccessTool } from "./commands";
+import {
+  accessForClass, allSelections, associatedTree, computedSatellites, DEFAULT_GRAPHICS, leavesOf, pairOf, reportObjects, selections,
+  type AccessGraphics, type AccessSelection, type AccessTimePeriod, type AssocNode, type StatusByFacility,
+} from "./state";
+
+type Action = "compute" | "clear" | "remove";
+
+const EMPTY: ReadonlySet<string> = new Set();
+const enc = encodeURIComponent;
+
+/** เวลา UTC แบบที่ server รับ (UtcZ): ไม่มีเศษวินาที = ไม่เขียน .000 */
+const utcZ = (d: Date): string => d.toISOString().replace(".000Z", "Z");
+
+/** path ของ Facility และ Satellite ทั้งหมด (ตัวเลือกของ Select Object...) */
+const accessForChoices = (doc: ScenarioDoc | null): string[] =>
+  (doc?.objects ?? []).filter((o) => o.class === "Facility" || o.class === "Satellite").map((o) => `*/${o.class}/${o.name}`);
+
+export function AccessTool({ params }: PanelProps) {
+  useCommands(); // ปุ่ม Report & Graph Manager... ตามสถานะคำสั่ง
+  const from: string | null = typeof params?.from === "string" && params.from !== "" ? params.from : null;
+  const sc = useScenario((s) => s.name);
+  const doc = useScenario((s) => s.doc);
+  const info = useResults((s) => s.info);
+  const jobActive = useJobs((s) => sc !== null && s.activeFor(sc) !== undefined);
+  const formatter = useTimeFormatter();
+  const ids = useId();
+
+  const cls = accessForClass(doc, from);
+  const tree = useMemo(() => associatedTree(doc, from), [doc, from]);
+  const leaves = useMemo(() => new Set(leavesOf(tree)), [tree]);
+  const status = useMemo<StatusByFacility>(
+    () => Object.fromEntries(Object.entries(info?.access ?? {}).map(([name, entry]) => [name, entry.status])),
+    [info],
+  );
+  const bold = useMemo(() => computedSatellites(doc, status), [doc, status]);
+
+  // ที่ติ๊กเป็นของ Access For ตัวที่ติ๊ก: เปลี่ยน Access For = เริ่มว่าง; object ที่หายจาก doc ไม่นับ
+  const [ticks, setTicks] = useState<{ from: string | null; set: ReadonlySet<string> }>({ from, set: EMPTY });
+  const checked = useMemo(
+    () => (ticks.from === from ? new Set([...ticks.set].filter((p) => leaves.has(p))) : EMPTY),
+    [ticks, from, leaves],
+  );
+  const setChecked = (next: ReadonlySet<string>): void => setTicks({ from, set: next });
+
+  const [mode, setMode] = useState<AccessTimePeriod["mode"]>("object");
+  const [startText, setStartText] = useState(() => initialTime(doc?.analysis_period.start, formatter.format));
+  const [stopText, setStopText] = useState(() => initialTime(doc?.analysis_period.stop, formatter.format));
+  const [autoAdd, setAutoAdd] = useState(true);
+  const [graphics, setGraphics] = useState<AccessGraphics>({ ...DEFAULT_GRAPHICS });
+  const [customColor, setCustomColor] = useState("#ffff00");
+  const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const start = parseTime(startText, formatter.fmt, formatter.ltz);
+  const stop = parseTime(stopText, formatter.fmt, formatter.ltz);
+  const startBad = mode === "specify" && start === null;
+  const stopBad = mode === "specify" && (stop === null || (start !== null && stop.getTime() <= start.getTime()));
+  const timePeriod: AccessTimePeriod | null =
+    mode === "object" ? { mode: "object" } : start !== null && stop !== null && !stopBad ? { mode: "specify", start: utcZ(start), stop: utcZ(stop) } : null;
+
+  const locked = busy || jobActive || sc === null;
+  const chosen = selections(doc, from, checked);
+  const canSelect = !locked && chosen.length > 0;
+  const objects = reportObjects(doc, from, checked);
+
+  /** ส่งชุดที่เลือกไปทีละคำขอ (ETag ของคำขอก่อนหน้าไปกับคำขอถัดไป) เขียนจริงแล้วดึง doc ใหม่ก่อนปลดปุ่ม */
+  const send = async (action: Action, list: AccessSelection[], extra: Record<string, unknown> = {}): Promise<void> => {
+    const name = sc;
+    if (name === null) return;
+    if (list.length === 0) {
+      if (action !== "compute") notify("info", "ACCESS_NONE", msg(action === "clear" ? "access.nothingToClear" : "access.nothingToRemove"), from);
+      return;
+    }
+    setBusy(true);
+    let etag = useScenario.getState().etag;
+    let wrote = false;
+    let matched = 0;
+    let failed = false;
+    try {
+      for (const sel of list) {
+        const res = await apiSend<{ job?: unknown; etag?: unknown; cleared?: unknown; removed?: unknown }>(
+          "POST", `/scenarios/${enc(name)}/access/${action}`, { from: sel.from, to: sel.to, ...extra }, etag,
+        );
+        etag = res.etag ?? (typeof res.data?.etag === "string" ? `"${res.data.etag}"` : etag);
+        if (action === "compute") {
+          wrote = true;
+          if (typeof res.data?.job === "string") recordQueuedJob(res.data.job, "analyze", name);
+        } else {
+          const n = res.data?.[action === "clear" ? "cleared" : "removed"];
+          if (typeof n === "number" && n > 0) {
+            matched += n;
+            wrote = true;
+          }
+        }
+      }
+    } catch (e) {
+      failed = true;
+      if (e instanceof ApiError && e.status === 412) {
+        if (useScenario.getState().name === name) useScenario.setState({ conflict: true });
+      } else {
+        notify("error", e instanceof ApiError ? e.code : "ACCESS_FAILED", msg("access.failed", { message: errorText(e) }), from);
+      }
+    } finally {
+      if (!failed && action !== "compute" && matched === 0) {
+        notify("info", "ACCESS_NONE", msg(action === "clear" ? "access.nothingToClear" : "access.nothingToRemove"), from);
+      }
+      // ดึง doc ใหม่ (ETag ใหม่ + computed) ก่อนปลดปุ่ม ไม่งั้นกดซ้ำเร็ว ๆ จะส่ง ETag เก่าแล้วได้ 412 ปลอม
+      if (wrote && useScenario.getState().name === name) await useScenario.getState().resync();
+      if (alive.current) setBusy(false);
+    }
+  };
+
+  const compute = (): void => {
+    if (!canSelect || timePeriod === null) return;
+    const g = { ...graphics, custom_color: graphics.color_mode === "custom" ? customColor : null };
+    void send("compute", chosen, { time_period: timePeriod, graphics: g, timeline: autoAdd });
+  };
+
+  const openStyle = (style: "Access" | "AER", kind: "report" | "graph"): void => {
+    if (objects.length > 0) openReport({ style, kind, objects, time: { mode: "object" }, dynamic: false });
+  };
+
+  const toggle = (paths: readonly string[], on: boolean): void => {
+    const next = new Set(checked);
+    for (const p of paths) {
+      if (on) next.add(p);
+      else next.delete(p);
+    }
+    setChecked(next);
+  };
+
+  const setG = (patch: Partial<AccessGraphics>): void => setGraphics((g) => ({ ...g, ...patch }));
+  const isBold = (leaf: string): boolean => from !== null && bold.has(pairOf(from, leaf));
+  const rgmEnabled = isEnabled("analysis.reportGraphManager");
+
+  const row = (node: AssocNode, child: boolean) => {
+    const members = node.cls === "Constellation" ? (node.children ?? []).map((c) => c.path) : [node.path];
+    const on = members.filter((p) => checked.has(p)).length;
+    const all = members.length > 0 && on === members.length;
+    const strong = members.length > 0 && members.every(isBold);
+    return (
+      <div key={`${child ? "c" : "n"}:${node.path}`} className={child ? "access-row access-child" : "access-row"} data-computed={strong ? "true" : "false"}>
+        <label className="access-choice">
+          <input
+            type="checkbox"
+            aria-label={node.name}
+            checked={all}
+            disabled={members.length === 0}
+            ref={(el) => {
+              if (el !== null) el.indeterminate = on > 0 && !all;
+            }}
+            onChange={() => toggle(members, !all)}
+          />
+          <span className={strong ? "access-name access-computed" : "access-name"}>{node.name}</span>
+        </label>
+      </div>
+    );
+  };
+
+  return (
+    <div className="access-tool">
+      <div className="access-for">
+        <label htmlFor={`${ids}-for`}>{t("access.accessFor")}</label>
+        <input id={`${ids}-for`} className="field form-input" readOnly value={cls === null || from === null ? "" : from.slice(2)} />
+        <button type="button" className="btn" disabled={sc === null} onClick={() => setPicking(true)}>
+          {t("access.selectObject")}
+        </button>
+      </div>
+      {cls === null && <p className="props-note">{msg("access.selectAccessFor")}</p>}
+
+      <div className="access-main">
+        <fieldset className="props-group access-assoc">
+          <legend>{t("access.associatedObjects")}</legend>
+          <ContextMenu.Root>
+            <ContextMenu.Trigger asChild>
+              <div className="access-tree">
+                {cls !== null && tree.length === 0 && <p className="props-note">{msg("access.noAssociated")}</p>}
+                {tree.map((node) => [row(node, false), ...(node.children ?? []).map((c) => row(c, true))])}
+              </div>
+            </ContextMenu.Trigger>
+            <ContextMenu.Portal>
+              <ContextMenu.Content className="menu-content">
+                <ContextMenu.Item className="menu-item" disabled={leaves.size === 0} onSelect={() => setChecked(new Set(leaves))}>
+                  {t("access.selectAll")}
+                </ContextMenu.Item>
+              </ContextMenu.Content>
+            </ContextMenu.Portal>
+          </ContextMenu.Root>
+        </fieldset>
+        <div className="access-buttons">
+          <button type="button" className="btn" disabled={!canSelect || timePeriod === null} onClick={compute}>
+            {t("access.compute")}
+          </button>
+          <button type="button" className="btn" disabled={!canSelect} onClick={() => void send("clear", chosen)}>
+            {t("access.clear")}
+          </button>
+          <button type="button" className="btn" disabled={locked || cls === null} onClick={() => void send("clear", allSelections(doc, from))}>
+            {t("access.clearAll")}
+          </button>
+          <button type="button" className="btn" disabled={!canSelect} onClick={() => void send("remove", chosen)}>
+            {t("access.remove")}
+          </button>
+          <button type="button" className="btn" disabled={locked || cls === null} onClick={() => void send("remove", allSelections(doc, from))}>
+            {t("access.removeAll")}
+          </button>
+          {jobActive && <p className="props-note" role="status">{msg("access.busy")}</p>}
+        </div>
+      </div>
+
+      <fieldset className="props-group">
+        <legend>{t("access.timePeriod")}</legend>
+        <label className="access-choice">
+          <input type="radio" name={`${ids}-time`} checked={mode === "object"} onChange={() => setMode("object")} />
+          {t("access.useObjectTimePeriod")}
+        </label>
+        <label className="access-choice">
+          <input type="radio" name={`${ids}-time`} checked={mode === "specify"} onChange={() => setMode("specify")} />
+          {t("access.specifyTimePeriod")}
+        </label>
+        <div className="access-times">
+          <label htmlFor={`${ids}-start`}>{t("field.analysisStart")}</label>
+          <input
+            id={`${ids}-start`}
+            className={startBad ? "field field-time field-invalid" : "field field-time"}
+            aria-invalid={startBad ? true : undefined}
+            disabled={mode !== "specify"}
+            value={startText}
+            onChange={(e) => setStartText(e.target.value)}
+          />
+          <label htmlFor={`${ids}-stop`}>{t("field.analysisStop")}</label>
+          <input
+            id={`${ids}-stop`}
+            className={stopBad ? "field field-time field-invalid" : "field field-time"}
+            aria-invalid={stopBad ? true : undefined}
+            disabled={mode !== "specify"}
+            value={stopText}
+            onChange={(e) => setStopText(e.target.value)}
+          />
+        </div>
+        {(startBad || stopBad) && <p className="form-error">{msg("access.timeInvalid")}</p>}
+      </fieldset>
+
+      <div className="access-columns">
+        <fieldset className="props-group">
+          <legend>{t("access.reports")}</legend>
+          <button type="button" className="btn" disabled={objects.length === 0} onClick={() => openStyle("Access", "report")}>
+            {t("access.accessDots")}
+          </button>
+          <button type="button" className="btn" disabled={objects.length === 0} onClick={() => openStyle("AER", "report")}>
+            {t("access.aerDots")}
+          </button>
+        </fieldset>
+        <fieldset className="props-group">
+          <legend>{t("access.graphs")}</legend>
+          <button type="button" className="btn" disabled={objects.length === 0} onClick={() => openStyle("Access", "graph")}>
+            {t("access.accessDots")}
+          </button>
+          <button type="button" className="btn" disabled={objects.length === 0} onClick={() => openStyle("AER", "graph")}>
+            {t("access.aerDots")}
+          </button>
+        </fieldset>
+        <div className="access-other">
+          <button
+            type="button"
+            className="btn"
+            disabled={!rgmEnabled}
+            title={commandTooltip("analysis.reportGraphManager")}
+            onClick={() => runCommand("analysis.reportGraphManager")}
+          >
+            {t("menu.analysis.reportGraphManager")}
+          </button>
+          <button type="button" className="btn" disabled={!canSelect} onClick={() => void send("compute", chosen, { timeline: true })}>
+            {t("access.addTimeline")}
+          </button>
+          <label className="access-choice">
+            <input type="checkbox" checked={autoAdd} onChange={(e) => setAutoAdd(e.target.checked)} />
+            {t("access.autoAddToTimeline")}
+          </label>
+        </div>
+      </div>
+
+      <fieldset className="props-group">
+        <legend>{t("access.animationGraphics")}</legend>
+        <div className="access-columns">
+          <div className="access-stack">
+            <label className="access-choice">
+              <input type="checkbox" checked={graphics.show} onChange={(e) => setG({ show: e.target.checked })} />
+              {t("ob.show")}
+            </label>
+            <label className="access-choice">
+              <input type="checkbox" checked={graphics.static_highlight} onChange={(e) => setG({ static_highlight: e.target.checked })} />
+              {t("access.staticHighlight")}
+            </label>
+            <label className="access-choice">
+              <input type="checkbox" checked={graphics.animate_highlight} onChange={(e) => setG({ animate_highlight: e.target.checked })} />
+              {t("access.animateHighlight")}
+            </label>
+            <label className="access-choice">
+              <input type="checkbox" checked={graphics.animate_line} onChange={(e) => setG({ animate_line: e.target.checked })} />
+              {t("access.showAnimateLine")}
+            </label>
+          </div>
+          <div className="access-stack">
+            <label className="access-choice">
+              <input type="radio" name={`${ids}-color`} checked={graphics.color_mode === "object"} onChange={() => setG({ color_mode: "object" })} />
+              {t("access.useObjectColors")}
+            </label>
+            <label className="access-choice">
+              <input type="radio" name={`${ids}-color`} checked={graphics.color_mode === "custom"} onChange={() => setG({ color_mode: "custom" })} />
+              {t("access.useCustomColor")}
+            </label>
+            <label className="access-choice">
+              {t("field.color")}
+              <input
+                type="color"
+                className="color-input"
+                aria-label={t("field.color")}
+                disabled={graphics.color_mode !== "custom"}
+                value={customColor}
+                onChange={(e) => setCustomColor(e.target.value.toLowerCase())}
+              />
+            </label>
+            <label className="access-choice">
+              <input type="checkbox" checked={graphics.inherit} onChange={(e) => setG({ inherit: e.target.checked })} />
+              {t("access.inheritSettings")}
+            </label>
+          </div>
+        </div>
+      </fieldset>
+
+      {picking && (
+        <SelectObjectDialog
+          choices={accessForChoices(doc)}
+          initial={from}
+          listLabel={t("access.accessFor")}
+          emptyNote={msg("viewFromTo.noObjects")}
+          onClose={(path) => {
+            setPicking(false);
+            if (path !== null && path !== from) openAccessTool(path);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** ข้อความเวลาเริ่มของช่อง Start/Stop จากเวลา ISO ของช่วงวิเคราะห์ (อ่านไม่ได้ = ว่าง) */
+function initialTime(iso: string | undefined, format: (d: Date) => string): string {
+  const d = iso === undefined ? null : parseIsoUtc(iso);
+  return d === null ? "" : format(d);
+}
+
+export function registerAccessToolPanel(): void {
+  const base = getPanelDef(ACCESS_TOOL_KIND);
+  if (base === undefined) throw new Error(`panel kind "${ACCESS_TOOL_KIND}" is not registered`);
+  registerPanel(ACCESS_TOOL_KIND, { ...base, component: AccessTool });
+}

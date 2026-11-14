@@ -8,6 +8,7 @@ import { msg } from "../../src/labels/messages.th";
 import { useLayout } from "../../src/stores/layout";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
+import { registerAccessCommands } from "../../src/windows/AccessTool/commands";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
 let disposeCore: () => void;
@@ -61,13 +62,28 @@ describe("Default toolbar", () => {
     expect((await screen.findByRole("tooltip")).textContent).toBe(t("toolbar.insertObject"));
   });
 
-  test("Access says why it is disabled", async () => {
+  test("Access says why it is disabled (no scenario)", async () => {
+    const user = userEvent.setup();
+    const disposeAccess = registerAccessCommands();
+    try {
+      useScenario.setState(useScenario.getInitialState(), true);
+      render(<Toolbars />);
+      const access = btn(defaults(), "toolbar.access");
+      expect(access.getAttribute("aria-disabled")).toBe("true");
+      await user.hover(access);
+      const tip = await screen.findByRole("tooltip");
+      expect(tip.textContent).toContain(t("toolbar.access"));
+      expect(tip.textContent).toContain(msg("tooltip.noScenario"));
+    } finally {
+      disposeAccess();
+    }
+  });
+
+  test("Report & Graph Manager still says it belongs to sub-project 4", async () => {
     const user = userEvent.setup();
     render(<Toolbars />);
-    await user.hover(btn(defaults(), "toolbar.access"));
-    const tip = await screen.findByRole("tooltip");
-    expect(tip.textContent).toContain(t("toolbar.access"));
-    expect(tip.textContent).toContain(msg("tooltip.subtask4"));
+    await user.hover(btn(defaults(), "toolbar.reportGraphManager"));
+    expect((await screen.findByRole("tooltip")).textContent).toContain(msg("tooltip.subtask4"));
   });
 
   test("hiding the toolbar in View → Toolbars removes it", () => {

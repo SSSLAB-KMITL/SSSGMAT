@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CommandContextMenu } from "../../src/chrome/ContextMenu";
 import { MenuBar } from "../../src/chrome/MenuBar";
 import { OBJECT_MENU, SATELLITE_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
-import { registerCommand } from "../../src/commands";
+import { commandTooltip, registerCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { useLayout } from "../../src/stores/layout";
@@ -198,6 +198,8 @@ describe("disabled items", () => {
     await openMenu(user, "Analysis");
     await user.keyboard("{ArrowDown}"); // first item (a disabled item is still reachable)
     expect(document.activeElement?.textContent).toBe("Access...");
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Report & Graph Manager...");
     expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
   });
 
@@ -212,13 +214,14 @@ describe("disabled items", () => {
     expect(screen.queryByRole("menu")).not.toBeNull();
   });
 
-  test("Access... and Report & Graph Manager... of the class menu carry the same note", async () => {
+  test("Report & Graph Manager... of the class menu carries the same note; Access... (built) has none while unregistered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
     const menu = await openMenu(user, "Scenario");
     for (const name of ["Access...", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
-    await user.hover(item(menu, "Access..."));
+    await user.hover(item(menu, "Report & Graph Manager..."));
     expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
+    expect(commandTooltip("object.access")).toBeUndefined();
   });
 
   test("an item turns enabled as soon as its command is registered", async () => {
