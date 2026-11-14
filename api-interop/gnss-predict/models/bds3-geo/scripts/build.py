@@ -23,7 +23,9 @@ scene = pl.init_scene()
 #   - CSNO (2019) "BeiDou Satellite Metadata" & CAST DFH-3B bus specifications:
 #       Bus box: X_B = 2.100 m, Y_B = 2.000 m, Z_B = 3.100 m (launch mass ~4600 kg).
 #   - Twin deployable S/C-band RDSS gold-mesh parabolic reflectors on +-X faces:
-#       Dish diameter 2.20 m (radius 1.10 m), centered at X = +-2.35 m -> total X = 6.900 m.
+#       Dish diameter 2.00 m (radius 1.00 m, ~3.14 m^2 aperture matching CAST GEO RDSS
+#       specifications), centered at X = +-2.18 m -> total X = 6.360 m.
+#       (Previous estimate used 2.20 m dishes / 6.900 m X extent.)
 #   - Solar wings: 2 wings, 3 panels/wing (2.450 m x 1.860 m = 13.67 m^2/wing, 27.34 m^2 total),
 #       yoke 1.050 m, gap 0.060 m -> deployed span Y = 19.040 m.
 #   - IGS igs_satellite_metadata.snx:
@@ -38,8 +40,8 @@ PANEL_GAP = 0.060
 YOKE_LEN = 1.050                            # wing_tip = 1.000 + 1.050 + 7.350 + 0.120 = 9.520 m -> span 19.040 m
 SADM_X, SADM_Z = 0.0, 0.0
 
-DISH_R = 1.100                              # Ø2.20 m deployable RDSS mesh reflectors on +-X
-DISH_CX = 2.350                             # X extent = +- (2.350 + 1.100) = +-3.450 m -> 6.900 m
+DISH_R = 1.000                              # Ø2.00 m (~3.14 m^2) deployable RDSS mesh reflectors on +-X
+DISH_CX = 2.180                             # X extent = +- (2.180 + 1.000) = +-3.180 m -> 6.360 m
 
 # --------------------------------------------------------------------------------------
 # Materials
@@ -83,10 +85,10 @@ for sgn_x in (1, -1):
     pl.bar(p, hinge_pt, apex_pt, 0.065, 0.055, "titanium_grey", (0, 1, 0))
     pl.bar(p, hinge_pt + Vector((0, 0, -0.32)), apex_pt + Vector((-sgn_x * 0.25, 0, -0.05)),
            0.045, 0.040, "titanium_grey", (0, 1, 0))
-    # Ø2.20 m parabolic gold-mesh reflector dish pointing +Z (toward Earth)
+    # Ø2.00 m parabolic gold-mesh reflector dish pointing +Z (toward Earth)
     pl.parabolic_dish(
         p, (sgn_x * DISH_CX, 0.0, +0.92), (0, 0, 1),
-        radius=DISH_R, depth=0.32, rings=6, segs=32,
+        radius=DISH_R, depth=0.30, rings=6, segs=32,
         front_mat="mesh_gold", back_mat="titanium_grey", feed_len=0.0,
     )
     # Offset feed horn array on +-X edge of +Z deck illuminating the side dish

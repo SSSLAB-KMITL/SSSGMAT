@@ -96,7 +96,7 @@
       "id": "bds3-geo",
       "glb": "bds3-geo/bds3-geo.glb",
       "blocks": ["BDS-3G"],
-      "size_m": [6.9, 19.04, 3.95],
+      "size_m": [6.36, 19.04, 3.95],
       "triangles": 7990,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
