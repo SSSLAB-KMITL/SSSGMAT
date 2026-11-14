@@ -5,6 +5,9 @@
 // - แหล่ง (provider kinds): gibs และ eox = ชั้นใน catalog ผ่าน server ในเครื่อง (proxy) ; osm = OSM_LAYER ที่ browser ดึงตรง ; ion = Cesium ion ที่ browser ดึงตรง
 // - ชั้นที่วาด = ชั้นที่ globe บอกว่าแสดง เฉพาะของแหล่งที่สวิตช์เปิด (ปิด = ไม่มีชั้นของแหล่งนั้นเลย ไม่มีคำขอไปโฮสต์นั้นจาก browser)
 //   id ใน globe ที่ catalog ไม่รู้จักข้ามไป
+//   การบัง (occlusion): วาดเฉพาะชั้นทึบบนสุดที่แสดงอยู่กับชั้นที่อยู่เหนือมัน ชั้นทึบ = translucency 0 และ jpg ที่ไม่ใช่ชั้น 10min หรือ OSM (isOpaqueLayer)
+//   ชั้นข้างใต้ไม่ถูกสร้าง จึงไม่มีคำขอชิ้นภาพของมันเลย (วัดบน SE Asia: ราวครึ่งของคำขอไปที่ชั้นที่ OSM ทึบทับอยู่) Natural Earth II ยังเป็นฐานเสมอ (ออฟไลน์ ถูก)
+//   คิดใหม่ทุกครั้งที่ Show / Translucency (useLayout.globe) หรือสวิตช์ของแหล่งเปลี่ยน ชั้นที่โผล่กลับมาวางตามลำดับวาดเดิม
 // - ตำแหน่ง: เหนือ index 0 (Natural Earth II: applyProps ของ scene3d.ts ใช้ index 0 เป็นภาพฐานของกลางวัน/กลางคืน ห้ามแทรกที่ 0)
 //   ลำดับวาด: GIBS ตาม catalog → EOX → OpenStreetMap (ชั้นหลังทับชั้นก่อน) ชั้นของ id หนึ่งวางต่อจากชั้นบนสุดของ id ก่อนหน้าที่วาดอยู่ (ไม่มี = index 1)
 //   ชั้นใหม่จึงอยู่ใต้เส้น Lat/Lon ที่วางไว้ก่อนเสมอ ส่วนเส้น Lat/Lon ที่เปิดทีหลัง scene3d.ts ต่อท้ายรายการ (บนสุด) เอง
@@ -207,19 +210,31 @@ function noteOsmFailing(): void {
 /** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) ภายในแหล่งเดียวกันตามลำดับ catalog */
 const SOURCE_ORDER: Readonly<Record<LayerSourceId, number>> = { gibs: 0, eox: 1, osm: 2 };
 
-/** ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด */
+const alphaOf = (id: string): number => {
+  const t = useLayout.getState().globe.layers[id]?.translucency ?? 0;
+  return 1 - t / 100;
+};
+
+/**
+ * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลก: translucency 0 และภาพทึบ = jpg ที่ครอบคลุมทั้งโลก (GIBS jpg, EOX) หรือ OpenStreetMap (png แต่ทึบ)
+ * png ของ GIBS (Himawari) ไม่ทึบ และชั้น 10min (Himawari, GOES: ดาวค้างฟ้าเห็นแค่จานโลกของตัวเอง แม้ GOES เป็น jpg) ไม่นับว่าทึบ
+ */
+export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
+  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period !== "10min"));
+
+/**
+ * ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด: ชั้นที่แสดงอยู่ตั้งแต่ชั้นทึบบนสุด (isOpaqueLayer) ขึ้นไป
+ * ชั้นใต้ชั้นทึบมองไม่เห็นอยู่แล้ว จึงไม่สร้าง (ไม่มีคำขอชิ้นภาพของมัน) Natural Earth II (index 0) ไม่อยู่ในรายการนี้ ยังเป็นภาพฐานเสมอ
+ */
 const shownLayers = (): ImageryLayerInfo[] => {
   if (ionPlan().kind === "shown") return [];
   const { sources, layers } = useImagery.getState();
   const globe = useLayout.getState().globe;
-  return [...layers, OSM_LAYER]
+  const order = [...layers, OSM_LAYER]
     .filter((l) => sources[l.source] && globe.layers[l.id]?.show === true)
     .sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
-};
-
-const alphaOf = (id: string): number => {
-  const t = useLayout.getState().globe.layers[id]?.translucency ?? 0;
-  return 1 - t / 100;
+  for (let i = order.length - 1; i > 0; i--) if (isOpaqueLayer(order[i], alphaOf(order[i].id))) return order.slice(i);
+  return order;
 };
 
 /** ข้อความเครดิตเป็น HTML ของ Credit: กันอักขระพิเศษไว้ (ค่ามาจาก catalog ของ server) */

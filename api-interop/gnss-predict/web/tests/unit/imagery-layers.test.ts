@@ -143,6 +143,15 @@ const setTime = (iso: string) => useTime.setState({ current: new Date(iso) });
 const show = (layers: Record<string, { show: boolean; translucency: number }>) => useLayout.setState((s) => ({ globe: { ...s.globe, layers } }));
 const sources = (on: Partial<typeof OFF>) => useImagery.setState({ sources: { ...OFF, ...on } });
 
+/**
+ * แถวของ DEFAULT_GLOBE ที่ translucency 10: ชั้นที่ซ้อนกันยังถูกสร้างทุกชั้น (ชั้นทึบที่ translucency 0 บังชั้นข้างใต้ ซึ่งมี test ของตัวเองใน "occlusion")
+ * test เรื่องลำดับวาด token และการนับชิ้นจึงยังเห็นทุกชั้น ชั้นที่ test ตั้งเองก็ใช้ translucency 10 ด้วยเหตุผลเดียวกัน
+ */
+const SEE_THROUGH_DEFAULT = {
+  ...DEFAULT_GLOBE,
+  layers: Object.fromEntries(Object.entries(DEFAULT_GLOBE.layers).map(([id, l]) => [id, { ...l, translucency: 10 }])),
+};
+
 const offs: (() => void)[] = [];
 function attach(viewer: never, nightAlpha?: number) {
   const off = attachImageryLayers(viewer, { now: () => Date.now(), nightAlpha });
@@ -160,7 +169,7 @@ beforeEach(() => {
   resetImageryNoticesForTest();
   useImagery.setState({ sources: GIBS_ON, layers: [...CATALOG], loaded: true });
   useMessages.setState(useMessages.getInitialState(), true);
-  useLayout.setState({ globe: DEFAULT_GLOBE });
+  useLayout.setState({ globe: SEE_THROUGH_DEFAULT });
   setTime("2026-11-11T12:00:00Z");
 });
 afterEach(() => {
@@ -181,7 +190,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("switch on with two layers shown: they sit at indices 1 and 2 in catalog order, the Lat/Lon grid stays last", () => {
-    show({ [MODIS]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [BM]: { show: false, translucency: 0 } });
+    show({ [MODIS]: { show: true, translucency: 10 }, [VIIRS]: { show: true, translucency: 10 }, [BM]: { show: false, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.list[0]).toBe(v.base);
@@ -193,10 +202,10 @@ describe("attachImageryLayers", () => {
   });
 
   test("a layer shown later goes into its catalog place, below the layers after it and below the grid", () => {
-    show({ [MODIS]: { show: true, translucency: 0 } });
+    show({ [MODIS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
-    show({ [MODIS]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } });
+    show({ [MODIS]: { show: true, translucency: 10 }, [BM]: { show: true, translucency: 10 }, [VIIRS]: { show: true, translucency: 10 } });
     expect(v.ids()).toEqual([BM, VIIRS, MODIS]);
     expect(v.list[0]).toBe(v.base);
     expect(v.list.at(-1)).toBe(v.grid);
@@ -206,7 +215,7 @@ describe("attachImageryLayers", () => {
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.ids()).toEqual([BM, VIIRS]);
-    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: false, translucency: 0 } });
+    show({ [BM]: { show: true, translucency: 10 }, [VIIRS]: { show: false, translucency: 10 } });
     expect(v.ids()).toEqual([BM]);
     useImagery.setState({ layers: CATALOG.filter((l) => l.id !== BM) });
     expect(v.ids()).toEqual([]);
@@ -217,7 +226,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("ids the catalog does not know are ignored", () => {
-    show({ Future_Layer: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } });
+    show({ Future_Layer: { show: true, translucency: 10 }, [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.ids()).toEqual([VIIRS]);
@@ -236,7 +245,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("the provider has the exact same-origin url template, a Web Mercator tiling scheme, the layer's max level and credit", () => {
-    show({ [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 }, [HIMA]: { show: true, translucency: 10 }, [BM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const [bm, viirs, hima] = v.gibs().map((l) => l.imageryProvider.options);
@@ -250,7 +259,7 @@ describe("attachImageryLayers", () => {
 
   test("each layer's credit (NASA GIBS / EOSDIS, JMA, NOAA) is shown on screen, not only in Cesium's Data attribution box", () => {
     useImagery.setState({ layers: [...CATALOG, { id: "GOES-East_ABI_GeoColor", title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: "NASA GIBS / EOSDIS, NOAA", source: "gibs" }] });
-    show({ [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 }, [HIMA]: { show: true, translucency: 10 }, "GOES-East_ABI_GeoColor": { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const credits = v.gibs().map((l) => l.imageryProvider.options.credit);
@@ -260,7 +269,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("each provider has a NeverTileDiscardPolicy, so Cesium loads tiles by XHR (preferBlob) and the HTTP status reaches errorEvent in every browser", () => {
-    show({ [VIIRS]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 }, [BM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.gibs()).toHaveLength(2);
@@ -277,7 +286,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("GIBS layers follow Ambient Level like the base layer: nightAlpha from attach and from later changes, dayAlpha 1 (translucency stays in alpha)", async () => {
-    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer, 0.3);
     expect(v.gibs().map((l) => [l.dayAlpha, l.nightAlpha])).toEqual([[1, 0.3], [1, 0.3]]);
@@ -289,7 +298,7 @@ describe("attachImageryLayers", () => {
     expect(v.scene.requestRender).toHaveBeenCalled();
 
     // ชั้นที่แสดงทีหลังและชั้นที่เปลี่ยนตามเวลา (ทั้งชั้นใหม่และชั้นเดิมที่รอ) ได้ค่าเดียวกัน
-    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 0 }, [MODIS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 40 }, [BM]: { show: true, translucency: 10 }, [MODIS]: { show: true, translucency: 10 } });
     expect(v.gibs().map((l) => l.nightAlpha)).toEqual([0.75, 0.75, 0.75]);
     await v.gibs()[1].imageryProvider.requestImage(0, 0, 0);
     setTime("2026-11-12T12:00:00Z");
@@ -306,7 +315,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("time that moves within the same token replaces nothing", () => {
-    show({ [VIIRS]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 }, [BM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const before = [...v.list];
@@ -319,7 +328,7 @@ describe("attachImageryLayers", () => {
 
   test("a token change twice within 1 s: one replacement now, one trailing replacement after the interval", () => {
     expect(TOKEN_INTERVAL_MS).toBe(1000);
-    show({ [VIIRS]: { show: true, translucency: 0 }, [BM]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 }, [BM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(providersOf(VIIRS)).toHaveLength(1);
@@ -342,7 +351,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("animation at 3600x for 3 s rebuilds a 10-minute layer at most once per second", () => {
-    show({ [HIMA]: { show: true, translucency: 0 } });
+    show({ [HIMA]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     let t = Date.parse("2026-11-11T12:00:00Z");
@@ -378,7 +387,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("a layer that never showed anything is not kept when it is replaced (only one older layer waits per id)", () => {
-    show({ [VIIRS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     setTime("2026-11-12T12:00:00Z");
@@ -386,7 +395,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("a tile that fails also counts as the new layer having started (the old one goes)", async () => {
-    show({ [VIIRS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     await v.gibs()[0].imageryProvider.requestImage(0, 0, 0);
@@ -416,7 +425,7 @@ describe("attachImageryLayers", () => {
     off();
     expect(v.list).toEqual([v.base, v.grid]);
     const count = providers().length;
-    show({ [MODIS]: { show: true, translucency: 0 } });
+    show({ [MODIS]: { show: true, translucency: 10 } });
     setTime("2026-11-20T00:00:00Z");
     useImagery.setState({ sources: OFF });
     useImagery.setState({ sources: GIBS_ON });
@@ -427,7 +436,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("a 404 tile is not retried and counts as missing for its (layer, token); a loaded tile counts as present", async () => {
-    show({ [VIIRS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const p = v.gibs()[0].imageryProvider;
@@ -446,7 +455,7 @@ describe("attachImageryLayers", () => {
   });
 
   test("other tile errors are not retried either and do not count as missing imagery", () => {
-    show({ [VIIRS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const p = v.gibs()[0].imageryProvider;
@@ -473,18 +482,18 @@ describe("attachImageryLayers", () => {
 
 describe("imageryStatus", () => {
   test("the top layer is the last shown layer in catalog order, labelled by its time token", () => {
-    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 } });
+    show({ [BM]: { show: true, translucency: 10 }, [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(imageryStatus(v.viewer).topLayer).toEqual({ id: VIIRS, title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missingRatio: 0, source: "gibs", max_level: 9 });
-    show({ [BM]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 } });
+    show({ [BM]: { show: true, translucency: 10 }, [HIMA]: { show: true, translucency: 10 } });
     expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: HIMA, label: "2026-11-11 12:00 UTC" });
-    show({ [BM]: { show: true, translucency: 0 } });
+    show({ [BM]: { show: true, translucency: 10 } });
     expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: BM, title: "Blue Marble", label: "" });
   });
 
   test("while the new time's layer has not loaded a tile, the HUD names the older layer still on screen", async () => {
-    show({ [VIIRS]: { show: true, translucency: 0 } });
+    show({ [VIIRS]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const p = v.gibs()[0].imageryProvider;
@@ -539,7 +548,7 @@ async function rejectIon(error: unknown) {
   await vi.advanceTimersByTimeAsync(0);
 }
 const ALL_SHOWN = {
-  [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 }, [OSM]: { show: true, translucency: 30 },
+  [BM]: { show: true, translucency: 10 }, [VIIRS]: { show: true, translucency: 10 }, [EOX]: { show: true, translucency: 10 }, [OSM]: { show: true, translucency: 30 },
 };
 
 describe("sources: Sentinel-2 cloudless (EOX) through the server", () => {
@@ -594,6 +603,78 @@ describe("sources: Sentinel-2 cloudless (EOX) through the server", () => {
   });
 });
 
+// ชั้นที่ถูกชั้นทึบทับทั้งหมดไม่ถูกสร้าง (รอบเร่งความเร็ว): ไม่มี provider จึงไม่มีคำขอชิ้นภาพของชั้นนั้นเลย
+describe("occlusion: layers under an opaque shown layer are not created", () => {
+  beforeEach(() => useImagery.setState({ sources: { gibs: true, eox: true, osm: true, ion: false }, layers: [...CATALOG, EOX_LAYER] }));
+  const OPAQUE_ALL = {
+    [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [EOX]: { show: true, translucency: 0 }, [OSM]: { show: true, translucency: 0 },
+  };
+
+  test("Blue Marble + VIIRS + EOX + OSM shown, all at 0 % translucency: only OSM is created, Natural Earth II stays the base", () => {
+    show(OPAQUE_ALL);
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([OSM]);
+    expect(providers()).toHaveLength(1);
+    expect(v.list[0]).toBe(v.base);
+    expect(v.list.at(-1)).toBe(v.grid);
+    expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: OSM, source: "osm" });
+  });
+
+  test("OSM at 30 % translucency also creates EOX below it (EOX is opaque, so nothing under EOX)", () => {
+    show({ ...OPAQUE_ALL, [OSM]: { show: true, translucency: 30 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([EOX, OSM]);
+    expect(providersOf(BM)).toHaveLength(0);
+    expect(providersOf(VIIRS)).toHaveLength(0);
+  });
+
+  test("a translucency change re-evaluates: OSM made see-through brings EOX in below it, made opaque again takes EOX off", () => {
+    show(OPAQUE_ALL);
+    const v = fakeViewer();
+    attach(v.viewer);
+    show({ ...OPAQUE_ALL, [OSM]: { show: true, translucency: 30 } });
+    expect(v.ids()).toEqual([EOX, OSM]);
+    show(OPAQUE_ALL);
+    expect(v.ids()).toEqual([OSM]);
+  });
+
+  test("a png Himawari layer on top hides nothing: the opaque jpg layer under it and Himawari are both created", () => {
+    useImagery.setState({ sources: GIBS_ON });
+    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [HIMA]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([VIIRS, HIMA]);
+  });
+
+  test("a GOES GeoColor layer (jpg, but a geostationary disk: period 10min) hides nothing either", () => {
+    const GOES = "GOES-East_ABI_GeoColor";
+    useImagery.setState({
+      sources: GIBS_ON,
+      layers: [...CATALOG, { id: GOES, title: "GOES-East GeoColor", period: "10min", max_level: 7, format: "jpg", credit: "NASA GIBS / EOSDIS, NOAA", source: "gibs" }],
+    });
+    show({ [BM]: { show: true, translucency: 0 }, [VIIRS]: { show: true, translucency: 0 }, [GOES]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([VIIRS, GOES]);
+  });
+
+  test("switching OSM off re-creates the layers under it down to the next opaque one, in draw order under the grid", () => {
+    show({ ...OPAQUE_ALL, [EOX]: { show: true, translucency: 40 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(v.ids()).toEqual([OSM]);
+    sources({ gibs: true, eox: true, osm: false });
+    expect(v.ids()).toEqual([VIIRS, EOX]);
+    expect(v.list.at(-1)).toBe(v.grid);
+    sources({ gibs: true, eox: false, osm: false });
+    expect(v.ids()).toEqual([VIIRS]);
+    sources({ gibs: true, eox: true, osm: true });
+    expect(v.ids()).toEqual([OSM]);
+  });
+});
+
 describe("sources: OpenStreetMap straight from the browser", () => {
   beforeEach(() => useImagery.setState({ layers: [...CATALOG, EOX_LAYER] }));
 
@@ -628,11 +709,11 @@ describe("sources: OpenStreetMap straight from the browser", () => {
 
   test("OSM on alone, shown later or hidden again; its row hidden = no provider", () => {
     sources({ osm: true });
-    show({ [OSM]: { show: false, translucency: 0 } });
+    show({ [OSM]: { show: false, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     expect(v.ids()).toEqual([]);
-    show({ [OSM]: { show: true, translucency: 0 } });
+    show({ [OSM]: { show: true, translucency: 10 } });
     expect(v.ids()).toEqual([OSM]);
     expect(v.list.indexOf(v.gibs()[0])).toBe(1);
     show({});
@@ -641,7 +722,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
 
   test("an OpenStreetMap tile error (even 403) is not retried and never turns any switch off", async () => {
     sources({ osm: true });
-    show({ [OSM]: { show: true, translucency: 0 } });
+    show({ [OSM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     for (const error of [{ retry: true, error: { statusCode: 403 } }, { retry: true, error: { statusCode: 429 } }, { retry: true }]) {
@@ -656,7 +737,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
   test("the OpenStreetMap credit is an on-screen link to its copyright page; other credits stay escaped text", () => {
     useImagery.setState({ layers: [...CATALOG, EOX_LAYER, { ...EOX_LAYER, id: "x", credit: "A <b>&</b> B", source: "gibs" }] });
     sources({ gibs: true, eox: true, osm: true });
-    show({ ...ALL_SHOWN, x: { show: true, translucency: 0 } });
+    show({ ...ALL_SHOWN, x: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const credit = (id: string) => v.gibs().find((l) => idOf(l) === id)!.imageryProvider.options.credit as InstanceType<typeof Credit>;
@@ -676,7 +757,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
 
   test("OpenStreetMap tiles failing past the threshold (any status, or none as in Safari): one Thai message per page session, the HUD flags missing imagery, no retry", async () => {
     sources({ osm: true });
-    show({ [OSM]: { show: true, translucency: 0 } });
+    show({ [OSM]: { show: true, translucency: 10 } });
     const a = fakeViewer();
     const b = fakeViewer();
     attach(a.viewer);
@@ -705,7 +786,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
     for (let i = 0; i < 10; i++) b.gibs()[0].imageryProvider.errorEvent.raiseEvent({ retry: true });
     expect(imageryStatus(b.viewer).topLayer).toMatchObject({ source: "osm", missingRatio: 1 });
     show({});
-    show({ [OSM]: { show: true, translucency: 0 } });
+    show({ [OSM]: { show: true, translucency: 10 } });
     for (let i = 0; i < 10; i++) a.gibs()[0].imageryProvider.errorEvent.raiseEvent({ retry: true });
     await Promise.resolve();
     expect(osmWarnings()).toHaveLength(1);
@@ -714,7 +795,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
 
   test("OpenStreetMap below the threshold stays silent: 8 settled tiles with 5 failed (62.5 %)", async () => {
     sources({ osm: true });
-    show({ [OSM]: { show: true, translucency: 0 } });
+    show({ [OSM]: { show: true, translucency: 10 } });
     const v = fakeViewer();
     attach(v.viewer);
     const p = v.gibs()[0].imageryProvider;
@@ -882,7 +963,7 @@ describe("sources: Cesium ion (exclusive)", () => {
     // ไม่ลองซ้ำเองกับ asset และ token เดิม
     setTime("2026-11-12T12:00:00Z");
     vi.advanceTimersByTime(5000);
-    show({ ...ALL_SHOWN, [MODIS]: { show: true, translucency: 0 } });
+    show({ ...ALL_SHOWN, [MODIS]: { show: true, translucency: 10 } });
     expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(2);
     // token ใหม่ หรือปิดแล้วเปิดสวิตช์ ion ใหม่ = ลองใหม่
     setToken("tok-other");
