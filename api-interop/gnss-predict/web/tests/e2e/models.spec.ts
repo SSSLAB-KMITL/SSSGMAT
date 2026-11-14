@@ -6,6 +6,8 @@
 //   test ที่นับโมเดลตั้ง Model Detail Threshold เป็น 200,000 km ก่อน (ค่าตั้งต้น 30,000 km: ดาวที่ห่างกล้อง Home View เกินนั้นเป็นจุด)
 //   modelCount() ต้องเท่าจำนวนนั้นพอดี (ดาวทุกดวงได้โมเดล: ตาม block, norad_ids หรือ generic) และจุดของดาวเหล่านั้นซ่อน
 // - Model Detail Threshold 1,000 km: ทุกดวงเป็นจุด แล้ว flyToSatellite (กล้องห่างดาว 100 km) ทำให้ดาวนั้นเป็นโมเดล
+// - ทุกโมเดลที่ดาวใน fixture ใช้ถูกวาดจริงที่ตัวดาว (satelliteModel: primitive ของ Cesium ready, shown, อยู่ห่างดาวไม่เกิน 1 m, ขนาดขั้นต่ำ = Model Pixel Size)
+//   ไม่ใช่แค่ entity มี ModelGraphics: primitive ที่ Cesium สร้างเสร็จหลัง entity เปลี่ยนครั้งสุดท้ายเคยค้างที่ศูนย์กลางโลก (ready และ show แต่มองไม่เห็น)
 // - ปิด Satellite Models ที่ 3D Graphics Window Properties (หน้า Details) -> modelCount() = 0 และจุดแสดง เปิดอีกครั้ง -> โมเดลกลับมาโดยไม่ fetch ไฟล์ใหม่
 // - ท่าทาง (ไม่ใช้ภาพจับหน้าจอ): satelliteOrientation(ชื่อดาว) ให้แกนตัวดาวใน ECEF +Z ต้องชี้ศูนย์กลางโลกคลาดไม่เกิน 0.5° ตั้งแต่เวลาเริ่มของ scenario
 //   (ขอบช่วงตัวอย่าง) และตามเวลาเมื่อ setTime
@@ -106,6 +108,9 @@ async function setDetailThreshold(page: Page, km: number): Promise<void> {
   await props.getByRole("button", { name: "OK", exact: true }).click();
   await expect(props).toBeHidden();
 }
+
+/** Model Pixel Size ตั้งต้นของหน้าต่าง 3D (props.ts DEFAULT_PROPS_3D) */
+const MODEL_PIXEL_SIZE = 48;
 
 /** ดาวทุกดวงในรายชื่อ: เป็นโมเดลหรือจุดอย่างใดอย่างหนึ่งพอดี (modelCount + จุดที่แสดง = จำนวนดาว) */
 const modelsPlusPoints = async (page: Page, names: string[]): Promise<number> => (await modelCount(page)) + (await pointsShown(page, names));
@@ -234,4 +239,37 @@ test("Model Detail Threshold: farther than the threshold from the camera a satel
   expect(await modelCount(page)).toBeGreaterThanOrEqual(1);
   expect(await modelsPlusPoints(page, shown)).toBe(shown.length);
   expect(await page.evaluate((n) => window.__gnssStudioTest!.satelliteOrientation(n), target)).not.toBeNull(); // โมเดลที่ใกล้มีท่าทาง
+});
+
+test("every model the fixture's satellites use is drawn at its satellite: the Cesium primitive is ready, shown, within 1 m of the satellite and at least Model Pixel Size", async ({ page }) => {
+  await openScenario(page, "E2E");
+  const names = await satelliteNames(page, "E2E");
+  await setDetailThreshold(page, 200_000);
+  const shown = await waitForModels(page, names);
+  // 1,000 km แล้วปิดและเปิด Satellite Models: ปิด = entity ไม่มีโมเดล Cesium ทิ้ง primitive ทั้งหมด, เปิดที่ 1,000 km = ทุกดวงเป็นจุดและยังไม่มี primitive
+  // กล้องไปหาทีละดวง: primitive ของดวงนั้นถูกสร้างตอนนั้น (แบบที่ผู้ใช้บินไปหาดาวที่ไกลเกิน Model Detail Threshold ตั้งแต่เปิดหน้า)
+  const props = await openDetails(page);
+  await props.getByLabel("Model Detail Threshold", { exact: true }).fill("1000");
+  await props.getByLabel("Satellite Models", { exact: true }).uncheck();
+  await props.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(() => modelCount(page), { message: "Satellite Models off", timeout: MODELS_TIMEOUT_MS }).toBe(0);
+  await expect.poll(() => page.evaluate((all) => all.filter((n) => window.__gnssStudioTest!.satelliteModel(n) !== null), shown), { message: "no model primitives left" }).toEqual([]);
+  await props.getByLabel("Satellite Models", { exact: true }).check();
+  await props.getByRole("button", { name: "OK", exact: true }).click();
+  await expect(props).toBeHidden();
+  expect(await pointsShown(page, shown), "every satellite beyond 1,000 km is a point").toBe(shown.length);
+
+  const models = new Map<string, string>();
+  for (const name of shown) {
+    expect(await page.evaluate((n) => window.__gnssStudioTest!.flyToSatellite(n, 300), name)).toBe(true);
+    // offsetM ใกล้ 0 (closeTo(0, 0) = น้อยกว่า 0.5 m): ค้างที่ศูนย์กลางโลก = รัศมีวงโคจร (2–4 หมื่น km)
+    await expect
+      .poll(() => page.evaluate((n) => window.__gnssStudioTest!.satelliteModel(n), name), { message: `${name}: model primitive drawn at the satellite`, timeout: MODELS_TIMEOUT_MS })
+      .toEqual({ model: expect.any(String), ready: true, shown: true, offsetM: expect.closeTo(0, 0), minimumPixelSize: MODEL_PIXEL_SIZE });
+    models.set(name, (await page.evaluate((n) => window.__gnssStudioTest!.satelliteModel(n), name))!.model);
+    expect(await page.evaluate((n) => window.__gnssStudioTest!.pointShown(n), name)).toBe(false);
+  }
+  const ids = new Set(models.values());
+  // โมเดลที่เคยค้างที่ศูนย์กลางโลกในหน้าเว็บจริง (Galileo FOC, BeiDou-3 MEO CAST) อยู่ใน fixture ด้วย
+  for (const id of ["galileo-foc", "bds3-meo-cast", "gps-iii"]) expect(ids.has(id), `fixture models: ${[...ids].join(", ")}`).toBe(true);
 });

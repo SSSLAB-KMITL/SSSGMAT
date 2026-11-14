@@ -20,7 +20,7 @@
 //   ModelVisualizer ตั้ง node.matrix = originalMatrix · TRS: หมุนรอบจุด pivot ของ node ในแกน glTF แกน +Y ของตัวดาวคือ −Z ของ glTF (WING_AXIS_GLTF)
 
 import {
-  Cartesian2, Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
+  Cartesian2, Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Matrix4, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
   ReferenceFrame, type EntityCollection, type Property, type Scene,
 } from "cesium";
 import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
@@ -281,6 +281,35 @@ export function modelCountOf(entities: EntityCollection, time: JulianDate = Juli
   let n = 0;
   for (const entity of entities.values) if (entity.id.startsWith("sat/") && states.has(entity) && modelShown(entity, time)) n++;
   return n;
+}
+
+/** สถานะของ primitive Model ที่ ModelVisualizer สร้างให้ entity ดาว (test hook satelliteModel) */
+export interface ModelPrimitiveState {
+  /** id ของโมเดลใน catalog */
+  model: string;
+  ready: boolean;
+  /** Model.show (ModelVisualizer ตั้งตามที่ entity แสดงและ Model Detail Threshold) */
+  shown: boolean;
+  /** ระยะ (m) จากตำแหน่งใน modelMatrix ถึงตำแหน่ง Earth-fixed ของ entity ณ time (ไม่มีตำแหน่ง = null) primitive ที่ ModelVisualizer ยังไม่ update = รัศมีวงโคจร */
+  offsetM: number | null;
+  minimumPixelSize: number;
+}
+
+const scratchPrimitivePos = new Cartesian3();
+const scratchEntityPos = new Cartesian3();
+
+/** primitive Model (id = entity) ใน primitives ของ entity ดาวที่มีโมเดล (applySatelliteModel) ไม่มีโมเดลหรือยังไม่มี primitive = null ไม่ใช้ในการวาด */
+export function modelPrimitiveState(primitives: { readonly length: number; get(i: number): unknown }, entity: Entity, time: JulianDate): ModelPrimitiveState | null {
+  const st = states.get(entity);
+  if (st === undefined) return null;
+  for (let i = 0; i < primitives.length; i++) {
+    const m: unknown = primitives.get(i);
+    if (!(m instanceof Model) || m.id !== entity) continue;
+    const r = entity.position?.getValueInReferenceFrame(time, ReferenceFrame.FIXED, scratchEntityPos);
+    const at = Matrix4.getTranslation(m.modelMatrix, scratchPrimitivePos);
+    return { model: st.spec.id, ready: m.ready, shown: m.show, offsetM: r === undefined ? null : Cartesian3.distance(at, r), minimumPixelSize: m.minimumPixelSize };
+  }
+  return null;
 }
 
 /** ฟังก์ชันที่ watchModelErrors เรียกเมื่อโมเดลของ entity ดาวโหลดไม่สำเร็จใน Cesium (uri = blob uri ของ spec ที่ entity ใช้อยู่) */

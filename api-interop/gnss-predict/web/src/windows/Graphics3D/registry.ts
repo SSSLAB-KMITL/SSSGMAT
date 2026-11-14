@@ -31,6 +31,17 @@ export interface SatelliteAxes {
   z: Vec3;
 }
 
+/** primitive ที่ Cesium ใช้วาดโมเดลของดาว (test hook satelliteModel) */
+export interface SatelliteModelState {
+  /** id ของโมเดลใน catalog */
+  model: string;
+  ready: boolean;
+  shown: boolean;
+  /** ระยะ (m) จากตำแหน่งที่ primitive ถูกวาดถึงตำแหน่งของดาว (ไม่มีตำแหน่ง = null) */
+  offsetM: number | null;
+  minimumPixelSize: number;
+}
+
 export interface Scene3DHandle {
   readonly panelId: string;
   /** Home View: มองโลกจากระยะ 4.5 รัศมีโลก */
@@ -63,6 +74,8 @@ export interface Scene3DHandle {
   satelliteOrientation(name: string): SatelliteAxes | null;
   /** จุดของดาวชื่อ name แสดงอยู่ไหม (ดาวแสดงเป็นโมเดล = จุดซ่อน) ไม่มีดาวนั้น = null */
   pointShown(name: string): boolean | null;
+  /** primitive โมเดลของดาวชื่อ name (ready, show, ระยะจากดาว, ขนาดขั้นต่ำ) ไม่มีดาว ไม่มีโมเดล หรือ Cesium ยังไม่สร้าง primitive = null */
+  satelliteModel(name: string): SatelliteModelState | null;
   /** test hook: กล้องมองดาวชื่อ name จากระยะ rangeM ทางด้านดวงอาทิตย์ (ปล่อยกล้องจากการตาม object/View From/To) ไม่มีดาวหรือตำแหน่ง = false */
   flyToSatellite(name: string, rangeM: number): boolean;
   /**

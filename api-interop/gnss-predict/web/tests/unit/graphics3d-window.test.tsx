@@ -62,6 +62,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     modelCount: () => 0,
     satelliteOrientation: () => null,
     pointShown: () => null,
+    satelliteModel: () => null,
     flyToSatellite: () => false,
     pathAt: () => null,
     entityScreenPosition: () => null,

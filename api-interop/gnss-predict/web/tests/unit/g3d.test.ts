@@ -47,6 +47,7 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     modelCount: () => 3,
     satelliteOrientation: (name: string) => (name === "G01" ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : null),
     pointShown: (name: string) => (name === "G01" ? false : null),
+    satelliteModel: (name: string) => (name === "G01" ? { model: "gps-iif", ready: true, shown: true, offsetM: 0, minimumPixelSize: 48 } : null),
     flyToSatellite: (name: string, rangeM: number) => { calls.push(["flyToSatellite", name, rangeM]); return name === "G01"; },
     pathAt: () => null,
     entityScreenPosition: (name: string) => (name === "G01" ? [320, 240] : null),
@@ -370,7 +371,10 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.modelCount()).toBe(0); // ไม่มีหน้าต่าง 3D
     expect(hooks.satelliteOrientation("G01")).toBeNull();
     expect(hooks.pointShown("G01")).toBeNull();
+    expect(hooks.satelliteModel("G01")).toBeNull();
     registerScene(fakeScene("graphics3d"));
+    expect(hooks.satelliteModel("G01")).toEqual({ model: "gps-iif", ready: true, shown: true, offsetM: 0, minimumPixelSize: 48 });
+    expect(hooks.satelliteModel("NOPE")).toBeNull();
     expect(hooks.modelCount()).toBe(3);
     expect(hooks.satelliteOrientation("G01")).toEqual({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] });
     expect(hooks.satelliteOrientation("NOPE")).toBeNull();

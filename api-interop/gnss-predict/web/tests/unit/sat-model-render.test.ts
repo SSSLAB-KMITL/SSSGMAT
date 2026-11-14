@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { bodyToEcefQuaternion, sunPositionEcef, yawSteeringFrame, type AttitudeFrame } from "../../src/cesium/attitude";
 import { applyGraphics, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import {
-  applyModelDetail, applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_LIGHT_SCALE, MODEL_SILHOUETTE_PX, modelCountOf, modelOrientation,
+  applyModelDetail, applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_LIGHT_SCALE, MODEL_SILHOUETTE_PX, modelCountOf, modelOrientation, modelPrimitiveState,
   SELECTED_SILHOUETTE_PX, setModelSelection, updateModelAttitudes, watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
 } from "../../src/cesium/satModelGraphics";
 import {
@@ -580,6 +580,43 @@ describe("watchModelErrors: Cesium load errors of satellite model primitives", (
     stop();
     expect(p.errorEvent.numberOfListeners).toBe(0);
     expect(scene.preRender.numberOfListeners).toBe(0);
+  });
+});
+
+// ---------- สถานะของ primitive โมเดล (test hook satelliteModel) ----------
+
+describe("modelPrimitiveState: the Cesium primitive drawing a satellite's model", () => {
+  /** primitive แบบ fakeModelPrimitive พร้อมค่าที่ ModelVisualizer ตั้ง (ready, show, modelMatrix, minimumPixelSize) */
+  function primitiveOf(entity: Entity, opts: { ready: boolean; show: boolean; at?: Cesium.Cartesian3; minimumPixelSize?: number }): Cesium.Model {
+    const m = fakeModelPrimitive(entity) as Cesium.Model & { _ready: boolean; _show: boolean; _minimumPixelSize: number };
+    m._ready = opts.ready;
+    m._show = opts.show;
+    m._minimumPixelSize = opts.minimumPixelSize ?? 0;
+    m.modelMatrix = opts.at === undefined ? Cesium.Matrix4.clone(Cesium.Matrix4.IDENTITY) : Cesium.Matrix4.fromTranslation(opts.at);
+    return m;
+  }
+  const listOf = (list: unknown[]) => ({ get length() { return list.length; }, get: (i: number) => list[i] });
+
+  test("a primitive that is ready and shown but still at its default modelMatrix (the Earth's centre) is reported far from its satellite", () => {
+    // ข้อผิดพลาดที่พบ: glb ที่ Cesium โหลดเสร็จหลัง entity เปลี่ยนครั้งสุดท้าย ModelVisualizer ไม่ได้ update อีก (skipIdleDisplayUpdates)
+    // primitive ready และ show แต่ modelMatrix ตั้งต้น ขนาดขั้นต่ำ 0: มองไม่เห็น
+    const entities = new EntityCollection();
+    const sat = entities.add(new Entity({ id: "sat/E14", position: orbit(0.1) }));
+    applySatelliteModel(sat, { ...LOOK, spec: specOf("galileo-foc") });
+    const r = sat.position!.getValueInReferenceFrame(TIME, Cesium.ReferenceFrame.FIXED, new Cesium.Cartesian3())!;
+    const stale = modelPrimitiveState(listOf([{ id: sat }, primitiveOf(sat, { ready: true, show: true })]), sat, TIME);
+    expect(stale).toEqual({ model: "galileo-foc", ready: true, shown: true, offsetM: expect.closeTo(Cesium.Cartesian3.magnitude(r), 3), minimumPixelSize: 0 });
+    const placed = modelPrimitiveState(listOf([primitiveOf(sat, { ready: true, show: true, at: r, minimumPixelSize: 48 })]), sat, TIME);
+    expect(placed).toEqual({ model: "galileo-foc", ready: true, shown: true, offsetM: 0, minimumPixelSize: 48 });
+  });
+
+  test("no primitive for the satellite yet, or no model on the entity = null", () => {
+    const entities = new EntityCollection();
+    const sat = entities.add(new Entity({ id: "sat/G01", position: orbit(0.1) }));
+    const plain = entities.add(new Entity({ id: "sat/G02", position: orbit(0.2) }));
+    applySatelliteModel(sat, { ...LOOK, spec: specOf("gps-iif") });
+    expect(modelPrimitiveState(listOf([primitiveOf(plain, { ready: true, show: true })]), sat, TIME)).toBeNull();
+    expect(modelPrimitiveState(listOf([primitiveOf(plain, { ready: true, show: true })]), plain, TIME)).toBeNull();
   });
 });
 

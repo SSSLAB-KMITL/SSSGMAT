@@ -62,7 +62,9 @@ import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
 import { sunPositionEcef } from "../../cesium/attitude";
-import { applyModelDetail, modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes, watchModelErrors } from "../../cesium/satModelGraphics";
+import {
+  applyModelDetail, modelBodyAxes, modelCountOf, modelPrimitiveState, setModelSelection, updateModelAttitudes, watchModelErrors,
+} from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
@@ -84,7 +86,7 @@ import { markersNear, selectOnClick } from "./pick";
 import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
 import { SatModelSource } from "./satModelSource";
 import {
-  notifyScenes, type MouseMode, type Scene3DHandle, type SatelliteAxes, type ViewFromToRequest, type ViewFromToResult,
+  notifyScenes, type MouseMode, type Scene3DHandle, type SatelliteAxes, type SatelliteModelState, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
 import {
   notifySensorViews, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
@@ -1127,6 +1129,11 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (entity === undefined) return null;
     const point = entity.point;
     return entity.isShowing && point !== undefined && (point.show?.getValue(this.viewer.clock.currentTime) ?? true) === true;
+  }
+
+  satelliteModel(name: string): SatelliteModelState | null {
+    const entity = this.entityByName(name);
+    return entity === undefined || this.destroyed ? null : modelPrimitiveState(this.viewer.scene.primitives, entity, this.viewer.clock.currentTime);
   }
 
   entityColor(name: string): string | null {
