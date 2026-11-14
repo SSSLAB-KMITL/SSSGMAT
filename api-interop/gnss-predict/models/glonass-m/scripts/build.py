@@ -23,8 +23,9 @@ scene = pl.init_scene()
 #   - Montenbruck et al. (2015) & Rodriguez-Solano et al. (2012) PROPBOXW.f:
 #     pressurized cylinder diameter 1.24 m (r=0.62 m), cylinder length ~3.60 m,
 #     solar array total area ~23.6-26.1 m^2 (2 wings, 2 panels/wing).
-#   - ISS Reshetnev Uragan-M (14F113) specifications:
-#     structural equipment ring envelope ~2.16 m (X=2.16 m),
+#   - ESA Navipedia & ISS Reshetnev Uragan-M (14F113) specifications:
+#     outer structural equipment ring / avionics diameter 2.40 m (FLANGE_R = 1.20 m;
+#     height 3.7 m quoted in Navipedia, 3.90 m with zenith dome + L-band tips),
 #     12 L-band helical antennas on conical nadir support frame,
 #     total deployed span 16.00 m (2 x 3.15 m x 1.95 m panels/wing = 24.57 m^2).
 #   - IGS igs_satellite_metadata.snx:
@@ -33,13 +34,13 @@ scene = pl.init_scene()
 CYL_R = 0.620
 CYL_Z_MIN = -1.550
 CYL_Z_MAX = +1.150
-FLANGE_R = 1.080                            # outer structural ring / avionics envelope (X = 2.16 m)
-HY_SADM = 1.100                             # SADM pivot at Y = +-1.100 m
+FLANGE_R = 1.200                            # outer structural ring / avionics envelope (Ø2.40 m per ESA Navipedia)
+HY_SADM = 1.220                             # SADM pivot at Y = +-1.220 m
 
 N_PANELS = 2
 PANEL_L, PANEL_W, PANEL_T = 3.150, 1.950, 0.025  # 2 * 3.15 * 1.95 = 12.285 m^2/wing (24.57 m^2 total)
 PANEL_GAP = 0.080
-YOKE_LEN = 0.520                            # wing_tip = 1.10 + 0.52 + 6.30 + 0.08 = 8.00 m -> span 16.00 m
+YOKE_LEN = 0.400                            # wing_tip = 1.22 + 0.40 + 6.30 + 0.08 = 8.00 m -> span 16.00 m
 SADM_X, SADM_Z = 0.0, -0.05
 
 # --------------------------------------------------------------------------------------
@@ -84,7 +85,7 @@ for i in range(4):
 pl.finish(p, ROOTOBJ)
 
 # --------------------------------------------------------------------------------------
-# 2. Outer Equipment Rings, Truss Struts & Side Avionics Bays (Envelope X = 2.16 m)
+# 2. Outer Equipment Rings, Truss Struts & Side Avionics Bays (Envelope Ø2.40 m)
 # --------------------------------------------------------------------------------------
 p = pl.Part("equipment_frame", store)
 for zc in (-1.05, -0.05, +0.95):
@@ -94,20 +95,20 @@ for zc in (-1.05, -0.05, +0.95):
 for i in range(8):
     a0 = 2 * math.pi * i / 8
     a1 = 2 * math.pi * (i + 0.5) / 8
-    p0 = Vector((0.96 * math.cos(a0), 0.96 * math.sin(a0), -1.02))
-    p1 = Vector((0.96 * math.cos(a1), 0.96 * math.sin(a1), -0.05))
-    p2 = Vector((0.96 * math.cos(a0), 0.96 * math.sin(a0), +0.92))
+    p0 = Vector((1.08 * math.cos(a0), 1.08 * math.sin(a0), -1.02))
+    p1 = Vector((1.08 * math.cos(a1), 1.08 * math.sin(a1), -0.05))
+    p2 = Vector((1.08 * math.cos(a0), 1.08 * math.sin(a0), +0.92))
     pl.bar(p, p0, p1, 0.032, 0.032, "titanium_grey", (0, 0, 1))
     pl.bar(p, p1, p2, 0.032, 0.032, "titanium_grey", (0, 0, 1))
 
-# Side avionics & Cs-clock thermal louver boxes on +-X (spanning X in [-1.08, +1.08] m)
+# Side avionics & Cs-clock thermal louver boxes on +-X (spanning X in [-1.20, +1.20] m)
 for sgn_x in (1, -1):
-    pl.box(p, (sgn_x * 0.86, 0.0, -0.05), (0.44, 0.88, 1.48),
+    pl.box(p, (sgn_x * 0.98, 0.0, -0.05), (0.44, 0.88, 1.48),
            {"+x": "osr_radiator", "-x": "osr_radiator", "default": "mli_gold"},
            uv="tile", tile=0.20)
-# SADM support brackets on +-Y (out to Y = +-1.10 m)
+# SADM support brackets on +-Y (out to Y = +-1.22 m)
 for sgn_y in (1, -1):
-    pl.box(p, (0.0, sgn_y * 0.86, SADM_Z), (0.38, 0.48, 0.44), "mli_silver", uv="tile", tile=pl.MLI_TILE)
+    pl.box(p, (0.0, sgn_y * 0.98, SADM_Z), (0.38, 0.48, 0.44), "mli_silver", uv="tile", tile=pl.MLI_TILE)
 pl.finish(p, ROOTOBJ)
 
 # --------------------------------------------------------------------------------------

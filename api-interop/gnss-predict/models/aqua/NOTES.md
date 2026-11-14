@@ -33,3 +33,9 @@ EXPECTED_SIZE (8.83, 16.7, 4.81) REL_DIFF_PCT (0.02, 0.01, 0.79)
 VERIFY_STATUS PASS
 ```
 
+
+## Cell-Normal Verification Evidence (P3-2 — High Confidence)
+Direct polygon normal & material inspection of the official `NASA-3D-Resources/Aqua_B.glb` mesh (after `Rx(-90 deg)` frame alignment to `+Z` nadir / `-Y` wing) resolves `cell_normal = "+X"` without ambiguity (`"confidence": "low"` removed from `catalog.json`):
+- **`+X` solar-cell face (`shiny_panel`, 717 polygons)**: Smooth, unobstructed photovoltaic face spanning `X = +0.320 .. +0.398 m` (`mean X = +0.3735 m`, outward face normals along `+X`).
+- **`-X` structural backside (`tex_01`, 693 polygons on `Y < -4.5 m`)**: Faces strictly `-X` (`X = +0.078 .. +0.370 m`, `mean X = +0.3401 m`) and carries the central deployment mast/boom, structural ribs, and backside copper busbar/harness wiring texture (`tex_01`).
+- **Verification**: `verify.py --single-wing --expected-size 8.828,16.701,4.772` passed cleanly (`993,412` bytes / `0.947 MB`, `12,977` triangles, `BBOX_SIZE (8.828, 16.701, 4.772)`, `REL_DIFF_PCT (0.0, 0.0, 0.0)`).

@@ -46,7 +46,7 @@
       "id": "glonass-m",
       "glb": "glonass-m/glonass-m.glb",
       "blocks": ["GLO-M", "GLO-M+"],
-      "size_m": [2.16, 16.0, 3.9],
+      "size_m": [2.4, 16.0, 3.9],
       "triangles": 4646,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
@@ -96,7 +96,7 @@
       "id": "bds3-geo",
       "glb": "bds3-geo/bds3-geo.glb",
       "blocks": ["BDS-3G"],
-      "size_m": [6.9, 19.04, 3.95],
+      "size_m": [6.36, 19.04, 3.95],
       "triangles": 7990,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
@@ -125,7 +125,7 @@
     {
       "id": "bds2-igso",
       "glb": "bds2-igso/bds2-igso.glb",
-      "blocks": ["BDS-2I", "BDS-2G", "BDS-2M"],
+      "blocks": ["BDS-2I", "BDS-2M"],
       "size_m": [2.05, 16.24, 2.92],
       "triangles": 5244,
       "wing_nodes": ["wing+Y", "wing-Y"],
@@ -133,11 +133,31 @@
       "status": "done"
     },
     {
+      "id": "bds2-geo",
+      "glb": "bds2-geo/bds2-geo.glb",
+      "blocks": ["BDS-2G"],
+      "size_m": [3.975, 16.24, 2.92],
+      "triangles": 6072,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
       "id": "qzss-igso",
       "glb": "qzss-igso/qzss-igso.glb",
-      "blocks": ["QZS-2A", "QZS-2I", "QZS-1"],
+      "blocks": ["QZS-2A", "QZS-2I"],
       "size_m": [2.854, 18.92, 6.205],
       "triangles": 5170,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "qzss-qzs1",
+      "glb": "qzss-qzs1/qzss-qzs1.glb",
+      "blocks": ["QZS-1"],
+      "size_m": [2.854, 25.3, 6.205],
+      "triangles": 5302,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
       "status": "done"
@@ -192,7 +212,6 @@
       "triangles": 12977,
       "wing_nodes": ["wing-Y"],
       "cell_normal": "+X",
-      "confidence": "low",
       "status": "done"
     },
     {
@@ -202,6 +221,17 @@
       "norad_ids": [37849, 43013],
       "size_m": [4.183, 8.959, 2.569],
       "triangles": 4024,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "noaa-21",
+      "glb": "noaa-21/noaa-21.glb",
+      "blocks": [],
+      "norad_ids": [54234],
+      "size_m": [4.3, 10.71, 3.118],
+      "triangles": 1982,
       "wing_nodes": ["wing-Y"],
       "cell_normal": "-X",
       "status": "done"
