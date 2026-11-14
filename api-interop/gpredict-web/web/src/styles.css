@@ -1466,6 +1466,36 @@ body {
   border: 1px solid var(--border);
 }
 
+/* ---------------------------------------------------------------- frequency and rotator knobs (ref-R §2.3, §5.2) */
+
+/* a GtkGrid: the arrows in rows 1 and 3, the digits in row 2; a column nothing is in (the frequency knob's column 2) has no width */
+.knob {
+  display: inline-grid;
+  justify-items: center;
+  align-items: center;
+  user-select: none;
+}
+/* the digits, separators and units of both knobs: Pango's xx-large, 1.728 times the text size */
+.knob-xxl {
+  font-size: 1.728em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: pre; /* a blank digit keeps its width */
+}
+/* a digit cell is as wide as a digit, so a blank leading digit does not move the arrows above and below it */
+.knob-cell {
+  min-width: 1ch;
+  text-align: center;
+}
+.knob[aria-disabled="true"] {
+  color: var(--text-dim);
+}
+.knob-arrow {
+  min-width: 0;
+  padding: 0 3px;
+  line-height: 1.2;
+}
+
 /* ---------------------------------------------------------------- after File → Quit (ของเรา) */
 
 .stopped {
