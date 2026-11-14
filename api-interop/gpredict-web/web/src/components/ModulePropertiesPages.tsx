@@ -1,16 +1,18 @@
 // The pages of the "Module properties" notebook (ref §3-§7), which Preferences → Modules shows too (ref-D §10). Every control is
-// Gpredict's, with its label, range, unit label and tooltip; the colours and the background map are shown, not usable yet (task 22).
-// The Window Placements of the Layout page are only in Preferences, which gives them to the page (`extra`).
+// Gpredict's, with its label, range, unit label and tooltip; the Map View and Polar View pages have the colour buttons and the
+// background map (ref-D §11, §12). The Window Placements of the Layout page are only in Preferences, which gives them to the page (`extra`).
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
-import { cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA, POLAR_COLORS } from "../colors";
+import { coloursOf, MAP_COLORS, POLAR_COLORS } from "../colors";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
-import { laterTooltip } from "../later";
 import { layoutCodeError, presetIndexOf, sanitizeLayoutCode, withFlag, withVisible } from "../moduleProps";
 import type { ModuleProps, Rates } from "../moduleProps";
+import { MAP_COLOUR_BUTTONS, POLAR_COLOUR_BUTTONS, SHADOW_ROW } from "../rgba";
 import type { Meta } from "../types";
-import { Check, LaterButton } from "./formParts";
+import { ColourButton } from "./ColourButton";
+import { Check } from "./formParts";
+import { MapImage, MapSelector } from "./MapSelector";
 import { SpinButton } from "./SpinButton";
 
 /** What every page gets. `set` replaces the draft; Reset is the page's own button, which the shell handles. `uid` makes the ids of the
@@ -21,8 +23,6 @@ export interface PageProps {
   set: (props: ModuleProps) => void;
   uid: string;
 }
-
-const LATER_TIP = laterTooltip(4);
 
 /** The page's "Reset" button at the bottom right (sat-pref-*.c create_reset_button). */
 export function ResetButton({ title, onReset }: { title: string; onReset: () => void }) {
@@ -231,22 +231,6 @@ export function FieldsPage({ fields, visible, onChange, onReset, resetTip }: Fie
   );
 }
 
-// ---------------------------------------------------------------- colours (sub-project 4)
-
-/** A colour button of Gpredict's page: its label and a swatch of the default colour; not usable yet. */
-function Colour({ label, color }: { label: string; color: number }) {
-  return (
-    <>
-      <span className="right">{label}</span>
-      <LaterButton title={LATER_TIP} className="colour">
-        <span className="swatch">
-          <span style={{ background: cssRgba(color) }} />
-        </span>
-      </LaterButton>
-    </>
-  );
-}
-
 // ---------------------------------------------------------------- Map View
 
 const MAP_TIPS: Record<string, string> = {
@@ -260,17 +244,34 @@ const MAP_TIPS: Record<string, string> = {
   "Solar Terminator": "Show solar Terminator",
 };
 
-const MAP_IMAGE = `${import.meta.env.BASE_URL}maps/earth_1024.jpg`;
-
 export function MapPage({ props, meta, set, uid, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
   const { map } = props;
+  const [selecting, setSelecting] = useState(false);
+  const [looked, setLooked] = useState(0); // the thumbnail asks the server again after the dialog: the map it shows may have been uploaded there
+  const colours = coloursOf(MAP_COLORS, map.colours);
   return (
     <div className="props-page-body">
       <Header>Background Map:</Header>
       <div className="map-pick">
-        <img className="map-thumb" src={MAP_IMAGE} width={100} height={50} alt="" />
-        <LaterButton title={LATER_TIP}>Select map</LaterButton>
+        <MapImage key={looked} file={map.file} width={100} height={50} className="map-thumb" />
+        <button type="button" className="button" title="Click to select a map" onClick={() => setSelecting(true)}>
+          Select map
+        </button>
       </div>
+      {selecting && (
+        <MapSelector
+          current={map.file}
+          onOpen={(file) => {
+            setSelecting(false);
+            setLooked((n) => n + 1);
+            set({ ...props, map: { ...map, file } }); // a map is chosen for the page; it is saved with the page (OK)
+          }}
+          onCancel={() => {
+            setSelecting(false);
+            setLooked((n) => n + 1);
+          }}
+        />
+      )}
       <Separator />
       <Header>Contents:</Header>
       <div className="check-grid four">
@@ -288,25 +289,31 @@ export function MapPage({ props, meta, set, uid, onReset, resetTip }: PageProps 
       <Separator />
       <Header>Colours:</Header>
       <div className="colour-grid">
-        <Colour label="Ground Station:" color={MAP_COLORS.groundStation} />
-        <Colour label="Grid:" color={MAP_COLORS.grid} />
-        <Colour label="Tick Labels:" color={MAP_COLORS.tick} />
-        <Colour label="Satellite:" color={MAP_COLORS.satellite} />
-        <Colour label="Selected Sat.:" color={MAP_COLORS.selected} />
-        <Colour label="Ground Track:" color={MAP_COLORS.track} />
-        <Colour label="Footprint:" color={MAP_COLORS.footprint} />
-        <Colour label="Info Text FG:" color={MAP_COLORS.infoFg} />
-        <Colour label="Info Text BG:" color={MAP_COLORS.infoBg} />
-        <Colour label="Solar terminator:" color={MAP_COLORS.terminator} />
-        <Colour label="Global shadow:" color={MAP_COLORS.earthShadow} />
+        {MAP_COLOUR_BUTTONS.map((b) => (
+          <ColourButton
+            key={b.key}
+            label={b.label}
+            tooltip={b.tooltip}
+            value={colours[b.key]}
+            onChange={(value) => set({ ...props, map: { ...map, colours: { ...colours, [b.key]: value } } })}
+          />
+        ))}
       </div>
       <div className="shadow-row">
-        <span className="right">Shadow:</span>
-        <i>Transp.</i>
-        <span title={LATER_TIP} className="shadow-slider">
-          <input type="range" min={0} max={255} step={1} value={MAP_SHADOW_ALPHA} disabled readOnly aria-label="Shadow" />
+        <span className="right">{SHADOW_ROW.label}</span>
+        <i>{SHADOW_ROW.low}</i>
+        <span title={SHADOW_ROW.tooltip} className="shadow-slider">
+          <input
+            type="range"
+            min={0}
+            max={255}
+            step={1}
+            value={map.shadow_alpha}
+            aria-label="Shadow"
+            onChange={(e) => set({ ...props, map: { ...map, shadow_alpha: Number(e.target.value) } })}
+          />
         </span>
-        <i>Opaque</i>
+        <i>{SHADOW_ROW.high}</i>
       </div>
       <Separator />
       <div className="inline-row">
@@ -360,6 +367,7 @@ const ORIENTATION_TIPS: Record<string, string> = {
 
 export function PolarPage({ props, meta, set, uid, onReset, resetTip }: PageProps & { onReset: () => void; resetTip: string }) {
   const { polar } = props;
+  const colours = coloursOf(POLAR_COLORS, polar.colours);
   return (
     <div className="props-page-body">
       <Header>Orientation:</Header>
@@ -391,13 +399,15 @@ export function PolarPage({ props, meta, set, uid, onReset, resetTip }: PageProp
       </div>
       <Header>Colours:</Header>
       <div className="colour-grid">
-        <Colour label="Background:" color={POLAR_COLORS.background} />
-        <Colour label="Axes/Circles:" color={POLAR_COLORS.axes} />
-        <Colour label="Tick Labels:" color={POLAR_COLORS.tick} />
-        <Colour label="Satellite:" color={POLAR_COLORS.satellite} />
-        <Colour label="Selected Sat.:" color={POLAR_COLORS.selected} />
-        <Colour label="Sky Track:" color={POLAR_COLORS.track} />
-        <Colour label="Info Text:" color={POLAR_COLORS.info} />
+        {POLAR_COLOUR_BUTTONS.map((b) => (
+          <ColourButton
+            key={b.key}
+            label={b.label}
+            tooltip={b.tooltip}
+            value={colours[b.key]}
+            onChange={(value) => set({ ...props, polar: { ...polar, colours: { ...colours, [b.key]: value } } })}
+          />
+        ))}
       </div>
       <Header>Miscellaneous:</Header>
       <Check

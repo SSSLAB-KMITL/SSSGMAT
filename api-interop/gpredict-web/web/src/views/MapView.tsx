@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getTrack } from "../api";
+import { coloursOf, MAP_COLORS } from "../colors";
 import type { ViewProps } from "../components/ModuleView";
+import { mapUrl, missingMaps } from "../mapFiles";
 import type { SatPos } from "./canvasCommon";
 import { prepareCanvas, useCanvasMouse, useElementSize, useRefreshGate } from "./canvasHooks";
 import { drawMap } from "./mapDraw";
@@ -8,14 +10,15 @@ import type { Polyline } from "./mapDraw";
 import { nightPolygon, terminatorDue } from "./mapGeom";
 import { planTrackFetches } from "./mapTracks";
 
-const MAP_IMAGE = `${import.meta.env.BASE_URL}maps/earth_1024.jpg`;
-
 /** After a failed track request the same request may be made again, by the next redraw that comes after this long. */
 const TRACK_RETRY_MS = 10_000;
 
 /**
  * The Map view (ref §5, spec §8.4), drawn on a canvas that fills its cell.
  *
+ * - It draws with the module's colours, the alpha of the shadow under the satellites and the background map of its configuration
+ *   (`config.map`, ref-D §11). A map file that the server does not have is drawn as the default map, and the log gets one ERROR for it
+ *   (plan decision 14); if the default is missing too the background is a flat colour.
  * - It redraws from the tick only every `refresh.map` ticks (the first tick at once); a selection, the mouse cursor, a
  *   resize and a fetched track redraw it from the tick it already shows. A tick that is not "ok" (computing, failed)
  *   leaves the last picture, and the next "ok" tick redraws at once.
@@ -37,20 +40,35 @@ export function MapView({ module, config, tick, nf, selected, onSelect, onSatCon
   const requested = useRef(new Map<number, string>()); // NORAD -> key of the last track request
 
   const centerLon = config.map.center_lon;
+  const file = config.map.file;
+  const colours = useMemo(() => coloursOf(MAP_COLORS, config.map.colours), [config.map.colours]);
+  const shadowAlpha = config.map.shadow_alpha;
   const contents = config.map.contents;
   const cursorOn = contents["Cursor Position"] === true;
   const footprintOff = useMemo(() => new Set(config.footprint_off), [config.footprint_off]);
   const groundTrack = useMemo(() => new Set(config.ground_track), [config.ground_track]);
 
-  // the picture
+  // the picture: the map of the configuration, or the default one when the server has no such file
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => setImage(img);
-    img.src = MAP_IMAGE;
-    return () => {
-      img.onload = null;
+    let alive = true;
+    const load = (name: string) => {
+      const img = new Image();
+      img.onload = () => {
+        if (alive) setImage(img);
+      };
+      img.onerror = () => {
+        if (!alive) return;
+        const instead = missingMaps.fallbackFor(name); // one ERROR in the log for each missing file
+        if (instead === null) setImage(null);
+        else load(instead);
+      };
+      img.src = mapUrl(name);
     };
-  }, []);
+    load(file);
+    return () => {
+      alive = false;
+    };
+  }, [file]);
 
   // which ticks redraw: the first, then every refresh.map-th "ok" tick
   const shown = useRefreshGate(tick, config.refresh.map);
@@ -103,6 +121,8 @@ export function MapView({ module, config, tick, nf, selected, onSelect, onSatCon
       h: size.h,
       dpr,
       image,
+      colours,
+      shadowAlpha,
       centerLon,
       contents,
       tick: shown,
@@ -114,7 +134,7 @@ export function MapView({ module, config, tick, nf, selected, onSelect, onSatCon
       cursor,
       nf,
     });
-  }, [size, image, shown, tracks, selected, centerLon, contents, cursor, footprintOff, groundTrack, nf]);
+  }, [size, image, colours, shadowAlpha, shown, tracks, selected, centerLon, contents, cursor, footprintOff, groundTrack, nf]);
 
   return (
     <div ref={holder} className="map-view">

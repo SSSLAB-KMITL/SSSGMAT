@@ -2,7 +2,8 @@
 //   1 background, 2 circles and axes, 3 N/E/S/W, 4 info texts, 5 each satellite (sky track with time labels, marker, name).
 // All the geometry is in polarGeom.ts and the texts in polarText.ts; this file only paints.
 
-import { cssRgba, POLAR_COLORS } from "../colors";
+import { cssRgba } from "../colors";
+import type { PolarColours } from "../colors";
 import { formatTime } from "../format";
 import type { NumberFormat } from "../numfmt";
 import type { SkyPoint, Tick } from "../types";
@@ -33,6 +34,8 @@ export interface PolarScene {
   w: number;
   h: number;
   dpr: number;
+  /** the colours of the Polar View page (`config.polar.colours`) */
+  colours: PolarColours;
   orientation: Orientation;
   contents: Readonly<Record<string, boolean>>;
   /** the tick being shown, null before the first one */
@@ -53,7 +56,7 @@ const TEXT_GAP = 2 * AXIS_EXTRA;
 
 /** Paint `scene` on `ctx` (whose canvas is round(w*dpr) x round(h*dpr)). Returns the position of every satellite drawn. */
 export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): SatPos[] {
-  const { w, h, dpr, orientation, contents, tick, selected } = scene;
+  const { w, h, dpr, orientation, contents, tick, selected, colours } = scene;
   const on = (name: string) => contents[name] === true;
   const [cx, cy] = [w / 2, h / 2];
   const r = Math.max(0, polarRadius(w, h)); // a view under 50 px has no circle left
@@ -66,11 +69,11 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
   ctx.textAlign = "left";
 
   // 1: background
-  ctx.fillStyle = cssRgba(POLAR_COLORS.background);
+  ctx.fillStyle = cssRgba(colours.background);
   ctx.fillRect(0, 0, w, h);
 
   // 2: circles at El 0, 30 and 60, and the axes, 5 px longer than the rim, in the axes colour
-  ctx.strokeStyle = cssRgba(POLAR_COLORS.axes);
+  ctx.strokeStyle = cssRgba(colours.axes);
   ctx.lineWidth = 1;
   if (r > 0) {
     for (const radius of [r, 0.6667 * r, 0.333 * r]) {
@@ -84,7 +87,7 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
   strokeLine(ctx, cx, cy - reach, cx, cy + reach);
 
   // 3: N, E, S, W in the tick colour
-  ctx.fillStyle = cssRgba(POLAR_COLORS.tick);
+  ctx.fillStyle = cssRgba(colours.tick);
   for (const label of cardinalLabels(cx, cy, r, orientation)) {
     ctx.textAlign = label.align;
     ctx.textBaseline = label.baseline;
@@ -97,7 +100,7 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
   const nowMs = tick === null ? NaN : Date.parse(tick.t);
   const left = cx - r - TEXT_GAP;
   const right = cx + r + TEXT_GAP;
-  ctx.fillStyle = cssRgba(POLAR_COLORS.info);
+  ctx.fillStyle = cssRgba(colours.info);
   if (on("QTH Info") && tick !== null) lines(ctx, tick.qth.name, left, cy - r - AXIS_EXTRA - LINE_H, "left", scene);
   if (on("Cursor Position") && scene.cursor !== null) {
     const [az, el] = xyToAzEl(scene.cursor.x, scene.cursor.y, cx, cy, r, orientation);
@@ -121,12 +124,12 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
   for (const sat of ordered) {
     const [x, y] = azElToXY(sat.az as number, sat.el as number, cx, cy, r, orientation);
     hits.push({ norad: sat.norad, x, y });
-    const colour = cssRgba(sat.norad === selected ? POLAR_COLORS.selected : POLAR_COLORS.satellite);
+    const colour = cssRgba(sat.norad === selected ? colours.selected : colours.satellite);
 
     // sky track: 1 px, track colour, from AOS to LOS of the current pass, with 4 time labels and no AOS/LOS labels
     const track = scene.tracks.get(sat.norad);
     if (track !== undefined && skyTrackWanted(sat, scene.skyEnabled, scene.auto) && track.key === skyKey(tick.window.start, sat)) {
-      drawSkyTrack(ctx, track.points, cx, cy, r, orientation, scene.nf.local);
+      drawSkyTrack(ctx, colours, track.points, cx, cy, r, orientation, scene.nf.local);
     }
 
     if (on("Satellite Marker")) {
@@ -143,6 +146,7 @@ export function drawPolar(ctx: CanvasRenderingContext2D, scene: PolarScene): Sat
 
 function drawSkyTrack(
   ctx: CanvasRenderingContext2D,
+  colours: PolarColours,
   points: readonly SkyPoint[],
   cx: number,
   cy: number,
@@ -154,8 +158,8 @@ function drawSkyTrack(
     .filter((p) => Number.isFinite(p.az) && Number.isFinite(p.el))
     .map((p) => ({ t: p.t, xy: azElToXY(p.az, Math.max(0, p.el), cx, cy, r, orientation) })); // El 0 is the rim: a point cannot be outside it
   if (pixels.length === 0) return;
-  ctx.strokeStyle = cssRgba(POLAR_COLORS.track);
-  ctx.fillStyle = cssRgba(POLAR_COLORS.track);
+  ctx.strokeStyle = cssRgba(colours.track);
+  ctx.fillStyle = cssRgba(colours.track);
   ctx.lineWidth = 1;
   ctx.beginPath();
   pixels.forEach(({ xy: [x, y] }, i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));

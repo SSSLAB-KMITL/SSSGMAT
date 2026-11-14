@@ -140,7 +140,7 @@ interface Props {
  * of the pages, each with a Reset button that gives the page the current global values again ("Reset module settings to the global
  * values."), and the buttons Cancel and OK. A page the user changes is pinned to the module when it is saved, a page that was Reset
  * and not changed afterwards inherits the global values again (`propsSave`). Nothing is changed until OK here and OK of the module
- * dialog. The colours and the background map are shown and cannot be used yet (task 22).
+ * dialog. The Map View page has the background map ("Select map") and the colours, the Polar View page the colours (ref-D §11, §12).
  */
 export function ModuleProperties({ initial, marks: initialMarks, global, meta, onCancel, onOK }: Props) {
   const [draft, setDraft] = useState<ModuleProps>(initial);

@@ -1199,7 +1199,17 @@ body {
 }
 .map-thumb {
   display: block;
-  object-fit: cover;
+  object-fit: fill; /* Gpredict scales the picture to the box (gdk_pixbuf_scale_simple), it does not crop it */
+  border: 1px solid var(--border);
+}
+/* the icon image-missing: a map the server cannot give */
+.map-missing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--view);
   border: 1px solid var(--border);
 }
 .colour-grid {
@@ -1211,6 +1221,42 @@ body {
 }
 .button.colour {
   padding: 3px 8px;
+}
+/* a colour button and the panel under it (ColourButton) */
+.colour-cell {
+  position: relative;
+  display: inline-block;
+}
+.colour-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: max-content 120px 3ch;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--window);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+/* the third button of a row is at the right of the page: its panel opens toward the left */
+.colour-grid > .colour-cell:nth-child(6n) > .colour-panel {
+  left: auto;
+  right: 0;
+}
+.colour-input {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+.colour-alpha-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .swatch {
   position: relative;
@@ -1230,6 +1276,50 @@ body {
 .swatch > span {
   position: absolute;
   inset: 0;
+}
+/* the Select Map dialog: the list of maps, the preview pane at its right, the upload button */
+.map-select {
+  width: 560px;
+  max-width: 100%;
+}
+.map-select-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.map-list {
+  flex: 1;
+  min-width: 0;
+  height: 260px;
+}
+.map-preview {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 170px;
+}
+.map-preview-image {
+  display: block;
+  object-fit: fill;
+  border: 1px solid var(--border);
+}
+.map-caption {
+  margin: 0;
+  text-align: center;
+  white-space: pre-line;
+}
+.map-own {
+  color: var(--text-dim);
+}
+.dialog-row.selected .map-own {
+  color: inherit;
+}
+.map-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .shadow-row {
   display: grid;

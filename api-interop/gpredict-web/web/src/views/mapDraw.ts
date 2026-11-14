@@ -2,9 +2,11 @@
 //   1 background image, 2 grid, 3 solar terminator, 4 ground station, 5 each satellite (ground track, footprint, marker,
 //   name), 6 info texts. All the geometry is in mapGeom.ts and the texts in mapText.ts; this file only paints.
 
-import { cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA } from "../colors";
+import { cssRgba } from "../colors";
+import type { MapColours } from "../colors";
 import { fmtLatLon } from "../numfmt";
 import type { NumberFormat } from "../numfmt";
+import { infoBgHex } from "../rgba";
 import type { Tick } from "../types";
 import { FONT, LINE_H, MARKER_HALF } from "./canvasCommon";
 import type { SatPos } from "./canvasCommon";
@@ -32,6 +34,10 @@ export interface MapScene {
   h: number;
   dpr: number;
   image: CanvasImageSource | null;
+  /** the colours of the Map View page (`config.map.colours`) */
+  colours: MapColours;
+  /** the "Shadow:" slider: the alpha, 0-255, of the black shadow under the satellite markers and names (`config.map.shadow_alpha`) */
+  shadowAlpha: number;
   centerLon: number;
   contents: Readonly<Record<string, boolean>>;
   /** the tick being shown, null before the first one */
@@ -52,7 +58,7 @@ export interface MapScene {
 
 /** Paint `scene` on `ctx` (whose canvas is round(w*dpr) x round(h*dpr)). Returns the position of every satellite drawn. */
 export function drawMap(ctx: CanvasRenderingContext2D, scene: MapScene): SatPos[] {
-  const { w, h, dpr, centerLon, contents, tick, selected } = scene;
+  const { w, h, dpr, centerLon, contents, tick, selected, colours } = scene;
   const on = (name: string) => contents[name] === true;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -79,19 +85,19 @@ export function drawMap(ctx: CanvasRenderingContext2D, scene: MapScene): SatPos[
       const lon = sat.lon_deg as number;
       const [x, y] = toXY(lat, lon, w, h, centerLon);
       hits.push({ norad: sat.norad, x, y });
-      const colour = cssRgba(isSelected ? MAP_COLORS.selected : MAP_COLORS.satellite);
+      const colour = cssRgba(isSelected ? colours.selected : colours.satellite);
 
       // ground track: 1 px, track colour
       const lines = scene.groundTrack.has(sat.norad) ? scene.tracks.get(sat.norad) : undefined;
       if (lines !== undefined) {
-        ctx.strokeStyle = cssRgba(MAP_COLORS.track);
+        ctx.strokeStyle = cssRgba(colours.track);
         ctx.lineWidth = 1;
         for (const line of lines) for (const px of projectLine(line, w, h, centerLon)) strokePath(ctx, px);
       }
 
       // footprint: the selected satellite always shows it (unless "Highlight footprint" is off for it)
       if ((on("Satellite Footprint") || isSelected) && !scene.footprintOff.has(sat.norad) && sat.footprint_km !== null) {
-        ctx.fillStyle = cssRgba(MAP_COLORS.footprint);
+        ctx.fillStyle = cssRgba(colours.footprint);
         ctx.strokeStyle = colour;
         ctx.lineWidth = 1;
         for (const ring of footprintRings(lat, lon, sat.footprint_km, centerLon)) {
@@ -110,7 +116,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, scene: MapScene): SatPos[
       // marker: a shadow square, then the 6x6 px square
       const [mx, my] = [Math.round(x), Math.round(y)];
       if (on("Satellite Marker") || isSelected) {
-        ctx.fillStyle = cssRgba(0x000000ff, MAP_SHADOW_ALPHA);
+        ctx.fillStyle = cssRgba(0x000000ff, scene.shadowAlpha);
         ctx.fillRect(mx - MARKER_HALF + 1, my - MARKER_HALF + 1, 2 * MARKER_HALF, 2 * MARKER_HALF);
         ctx.fillStyle = colour;
         ctx.fillRect(mx - MARKER_HALF, my - MARKER_HALF, 2 * MARKER_HALF, 2 * MARKER_HALF);
@@ -120,7 +126,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, scene: MapScene): SatPos[
       if (on("Satellite Name") || isSelected) {
         const tw = ctx.measureText(sat.name).width;
         const p = labelPos(mx, my, tw, LINE_H, w, h);
-        ctx.fillStyle = cssRgba(0x000000ff, MAP_SHADOW_ALPHA);
+        ctx.fillStyle = cssRgba(0x000000ff, scene.shadowAlpha);
         ctx.fillText(sat.name, p.x + 1, p.y + 1);
         ctx.fillStyle = colour;
         ctx.fillText(sat.name, p.x, p.y);
@@ -151,7 +157,7 @@ function drawBackground(ctx: CanvasRenderingContext2D, scene: MapScene): void {
 /** 2: lines every 30 degrees (0.5 px) and their labels "%.0f°" and N/S/E/W, or a space, in the grid colour. */
 function drawGrid(ctx: CanvasRenderingContext2D, scene: MapScene): void {
   const { w, h, centerLon, nf } = scene;
-  const colour = cssRgba(MAP_COLORS.grid);
+  const colour = cssRgba(scene.colours.grid);
   ctx.strokeStyle = colour;
   ctx.fillStyle = colour;
   ctx.lineWidth = 0.5;
@@ -177,9 +183,9 @@ function drawTerminator(ctx: CanvasRenderingContext2D, night: NonNullable<MapSce
   ctx.beginPath();
   px.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
   ctx.closePath();
-  ctx.fillStyle = cssRgba(MAP_COLORS.earthShadow);
+  ctx.fillStyle = cssRgba(scene.colours.earthShadow);
   ctx.fill();
-  ctx.strokeStyle = cssRgba(MAP_COLORS.terminator);
+  ctx.strokeStyle = cssRgba(scene.colours.terminator);
   ctx.lineWidth = 1;
   strokePath(ctx, px.slice(0, -2)); // the last two points only close the polygon along the pole line
 }
@@ -188,21 +194,21 @@ function drawTerminator(ctx: CanvasRenderingContext2D, night: NonNullable<MapSce
 function drawStation(ctx: CanvasRenderingContext2D, tick: Tick, scene: MapScene): void {
   const { w, h, centerLon } = scene;
   const [x, y] = toXY(tick.qth.lat_deg, tick.qth.lon_deg, w, h, centerLon).map(Math.round) as [number, number];
-  ctx.fillStyle = cssRgba(MAP_COLORS.groundStation);
+  ctx.fillStyle = cssRgba(scene.colours.groundStation);
   ctx.fillRect(x - MARKER_HALF, y - MARKER_HALF, 2 * MARKER_HALF, 2 * MARKER_HALF);
   const p = labelPos(x, y, ctx.measureText(tick.qth.name).width, LINE_H, w, h);
   ctx.fillText(tick.qth.name, p.x, p.y);
 }
 
-/** 6: info texts in the info colours, on a rectangle of the info background colour. */
+/** 6: info texts in the info colours, on a rectangle of the info background colour (without its alpha, ref-D §11). */
 function drawInfoTexts(ctx: CanvasRenderingContext2D, scene: MapScene): void {
   const { w, h, contents, tick, selected } = scene;
   const box = (text: string, x: number, y: number, rightAligned = false) => {
     const tw = ctx.measureText(text).width;
     const left = rightAligned ? x - tw : x;
-    ctx.fillStyle = cssRgba(MAP_COLORS.infoBg);
+    ctx.fillStyle = infoBgHex(scene.colours.infoBg); // as in Gpredict the background of the info texts has no alpha
     ctx.fillRect(left, y, tw, LINE_H);
-    ctx.fillStyle = cssRgba(MAP_COLORS.infoFg);
+    ctx.fillStyle = cssRgba(scene.colours.infoFg);
     ctx.fillText(text, left, y + (LINE_H - 13) / 2);
   };
   ctx.font = FONT;

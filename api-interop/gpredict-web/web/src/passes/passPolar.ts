@@ -6,6 +6,7 @@
 // (only its track, from AOS to LOS), the time labels are 5 and the cursor text has two spaces between AZ and EL.
 
 import { cssRgba, POLAR_COLORS } from "../colors";
+import type { PolarColours } from "../colors";
 import { formatTime, fmtFixed } from "../format";
 import { AXIS_EXTRA, azElToXY, cardinalLabels, type Orientation, orientationOf, xyToAzEl } from "../views/polarGeom";
 import type { Point, PlotSize, Segment, TextAnchor, TextMark } from "./plotCommon";
@@ -91,10 +92,10 @@ function skyTrack(p: PassInfo, cx: number, cy: number, r: number, orientation: O
  * 1 then, so every inner sample gets one. A label is vertically centred on its point; right of the centre of the plot its text
  * ends 5 px before the point, otherwise it starts 5 px after it.
  */
-function timeLabels(p: PassInfo, track: readonly Point[], cx: number, local: boolean): TextMark[] {
+function timeLabels(p: PassInfo, track: readonly Point[], cx: number, local: boolean, colours: PolarColours): TextMark[] {
   const n = track.length;
   if (n < 2) return [];
-  const color = cssRgba(POLAR_COLORS.track); // the labels have the track colour
+  const color = cssRgba(colours.track); // the labels have the track colour
   const label = (iso: string, [x, y]: Point, first: boolean): TextMark => {
     const px = first ? x : x > cx ? x - LABEL_SHIFT : x + LABEL_SHIFT;
     const before = px > cx;
@@ -110,11 +111,20 @@ function timeLabels(p: PassInfo, track: readonly Point[], cx: number, local: boo
  * The Polar plot of `p` in a plot of `size` (ref-P §5). `orientation` is the Polar View's setting ("N/E/S/W", ...); `qthName` is
  * the station name drawn above the top left of the circle, null to leave it out (the "QTH Info" setting is off). `p` null gives
  * the circles, the axes and the letters only. `local` is "Show local time instead of UTC": the time labels are those of the machine's zone.
+ * `colours` are those of Preferences → Modules → Polar View, not of any module (plan decision 15; the defaults when left out); the
+ * background is white whatever its Background colour is.
  */
-export function passPolarScene(p: PassInfo | null, size: PlotSize, orientation: string, qthName: string | null, local = false): PolarScene {
+export function passPolarScene(
+  p: PassInfo | null,
+  size: PlotSize,
+  orientation: string,
+  qthName: string | null,
+  local = false,
+  colours: PolarColours = POLAR_COLORS,
+): PolarScene {
   const o = orientationOf(orientation);
   const { cx, cy, r } = geometry(size);
-  const info = cssRgba(POLAR_COLORS.info);
+  const info = cssRgba(colours.info);
   const track = p === null ? [] : skyTrack(p, cx, cy, r, o);
   return {
     width: size.width,
@@ -123,18 +133,18 @@ export function passPolarScene(p: PassInfo | null, size: PlotSize, orientation: 
     cy,
     r,
     background: cssRgba(0xffffffff), // always white, whatever the Polar View's background (ref-P §5.1)
-    axesColor: cssRgba(POLAR_COLORS.axes),
+    axesColor: cssRgba(colours.axes),
     circles: CIRCLES.map((f) => ({ x: cx, y: cy, r: f * r })),
     axes: [
       { x1: cx - r - AXIS_EXTRA, y1: cy, x2: cx + r + AXIS_EXTRA, y2: cy },
       { x1: cx, y1: cy - r - AXIS_EXTRA, x2: cx, y2: cy + r + AXIS_EXTRA },
     ],
-    cardinals: cardinalLabels(cx, cy, r, o).map((l) => ({ ...l, color: cssRgba(POLAR_COLORS.tick) })),
+    cardinals: cardinalLabels(cx, cy, r, o).map((l) => ({ ...l, color: cssRgba(colours.tick) })),
     qth: qthName ? { text: qthName, x: cx - r - TEXT_GAP, y: cy - r - AXIS_EXTRA, align: "left", baseline: "bottom", color: info } : null,
     cursor: { x: cx - r - TEXT_GAP, y: cy + r + AXIS_EXTRA, align: "left", baseline: "top", color: info },
     track,
-    trackColor: cssRgba(POLAR_COLORS.track),
-    ticks: p === null ? [] : timeLabels(p, track, cx, local),
+    trackColor: cssRgba(colours.track),
+    ticks: p === null ? [] : timeLabels(p, track, cx, local, colours),
   };
 }
 

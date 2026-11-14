@@ -123,6 +123,19 @@ describe("passPolarScene", () => {
     expect(scene.trackColor).toBe(cssRgba(POLAR_COLORS.track));
   });
 
+  it("is drawn in the colours it is given, the global colours of the Polar View (plan decision 15), on a white background still", () => {
+    const colours = { ...POLAR_COLORS, background: 0x12345678, axes: 0x11223344, tick: 0x55667788, track: 0x99aabbcc, info: 0xddeeff01 };
+    const scene = passPolarScene(makePass(30, 150), SIZE, "N/E/S/W", "Bangkok", false, colours);
+    expect(scene.background).toBe("rgba(255, 255, 255, 1)");
+    expect(scene.axesColor).toBe(cssRgba(0x11223344));
+    expect(scene.trackColor).toBe(cssRgba(0x99aabbcc));
+    expect(scene.cardinals.every((c) => c.color === cssRgba(0x55667788))).toBe(true);
+    expect(scene.qth!.color).toBe(cssRgba(0xddeeff01));
+    expect(scene.cursor.color).toBe(cssRgba(0xddeeff01));
+    expect(scene.ticks.length).toBeGreaterThan(0);
+    expect(scene.ticks.every((t) => t.color === cssRgba(0x99aabbcc))).toBe(true); // the time labels have the track colour
+  });
+
   it("the circle is min(width, height) / 2 - 20 px, centred in the area", () => {
     const wide = passPolarScene(null, { width: 401, height: 300 }, "N/E/S/W", null);
     expect(wide).toMatchObject({ width: 401, height: 300, cx: 200, cy: 150, r: 130 }); // integer centre, as Gpredict (guint)

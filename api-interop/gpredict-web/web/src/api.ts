@@ -6,6 +6,8 @@ import type {
   ClockUpdate,
   CloneResult,
   LocationsAnswer,
+  MapEntry,
+  MapList,
   Meta,
   ModuleConfig,
   ModuleList,
@@ -52,18 +54,13 @@ function isApiMessage(v: unknown): v is ApiMessage {
 }
 
 /**
- * Send a request; throws ApiError if the server cannot be reached or answers with status >= 400.
+ * Send a request (`init` has the method, headers and body); throws ApiError if the server cannot be reached or answers with status >= 400.
  * Aborting `signal` (ของเรา: the Cancel of a pass request) is not a failure of the server: the fetch's own AbortError is let through.
  */
-async function send(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+async function fetchChecked(path: string, init: RequestInit, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(path, {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    });
+    res = await fetch(path, { ...init, signal });
   } catch (e) {
     if (signal?.aborted) throw e;
     throw new ApiError("NETWORK_ERROR", "ติดต่อ server ไม่ได้ (server ปิดอยู่หรือเครือข่ายขัดข้อง)", 0);
@@ -82,6 +79,18 @@ async function send(method: string, path: string, body?: unknown, signal?: Abort
   }
   return res;
 }
+
+/** `fetchChecked` for a request with a JSON body, or none. */
+const send = (method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Response> =>
+  fetchChecked(
+    path,
+    {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    signal,
+  );
 
 /** One call of the server: the JSON answer (undefined for a 204). `signal` aborts it. Throws ApiError, or AbortError after an abort. */
 export async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -171,6 +180,21 @@ export const getPrefs = () => request<PrefsAnswer>("GET", "/api/prefs");
  */
 export const putPrefs = (set: Readonly<Record<string, PrefValue>>, remove: readonly string[], o?: WriteOptions) =>
   request<PrefsAnswer>("PUT", writeUrl("/api/prefs", o), { set, remove });
+
+// ---------------------------------------------------------------- background maps
+
+/** The maps of the Map View's "Select Map" dialog (GET /api/maps) and the one the Map View draws by default. */
+export const getMaps = () => request<MapList>("GET", "/api/maps");
+
+/**
+ * Uploads an image as the map `name` (POST /api/maps?name=): the raw bytes as the body, `contentType` image/png or image/jpeg to match the
+ * name's extension, at most MAP_UPLOAD_MAX. Answers the new entry of the list. 422 MAP_INVALID (ApiError, Thai text) for a name, a type, a size or
+ * an image the server does not take; a body far over the limit may instead end as a network error (NETWORK_ERROR), the connection being closed.
+ */
+export async function uploadMap(name: string, contentType: string, image: Blob): Promise<MapEntry> {
+  const res = await fetchChecked(`/api/maps?name=${seg(name)}`, { method: "POST", headers: { "Content-Type": contentType }, body: image });
+  return (await res.json()) as MapEntry;
+}
 
 // ---------------------------------------------------------------- other
 

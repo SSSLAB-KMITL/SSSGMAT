@@ -1,5 +1,5 @@
 import { useCallback, useId, useMemo } from "react";
-import { cssRgba, POLAR_COLORS } from "../colors";
+import { cssRgba } from "../colors";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { RotKnob } from "../components/RotKnob";
 import { SatFilter } from "../components/SatFilter";
@@ -8,6 +8,7 @@ import { ToggleButton } from "../components/ToggleButton";
 import { PassPolarPlot } from "../passes/PassPolarPlot";
 import type { PolarScene } from "../passes/passPolar";
 import { strokeSegments } from "../passes/plotCommon";
+import { useGlobalPolar } from "../prefs/globalPolar";
 import { orientationOf } from "../views/polarGeom";
 import { editedValue, fmtAngle } from "./radioView";
 import { crosshair, ROT_TOOLTIPS as TIPS, rotEnabled, rotMarkers, rotTitle, SETPOINT_RADIUS, targetRect } from "./rotView";
@@ -20,9 +21,9 @@ interface Props {
   module: string;
   /** the newest state of the controller: the `rotator` of the module's tick. A new object replaces what the window shows */
   state: RotatorState;
-  /** the Polar View's orientation of the module as its configuration holds it ("N/E/S/W", ...; N/E/S/W for another text): the plot is drawn the way the module's polar view is */
+  /** the orientation of Preferences → Modules → Polar View ("N/E/S/W", ...; N/E/S/W for another text), not of the module's own Polar view (plan decision 15) */
   orientation: string;
-  /** the name of the station, drawn at the top left of the plot; null when the Polar View's "QTH Info" is off */
+  /** the name of the station, drawn at the top left of the plot; null when the "QTH Info" of Preferences → Modules → Polar View is off */
   qthName: string | null;
   /** sends one action of the window to the server (controllerAction(module, "rotator", body)) and answers the new state, which the window shows at once */
   onAction: (body: Record<string, unknown>) => Promise<RotatorState>;
@@ -35,9 +36,9 @@ interface Props {
 /** The numbers whose steps the window keeps until the server has answered them (see useControllerState). */
 type EditKey = "az" | "el" | "cycle" | "threshold";
 
-/** The markers over the plot, all in the colour of a satellite (`col_sat`): a filled square, a circle and a cross-hair (`gtk-polar-plot.c:592-635`). */
-function paintMarkers(ctx: CanvasRenderingContext2D, markers: RotMarkers): void {
-  const color = cssRgba(POLAR_COLORS.satellite);
+/** The markers over the plot, all in the colour of a satellite (`col_sat`, the Polar View's colour of Preferences → Modules): a filled square, a circle and a cross-hair (`gtk-polar-plot.c:592-635`). */
+function paintMarkers(ctx: CanvasRenderingContext2D, markers: RotMarkers, satellite: number): void {
+  const color = cssRgba(satellite);
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
@@ -62,6 +63,7 @@ function paintMarkers(ctx: CanvasRenderingContext2D, markers: RotMarkers): void 
 export function RotatorControl({ module, state, orientation: named, qthName, onAction, onClose, raiseToken }: Props) {
   const id = useId();
   const orientation = orientationOf(named);
+  const { colours } = useGlobalPolar();
   const { shown, edits, problem, send, act } = useControllerState<RotatorState, EditKey>(state, onAction);
 
   const az = editedValue(edits.az, shown.knob.az);
@@ -71,8 +73,8 @@ export function RotatorControl({ module, state, orientation: named, qthName, onA
   // the set-point circle is at the knobs, so the state the markers are made from has the numbers of the knobs
   const marked = useMemo(() => ({ ...shown, setpoint: { az, el } }), [shown, az, el]);
   const paint = useCallback(
-    (ctx: CanvasRenderingContext2D, scene: PolarScene) => paintMarkers(ctx, rotMarkers(marked, scene, orientation)),
-    [marked, orientation],
+    (ctx: CanvasRenderingContext2D, scene: PolarScene) => paintMarkers(ctx, rotMarkers(marked, scene, orientation), colours.satellite),
+    [marked, orientation, colours.satellite],
   );
 
   const enabled = rotEnabled(shown);

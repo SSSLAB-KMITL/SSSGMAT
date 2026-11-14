@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNumberFormat } from "../numfmt";
+import { useGlobalPolar } from "../prefs/globalPolar";
 import { prepareCanvas, useElementSize } from "../views/canvasHooks";
 import { POLAR_ORIENTATIONS } from "../views/polarGeom";
 import { passPolarScene, polarMouseText } from "./passPolar";
@@ -36,7 +37,7 @@ export interface PassPolarPlotProps {
   pass: PassInfo | null;
   /** the name of the station, drawn above the top left of the circle; null leaves it out (the "QTH Info" setting is off) */
   qthName: string | null;
-  /** the Polar View's orientation setting ("N/E/S/W", ...); N/E/S/W when left out */
+  /** the orientation of Preferences → Modules → Polar View ("N/E/S/W", ...), which the caller reads (`useGlobalPolar`); N/E/S/W when left out */
   orientation?: string;
   /**
    * Paints over the plot once the scene is drawn (Antenna Control's markers). `scene` has the size of the plot and the centre and radius
@@ -50,6 +51,7 @@ export interface PassPolarPlotProps {
  * parent (which must have a height). The mouse text `AZ: %.0f°  EL: %.0f°` shows the Az and El under the pointer inside the
  * circle; as in Gpredict it stays where it was when the pointer leaves the plot, and goes when the pointer moves out of the
  * circle (ref-P §5.4). There are no clicks. The time labels of the track are local times with "Show local time instead of UTC".
+ * The colours are those of Preferences → Modules → Polar View, not of any module's Polar view (plan decision 15).
  */
 export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[0], overlay }: PassPolarPlotProps) {
   const holder = useRef<HTMLDivElement>(null);
@@ -57,10 +59,11 @@ export function PassPolarPlot({ pass, qthName, orientation = POLAR_ORIENTATIONS[
   const size = useElementSize(holder);
   const [cursorText, setCursorText] = useState<string | null>(null);
   const { local } = useNumberFormat();
+  const { colours } = useGlobalPolar();
 
   const scene = useMemo(
-    () => passPolarScene(pass, { width: size.w, height: size.h }, orientation, qthName, local),
-    [pass, size.w, size.h, orientation, qthName, local],
+    () => passPolarScene(pass, { width: size.w, height: size.h }, orientation, qthName, local, colours),
+    [pass, size.w, size.h, orientation, qthName, local, colours],
   );
 
   useEffect(() => {

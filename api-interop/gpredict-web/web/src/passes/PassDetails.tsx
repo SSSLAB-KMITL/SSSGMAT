@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { FloatingWindow } from "../components/FloatingWindow";
 import { useNumberFormat } from "../numfmt";
+import { useGlobalPolar } from "../prefs/globalPolar";
 import { usePrefs } from "../prefs/prefsStore";
 import { PassAzElPlot } from "./PassAzElPlot";
 import { PassPolarPlot } from "./PassPolarPlot";
@@ -55,6 +56,7 @@ export function PassDetails({ answer, onClose, position }: Props) {
   const { sat, qth, pass } = answer;
   const prefs = usePrefs();
   const nf = useNumberFormat();
+  const polar = useGlobalPolar(); // the Polar plot follows Preferences → Modules → Polar View, not a module (plan decision 15)
   const titles = prefs === null ? null : columnTitles(prefs.values[SINGLE_COLUMNS_KEY]);
   const columns = visibleColumns(SINGLE_COLUMNS, titles ?? []);
   const [tab, setTab] = useState<TabId>("data");
@@ -123,7 +125,7 @@ export function PassDetails({ answer, onClose, position }: Props) {
             </div>
             <div className="pass-panel polar" role="tabpanel" aria-hidden={tab !== "polar"}>
               <div className="pass-plot">
-                <PassPolarPlot pass={pass} qthName={qth.name} />
+                <PassPolarPlot pass={pass} qthName={polar.qthInfo ? qth.name : null} orientation={polar.orientation} />
               </div>
             </div>
             <div className="pass-panel azel" role="tabpanel" aria-hidden={tab !== "azel"}>

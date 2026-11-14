@@ -7,6 +7,7 @@ import {
   getCurrentLog,
   getLicense,
   getLocations,
+  getMaps,
   getModules,
   getPrefs,
   getReadme,
@@ -18,6 +19,7 @@ import {
   putTabs,
   retryModule,
   searchSatellites,
+  uploadMap,
 } from "./api";
 
 type Call = { url: string; init: RequestInit | undefined };
@@ -191,6 +193,41 @@ describe("api", () => {
     const err = (await postLog(3, "f", "").catch((e: unknown) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect([err.code, err.status, err.object]).toEqual(["LOG_INVALID", 422, "text"]);
+  });
+
+  it("reads the list of the background maps", async () => {
+    const list = { maps: [{ file: "earth_800.png", stock: true, width: 800, height: 400, bytes: 3000 }], default: "nasa-bmng-07_1024.jpg" };
+    const calls = stubFetch(() => json(list));
+    await expect(getMaps()).resolves.toEqual(list);
+    expect(calls[0]!.url).toBe("/api/maps");
+    expect(calls[0]!.init?.method).toBe("GET");
+  });
+
+  it("uploads a map as the raw bytes with the content type given, the name in the query, and gets its entry", async () => {
+    const entry = { file: "my map.png", stock: false, width: 4, height: 2, bytes: 9 };
+    const calls = stubFetch(() => json(entry));
+    const image = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])]);
+    await expect(uploadMap("my map.png", "image/png", image)).resolves.toEqual(entry);
+    expect(calls[0]!.url).toBe("/api/maps?name=my%20map.png");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBe(image);
+    expect(new Headers(calls[0]!.init?.headers).get("Content-Type")).toBe("image/png");
+  });
+
+  it("an upload the server refuses is an ApiError MAP_INVALID with its Thai text", async () => {
+    stubFetch(() => json({ code: "MAP_INVALID", level: "error", text: "ภาพต้องไม่เกิน 10 MB", object: "body" }, 422));
+    const err = (await uploadMap("a.jpg", "image/jpeg", new Blob(["x"])).catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect([err.code, err.status, err.text, err.object]).toEqual(["MAP_INVALID", 422, "ภาพต้องไม่เกิน 10 MB", "body"]);
+  });
+
+  it("an upload whose connection is closed (an oversize body) is an ApiError NETWORK_ERROR, not a crash", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    const err = (await uploadMap("a.jpg", "image/jpeg", new Blob(["x"])).catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect([err.code, err.status]).toEqual(["NETWORK_ERROR", 0]);
   });
 
   it("a README the server cannot find is an ApiError with its Thai text", async () => {

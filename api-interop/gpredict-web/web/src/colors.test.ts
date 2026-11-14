@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA, POLAR_COLORS } from "./colors";
+import { coloursOf, cssRgba, MAP_COLORS, MAP_SHADOW_ALPHA, POLAR_COLORS } from "./colors";
 
 describe("cssRgba", () => {
   it("turns 0xRRGGBBAA into an rgba() string", () => {
@@ -43,5 +43,19 @@ describe("default colours (ref §5 and §6)", () => {
       track: 0x0000ffff,
       info: 0x00007fff,
     });
+  });
+});
+
+describe("coloursOf", () => {
+  it("takes the colours of the configuration and the default for a name it lacks", () => {
+    const got = coloursOf(POLAR_COLORS, { background: 0x11223344, track: 0 });
+    expect(got).toEqual({ ...POLAR_COLORS, background: 0x11223344, track: 0 });
+  });
+
+  it("ignores a name that is not a colour and a value that is not a number, and is a copy", () => {
+    const got = coloursOf(MAP_COLORS, { grid: NaN, other: 5 } as unknown as Record<string, number>);
+    expect(got).toEqual(MAP_COLORS);
+    expect(got).not.toBe(MAP_COLORS);
+    expect(coloursOf(MAP_COLORS, undefined)).toEqual(MAP_COLORS);
   });
 });

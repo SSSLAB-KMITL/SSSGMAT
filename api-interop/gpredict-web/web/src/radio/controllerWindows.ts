@@ -10,9 +10,8 @@
 
 import { ApiError } from "../api";
 import type { Selections } from "../selection";
-import type { ApiMessage, ModuleConfig, Tick } from "../types";
+import type { ApiMessage, Tick } from "../types";
 import { shouldReconnect } from "../useModuleSocket";
-import { POLAR_ORIENTATIONS } from "../views/polarGeom";
 import type { ControllerKind, ControllerRef, RadioState, RotatorState } from "./types";
 
 // ---------------------------------------------------------------- the open windows
@@ -110,13 +109,12 @@ export function windowGone(w: Watch, closeCode: number | null): boolean {
 }
 
 /**
- * The Polar plot of Antenna Control is drawn the way the module's Polar view is (ref-R §5.6): its orientation, and the station name
- * at the top left only while the Polar view's "QTH Info" is on. `polar` is null until the module's configuration has arrived (N/E/S/W,
- * no name till then); `qthName` is the station of the window's tick, null before the first one.
+ * The Polar plot of Antenna Control is drawn the way Preferences → Modules → Polar View says, not the way the Polar view of the module
+ * is (plan decision 15; ref-R §5.6): its orientation, and the station name at the top left only while that page's "QTH Info" is on.
+ * `qthName` is the station of the window's tick, null before the first one.
  */
-export function rotPlotOf(polar: ModuleConfig["polar"] | null, qthName: string | null): { orientation: string; qthName: string | null } {
-  if (polar === null) return { orientation: POLAR_ORIENTATIONS[0], qthName: null };
-  return { orientation: polar.orientation, qthName: polar.contents["QTH Info"] === true ? qthName : null };
+export function rotPlotOf(polar: { orientation: string; qthInfo: boolean }, qthName: string | null): { orientation: string; qthName: string | null } {
+  return { orientation: polar.orientation, qthName: polar.qthInfo ? qthName : null };
 }
 
 // ---------------------------------------------------------------- the target of a module (spec §3.3)

@@ -19,28 +19,3 @@ export function Check({ checked, onChange, title, later = false, children }: Che
     </label>
   );
 }
-
-interface LaterButtonProps {
-  /** the tooltip: which sub-project has the feature, or why it is not there (it stays visible: a disabled button shows none everywhere) */
-  title: string;
-  className?: string;
-  children: ReactNode;
-}
-
-/**
- * A button that is shown and cannot be pressed (spec §8.2). It is `aria-disabled` and not `disabled` so that its tooltip
- * shows in every browser; pressing it does nothing.
- */
-export function LaterButton({ title, className = "", children }: LaterButtonProps) {
-  return (
-    <button
-      type="button"
-      className={`button later ${className}`.trim()}
-      aria-disabled="true"
-      title={title}
-      onClick={(e) => e.preventDefault()}
-    >
-      {children}
-    </button>
-  );
-}

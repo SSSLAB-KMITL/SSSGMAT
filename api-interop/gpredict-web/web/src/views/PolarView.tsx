@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getSkyTrack } from "../api";
+import { coloursOf, POLAR_COLORS } from "../colors";
 import type { ViewProps } from "../components/ModuleView";
 import type { SatPos } from "./canvasCommon";
 import { prepareCanvas, useCanvasMouse, useElementSize, useRefreshGate } from "./canvasHooks";
@@ -10,7 +11,8 @@ import { planSkyFetches } from "./polarTracks";
 import type { SkyRequest } from "./polarTracks";
 
 /**
- * The Polar view (ref §6, spec §8.5), drawn on a canvas that fills its cell.
+ * The Polar view (ref §6, spec §8.5), drawn on a canvas that fills its cell, in the colours of the module's configuration
+ * (`config.polar.colours`, ref-D §12).
  *
  * - It redraws from the tick only every `refresh.polar` ticks (the first tick at once); a selection, the mouse cursor, a
  *   resize and a fetched sky track redraw it from the tick it already shows. A tick that is not "ok" (computing, failed)
@@ -33,6 +35,7 @@ export function PolarView({ module, config, tick, nf, selected, onSelect, onSatC
   const requested = useRef(new Map<number, SkyRequest>()); // NORAD -> the last sky track request
 
   const orientation = orientationOf(config.polar.orientation);
+  const colours = useMemo(() => coloursOf(POLAR_COLORS, config.polar.colours), [config.polar.colours]);
   const contents = config.polar.contents;
   const cursorOn = contents["Cursor Position"] === true;
   const auto = config.polar.auto_skytrack;
@@ -85,6 +88,7 @@ export function PolarView({ module, config, tick, nf, selected, onSelect, onSatC
       w: size.w,
       h: size.h,
       dpr,
+      colours,
       orientation,
       contents,
       tick: shown,
@@ -95,7 +99,7 @@ export function PolarView({ module, config, tick, nf, selected, onSelect, onSatC
       cursor,
       nf,
     });
-  }, [size, shown, tracks, selected, orientation, contents, cursor, skyEnabled, auto, nf]);
+  }, [size, shown, tracks, selected, colours, orientation, contents, cursor, skyEnabled, auto, nf]);
 
   return (
     <div ref={holder} className="polar-view">

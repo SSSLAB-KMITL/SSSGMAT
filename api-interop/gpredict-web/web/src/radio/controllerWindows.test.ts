@@ -184,16 +184,15 @@ describe("the target of a module (spec §3.3)", () => {
   });
 });
 
-describe("the plot of Antenna Control (ref-R §5.6)", () => {
-  const polar = (orientation: string, qthInfo: boolean) => ({ orientation, contents: { "QTH Info": qthInfo }, auto_skytrack: false, colours: {} });
+describe("the plot of Antenna Control (ref-R §5.6, plan decision 15)", () => {
+  const polar = (orientation: string, qthInfo: boolean) => ({ orientation, qthInfo });
 
-  it("is drawn the way the module's Polar view is, with the station name only while QTH Info is on", () => {
+  it("is drawn the way Preferences → Modules → Polar View says, with the station name only while its QTH Info is on", () => {
     expect(rotPlotOf(polar("S/W/N/E", true), "Bangkok")).toEqual({ orientation: "S/W/N/E", qthName: "Bangkok" });
     expect(rotPlotOf(polar("N/W/S/E", false), "Bangkok")).toEqual({ orientation: "N/W/S/E", qthName: null });
   });
 
-  it("is N/E/S/W without a name until the module's configuration has arrived, and without a name before the first tick", () => {
-    expect(rotPlotOf(null, "Bangkok")).toEqual({ orientation: "N/E/S/W", qthName: null });
+  it("has no name before the first tick", () => {
     expect(rotPlotOf(polar("S/E/N/W", true), null)).toEqual({ orientation: "S/E/N/W", qthName: null });
   });
 });

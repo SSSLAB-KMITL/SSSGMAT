@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useState } from "react";
-import { getModule } from "../api";
-import type { ModuleConfig, Tick } from "../types";
+import { useGlobalPolar } from "../prefs/globalPolar";
+import type { Tick } from "../types";
 import { useModuleSocket } from "../useModuleSocket";
 import { controllerOf, refKey, rotPlotOf, WATCH_START, watchTick, windowGone } from "./controllerWindows";
 import type { ControllerWindow, Watch } from "./controllerWindows";
@@ -70,31 +70,10 @@ function RadioWindow({ win, onClosed, onGone }: WindowProps) {
   return <RadioControl module={module} state={state} onAction={onAction} onClose={close} raiseToken={win.raise} />;
 }
 
-/**
- * The Polar view settings of the module, read once when the window opens: they change only with Configure, which is blocked while
- * the window is open (ref-R §1). Null until they have arrived; if they cannot be read the plot stays N/E/S/W without the station name.
- */
-function usePolarSettings(module: string): ModuleConfig["polar"] | null {
-  const [polar, setPolar] = useState<ModuleConfig["polar"] | null>(null);
-  useEffect(() => {
-    let alive = true;
-    getModule(module).then(
-      (config) => {
-        if (alive) setPolar(config.polar);
-      },
-      () => {}, // the server cannot be reached: the window's socket says so, and goes on reconnecting
-    );
-    return () => {
-      alive = false;
-    };
-  }, [module]);
-  return polar;
-}
-
 function RotatorWindow({ win, onClosed, onGone }: WindowProps) {
   const { tick, gone } = useWindowTicks({ win, onGone });
   const { module } = win;
-  const polar = usePolarSettings(module);
+  const polar = useGlobalPolar(); // the plot follows Preferences → Modules → Polar View, not the module (plan decision 15)
   const onAction = useCallback((body: Record<string, unknown>) => controllerAction(module, "rotator", body), [module]);
   const close = useCallback(() => onClosed({ module, kind: "rotator" }), [module, onClosed]);
   const state = controllerOf(tick, "rotator");

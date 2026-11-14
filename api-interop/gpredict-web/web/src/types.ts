@@ -301,6 +301,23 @@ export interface PrefsAnswer {
   user: string[];
 }
 
+// ---------------------------------------------------------------- GET /api/maps
+
+/** A background map of the Map View: one of Gpredict's (`stock`) or one uploaded to data/maps/. `width` and `height` are in pixels. */
+export interface MapEntry {
+  file: string;
+  stock: boolean;
+  width: number;
+  height: number;
+  bytes: number;
+}
+
+/** GET /api/maps: the maps (Gpredict's first, in their order, then the uploaded ones by name) and the file the Map View draws by default. */
+export interface MapList {
+  maps: MapEntry[];
+  default: string;
+}
+
 // ---------------------------------------------------------------- GET /api/meta
 
 export interface Meta {
