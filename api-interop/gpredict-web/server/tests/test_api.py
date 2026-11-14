@@ -326,7 +326,8 @@ class QthApiTest(ApiTestBase):
         with self.assertLogs("gpredict_web.store", "ERROR"):
             r = self.put_batch([self.station("OTHER", lat_deg=10.0, lon_deg=20.0)], "OTHER")
         self.assertEqual(r.json()["changed_modules"], ["M"])
-        self.assertEqual(self.client.post("/api/tle/update").status_code, 200)       # hub.reload ทุก module ที่เปิดอยู่
+        with self.assertLogs("gpredict_web.app", "ERROR"):                            # ไม่มีเน็ตใน test: หยุดก่อนรวม TLE
+            self.assertEqual(self.client.post("/api/tle/update").status_code, 200)   # hub.reload ทุก module ที่เปิดอยู่
         self.assertEqual({n: self.hub.get(n).tick()["qth"]["name"] for n in ("M", "N", "K")},
                          {"M": "ORIGIN", "N": "ORIGIN", "K": "OTHER"})
         self.assertEqual(self.hub.get("M").module.qth, None)                         # runtime กับไฟล์ตรงกัน (ทั้งคู่ ** DEFAULT **)
@@ -544,6 +545,25 @@ class TleApiTest(ApiTestBase):
             body = self.client.post("/api/tle/update").json()
         self.assertEqual((body["new"], body["add_new"], body["skipped"]), (0, False, len(NASABARE_NORADS)))
         self.assertEqual(self.tle_logs(logs), [("tle_update_from_files", "TLE elements updated.")])
+
+    def test_tle_update_aborts_when_no_source_answered(self):
+        """ไม่มี source ใดให้ข้อมูล (ต่อไม่ได้และไม่มี cache) บนดัชนีที่มีดาว: หยุดแบบ Gpredict (ref-D §5.2, tle-update.c:647-665)
+        ตัวนับเป็นศูนย์ (ไม่ใช่ Missing ทุกดวง) log ERROR แทน "TLE elements updated." และ TLE เดิมไม่เปลี่ยน"""
+        self.client.put("/api/prefs", json={"set": {"TLE/URLS": [NASABARE_URL, AMATEUR_URL]}})
+        before = (self.cfg.data_dir / "satdb.json").read_bytes()
+        with self.assertLogs("gpredict_web", "INFO") as logs:
+            r = self.client.post("/api/tle/update")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual({k: body[k] for k in ("updated", "skipped", "missing", "new", "add_new")},
+                         {"updated": 0, "skipped": 0, "missing": 0, "new": 0, "add_new": False})
+        self.assertEqual([(m["code"], m["level"]) for m in body["messages"]], [("ORBIT_DOWNLOAD_FAILED", "warning")] * 2)
+        self.assertEqual(self.tle_logs(logs), [])
+        errors = [(r.levelname, getattr(r, "gp_function", None), r.getMessage()) for r in logs.records if r.levelname == "ERROR"]
+        self.assertEqual(errors, [("ERROR", "tle_update_from_network", "Could not fetch TLE files from network. Aborting.")])
+        self.assertEqual((self.cfg.data_dir / "satdb.json").read_bytes(), before)
+        self.assertEqual(self.client.get("/api/satellites/25544").json()["tle"], list(record(25544).tle_lines))
+        self.assertEqual(self.client.get("/api/prefs").json()["values"]["TLE/LAST_UPDATE"], 0)
 
     def test_tle_local_endpoint(self):
         self.put_module()
@@ -1832,7 +1852,8 @@ class ControllerApiTest(ApiTestBase):
         self.assertIs(self.hub.get("M"), rt)
         self.assertEqual((rt.qth.name, rt.module.qth, rt.tick()["qth"]["name"]), ("ORIGIN", None, "ORIGIN"))
         # Update TLE (hub.reload ทุก module) หลัง OK: controller ที่ทำงานอยู่ไม่ถูกย้ายสถานี
-        self.assertEqual(self.client.post("/api/tle/update").status_code, 200)
+        with self.assertLogs("gpredict_web.app", "ERROR"):                            # ไม่มีเน็ตใน test: หยุดก่อนรวม TLE
+            self.assertEqual(self.client.post("/api/tle/update").status_code, 200)
         self.assertEqual((self.hub.get("M").qth.name, rt.tick()["qth"]["name"]), ("ORIGIN", "ORIGIN"))
         self.assertEqual(self.listed(), both)
         self.assertEqual(self.act("radio", action="track", on=False)["norad"], SAT_BY_NAME)    # ยังสั่ง controller ได้ตามปกติ
@@ -2457,7 +2478,8 @@ class LifespanTest(ApiTestBase):
     def test_startup_message_cleared_after_tle_update(self):
         client = self.start()
         self.assertTrue(client.get("/api/modules").json()["messages"])
-        client.post("/api/tle/update")
+        with self.assertLogs("gpredict_web.app", "ERROR"):                            # ยังไม่มีเน็ต: หยุดก่อนรวม TLE
+            client.post("/api/tle/update")
         self.assertEqual(client.get("/api/modules").json()["messages"], [])
 
     def test_restart_reopens_session_and_drops_broken_module(self):

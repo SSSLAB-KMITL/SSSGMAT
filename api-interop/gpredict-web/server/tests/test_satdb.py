@@ -299,11 +299,11 @@ class TestApplySets(SatDbTestCase):
         fresh = make_set(2, "BETA", E0, "Operational")
         sources = {"g": [make_set(1), fresh]}
         res = self.apply(sources, add_new=False)
-        self.assertEqual(counts(res), (0, 1, 0, 0))
+        self.assertEqual((counts(res), res.add_new), ((0, 1, 0, 0), False))
         self.assertIsNone(self.db.get(2))
         self.assertEqual(len(self.db), 1)
         res = self.apply(sources, add_new=True)
-        self.assertEqual(counts(res), (0, 1, 0, 1))               # ดวงใหม่ไม่นับใน updated
+        self.assertEqual((counts(res), res.add_new), ((0, 1, 0, 1), True))     # ดวงใหม่ไม่นับใน updated
         self.assertEqual(self.db.get(2), SatRecord(2, "BETA", ["g"], fresh.lines, fresh.epoch, T1, "Operational"))
         self.assertEqual(counts(self.apply(sources, add_new=True)), (0, 2, 0, 0))     # รอบถัดไปไม่ใช่ดวงใหม่แล้ว
 
@@ -439,7 +439,7 @@ class TestApplySets(SatDbTestCase):
         rec = SatRecord(1, "A", [], ("x", "y"), E0, E0)
         self.assertEqual(rec.status, UNKNOWN_STATUS)
         res = UpdateResult(1, 2, 3)
-        self.assertEqual((res.new, res.messages), (0, []))
+        self.assertEqual((res.new, res.messages, res.add_new, res.aborted), (0, [], False, None))
         self.assertEqual(UpdateResult(1, 2, 3, []).messages, [])
         self.assertEqual(UpdateResult(1, 2, 3, new=4).new, 4)
 

@@ -41,12 +41,16 @@ class SatRecord:
 @dataclass
 class UpdateResult:
     """จำนวนแบบหน้าต่าง "TLE Update" ของ Gpredict: Satellites updated / skipped / Missing Satellites / New Satellites
-    updated + skipped + missing = จำนวนดาวที่มีอยู่ก่อนอัปเดต ส่วนดวงที่เพิ่มเข้ามาใหม่นับเฉพาะใน new"""
+    updated + skipped + missing = จำนวนดาวที่มีอยู่ก่อนอัปเดต ส่วนดวงที่เพิ่มเข้ามาใหม่นับเฉพาะใน new
+    add_new: รอบนี้รวม TLE โดยเปิด "Add new satellites" (Gpredict แสดงบรรทัด New Satellites และ log จำนวนดวงใหม่เฉพาะกรณีนี้)
+    aborted: ข้อความ ERROR ของ Gpredict เมื่อ Update จาก network หยุดก่อนรวม TLE (ไม่มี source ให้ข้อมูล) None = รวมแล้ว"""
     updated: int
     skipped: int
     missing: int
     messages: list[Message] = field(default_factory=list)
     new: int = field(default=0, kw_only=True)
+    add_new: bool = field(default=False, kw_only=True)
+    aborted: str | None = field(default=None, kw_only=True)
 
 
 def gmat_name(norad: int) -> str:
@@ -243,7 +247,7 @@ class SatDb:
                     if norad not in self._sats:
                         self._sats[norad] = SatRecord(norad, src.name, sorted(seen[norad]), src.lines, src.epoch, now, src.status)
                         new += 1
-        return UpdateResult(updated, skipped, missing, new=new)
+        return UpdateResult(updated, skipped, missing, new=new, add_new=add_new)
 
     def apply_groups(self, files: dict[str, Path], now: datetime, add_new: bool = True) -> UpdateResult:
         """รวมไฟล์ OMM ของแต่ละกลุ่ม CelesTrak (กลุ่ม -> path) เข้าดัชนีด้วย apply_sets ยังไม่บันทึกลงดิสก์ (เรียก save())

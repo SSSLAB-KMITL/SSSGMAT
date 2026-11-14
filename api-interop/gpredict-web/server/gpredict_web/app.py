@@ -81,7 +81,9 @@ LOG_DIR = "logs"                       # โฟลเดอร์ log ใต้ 
 TLE_LOCAL_FILES_MAX = 200
 TLE_LOCAL_BYTES_MAX = 20 * 1024 * 1024
 TLE_LOCAL_NAME_MAX = 255
-TLE_LOG_FUNCTION = "tle_update_from_files"          # function ในบรรทัด log ของ Update TLE ตามต้นฉบับ (tle-update.c)
+# function ในบรรทัด log ของ Update TLE ตามต้นฉบับ (tle-update.c): รวม TLE แล้ว / Update จาก network หยุดก่อนรวม
+TLE_LOG_FUNCTION = "tle_update_from_files"
+TLE_NET_LOG_FUNCTION = "tle_update_from_network"
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -727,8 +729,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 + [{"name": group, "last_request": None, "last_success": None} for group in satdb.groups() if group not in names]}
 
     def tle_result(result: UpdateResult) -> dict:
-        """หลังรวม TLE (ถือ tle_lock อยู่): อ่านดาวของทุก module ที่เปิดอยู่ใหม่ log INFO แบบ Gpredict (tle-update.c) แล้วคืนตัวนับ
-        add_new = TLE/ADD_NEW_SATS (หน้าต่าง TLE Update แสดงบรรทัด "New Satellites:" เมื่อเปิด)"""
+        """หลัง Update TLE (ถือ tle_lock อยู่): อ่านดาวของทุก module ที่เปิดอยู่ใหม่ log แบบ Gpredict (tle-update.c) แล้วคืนตัวนับ
+        - รวม TLE แล้ว: INFO "Added %d new satellites…" (เมื่อ add_new) และ "TLE elements updated."
+        - หยุดก่อนรวม (result.aborted): ERROR ข้อความของ Gpredict แทนสองบรรทัดนั้น
+        add_new = ค่าที่รอบนี้ใช้รวม TLE (หน้าต่าง TLE Update แสดงบรรทัด "New Satellites:" เมื่อเป็น true, หยุดก่อนรวม = false)"""
         messages = list(result.messages)
         for name in hub.open_names():
             try:
@@ -736,14 +740,16 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             except ApiError as exc:
                 messages.append(Message(exc.code, "warning",
                                         f"อ่าน module {name} ใหม่หลังอัปเดต TLE ไม่ได้: {exc.text}", name))
-        add_new = prefs.get("TLE/ADD_NEW_SATS")
-        gp = {"gp_function": TLE_LOG_FUNCTION}
-        if add_new:
-            _log.info("Added %d new satellites to local database", result.new, extra=gp)
-        _log.info("TLE elements updated.", extra=gp)
+        if result.aborted:
+            _log.error("%s", result.aborted, extra={"gp_function": TLE_NET_LOG_FUNCTION})
+        else:
+            gp = {"gp_function": TLE_LOG_FUNCTION}
+            if result.add_new:
+                _log.info("Added %d new satellites to local database", result.new, extra=gp)
+            _log.info("TLE elements updated.", extra=gp)
         clear_startup_messages()
         return {"updated": result.updated, "skipped": result.skipped, "missing": result.missing, "new": result.new,
-                "add_new": add_new, "messages": [m.to_dict() for m in messages]}
+                "add_new": result.add_new, "messages": [m.to_dict() for m in messages]}
 
     def update_tle() -> dict:
         """Edit → Update TLE data from network ตาม TLE sources และ proxy ของ Preferences (tlesources.update_from_sources)"""

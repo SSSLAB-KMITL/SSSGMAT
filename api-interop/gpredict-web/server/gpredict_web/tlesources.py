@@ -12,7 +12,8 @@
 - Proxy (TLE/PROXY) ใช้กับทุก source: opener เดียวจาก make_opener ส่งให้ทั้ง fetch_group และ fetch_text
 - คำขอที่ส่งเองมีแค่ User-Agent "gpredict-web" (คำขอ CelesTrak ส่งโดย engine ด้วย User-Agent ของ engine)
 - TLE ทุก source ของรอบหนึ่งรวมกันใน SatDb.apply_sets ครั้งเดียว (ref-D §5.3) TLE/LAST_UPDATE ตั้งเมื่อ updated + new > 0
-  ทั้งจาก network และไฟล์ (tle_update_from_files ของ Gpredict ใช้ร่วมกันทั้งสองทาง)
+  ทั้งจาก network และไฟล์ (tle_update_from_files ของ Gpredict ใช้ร่วมกันทั้งสองทาง) Update จาก network ที่ไม่มี source ใดให้ข้อมูล
+  หยุดก่อนรวมแบบ Gpredict (ref-D §5.2) ส่วน Update จากไฟล์รวมเสมอ (ไฟล์ที่ไม่มี TLE ใช้ได้ทำให้ทุกดวงเป็น Missing ตาม ref-D §6)
 """
 
 import hashlib
@@ -40,6 +41,9 @@ STATE_FILE = "state.json"
 CELESTRAK_HOSTS = ("celestrak.org", "www.celestrak.org")
 CELESTRAK_GP_PATH = "/NORAD/elements/gp.php"
 LOCAL_SUFFIXES = (".tle", ".txt")       # ไฟล์ที่ Update from local files อ่าน (ไม่สนตัวพิมพ์, ref-D §5.3 แถว Files read)
+# ข้อความ ERROR ของ Gpredict เมื่อ Update จาก network หยุดก่อนรวม TLE (tle_update_from_network, tle-update.c:523-533, :647-665)
+NO_FILES_LOG = "No files to fetch from network."
+NOT_FETCHED_LOG = "Could not fetch TLE files from network. Aborting."
 _STATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"  # รูปเดียวกับ state ของ engine (omm.parse_state_time อ่านได้ทั้งสองไฟล์)
 _UTC = timezone.utc
 
@@ -184,14 +188,19 @@ def update_from_sources(db: SatDb, cfg: Config, prefs: Prefs, now: datetime,
     - กลุ่ม CelesTrak เดียวกันหรือ URL เดียวกันซ้ำในรายการดึงครั้งเดียว URL หลายตัวที่ได้กลุ่มเดียวกันรวมเป็น source เดียว
     - source ที่ไม่มีข้อมูลใช้เลย (ต่อไม่ได้และไม่มี cache) ถูกข้าม ดาวและสมาชิกกลุ่มเดิมของมันไม่ถูกแตะ
     - กลุ่มที่ทุก source ของมันมีข้อมูล: สมาชิกถูกแทนด้วยดาวที่ได้รอบนี้ (ดวงที่หายไปหลุดจากกลุ่มแต่ยังอยู่ในดัชนี)
+    - หยุดก่อนรวม TLE แบบ Gpredict (ตัวนับเป็นศูนย์ ไม่แตะและไม่บันทึกดัชนี aborted = ข้อความ ERROR ของ Gpredict):
+      ไม่มี URL เลย -> NO_FILES_LOG (ไม่สร้าง opener) หรือไม่มี source ใดให้ข้อมูล -> NOT_FETCHED_LOG (คงคำเตือนของแต่ละ source)
     messages: ของ engine และ fetch_text ตามลำดับ URL + ข้อความของการแปลง OMM"""
+    urls = prefs.get("TLE/URLS")
+    if not urls:                            # Preferences รับ 1–50 URL จึงเกิดได้เฉพาะค่าที่ไม่ผ่านการตรวจ
+        return UpdateResult(0, 0, 0, aborted=NO_FILES_LOG)
     opener = opener_factory(prefs.get("TLE/PROXY"))
     text_cache = cache_dir(cfg)
     sources: dict[str, list[TleSet]] = {}
     incomplete: set[str] = set()
     messages: list[Message] = []
     fetched: set[tuple[str, str]] = set()
-    for url in prefs.get("TLE/URLS"):
+    for url in urls:
         kind, group = classify(url)
         key = (kind, group if kind == "celestrak" else url)
         if key in fetched:
@@ -206,6 +215,8 @@ def update_from_sources(db: SatDb, cfg: Config, prefs: Prefs, now: datetime,
             sources.setdefault(group, []).extend(sets)
         else:
             incomplete.add(group)
+    if not sources:
+        return UpdateResult(0, 0, 0, messages, aborted=NOT_FETCHED_LOG)
     result = db.apply_sets(sources, now, prefs.get("TLE/ADD_NEW_SATS"), frozenset(sources.keys() - incomplete))
     db.save()
     _store_last_update(prefs, result, now)

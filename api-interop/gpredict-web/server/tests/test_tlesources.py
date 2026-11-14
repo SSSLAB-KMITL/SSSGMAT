@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, urlopen
 
-from gpredict_web.prefs import Prefs      # import gpredict_web ก่อน: __init__ ใส่ path ของ gnss_predict
+from gpredict_web.prefs import PREFS, Prefs      # import gpredict_web ก่อน: __init__ ใส่ path ของ gnss_predict
 from gpredict_web.satdb import SatDb
 from gpredict_web.tletext import parse_tle_text
 from gpredict_web.tlesources import (
@@ -196,6 +196,7 @@ class UpdateFromSourcesTest(unittest.TestCase):
     def test_nasabare_group(self):
         res = self.run_update(UrlOpener({NASABARE_URL: NASABARE}))
         self.assertEqual((res.updated, res.skipped, res.missing, res.new, res.messages), (0, 0, 0, 4, []))
+        self.assertEqual((res.add_new, res.aborted), (True, None))
         self.assertEqual(sorted(self.db.norads()), NASABARE_NORADS)
         self.assertEqual(self.db.groups(), ["nasabare"])
         self.assertEqual(self.db.get(24278).name, "FO-29")
@@ -203,7 +204,7 @@ class UpdateFromSourcesTest(unittest.TestCase):
 
     def test_add_new_follows_prefs(self):
         res = self.run_update(UrlOpener({NASABARE_URL: NASABARE}), **{"TLE/ADD_NEW_SATS": False})
-        self.assertEqual((res.new, len(self.db)), (0, 0))
+        self.assertEqual((res.new, res.add_new, len(self.db)), (0, False, 0))
 
     def test_proxy_used_for_all_sources(self):
         opener = UrlOpener({NASABARE_URL: NASABARE, AMATEUR_OMM_URL: dump(GROUP_A)})
@@ -231,20 +232,38 @@ class UpdateFromSourcesTest(unittest.TestCase):
     def test_source_failure_keeps_old_tles(self):
         self.db.apply_sets({"nasabare": parse_tle_text(NASABARE.decode())}, T0 - 3 * HOUR, True)
         self.db.save()
+        saved_bytes = self.db.path.read_bytes()
         before = {n: self.db.get(n) for n in self.db.norads()}
         opener = UrlOpener({NASABARE_URL: URLError("proxy ผิด"), AMATEUR_OMM_URL: URLError("proxy ผิด")})
         res = self.run_update(opener, urls=[NASABARE_URL, AMATEUR_URL])
         self.assertEqual(opener.urls, [NASABARE_URL, AMATEUR_OMM_URL])
         self.assertEqual({n: self.db.get(n) for n in self.db.norads()}, before)          # ดาวเดิมอยู่ครบ ไม่เปลี่ยน
-        saved = SatDb(self.db.path)
-        self.assertEqual({n: saved.get(n) for n in before}, before)
-        self.assertEqual((res.updated, res.new), (0, 0))
+        self.assertEqual(self.db.path.read_bytes(), saved_bytes)                       # ไม่รวมและไม่บันทึกเลย
+        # ไม่มี source ใดให้ข้อมูล: หยุดก่อนรวม TLE แบบ Gpredict (tle-update.c:647-665) ตัวนับเป็นศูนย์ทั้งหมด
+        self.assertEqual((res.updated, res.skipped, res.missing, res.new, res.add_new), (0, 0, 0, 0, False))
+        self.assertEqual(res.aborted, "Could not fetch TLE files from network. Aborting.")
         self.assertEqual([(m.code, m.level) for m in res.messages], [("ORBIT_DOWNLOAD_FAILED", "warning")] * 2)
         self.assertEqual([m.object for m in res.messages], [NASABARE_URL, "amateur"])
         # ต่อไม่ถึง server: ไม่บันทึกเวลาขอ (ทั้งของเราและของ engine) ครั้งหน้าลองใหม่ได้
         self.assertEqual(omm.read_state(cache_dir(self.cfg) / "state.json"), {})
         self.assertEqual(omm.read_state(self.cfg.state_file), {})
         self.assertEqual(self.prefs.get("TLE/LAST_UPDATE"), 0)
+
+    def test_no_urls_aborts_like_gpredict(self):
+        """TLE/URLS ว่าง (Preferences รับ 1–50 URL จึงเกิดได้เฉพาะค่าที่ไม่ผ่านการตรวจ): ไม่ส่งคำขอ ไม่แตะดัชนี (tle-update.c:523-533)"""
+        class NoUrls:
+            def get(self, key):
+                return [] if key == "TLE/URLS" else PREFS[key].default
+
+        self.db.apply_sets({"nasabare": parse_tle_text(NASABARE.decode())}, T0, True)
+        res = update_from_sources(self.db, self.cfg, NoUrls(), T0, opener_factory=self.no_opener)
+        self.assertEqual((res.updated, res.skipped, res.missing, res.new, res.messages), (0, 0, 0, 0, []))
+        self.assertEqual(res.aborted, "No files to fetch from network.")
+        self.assertEqual(len(self.db), len(NASABARE_NORADS))
+        self.assertFalse(self.db.path.exists())
+
+    def no_opener(self, proxy):
+        raise AssertionError("ไม่ควรสร้าง opener")
 
     def test_last_update_only_when_changed(self):
         opener = UrlOpener({NASABARE_URL: NASABARE})
