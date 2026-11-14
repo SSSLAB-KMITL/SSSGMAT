@@ -1389,6 +1389,62 @@ body {
 .hw-wait {
   padding: 12px 14px;
 }
+
+/* Preferences → General → Ground Stations (ref-D §3): the table and buttons are those of Interfaces; the Alt header has two lines ("Alt\n(m)") */
+.station-table th {
+  white-space: pre-line;
+}
+.station-table td input {
+  margin: 0;
+}
+.qth-editor {
+  min-width: 440px;
+}
+
+/* Select Location (ref-D §3, loc-tree.c): the tree of cities, in a dialog a little wider than Gpredict's 450 x 400 so that the five columns fit */
+.location-select {
+  width: 520px;
+  max-width: 100%;
+}
+.tree-list {
+  height: 340px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tree-list .sat-table {
+  table-layout: fixed;
+}
+.tree-list .sat-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-list .sat-table tbody tr {
+  scroll-margin-top: 28px; /* the header sticks to the top: a row that is scrolled into view must clear it */
+}
+.tree-col-deg {
+  width: 88px;
+}
+.tree-col-alt {
+  width: 52px;
+}
+.tree-col-wx {
+  width: 60px;
+}
+.tree-list .sat-table tr.cursor td {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+.tree-arrow {
+  display: inline-block;
+  width: 14px;
+  font-size: 10px;
+}
+.tree-wait {
+  padding: 12px 14px;
+}
 .hw-editor {
   min-width: 440px;
 }

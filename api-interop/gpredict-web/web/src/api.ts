@@ -5,12 +5,14 @@ import type {
   Clock,
   ClockUpdate,
   CloneResult,
+  LocationsAnswer,
   Meta,
   ModuleConfig,
   ModuleList,
   PrefsAnswer,
   PrefValue,
   Qth,
+  QthBatchAnswer,
   QthList,
   SatRecord,
   SkyTrackResult,
@@ -95,6 +97,17 @@ export const getQthList = () => request<QthList>("GET", "/api/qth");
 export const getQth = (name: string) => request<Qth>("GET", `/api/qth/${seg(name)}`);
 export const putQth = (q: Qth) => request<Qth>("PUT", `/api/qth/${seg(q.name)}`, q);
 export const deleteQth = (name: string) => request<void>("DELETE", `/api/qth/${seg(name)}`);
+
+/**
+ * Replaces all the ground stations and the default one in one call (Preferences → Ground Stations, OK): every station is checked first
+ * (422 QTH_INVALID for a wrong field, two names that differ only in case, or a default that is not in the list; 422 QTH_LAST for an empty
+ * list) and then nothing is written; the stations that are not in the list are deleted. `dryRun`: the same check and answer, nothing written.
+ */
+export const putQthBatch = (d: { stations: readonly Qth[]; default: string }, o?: WriteOptions) =>
+  request<QthBatchAnswer>("PUT", writeUrl("/api/qth/batch", o), { stations: d.stations, default: d.default });
+
+/** The cities and weather stations of the Select buttons of the ground station editor (spec §4.3); about 600 kB, so locations.ts keeps the answer. */
+export const getLocations = () => request<LocationsAnswer>("GET", "/api/locations");
 
 // ---------------------------------------------------------------- satellites and TLE
 

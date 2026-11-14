@@ -33,6 +33,24 @@ export interface QthList {
   messages: ApiMessage[];
 }
 
+/** The answer of PUT /api/qth/batch (also as a dry run): the stations as they are (sorted by name) and the default, and the modules that had to change. */
+export interface QthBatchAnswer {
+  qth: Qth[];
+  default: string;
+  /** modules that used a station that is gone and now say ** DEFAULT ** */
+  changed_modules: string[];
+}
+
+/** One city of GET /api/locations: [continent, country, city, lat, lon, alt_m, icao] (lat and lon in degrees, south and west negative). */
+export type LocationTuple = [continent: string, country: string, city: string, lat: number, lon: number, alt_m: number, icao: string];
+
+/** GET /api/locations: the list behind the Select buttons of the ground station editor (sorted by continent, country, city). */
+export interface LocationsAnswer {
+  source: string;
+  downloaded: string;
+  locations: LocationTuple[];
+}
+
 // ---------------------------------------------------------------- satellites and TLE
 
 export interface SatRecord {

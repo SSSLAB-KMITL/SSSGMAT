@@ -4,11 +4,13 @@ import {
   cloneModule,
   getClock,
   getLicense,
+  getLocations,
   getModules,
   getPrefs,
   getReadme,
   putClock,
   putPrefs,
+  putQthBatch,
   putTabs,
   retryModule,
   searchSatellites,
@@ -92,6 +94,31 @@ describe("api", () => {
   it("a refused preference is an ApiError with the Thai text and the key", async () => {
     stubFetch(() => json({ code: "PREFS_INVALID", level: "error", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV" }, 422));
     await expect(putPrefs({ "PREDICT/MINIMUM_ELEV": 0 }, [])).rejects.toMatchObject({ code: "PREFS_INVALID", text: "ค่าผิด", object: "PREDICT/MINIMUM_ELEV", status: 422 });
+  });
+
+  it("PUTs the stations and the default to /api/qth/batch, and a dry run to ?dry_run=true, with the same body", async () => {
+    const thbk = { name: "THBK", description: "", location: "Bangkok", lat_deg: 13.7, lon_deg: 100.8, alt_m: 6, weather_station: "VTBS" };
+    const calls = stubFetch(() => json({ qth: [thbk], default: "THBK", changed_modules: [] }));
+    expect(await putQthBatch({ stations: [thbk], default: "THBK" })).toEqual({ qth: [thbk], default: "THBK", changed_modules: [] });
+    await putQthBatch({ stations: [thbk], default: "THBK" }, { dryRun: true });
+    expect(calls.map((c) => [c.url, c.init?.method])).toEqual([
+      ["/api/qth/batch", "PUT"],
+      ["/api/qth/batch?dry_run=true", "PUT"],
+    ]);
+    for (const c of calls) expect(JSON.parse(String(c.init?.body))).toEqual({ stations: [thbk], default: "THBK" });
+  });
+
+  it("sends nothing but the stations and the default to /api/qth/batch", async () => {
+    const calls = stubFetch(() => json({}));
+    await putQthBatch({ stations: [], default: "x", extra: 1 } as { stations: []; default: string });
+    expect(Object.keys(JSON.parse(String(calls[0]!.init?.body))).sort()).toEqual(["default", "stations"]);
+  });
+
+  it("GETs the list of cities", async () => {
+    const answer = { source: "NOAA", downloaded: "2026-11-14T12:05:40Z", locations: [["Asia", "Thailand", "Chiang Mai", 18.78, 98.98, 312, "VTCC"]] };
+    const calls = stubFetch(() => json(answer));
+    expect(await getLocations()).toEqual(answer);
+    expect(calls[0]!.url).toBe("/api/locations");
   });
 
   it("builds the satellite search query", async () => {

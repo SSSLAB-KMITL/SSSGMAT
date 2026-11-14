@@ -1,8 +1,11 @@
 // The "Edit ground station data" dialog (ref §10): the form, the tooltips and how latitude, longitude and locator follow each
 // other. Pure; QthEditor.tsx shows it.
 
+import { locationText } from "./locations";
+import type { LocationRow } from "./locations";
 import { normalizeLocator, toLocator, tryFromLocator } from "./locator";
 import { isModuleName } from "./moduleName";
+import { ftToM, mToFt } from "./numfmt";
 import { roundTo } from "./spin";
 import type { Qth } from "./types";
 
@@ -26,13 +29,10 @@ export const QTH_TIPS = {
   selectWeather: "Select a weather station",
 } as const;
 
-/** (ของเรา) the Select buttons stay off: this version has no list of cities and no list of weather stations. */
-export const NO_CITY_LIST_TIP = "ยังไม่มีรายชื่อเมืองให้เลือก ให้พิมพ์ Location เอง";
-export const NO_WEATHER_LIST_TIP = "ยังไม่มีรายชื่อสถานีอากาศให้เลือก ให้พิมพ์รหัส 4 ตัวอักษรเอง";
-
 /**
  * What the editor shows. Latitude and longitude are the numbers of the spin buttons (0 to 90 and 0 to 180); South and West
- * are the combos next to them. `locator` is the text of the Locator entry.
+ * are the combos next to them. `locator` is the text of the Locator entry. The altitude is in metres whatever the Imperial setting
+ * is: with Imperial on the editor shows it in feet (`altShown`) and a number typed in feet goes in as metres (`altFromShown`).
  */
 export interface QthForm {
   name: string;
@@ -115,6 +115,50 @@ export function editLocator(f: QthForm, text: string): QthForm {
     lon: roundTo(Math.abs(point.lon), COORDINATE_DIGITS),
     west: point.lon < 0,
   };
+}
+
+// ---------------------------------------------------------------- the altitude in metres or feet (ref-D §3)
+
+/** The unit label beside the altitude spin button (`sat-pref-qth-editor.c:722-727`, `qth-editor.c:603-606`). */
+export const altUnit = (imperial: boolean): string => (imperial ? "ft ASL" : "m ASL");
+
+/** The top of the altitude spin button: 5000 m, or the same height in feet (the range is converted, ref-D §2.1). */
+export const altMax = (imperial: boolean): number => (imperial ? mToFt(QTH_LIMITS.alt) : QTH_LIMITS.alt);
+
+/** The number the altitude spin button shows for `alt` metres: whole metres, or whole feet with Imperial on. */
+export const altShown = (alt: number, imperial: boolean): number => (imperial ? Math.round(mToFt(alt)) : alt);
+
+const clampAlt = (metres: number): number => Math.min(QTH_LIMITS.alt, Math.max(0, metres));
+
+/**
+ * The metres for a number the altitude spin button gave: as it is, or from feet by `ftToM` without rounding (Gpredict cuts the converted
+ * value to whole metres, so each OK lost up to a metre: 100 m, shown as 328 ft, came back as 99 m). Kept within 0 to 5000 m, which the
+ * server checks and which the top of the range in feet only just reaches.
+ */
+export const altFromShown = (shown: number, imperial: boolean): number => clampAlt(imperial ? ftToM(shown) : shown);
+
+// ---------------------------------------------------------------- the Select buttons (loc-tree.c, sat-pref-qth-editor.c:357-436)
+
+/**
+ * The form after the Select button of Location chose `row`: Location ("<city>, <country>"), Latitude and Longitude (to the spin buttons' four
+ * decimals, with South and West by the sign), Altitude (in metres, kept within the spin button's range) and Weather St; the locator follows
+ * the coordinates. Name and Description stay.
+ */
+export function applyLocation(f: QthForm, row: LocationRow): QthForm {
+  return editCoordinates(
+    { ...f, location: locationText(row), alt: clampAlt(row.alt_m), weather: row.icao },
+    {
+      lat: roundTo(Math.abs(row.lat), COORDINATE_DIGITS),
+      south: row.lat < 0,
+      lon: roundTo(Math.abs(row.lon), COORDINATE_DIGITS),
+      west: row.lon < 0,
+    },
+  );
+}
+
+/** The form after the Select button of Weather St chose `row`: only the weather station. */
+export function applyWeather(f: QthForm, row: LocationRow): QthForm {
+  return { ...f, weather: row.icao };
 }
 
 /** What the Clear button leaves. */

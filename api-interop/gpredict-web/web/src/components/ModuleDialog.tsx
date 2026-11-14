@@ -13,6 +13,7 @@ import type { ModuleDraft, SelectedSat } from "../moduleForm";
 import { MODULE_NAME_MAX, NAME_TIP, sanitizeModuleName } from "../moduleName";
 import { propsOf } from "../moduleProps";
 import type { ModuleProps } from "../moduleProps";
+import { useNumberFormat } from "../numfmt";
 import { loadSatNames } from "../satNames";
 import type { ModuleConfig, Qth } from "../types";
 import { useMeta } from "../useMeta";
@@ -58,6 +59,7 @@ type Child = "properties" | "qth" | "overwrite" | null;
  */
 export function ModuleDialog({ target, onClose }: Props) {
   const meta = useMeta();
+  const nf = useNumberFormat(); // the Add button's editor shows the altitude in feet with Imperial on
   const editing = target.kind === "edit";
   const config = target.kind === "edit" ? target.config : null;
 
@@ -261,7 +263,9 @@ export function ModuleDialog({ target, onClose }: Props) {
           }}
         />
       )}
-      {child === "qth" && <QthEditor existing={qthNames} onClose={() => setChild(null)} onSaved={qthSaved} />}
+      {child === "qth" && (
+        <QthEditor mode="save" imperial={nf.imperial} existing={qthNames} onClose={() => setChild(null)} onSaved={qthSaved} />
+      )}
       {child === "overwrite" && question !== null && (
         <FloatingWindow title="Overwrite module" onClose={() => setChild(null)}>
           <div className="dialog">
