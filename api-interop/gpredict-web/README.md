@@ -157,7 +157,8 @@ tick ของ `/ws/modules/{name}` มี `radio` และ `rotator` เมื
 
 หลังงานนี้ทุกรายการในเมนูของ Gpredict กดได้ (ดูหัวข้อ "รายการของ Gpredict ที่กดไม่ได้" ข้างล่าง)
 ป้าย ชื่อหน้าต่าง tooltip และข้อความตรงกับ [รายการอ้างอิงส่วน Data & Preferences](docs/2026-11-12-gpredict-reference-data.md)
-ข้อที่ตั้งใจให้ต่างจาก Gpredict ทั้งหมดอยู่ใน [spec งานย่อยที่ 4](docs/2026-11-12-gpredict-web-data-design.md) หัวข้อ 11
+ข้อที่ตั้งใจให้ต่างจาก Gpredict มีครบในหัวข้อ "ข้อตกลงที่เปลี่ยนพฤติกรรม → งานย่อยที่ 4" ข้างล่าง
+ส่วน [spec งานย่อยที่ 4](docs/2026-11-12-gpredict-web-data-design.md) หัวข้อ 11 เก็บข้อบกพร่องของ Gpredict ที่แก้และข้อจำกัดของ browser
 
 ### วิธีใช้: Preferences
 
@@ -165,6 +166,8 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
 
 - **OK** ตรวจทุกส่วนก่อนด้วย `?dry_run=true` (ค่า Preferences, สถานี, วิทยุและ rotator) ผ่านทั้งหมดจึงเขียนจริงตามลำดับของ Gpredict
   (General, Modules, Interfaces, Predict) ส่วนใดผิด ไม่มีส่วนไหนถูกบันทึก หน้าต่างไม่ปิดและบอกช่องที่ผิดเป็นภาษาไทย (ของเรา) Cancel ทิ้งทุกการแก้
+  - การเขียนที่ล้มหลังจากส่วนก่อนหน้าเขียนไปแล้ว (เช่น server หยุดระหว่างเขียน) ข้อความต่อท้ายว่า "บันทึกส่วนเหล่านี้ไปแล้ว กด Cancel ก็ไม่ย้อนกลับ: …"
+    พร้อมชื่อส่วน เช่น "General → Number Formats, General → Ground Stations" (ของเรา)
 - **General → Number Formats**: "Show local time instead of UTC.", "Time format:" (รหัสของ C `strftime` ไม่เกิน 50 ตัวอักษร ตัวอย่างข้างช่องอัปเดตทุก 1 วินาที),
   "Use N/S/E/W for geographical coordinates." และ "Use Imperial units instead of Metric."
   - มีผลทันทีหลัง OK กับทุกที่ตามตารางของ Gpredict: นาฬิกาหัว module, List, Single sat (`mi`, `mi/sec`), Pass details, Upcoming passes,
@@ -178,6 +181,7 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
   - ทุกการแก้อยู่ในหน้าต่างจนกด OK ของ Preferences แล้วส่งทั้งชุดด้วย `PUT /api/qth/batch` ครั้งเดียว ลบจนไม่เหลือสถานีไม่ได้
   - ลบสถานีที่ module ใช้อยู่ได้เหมือน Gpredict: module นั้นเปลี่ยนเป็น "** DEFAULT **" ทันทีพร้อม log ระดับ ERROR
     module ที่เปิดอยู่ยังใช้สถานีเดิมจนกว่าจะถูกสร้างใหม่ (ปิดแล้วเปิดใหม่, Configure → OK หรือเปิด server ใหม่) module ที่ใช้ "** DEFAULT **" ตามสถานีตั้งต้นใหม่เมื่อถูกสร้างใหม่
+    หน้าที่แสดง module นั้นอ่านค่าของ module ใหม่เอง (เหตุการณ์ `module_config_changed` ของ `/ws/app`) การบันทึก view หลังจากนั้นจึงไม่ล้ม
 - **General → TLE Update**: "Check the age of TLE data:" (Never, Monthly, Weekly ตั้งต้น, Daily), "If TLEs are too old:" ("Notify me" ตั้งต้น,
   "Perform automatic update in the background"), "Proxy server:", "TLE sources:" (ดับเบิลคลิกเพื่อแก้, ปุ่ม Add TLE source และ Delete TLE source),
   "Add new satellites to local database" และ Reset (ดูหัวข้อ "วิธีใช้: TLE" ข้างล่าง)
@@ -194,11 +198,19 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
 - Module properties (ปุ่ม Properties ของ Create new module และ Edit module) แสดงค่าที่ใช้จริง
   - แก้หน้าใดแล้ว OK = ตรึง (pin) ทุกค่าของหน้านั้นไว้ใน module (ไม่ตามค่ารวมอีก)
   - Reset ("Reset module settings to the global values.") แล้ว OK = เลิกตรึง หน้านั้นกลับไปสืบทอดค่ารวม
-- ค่ารวมที่เปลี่ยนมีผลกับ module ที่เปิดอยู่เมื่อ module ถูกสร้างใหม่ (ปิดแล้วเปิดใหม่, Configure → OK, เปิด server ใหม่) เหมือน Gpredict
-  ข้อยกเว้นของหน้าเว็บอยู่ในหัวข้อ "ข้อตกลงที่เปลี่ยนพฤติกรรม → งานย่อยที่ 4"
+- ค่ารวมที่เปลี่ยนมีผลกับ module ที่เปิดอยู่เมื่อ module ถูกสร้างใหม่ (เปิด, Configure → OK, เปิด server ใหม่) เหมือน Gpredict ทั้งฝั่ง server และหน้าเว็บ
+  - module ที่เปิดอยู่จำค่ารวมของตอนที่ถูกสร้าง การบันทึก view (Ground Track, การเรียง List ฯลฯ), Autotrack, การแก้สถานี และ Update TLE (รวมที่ทำเองทุก 10 นาที)
+    ไม่ดึงค่ารวมใหม่เข้ามา รอบ tick และจำนวนรอบของ Ground Track ก็ใช้ค่าที่จำไว้
+  - `GET /api/modules/{name}` ของ module ที่เปิดอยู่ตอบค่าที่ module ทำงานอยู่ (ช่อง `window` มาจากไฟล์) สลับแท็บ กด F5 หรือเปิดอีก browser จึงยังเห็นค่าเดิม
+  - **Configure → OK สร้าง module ใหม่ทุกครั้ง** แม้ไม่ได้แก้อะไร (`PUT /api/modules/{name}?recreate=true`): ได้ค่ารวมและสถานีของตอนนั้น
+    (module "** DEFAULT **" ได้สถานีตั้งต้นปัจจุบัน) แต่นาฬิกาของ module ไม่ถูก reset (ดูหัวข้อ "ข้อตกลงที่เปลี่ยนพฤติกรรม → งานย่อยที่ 4")
+  - Edit module และ Module properties แสดงค่ารวมปัจจุบัน (`GET /api/modules/{name}?fresh=1`) จึงเห็นและตรึงค่าที่ module จะได้หลัง OK
+  - Number Formats มีผลทันทีกับทุก module (ข้อยกเว้นของ spec หัวข้อ 9.1)
 - **ย้ายไฟล์ module แบบเดิม (งานย่อย 1–3)**: เปิด server ครั้งแรกหลังอัปเกรด ไฟล์ module แบบเต็มถูกย้ายเป็นแบบเก็บเฉพาะค่าที่ตั้งเอง
   - ค่าที่เท่ากับค่ารวมตอนนั้นถูกลบออกเพื่อให้สืบทอด ค่าที่ต่างคงไว้ ค่าที่ใช้จริงจึงไม่เปลี่ยน (ตรวจซ้ำก่อนเขียน ไม่เท่าเดิมไม่ย้าย)
   - สำเนาเดิมทุกไบต์อยู่ที่ `data/modules/_backup_v1/<ชื่อ>.json` ทำครั้งเดียว: เปิดครั้งถัดไปไม่ย้ายซ้ำและไม่ทับสำเนา ไฟล์ที่อ่านไม่ได้ไม่ถูกแตะ (log WARNING)
+  - ไฟล์ module แบบเดิมหรือที่อ่านไม่ได้ซึ่งถูกเขียนทับภายหลัง (บันทึกจากหน้าเว็บ, ตำแหน่งหน้าต่างแยก, Clone, สถานีที่ module ใช้ถูกลบ)
+    ได้สำเนาทุกไบต์ที่ `_backup_v1/` ก่อนเขียนเช่นกัน ถ้ามีสำเนาชื่อเดียวกันที่ต่างอยู่แล้ว สำเนาใหม่ไปที่ `<ชื่อ>.<n>.json` ไม่ทับของเดิม
   - ถ้าจะกลับไปใช้โปรแกรมรุ่นงานย่อยที่ 1–3 ให้คัดลอกไฟล์ใน `_backup_v1/` กลับไปที่ `modules/`
 
 ### วิธีใช้: ภาพและสีของ Map และ Polar
@@ -206,6 +218,7 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
 - **หน้า Map View** (ใน Module properties และใน Preferences → Modules): รูปย่อ 100 × 50 กับปุ่ม "Select map" ที่เปิด "Select Map"
   - รายการภาพ 15 ภาพของ Gpredict และภาพที่อัปโหลด ตัวอย่าง 160 × 80 พร้อม "<w>x<h> pixels" และขนาดไฟล์ ปุ่ม Cancel และ Open
   - ปุ่มอัปโหลด (ของเรา: browser เลือกไฟล์บนดิสก์ของ server ไม่ได้) รับ jpg และ png ไม่เกิน 10 MB เก็บที่ `data/maps/`
+    ภาพที่อัปโหลดซ้ำชื่อเดิมแสดงภาพใหม่ทันที (server ส่งภาพที่อัปโหลดด้วย `Cache-Control: no-cache`)
   - Colours: 11 ปุ่มสี (Ground Station, Grid, Tick Labels, Satellite, Selected Sat., Ground Track, Footprint, Info Text FG, Info Text BG,
     Solar terminator, Global shadow) แต่ละปุ่มเปิดแผงที่มีตัวเลือกสีของ browser และ slider ความทึบ 0–255 (ของเรา) เก็บเป็น `0xRRGGBBAA` แบบ Gpredict และ slider "Shadow:"
 - **หน้า Polar View**: 7 ปุ่มสี (Background, Axes/Circles, Tick Labels, Satellite, Selected Sat., Sky Track, Info Text) และ "Show the sky tracks automatically"
@@ -215,15 +228,19 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
   repo ของ Gpredict ไม่มีไฟล์ license ของภาพ (`COPYING` คือ GPL v2 ของโปรแกรมและไม่ได้บอกว่าครอบคลุมภาพ)
   Gpredict เขียนแค่ว่า "Most of the maps originate from NASA Visible Earth" โดยไม่บอกว่าภาพไหนไม่ใช่
   **สองภาพไม่มีหลักฐานที่มาใน repo**: `earth_800.png` (มีแค่ comment "Created with The GIMP") และ `nasa-topo_800.png` (ไม่มี metadata)
-  ภาพชุด `nasa-bmng-*` และ `nasa-topo_*` ที่มาจาก NASA ใช้ได้ตามเงื่อนไขทั่วไปของ NASA (ยังไม่ได้ตรวจกับหน้าเงื่อนไขของ NASA ฉบับปัจจุบัน)
+  เงื่อนไขทั่วไปของ NASA (ไม่ได้มาจาก repo ของ Gpredict และยังไม่ได้ตรวจกับหน้าเงื่อนไขของ NASA ฉบับปัจจุบัน): เนื้อหาของ NASA โดยทั่วไปไม่มีลิขสิทธิ์
+  และใช้ซ้ำได้โดยให้เครดิต ภาพชุด `nasa-bmng-*` และ `nasa-topo_*` ที่มาจาก NASA จึงใช้ได้ตามนั้น แต่ข้อความของ Gpredict เองไม่ได้รับรองว่าครบทุกภาพ
 
 ### วิธีใช้: TLE
 
 - **Edit → Update TLE data from network** ดึงทุก URL ใน "TLE sources:" ตามลำดับ ผ่าน "Proxy server:" ถ้าตั้งไว้
   - URL แบบ `https://celestrak.org/NORAD/elements/gp.php?GROUP=<กลุ่ม>&…`: ดึง OMM ของกลุ่มนั้นผ่าน OMM cache ที่ใช้ร่วมกับ GNSS Studio
     (1 ครั้งต่อกลุ่มต่อ 2 ชั่วโมง นับรวมสองโปรแกรม) ช่อง `FORMAT` ไม่มีผล (`FORMAT=tlet` ของ gps-ops ในรายการตั้งต้นจึงไม่ทำให้พัง)
+    ชื่อ host `celestrak.com` และ URL แบบเก่า `/NORAD/elements/<กลุ่ม>.txt` นับเป็นกลุ่มเดียวกันนี้ จึงไม่ข้ามกติกาต่อกลุ่ม
+    URL อื่นของ CelesTrak ที่ไม่บอกกลุ่ม (เช่น `CATNR=`) ใช้กติกาต่อ URL แบบข้างล่าง
   - URL อื่น (ตั้งต้นคือ AMSAT `https://www.amsat.org/amsat/ftp/keps/current/nasabare.txt`): ดึงข้อความ TLE 2 หรือ 3 บรรทัด
     ไม่เกิน 1 ครั้งต่อ URL ต่อ 2 ชั่วโมง เก็บที่ `data/tle/_cache/` (เวลาขอใน `state.json`) กลุ่มในหน้าเลือกดาวคือชื่อไฟล์ใน URL ไม่รวมนามสกุล เช่น `nasabare`
+    เวลาขอถูกบันทึกทันทีที่ได้คำตอบ เขียนไฟล์ cache ไม่ได้: คำเตือน `ORBIT_DOWNLOAD_FAILED` และใช้ไฟล์ cache เดิม (ถ้ามี) โดยยังนับว่าขอไปแล้ว
   - ส่งเฉพาะ User-Agent `gpredict-web` timeout 30 วินาที ต่อไม่ได้ ได้คำตอบที่ใช้ไม่ได้ หรือ proxy ผิด: ใช้ไฟล์เดิม TLE เดิมไม่หาย และบอกเหตุเป็นภาษาไทยในหน้าต่าง
   - TLE ของทุก source รวมกันตามกติกาของ Gpredict: epoch ใหม่กว่า = updated, epoch เท่ากันแต่สถานะท้ายชื่อ (`[+]`, `[-]`, `[P]`, `[B]`, `[S]`, `[X]`)
     เปลี่ยน = updated ไม่งั้น skipped, ไม่มีใน source ใดเลย = missing, ดวงที่ยังไม่มี = new (เมื่อติ๊ก "Add new satellites to local database")
@@ -231,25 +248,29 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
   - หน้าต่าง "TLE Update" แสดง "Satellites updated:", "Satellites skipped:", "Missing Satellites:" และ "New Satellites:" แล้วคำเตือนของแต่ละ source เป็นภาษาไทย (ของเรา)
 - **Edit → Update TLE data from local files**: กล่อง "Update TLE from files" ปุ่มข้าง "Select TLE directory:" เปิดตัวเลือกโฟลเดอร์ของ browser
   OK ส่งเฉพาะไฟล์ระดับบนสุดของโฟลเดอร์ที่ชื่อลงท้าย `.tle` หรือ `.txt` (ไม่สนตัวพิมพ์ ไม่เกิน 200 ไฟล์ รวมไม่เกิน 20 MB) แล้วแสดงกล่อง "TLE Update" แบบเดียวกัน
+  (server ปฏิเสธคำขอที่ body เกิน 40 MB ก่อนอ่าน: ข้อความ 20 MB เมื่อเข้ารหัสเป็น JSON ยาวขึ้นได้)
   - TLE 2 และ 3 บรรทัดปนกันได้ ตรวจ checksum และเลข NORAD ของสองบรรทัด ดาวจากชุด 2 บรรทัดได้ชื่อ `<ปี>-<รหัสปล่อย>` เช่น `1999-999A`
   - กลุ่มคือชื่อไฟล์ก่อนจุดแรก ไฟล์ที่ชื่อตรงกับกลุ่มที่มีอยู่แทนสมาชิกของกลุ่มนั้น (เหมือนไฟล์ `.cat` ของ Gpredict) ไฟล์ที่อ่านไม่ได้ได้คำเตือน `TLE_FILE_INVALID`
   - browser ไม่บอก path ของโฟลเดอร์ จึงจำโฟลเดอร์ล่าสุดไม่ได้
 - **ตรวจอายุ TLE อัตโนมัติ**: server ตรวจทุก 10 นาที ครั้งแรก 10 นาทีหลังเปิด อายุนับจาก Update ครั้งล่าสุดที่มีดวง updated หรือดวงใหม่ (`TLE/LAST_UPDATE`)
   ข้อมูลที่ยังไม่เคย Update หลังติดตั้งงานย่อยที่ 4 จึงถือว่าเก่าเสมอ (ยกเว้น Never) เหมือนติดตั้ง Gpredict ใหม่
   - "Notify me": ทุก browser ที่เปิดอยู่ขึ้นกล่อง "Your TLE files are getting out of date. … **Edit -> Update TLE** in the menubar." ปุ่ม OK
-    ครั้งเดียวต่อการเปิด server (ยังไม่มี browser เปิดอยู่: กล่องขึ้นใน browser แรกที่เปิด)
+    ครั้งเดียวต่อการเปิด server (ยังไม่มี browser เปิดอยู่: กล่องขึ้นใน browser แรกที่เปิด) หน้าต่างแยกของ module ก็แสดงกล่องนี้
+    จึงไม่หายเมื่อเปิดอยู่แค่หน้าต่างแยก (ถ้าหน้าหลักเปิดอยู่ด้วย กล่องขึ้นทั้งสองหน้า)
   - "Perform automatic update in the background": เรียก Update TLE data from network เอง ติดกติกา 2 ชั่วโมงต่อ source จึงไม่ส่งคำขอถี่แม้ตรวจทุก 10 นาที
 
 ### วิธีใช้: Log และ Log browser
 
 - server เขียน log ของทุกส่วน (งานย่อย 1–4) รูปแบบของ Gpredict ลง `data/logs/gpredict.log` บรรทัดละ `YYYY/MM/DD HH:MM:SS|<ระดับ 1–4>|<function>: <ข้อความ>`
   (เวลาท้องถิ่น ระดับ 1 Error, 2 Warning, 3 Info, 4 Debug) ข้อความของ Gpredict เป็นภาษาอังกฤษตามต้นฉบับ เหตุการณ์ที่ Gpredict ไม่มีเป็นภาษาไทย
-  - `python -m gpredict_web` พิมพ์ path ของไฟล์นี้ใต้บรรทัดที่อยู่ของหน้าเว็บ เพราะระหว่าง server รัน คำเตือนและข้อผิดพลาดไปที่ไฟล์นี้ ไม่แสดงที่ terminal
+  - `python -m gpredict_web` พิมพ์ path ของไฟล์นี้ใต้บรรทัดที่อยู่ของหน้าเว็บ เพราะระหว่าง server รัน คำเตือนและข้อผิดพลาดตามปกติไปที่ไฟล์นี้ ไม่แสดงที่ terminal
+    (ถ้าเปิดไฟล์ไม่ได้ เช่นโฟลเดอร์เขียนไม่ได้ จะเขียนที่ terminal แทนในรูปแบบเดียวกัน)
   - เปิด server: ลบ `gpredict.log` ของรอบก่อน แล้วขึ้นต้นด้วย "Session started" ปิด server: "Session ended" (ระดับ Info) แล้วหมุนไฟล์และลบไฟล์เก่าตาม
     "Delete log files older than:" (Always delete = ไม่เก็บไฟล์ที่หมุนแล้ว `gpredict.log` อยู่จนเปิดครั้งถัดไป)
   - หน้าเว็บส่งข้อความของตัวเองผ่าน `POST /api/log` เช่น "PRINT not implemented" ของ Print ใน Upcoming passes และไฟล์แผนที่ที่หายไป
 - **File → Log browser** (Ctrl+L): หน้าต่าง "Log Browser: <path ของไฟล์>" ตาราง Time, Level, Message และกรอบ " Summary " (Errors, Warnings, Info, Debug, Total)
   - อ่าน log ของรอบนี้ครั้งเดียวตอนเปิด (บรรทัดที่เขียนทีหลังไม่ขึ้นจนกว่าจะเปิดหน้าต่างใหม่ เหมือน Gpredict)
+    มีไฟล์แต่อ่านไม่ได้: หน้าต่างบอกเหตุเป็นภาษาไทย (`LOG_UNREADABLE`) ไม่ใช่ตารางว่าง
   - Open เลือกไฟล์ log บนเครื่องด้วยตัวเลือกไฟล์ของ browser (ไม่เกิน 10 MB ชื่อหน้าต่างเป็นชื่อไฟล์เพราะ browser ไม่บอก path) Clear ล้างตารางและตัวนับทั้งหมด Close ปิด
 
 ### วิธีใช้: Satellite Info
@@ -269,8 +290,20 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
   - ขนาด: ขนาดที่จำไว้ ไม่งั้นขนาดตอนอยู่ในแท็บ ตำแหน่งที่จำไว้ใช้เมื่อเปิด "Restore position of module windows" (Preferences → Modules → Layout)
   - หน้าต่างแยกตรวจขนาดและตำแหน่งของตัวเองทุก 1 วินาทีแล้วบันทึกลง module (ข้ามค่าที่ออกนอกจอ เหมือน Gpredict)
   - browser บล็อก popup: แท็บอยู่ที่เดิมและมีข้อความภาษาไทยบอกให้อนุญาต popup ของ `127.0.0.1:8740` (ของเรา)
-  - ปิดหน้าต่างแยกด้วยปุ่มปิดของ browser = Close module, F5 ในหน้าต่างแยก module ยังเปิดอยู่
+  - ดาวที่เลือกและ Autotrack ของแท็บไปกับ module: ส่งในที่อยู่ของหน้าต่าง (`&sel=<NORAD>&autotrack=1`) แล้วหน้าต่างลบออกจากที่อยู่หลังอ่าน
+    หน้าหลักหยุด Autotrack ของ module นั้นทันที (หน้าต่างทำต่อ) Time Controller และ Sky at a glance ของแท็บนั้นปิดไปจากหน้าหลักโดยไม่ reset นาฬิกา
+    (Gpredict ย้ายหน้าต่าง Time Controller ไปกับ module ที่นี่เปิดใหม่ได้จาก Module menu ของหน้าต่างแยก)
+  - ปิดหน้าต่างแยกด้วยปุ่มปิดของ browser = Close module
+  - F5 ในหน้าต่างแยก: module ยังเปิดอยู่ แต่ Radio Control และ Antenna Control ของ module นั้นถูกปิด (ปลด Engage) เพราะหน้าเดิมส่ง Close module
+    แล้วหน้าใหม่เปิด module อีกครั้ง (การตัดสินข้อ 9 ของแผนงานย่อยที่ 4 คงไว้ตามเดิม) ดาวที่เลือกและ Autotrack เริ่มใหม่ (ไม่มี/ปิด)
+    เปิด module อีกครั้งไม่ได้: แถบข้อความของหน้าต่างบอกเหตุเป็นภาษาไทย
 - **Attach module** (Module menu ของหน้าต่างแยก): module กลับเป็นแท็บสุดท้ายของหน้าหลัก (ไม่ถูกเลือก) และหน้าต่างแยกปิดตัวเอง
+  - เมื่อ server ตอบแล้ว หน้าต่างส่งดาวที่เลือกและ Autotrack กลับให้หน้าหลักทาง BroadcastChannel `gpredict-web-handover` (ของเรา) หน้าหลักรับเมื่อ module เป็นแท็บแล้ว
+  - Radio Control และ Antenna Control ที่เปิดจากหน้าต่างแยกทำงานต่อโดยไม่ถูกปลด Engage หน้าต่างควบคุมขึ้นที่หน้าหลักเอง
+    (หน้าหลักอ่านรายการ controller ใหม่ทุกครั้งที่รายการ module เปลี่ยนและทุกครั้งที่ต่อ `/ws/app`)
+- **Detach และ Attach ไม่ส่งเป้าหมายให้ controller**: ดาวที่ส่งต่อคือดาวที่ controller ตามอยู่แล้ว การส่งต่อเองจึงไม่ส่ง `POST …/target` ไม่ส่ง S หรือ q
+  และไม่ปิด controller ไม่มีหน้าคู่ (หน้าต่างจากแถบคืนหน้าต่าง, F5 ในหน้าต่างแยก, ไม่มีหน้าหลักเปิดอยู่ตอน Attach): module เริ่มแบบไม่มีดาวที่เลือกและ Autotrack ปิดเหมือนเดิม
+- **Clone** ของ module ที่เป็นหน้าต่างแยก: module ใหม่เปิดเป็นแท็บ (ขนาดและตำแหน่งที่จำไว้ติดไปด้วย)
 - **Full screen**: หน้าที่ module อยู่เต็มจอ (Fullscreen API: เมนูบาร์และแถบแท็บซ่อน) Gpredict สร้างหน้าต่างใหม่แล้วขยาย แต่ browser ขยายหน้าต่างที่เพิ่งเปิดไม่ได้
   - Exit full screen ทำตาม Gpredict คือออกจากเต็มจอแล้วเป็น "หน้าต่าง": module ในแท็บถูก Detach ทันที ถ้าออกด้วย Esc ของ browser module อยู่ที่เดิม
   - Attach module ระหว่างเต็มจอ: ออกจากเต็มจอแล้วอยู่ในแท็บเดิม ไม่บันทึกสถานะเต็มจอ (เหมือน Gpredict)
@@ -286,25 +319,31 @@ Edit → Preferences เปิดหน้าต่าง "GPREDICT Preferences 
 | PUT | `/api/qth/batch` | `{"stations": [...], "default": "<ชื่อ>"}` แทนสถานีทั้งชุด (Preferences → Ground Stations) สถานีที่ module ใช้อยู่ถูกลบได้: module นั้นเป็น "** DEFAULT **" |
 | PUT | `/api/prefs`, `/api/qth/batch`, `/api/hwconf` + `?dry_run=true` | ตรวจและตอบรูปเดียวกับของจริงแต่ไม่เขียนอะไร (OK ของ Preferences ตรวจทุกส่วนก่อน) |
 | GET | `/api/tle/groups` | กลุ่มของ TLE sources ตามลำดับพร้อม `last_request`, `last_success` แล้วกลุ่มอื่นในดัชนีดาว |
-| POST | `/api/tle/local` | `{"files": [{"name", "text"}]}` (หน้าเว็บอ่านไฟล์เป็นข้อความ ไม่ใช้ multipart) ตอบตัวนับแบบ `POST /api/tle/update` |
-| GET | `/api/logs/current` | ข้อความของ `gpredict.log` ของรอบนี้ (ไม่มีไฟล์ = ข้อความว่าง) |
+| POST | `/api/tle/local` | `{"files": [{"name", "text"}]}` (หน้าเว็บอ่านไฟล์เป็นข้อความ ไม่ใช้ multipart: การตัดสินข้อ 2 ของแผน) ตอบตัวนับแบบ `POST /api/tle/update` body เกิน 40 MB ถูกปฏิเสธก่อนอ่าน |
+| GET | `/api/logs/current` | ข้อความของ `gpredict.log` ของรอบนี้ (ไม่มีไฟล์ = ข้อความว่าง, มีแต่อ่านไม่ได้ = 500 `LOG_UNREADABLE`) |
 | POST | `/api/log` | `{"level": 1–4, "function", "text"}` ข้อความจากหน้าเว็บ (text ไม่เกิน 500 ตัวอักษร) ตอบ 204 |
 | GET | `/api/maps` | `{"maps": [...], "default"}` ภาพ 15 ภาพของ Gpredict และภาพที่อัปโหลด พร้อมขนาดภาพและขนาดไฟล์ |
 | POST | `/api/maps?name=<ไฟล์>` | body ดิบ `Content-Type: image/jpeg` หรือ `image/png` ไม่เกิน 10 MB เก็บที่ `data/maps/` |
-| GET | `/api/maps/{file}` | ไฟล์ภาพ |
+| GET | `/api/maps/{file}` | ไฟล์ภาพ (ภาพที่อัปโหลดส่งด้วย `Cache-Control: no-cache`) |
 | GET | `/api/locations` | รายชื่อเมืองและสถานีอากาศ `[ทวีป, ประเทศ, เมือง, lat, lon, alt_m, ICAO]` |
 | PUT | `/api/modules/{name}/window` | `{state, x, y, width, height}` ของหน้าต่างแยก (state 1 = Detach, 0 = Attach: เป็นแท็บสุดท้าย) |
-| PUT | `/api/modules/{name}` | เพิ่ม `pin` และ `unpin` (รายการ path เช่น `layout_code`, `map.colours.satellite`) GET และคำตอบเป็นค่าที่ใช้จริงหลังสืบทอด |
+| PUT | `/api/modules/{name}` | เพิ่ม `pin` และ `unpin` (รายการ path เช่น `layout_code`, `map.colours.satellite`) GET และคำตอบเป็นค่าที่ใช้จริงหลังสืบทอด: module ที่เปิดอยู่ = ค่าที่ module ทำงานอยู่ (ช่อง `window` จากไฟล์), module ที่ปิด = ไฟล์ + ค่ารวมปัจจุบัน |
+| PUT | `/api/modules/{name}?recreate=true` | Configure → OK: บันทึกแล้วสร้าง module ที่เปิดอยู่ใหม่ด้วยค่ารวมและสถานีของตอนนั้น (นาฬิกาไม่ถูก reset) module ที่ปิดอยู่ = บันทึกธรรมดา Radio Control หรือ Antenna Control เปิดอยู่และสถานีหรือดาวจะเปลี่ยน: 409 `CONTROLLER_ACTIVE` ไม่เขียนอะไร |
+| GET | `/api/modules/{name}?fresh=1` | ไฟล์ + ค่ารวมปัจจุบันแม้ module เปิดอยู่ (Edit module ใช้) |
 | GET | `/api/satellites/{norad}` | เพิ่ม `status` และ `orbit_info` (ค่าของแท็บ Orbit Info) |
 | GET | `/api/modules` | เพิ่ม `windows`: module ที่เปิดอยู่และเป็นหน้าต่างแยก |
-| WS | `/ws/app` | เหตุการณ์ระดับโปรแกรมถึงทุก browser: `prefs_changed`, `modules_changed`, `tle_old` (ตรวจ Host และ Origin เหมือน `/ws/modules`) |
+| WS | `/ws/app` | เหตุการณ์ระดับโปรแกรมถึงทุก browser: `prefs_changed` (เฉพาะเมื่อเขียนจริง), `modules_changed`, `tle_old` และ `module_config_changed` (ตรวจ Host และ Origin เหมือน `/ws/modules`) |
+
+`module_config_changed` คือ `{"type": "module_config_changed", "modules": [...]}`: ค่าที่ module ที่เปิดอยู่เหล่านั้นทำงานอยู่เปลี่ยนจากนอกหน้าที่แสดงมัน
+(สถานีที่ใช้ถูกลบจนเป็น "** DEFAULT **", แก้สถานีที่ใช้, Configure → OK, การบันทึกของหน้าอื่นที่เปลี่ยนค่า, Update TLE ที่ทำให้ค่าเปลี่ยน)
+หน้าที่แสดง module นั้นอ่าน `GET /api/modules/{name}` ใหม่ และอ่านทุก module ที่แสดงใหม่ทุกครั้งที่ต่อ `/ws/app` (เหตุการณ์ระหว่างหลุดไม่ถูกส่งซ้ำ)
 
 `GET /api/meta` เพิ่ม `log_dir` (path จริงของโฟลเดอร์ log), `module_keys` (path ของค่าใน module → key ของค่ารวม) และ `global_layout_extra`
 `PUT /api/prefs` รับ key ของ Gpredict ทั้งหมดของกลุ่ม General และ Modules (`GLOBAL/*`, `TLE/*`, `LOG/*`, `MODULES/*`)
 
 ## รายการของ Gpredict ที่กดไม่ได้
 
-ไม่มีแล้วตั้งแต่งานย่อยที่ 4 ทุกรายการของเมนูและทุกกลุ่มของ Preferences กดได้ (`web/src/later.test.ts` ตรวจทุกเมนูทุกสถานะ)
+ไม่มีแล้วตั้งแต่งานย่อยที่ 4 ทุกรายการของเมนูและทุกกลุ่มของ Preferences กดได้ (`web/src/menuItems.test.ts` ตรวจทุกเมนูทุกสถานะ)
 ที่ยังกดไม่ได้คือที่ Gpredict เองปิดตามสถานะ เช่น "Sky track" ของดาวค้างฟ้า (GEO), OK ของ "Edit ground station data" ก่อนมีชื่อ, "Layout code:" เมื่อไม่ได้เลือก Custom
 
 Help ไม่มี News (ของเรา) และ "About Gpredict Web" เป็นของเรา
@@ -350,7 +389,8 @@ api-interop/gpredict-web/.venv/bin/pip install -r api-interop/gpredict-web/serve
 ```
 
 แล้วเปิด <http://127.0.0.1:8740> (ใช้ `localhost` หรือ `[::1]` แทนได้)
-server พิมพ์ที่อยู่นี้และ path ของ `gpredict.log` ตอนเริ่ม ระหว่างรันคำเตือนและข้อผิดพลาดของ server อยู่ในไฟล์นั้น (File → Log browser) ไม่แสดงที่ terminal
+server พิมพ์ที่อยู่นี้และ path ของ `gpredict.log` ตอนเริ่ม ระหว่างรันคำเตือนและข้อผิดพลาดของ server ตามปกติอยู่ในไฟล์นั้น (File → Log browser) ไม่แสดงที่ terminal
+(ถ้าเปิดไฟล์ไม่ได้จะแสดงที่ terminal แทน)
 
 process เดียวเสิร์ฟทั้ง API (`/api`), WebSocket (`/ws`) และหน้าเว็บ (`web/dist`) หยุดได้ด้วย File → Quit ในหน้าเว็บ หรือ Ctrl+C
 
@@ -534,9 +574,10 @@ action ของ controller ที่ไม่ได้เปิดอยู่ 
 | รหัส | HTTP / ที่แสดง | ความหมาย |
 |---|---|---|
 | `QTH_LAST` | 422, `object` = `stations` | `PUT /api/qth/batch` ที่ไม่เหลือสถานีเลย (Preferences → Ground Stations ลบแถวสุดท้ายไม่ได้อยู่แล้ว: ข้อความ "Can not delete ground station!…" ของ Gpredict) |
-| `TLE_FILE_INVALID` | 422, `object` = `files` / warning ใน `messages`, `object` = ชื่อไฟล์ | `POST /api/tle/local` ที่ body ผิดรูป เกิน 200 ไฟล์หรือรวมเกิน 20 MB (422) หรือไฟล์ที่ไม่มี TLE ใช้ได้เลย (warning: ข้ามไฟล์นั้น ไฟล์อื่นยังถูกอ่าน) |
+| `TLE_FILE_INVALID` | 422, `object` = `files` / warning ใน `messages`, `object` = ชื่อไฟล์ | `POST /api/tle/local` ที่ body ผิดรูป เกิน 200 ไฟล์ รวมเกิน 20 MB หรือ body เกิน 40 MB (ปฏิเสธก่อนอ่าน) (422) หรือไฟล์ที่ไม่มี TLE ใช้ได้เลย (warning: ข้ามไฟล์นั้น ไฟล์อื่นยังถูกอ่าน) |
 | `MAP_INVALID` | 422, `object` = `name`, `Content-Type` หรือ `body` | `POST /api/maps` ที่ชื่อไฟล์ผิดกติกาหรือซ้ำกับภาพของ Gpredict, นามสกุลไม่ใช่ jpg/jpeg/png, `Content-Type` ไม่ตรงนามสกุล, เนื้อไฟล์ไม่ใช่ภาพชนิดนั้น หรือเกิน 10 MB |
 | `LOG_INVALID` | 422, `object` = ชื่อช่อง | `POST /api/log` ที่ `level` ไม่ใช่จำนวนเต็ม 1–4, `function` ไม่ใช่ชื่อแบบตัวระบุ (ไม่เกิน 64 ตัว), `text` ว่างหรือยาวเกิน 500 ตัวอักษร หรือมีช่องอื่น |
+| `LOG_UNREADABLE` | 500, `object` = `gpredict.log` | `GET /api/logs/current` เมื่อมี `gpredict.log` แต่อ่านไม่ได้ (สิทธิ์, เป็นโฟลเดอร์ ฯลฯ) ข้อความบอก path และสาเหตุ ไม่ตอบข้อความว่างที่ดูเหมือนไม่มี log |
 
 รหัสเดิมที่ใช้กับงานใหม่
 
@@ -545,8 +586,11 @@ action ของ controller ที่ไม่ได้เปิดอยู่ 
 - `PREFS_INVALID` 422 รับ key ใหม่ทั้งหมดของ General และ Modules (เช่น Time format เกิน 50 ตัว, URL ที่ไม่ใช่ http/https, layout code ผิด, สีที่ไม่ใช่ `0xRRGGBBAA`)
   `PUT /api/prefs?dry_run=true` ตอบรหัสเดียวกันเมื่อผิด และตอบค่าที่จะใช้หลังเขียนเมื่อผ่าน โดยไม่เขียนไฟล์ (เช่นเดียวกับ `HWCONF_INVALID` ของ `PUT /api/hwconf?dry_run=true` และ `QTH_*` ของ batch)
 - `MODULE_INVALID` 422: `pin`/`unpin` ที่ไม่ใช่ path ใน `module_keys` ของ `GET /api/meta`, ค่าผิดของ `PUT /api/modules/{name}/window` (ช่องที่ไม่รู้จัก, state ไม่ใช่ 0/1)
+- `CONTROLLER_ACTIVE` 409 ของ `PUT /api/modules/{name}?recreate=true`: Radio Control หรือ Antenna Control ของ module เปิดอยู่ และการสร้างใหม่จะเปลี่ยนสถานี
+  (`object` = `qth` เทียบด้วยชื่อสถานี: พิกัดใหม่ของสถานีเดิมถึง module ที่เปิดอยู่ทันทีอยู่แล้ว) หรือรายชื่อดาว (`object` = `satellites`) ไม่เขียนอะไรและ module ไม่เปลี่ยน
+- `QTH_INVALID` 422 ของ `?recreate=true`: module "** DEFAULT **" ที่ยังไม่มีสถานีตั้งต้น ตรวจก่อนเขียนจึงไม่มีอะไรถูกบันทึก
 - `ORBIT_RATE_LIMITED_LOCAL` (info) และ `ORBIT_DOWNLOAD_FAILED` (warning) ใน `messages` ของ `POST /api/tle/update` ใช้กับ source ข้อความ TLE ด้วย (`object` = URL):
-  ยังไม่ครบ 2 ชั่วโมงจึงใช้ไฟล์เดิม หรือดึงไม่สำเร็จพร้อมสาเหตุ (ถ้ายังไม่มีไฟล์ใน cache source นั้นถูกข้าม)
+  ยังไม่ครบ 2 ชั่วโมงจึงใช้ไฟล์เดิม หรือดึงไม่สำเร็จหรือเขียนไฟล์ cache ไม่ได้พร้อมสาเหตุ (ถ้ายังไม่มีไฟล์ใน cache source นั้นถูกข้าม)
 - `NOT_FOUND` 404: `GET /api/maps/{file}` ที่ไม่มีภาพนั้น (หน้าเว็บใช้ภาพตั้งต้นแทนและส่ง log ERROR)
 
 ## ข้อตกลงที่เปลี่ยนพฤติกรรม
@@ -616,23 +660,33 @@ action ของ controller ที่ไม่ได้เปิดอยู่ 
   (โฟลเดอร์ TLE ล่าสุดจึงจำไม่ได้ ชื่อหน้าต่าง Log browser ของไฟล์ที่เปิดเป็นชื่อไฟล์ไม่ใช่ path)
 - Full screen เต็มจอในหน้าต่างเดิม (Gpredict สร้างหน้าต่างใหม่), คืนหน้าต่างแยกตอนเปิดใหม่ด้วยแถบให้กด "เปิด" (browser บล็อก popup ที่ไม่ได้เกิดจากการคลิก),
   "Restore position of main window" บันทึกได้แต่ไม่มีผล, รายชื่อเมืองสร้างจาก NOAA ไม่ใช่ `locations.dat` ของ Gpredict (สัญญาอนุญาต)
-- **คำเตือนของ server ไปที่ `gpredict.log` ไม่ใช่ terminal** ระหว่าง server รัน (log ของ Gpredict รับทุกส่วนของ server) `python -m gpredict_web` จึงพิมพ์ path ของไฟล์ตอนเริ่ม
-  ส่วนข้อความของ uvicorn เอง (เช่นบรรทัดคำขอ HTTP) ยังออกที่ terminal ตามเดิม
+- **คำเตือนของ server ตามปกติไปที่ `gpredict.log` ไม่ใช่ terminal** ระหว่าง server รัน (log ของ Gpredict รับทุกส่วนของ server) `python -m gpredict_web` จึงพิมพ์ path ของไฟล์ตอนเริ่ม
+  ถ้าเปิดไฟล์ไม่ได้ log ไปที่ terminal แทน ส่วนข้อความของ uvicorn เอง (เช่นบรรทัดคำขอ HTTP) ยังออกที่ terminal ตามเดิม
 - **สถานีชื่อ `batch`** บันทึกผ่าน Preferences → Ground Stations ได้ แต่ `PUT /api/qth/batch` คือ endpoint ของการแทนทั้งชุด จึงบันทึกสถานีชื่อนี้ทีละตัวด้วย `PUT /api/qth/{name}` ไม่ได้
 - **Polar plot ของ Pass details และ Antenna Control ใช้ค่ารวมของ Polar View** (สี, ทิศ และ QTH Info จาก Preferences → Modules) ไม่ใช่ค่าของ module ที่เปิดหน้าต่างนั้น
   (การตัดสินข้อ 15 ของแผนงานย่อยที่ 4)
 - **"Epoch time:" ของ Satellite Info** ใช้ epoch ที่อ่านปีสองหลัก ≥ 57 เป็น 19xx (Gpredict ใช้ 2000 + ปีเสมอ) TLE ปัจจุบันทุกชุดได้ผลเท่ากัน
 - กล่อง "Notify me" ของ TLE เก่าที่เกิดตอนยังไม่มี browser เปิดอยู่ ขึ้นใน browser แรกที่เปิด (Gpredict มีหน้าต่างเสมอ)
 - **Sky at a glance แสดงเฉพาะขณะ module ของมันแสดงอยู่** (จากงานย่อยที่ 2 ดูข้อแรกของหัวข้อนี้) ยังเป็นแบบเดิม module ที่ Detach อยู่แสดงในหน้าต่างของมันเองจึงนับว่าแสดงอยู่
+- **Configure → OK ไม่ reset นาฬิกาของ module**: module ถูกสร้างใหม่ใน runtime เดิม (ค่ารวม สถานี และดาวของตอนนั้น) นาฬิกา ช่วงที่ GMAT คำนวณไว้
+  และ controller ที่เปิดอยู่จึงอยู่ต่อ ไม่ต้องรอ GMAT คำนวณใหม่ Gpredict สร้าง module object ใหม่ นาฬิกาจึงกลับเป็นเวลาจริง
+- **สร้างใหม่ขณะ controller เปิดอยู่** (`?recreate=true` จาก API หรือหน้าอื่น เพราะ Configure ของหน้าที่มีหน้าต่าง controller ถูกห้ามแบบ Gpredict อยู่แล้ว):
+  ปฏิเสธด้วย `CONTROLLER_ACTIVE` เมื่อสถานี (เทียบชื่อ) หรือรายชื่อดาวจะเปลี่ยน ตามการตัดสินข้อ 4 ของงานย่อยที่ 3
+- **ปิด server**: ปิด controller ก่อน (ปลด Engage ส่ง S และ q ให้ rotator และวิทยุทันที) แล้วหยุดงานตรวจอายุ TLE (รองานที่กำลังทำให้จบ) แล้วจึงหยุด tick และปิด module
+- **Detach และ Attach ส่งต่อดาวที่เลือกและ Autotrack** ระหว่างสองหน้า (ที่อยู่ของหน้าต่างตอน Detach และ BroadcastChannel ตอน Attach ดูหัวข้อ "วิธีใช้: Detach, Attach และ Full screen")
+  Gpredict ย้าย module object ทั้งตัวจึงไม่มีอะไรต้องส่ง หน้าเว็บไม่มีหน้าคู่ให้ส่ง (เช่นหน้าต่างจากแถบคืนหน้าต่าง) จึงเริ่มแบบไม่มีดาวที่เลือกและ Autotrack ปิด
+- **OK ของ Preferences ที่ล้มกลางทาง** (หลังส่วนก่อนหน้าเขียนแล้ว) บอกส่วนที่บันทึกไปแล้ว spec หัวข้อ 10 สัญญาว่าไม่มีส่วนไหนถูกบันทึกเมื่อส่วนใดผิด
+  ซึ่งการตรวจก่อนเขียนทำให้จริงสำหรับค่าที่ผิด แต่การเขียนที่ล้มเพราะ server หายไปเกิดได้หลังส่วนก่อนหน้าเขียนแล้ว
+- **กล่อง Notify me ขึ้นในหน้าต่างแยกด้วย** ไม่หายเมื่อเปิดอยู่แค่หน้าต่างแยก ถ้าหน้าหลักเปิดอยู่ด้วยกล่องขึ้นทั้งสองหน้า
+- **CelesTrak**: `celestrak.com` และ URL แบบเก่า `/NORAD/elements/<กลุ่ม>.txt` นับกติกา 1 ครั้งต่อกลุ่มต่อ 2 ชั่วโมงที่ใช้ร่วมกับ GNSS Studio
 
 ที่ทำตาม Gpredict แม้ดูแปลก (spec หัวข้อ 11): "Debug level:" มีผลเมื่อเปิด server ครั้งถัดไป, แจ้ง TLE เก่าครั้งเดียวต่อการเปิด server,
-tooltip ของปุ่ม "Info Text:" ในหน้า Polar View ใช้ข้อความของปุ่มพื้นหลัง, URL `FORMAT=tlet` ในรายการ TLE sources ตั้งต้น
+tooltip ของปุ่ม "Info Text:" ในหน้า Polar View ใช้ข้อความของปุ่มพื้นหลัง, URL `FORMAT=tlet` ในรายการ TLE sources ตั้งต้น,
+แจ้ง TLE เก่าหลังเปิดครั้งแรกด้วย (ยังไม่มี `TLE/LAST_UPDATE` จึงถือว่าเก่า เหมือนค่าตั้งต้น 0 ของ Gpredict คงไว้ตามเดิม)
 
-- **module ที่เปิดอยู่ใช้ค่าเดิมจนกว่าจะถูกสร้างใหม่** (ปิดแล้วเปิดใหม่, Configure → OK, เปิด server ใหม่) ทั้งสถานีที่ถูกลบหรือสถานีตั้งต้นที่เปลี่ยน และค่ารวมของ Preferences → Modules
-  - ฝั่ง server (สถานีที่ module คำนวณ, ดาว) เป็นแบบนี้จริงจนกว่าจะสร้างใหม่
-  - ค่าของ view (layout, คอลัมน์, เนื้อหาและสีของ Map/Polar, ภาพแผนที่) หน้าเว็บอ่านจาก server ทุกครั้งที่แสดงแท็บของ module นั้น
-    แท็บที่แสดงอยู่ตอนกด OK ของ Preferences จึงคงค่าเดิม แต่**สลับไปแท็บอื่นแล้วกลับมา กด F5 หรือเปิดอีก browser แล้ว module ที่สืบทอดค่านั้นได้ค่ารวมใหม่ทันที**
-    โดยยังไม่ถูกสร้างใหม่ (พบตอนตรวจรับงานย่อยที่ 4 ข้อ 8: ต่างจาก spec หัวข้อ 9.1 ที่ให้มีผลเมื่อสร้างใหม่เท่านั้น)
+- **module ที่เปิดอยู่ใช้ค่าเดิมจนกว่าจะถูกสร้างใหม่** (เปิด, Configure → OK, เปิด server ใหม่) ทั้งสถานีที่ถูกลบหรือสถานีตั้งต้นที่เปลี่ยน และค่ารวมของ Preferences → Modules
+  ทั้งที่ server คำนวณและที่หน้าเว็บแสดง (ดูหัวข้อ "วิธีใช้: ค่ารวมของ module และการสืบทอด") สลับแท็บ กด F5 หรือเปิดอีก browser ก็ยังได้ค่าที่ module ทำงานอยู่
+  ตอนตรวจรับงานย่อยที่ 4 ข้อ 8 หน้าเว็บยังแสดงค่ารวมใหม่ก่อนสร้างใหม่ ข้อนี้แก้แล้วในรอบแก้ไขหลังตรวจรับ (ดูผลตรวจรับข้อ 8 และ "แก้หลังตรวจรับ")
 
 ## ข้อจำกัดที่ทราบ
 
@@ -646,6 +700,9 @@ tooltip ของปุ่ม "Info Text:" ในหน้า Polar View ใช�
 - ไม่มีโหมด GPSD ของสถานี (สถานีเป็นแบบพิกัดคงที่เท่านั้น)
 - Detach module ต้องอนุญาต popup ขนาดหน้าต่างแยกที่จำไว้ส่งให้ `window.open` แต่ browser อาจปรับเอง (Chrome แบบ headless ใช้ 800 × 600 เสมอ)
   และ Full screen ในหน้าต่างแยกยังไม่ได้ตรวจในหน้าจอจริง (ดูผลตรวจรับงานย่อยที่ 4 ข้อ 7)
+- F5 (หรือ Ctrl+R) ในหน้าต่างแยกของ module ปิด Radio Control และ Antenna Control ของ module นั้น (ปลด Engage, rotator และวิทยุหยุดตาม) เพราะหน้าเดิมส่ง Close module
+  ก่อนหน้าใหม่เปิด module อีกครั้ง (การตัดสินข้อ 9 ของแผนงานย่อยที่ 4 คงไว้ตามเดิม) ถ้าต่อกับอุปกรณ์จริงอย่ากด F5 ในหน้าต่างแยกระหว่าง pass
+- การส่งดาวที่เลือกและ Autotrack ตอน Attach ใช้ BroadcastChannel ของ browser หน้าหลักที่เปิดใน browser อื่นหรือโปรไฟล์อื่นไม่ได้รับ (module กลับมาแบบไม่มีดาวที่เลือก)
 - รายชื่อเมืองของ Select Location เป็นข้อมูลสถานีอากาศของ NOAA (6,682 แห่ง) ไม่ใช่รายการของ Gpredict เมืองที่มีใน Gpredict อาจไม่มีหรือชื่อต่างกัน
 - ดาวสูงสุด 200 ดวงต่อ module
 - ต้องมี GMAT: เมื่อตั้งเวลาไปนอกช่วงที่คำนวณไว้ (เช่นข้ามไปอีก 3 วัน) server ต้องสั่ง GMAT คำนวณช่วงใหม่ทั้งช่วง
@@ -1146,11 +1203,11 @@ integration กับ hamlib จริง (`tests.test_integration_hamlib`): rig
 | 5 | Log browser แสดง log ที่มีบรรทัดจากงานย่อย 1–3 และ Summary นับถูก | ผ่าน |
 | 6 | Satellite Info ของ ISS ตรงกับ TLE และแท็บ Transponders มีรายการจาก SatNOGS | ผ่าน |
 | 7 | Detach, ย้ายและขยายหน้าต่าง, Attach เป็นแท็บสุดท้าย, Detach อีกครั้งได้ขนาดเดิม, Full screen และ Exit full screen | ผ่านเท่าที่ Chrome headless ตรวจได้ (ขนาดหน้าต่างและ Full screen ในหน้าต่างแยก ดูข้อ 7) |
-| 8 | layout ของกลุ่ม Modules: module ใหม่ได้ layout นั้น, module ที่ไม่ได้ตั้งเองได้เมื่อเปิดใหม่, module ที่ตั้งเองไม่เปลี่ยน | ผ่าน (พบข้อที่ต่างจาก spec หัวข้อ 9.1 หนึ่งข้อ ดูข้อ 8) |
+| 8 | layout ของกลุ่ม Modules: module ใหม่ได้ layout นั้น, module ที่ไม่ได้ตั้งเองได้เมื่อเปิดใหม่, module ที่ตั้งเองไม่เปลี่ยน | ผ่าน (พบข้อที่ต่างจาก spec หัวข้อ 9.1 หนึ่งข้อ แก้แล้วหลังตรวจรับ ดูข้อ 8) |
 | 9 | เลือก `nasa-topo_1024.jpg` และเปลี่ยนสีดาวแล้ว Map วาดตาม | ผ่าน |
 | 10 | ไม่มีรายการไหนในเมนูของ Gpredict ที่กดไม่ได้ test ทั้งหมดผ่าน GNSS Studio ได้ผลเหมือนเดิมทุกไบต์ | ผ่าน |
 
-ไม่มี error หรือ warning ใน console ของ browser ทุกขั้น ไม่พบข้อบกพร่องที่ต้องแก้โค้ดระหว่างตรวจรับ
+ไม่มี error หรือ warning ใน console ของ browser ทุกขั้น ไม่พบข้อบกพร่องอื่นนอกจากข้อ 8 ซึ่งแก้แล้วหลังตรวจรับ (หัวข้อ "แก้หลังตรวจรับ" ท้ายส่วนนี้)
 log ของ server (`data/logs/gpredict.log`) มีเฉพาะบรรทัด ERROR ที่ตั้งใจให้เกิด (ลบสถานีที่ module ใช้ในข้อ 2 และ rigctld ที่ไม่ได้เปิดในข้อ 5) และไม่มีข้อความของ server ออกที่ terminal นอกจากของ uvicorn
 
 ### RF1. ย้ายไฟล์ module ตอนเปิด server ครั้งแรก
@@ -1264,8 +1321,10 @@ module `T24N` (ลำดับแท็บ Amateur, T24N, T24S) Module menu ข�
 - **Detach อีกครั้ง**: หน้าเว็บเรียก `window.open("/?module=T24N", "gpredict-T24N", "popup,width=640,height=413")` คือขนาดที่จำไว้ (ตำแหน่งไม่ส่งเพราะ "Restore position of module windows" ปิดอยู่)
   แต่ Chrome headless เปิดหน้าต่าง 800 × 600 เสมอไม่ว่าจะขออะไร (Detach ครั้งแรกที่ยังไม่มีขนาดที่จำไว้ หน้าเว็บขอขนาดของ module ในแท็บซึ่งกว้าง 1600 px ก็ได้ 800 × 600)
   จึงตรวจได้แค่ขนาดที่หน้าเว็บขอ ไม่ใช่ขนาดหน้าต่างจริง
-- **แถบคืนหน้าต่าง**: browser ของสคริปต์ถูกปิดขณะ T24N เป็นหน้าต่างแยก เปิดหน้าใหม่แล้วมีแถบ "module T24N ตั้งให้เปิดเป็นหน้าต่างแยก" ปุ่ม "เปิด" ได้ `/?module=T24N&restored=1` ชื่อ "Gpredict: T24N (CNX)"
-  ปิดหน้าต่างแยกด้วยการปิด browser = Close module (T24N หายจากรายการที่เปิด)
+- **แถบคืนหน้าต่าง**: สคริปต์รอบก่อนหยุดกลางทางและ process ของ Chrome ของสคริปต์ถูกปิดทิ้งขณะ T24N เป็นหน้าต่างแยก หน้าต่างจึงไม่ได้ส่ง Close module
+  (หน้าที่ถูกปิดทั้ง process ไม่ได้รับ `pagehide`) และ T24N ยังเป็นหน้าต่างใน server เปิดหน้าหลักใหม่แล้วมีแถบ "module T24N ตั้งให้เปิดเป็นหน้าต่างแยก"
+  ปุ่ม "เปิด" ได้ `/?module=T24N&restored=1` ชื่อ "Gpredict: T24N (CNX)"
+- **ปิดหน้าต่างแยก** (ปิดเฉพาะหน้าต่างของ module ตามปกติ หน้าได้รับ `pagehide`) = Close module: T24N หายจากรายการที่เปิด
 - **Full screen ของแท็บ**: `.app` เต็มจอ เมนูบาร์และแถบแท็บซ่อน Module menu เป็น "Attach module", "Exit full screen"
   - Exit full screen: ออกจากเต็มจอและ T24N ถูก Detach ทันที (หน้าต่าง "GPREDICT: T24N (THBK)")
   - ออกด้วย browser (`document.exitFullscreen()` แทน Esc): ออกจากเต็มจอ T24N ยังเป็นแท็บ ไม่มีหน้าต่างใหม่
@@ -1285,8 +1344,13 @@ module `T24N` (ลำดับแท็บ Amateur, T24N, T24S) Module menu ข�
 - ปิดแล้วเปิดใหม่ `T24S` และ `Amateur` (สืบทอด): ได้ **Map, List** ส่วน `T24N` (ตั้งเอง) ปิดแล้วเปิดใหม่ยังเป็น Map, List, Polar, Single sat
 - **พบข้อที่ต่างจาก spec หัวข้อ 9.1**: หลัง OK ของ Preferences แท็บที่แสดงอยู่คง layout เดิม แต่เมื่อสลับไปแท็บ `Amateur` และ `T24S` (ยังไม่ได้เปิดใหม่) ก็แสดง Map, List แล้ว
   เพราะหน้าเว็บอ่านค่าของ module จาก server ทุกครั้งที่แสดงแท็บ และ server คืนค่าที่สืบทอดจากค่ารวมปัจจุบัน (กด F5 หรือเปิดอีก browser ก็เช่นกัน)
-  ฝั่ง server (สถานีที่ module คำนวณ) ยังคงค่าเดิมจนสร้างใหม่ตามข้อ 2 ไม่ได้แก้ในงานนี้เพราะเป็นคำถามการออกแบบ (ค่าของ view ที่ "สร้างไว้" ควรอยู่ที่หน้าเว็บหรือที่ server)
-  บันทึกไว้ในหัวข้อ "ข้อตกลงที่เปลี่ยนพฤติกรรม → งานย่อยที่ 4"
+  ฝั่ง server (สถานีที่ module คำนวณ) ยังคงค่าเดิมจนสร้างใหม่ตามข้อ 2
+- **แก้แล้วหลังตรวจรับ** (รอบแก้ไขสุดท้าย ไม่ได้ตรวจซ้ำใน browser ตรวจซ้ำด้วย test): module ที่เปิดอยู่จำค่ารวมของตอนที่ถูกสร้าง และ `GET /api/modules/{name}`
+  ของ module ที่เปิดอยู่ตอบค่านั้น สลับแท็บ กด F5 หรือเปิดอีก browser จึงได้ layout เดิมจนกว่าจะสร้างใหม่ Configure → OK สร้างใหม่ทุกครั้ง
+  test ที่ตรวจ: `test_api.ModuleLifetimeApiTest` (การบันทึก view, `PUT /api/qth/{name}` และ Update TLE ไม่ดึงค่ารวมใหม่ รวมรอบ tick และจำนวนรอบ Ground Track,
+  GET ของ module ที่เปิดอยู่, `?fresh=1`, การสร้างใหม่ได้ค่ารวมและสถานีตั้งต้นของตอนนั้น), `test_api.ControllerApiTest` (สร้างใหม่ขณะ controller เปิดอยู่),
+  `test_appevents.AppSocketTest` (ลบสถานีแล้วเหตุการณ์ `module_config_changed` ระบุ module และค่าที่อ่านใหม่บันทึกได้) และของหน้าเว็บ
+  `appEvents.test.ts` (อ่านใหม่เมื่อได้เหตุการณ์และทุกครั้งที่ต่อใหม่), `moduleForm.test.ts` (Configure → OK ที่ไม่ได้แก้ก็ส่ง `recreate`, Edit module อ่าน `?fresh=1`)
 
 ภาพ: `c8-01-modules-layout.png`, `c8-02-world-map-and-table.png`, `c8-03-new-module.png`, `c8-04-t24l.png`, `c8-05-*-reopened.png`
 
@@ -1316,8 +1380,7 @@ module `T24N` (ลำดับแท็บ Amateur, T24N, T24S) Module menu ข�
 รวม 50 รายการ กดไม่ได้รายการเดียวคือ "Sky track" ของ ES'HAIL 2 ซึ่ง Gpredict ปิดเองสำหรับดาว GEO (ref หัวข้อ Polar view popup) ไม่ใช่รายการที่รองานย่อยถัดไป
 Preferences มี 4 กลุ่มกดได้ทุกกลุ่ม "Window Placements" อยู่ในหน้า Layout ของกลุ่ม Modules และไม่อยู่ใน Module properties
 ปุ่ม Select ทั้งสองของ "Edit ground station data" กดได้ ดับเบิลคลิกที่ดาวใน List เปิด "Satellite Info"
-`web/src/later.test.ts` ตรวจเมนูทุกหัว ทุกสถานะของ Module menu (แท็บ, หน้าต่าง, เต็มจอ) และ popup ของทุก view ว่าไม่มีรายการที่รองานย่อยถัดไป
-(ตาราง `LATER` และตัวช่วยที่สร้างรายการแบบนั้นถูกลบตั้งแต่ Task 23 กลไก `later` ที่เหลือใน `menuSpec.ts`/`prefGroups.ts` ไม่มีรายการใดใช้)
+`web/src/menuItems.test.ts` ตรวจเมนูทุกหัว ทุกสถานะของ Module menu (แท็บ, หน้าต่าง, เต็มจอ) และ popup ของทุก view ว่าทุกรายการกดได้
 
 ### test ครบทุกชุด
 
@@ -1345,8 +1408,49 @@ Preferences มี 4 กลุ่มกดได้ทุกกลุ่ม "Win
   ส่วน CelesTrak ของ TLE sources ใช้โค้ดเดียวกับ Update TLE ของงานย่อยที่ 1 (มี test ของ server ด้วย opener ปลอม รวม proxy และกติกา 2 ชม.)
 - **ข้อ 4 background** ไม่ได้เห็นคำขอจริงจากการตรวจอายุ เพราะคำขอ AMSAT ครั้งเดียวใช้ไปในข้อ 3 การ Update เองจึงติดกติกา 2 ชม. (ซึ่งเป็นสิ่งที่เกณฑ์ต้องการให้เห็น)
 - **ข้อ 7** ขนาดหน้าต่างแยกตอน Detach อีกครั้งตรวจจากขนาดที่ส่งให้ `window.open` (Chrome headless ไม่ทำตาม) และ Full screen ภายในหน้าต่างแยกตรวจในหน้าจอจริงไม่ได้
-- **ข้อ 8** module ที่สืบทอดค่ารวมได้ค่าใหม่เมื่อสลับแท็บหรือโหลดหน้าใหม่ ไม่ต้องรอสร้างใหม่ (ดูข้อ 8) ยังไม่ได้แก้
+- **ข้อ 8** module ที่สืบทอดค่ารวมได้ค่าใหม่เมื่อสลับแท็บหรือโหลดหน้าใหม่ ไม่ต้องรอสร้างใหม่ (ดูข้อ 8) แก้แล้วหลังตรวจรับ ตรวจซ้ำด้วย test ไม่ได้ตรวจซ้ำใน browser
 - module ทดสอบและ `T24S` (สถานี CNX) สร้างผ่าน API แทนหน้าต่าง Create new module เพื่อกำหนดคอลัมน์และสถานีได้ตรง (ข้อ 8 สร้าง `T24L` ผ่านหน้าต่างจริง)
   ข้อ 5 ตั้งเวลา module และขอ pass ผ่าน API เพื่อให้ GMAT คำนวณข้อมูลใหม่ และจุดคลิกขวาบน Map และ Polar คำนวณจากตำแหน่งดาวในตาราง
 - Radio Control ในข้อ 1 และ 5 ใช้วิทยุ `T24RIG` ที่ไม่มี rigctld (ไม่ได้เปิด hamlib) ข้อ 5 จึงได้ error ของการเชื่อมต่อตามที่ตั้งใจ
 - ตรวจเฉพาะ Google Chrome แบบ headless ไม่ได้ลอง Safari และ Firefox
+
+### แก้หลังตรวจรับ
+
+หลังตรวจรับ ผู้ตรวจงานทั้งชุด (ฝั่ง server และหน้าเว็บ) และผู้ตรวจของ README พบข้อที่ต้องแก้ ทุกข้อแก้ในรอบแก้ไขสุดท้าย (2026-11-15) ด้วย test ที่ล้มก่อนแก้
+รายละเอียดของพฤติกรรมใหม่อยู่ในหัวข้อ "วิธีใช้" และ "ข้อตกลงที่เปลี่ยนพฤติกรรม → งานย่อยที่ 4" ข้างบน
+
+- **ข้อ 8 ของการตรวจรับ (spec หัวข้อ 9.1)**: module ที่เปิดอยู่ใช้ค่ารวมของตอนที่ถูกสร้างทั้งที่ server และหน้าเว็บ Configure → OK สร้างใหม่ทุกครั้ง (ดูข้อ 8)
+- **ลบสถานีที่ module ที่เปิดอยู่ใช้**: เดิมการบันทึก view ของ module นั้นหลังกด OK ล้มด้วย 422 จนกว่าจะโหลดหน้าใหม่ ตอนนี้หน้าอ่านค่าใหม่จาก `module_config_changed`
+- **ปิด server**: ปิด controller ก่อน (S และ q ถึง rotator และวิทยุทันที) แล้วจึงหยุดงานตรวจอายุ TLE, tick และ module
+- **Detach และ Attach**: Radio Control และ Antenna Control ที่เปิดในหน้าต่างแยกขึ้นที่หน้าหลักหลัง Attach, ดาวที่เลือกและ Autotrack ไปกับ module ทั้งสองทาง,
+  หน้าหลักไม่เก็บ Time Controller ของ module ที่ Detach ไว้อีก (เดิมการเปิด Time Controller ของ module อื่นในหน้าหลัก reset นาฬิกาของ module ที่อยู่ในหน้าต่างแยก
+  เพราะหน้าหลักตัด Time Controller ตามรายการ module ที่เปิดอยู่ ซึ่งรวมหน้าต่างแยก ไม่ใช่ตามแท็บ)
+- **ข้อมูล**: สำเนา v1 ก่อนเขียนทับไฟล์ module ทุกทาง, บรรทัด "Session started"/"Session ended" ที่เขียนไม่ได้ (ดิสก์เต็ม) ไม่ทำให้ server เปิดไม่ได้,
+  Clone ของหน้าต่างแยกเปิดเป็นแท็บ, กติกา 2 ชั่วโมงของ AMSAT นับตั้งแต่ได้คำตอบ และของ CelesTrak นับ `celestrak.com` กับ URL แบบเก่าต่อกลุ่ม,
+  `/api/tle/local` ปฏิเสธ body เกิน 40 MB ก่อนอ่าน, `LOG_UNREADABLE`, ภาพที่อัปโหลดไม่ค้าง cache ของ browser, `prefs_changed` เฉพาะเมื่อเขียนจริง
+- **หน้าเว็บ**: ข้อความของ OK ของ Preferences ที่ล้มกลางทาง, กล่อง TLE เก่าในหน้าต่างแยก, ข้อความเมื่อหน้าต่างแยกเปิด module อีกครั้งไม่ได้,
+  `role="alert"` ของบรรทัดผิดพลาดใน Log browser และ Satellite Info, แท็บของ Satellite Info ผูกกับแผงของมัน, ชื่อของกล่อง TLE เก่าสำหรับ screen reader,
+  ลบกลไก `later` ที่ไม่มีรายการใช้แล้ว (`web/src/later.test.ts` เป็น `web/src/menuItems.test.ts`), สร้างที่อยู่ของ `gpredict.log` ที่เดียว (`log_file`)
+
+**ตรวจ Detach และ Attach ในหน้าจริงอีกครั้ง** (2026-11-15 เวลาไทย 02:37–02:38, Chrome แบบ headless ผ่าน puppeteer-core) server port 8751 กับ data dir ชั่วคราว
+(สำเนาของ data dir A ที่ตั้ง "Check the age of TLE data:" เป็น Never จึงไม่มีคำขอออกเน็ต) module `FB` 8 ดวง และ rotator ที่ชี้ไป `127.0.0.1:59999` ซึ่งไม่มีอะไรฟัง (ไม่ได้กด Engage)
+นับ `POST /api/modules/FB/target` จาก log ของ uvicorn
+
+| ขั้น | ผล |
+|---|---|
+| หน้าหลัก: Autotrack | เลือก 239ALFEROV (RS61S) เอง |
+| Detach | หน้าต่างเปิดด้วย `/?module=FB&sel=64881&autotrack=1` แล้วที่อยู่เหลือ `/?module=FB` Module menu ของหน้าต่าง: Autotrack ติ๊กและ 239ALFEROV ถูกเลือก target ใหม่ **0** ครั้ง |
+| Antenna Control ในหน้าต่างแยก | "Gpredict Rotator Control: FB" เปิด `GET /api/controllers` มี FB rotator หน้าหลักยังไม่แสดง |
+| ในหน้าต่าง: ปิด Autotrack แล้วเลือก 2026-195A | target 1 ครั้ง |
+| Attach | หน้าหลัก: Autotrack ไม่ติ๊กและ 2026-195A ถูกเลือก target ใหม่ **0** ครั้ง หน้าต่าง "Gpredict Rotator Control: FB" ขึ้นที่หน้าหลัก controller ยังเปิด (ไม่มีคำขอปิด) |
+| หน้าหลักเลือก 239ALFEROV อีกครั้ง | target 1 ครั้ง (ไม่ค้างแบบที่ผู้ตรวจพบ) |
+
+console ไม่มี error หรือ warning หยุด server ด้วย `POST /api/quit` และปิด Chrome แล้ว
+
+test ครบทุกชุดหลังแก้
+
+| ชุด | ผล |
+|---|---|
+| engine | 498 test OK (ข้าม 3 ที่ต้องใช้ GMAT) `git diff feature/gpredict-web-core -- api-interop/gnss-predict` ว่าง |
+| server | 1195 test OK ไม่ข้ามเลย (รวม integration กับ GMAT จริง) |
+| web | 86 ไฟล์ 1487 test OK, build สำเร็จ (173 modules, JS 467.32 kB) |

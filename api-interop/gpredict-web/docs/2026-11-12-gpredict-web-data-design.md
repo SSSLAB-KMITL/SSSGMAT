@@ -337,21 +337,27 @@
 | Method | Path | ทำอะไร |
 |---|---|---|
 | PUT | `/api/qth/batch` | `{stations: [...], default}` แทนทั้งชุด (หัวข้อ 4) |
-| POST | `/api/tle/local` | multipart ไฟล์ TLE คืนตัวนับแบบ `/api/tle/update` |
-| GET | `/api/logs/current` | ข้อความของ `gpredict.log` |
+| POST | `/api/tle/local` | JSON `{"files": [{"name", "text"}]}` (หน้าเว็บอ่านไฟล์เป็นข้อความ ไม่ใช้ multipart: การตัดสินข้อ 2 ของแผน) ไม่เกิน 200 ไฟล์ ข้อความรวมไม่เกิน 20 MB body เกิน 40 MB ปฏิเสธก่อนอ่าน คืนตัวนับแบบ `/api/tle/update` |
+| GET | `/api/logs/current` | ข้อความของ `gpredict.log` (ไม่มีไฟล์ = ข้อความว่าง) |
 | POST | `/api/log` | `{level, function, text}` จาก web (ระดับไม่เกิน 4 ยาวไม่เกิน 500) |
 | GET/POST | `/api/maps` | รายการภาพ (ของ Gpredict + อัปโหลด) / อัปโหลดภาพ (jpg, png ไม่เกิน 10 MB) |
 | GET | `/api/maps/{file}` | ไฟล์ภาพ |
 | GET | `/api/locations` | รายชื่อเมืองและสถานีอากาศ |
 | PUT | `/api/modules/{name}/window` | `{state, x, y, width, height}` ของหน้าต่างแยก |
+| PUT | `/api/modules/{name}?recreate=true` | Configure → OK: บันทึกแล้วสร้าง module ที่เปิดอยู่ใหม่ด้วยค่ารวมและสถานีของตอนนั้น (หัวข้อ 9.1) module ที่ปิดอยู่ = บันทึกธรรมดา (รอบแก้ไขสุดท้าย) |
+| GET | `/api/modules/{name}` | module ที่เปิดอยู่: ค่าที่ module ทำงานอยู่ (ช่อง `window` จากไฟล์) `?fresh=1` = ไฟล์ + ค่ารวมปัจจุบัน สำหรับ Edit module (รอบแก้ไขสุดท้าย) |
 | GET | `/api/satellites/{norad}` | เพิ่ม `status` และค่าของ Orbit Info |
-| WS | `/ws/app` | เหตุการณ์ระดับโปรแกรม: `prefs_changed`, `modules_changed`, `tle_old` |
+| WS | `/ws/app` | เหตุการณ์ระดับโปรแกรม: `prefs_changed`, `modules_changed`, `tle_old` และ `module_config_changed` `{modules: [...]}` (ค่าที่ module ที่เปิดอยู่ทำงานอยู่เปลี่ยนจากนอกหน้าที่แสดงมัน: รอบแก้ไขสุดท้าย) |
 
 - **Preferences**: `PUT /api/prefs` ของ passes รับ key ใหม่ทั้งหมดของ General และ Modules
 - **รหัสใหม่**:
   - `QTH_LAST` (422 ลบจนไม่เหลือ)
-  - `TLE_FILE_INVALID` (warning ต่อไฟล์)
+  - `TLE_FILE_INVALID` (warning ต่อไฟล์ และ 422 ของ body ที่ผิดรูปหรือเกินขนาด)
   - `MAP_INVALID` (422)
+  - `LOG_INVALID` (422 `POST /api/log` ผิดรูปแบบ: การตัดสินข้อ 13 ของแผน)
+  - `LOG_UNREADABLE` (500 `GET /api/logs/current` เมื่อมีไฟล์แต่อ่านไม่ได้: รอบแก้ไขสุดท้าย)
+- **รหัสเดิมที่ใช้เพิ่ม**: `CONTROLLER_ACTIVE` (409) ของ `?recreate=true` เมื่อ Radio Control หรือ Antenna Control เปิดอยู่และสถานี (เทียบชื่อ) หรือรายชื่อดาวจะเปลี่ยน
+  (การตัดสินข้อ 4 ของงานย่อยที่ 3)
 - **ความปลอดภัย**: การตรวจ Host/Origin ของ core ครอบทุก endpoint ใหม่รวม `/ws/app`
 
 ## 13. การทดสอบ
