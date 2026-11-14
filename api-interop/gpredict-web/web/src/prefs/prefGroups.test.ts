@@ -13,14 +13,14 @@ describe("PREF_GROUPS (ref-D §1)", () => {
     ]);
   });
 
-  it("only Predict has a page in this sub-project; the others name the sub-project that adds them", () => {
+  it("Interfaces and Predict have a page; General and Modules name the sub-project that adds them", () => {
     expect(PREF_GROUPS.map((g) => [g.id, g.page === null, g.later])).toEqual([
       ["general", true, 4],
       ["modules", true, 4],
-      ["interfaces", true, 3],
+      ["interfaces", false, undefined],
       ["predict", false, undefined],
     ]);
-    expect(laterTooltip(3)).toBe("อยู่ในงานย่อยที่ 3: Radio & Rotator");
+    expect(laterTooltip(4)).toBe("อยู่ในงานย่อยที่ 4: Data & Preferences");
   });
 
   it("every group has an icon, and a group without a page can say which sub-project has it", () => {
@@ -30,7 +30,7 @@ describe("PREF_GROUPS (ref-D §1)", () => {
     }
   });
 
-  it("opens at Predict, the only group with a page", () => {
+  it("opens at Predict: Gpredict opens at General, which has no page yet", () => {
     expect(FIRST_GROUP).toBe("predict");
     expect(firstView()).toEqual({ active: "predict", visited: ["predict"] });
   });
@@ -57,8 +57,13 @@ describe("switchGroup", () => {
   it("ignores a group without a page: it cannot be pressed", () => {
     const view = firstView();
     expect(switchGroup(view, "modules", groups)).toBe(view);
-    expect(switchGroup(view, "interfaces", groups)).toBe(view);
     expect(switchGroup(view, "general")).toBe(view); // in this sub-project General has no page
+  });
+
+  it("shows Interfaces, and keeps its page in the window when another group is chosen", () => {
+    const toInterfaces = switchGroup(firstView(), "interfaces");
+    expect(toInterfaces).toEqual({ active: "interfaces", visited: ["predict", "interfaces"] });
+    expect(switchGroup(toInterfaces, "predict")).toEqual({ active: "predict", visited: ["predict", "interfaces"] });
   });
 
   it("ignores the group that is shown already", () => {

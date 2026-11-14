@@ -1,6 +1,7 @@
 // The groups of the Preferences window (ref-D §1): the four icons at its left and the page of each. Pure but for the pages.
 
 import type { ReactNode } from "react";
+import { InterfacesPages } from "../radio/InterfacesPages";
 import type { PrefValue } from "../types";
 import { PredictPages } from "./PredictPages";
 
@@ -37,7 +38,7 @@ export interface PrefGroup {
 export const PREF_GROUPS: readonly PrefGroup[] = [
   { id: "general", label: "General", icon: "⚙", page: null, later: 4 },
   { id: "modules", label: "Modules", icon: "☰", page: null, later: 4 },
-  { id: "interfaces", label: "Interfaces", icon: "∿", page: null, later: 3 },
+  { id: "interfaces", label: "Interfaces", icon: "∿", page: InterfacesPages },
   { id: "predict", label: "Predict", icon: "▦", page: PredictPages },
 ];
 

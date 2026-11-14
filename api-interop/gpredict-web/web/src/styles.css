@@ -1295,6 +1295,67 @@ body {
   border-radius: 3px;
 }
 
+/* Preferences → Interfaces (ref-R §8): the tables of the devices with their buttons, and the two editors */
+.hw-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 400px;
+  padding: 12px 14px 6px;
+}
+.hw-list {
+  flex: 1;
+  min-height: 200px;
+  overflow: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.hw-buttons {
+  display: flex;
+  gap: 6px;
+}
+.hw-wait {
+  padding: 12px 14px;
+}
+.hw-editor {
+  min-width: 440px;
+}
+.hw-grid {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 6px;
+  align-items: center;
+}
+.hw-grid > .spin {
+  justify-self: start;
+}
+.hw-radio > .spin {
+  grid-column: 2 / 4; /* a spin button of the radio editor spans two columns, as in Gpredict's grid */
+}
+.hw-span2 {
+  grid-column: 2 / 4;
+}
+.hw-span3 {
+  grid-column: 2 / 5;
+}
+.hw-full {
+  grid-column: 1 / -1;
+}
+.hw-stop-label {
+  grid-column: 2 / 4;
+}
+.hw-pre {
+  white-space: pre; /* the labels of the rotator editor begin with a space */
+}
+.hw-field-error {
+  grid-column: 2 / 5;
+  margin: 0;
+  padding: 2px 8px;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+
 /* ---------------------------------------------------------------- Sky at a glance (ref-P §7) */
 
 /* The chart's size is the window's: it opens at the size of skyLayout and the corner makes it bigger, never smaller (the minimum is set inline) */

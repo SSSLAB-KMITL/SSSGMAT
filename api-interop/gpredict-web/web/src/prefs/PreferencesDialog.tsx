@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { errorText } from "../api";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Modal } from "../components/Modal";
 import { laterTooltip } from "../later";
 import type { PrefValue } from "../types";
@@ -29,7 +30,8 @@ function GroupPage({ page, api }: { page: (api: PrefsPageApi) => ReactNode; api:
  * `savePrefs`), then runs the latest `onCommit` function of each page and key, in the order they were first registered, then
  * closes. If any of that fails the window stays open and shows the Thai error. Cancel and Escape close it and save nothing. The
  * page of a group that has been shown stays in the window (hidden) until it closes, so switching groups loses nothing; the window
- * reads the server's values again when it opens, and a page is built from them.
+ * reads the server's values again when it opens, and a page is built from them. An error in a page shows a Thai message in its place
+ * (ErrorBoundary, ของเรา) and leaves the window and the other pages as they are.
  */
 export function PreferencesDialog({ onClose }: Props) {
   const answer = usePrefs();
@@ -158,7 +160,9 @@ export function PreferencesDialog({ onClose }: Props) {
                   aria-labelledby={`${id}-tab-${g.id}`}
                   hidden={g.id !== view.active}
                 >
-                  <GroupPage page={g.page!} api={apis.get(g.id)!} />
+                  <ErrorBoundary>
+                    <GroupPage page={g.page!} api={apis.get(g.id)!} />
+                  </ErrorBoundary>
                 </div>
               ))
             ) : (
