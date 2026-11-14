@@ -166,7 +166,7 @@
       "id": "navic-nvs",
       "glb": "navic-nvs/navic-nvs.glb",
       "blocks": ["IRS-2G", "IRS-2I"],
-      "size_m": [1.916, 13.11, 3.316],
+      "size_m": [1.916, 9.5, 3.316],
       "triangles": 2820,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
