@@ -56,7 +56,7 @@
       "id": "bds3-meo-secm",
       "glb": "bds3-meo-secm/bds3-meo-secm.glb",
       "blocks": ["BDS-3M-SECM-A", "BDS-3M-SECM-B", "BDS-3SM-SECM"],
-      "size_m": [2.21, 11.36, 1.404],
+      "size_m": [2.21, 11.36, 1.444],
       "triangles": 4432,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
