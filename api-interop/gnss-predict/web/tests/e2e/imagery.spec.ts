@@ -1,0 +1,288 @@
+// โหมด Camera ของ Sensor View และ Globe Manager (imagery spec §5.1, §5.3, §7): e2e ไม่ต่อเน็ตเลย
+// - server ของ e2e ตั้ง online_imagery.enabled = false (build_fixture.py) จึงไม่มี request ไป /api/imagery/tiles จากหน้าเว็บ และ server ไม่ส่งอะไรไป GIBS
+//   ทุก test ตรวจตอนจบว่าไม่มี request ใดของ browser ไปที่ /api/imagery/tiles (ตัวกัน request นอกเครื่องของ fixtures.ts ยังทำงานด้วย)
+// - spec นี้เปิด Sensor View (สร้าง sensor ใน scenario E2E) แล้วคืนเอกสารเดิมทุก test เหมือน sensor.spec.ts (spec อื่นใช้ E2E ด้วย)
+//   ไม่เรียก tile ของ server เอง (ไม่มี request ไปที่ /api/imagery/tiles ทั้งจากหน้าเว็บและจาก test)
+
+import type { Page } from "@playwright/test";
+import { ephemHash, expect, openScenario, saveScenario, test as base, treeRow, waitForScene } from "./fixtures";
+import { msg } from "../../src/labels/messages.th";
+
+const RAD = Math.PI / 180;
+const DEG = 180 / Math.PI;
+
+/** request ของ browser (ทุกหน้า) ที่ไปที่ชิ้นภาพของ server: ต้องว่างเสมอ (สวิตช์ภาพออนไลน์ปิด) */
+const TILES_PATH = "/api/imagery/tiles";
+
+const test = base.extend<{ tileRequests: string[] }>({
+  tileRequests: [
+    async ({ context }, use) => {
+      const seen: string[] = [];
+      context.on("request", (r) => {
+        if (new URL(r.url()).pathname.startsWith(TILES_PATH)) seen.push(`${r.method()} ${r.url()}`);
+      });
+      await use(seen);
+      expect(seen, `browser requests to ${TILES_PATH} (online imagery is off in the e2e data)`).toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+// ---------- Sensor View ----------
+
+const SATELLITE = "G01";
+const SENSOR = "Sensor1";
+const SENSOR_TAB = "Sensor View - Sensor1 (G01)";
+
+const windowTab = (page: Page, title: string) => page.locator(".dv-default-tab-content").filter({ hasText: title });
+const sensorView = (page: Page) => page.locator(".sensor-view");
+const zoomIn = (page: Page) => sensorView(page).getByRole("button", { name: "Zoom In", exact: true });
+const zoomOut = (page: Page) => sensorView(page).getByRole("button", { name: "Zoom Out", exact: true });
+const displayButton = (page: Page, name: "Camera" | "Sensor") =>
+  sensorView(page).getByRole("group", { name: "Display", exact: true }).getByRole("button", { name, exact: true });
+const zoomValue = (page: Page) => sensorView(page).locator(".sensor-view-zoom-value");
+const hud = (page: Page) => page.getByTestId("sensor-view-hud");
+
+/** เลือกดาวใน Object Browser แล้วสั่งเมนู Satellite -> Sensor View (เหมือน sensor.spec.ts) */
+async function openSensorView(page: Page): Promise<void> {
+  await treeRow(page, `*/Satellite/${SATELLITE}`).click();
+  await page.getByRole("menuitem", { name: "Satellite", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Sensor View", exact: true }).click();
+  await expect(windowTab(page, SENSOR_TAB)).toBeVisible();
+}
+
+const sensorCamera = (page: Page) => page.evaluate((n) => window.__gnssStudioTest!.sensorViewCamera(n), SENSOR);
+const entityPosition = (page: Page, name: string) => page.evaluate((n) => window.__gnssStudioTest!.entityPositionEcef(n), name);
+
+/** ระยะ (เมตร) ระหว่างกล้องของ Sensor View กับดาวแม่ในหน้าต่าง 3D (อ่านสองค่าใน evaluate เดียว: เวลาเดียวกัน) ไม่มีกล้องหรือไม่มีดาว = null */
+async function cameraDistanceM(page: Page): Promise<number | null> {
+  const [camera, position] = await page.evaluate(
+    ([s, sat]) => [window.__gnssStudioTest!.sensorViewCamera(s), window.__gnssStudioTest!.entityPositionEcef(sat)] as const,
+    [SENSOR, SATELLITE] as const,
+  );
+  if (camera === null || position === null) return null;
+  const d = [camera.position[0] - position[0], camera.position[1] - position[1], camera.position[2] - position[2]];
+  return Math.hypot(d[0], d[1], d[2]);
+}
+
+/** รอจนกล้องตามดาว (ไม่เกิน 1 ม.) แล้วคืนระยะที่วัดได้: scene พร้อม และมีตำแหน่งของดาวแล้ว */
+async function waitForCameraOnSatellite(page: Page, what: string): Promise<void> {
+  await expect
+    .poll(async () => (await cameraDistanceM(page)) ?? Number.POSITIVE_INFINITY, { message: `${what}: Sensor View camera follows ${SATELLITE}` })
+    .toBeLessThanOrEqual(1);
+}
+
+/** fov ด้านสั้นของภาพ (องศา): fovDeg ของ Cesium คือด้านยาว จึงลดตามสัดส่วนภาพ (เหมือน sensor.spec.ts) ไม่มีภาพหรือไม่มีกล้อง = null */
+async function shortSideFovDeg(page: Page): Promise<number | null> {
+  const camera = await sensorCamera(page);
+  const size = await page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="sensor-view"] canvas');
+    return canvas === null ? null : { width: canvas.clientWidth, height: canvas.clientHeight };
+  });
+  if (camera === null || size === null || size.width === 0 || size.height === 0) return null;
+  const ratio = Math.max(size.width / size.height, size.height / size.width);
+  return 2 * Math.atan(Math.tan((camera.fovDeg * RAD) / 2) / ratio) * DEG;
+}
+
+/** รอจน fov ด้านสั้นเท่า `expected` คลาดไม่เกิน 1% (เทียบเป็นสัดส่วน) */
+async function expectShortSideFov(page: Page, expected: number, what: string): Promise<void> {
+  await expect
+    .poll(async () => {
+      const fov = await shortSideFovDeg(page);
+      return fov === null ? Number.POSITIVE_INFINITY : Math.abs(fov - expected) / expected;
+    }, { message: `${what}: short-side fov (expected ${expected.toFixed(4)} deg)` })
+    .toBeLessThanOrEqual(0.01);
+}
+
+test.describe("Sensor View Camera mode", () => {
+  // undefined = ยังไม่ได้เก็บเอกสารเดิม (beforeEach ล้มก่อน): ไม่มีอะไรให้คืน
+  let restore: (() => Promise<void>) | undefined;
+  let hashBefore = "";
+
+  test.beforeEach(async ({ request }) => {
+    restore = undefined;
+    hashBefore = await ephemHash(request, "E2E");
+    restore = await saveScenario(request, "E2E");
+  });
+  test.afterEach(async ({ request }) => {
+    const undo = restore;
+    restore = undefined;
+    if (undo === undefined) return;
+    await undo();
+    expect(await ephemHash(request, "E2E"), "ephem hash of E2E after restoring the scenario").toBe(hashBefore);
+  });
+
+  test("opens in Camera mode with nothing but the Earth, and zoom narrows the view while the camera stays on the satellite", async ({ page }) => {
+    await openScenario(page, "E2E");
+    await waitForScene(page);
+    await openSensorView(page);
+    await waitForCameraOnSatellite(page, "at ×1");
+
+    // ค่าตั้งต้น: Camera, ×1, ไม่มี entity แสดงในภาพเลย
+    await expect(displayButton(page, "Camera")).toHaveAttribute("aria-pressed", "true");
+    await expect(displayButton(page, "Sensor")).toHaveAttribute("aria-pressed", "false");
+    await expect(zoomValue(page)).toHaveText("×1");
+    await expect.poll(async () => (await sensorCamera(page))?.visibleEntityCount, { message: "no entities shown in Camera mode" }).toBe(0);
+    const start = (await sensorCamera(page))!;
+    expect(start.display).toBe("camera");
+    expect(start.zoom).toBe(1);
+    // หน้าต่าง 3D หลักยังวาด object ของตัวเอง (Camera ซ่อนเฉพาะในหน้าต่างของมัน)
+    expect(await entityPosition(page, SATELLITE), "the main 3D window still draws the satellite").not.toBeNull();
+
+    const fovAt1 = await shortSideFovDeg(page);
+    expect(fovAt1, "short-side fov at ×1").not.toBeNull();
+
+    // Zoom In สองครั้ง = ×4: fov ด้านสั้น = 1/4 ของ ×1 (คลาดไม่เกิน 1%) และกล้องยังอยู่ที่ดาว (< 1 ม.) ส่วนหน้าต่างอื่นไม่ถูกแตะ
+    await zoomIn(page).click();
+    await expect(zoomValue(page)).toHaveText("×2");
+    await expectShortSideFov(page, fovAt1! / 2, "at ×2");
+    await zoomIn(page).click();
+    await expect(zoomValue(page)).toHaveText("×4");
+    await expectShortSideFov(page, fovAt1! / 4, "at ×4");
+    await waitForCameraOnSatellite(page, "at ×4");
+    const zoomed = (await sensorCamera(page))!;
+    expect(zoomed.zoom).toBe(4);
+    expect(zoomed.display).toBe("camera");
+    expect(zoomed.visibleEntityCount).toBe(0);
+    expect(await cameraDistanceM(page), "camera-to-satellite distance at ×4 (m)").toBeLessThan(1);
+    // ทิศกล้องไม่เปลี่ยนจากการซูม (ยังชี้ศูนย์กลางโลกแบบเดิม)
+    const dot = zoomed.direction[0] * start.direction[0] + zoomed.direction[1] * start.direction[1] + zoomed.direction[2] * start.direction[2];
+    expect(Math.acos(Math.min(1, dot)) * DEG, "angle between the ×1 and ×4 view directions (deg)").toBeLessThan(0.05);
+
+    // HUD: บรรทัดมุมกว้างบอก ×4 แหล่งภาพคือ Natural Earth II (ออฟไลน์) และยังไม่ถึง ×8 จึงไม่มีคำแนะนำ Globe Manager
+    await expect(hud(page)).toContainText(/FOV [0-9.]+° ×4/);
+    await expect(hud(page)).toContainText(msg("sensorView.hudImageryOffline"));
+    await expect(hud(page)).not.toContainText(msg("sensorView.hintGlobeManager"));
+
+    // Zoom Out ด้วยล้อเมาส์ (deltaY > 0 = ออก ทีละขั้น) ไม่ใช่ Step Backward และไม่เปลี่ยนตำแหน่งกล้อง
+    const box = (await page.getByTestId("sensor-view").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 100);
+    await expect(zoomValue(page)).toHaveText("×2");
+    await expectShortSideFov(page, fovAt1! / 2, "after the wheel");
+    await waitForCameraOnSatellite(page, "after the wheel");
+
+    // Zoom Out อีกครั้ง = ×1 (ปุ่มปิดใช้ที่ปลายล่าง) fov กลับเป็นค่าตั้งต้น
+    await zoomOut(page).click();
+    await expect(zoomValue(page)).toHaveText("×1");
+    await expect(zoomOut(page)).toBeDisabled();
+    await expectShortSideFov(page, fovAt1!, "back at ×1");
+    await waitForCameraOnSatellite(page, "back at ×1");
+  });
+
+  test("Sensor display shows the scenario objects in this window only, and Camera hides them again", async ({ page }) => {
+    await openScenario(page, "E2E");
+    await waitForScene(page);
+    await openSensorView(page);
+    await waitForCameraOnSatellite(page, "at ×1");
+    await expect.poll(async () => (await sensorCamera(page))?.visibleEntityCount).toBe(0);
+
+    await displayButton(page, "Sensor").click();
+    await expect(displayButton(page, "Sensor")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => (await sensorCamera(page))?.visibleEntityCount, { message: "entities shown in Sensor mode" }).toBeGreaterThan(0);
+    expect((await sensorCamera(page))!.display).toBe("sensor");
+    // โหมด Sensor วาดวงขอบกรวยบนภาพ (SVG) ส่วนโหมด Camera ไม่วาด
+    await expect(sensorView(page).locator("svg.sensor-view-cone")).toHaveCount(1);
+
+    await displayButton(page, "Camera").click();
+    await expect(displayButton(page, "Camera")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => (await sensorCamera(page))?.visibleEntityCount, { message: "entities hidden again in Camera mode" }).toBe(0);
+    await expect(sensorView(page).locator("svg.sensor-view-cone")).toHaveCount(0);
+    expect(await entityPosition(page, SATELLITE), "the main 3D window still draws the satellite").not.toBeNull();
+    await waitForCameraOnSatellite(page, "after switching display modes");
+  });
+
+  test("at ×8 in Camera mode with online imagery off, the HUD points to Globe Manager", async ({ page }) => {
+    await openScenario(page, "E2E");
+    await waitForScene(page);
+    await openSensorView(page);
+    await waitForCameraOnSatellite(page, "at ×1");
+
+    for (let i = 0; i < 3; i++) await zoomIn(page).click();
+    await expect(zoomValue(page)).toHaveText("×8");
+    await expect(hud(page)).toContainText(msg("sensorView.hintGlobeManager"));
+    await expect(hud(page)).toContainText(/FOV [0-9.]+° ×8/);
+    // Sensor ไม่แสดงคำแนะนำ (คำแนะนำเฉพาะโหมด Camera)
+    await displayButton(page, "Sensor").click();
+    await expect(hud(page)).not.toContainText(msg("sensorView.hintGlobeManager"));
+  });
+});
+
+// ---------- Globe Manager ----------
+
+/** ชื่อบนจอของชั้นภาพ ตามลำดับใน catalog ของ server (draw order: ชั้นหลังทับชั้นก่อน) ต่อจาก Natural Earth II ที่เป็นฐานเสมอ */
+const GIBS_TITLES = [
+  "Blue Marble",
+  "VIIRS NOAA-20 True Color",
+  "VIIRS Suomi NPP True Color",
+  "MODIS Terra True Color",
+  "Himawari-9 Red Visible",
+  "Himawari-9 Clean Infrared",
+  "GOES-East GeoColor",
+  "GOES-West GeoColor",
+];
+
+const onlineSwitch = (page: Page) => page.getByRole("checkbox", { name: "Online imagery (NASA GIBS)", exact: true });
+const globeRows = (page: Page) => page.locator(".globe-table tbody tr");
+
+interface SettingsDoc {
+  online_imagery: { enabled: boolean };
+}
+
+async function imageryEnabledOnServer(page: Page): Promise<boolean> {
+  const reply = await page.request.get("/api/settings");
+  expect(reply.ok()).toBe(true);
+  return ((await reply.json()) as SettingsDoc).online_imagery.enabled;
+}
+
+test.describe("Globe Manager", () => {
+  test("lists Natural Earth II and the 8 GIBS layers; ticking Online imagery asks for consent and Cancel changes nothing", async ({ page }) => {
+    await openScenario(page, "E2E");
+    expect(await imageryEnabledOnServer(page), "online_imagery.enabled in the e2e data").toBe(false);
+    // รายการชั้นของ server ตรงกับที่หน้าต่างแสดง (GET /api/imagery/layers ไม่ต่อเน็ต: ใช้ได้เสมอแม้สวิตช์ปิด)
+    const layersReply = await page.request.get("/api/imagery/layers");
+    expect(layersReply.ok()).toBe(true);
+    const layers = (await layersReply.json()) as { enabled: boolean; layers: { title: string }[] };
+    expect(layers.enabled).toBe(false);
+    expect(layers.layers.map((l) => l.title)).toEqual(GIBS_TITLES);
+
+    await page.getByRole("menuitem", { name: "View", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Globe Manager", exact: true }).click();
+
+    // 9 แถว: Natural Earth II (ฐาน ปิดไม่ได้) + 8 ชั้นของ catalog ตามลำดับ
+    await expect(onlineSwitch(page)).toBeVisible();
+    await expect(globeRows(page)).toHaveCount(9);
+    await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES]);
+    await expect(onlineSwitch(page)).not.toBeChecked();
+    // สวิตช์ปิด: ชั้น GIBS ใช้ไม่ได้ (Show และ % Translucency ปิดใช้) ส่วน Natural Earth II ติ๊กไว้และปิดไม่ได้เสมอ
+    await expect(page.getByRole("checkbox", { name: "Natural Earth II Show", exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Natural Earth II Show", exact: true })).toBeDisabled();
+    for (const title of GIBS_TITLES) {
+      await expect(page.getByRole("checkbox", { name: `${title} Show`, exact: true }), `${title} Show while the switch is off`).toBeDisabled();
+    }
+
+    // ติ๊ก -> กล่องยืนยันภาษาไทยที่บอก host ที่จะต่อ -> Cancel: ไม่เปลี่ยนค่า (server ยังปิด และช่องติ๊กกลับเป็นไม่ติ๊ก)
+    await onlineSwitch(page).click();
+    // หน้าต่างลอยของ Globe Manager ก็มี role dialog (dockview): เลือกกล่องยืนยันของแอปจากชื่อ "Confirm"
+    const dialog = page.getByRole("dialog", { name: "Confirm", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("gibs.earthdata.nasa.gov");
+    await expect(dialog).toContainText("data/imagery");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(onlineSwitch(page)).not.toBeChecked();
+    expect(await imageryEnabledOnServer(page), "online_imagery.enabled after Cancel").toBe(false);
+
+    // Esc = Cancel เช่นกัน
+    await onlineSwitch(page).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("gibs.earthdata.nasa.gov");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(onlineSwitch(page)).not.toBeChecked();
+    expect(await imageryEnabledOnServer(page), "online_imagery.enabled after Escape").toBe(false);
+    const after = await page.request.get("/api/imagery/layers");
+    expect(((await after.json()) as { enabled: boolean }).enabled).toBe(false);
+    // ทุกอย่างข้างบนเกิดโดยไม่มี request ใดไป /api/imagery/tiles (ตรวจตอนจบ test ด้วย fixture tileRequests)
+  });
+});
