@@ -20,23 +20,22 @@ scene = pl.init_scene()
 # --------------------------------------------------------------------------------------
 # Dimensions (metres). official / derived / est.
 # Sources:
-#   - CSNO (2019) "BeiDou Satellite Metadata" & CAST DFH-3B IGSO bus specifications:
-#       Bus box: X_B = 2.100 m, Y_B = 2.000 m, Z_B = 3.100 m (launch mass ~4200 kg).
-#       Unlike BDS-3G (GEO), BDS-3I (IGSO) does not carry the twin Ø2.2 m side RDSS mesh
-#       reflectors; instead it carries a +Z L-band phased array, Ka-band ISL phased array,
-#       and a compact +X regional S/C-band dish (Ø0.84 m, extending X to [-1.08, +1.28] m = 2.36 m).
-#   - Solar wings: 2 wings, 3 panels/wing (2.300 m x 1.800 m = 12.42 m^2/wing, 24.84 m^2 total),
-#       yoke 1.000 m, gap 0.060 m -> deployed span Y = 18.040 m.
-#   - IGS igs_satellite_metadata.snx:
+#   - CSNO "BeiDou Satellite Metadata" (BDS-3I, via GFZ / Duan et al. ABW):
+#       Bus box: X_B = 2.098 m, Y_B = 2.358 m, Z_B = 3.602 m (launch mass ~4200 kg; SNX operational ~2950 kg).
+#       Unlike BDS-3G (GEO), BDS-3I (IGSO) omits twin Ø2.2 m RDSS mesh reflectors and
+#       carries a +Z L-band phased array, Ka-band ISL phased array, and compact +X S/C-band dish.
+#   - Solar wings (est.): 2 wings, 3 panels/wing (2.300 m x 1.800 m = 12.42 m^2/wing, 24.84 m^2 total),
+#       yoke 0.821 m, gap 0.060 m -> wing_tip = 1.179 + 0.821 + 6.900 + 0.120 = 9.020 m (18.040 m span).
+#   - IGS igs_satellite_metadata.snx (C220):
 #       LRA_BDS_SHAO_90 (90 corner-cube prisms) at (-0.9893, -0.7118, +1.9724) m.
 # --------------------------------------------------------------------------------------
-BUS = (2.100, 2.000, 3.100)                 # CAST DFH-3B bus (X, Y, Z) m
+BUS = (2.098, 2.358, 3.602)                 # official CSNO BDS-3I bus (X, Y, Z) m
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
 N_PANELS = 3
 PANEL_L, PANEL_W, PANEL_T = 2.300, 1.800, 0.026
 PANEL_GAP = 0.060
-YOKE_LEN = 1.000                            # wing_tip = 1.000 + 1.000 + 6.900 + 0.120 = 9.020 m -> span 18.040 m
+YOKE_LEN = 0.821                            # wing_tip = 1.179 + 0.821 + 6.900 + 0.120 = 9.020 m -> span 18.040 m
 SADM_X, SADM_Z = 0.0, 0.0
 
 # --------------------------------------------------------------------------------------
@@ -113,11 +112,11 @@ pl.parabolic_dish(p, (+0.86, -0.36, HZ + 0.16), (0, 0, 1),
                   radius=0.42, depth=0.10, rings=5, segs=28,
                   front_mat="mesh_gold", back_mat="titanium_grey", feed_len=0.28)
 
-# Official LRA_BDS_SHAO_90 (90 corner-cube prisms) at (-0.820, -0.712, +1.972) m
-# Mounted on an elevated support pedestal on the (-X, -Y) corner of the +Z deck
-# (SINEX Z = +1.9724 m, Y = -0.7118 m)
-pl.box(p, (-0.820, -0.712, HZ + 0.184), (0.18, 0.18, 0.368), "titanium_grey")
-pl.lrr_array(p, (-0.820, -0.712, HZ + 0.368), (0.46, 0.38, 0.054), nx=10, ny=9)
+# Official LRA_BDS_SHAO_90 (90 corner-cube prisms) at (-0.9893, -0.7118, +1.9724) m
+# Mounted on a compact bracket on the (-X, -Y) corner of the +Z deck
+# (HZ = 1.801 m -> 0.117 m bracket + 0.054 m tray puts prism faces at Z = +1.972 m)
+pl.box(p, (-0.820, -0.712, HZ + 0.0585), (0.18, 0.18, 0.117), "titanium_grey")
+pl.lrr_array(p, (-0.820, -0.712, HZ + 0.117), (0.46, 0.38, 0.054), nx=10, ny=9)
 pl.finish(p, ROOTOBJ)
 
 # --------------------------------------------------------------------------------------

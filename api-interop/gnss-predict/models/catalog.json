@@ -106,7 +106,7 @@
       "id": "bds3-igso",
       "glb": "bds3-igso/bds3-igso.glb",
       "blocks": ["BDS-3I"],
-      "size_m": [2.36, 18.04, 3.95],
+      "size_m": [2.359, 18.04, 4.452],
       "triangles": 6378,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
