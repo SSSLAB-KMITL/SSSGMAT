@@ -200,11 +200,13 @@ describe("wing nodes in the real glbs", () => {
     }
   });
 
-  test("EO models without a solar_cells material: catalog cell_normal lies along the panel's own faces (terra both faces cells, GOES 'solarpanel-faces', aqua/suomi-npp ±X)", () => {
-    // terra: แผงสองหน้า วัสดุเซลล์เดียวกันทั้ง ±Z ของตัวดาว (glTF ∓Y) catalog เลือก −Z
-    const terra = areaByAxis(readGlb(entryOf("terra").glb), "wing-Y", "Main Solar Panels.001");
-    expect(terra["+Y"]).toBeCloseTo(terra["-Y"], 3);
-    expect(cellNormalOf(catalog, "terra")).toEqual([0, 0, -1]);
+  test("EO models without a solar_cells material: catalog cell_normal lies along the panel's own faces (terra cell face vs its back, GOES 'solarpanel-faces', aqua/suomi-npp ±X)", () => {
+    // terra: หน้าเซลล์ (Main Solar Panels.001) ชี้ทาง cell_normal ของ catalog ส่วนหน้าหลัง (Main Solar Panels Back) ชี้ทางตรงข้าม
+    const terraGlb = readGlb(entryOf("terra").glb);
+    const terraCells = bodyOfGltf(faceNormal(terraGlb, "wing-Y", "Main Solar Panels.001")!);
+    const terraBack = bodyOfGltf(faceNormal(terraGlb, "wing-Y", "Main Solar Panels Back")!);
+    expect(angleDeg(cart(terraCells), cart(cellNormalOf(catalog, "terra")))).toBeLessThan(0.5);
+    expect(angleDeg(cart(terraBack), cart(cellNormalOf(catalog, "terra")))).toBeGreaterThan(179.5);
     // GOES: หน้าเซลล์ (Goes2-solarpanel-faces) ชี้ +Z ของตัวดาว
     const goes = bodyOfGltf(faceNormal(readGlb(entryOf("goes").glb), "wing-Y", "Goes2-solarpanel-faces")!);
     expect(angleDeg(cart(goes), cart(cellNormalOf(catalog, "goes")))).toBeLessThan(0.5);
@@ -226,9 +228,11 @@ describe("cell_normal of the catalog", () => {
       const field = (m as { cell_normal?: string }).cell_normal;
       expect(field, m.id).toMatch(/^[+-][XZ]$/);
       expect(cellNormalOf(catalog, m.id), m.id).toEqual(AXES[field!]);
-      expect(wingZeroNormal(m.id), m.id).toEqual(AXES[field!]);
+      expect(wingZeroNormal(m.id), m.id).toEqual(AXES[field!]); // ตารางสำรอง (หรือค่าตั้งต้น −X) ให้ค่าเดียวกับ catalog ทุกโมเดล
     }
-    expect(Object.keys(WING_ZERO_NORMAL).sort()).toEqual(catalog.models.map((m) => m.id).sort());
+    // ไม่มี id ค้างในตารางที่ catalog ไม่มีแล้ว
+    const ids = new Set(catalog.models.map((m) => m.id));
+    for (const id of Object.keys(WING_ZERO_NORMAL)) expect(ids.has(id), id).toBe(true);
   });
 
   test("a catalog without cell_normal (or with an unreadable value) falls back to the per-id table", () => {
@@ -791,17 +795,31 @@ describe("SatModelSource: catalog and glb loading", () => {
   test("the attitude law follows each satellite's block: blocks sharing one model share its glb but not its law", async () => {
     const { calls } = stubModelFetch();
     const src = new SatModelSource(() => undefined);
-    const sats = [{ block: "BDS-2G", norad: 1 }, { block: "BDS-2I", norad: 2 }, { block: "QZS-1", norad: 3 }, { block: "QZS-2I", norad: 4 }];
+    // คู่ block จาก catalog ที่ได้โมเดลเดียวกันแต่กฎต่างกัน (เช่น block ใน fallback_blocks ที่ไปลง generic)
+    const blocks = [...catalog.models.flatMap((m) => m.blocks ?? []), ...catalog.fallback_blocks];
+    const byModel = new Map<string, string[]>();
+    for (const b of blocks) {
+      const id = resolveModel(catalog, { block: b, norad: null }).id;
+      byModel.set(id, [...(byModel.get(id) ?? []), b]);
+    }
+    const pair = [...byModel.values()].map((bs) => bs.filter((b, i) => bs.findIndex((x) => attitudeLawFor(x, false) === attitudeLawFor(b, false)) === i)).find((bs) => bs.length >= 2);
+    expect(pair, "catalog มี block สองตัวที่ใช้โมเดลเดียวกันแต่กฎต่างกัน").toBeDefined();
+    const sats = [{ block: pair![0], norad: 1 }, { block: pair![1], norad: 2 }, { block: "BDS-2G", norad: 3 }, { block: "QZS-1", norad: 4 }];
     for (let round = 0; round < 2; round++) {
       for (const s of sats) src.specFor(s);
       await flush();
     }
-    const [geo, igso, qzs1, qzs2] = sats.map((s) => src.specFor(s)!);
-    expect([geo.id, igso.id, qzs1.id, qzs2.id]).toEqual(["bds2-igso", "bds2-igso", "qzss-igso", "qzss-igso"]);
-    expect([geo.law, igso.law, qzs1.law, qzs2.law]).toEqual(["orbit_normal", "bds2_ys_on", "qzss1_ys_on", "qzss2_pseudo_ys"]);
-    expect(geo.uri).toBe(igso.uri);
-    expect(src.specFor({ block: "BDS-2G", norad: 9 })).toBe(geo); // spec เดียวกันต่อ (โมเดล, กฎ)
-    expect(calls.filter((p) => p.endsWith(".glb")).sort()).toEqual(["/models/bds2-igso/bds2-igso.glb", "/models/qzss-igso/qzss-igso.glb"]);
+    const [a, b, geo, qzs1] = sats.map((s) => src.specFor(s)!);
+    expect(a.id).toBe(b.id);
+    expect(a.uri).toBe(b.uri); // glb เดียวกัน
+    expect(a.law).toBe(attitudeLawFor(pair![0], false));
+    expect(b.law).toBe(attitudeLawFor(pair![1], false));
+    expect(a.law).not.toBe(b.law);
+    expect(src.specFor({ block: pair![0], norad: 9 })).toBe(a); // spec เดียวกันต่อ (โมเดล, กฎ)
+    // กฎตาม block ไม่ว่าจะได้โมเดลไหน
+    expect([geo.id, geo.law]).toEqual([resolveModel(catalog, { block: "BDS-2G", norad: null }).id, "orbit_normal"]);
+    expect([qzs1.id, qzs1.law]).toEqual([resolveModel(catalog, { block: "QZS-1", norad: null }).id, "qzss1_ys_on"]);
+    expect(calls.filter((p) => p.endsWith(".glb")).sort()).toEqual([...new Set([a, geo, qzs1].map((x) => `/models/${entryOf(x.id).glb}`))].sort());
     // terra: cell_normal ของ catalog (−Z)
     src.specFor({ block: null, norad: 25994 });
     await flush();

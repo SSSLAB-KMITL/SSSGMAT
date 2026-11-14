@@ -105,7 +105,8 @@ export function wingNodesOf(cat: ModelCatalog, id: string): string[] {
  * ค่าตรงกับ cell_normal ของ catalog ปัจจุบัน (test ตรวจทุกโมเดล) ที่มาของค่า:
  * - −X: โมเดลที่มี material "solar_cells" (GNSS ทุกตัว, generic, himawari-9) ตรงกับ NOTES ของ gps-iif, gps-iii, galileo-foc
  *   (tests/unit/sat-model-render.test.ts ตรวจกับหน้าเซลล์ใน glb จริง)
- * - terra −Z: "Main Solar Panels.001" เป็นแผงสองชั้นที่ใช้ texture เซลล์ทั้งสองด้าน (±Z ของตัวดาว พื้นที่เท่ากัน) catalog เลือก −Z
+ * - −X ยังรวม noaa-21 (material "solar_cells")
+ * - terra −Z: หน้าเซลล์ "Main Solar Panels.001" ชี้ −Z (หน้าหลังเป็น "Main Solar Panels Back")
  * - goes +Z: หน้า "Goes2-solarpanel-faces" (สีน้ำเงินของเซลล์) ชี้ +Z
  * - aqua +X, suomi-npp −X: texture เดียวกันทั้งสองด้านของแผง (แกน ±X แน่นอน) ด้านตาม catalog
  * ไม่อยู่ในตาราง = DEFAULT_WING_ZERO_NORMAL (−X: ด้านเซลล์ของโมเดล procedural ทุกตัว)
@@ -120,12 +121,14 @@ export const WING_ZERO_NORMAL: Readonly<Record<string, readonly [number, number,
   "glonass-k1": [-1, 0, 0],
   "glonass-k2": [-1, 0, 0],
   "bds2-igso": [-1, 0, 0],
+  "bds2-geo": [-1, 0, 0],
   "bds3-geo": [-1, 0, 0],
   "bds3-igso": [-1, 0, 0],
   "bds3-meo-cast": [-1, 0, 0],
   "bds3-meo-secm": [-1, 0, 0],
   "qzss-geo": [-1, 0, 0],
   "qzss-igso": [-1, 0, 0],
+  "qzss-qzs1": [-1, 0, 0],
   "navic-irnss1": [-1, 0, 0],
   "navic-nvs": [-1, 0, 0],
   generic: [-1, 0, 0],
@@ -133,6 +136,7 @@ export const WING_ZERO_NORMAL: Readonly<Record<string, readonly [number, number,
   terra: [0, 0, -1],
   aqua: [1, 0, 0],
   "suomi-npp": [-1, 0, 0],
+  "noaa-21": [-1, 0, 0],
   goes: [0, 0, 1],
 };
 

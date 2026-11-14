@@ -1175,7 +1175,7 @@ View From/To ที่ From เป็นดาว: กล้องอยู่�
 Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-14-gnss-studio-models-integration-design.md), brief ของโมเดล: [docs/2026-11-14-gnss-studio-models-brief.md](docs/2026-11-14-gnss-studio-models-brief.md),
 การตัดสินใจและเรื่องที่เลื่อน: [docs/2026-11-14-gnss-studio-imagery-decisions.md](docs/2026-11-14-gnss-studio-imagery-decisions.md) หัวข้อ "โมเดล 3 มิติในหน้าต่าง 3D"
 
-**โมเดลที่มี (23 ตัว ใน `models/catalog.json`)**
+**โมเดลที่มี (26 ตัว ใน `models/catalog.json`)**
 
 | โมเดล | block (`satelliteInfo(norad).block` จากข้อมูล IGS) หรือ NORAD | กฎท่าทาง (ตาม block ของดาว ไม่ใช่ตามโมเดล) |
 |---|---|---|
@@ -1187,12 +1187,14 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 | `glonass-k2` | GLO-K2 | `glonass_k` (ประมาณการ) |
 | `galileo-iov` | GAL-1 | `galileo_iov` |
 | `galileo-foc` | GAL-2 | `galileo_foc` |
-| `bds2-igso` | BDS-2I, BDS-2G, BDS-2M | BDS-2I/2M `bds2_ys_on`, BDS-2G `orbit_normal` |
+| `bds2-igso` | BDS-2I, BDS-2M | `bds2_ys_on` |
+| `bds2-geo` | BDS-2G | `orbit_normal` |
 | `bds3-geo` | BDS-3G | `orbit_normal` |
 | `bds3-igso` | BDS-3I | `bds3_cast` |
 | `bds3-meo-cast` | BDS-3M-CAST, BDS-3SM-CAST | `bds3_cast` |
 | `bds3-meo-secm` | BDS-3M-SECM-A, BDS-3M-SECM-B, BDS-3SM-SECM | `bds3_secm` |
-| `qzss-igso` | QZS-2A, QZS-2I, QZS-1 | QZS-2A/2I `qzss2_pseudo_ys`, QZS-1 `qzss1_ys_on` |
+| `qzss-igso` | QZS-2A, QZS-2I | `qzss2_pseudo_ys` |
+| `qzss-qzs1` | QZS-1 | `qzss1_ys_on` |
 | `qzss-geo` | QZS-2G, QZS-3G | `orbit_normal` |
 | `navic-irnss1` | IRS-1G, IRS-1I | `navic` (ประมาณการ) |
 | `navic-nvs` | IRS-2G, IRS-2I | `navic` (ประมาณการ) |
@@ -1200,6 +1202,7 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 | `terra` | NORAD 25994 | `nadir_velocity` |
 | `aqua` | NORAD 27424 | `nadir_velocity` |
 | `suomi-npp` | NORAD 37849 (Suomi NPP), 43013 (NOAA-20) | `nadir_velocity` |
+| `noaa-21` | NORAD 54234 (NOAA-21) | `nadir_velocity` |
 | `goes` | NORAD 41866, 43226, 51850, 60133 (GOES-16/17/18/19) | `nadir_velocity` |
 | `himawari-9` | NORAD 41836, 40267 (Himawari-9/8) | `nadir_velocity` |
 
@@ -1245,7 +1248,7 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - **ประมาณการ**: `gps_iii` (ค่าหน่วง d = 2000 เลือกให้ ≤ 0.082°/s และราว 1 ชั่วโมง), `glonass_k` (อัตราคงที่ ไม่มีช่วงเร่ง/ผ่อน และไม่อ่านพารามิเตอร์ใน CDMA nav), `navic` (เกณฑ์ ON 4°)
 - ไม่จำลอง: CYS ของ BDS-2 บางดวงหลังอัปเกรดปี 2017–2018, การพลิกที่เลื่อนออกไปของ BDS-3 SECM, แบบ WHU ของ CAST, ค่า β0 = 2.8° ของ CAST MEO (ใช้ 3° ทุกดวง), การหมุนช่วง manoeuvre
 - **ด้านเซลล์ของ `aqua` และ `suomi-npp` ตาม `cell_normal` ของ catalog**: แผงสองหน้าใช้พื้นผิวเดียวกัน แกนแผง (±X) แน่นอน ด้านที่เห็นเป็นไปตามที่ catalog เลือก
-  ด้านเซลล์ของ `goes` เชื่อได้ระดับปานกลาง ส่วน `terra` เซลล์อยู่ทั้งสองหน้า (แกนแผงแน่นอน catalog เลือก −Z)
+  ด้านเซลล์ของ `goes` เชื่อได้ระดับปานกลาง ส่วน `terra` หน้าเซลล์ชี้ −Z (หน้าหลังเป็นพื้นผิวหลังแผง)
 - โมเดลนี้เป็นภาพประกอบ ไม่ใช่ท่าทางที่วัดได้ของดาว และโมเดลของดาวรุ่นที่ไม่มีใน catalog ใช้ `generic` (ท่าทางยังตาม block ของดาว)
 - ภาพที่ออกมาตรวจด้วยคณิตศาสตร์ของ Cesium และ e2e (จำนวนโมเดล จุดซ่อนหรือแสดง ทิศ +Z) ไม่ได้ตรวจด้วยตาบน GPU จริง (e2e ใช้ SwiftShader และไม่ใช้ภาพจับหน้าจอ)
   ความเร็ว 30 fps ที่ 146 ดวงยังไม่ได้วัดบน GPU จริง (Model Detail Threshold ลดจำนวนโมเดลที่วาดลงตามระยะจากกล้อง)
