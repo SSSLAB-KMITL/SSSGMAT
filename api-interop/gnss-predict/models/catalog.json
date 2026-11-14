@@ -76,7 +76,7 @@
       "id": "glonass-k1",
       "glb": "glonass-k1/glonass-k1.glb",
       "blocks": ["GLO-K1", "GLO-K1+", "GLO-K1A", "GLO-K1B"],
-      "size_m": [1.52, 10.76, 2.98],
+      "size_m": [1.673, 11.29, 3.01],
       "triangles": 3976,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
