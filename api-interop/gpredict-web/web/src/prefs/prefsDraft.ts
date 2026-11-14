@@ -2,6 +2,7 @@
 // Pure: no React, no requests. The window keeps one Draft for all its pages; `draftToRequest` makes the body of PUT /api/prefs.
 
 import type { PrefsAnswer, PrefValue } from "../types";
+import { savedNote } from "./prefPlaces";
 
 /** A page asked for a key to go back to its default (a Reset button). */
 export const RESET = Symbol("RESET");
@@ -110,7 +111,7 @@ export interface CommitSteps {
  * OK of the Preferences window, all or nothing (spec §10, plan decision 6): every part is checked first, with dry runs that write
  * nothing, and only when all of them pass is anything written. In this order, one at a time, and the first step that rejects ends it
  * (its error is what rejects here): checkPrefs, every check, savePrefs, every commit. A check that fails therefore leaves every file as
- * it was.
+ * it was; a write that fails after others (the server went away, a file could not be written) says what they saved (`commitSteps`).
  */
 export async function commitPreferences(steps: CommitSteps): Promise<void> {
   await steps.checkPrefs();
@@ -131,6 +132,10 @@ export interface PreferenceParts {
   prefsFailedAs(e: unknown): string;
   /** the text to show for a failure of a page's check or commit; `page` is the group that registered it */
   pageFailedAs(page: string, e: unknown): string;
+  /** what `savePrefs` saves, as the note of a failure after it names it (prefPlaces.ts `prefsSavedParts`) */
+  prefsPart: string;
+  /** what the commit of `page` registered under `key` saves, as the same note names it */
+  pagePart(page: string, key: string): string;
 }
 
 /** The step that does what `step` does and fails with the Error of `text(failure)`, which is what the window shows (and what rejects `commitPreferences`). */
@@ -144,14 +149,29 @@ const failingAs =
     }
   };
 
-/** The steps for `commitPreferences`, each failing with a text that says where the failure is (spec §10: "<group> → <tab>: <text>"). */
+/**
+ * The steps for `commitPreferences`, each failing with a text that says where the failure is (spec §10: "<group> → <tab>: <text>"). A
+ * write that fails after other writes of the same OK adds what those saved (prefPlaces.ts `savedNote`): Cancel does not take it back,
+ * and OK again sends only what is still to save.
+ */
 export function commitSteps(p: PreferenceParts): CommitSteps {
   const nothing: Commit = async () => {};
-  const page = (e: { page: string; fn: Commit }) => failingAs((failure) => p.pageFailedAs(e.page, failure), e.fn);
+  const saved: string[] = []; // what the writes of this OK have saved so far
+  const writing =
+    (text: (failure: unknown) => string, step: Commit, part: string): Commit =>
+    async () => {
+      try {
+        await step();
+      } catch (e) {
+        throw new Error(saved.length === 0 ? text(e) : `${text(e)} ${savedNote(saved)}`);
+      }
+      saved.push(part);
+    };
+  const pageText = (page: string) => (failure: unknown) => p.pageFailedAs(page, failure);
   return {
     checkPrefs: p.changed ? failingAs(p.prefsFailedAs, p.checkPrefs) : nothing,
-    checks: p.checks.entries.map(page),
-    savePrefs: p.changed ? failingAs(p.prefsFailedAs, p.savePrefs) : nothing,
-    commits: p.commits.entries.map(page),
+    checks: p.checks.entries.map((e) => failingAs(pageText(e.page), e.fn)),
+    savePrefs: p.changed ? writing(p.prefsFailedAs, p.savePrefs, p.prefsPart) : nothing,
+    commits: p.commits.entries.map((e) => writing(pageText(e.page), e.fn, p.pagePart(e.page, e.key))),
   };
 }

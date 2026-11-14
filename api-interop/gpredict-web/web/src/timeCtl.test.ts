@@ -3,12 +3,14 @@ import { pinTimeZone } from "./pinTimeZone";
 import {
   applyEdit,
   changeField,
+  clockToReset,
   composeTime,
   dayOf,
   displayFields,
   failEdit,
   fieldsFromTime,
   INITIAL_MODEL,
+  keptTimeController,
   monthGrid,
   observeClock,
   shiftMonth,
@@ -371,3 +373,19 @@ describe("the clock model", () => {
 function fieldsString(f: TimeFields): string {
   return `${f.day.toISOString().slice(0, 10)} ${f.h}:${f.m}:${f.s}.${f.ms}`;
 }
+
+describe("the Time Controller of the main page and the tabs (one window at a time, ref §9)", () => {
+  it("is forgotten, with no reset, once its module is not a tab: closed, deleted, or detached (its window has its own)", () => {
+    expect(keptTimeController("X", ["X", "Y"])).toBe("X");
+    expect(keptTimeController("X", ["Y"])).toBeNull();
+    expect(keptTimeController(null, ["Y"])).toBeNull();
+  });
+
+  it("opening the Time Controller of another tab resets the clock of the one that closes, and never of a detached module", () => {
+    expect(clockToReset("X", "Y")).toBe("X"); // X's window closes, as its close button does
+    expect(clockToReset("Y", "Y")).toBeNull(); // the same window comes to the front
+    expect(clockToReset(null, "Y")).toBeNull();
+    // the cause of the bug: X was detached, so its Time Controller here is forgotten and the clock of X, running in its window, stays
+    expect(clockToReset(keptTimeController("X", ["Y"]), "Y")).toBeNull();
+  });
+});

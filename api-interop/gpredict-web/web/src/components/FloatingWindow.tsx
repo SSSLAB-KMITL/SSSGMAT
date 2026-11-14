@@ -7,6 +7,8 @@ import type { Point, Size } from "../windowGeom";
 interface Props {
   /** shown in the title bar, centred */
   title: string;
+  /** the window's accessible name when its title is empty (a box Gpredict shows without a title): our Thai, read by screen readers */
+  label?: string;
   /** the close button, or Escape while this is the front window (unless `closeOnEscape` is false) */
   onClose: () => void;
   /** Escape closes the window when it is in front. Default true; Radio Control and Antenna Control pass false: Gpredict closes them only with the close button (ref-R §1) */
@@ -48,14 +50,14 @@ function viewportSize(): Size {
  * button, dragged by the title bar, always kept inside the page, closed by Escape when it is in front. A press on a
  * window brings it to the front. It does not block the page behind it.
  */
-export function FloatingWindow({ title, onClose, closeOnEscape = true, children, initialPosition, width, raiseToken }: Props) {
+export function FloatingWindow({ title, label, onClose, closeOnEscape = true, children, initialPosition, width, raiseToken }: Props) {
   const id = useId();
   const titleId = `${id}-title`;
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   // null until the window is measured (it is invisible until then, so it never flashes at the wrong place)
   const [pos, setPos] = useState<Point | null>(null);
-  const windows = useSyncExternalStore(subscribe, getStack);
+  const windows = useSyncExternalStore(subscribe, getStack, getStack); // (the third is what react-dom/server renders with: the tests' markup)
 
   const place = useCallback((wanted: Point | null) => {
     const el = box.current;
@@ -155,7 +157,8 @@ export function FloatingWindow({ title, onClose, closeOnEscape = true, children,
       ref={box}
       className="float-window"
       role="dialog"
-      aria-labelledby={titleId}
+      aria-labelledby={label === undefined ? titleId : undefined}
+      aria-label={label}
       tabIndex={-1}
       style={{ left: pos?.x ?? 0, top: pos?.y ?? 0, width: width ?? "max-content", zIndex: z, visibility: pos === null ? "hidden" : undefined }}
       onPointerDownCapture={raise}

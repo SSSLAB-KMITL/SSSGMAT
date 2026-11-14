@@ -12,6 +12,8 @@ import { TabError } from "./prefPlaces";
 
 /** The name of the tab, as an error of the window names it ("General → Ground Stations: ..."); the second tab of General (`GENERAL_TABS`). */
 export const GROUND_STATIONS_TAB = "Ground Stations";
+/** The key the tab registers its check and commit under (PrefsPageApi `onCheck`, `onCommit`). */
+export const STATIONS_KEY = "qth";
 
 /** The list as the window holds it: the stations, sorted by name, and the name of the default station (always one of them). */
 export interface StationsDraft {

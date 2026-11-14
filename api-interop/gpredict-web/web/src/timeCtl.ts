@@ -227,3 +227,22 @@ export function displayFields(m: ClockModel, fallback: Date, local = false): Tim
   }
   return fieldsFromTime(new Date(Math.floor(time.getTime() / 1000) * 1000), local);
 }
+
+// ---------------------------------------------------------------- the window of the main page
+
+/**
+ * The module whose Time Controller the main page keeps open: none once that module is not one of its `tabs` any more. A closed or
+ * deleted module's clock is gone; a detached one runs on in its window, which has a Time Controller of its own, so it is forgotten here
+ * without a reset (a hidden window kept here would reset that clock when another module's Time Controller is opened).
+ */
+export function keptTimeController(open: string | null, tabs: readonly string[]): string | null {
+  return open !== null && tabs.includes(open) ? open : null;
+}
+
+/**
+ * Opening the Time Controller of `name` on the main page (one window at a time): the module whose window closes and whose clock is
+ * therefore reset, as its close button does (ref §9); null when none closes.
+ */
+export function clockToReset(open: string | null, name: string): string | null {
+  return open !== null && open !== name ? open : null;
+}

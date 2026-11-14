@@ -24,6 +24,7 @@ import {
   stationColumns,
   stationRows,
   stationsBody,
+  STATIONS_KEY,
 } from "./groundStations";
 import type { StationsDraft } from "./groundStations";
 import type { PrefsPageApi } from "./prefGroups";
@@ -59,11 +60,11 @@ function StationsTable({ api, list }: { api: PrefsPageApi; list: QthList }) {
   useEffect(() => {
     if (!changed) return;
     // the window checks before it writes anything (all or nothing): the same list, as a dry run
-    api.onCheck("qth", async () => {
+    api.onCheck(STATIONS_KEY, async () => {
       const body = stationsBody(original, latest.current);
       if (body !== null) await checkStations(body);
     });
-    api.onCommit("qth", async () => {
+    api.onCommit(STATIONS_KEY, async () => {
       const body = stationsBody(original, latest.current);
       if (body !== null) await commitStations(body);
     });

@@ -1,7 +1,7 @@
-import { createElement } from "react";
+import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { OrbitInfoTable, TransponderList } from "./components/SatInfoWindow";
+import { OrbitInfoTable, OrbitPanel, SatInfoWindow, TransponderList, TransponderPanel } from "./components/SatInfoWindow";
 import { DEFAULT_NF } from "./numfmt";
 import type { NumberFormat } from "./numfmt";
 import type { Transponder } from "./radio/types";
@@ -328,5 +328,35 @@ describe("the open Satellite Info windows", () => {
   it("closing a window that is not open leaves the list as it is", () => {
     const list = openSatInfo([], 1);
     expect(closeSatInfo(list, "satinfo:nope")).toBe(list);
+  });
+});
+
+describe("the Satellite Info window for assistive technology", () => {
+  it("a request that failed is an alert, in both tabs, and so is the line of an unreadable TLE", () => {
+    const failed = { state: "failed" as const, text: "ติดต่อ server ไม่ได้" };
+    expect(renderToStaticMarkup(createElement(OrbitPanel, { load: failed }))).toBe('<p class="dialog-error" role="alert">ติดต่อ server ไม่ได้</p>');
+    expect(renderToStaticMarkup(createElement(TransponderPanel, { load: failed }))).toBe('<p class="dialog-error" role="alert">ติดต่อ server ไม่ได้</p>');
+    const unreadable = renderToStaticMarkup(createElement(OrbitPanel, { load: { state: "ready", value: { norad: 1, name: "X", orbit_info: null } as never } }));
+    expect(unreadable).toContain('role="alert"');
+  });
+
+  it("each tab controls its panel and each panel is labelled by its tab, with ids of their own window", () => {
+    const html = renderToStaticMarkup(createElement(SatInfoWindow, { norad: 25544, onClose: () => {} }));
+    const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((m) => m[0]);
+    const panels = [...html.matchAll(/<div[^>]*role="tabpanel"[^>]*>/g)].map((m) => m[0]);
+    expect(tabs).toHaveLength(2);
+    expect(panels).toHaveLength(2);
+    const attr = (tag: string, name: string) => new RegExp(`${name}="([^"]+)"`).exec(tag)?.[1];
+    for (let i = 0; i < 2; i++) {
+      expect(attr(tabs[i]!, "aria-controls"), `tab ${i}`).toBe(attr(panels[i]!, "id"));
+      expect(attr(panels[i]!, "aria-labelledby"), `panel ${i}`).toBe(attr(tabs[i]!, "id"));
+    }
+    // two windows can be open at once, on one page: their ids differ
+    const two = renderToStaticMarkup(
+      createElement(Fragment, null, createElement(SatInfoWindow, { norad: 25544, onClose: () => {} }), createElement(SatInfoWindow, { norad: 7530, onClose: () => {} })),
+    );
+    const ids = [...two.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

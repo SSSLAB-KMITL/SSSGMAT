@@ -16,6 +16,7 @@ import {
   goneText,
   NO_GEOMETRY,
   popupBlockedText,
+  reopenFailedText,
   restoreList,
   restoreWindow,
   sameGeometry,
@@ -452,6 +453,21 @@ describe("DetachedSession (the page /?module=<name>, spec §8.1-§8.2, decision 
     expect(page.getSnapshot()).toMatchObject({ phase: "open", error: null, epoch: 1 });
   });
 
+  it("says why when opening the module again fails while the page shows it, and forgets it once the module is open again", async () => {
+    const srv = server({ open: ["A"], windows: ["A"] });
+    const page = new DetachedSession("A", srv.deps);
+    await page.start();
+    srv.s.open = []; // the close of the page before an F5 came after this page's open
+    srv.failOpenWith(new ApiError("GMAT_FAILED", "GMAT ไม่ตอบ", 500));
+    await page.sync();
+    expect(page.getSnapshot()).toMatchObject({ phase: "open", epoch: 1, error: "GMAT ไม่ตอบ" });
+    page.pageHide();
+    expect(srv.calls).toContain("keepalive close A"); // still the module's window
+    srv.failOpenWith(null);
+    await page.sync();
+    expect(page.getSnapshot()).toMatchObject({ phase: "open", epoch: 2, error: null });
+  });
+
   it("tells its listeners of every change, and keeps the list of modules for Clone", async () => {
     const srv = server({ open: ["A"], windows: ["A"], modules: ["A", "B", "C"] });
     const page = new DetachedSession("A", srv.deps);
@@ -470,5 +486,11 @@ describe("goneText (ของเรา: what the page says when its window canno
     expect(goneText("A", "attached")).toContain("แท็บ");
     expect(goneText("A", "closed")).toContain("ปิด");
     expect(goneText("A", "deleted")).toContain("A");
+  });
+});
+
+describe("reopenFailedText (ของเรา: the notice of a module window whose module could not be opened again)", () => {
+  it("names the module and gives the server's reason", () => {
+    expect(reopenFailedText("Amateur", "GMAT ไม่ตอบ")).toBe("เปิด module Amateur อีกครั้งไม่ได้: GMAT ไม่ตอบ (โหลดหน้านี้ใหม่เพื่อลองอีกครั้ง)");
   });
 });

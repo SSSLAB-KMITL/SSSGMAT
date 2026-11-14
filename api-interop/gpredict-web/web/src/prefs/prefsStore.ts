@@ -88,8 +88,11 @@ export class PrefsStore {
 
 const store = new PrefsStore(getPrefs, putPrefs);
 
+/** What react-dom/server renders with (the markup of the tests): no answer yet, as a page before its first load. */
+const NO_ANSWER = (): PrefsAnswer | null => null;
+
 /** The Preferences of the server, null until they have arrived; the first user starts the load. */
-export const usePrefs = (): PrefsAnswer | null => useSyncExternalStore(store.subscribe, store.getSnapshot);
+export const usePrefs = (): PrefsAnswer | null => useSyncExternalStore(store.subscribe, store.getSnapshot, NO_ANSWER);
 
 /** Read the Preferences again (the Preferences window does when it opens, so that its pages start from the current values). */
 export const reloadPrefs = (): Promise<void> => store.reload();

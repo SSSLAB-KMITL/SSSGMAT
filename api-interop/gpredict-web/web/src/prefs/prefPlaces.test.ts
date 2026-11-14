@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../api";
 import { META } from "../moduleDefaults.fixture";
 import { PROPS_TABS } from "../moduleProps";
-import { pageFailure, prefPlace, prefsFailure, TabError } from "./prefPlaces";
+import { pageFailure, prefPlace, prefsFailure, prefsSavedParts, savedNote, TabError } from "./prefPlaces";
 import { PAGE_KEYS, PREDICT_TABS } from "./predictPrefs";
 
 const labelOf = (g: string) => g.toUpperCase();
@@ -87,5 +87,26 @@ describe("the text of a failure: <group> → <tab>: <Thai text of the server>", 
       "Interfaces → Rotators: Port ต้องเป็นจำนวนเต็ม 1024–65535",
     );
     expect(pageFailure("General", new Error("boom"))).toBe("General: boom");
+  });
+});
+
+describe("what a failure halfway through OK says is saved already (ของเรา)", () => {
+  it("the preferences are named by the places of their keys, each once", () => {
+    expect(prefsSavedParts(["GLOBAL/USE_LOCAL_TIME", "GLOBAL/TIME_FORMAT", "MODULES/MAP_CENTER", "LOG/LEVEL"], labelOf)).toEqual([
+      "GENERAL → Number Formats",
+      "MODULES → Map View",
+      "GENERAL → Message Logs",
+    ]);
+  });
+
+  it("a key with no place is left out, and only such keys are the Preferences", () => {
+    expect(prefsSavedParts(["PREDICT/MINIMUM_ELEV", "NO/SUCH_KEY"], labelOf)).toEqual(["PREDICT → Pass Conditions"]);
+    expect(prefsSavedParts(["NO/SUCH_KEY"], labelOf)).toEqual(["Preferences"]);
+  });
+
+  it("the note lists the parts and says that Cancel does not take them back", () => {
+    expect(savedNote(["General → Number Formats", "General → Ground Stations"])).toBe(
+      "(บันทึกส่วนเหล่านี้ไปแล้ว กด Cancel ก็ไม่ย้อนกลับ: General → Number Formats, General → Ground Stations)",
+    );
   });
 });

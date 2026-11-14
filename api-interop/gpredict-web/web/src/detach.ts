@@ -193,7 +193,7 @@ export function watchGeometry(w: GeometryWatch, g: Geometry, now: number, screen
 
 /**
  * - opening: its module is being opened (or could not be: `error`)
- * - open: the page shows its module, a window of its own
+ * - open: the page shows its module, a window of its own (`error`: opening it again failed, see `reopenFailedText`)
  * - leaving: Attach module or Close is on its way
  * - gone: the module was attached, closed or deleted, and the window was asked to close
  */
@@ -204,7 +204,7 @@ export interface DetachedState {
   phase: DetachedPhase;
   /** counts the opens of the module: a new one (the module was opened again) connects the views again */
   epoch: number;
-  /** why the module could not be opened (Thai text), null if it was */
+  /** why the module could not be opened, or opened again (Thai text), null if it was */
   error: string | null;
   gone: GoneReason | null;
   /** every module, for Clone (the names it may not take) */
@@ -236,6 +236,15 @@ export function detachedStep(list: Pick<ModuleList, "modules" | "open" | "window
   if (!list.open.includes(module)) return "reopen";
   if (!list.windows.includes(module)) return ensured ? "attached" : "window";
   return "keep";
+}
+
+/**
+ * (ของเรา) the notice of a module window whose module was closed under it (the close of the page before an F5 came after this page's
+ * open, plan decision 9) and could not be opened again: `error` is the server's reason. The session tries again at its next sync (a
+ * modules_changed, a reconnect); loading the page again tries at once.
+ */
+export function reopenFailedText(module: string, error: string): string {
+  return `เปิด module ${module} อีกครั้งไม่ได้: ${error} (โหลดหน้านี้ใหม่เพื่อลองอีกครั้ง)`;
 }
 
 /** (ของเรา) what the page says when its window does not close itself (a page not opened by the main page cannot be closed by script). */
@@ -355,7 +364,7 @@ export class DetachedSession {
     try {
       await this.deps.openModule(this.module);
     } catch (e) {
-      if (this.state.phase === "opening") this.set({ error: errorText(e) });
+      if (this.state.phase === "opening" || this.state.phase === "open") this.set({ error: errorText(e) });
       return; // open again: tried at the next `connected` (opening), or the next `sync` (open)
     } finally {
       this.opening = false;

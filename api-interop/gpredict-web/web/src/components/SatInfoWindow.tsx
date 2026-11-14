@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useId, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { errorText, getSatellite } from "../api";
 import { useNumberFormat } from "../numfmt";
@@ -19,7 +19,7 @@ const TABS: readonly { id: TabId; label: string }[] = [
 ];
 
 /** What a request has brought so far. */
-type Load<T> = { state: "loading" } | { state: "failed"; text: string } | { state: "ready"; value: T };
+export type Load<T> = { state: "loading" } | { state: "failed"; text: string } | { state: "ready"; value: T };
 
 /** A text with `<sub>` and `<sup>` in it (only the units of the Orbit Info rows have them), as real subscripts and superscripts; never as HTML. */
 function Scripted({ text }: { text: string }) {
@@ -89,25 +89,39 @@ export function TransponderList({ transponders }: { transponders: readonly Trans
 }
 
 /** The Orbit Info tab for a satellite's record: its rows, or the rows that can still be shown with the line that says why not. */
-function OrbitPanel({ load }: { load: Load<SatRecord> }) {
+export function OrbitPanel({ load }: { load: Load<SatRecord> }) {
   const nf = useNumberFormat();
   if (load.state === "loading") return <div role="status">กำลังอ่านข้อมูลดาว…</div>; // (ของเรา) Gpredict reads it before it opens the window
-  if (load.state === "failed") return <p className="dialog-error">{load.text}</p>;
+  if (load.state === "failed") {
+    return (
+      <p className="dialog-error" role="alert">
+        {load.text}
+      </p>
+    );
+  }
   const info = load.value.orbit_info;
   if (info === null || info === undefined) {
     return (
       <>
         <OrbitInfoTable rows={unreadableRows(load.value)} />
-        <p className="dialog-error">{UNREADABLE_TEXT}</p>
+        <p className="dialog-error" role="alert">
+          {UNREADABLE_TEXT}
+        </p>
       </>
     );
   }
   return <OrbitInfoTable rows={orbitInfoRows(info, nf)} />;
 }
 
-function TransponderPanel({ load }: { load: Load<Transponder[]> }) {
+export function TransponderPanel({ load }: { load: Load<Transponder[]> }) {
   if (load.state === "loading") return <div role="status">กำลังอ่านข้อมูล transponder…</div>; // (ของเรา)
-  if (load.state === "failed") return <p className="dialog-error">{load.text}</p>;
+  if (load.state === "failed") {
+    return (
+      <p className="dialog-error" role="alert">
+        {load.text}
+      </p>
+    );
+  }
   return <TransponderList transponders={load.value} />;
 }
 
@@ -146,6 +160,9 @@ interface Props {
  */
 export function SatInfoWindow({ norad, onClose, position }: Props) {
   const [tab, setTab] = useState<TabId>("orbit");
+  const id = useId(); // the ids that tie each tab to its panel, its own in every window (several can be open)
+  const tabId = (t: TabId) => `${id}-tab-${t}`;
+  const panelId = (t: TabId) => `${id}-panel-${t}`;
   const record = useLoad(getSatellite, norad);
   const transponders = useLoad(getTransponders, norad);
 
@@ -168,6 +185,8 @@ export function SatInfoWindow({ norad, onClose, position }: Props) {
               key={t.id}
               type="button"
               role="tab"
+              id={tabId(t.id)}
+              aria-controls={panelId(t.id)}
               data-tab={t.id}
               aria-selected={t.id === tab}
               tabIndex={t.id === tab ? 0 : -1}
@@ -180,10 +199,10 @@ export function SatInfoWindow({ norad, onClose, position }: Props) {
           ))}
         </div>
         <div className="satinfo-panels">
-          <div className="satinfo-panel orbit" role="tabpanel" aria-hidden={tab !== "orbit"}>
+          <div className="satinfo-panel orbit" role="tabpanel" id={panelId("orbit")} aria-labelledby={tabId("orbit")} aria-hidden={tab !== "orbit"}>
             <OrbitPanel load={record} />
           </div>
-          <div className="satinfo-panel trsp" role="tabpanel" aria-hidden={tab !== "trsp"}>
+          <div className="satinfo-panel trsp" role="tabpanel" id={panelId("trsp")} aria-labelledby={tabId("trsp")} aria-hidden={tab !== "trsp"}>
             <TransponderPanel load={transponders} />
           </div>
         </div>

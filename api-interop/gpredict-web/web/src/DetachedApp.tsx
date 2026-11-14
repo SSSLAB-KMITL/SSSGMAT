@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
 import { closeModule, closeModuleKeepalive, errorText, getModules, openModule, putWindow, retryModule } from "./api";
 import { connectAppEvents, withConfigReads } from "./appEvents";
 import { Dialogs } from "./components/Dialogs";
@@ -10,7 +11,8 @@ import { NoticeStrip } from "./components/NoticeStrip";
 import { Overlay } from "./components/Overlay";
 import { SatInfoWindows } from "./components/SatInfoWindow";
 import { TimeController } from "./components/TimeController";
-import { DETACH_POLL_MS, detachedTitle, DetachedSession, goneText, NO_GEOMETRY, watchGeometry } from "./detach";
+import { TleOldNotice } from "./components/TleOldNotice";
+import { DETACH_POLL_MS, detachedTitle, DetachedSession, goneText, NO_GEOMETRY, reopenFailedText, watchGeometry } from "./detach";
 import type { DetachedDeps, GeometryWatch } from "./detach";
 import { closeDialog, showDialog } from "./dialogs";
 import type { Dialog } from "./dialogs";
@@ -65,12 +67,14 @@ export function DetachedApp({ module, restored, handover }: Props) {
   const [session] = useState(() => new DetachedSession(module, BROWSER));
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [configRereads, setConfigRereads] = useState(0); // the reads of the module's configuration /ws/app asked for
+  const [tleOld, setTleOld] = useState<string | null>(null); // the text of the notice "TLE files are getting out of date", while it is shown
 
   useEffect(() => void session.start(), [session]);
 
   // the events of the program (/ws/app): the list of modules (an Attach, a Delete, the close of the page before this one), the
   // Preferences (number formats apply at once) and the module's configuration (module_config_changed naming it, and every connect:
-  // `withConfigReads`). The TLE notice is the main page's.
+  // `withConfigReads`). The server sends the TLE notice once per run, to the pages connected then or else to the first that connects: a
+  // window shows it too, so it is not lost when the window is the only page (the main page, if it is connected, shows its own).
   useEffect(
     () =>
       connectAppEvents(
@@ -82,7 +86,7 @@ export function DetachedApp({ module, restored, handover }: Props) {
             },
             prefsChanged: () => void reloadPrefs().catch(() => {}),
             modulesChanged: () => void session.sync(),
-            tleOld: () => {},
+            tleOld: setTleOld,
           },
           { shown: () => [module], reread: () => setConfigRereads((n) => n + 1) },
         ),
@@ -101,6 +105,9 @@ export function DetachedApp({ module, restored, handover }: Props) {
     if (state.phase !== "open") document.title = detachedTitle(module, null, restored);
   }, [module, restored, state.phase]);
 
+  const closeTleOld = () => setTleOld(null);
+  const notice = tleOld !== null && <TleOldNotice text={tleOld} onClose={closeTleOld} />;
+
   if (state.phase === "opening" || state.phase === "gone") {
     // (ของเรา) while the module opens, or when it could not; and when the window did not close itself after Attach, Close or Delete
     const text =
@@ -114,6 +121,7 @@ export function DetachedApp({ module, restored, handover }: Props) {
         <div className="empty" role="status">
           {text}
         </div>
+        {notice}
       </div>
     );
   }
@@ -128,7 +136,10 @@ export function DetachedApp({ module, restored, handover }: Props) {
       session={session}
       modules={state.modules}
       configRereads={configRereads}
-    />
+      reopenError={state.error}
+    >
+      {notice}
+    </DetachedModule>
   );
 }
 
@@ -141,9 +152,13 @@ interface ModuleProps extends Props {
   modules: readonly string[];
   /** counts the reads of the configuration /ws/app asked for: each new value reads it again (useModuleConfig) */
   configRereads: number;
+  /** why opening the module again failed (the session tries again), null if it did not */
+  reopenError: string | null;
+  /** the page's own windows (the TLE notice), inside the part that full screen shows */
+  children?: ReactNode;
 }
 
-function DetachedModule({ module, restored, handover, session, modules, configRereads }: ModuleProps) {
+function DetachedModule({ module, restored, handover, session, modules, configRereads, reopenError, children }: ModuleProps) {
   const [local, setLocal] = useState<Notice[]>([]); // errors of this page's own requests
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]);
@@ -272,10 +287,11 @@ function DetachedModule({ module, restored, handover, session, modules, configRe
   const notices = useMemo(
     () => [
       ...local,
+      ...(reopenError === null ? [] : [{ id: `reopen:${module}`, level: "error" as const, text: reopenFailedText(module, reopenError) }]),
       ...(configError === null ? [] : [{ id: `config:${module}`, level: "error" as const, text: configError }]),
       ...tickNotices(module, tick, satNames),
     ],
-    [local, configError, module, tick, satNames],
+    [local, reopenError, configError, module, tick, satNames],
   );
   useEffect(() => setDismissed((d) => pruneDismissed(d, notices)), [notices]);
   const dismiss = useCallback((id: string) => {
@@ -364,6 +380,7 @@ function DetachedModule({ module, restored, handover, session, modules, configRe
       )}
       {timeController && <TimeController key={module} module={module} tick={tick} onClose={closeTimeController} onResetFailed={addLocalError} />}
       {ctl.box !== null && <MessageBox title={ctl.box.title} message={ctl.box.message} onOk={ctl.closeBox} />}
+      {children}
     </div>
   );
 }

@@ -2,6 +2,9 @@ import { boldSegments } from "../tleUpdate";
 import { FloatingWindow } from "./FloatingWindow";
 import { MessageIcon } from "./MessageBox";
 
+/** (ของเรา) the accessible name of the notice, which has no title as in Gpredict */
+export const TLE_OLD_NAME = "ข้อมูล TLE เก่า";
+
 interface Props {
   /** the text of the notice as the server sends it (`tle_old` of /ws/app): Gpredict's, with `<b>…</b>` where it is bold */
   text: string;
@@ -11,11 +14,11 @@ interface Props {
 /**
  * The notice that the TLE data is old (ref-D §5.1, main.c:516-536): a message dialog that does not block the page and has no title, the
  * info icon, the text with "Edit -> Update TLE" in bold, and one button, OK. Escape and the close button close it like OK does. Only the
- * tag `<b>` is shown as markup (`boldSegments`): the rest of the text is text.
+ * tag `<b>` is shown as markup (`boldSegments`): the rest of the text is text. Screen readers name it `TLE_OLD_NAME`.
  */
 export function TleOldNotice({ text, onClose }: Props) {
   return (
-    <FloatingWindow title="" onClose={onClose}>
+    <FloatingWindow title="" label={TLE_OLD_NAME} onClose={onClose}>
       <div className="dialog message-box tle-old">
         <div className="message-box-row">
           <MessageIcon error={false} />

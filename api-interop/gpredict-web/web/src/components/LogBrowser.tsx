@@ -81,7 +81,11 @@ export function LogBrowser({ onClose }: { onClose: () => void }) {
   return (
     <FloatingWindow title={logBrowserTitle(shown)} onClose={onClose} width={WIDTH}>
       <div className="dialog log-browser">
-        {error !== null && <p className="dialog-error">{error}</p>}
+        {error !== null && (
+          <p className="dialog-error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="log-main">
           <div className="log-list" tabIndex={0} role="region" aria-label="ข้อความใน log" data-autofocus>
             <table className="sat-table log-table">

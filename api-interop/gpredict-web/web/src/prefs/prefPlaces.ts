@@ -66,3 +66,25 @@ export function prefsFailure(e: unknown, labelOf: (group: PrefGroupId) => string
 export function pageFailure(groupLabel: string, e: unknown): string {
   return placed(groupLabel, e instanceof TabError ? e.tab : null, e);
 }
+
+/**
+ * What a save of the preferences with these keys has saved, for the note of a failure after it (`savedNote`): the places of the keys,
+ * "<group> → <tab>", each once; "Preferences" when none of the keys has a place.
+ */
+export function prefsSavedParts(keys: readonly string[], labelOf: (group: PrefGroupId) => string): string[] {
+  const parts: string[] = [];
+  for (const key of keys) {
+    const place = prefPlace(key);
+    const part = place === null ? null : `${labelOf(place.group)} → ${place.tab}`;
+    if (part !== null && !parts.includes(part)) parts.push(part);
+  }
+  return parts.length === 0 && keys.length > 0 ? ["Preferences"] : parts;
+}
+
+/**
+ * (ของเรา) What is added to the failure of a step of OK when steps before it have written (spec §10 promises that a failure saves
+ * nothing, which only the checks before any write can keep): the parts saved already, which Cancel does not take back.
+ */
+export function savedNote(parts: readonly string[]): string {
+  return `(บันทึกส่วนเหล่านี้ไปแล้ว กด Cancel ก็ไม่ย้อนกลับ: ${parts.join(", ")})`;
+}

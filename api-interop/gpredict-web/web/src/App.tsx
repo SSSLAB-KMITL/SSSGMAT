@@ -38,6 +38,7 @@ import { CONFIGURE_BLOCKED_BOX, hasModule } from "./radio/controllerWindows";
 import { closeSatInfo, openSatInfo } from "./satInfo";
 import type { SatInfoOpen } from "./satInfo";
 import { activeTab, initialTab, pageIndex, tabOrderWithWindows, tabsOf, windowTitle } from "./tabs";
+import { clockToReset, keptTimeController } from "./timeCtl";
 import type { ApiMessage, ModuleWindow } from "./types";
 import { useModuleConfig } from "./useModuleConfig";
 import { useModuleSocket } from "./useModuleSocket";
@@ -216,29 +217,30 @@ function Main({ onStopped }: { onStopped: () => void }) {
   );
   useAttachHandovers(tabs, takeOver);
 
-  // the Sky at a glance window of a module that is not open any more is forgotten
-  useEffect(() => setSkyGlance((s) => pruneSky(s, open)), [open]);
+  // the Sky at a glance window of a module that is not a tab any more is forgotten (it shows only with its tab; a detached module's window
+  // opens its own)
+  useEffect(() => setSkyGlance((s) => pruneSky(s, tabs)), [tabs]);
 
   // the module was closed or deleted (1000) or is not open (1008): from another browser tab, say. Drop its tab.
   useEffect(() => {
     if (closeCode !== null) void reloadModules();
   }, [closeCode, reloadModules]);
 
-  // the module of the Time Controller was closed or deleted: its window goes with it (no reset, the clock is gone too)
+  // the module of the Time Controller is not a tab any more: its window goes, without a reset (closed or deleted: the clock is gone too;
+  // detached: its clock runs on in its window, whose Module menu has a Time Controller of its own)
   useEffect(() => {
-    if (loaded && timeController !== null && !open.includes(timeController)) setTimeController(null);
-  }, [loaded, open, timeController]);
+    if (loaded) setTimeController((t) => keptTimeController(t, tabs));
+  }, [loaded, tabs]);
 
   /**
-   * Open the Time Controller of a module (the Module menu's "Time Controller", Task 18). One window at a time: another
-   * module's window is closed, which resets its clock like closing it does (ref §9). The window shows while its module's
-   * tab is the active one; the tick it follows is that tab's.
+   * Open the Time Controller of a module (the Module menu's "Time Controller"). One window at a time: another module's window is closed,
+   * which resets its clock like closing it does (ref §9). The window shows while its module's tab is the active one; the tick it follows
+   * is that tab's.
    */
   const openTimeController = useCallback(
     (name: string) => {
-      if (timeController !== null && timeController !== name) {
-        resetClock(timeController).catch((e) => addLocalError(errorText(e)));
-      }
+      const reset = clockToReset(timeController, name);
+      if (reset !== null) resetClock(reset).catch((e) => addLocalError(errorText(e)));
       setTimeController(name);
     },
     [timeController, addLocalError],

@@ -5,9 +5,10 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Modal } from "../components/Modal";
 import { laterTooltip } from "../later";
 import type { PrefValue } from "../types";
+import { GROUND_STATIONS_TAB, STATIONS_KEY } from "./groundStations";
 import { COMMIT_ORDER, firstView, groupLabel, PREF_GROUPS, switchGroup } from "./prefGroups";
 import type { PrefGroupId, PrefsPageApi } from "./prefGroups";
-import { pageFailure, prefsFailure } from "./prefPlaces";
+import { pageFailure, prefsFailure, prefsSavedParts } from "./prefPlaces";
 import { CommitList, commitPreferences, commitSteps, draftToRequest, draftValue, resetInDraft, setInDraft } from "./prefsDraft";
 import type { Draft } from "./prefsDraft";
 import { checkPrefs, reloadPrefs, savePrefs, usePrefs } from "./prefsStore";
@@ -104,6 +105,10 @@ export function PreferencesDialog({ onClose }: Props) {
           prefsFailedAs: (e) => prefsFailure(e, groupLabel),
           // a page's name is a group's id: the pages are registered by `PREF_GROUPS.map` above and nowhere else
           pageFailedAs: (page, e) => pageFailure(groupLabel(page as PrefGroupId), e),
+          // what a failure after a write says is saved already (ของเรา): the places of the preferences, the ground stations, the devices
+          prefsPart: prefsSavedParts([...Object.keys(set), ...remove], groupLabel).join(", "),
+          pagePart: (page, key) =>
+            key === STATIONS_KEY ? `${groupLabel("general")} → ${GROUND_STATIONS_TAB}` : groupLabel(page as PrefGroupId),
         }),
       );
       onClose();

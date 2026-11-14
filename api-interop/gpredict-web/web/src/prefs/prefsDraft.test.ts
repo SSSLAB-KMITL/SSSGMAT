@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api";
 import type { PrefsAnswer } from "../types";
-import { pageFailure, prefsFailure, TabError } from "./prefPlaces";
+import { pageFailure, prefsFailure, savedNote, TabError } from "./prefPlaces";
 import { CommitList, commitPreferences, commitSteps, draftToRequest, draftValue, RESET, resetInDraft, setInDraft } from "./prefsDraft";
 import type { Draft } from "./prefsDraft";
 
@@ -269,6 +269,8 @@ describe("commitSteps: OK of the window, with the text of a failure placed", () 
         commits,
         prefsFailedAs: (e: unknown) => prefsFailure(e, (g) => label(g)),
         pageFailedAs: (page: string, e: unknown) => pageFailure(label(page), e),
+        prefsPart: "General → Number Formats, Modules → Map View",
+        pagePart: (page: string, key: string) => (key === "qth" ? "General → Ground Stations" : label(page)),
       },
     };
   }
@@ -300,6 +302,50 @@ describe("commitSteps: OK of the window, with the text of a failure placed", () 
     const w = parts(log);
     w.commits.add("interfaces", "hwconf", w.step("commit interfaces", new ApiError("HWCONF_INVALID", "เขียนไฟล์ไม่ได้", 500)));
     await expect(commitPreferences(commitSteps(w.parts))).rejects.toThrow("Interfaces: เขียนไฟล์ไม่ได้");
+  });
+
+  it("a commit that fails after other parts were written says which parts are saved already (Cancel does not take them back)", async () => {
+    const log: string[] = [];
+    const w = parts(log);
+    w.commits.add("interfaces", "hwconf", w.step("commit interfaces", new ApiError("HWCONF_INVALID", "เขียนไฟล์ไม่ได้", 500)));
+    w.commits.add("general", "qth", w.step("commit general"));
+    const failure = await commitPreferences(commitSteps(w.parts)).then(
+      () => null,
+      (e: unknown) => (e as Error).message,
+    );
+    expect(log).toEqual(["checkPrefs", "savePrefs", "commit general", "commit interfaces"]);
+    expect(failure).toBe(
+      "Interfaces: เขียนไฟล์ไม่ได้ (บันทึกส่วนเหล่านี้ไปแล้ว กด Cancel ก็ไม่ย้อนกลับ: General → Number Formats, Modules → Map View, General → Ground Stations)",
+    );
+  });
+
+  it("a failure with nothing written before it has no note: the save of the preferences, or a first commit when no preference changed", async () => {
+    const message = (p: Promise<void>) => p.then(() => null, (e: unknown) => (e as Error).message);
+    const refused = parts([]);
+    refused.parts.savePrefs = refused.step("savePrefs", new ApiError("PREFS_INVALID", "เขียนไฟล์ไม่ได้", 500));
+    expect(await message(commitPreferences(commitSteps(refused.parts)))).toBe("เขียนไฟล์ไม่ได้");
+
+    const first = parts([], { changed: false });
+    first.commits.add("general", "qth", first.step("commit general", new ApiError("QTH_INVALID", "ไม่มีสถานี", 409)));
+    first.commits.add("interfaces", "hwconf", first.step("commit interfaces"));
+    expect(await message(commitPreferences(commitSteps(first.parts)))).toBe("General: ไม่มีสถานี");
+
+    const second = parts([], { changed: false });
+    second.commits.add("general", "qth", second.step("commit general"));
+    second.commits.add("interfaces", "hwconf", second.step("commit interfaces", new ApiError("HWCONF_INVALID", "เขียนไฟล์ไม่ได้", 500)));
+    expect(await message(commitPreferences(commitSteps(second.parts)))).toBe(`Interfaces: เขียนไฟล์ไม่ได้ ${savedNote(["General → Ground Stations"])}`);
+  });
+
+  it("a second OK starts a new list: what the first OK saved is not named again", async () => {
+    const w = parts([], { changed: false });
+    let fail = true;
+    w.commits.add("general", "qth", w.step("commit general"));
+    w.commits.add("interfaces", "hwconf", async () => {
+      if (fail) throw new ApiError("HWCONF_INVALID", "เขียนไฟล์ไม่ได้", 500);
+    });
+    await expect(commitPreferences(commitSteps(w.parts))).rejects.toThrow(savedNote(["General → Ground Stations"]));
+    fail = false;
+    await expect(commitPreferences(commitSteps(w.parts))).resolves.toBeUndefined();
   });
 
   it("without a change to a preference the preferences are neither checked nor saved, and the pages still are", async () => {
