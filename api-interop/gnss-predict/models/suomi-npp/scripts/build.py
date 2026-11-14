@@ -53,3 +53,4 @@ vl.resize_packed_images(512)
 
 views = vl.compute_eo_views(scene, bus_ob)
 pl.export_and_render(ROOT, "suomi-npp", scene, args, views=views)
+

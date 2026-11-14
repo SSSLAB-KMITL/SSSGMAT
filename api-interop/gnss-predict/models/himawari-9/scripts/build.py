@@ -133,3 +133,4 @@ for extra in ("sadm_+Y", "wing+Y"):
         bpy.data.objects.remove(ob, do_unlink=True)
 
 pl.export_and_render(ROOT, "himawari-9", scene, args)
+

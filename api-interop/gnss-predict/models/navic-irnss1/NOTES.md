@@ -51,3 +51,4 @@ WING_NODES wing+Y T=[0, 0, -0.75], wing-Y T=[0, 0, 0.75]
 EXPECTED_SIZE (1.814, 6.92, 2.25) REL_DIFF_PCT (0.0, 0.0, 0.0)
 VERIFY_STATUS PASS
 ```
+
