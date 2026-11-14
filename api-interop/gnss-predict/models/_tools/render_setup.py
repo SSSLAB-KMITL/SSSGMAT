@@ -112,3 +112,4 @@ def view(scene, filepath, target, direction, dist, lens, sun_from, up=(0, 0, 1),
     scene.render.filepath = filepath
     bpy.ops.render.render(write_still=True)
     print("RENDERED", filepath)
+

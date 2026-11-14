@@ -154,3 +154,4 @@ render_setup.view(
     lens=45,
     sun_from=(-0.75, -0.35, 0.55),
 )
+

@@ -75,3 +75,4 @@ Wing node       : wing+Y origin_body=(-0.0, 1.03, 0.0) rot=(0.0, -0.0, 0.0)
 Wing node       : wing-Y origin_body=(-0.0, -1.03, 0.0) rot=(0.0, -0.0, 0.0)
 VERIFY_STATUS   : PASS
 ```
+

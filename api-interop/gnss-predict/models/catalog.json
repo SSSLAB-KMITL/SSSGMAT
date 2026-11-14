@@ -84,40 +84,49 @@
       "status": "done"
     },
     {
-      "id": "bds3-geo-igso",
-      "glb": "bds3-geo-igso/bds3-geo-igso.glb",
-      "blocks": ["BDS-3G", "BDS-3I"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "id": "bds3-geo",
+      "glb": "bds3-geo/bds3-geo.glb",
+      "blocks": ["BDS-3G"],
+      "size_m": [6.9, 19.04, 3.95],
+      "triangles": 7990,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
+    },
+    {
+      "id": "bds3-igso",
+      "glb": "bds3-igso/bds3-igso.glb",
+      "blocks": ["BDS-3I"],
+      "size_m": [2.36, 18.04, 3.95],
+      "triangles": 6378,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "status": "done"
     },
     {
       "id": "glonass-k2",
       "glb": "glonass-k2/glonass-k2.glb",
       "blocks": ["GLO-K2"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.082, 20.4, 3.46],
+      "triangles": 4990,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "bds2-igso",
       "glb": "bds2-igso/bds2-igso.glb",
       "blocks": ["BDS-2I", "BDS-2G", "BDS-2M"],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.05, 16.24, 2.92],
+      "triangles": 5244,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "generic",
       "glb": "generic/generic.glb",
       "blocks": [],
-      "size_m": [0, 0, 0],
-      "triangles": 0,
+      "size_m": [2.0, 12.0, 2.44],
+      "triangles": 1916,
       "wing_nodes": ["wing+Y", "wing-Y"],
-      "status": "pending"
+      "status": "done"
     }
   ],
   "fallback": "generic",
