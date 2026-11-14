@@ -19,7 +19,7 @@ import {
   type Entity, type EntityCollection,
 } from "cesium";
 import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
-import { VELOCITY_STEP_S } from "./sensorDraw";
+import { VELOCITY_STEP_S, velocityOf } from "./sensorDraw";
 
 /** ขยายโมเดลได้ไม่เกินนี้เพื่อให้ได้ขนาดขั้นต่ำบนจอ (โมเดลยาวราว 15 m → ไม่เกินราว 300 km) */
 export const MODEL_MAXIMUM_SCALE = 20000;
@@ -151,8 +151,9 @@ function sunAlongY(frame: AttitudeFrame, sun: Cartesian3, r: Cartesian3): boolea
 }
 
 /**
- * ท่าทางและมุมแผงของทุกดาวที่มีโมเดลและแสดงอยู่ใน entities ณ time (ดาวที่ซ่อน ไม่มีตำแหน่ง ณ t หรือ t ± 1 s ไม่ถูกแตะ)
- * ความเร็วจากผลต่างตำแหน่ง t ± 1 s แบบเดียวกับ sensor คืนจำนวนดาวที่คำนวณ ค่าที่ไม่เปลี่ยนไม่ส่ง event (ConstantProperty.setValue เทียบค่า)
+ * ท่าทางและมุมแผงของทุกดาวที่มีโมเดลและแสดงอยู่ใน entities ณ time (ดาวที่ซ่อน ไม่มีตำแหน่ง ณ t หรือไม่มีทั้ง t − 1 s และ t + 1 s ไม่ถูกแตะ)
+ * ความเร็วจาก sensorDraw.velocityOf ตัวเดียวกับ sensor: t ± 1 s, ขอบช่วงตัวอย่าง (เริ่ม/จบ animation) = ผลต่างข้างเดียว 1 s
+ * คืนจำนวนดาวที่คำนวณ ค่าที่ไม่เปลี่ยนไม่ส่ง event (ConstantProperty.setValue เทียบค่า)
  */
 export function updateModelAttitudes(entities: EntityCollection, time: JulianDate): number {
   const sun = sunPositionEcef(time, scratchSun);
@@ -170,8 +171,9 @@ export function updateModelAttitudes(entities: EntityCollection, time: JulianDat
       const r = position.getValueInReferenceFrame(time, ReferenceFrame.FIXED, scratchR);
       const p0 = position.getValueInReferenceFrame(before, ReferenceFrame.FIXED, scratchBefore);
       const p1 = position.getValueInReferenceFrame(after, ReferenceFrame.FIXED, scratchAfter);
-      if (r === undefined || p0 === undefined || p1 === undefined) continue;
-      const v = Cartesian3.multiplyByScalar(Cartesian3.subtract(p1, p0, scratchV), 1 / (2 * VELOCITY_STEP_S), scratchV);
+      if (r === undefined) continue;
+      const v = velocityOf(r, p0 ?? null, p1 ?? null, scratchV);
+      if (v === null) continue;
       const frame = st.spec.eo ? nadirVelocityFrame(r, v, st.frame) : yawSteeringFrame(r, v, sun, st.hasFrame ? st.frame.ey : undefined, st.frame);
       if (frame === null) continue;
       st.hasFrame = true;

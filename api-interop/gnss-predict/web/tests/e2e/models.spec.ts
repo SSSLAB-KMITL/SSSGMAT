@@ -5,7 +5,8 @@
 // - data ของ e2e มีดาวชุดเล็ก (snapshot ทดสอบ) บางดวงถูกตัวกรองดาวซ่อน: "ดาวที่แสดง" = ดาวใน scenario ที่ป้ายชื่อแสดงอยู่ในหน้าต่าง 3D ตัวแรก (labelShown)
 //   modelCount() ต้องเท่าจำนวนนั้นพอดี (ดาวทุกดวงได้โมเดล: ตาม block, norad_ids หรือ generic) และจุดของดาวเหล่านั้นซ่อน
 // - ปิด Satellite Models ที่ 3D Graphics Window Properties (หน้า Details) -> modelCount() = 0 และจุดแสดง เปิดอีกครั้ง -> โมเดลกลับมาโดยไม่ fetch ไฟล์ใหม่
-// - ท่าทาง (ไม่ใช้ภาพจับหน้าจอ): satelliteOrientation(ชื่อดาว) ให้แกนตัวดาวใน ECEF +Z ต้องชี้ศูนย์กลางโลกคลาดไม่เกิน 0.5° และตามเวลาเมื่อ setTime
+// - ท่าทาง (ไม่ใช้ภาพจับหน้าจอ): satelliteOrientation(ชื่อดาว) ให้แกนตัวดาวใน ECEF +Z ต้องชี้ศูนย์กลางโลกคลาดไม่เกิน 0.5° ตั้งแต่เวลาเริ่มของ scenario
+//   (ขอบช่วงตัวอย่าง) และตามเวลาเมื่อ setTime
 // - spec นี้ไม่แก้ scenario ใด (ปิดเปิด Satellite Models เป็นค่าตั้งของหน้าต่างในหน้าเว็บ ไม่ถูกบันทึกลงไฟล์)
 
 import type { Page } from "@playwright/test";
@@ -163,7 +164,11 @@ test("model attitude: body +Z of each shown satellite points to Earth (within 0.
   const nadirErrors = async (): Promise<number[]> =>
     (await poses()).map((p) => (p.pos === null || p.axes === null ? Infinity : angleDeg(p.axes.z, [-p.pos[0], -p.pos[1], -p.pos[2]])));
 
-  // เวลาในช่วงตัวอย่างตำแหน่ง ห่างจากขอบ (ท่าทางใช้ตำแหน่ง t ± 1 s จึงต้องมีตัวอย่างทั้งสองด้านของ t)
+  // เวลาเริ่มของ scenario (เวลาตั้งต้นของ animation = ตัวอย่างตำแหน่งแรก ไม่มี t − 1 s): ท่าทางจากผลต่างข้างเดียว ต้องมีตั้งแต่เปิดหน้า
+  await page.evaluate(() => window.__gnssStudioTest!.setTime("2026-11-10T00:00:00Z"));
+  await expect.poll(async () => Math.max(...(await nadirErrors())), { message: "body +Z within 0.5° of nadir at the scenario start", timeout: MODELS_TIMEOUT_MS }).toBeLessThan(0.5);
+
+  // เวลากลางช่วงตัวอย่างตำแหน่ง (มีตัวอย่างทั้งสองด้านของ t)
   await page.evaluate(() => window.__gnssStudioTest!.setTime("2026-11-10T01:00:00Z"));
   await expect.poll(async () => Math.max(...(await nadirErrors())), { message: "body +Z within 0.5° of nadir for every shown satellite", timeout: MODELS_TIMEOUT_MS }).toBeLessThan(0.5);
 

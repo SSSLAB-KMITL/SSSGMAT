@@ -250,6 +250,38 @@ describe("posed models: nadir down and cells toward the sun after Cesium's trans
     }
   });
 
+  test.each([
+    ["first sample (animation start)", -1200, 1],
+    ["last sample (animation stop)", 1200, -1],
+  ])("attitude at the %s: one-sided 1 s difference (no t ∓ 1 s sample), +Z to Earth, yaw from that velocity", (_label, offset, side) => {
+    const entities = new EntityCollection();
+    const position = orbit(0.7);
+    const entity = entities.add(new Entity({ id: "sat/B", position }));
+    applySatelliteModel(entity, { ...LOOK, spec: specOf("gps-iif") });
+    const at = JulianDate.addSeconds(TIME, offset, new JulianDate());
+    const fixed = (t: JulianDate) => position.getValueInReferenceFrame(t, ReferenceFrame.FIXED, new Cartesian3());
+    expect(fixed(JulianDate.addSeconds(at, -side, new JulianDate()))).toBeUndefined(); // ตัวอย่างฝั่งนั้นไม่มีจริง
+    expect(updateModelAttitudes(entities, at)).toBe(1);
+    const r = fixed(at)!;
+    const other = fixed(JulianDate.addSeconds(at, side, new JulianDate()))!;
+    const v = Cartesian3.multiplyByScalar(Cartesian3.subtract(other, r, new Cartesian3()), side, new Cartesian3());
+    const want = modelOrientation(yawSteeringFrame(r, v, sunPositionEcef(at))!);
+    const q = entity.orientation!.getValue(at) as Quaternion;
+    expect(Quaternion.equalsEpsilon(q, want, 1e-9) || Quaternion.equalsEpsilon(q, Quaternion.negate(want, new Quaternion()), 1e-9)).toBe(true);
+    const toEarth = Cartesian3.normalize(Cartesian3.negate(r, new Cartesian3()), new Cartesian3());
+    expect(angleDeg(rendered(q, null, gltfOfBody([0, 0, 1])), toEarth)).toBeLessThan(1e-6);
+  });
+
+  test("a satellite with no position on either side of t (single sample) is left alone", () => {
+    const entities = new EntityCollection();
+    const position = new SampledPositionProperty(ReferenceFrame.FIXED);
+    position.addSample(TIME, new Cartesian3(GPS_R, 0, 0));
+    const entity = entities.add(new Entity({ id: "sat/S", position }));
+    applySatelliteModel(entity, { ...LOOK, spec: specOf("gps-iif") });
+    expect(updateModelAttitudes(entities, TIME)).toBe(0);
+    expect(Quaternion.equals(entity.orientation!.getValue(TIME) as Quaternion, Quaternion.IDENTITY)).toBe(true);
+  });
+
   test("the wing holds its previous angle while the sun lies along ±Y of the body (wingAngle has no answer there)", () => {
     const entities = new EntityCollection();
     // ดาว EO วงโคจรเส้นศูนย์สูตร เวลาเดียวกันแต่ตำแหน่งต่างกัน: รอบแรกได้มุมจริง รอบสองบังคับให้ดวงอาทิตย์อยู่แนว ey

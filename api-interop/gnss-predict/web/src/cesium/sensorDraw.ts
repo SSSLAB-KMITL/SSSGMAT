@@ -53,13 +53,22 @@ export interface SensorDrawState {
 /** Cone Half Angle (องศา) ของ sensor */
 export const coneHalfAngleOf = (sensor: SensorObj): number => sensor.definition?.cone_half_angle ?? DEFAULT_CONE_HALF_ANGLE_DEG;
 
-const rate = (a: Vec3, b: Vec3, seconds: number): Vec3 => ({ x: (a.x - b.x) / seconds, y: (a.y - b.y) / seconds, z: (a.z - b.z) / seconds });
+function rate(a: Vec3, b: Vec3, seconds: number, result: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
+  result.x = (a.x - b.x) / seconds;
+  result.y = (a.y - b.y) / seconds;
+  result.z = (a.z - b.z) / seconds;
+  return result;
+}
 
-/** ความเร็ว Earth-fixed (m/s) จากตำแหน่ง t − 1 s, t, t + 1 s (P9) ไม่มีทั้งสองข้าง = null */
-function velocityOf(p: Vec3, prev: Vec3 | null, next: Vec3 | null): Vec3 | null {
-  if (prev !== null && next !== null) return rate(next, prev, 2 * VELOCITY_STEP_S);
-  if (next !== null) return rate(next, p, VELOCITY_STEP_S);
-  if (prev !== null) return rate(p, prev, VELOCITY_STEP_S);
+/**
+ * ความเร็ว Earth-fixed (m/s) จากตำแหน่ง t − 1 s, t, t + 1 s (P9) ไม่มีทั้งสองข้าง = null
+ * result (ไม่ระบุ = object ใหม่) ให้ผู้เรียกที่วนทุกดาวทุกรอบไม่สร้าง object ใหม่ (satModelGraphics.updateModelAttitudes ส่ง Cartesian3 scratch)
+ */
+export function velocityOf<T extends Vec3 = Vec3>(p: Vec3, prev: Vec3 | null, next: Vec3 | null, result?: T): T | null {
+  const out = (result ?? { x: 0, y: 0, z: 0 }) as T;
+  if (prev !== null && next !== null) return rate(next, prev, 2 * VELOCITY_STEP_S, out) as T;
+  if (next !== null) return rate(next, p, VELOCITY_STEP_S, out) as T;
+  if (prev !== null) return rate(p, prev, VELOCITY_STEP_S, out) as T;
   return null;
 }
 
