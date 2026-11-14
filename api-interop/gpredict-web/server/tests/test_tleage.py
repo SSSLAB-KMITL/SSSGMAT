@@ -286,13 +286,13 @@ class TleAgeLoopTest(unittest.TestCase):
         self.assertIn("ตรวจอายุ TLE", logs.records[0].getMessage())
         self.assertIn("เขียนไฟล์ไม่ได้", "".join(logs.output))
 
-    def test_shutdown_waits_for_a_running_check_before_closing_anything(self):
-        """Gpredict รอ update ที่ค้างอยู่ก่อนปิดโปรแกรม: ขั้นปิดอื่น (controller, tick, module) เริ่มหลังตรวจรอบนั้นจบเท่านั้น
-        ไม่งั้น update จะ reload module ที่กำลังถูกปิด"""
+    def test_shutdown_stops_controllers_first_then_waits_for_a_running_check_before_closing_modules(self):
+        """ตอนปิด: controller ก่อน (S, q ถึง rig และ rotor ทันที ไม่รอ update ที่อาจดึงจากเน็ตหลายนาที final review server Important 1)
+        แล้วรอตรวจอายุ TLE รอบที่ค้างอยู่ให้จบเหมือน Gpredict (update reload module ตอนจบ) ก่อนหยุด tick และปิด module"""
         app = self.make_app()
         started = threading.Event()
         steps: list[str] = []
-        real_controllers = app.state.controllers.shutdown
+        real_controllers, real_ticks, real_ephem = app.state.controllers.shutdown, app.state.ticks.shutdown, self.ephem.close
 
         def check():
             started.set()
@@ -304,11 +304,21 @@ class TleAgeLoopTest(unittest.TestCase):
             steps.append("controllers")
             await real_controllers()
 
+        async def ticks_shutdown():
+            steps.append("ticks")
+            await real_ticks()
+
+        def ephem_close():
+            steps.append("modules")
+            real_ephem()
+
         with mock.patch.object(app.state.tle_age_checker, "check", check), \
-                mock.patch.object(app.state.controllers, "shutdown", controllers_shutdown):
+                mock.patch.object(app.state.controllers, "shutdown", controllers_shutdown), \
+                mock.patch.object(app.state.ticks, "shutdown", ticks_shutdown), \
+                mock.patch.object(self.ephem, "close", ephem_close):
             with TestClient(app):
                 self.assertTrue(started.wait(5))
-        self.assertEqual(steps, ["check finished", "controllers"])
+        self.assertEqual(steps, ["controllers", "check finished", "ticks", "modules"])
         self.assertTrue(app.state.tle_age_task.done())
 
     def test_shutdown_while_sleeping_leaves_no_task(self):

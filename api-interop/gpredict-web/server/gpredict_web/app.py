@@ -32,7 +32,7 @@
 - ตอนเริ่ม (start_background=True): เปิด log session (gplog.start_session ระดับ LOG/LEVEL) ก่อนอย่างอื่น แล้วลบช่วงคำนวณเก่า,
   bootstrap (หัวข้อ 7.1) เปิด module ที่ค้างอยู่ใน session.json และเริ่ม task ตรวจอายุ TLE (ทุก tle_check_interval_s วินาที ครั้งแรกหลังครบช่วงแรก)
   ช่องเหตุการณ์ /ws/app เริ่มทุกครั้ง (ไม่ขึ้นกับ start_background)
-  ตอนปิด: หยุด task ตรวจอายุ TLE (รอ update ที่กำลังทำอยู่ให้จบ เหมือน Gpredict) -> ปลด controller ทุกตัว (S, q) -> หยุด tick ->
+  ตอนปิด: ปลด controller ทุกตัว (S, q ถึงอุปกรณ์ทันที) -> หยุด task ตรวจอายุ TLE (รอ update ที่กำลังทำอยู่ให้จบ เหมือน Gpredict) -> หยุด tick ->
   ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป
   จบด้วยปิด log session (gplog.end_session หมุนไฟล์ตาม LOG/CLEAN_AGE ที่อ่านตอนนี้) แล้วปิดช่อง /ws/app
 - dev: `uvicorn gpredict_web.app:app --reload --port 8740` (app สร้างเมื่อถูกอ่านครั้งแรก การ import เฉยๆ จึงไม่แตะ data จริง)
@@ -650,12 +650,14 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         ephem.close()
 
     async def stop_services() -> None:
-        """ตอนปิดตามลำดับ ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ"""
+        """ตอนปิดตามลำดับ ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ
+        controller ก่อน: rig และ rotor ได้ S, q ทันที ไม่รอ update TLE ที่อาจดึงจากเน็ตหลายนาที (ขณะนั้น browser หลุดไปแล้ว)
+        controllers.shutdown ไม่ปิด module tick ที่ยังวิ่งได้ {} จาก on_tick แล้วหยุดเองเมื่อไม่มีทั้ง socket และ controller"""
         try:
-            await stop_tle_age()             # ก่อนปิด module: update ที่ค้างอยู่ reload module ทุกตัวตอนจบ
+            await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนอย่างอื่น
         finally:
             try:
-                await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
+                await stop_tle_age()         # ก่อนหยุด tick และปิด module: update ที่ค้างอยู่ reload module ทุกตัวตอนจบ
             finally:
                 try:
                     await ticks.shutdown()
