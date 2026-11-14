@@ -169,6 +169,8 @@ describe("Camera display of a Sensor View", () => {
       globe: { baseColor: Cesium.Color.BLUE, enableLighting: false, ellipsoid: Ellipsoid.WGS84 },
       light: { intensity: 1 },
       postRender: new Cesium.Event(),
+      preRender: new Cesium.Event(),
+      primitives: new Cesium.PrimitiveCollection(),
       renderError: new Cesium.Event(),
       requestRender: () => undefined,
       screenSpaceCameraController: { enableInputs: true, enableRotate: true, enableTranslate: true, enableTilt: true, enableLook: true },

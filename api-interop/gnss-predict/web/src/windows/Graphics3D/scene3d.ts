@@ -43,6 +43,7 @@
 // - โมเดล 3 มิติของดาว (models integration spec §3–§4, 3D Graphics Window Properties → Details → Satellite Models / Model Pixel Size):
 //   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
 //   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นชุดละ 100 ms: SatModelSource)
+//   Cesium โหลดโมเดลไม่สำเร็จ (errorEvent ของ primitive: watchModelErrors) = โมเดลนั้นล้มเหลวทั้งหน้าเว็บ ดาวกลับเป็นจุด + ข้อความไทยครั้งเดียวต่อโมเดล
 //   เลือกดาว (useSelection) = ขอบรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) Sensor View: โมเดลของดาวแม่ถูกซ่อนเหมือนจุดและป้าย (กล้องอยู่ในตัวดาว)
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
@@ -57,7 +58,7 @@ import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
-import { modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes } from "../../cesium/satModelGraphics";
+import { modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes, watchModelErrors } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
@@ -308,6 +309,8 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
     this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: opts.notify });
     this.offs.push(scene.postRender.addEventListener(() => void this.frames++));
+    // โมเดลที่ Cesium โหลดไม่สำเร็จ: ดาวของโมเดลนั้นกลับเป็นจุด (ทุกหน้าต่าง) + ข้อความครั้งเดียวต่อโมเดล
+    this.offs.push(watchModelErrors(scene, (_entity, uri, error) => this.models.modelFailed(uri, error)));
     this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
     // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้ ด้านกลางคืนจางตาม Ambient Level เท่าภาพฐาน (applyProps ส่งค่าใหม่ทีหลัง)

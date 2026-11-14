@@ -2,6 +2,8 @@
 //
 // - applySatelliteModel: ตั้ง entity.model (glb จาก blob URL ของ satModels.loadModelGlb) + entity.orientation แล้วซ่อนจุด (ป้ายชื่อ เส้นทาง สีของจุดคงเดิม:
 //   entityColor ของ test hook และการคลิกเลือกใช้ตำแหน่งของ entity ไม่ใช่ภาพ) ไม่มีโมเดล (ปิด Satellite Models, ยังโหลดไม่เสร็จ, โหลดล้มเหลว) = ลบโมเดล คืนจุด
+// - watchModelErrors: โมเดลที่ Cesium โหลดไม่สำเร็จหลังอ่าน JSON แล้ว (buffer, mesh, shader) แจ้งผ่าน errorEvent ของ primitive ที่ ModelVisualizer สร้าง
+//   (Model.id = entity, อยู่ใน scene.primitives) ผู้เรียกกลับไปวาดเป็นจุด ความล้มเหลวก่อนนั้น (Model.fromGltfAsync) ถูกกันไว้ด้วย satModels.glbProblem
 // - updateModelAttitudes: ท่าทาง (attitude.ts) และมุมแผงของดาวที่แสดงอยู่ทุกดวง ณ เวลาหนึ่ง เขียนลง ConstantProperty เดิม (ไม่มี CallbackProperty:
 //   หน้าต่าง 3D ข้าม update ตอนอยู่เฉย ๆ ตาม event ของ EntityCollection: idleUpdates.ts) ผู้เรียกเรียกตามรอบ throttle 250 ms เดียวกับ sensor
 //   ไม่สร้างออบเจ็กต์ใหม่ต่อดวงต่อรอบ (scratch ของโมดูลและสถานะต่อ entity)
@@ -15,8 +17,8 @@
 //   ModelVisualizer ตั้ง node.matrix = originalMatrix · TRS: หมุนรอบจุด pivot ของ node ในแกน glTF แกน +Y ของตัวดาวคือ −Z ของ glTF (WING_AXIS_GLTF)
 
 import {
-  Cartesian3, Color, ColorBlendMode, ConstantProperty, JulianDate, Matrix3, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion, ReferenceFrame,
-  type Entity, type EntityCollection,
+  Cartesian3, Color, ColorBlendMode, ConstantProperty, Entity, JulianDate, Matrix3, Model, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion,
+  ReferenceFrame, type EntityCollection, type Scene,
 } from "cesium";
 import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
 import { VELOCITY_STEP_S, velocityOf } from "./sensorDraw";
@@ -211,4 +213,42 @@ export function modelCountOf(entities: EntityCollection, time: JulianDate = Juli
   let n = 0;
   for (const entity of entities.values) if (entity.id.startsWith("sat/") && states.has(entity) && modelShown(entity, time)) n++;
   return n;
+}
+
+/** ฟังก์ชันที่ watchModelErrors เรียกเมื่อโมเดลของ entity ดาวโหลดไม่สำเร็จใน Cesium (uri = blob uri ของ spec ที่ entity ใช้อยู่) */
+export type ModelErrorHandler = (entity: Entity, uri: string, error: unknown) => void;
+
+/**
+ * ฟังความล้มเหลวของโมเดลดาวใน Cesium: ก่อนวาดทุกเฟรม (scene.preRender ก่อน primitive update ในเฟรมนั้น ซึ่งเป็นที่ errorEvent เกิด) หา primitive Model
+ * ใน scene.primitives ที่ id เป็น entity ดาวที่มีโมเดล (applySatelliteModel) แล้วฟัง errorEvent ของมันครั้งเดียวต่อ primitive
+ * TextureError ไม่นับ (Cesium ยังวาดโมเดลได้ เหมือน ModelVisualizer) คืนตัวเลิกฟังทั้งหมด
+ */
+export function watchModelErrors(scene: Pick<Scene, "preRender" | "primitives">, onError: ModelErrorHandler): () => void {
+  const hooked = new Map<Model, () => void>();
+  const scan = (): void => {
+    for (const [m, off] of hooked) {
+      if (m.isDestroyed()) {
+        off();
+        hooked.delete(m);
+      }
+    }
+    const primitives = scene.primitives;
+    for (let i = 0; i < primitives.length; i++) {
+      const m: unknown = primitives.get(i);
+      if (!(m instanceof Model) || hooked.has(m)) continue;
+      const entity: unknown = m.id;
+      if (!(entity instanceof Entity) || !states.has(entity)) continue;
+      hooked.set(m, m.errorEvent.addEventListener((error: unknown) => {
+        const st = states.get(entity);
+        if ((error as { name?: unknown } | null)?.name === "TextureError" || st === undefined) return;
+        onError(entity, st.spec.uri, error);
+      }));
+    }
+  };
+  const off = scene.preRender.addEventListener(scan);
+  return () => {
+    off();
+    for (const remove of hooked.values()) remove();
+    hooked.clear();
+  };
 }

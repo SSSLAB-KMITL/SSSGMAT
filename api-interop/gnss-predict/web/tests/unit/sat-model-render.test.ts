@@ -17,10 +17,10 @@ import { bodyToEcefQuaternion, sunPositionEcef, yawSteeringFrame, type AttitudeF
 import { applyGraphics, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import {
   applySatelliteModel, MODEL_AXIS_FIX, MODEL_COLOR_BLEND, MODEL_MAXIMUM_SCALE, modelCountOf, modelOrientation, setModelSelection, updateModelAttitudes,
-  WING_AXIS_GLTF, type SatModelSpec,
+  watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
 } from "../../src/cesium/satModelGraphics";
 import {
-  DEFAULT_WING_ZERO_NORMAL, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
+  CESIUM_GLTF_EXTENSIONS, DEFAULT_WING_ZERO_NORMAL, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
 } from "../../src/cesium/satModels";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
 import { msg } from "../../src/labels/messages.th";
@@ -33,7 +33,7 @@ import { useTime } from "../../src/stores/time";
 import { mountScene3D } from "../../src/windows/Graphics3D/scene3d";
 import { MODEL_BATCH_MS, resetModelReports, SatModelSource } from "../../src/windows/Graphics3D/satModelSource";
 import { makeDoc } from "./helpers/chrome";
-import { areaByAxis, bodyOfGltf, faceNormal, gltfOfBody, MODELS_DIR, parents, readGlb, type V3 } from "./helpers/glb";
+import { areaByAxis, bodyOfGltf, faceNormal, gltfOfBody, makeGlb, MODELS_DIR, parents, readGlb, type V3 } from "./helpers/glb";
 import { CATALOG, makeScenarioDoc } from "./helpers/objects";
 
 vi.mock("../../src/cesium/viewer", async (importOriginal) => ({
@@ -441,6 +441,50 @@ describe("satellite entities with models on and off", () => {
   });
 });
 
+// ---------- โมเดลที่ Cesium โหลดไม่สำเร็จ (watchModelErrors) ----------
+
+/** primitive โมเดลของ Cesium แบบที่ ModelVisualizer สร้าง (Model จริงต้องมี WebGL): instanceof Model, id = entity, errorEvent จริง */
+function fakeModelPrimitive(id: unknown): Cesium.Model {
+  const m = Object.create(Cesium.Model.prototype) as Cesium.Model & { _errorEvent: Cesium.Event };
+  m._errorEvent = new Cesium.Event();
+  m.id = id;
+  return m;
+}
+
+function fakeModelScene() {
+  const list: unknown[] = [];
+  return { list, scene: { preRender: new Cesium.Event(), primitives: { get length() { return list.length; }, get: (i: number) => list[i] } } };
+}
+
+describe("watchModelErrors: Cesium load errors of satellite model primitives", () => {
+  test("hooks errorEvent of each satellite model primitive (found before the frame updates it) and reports entity + uri once per primitive", () => {
+    const entities = new EntityCollection();
+    const sat = entities.add(new Entity({ id: "sat/G01", position: orbit(0.1) }));
+    applySatelliteModel(sat, { ...LOOK, spec: specOf("gps-iif", "blob:test/a") });
+    const other = new Entity({ id: "fac/X" });
+    const { list, scene } = fakeModelScene();
+    const onError = vi.fn();
+    const stop = watchModelErrors(scene as never, onError);
+    const p = fakeModelPrimitive(sat);
+    list.push(fakeModelPrimitive(other), { id: sat }, p); // โมเดลของ entity อื่น และ primitive ที่ไม่ใช่ Model ไม่ถูกแตะ
+    scene.preRender.raiseEvent(scene, TIME);
+    scene.preRender.raiseEvent(scene, TIME); // ไม่ hook ซ้ำ
+    expect(p.errorEvent.numberOfListeners).toBe(1);
+    expect((list[0] as Cesium.Model).errorEvent.numberOfListeners).toBe(0);
+    const error = new Error("Failed to load model: blob:test/a");
+    p.errorEvent.raiseEvent(error);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(sat, "blob:test/a", error);
+    // TextureError (Cesium ยังวาดโมเดลได้ ไม่มีพื้นผิว) ไม่นับ
+    const tex = Object.assign(new Error("texture"), { name: "TextureError" });
+    p.errorEvent.raiseEvent(tex);
+    expect(onError).toHaveBeenCalledTimes(1);
+    stop();
+    expect(p.errorEvent.numberOfListeners).toBe(0);
+    expect(scene.preRender.numberOfListeners).toBe(0);
+  });
+});
+
 // ---------- โหลด catalog และ glb (SatModelSource) ----------
 
 const glbBytes = (rel: string): ArrayBuffer => {
@@ -449,7 +493,7 @@ const glbBytes = (rel: string): ArrayBuffer => {
 };
 
 /** fetch ปลอม: /models/catalog.json และ glb จากโฟลเดอร์ models (path ใน fail ตอบ 404, ใน html ตอบหน้าแอปแบบ SPA fallback) */
-function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?: boolean } = {}) {
+function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?: boolean; glbs?: Record<string, ArrayBuffer> } = {}) {
   const calls: string[] = [];
   const fetch = vi.fn(async (input: unknown) => {
     const path = new URL(String(input), "http://localhost").pathname;
@@ -461,6 +505,8 @@ function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?:
     const rel = path.slice("/models/".length);
     if (opts.fail?.includes(rel)) return new Response("missing", { status: 404 });
     if (opts.html?.includes(rel)) return new Response("<!doctype html><html></html>", { status: 200, headers: { "Content-Type": "text/html" } });
+    const own = opts.glbs?.[rel];
+    if (own !== undefined) return new Response(own, { status: 200, headers: { "Content-Type": "model/gltf-binary" } });
     return new Response(glbBytes(rel), { status: 200, headers: { "Content-Type": "model/gltf-binary" } });
   });
   vi.stubGlobal("fetch", fetch);
@@ -600,6 +646,82 @@ describe("SatModelSource: catalog and glb loading", () => {
     expect(useMessages.getState().items.map((m) => m.code)).toEqual(["MODEL_CATALOG"]);
   });
 
+  test("glbProblem: the JSON chunk must say glTF 2.0 and require only extensions Cesium supports; the chunks must fit the file", () => {
+    const asset = { asset: { version: "2.0" } };
+    expect(glbProblem(glbBytes(entryOf("gps-iif").glb))).toBeNull();
+    expect(glbProblem(makeGlb(asset))).toBeNull();
+    expect(glbProblem(makeGlb({ ...asset, extensionsRequired: [] }))).toBeNull();
+    expect(glbProblem(makeGlb({ ...asset, extensionsRequired: ["KHR_materials_unlit"], extensionsUsed: ["KHR_materials_unlit"] }))).toBeNull();
+    expect(glbProblem(makeGlb(asset, new Uint8Array([1, 2, 3, 4])))).toBeNull();
+    expect(glbProblem(makeGlb({ asset: { version: "1.0" } }))).toMatch(/1\.0/);
+    expect(glbProblem(makeGlb({}))).not.toBeNull();
+    expect(glbProblem(makeGlb({ ...asset, extensionsRequired: ["EXT_not_in_cesium"] }))).toMatch(/EXT_not_in_cesium/);
+    expect(glbProblem(makeGlb({ ...asset, extensionsRequired: "KHR_materials_unlit" }))).not.toBeNull();
+    expect(glbProblem(makeGlb(null, undefined, { jsonText: "{not json" }))).not.toBeNull();
+    expect(glbProblem(makeGlb(asset, undefined, { jsonType: 0x004e4942 }))).not.toBeNull(); // chunk แรกไม่ใช่ JSON
+    expect(glbProblem(makeGlb(asset, undefined, { lengthDelta: 8 }))).not.toBeNull(); // ความยาวในหัวไม่ตรงไฟล์
+    expect(glbProblem(new TextEncoder().encode("<!doctype html><html></html>").buffer as ArrayBuffer)).not.toBeNull();
+  });
+
+  test("the extensions allowed in extensionsRequired are exactly Cesium's ModelUtility.supportedExtensions (a Cesium upgrade that changes it fails here)", () => {
+    const { ModelUtility: mu } = Cesium as unknown as { ModelUtility: { supportedExtensions: Record<string, boolean> } };
+    expect([...CESIUM_GLTF_EXTENSIONS].sort()).toEqual(Object.keys(mu.supportedExtensions).filter((k) => mu.supportedExtensions[k]).sort());
+  });
+
+  test("a glb whose JSON chunk Cesium would reject (glTF 1.0, unknown required extension) leaves that model as points with one Thai message", async () => {
+    stubModelFetch({ glbs: { "gps-iif/gps-iif.glb": makeGlb({ asset: { version: "1.0" } }), "generic/generic.glb": makeGlb({ asset: { version: "2.0" }, extensionsRequired: ["EXT_not_in_cesium"] }) } });
+    const a = new SatModelSource(() => undefined);
+    for (let round = 0; round < 3; round++) {
+      a.specFor({ block: "GPS-IIF", norad: 1 });
+      a.specFor({ block: null, norad: 7 });
+      await flush();
+    }
+    expect(a.specFor({ block: "GPS-IIF", norad: 1 })).toBeNull();
+    expect(a.specFor({ block: null, norad: 7 })).toBeNull();
+    const items = useMessages.getState().items;
+    expect(items.map((m) => m.code)).toEqual(["MODEL_LOAD", "MODEL_LOAD"]);
+    expect(items[0].text).toContain("gps-iif");
+    expect(items[1].text).toContain("EXT_not_in_cesium");
+    a.dispose();
+  });
+
+  test("a model that Cesium fails to load (errorEvent of its primitive) goes back to points in every window, with one Thai message per model id", async () => {
+    stubModelFetch();
+    const changedA = vi.fn();
+    const changedB = vi.fn();
+    const a = new SatModelSource(changedA);
+    const b = new SatModelSource(changedB);
+    for (let round = 0; round < 2; round++) {
+      a.specFor({ block: "GPS-IIF", norad: 1 });
+      b.specFor({ block: "GPS-IIF", norad: 2 });
+      await flush();
+    }
+    const spec = a.specFor({ block: "GPS-IIF", norad: 1 })!;
+    expect(spec.id).toBe("gps-iif");
+    changedA.mockClear();
+    changedB.mockClear();
+    a.modelFailed(spec.uri, new Error("Failed to load model: boom"));
+    a.modelFailed(spec.uri, new Error("again (second satellite of the same model)"));
+    b.modelFailed(spec.uri, new Error("again (other window)"));
+    expect(a.specFor({ block: "GPS-IIF", norad: 1 })).toBeNull();
+    expect(b.specFor({ block: "GPS-IIF", norad: 2 })).toBeNull();
+    await flush();
+    expect(changedA).toHaveBeenCalledTimes(1); // restyle: ดาวของโมเดลนี้กลับเป็นจุด
+    expect(changedB).toHaveBeenCalledTimes(1);
+    const items = useMessages.getState().items;
+    expect(items.map((m) => [m.level, m.code])).toEqual([["warning", "MODEL_LOAD"]]);
+    expect(items[0].text).toBe(msg("model.loadFailed", { model: "gps-iif", message: "Failed to load model: boom" }));
+    // ไม่ลองโหลดซ้ำ
+    a.specFor({ block: "GPS-IIF", norad: 1 });
+    await flush();
+    expect(a.specFor({ block: "GPS-IIF", norad: 1 })).toBeNull();
+    // uri ที่ไม่ใช่ของโมเดลใด: ไม่ทำอะไร
+    a.modelFailed("blob:http://localhost/unknown", new Error("x"));
+    expect(useMessages.getState().items).toHaveLength(1);
+    a.dispose();
+    b.dispose();
+  });
+
   test("loadModelGlb checks the glb header before making a blob url", async () => {
     stubModelFetch({ html: ["aqua/aqua.glb"] });
     await expect(loadModelGlb("/models/aqua/aqua.glb")).rejects.toThrow();
@@ -623,7 +745,7 @@ describe("3D window with models", () => {
     const requestRender = vi.fn();
     const scene = {
       canvas, globe: { baseColor: Color.BLUE, enableLighting: false, ellipsoid: Ellipsoid.WGS84 }, light: { intensity: 1 },
-      postRender: new Cesium.Event(), renderError: new Cesium.Event(), requestRender,
+      postRender: new Cesium.Event(), preRender: new Cesium.Event(), renderError: new Cesium.Event(), requestRender, primitives: new Cesium.PrimitiveCollection(),
       screenSpaceCameraController: { enableInputs: true, enableRotate: true, enableTranslate: true, enableTilt: true, enableLook: true },
     };
     return {
@@ -731,6 +853,31 @@ describe("3D window with models", () => {
     )!;
     expect(Quaternion.equalsEpsilon(q3, modelOrientation(frame), 1e-9) || Quaternion.equalsEpsilon(q3, Quaternion.negate(modelOrientation(frame), new Quaternion()), 1e-9)).toBe(true);
     scene.destroy();
+  });
+
+  test("a model whose primitive reports a Cesium load error goes back to points (all satellites of that model), with one Thai message", async () => {
+    const { scene, ds, viewer } = await mount();
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    const g01 = ds.entities.getById("sat/G01")!;
+    const id = value<string>(g01.model!.uri);
+    expect(value<string>(ds.entities.getById("sat/G02")!.model!.uri)).toBe(id); // ดาวสองดวงใช้โมเดลเดียวกัน
+    // แบบที่ ModelVisualizer ทำ: primitive ของ entity อยู่ใน scene.primitives แล้วเฟรมถัดไป update ของมันแจ้ง errorEvent
+    const p1 = fakeModelPrimitive(g01);
+    const p2 = fakeModelPrimitive(ds.entities.getById("sat/G02")!);
+    viewer.scene.primitives.add(p1);
+    viewer.scene.primitives.add(p2);
+    viewer.scene.preRender.raiseEvent(viewer.scene, JulianDate.now());
+    p1.errorEvent.raiseEvent(new Error("Failed to load model: broken buffer"));
+    p2.errorEvent.raiseEvent(new Error("Failed to load model: broken buffer"));
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(0));
+    expect(g01.model).toBeUndefined();
+    expect(scene.pointShown("G01")).toBe(true);
+    expect(scene.pointShown("G02")).toBe(true);
+    const items = useMessages.getState().items;
+    expect(items.map((m) => m.code)).toEqual(["MODEL_LOAD"]);
+    expect(items[0].text).toContain("broken buffer");
+    scene.destroy();
+    expect(viewer.scene.preRender.numberOfListeners).toBe(0);
   });
 
   test("picking and labels are unchanged with models on; selecting a satellite outlines its model", async () => {

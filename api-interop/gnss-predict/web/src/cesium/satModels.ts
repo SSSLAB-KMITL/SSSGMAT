@@ -180,14 +180,65 @@ export function loadModelCatalog(): Promise<ModelCatalog> {
 
 /** "glTF" แบบ little-endian ที่ 4 ไบต์แรกของ glb */
 const GLB_MAGIC = 0x46546c67;
+/** ชนิดของ chunk ใน glb: "JSON" และ "BIN\0" */
+const CHUNK_JSON = 0x4e4f534a;
+const CHUNK_BIN = 0x004e4942;
+
+/**
+ * extension ของ glTF ที่ Cesium (1.147, ModelUtility.supportedExtensions) รองรับ: extensionsRequired ที่มีชื่ออื่นทำให้ Cesium โหลดไม่ได้
+ * test เทียบรายการนี้กับของ Cesium ที่ติดตั้งจริง (Cesium รุ่นใหม่ที่เปลี่ยนรายการทำให้ test ล้ม) ไม่ import Cesium ที่นี่ (ไฟล์นี้ไม่ผูกกับ Cesium)
+ */
+export const CESIUM_GLTF_EXTENSIONS: ReadonlySet<string> = new Set([
+  "AGI_articulations", "CESIUM_mesh_vector", "CESIUM_primitive_outline", "CESIUM_RTC", "EXT_feature_metadata", "EXT_implicit_cylinder_region",
+  "EXT_implicit_ellipsoid_region", "EXT_instance_features", "EXT_mesh_features", "EXT_mesh_gpu_instancing", "EXT_mesh_polygon",
+  "EXT_mesh_primitive_edge_visibility", "EXT_meshopt_compression", "EXT_primitive_voxels", "EXT_structural_metadata", "EXT_texture_webp", "EXT_voxels",
+  "KHR_blend", "KHR_draco_mesh_compression", "KHR_implicit_shapes", "KHR_materials_common", "KHR_materials_pbrSpecularGlossiness",
+  "KHR_materials_specular", "KHR_materials_anisotropy", "KHR_materials_clearcoat", "KHR_materials_emissive_strength", "KHR_materials_unlit",
+  "KHR_mesh_quantization", "KHR_mesh_primitive_restart", "KHR_meshopt_compression", "KHR_techniques_webgl", "KHR_texture_basisu",
+  "KHR_texture_transform", "KHR_gaussian_splatting", "KHR_gaussian_splatting_compression_spz_2", "WEB3D_quantized_attributes",
+]);
+
+/**
+ * ปัญหาของไฟล์ glb ที่ทำให้ Cesium โหลดไม่ได้ตั้งแต่ขั้นอ่าน JSON (Model.fromGltfAsync ล้มเหลว ซึ่ง ModelVisualizer แค่ console.log ไม่มีทางรู้จากภายนอก)
+ * ไม่มีปัญหา = null ตรวจแบบเดียวกับ GltfJsonLoader ของ Cesium แต่เข้มกว่าเรื่องรุ่น (โมเดลของเราเป็น 2.0 ทั้งหมด):
+ * หัว glb (magic "glTF" รุ่น 2 ความยาวตรงไฟล์), chunk แรกเป็น JSON ที่อ่านได้ chunk ทั้งหมดพอดีไฟล์ (BIN ไม่เกินหนึ่ง),
+ * asset.version = "2.0" และ extensionsRequired (ถ้ามี) เป็นรายการที่ Cesium รองรับทุกตัว (รายการว่างได้)
+ */
+export function glbProblem(buf: ArrayBuffer): string | null {
+  const view = new DataView(buf);
+  if (buf.byteLength < 20 || view.getUint32(0, true) !== GLB_MAGIC || view.getUint32(4, true) !== 2) return "ไม่ใช่ไฟล์ glb (glTF 2.0)";
+  if (view.getUint32(8, true) !== buf.byteLength) return "ความยาวในหัว glb ไม่ตรงกับไฟล์";
+  const jsonLength = view.getUint32(12, true);
+  if (view.getUint32(16, true) !== CHUNK_JSON || 20 + jsonLength > buf.byteLength) return "glb ไม่มี JSON chunk";
+  let at = 20 + jsonLength;
+  if (at < buf.byteLength) {
+    if (at + 8 > buf.byteLength || view.getUint32(at + 4, true) !== CHUNK_BIN) return "chunk ที่สองของ glb ไม่ใช่ BIN";
+    at += 8 + view.getUint32(at, true);
+    if (at !== buf.byteLength) return "chunk ของ glb ไม่พอดีไฟล์";
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLength)));
+  } catch {
+    return "JSON ของ glb อ่านไม่ได้";
+  }
+  const gltf = (typeof json === "object" && json !== null ? json : {}) as { asset?: { version?: unknown }; extensionsRequired?: unknown };
+  const version = gltf.asset?.version;
+  if (version !== "2.0") return `glTF รุ่น ${String(version)} (ต้องเป็น 2.0)`;
+  const required = gltf.extensionsRequired;
+  if (required === undefined) return null;
+  if (!Array.isArray(required) || !required.every((e) => typeof e === "string")) return "extensionsRequired ไม่ใช่รายการชื่อ";
+  const unsupported = required.filter((e) => !CESIUM_GLTF_EXTENSIONS.has(e));
+  return unsupported.length === 0 ? null : `ต้องใช้ extension ที่ Cesium ไม่รองรับ: ${unsupported.join(", ")}`;
+}
 
 const glbLoads = new Map<string, Promise<string>>();
 
 /**
  * โหลด glb ที่ url ครั้งเดียวต่อหน้าเว็บ แล้วคืน blob: URL ของไฟล์นั้น (ใช้เป็น uri ของ ModelGraphics)
  * - หนึ่งคำขอต่อไฟล์ไม่ว่ามีดาวกี่ดวงหรือหน้าต่างกี่บาน: Cesium โหลดจาก blob ในเครื่อง (ResourceCache ของมันใช้ร่วมกันตาม uri เดียวกัน)
- * - ตรวจหัว glb (magic "glTF" รุ่น 2) ก่อน: ไฟล์ที่หายทำให้ server ตอบหน้าแอป (HTML) สถานะ 200 ซึ่ง Cesium จะโหลดล้มเหลวเงียบ ๆ
- *   ล้มเหลวที่นี่ผู้เรียกจึงรู้และกลับไปวาดเป็นจุด
+ * - ตรวจไฟล์ก่อน (glbProblem): ไฟล์ที่หายทำให้ server ตอบหน้าแอป (HTML) สถานะ 200 และ glb ที่ Cesium อ่าน JSON ไม่ได้ ซึ่ง Cesium จะโหลดล้มเหลวเงียบ ๆ
+ *   ล้มเหลวที่นี่ผู้เรียกจึงรู้และกลับไปวาดเป็นจุด (ความล้มเหลวหลังจากนั้นใน Cesium: satModelGraphics.watchModelErrors)
  * - ผลล้มเหลวถูกจำไว้ (ไม่ลองซ้ำ ข้อความแจ้งครั้งเดียวต่อโมเดล) จนกว่าจะ resetModelLoads
  */
 export function loadModelGlb(url: string): Promise<string> {
@@ -197,9 +248,8 @@ export function loadModelGlb(url: string): Promise<string> {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${url} ตอบ ${res.status}`);
       const buf = await res.arrayBuffer();
-      const view = new DataView(buf);
-      if (buf.byteLength < 12 || view.getUint32(0, true) !== GLB_MAGIC || view.getUint32(4, true) !== 2)
-        throw new Error(`${url} ไม่ใช่ไฟล์ glb (glTF 2.0)`);
+      const problem = glbProblem(buf);
+      if (problem !== null) throw new Error(`${url}: ${problem}`);
       return URL.createObjectURL(new Blob([buf], { type: "model/gltf-binary" }));
     })();
     glbLoads.set(url, p);

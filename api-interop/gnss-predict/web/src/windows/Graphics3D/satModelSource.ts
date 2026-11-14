@@ -5,6 +5,8 @@
 //   changed() ถูกรวบเป็นชุด: ไฟล์แรกที่เสร็จเปิดหน้าต่าง MODEL_BATCH_MS ไฟล์ที่เสร็จในหน้าต่างนั้นรวมเป็น changed() ครั้งเดียวตอนหน้าต่างปิด
 //   (ตอนเปิดหน้าเว็บ glb ราว 17 ไฟล์ทยอยมาจะได้ restyle ไม่กี่ครั้ง ไม่ใช่ครั้งละไฟล์) ไฟล์ที่เสร็จหลังจากนั้นเปิดชุดใหม่
 // - โหลดล้มเหลว = ดาวที่ใช้โมเดลนั้นเป็นจุดต่อไป (ไม่ลองซ้ำ) + ข้อความไทยใน Message Viewer ครั้งเดียวต่อ id ต่อหน้าเว็บ
+//   ทั้งตอนโหลดไฟล์ (loadModelGlb: ไฟล์หาย ไม่ใช่ glb ที่ Cesium อ่านได้) และหลังให้ Cesium แล้ว (modelFailed จาก satModelGraphics.watchModelErrors:
+//   ทุกหน้าต่างวาดดาวของโมเดลนั้นใหม่เป็นจุด)
 //   catalog ล้มเหลว: ทุกดวงเป็นจุด + ข้อความครั้งเดียว (loadModelCatalog ไม่จำความล้มเหลว: หน้าต่างที่เปิดใหม่ลองอีกครั้ง)
 // - block ของดาวจาก catalog ของ snapshot (satelliteInfo().block) ตรงตัวกับ blocks ใน models/catalog.json (ตรวจกับ snapshot จริงแล้ว) ไม่ต้องแปลง
 //   block ว่าง ("") ถือเป็นไม่มี block
@@ -24,6 +26,10 @@ let loadedCatalog: ModelCatalog | null = null;
 const glbResults = new Map<string, string | null>();
 /** spec ต่อ id ของโมเดล (ดาวหลายดวงและหลายหน้าต่างใช้ตัวเดียวกัน: ผู้ใช้ห้ามแก้) */
 const specs = new Map<string, SatModelSpec>();
+/** url ของ glb → id ของโมเดล (หาโมเดลจาก blob uri ที่ Cesium โหลดไม่สำเร็จ) */
+const idByUrl = new Map<string, string>();
+/** ตัวที่ยังไม่ dispose (แจ้งทุกหน้าต่างเมื่อโมเดลล้มเหลวใน Cesium) */
+const live = new Set<SatModelSource>();
 /** id (หรือ "catalog") ที่แจ้งไปแล้วในหน้านี้ */
 const reported = new Set<string>();
 
@@ -39,6 +45,7 @@ function reportOnce(key: string, code: string, text: string): void {
 export function resetModelReports(): void {
   loadedCatalog = null;
   glbResults.clear();
+  idByUrl.clear();
   specs.clear();
   reported.clear();
 }
@@ -51,7 +58,9 @@ export class SatModelSource {
   /** ชุดที่เปิดอยู่ (changed() ตอนครบ MODEL_BATCH_MS) */
   private batch: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly changed: () => void) {}
+  constructor(private readonly changed: () => void) {
+    live.add(this);
+  }
 
   /** โมเดลที่พร้อมวาดของดาว (block ตาม catalog ของ snapshot, NORAD) ไม่พร้อม = null */
   specFor(sat: { block: string | null; norad: number }): SatModelSpec | null {
@@ -82,8 +91,23 @@ export class SatModelSource {
   /** เลิกแจ้งหน้าต่าง (ผลที่มาทีหลังยังเก็บไว้ให้หน้าต่างอื่น) */
   dispose(): void {
     this.disposed = true;
+    live.delete(this);
     if (this.batch !== null) clearTimeout(this.batch);
     this.batch = null;
+  }
+
+  /**
+   * Cesium โหลดโมเดลของ blob uri นี้ไม่สำเร็จ: โมเดลนั้นถือว่าล้มเหลว (specFor = null ทุกหน้าต่าง ไม่ลองซ้ำ) ข้อความไทยครั้งเดียวต่อ id
+   * แล้วทุกหน้าต่าง restyle (ชุดเดียวกับไฟล์ที่โหลดเสร็จ) ดาวของโมเดลนั้นกลับเป็นจุด uri ที่ไม่ใช่ของโมเดลที่โหลดไว้ = ไม่ทำอะไร
+   */
+  modelFailed(uri: string, error: unknown): void {
+    const url = [...glbResults].find(([, u]) => u === uri)?.[0];
+    if (url === undefined) return;
+    const id = idByUrl.get(url) ?? url;
+    glbResults.set(url, null);
+    specs.delete(id);
+    reportOnce(`model:${id}`, "MODEL_LOAD", msg("model.loadFailed", { model: id, message: errorText(error) }));
+    for (const src of live) src.settled();
   }
 
   /** catalog หรือ glb เสร็จ: เข้าชุดที่เปิดอยู่ หรือเปิดชุดใหม่ */
@@ -111,6 +135,7 @@ export class SatModelSource {
   private loadGlb(id: string, url: string): void {
     if (this.waiting.has(url)) return;
     this.waiting.add(url);
+    idByUrl.set(url, id);
     loadModelGlb(url).then(
       (uri) => {
         glbResults.set(url, uri);

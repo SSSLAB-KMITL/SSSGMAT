@@ -138,3 +138,28 @@ export function areaByAxis(glb: Glb, nodeName: string, material: string): Record
 export const gltfOfBody = ([x, y, z]: V3): V3 => [x, z, -y];
 /** พิกัด glTF → กรอบตัวดาว */
 export const bodyOfGltf = ([x, y, z]: V3): V3 => [x, -z, y];
+
+/** glb ขนาดเล็กจาก JSON (และ BIN ถ้ามี) ตามรูปแบบ glb 2.0 (chunk เติมให้ครบ 4 ไบต์) สำหรับ test ของการตรวจ glb */
+export function makeGlb(json: unknown, bin?: Uint8Array, opts: { jsonText?: string; lengthDelta?: number; jsonType?: number } = {}): ArrayBuffer {
+  const pad = (n: number) => (4 - (n % 4)) % 4;
+  const text = new TextEncoder().encode(opts.jsonText ?? JSON.stringify(json));
+  const jsonLen = text.length + pad(text.length);
+  const binLen = bin === undefined ? 0 : bin.length + pad(bin.length);
+  const total = 12 + 8 + jsonLen + (bin === undefined ? 0 : 8 + binLen);
+  const buf = new ArrayBuffer(total);
+  const view = new DataView(buf);
+  const bytes = new Uint8Array(buf);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, total + (opts.lengthDelta ?? 0), true);
+  view.setUint32(12, jsonLen, true);
+  view.setUint32(16, opts.jsonType ?? 0x4e4f534a, true);
+  bytes.set(text, 20);
+  bytes.fill(0x20, 20 + text.length, 20 + jsonLen);
+  if (bin !== undefined) {
+    view.setUint32(20 + jsonLen, binLen, true);
+    view.setUint32(24 + jsonLen, 0x004e4942, true);
+    bytes.set(bin, 28 + jsonLen);
+  }
+  return buf;
+}
