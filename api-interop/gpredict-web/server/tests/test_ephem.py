@@ -185,6 +185,12 @@ class ManagerTestBase(unittest.TestCase):
     def ephem_dir(self) -> Path:
         return self.cfg.data_dir / "ephem"
 
+    def drain_failing(self) -> list[str]:
+        """drain() ของงานที่ GMAT ล้ม: งานที่ล้มมีบรรทัด ERROR (คืนข้อความ) test ไม่ปล่อยให้ไปขึ้นที่ stderr"""
+        with self.assertLogs("gpredict_web.ephem", "ERROR") as logs:
+            self.m.drain()
+        return [r.getMessage() for r in logs.records]
+
 
 class ManagerTest(ManagerTestBase):
     def test_computing_then_ok_with_values_from_gmat(self):
@@ -404,7 +410,7 @@ class ManagerTest(ManagerTestBase):
         s1 = spec(25544)
         self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
         self.m.ensure("A", [s1], self.w)
-        self.m.drain()
+        self.drain_failing()
         st = self.m.status("A")
         self.assertEqual(codes(st), ("failed", ["GMAT_FAILED"]))
         self.assertEqual(st[1][0].level, "error")
@@ -421,10 +427,56 @@ class ManagerTest(ManagerTestBase):
         self.assertEqual(codes(self.m.status("A")), ("ok", []))
         self.assertEqual(len(self.fake.calls), 2)
 
+    def test_job_start_and_finish_are_logged(self):
+        """งาน GMAT มีบรรทัดเริ่มและเสร็จ (ไทย ระดับ INFO) ลงไฟล์ log แบบ Gpredict"""
+        self.m.ensure("A", [spec(25544), spec(43013)], self.w)
+        with self.assertLogs("gpredict_web.ephem", "INFO") as logs:
+            self.m.drain()
+        self.assertEqual([r.levelname for r in logs.records], ["INFO", "INFO"])
+        self.assertRegex(logs.records[0].getMessage(),
+                         r"^งาน GMAT \S+ เริ่ม: ช่วงของ module 2026-11-12T05:00:00Z ถึง 2026-11-12T21:00:00Z ดาว 2 ดวง$")
+        self.assertRegex(logs.records[1].getMessage(), r"^งาน GMAT \S+ เสร็จ ใช้เวลา \d+\.\d วินาที ได้ผล 2 จาก 2 ดวง$")
+        self.assertEqual(logs.records[0].getMessage().split()[2], logs.records[1].getMessage().split()[2])      # id เดียวกัน
+
+    def test_job_finish_counts_satellites_gmat_dropped(self):
+        self.fake.drop = {"S43013"}
+        self.m.ensure("A", [spec(25544), spec(43013)], self.w)
+        with self.assertLogs("gpredict_web.ephem", "INFO") as logs:
+            self.m.drain()
+        self.assertRegex(logs.records[-1].getMessage(), r"ได้ผล 1 จาก 2 ดวง$")
+
+    def test_failed_job_is_logged_as_error_with_the_reason(self):
+        self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
+        self.m.ensure("A", [spec(25544)], self.w)
+        with self.assertLogs("gpredict_web.ephem", "INFO") as logs:
+            self.m.drain()
+        self.assertEqual([r.levelname for r in logs.records], ["INFO", "ERROR"])
+        self.assertRegex(logs.records[1].getMessage(), r"^งาน GMAT \S+ ล้มเหลว: GMAT จบด้วย exit code 3$")
+        self.assertIsNone(logs.records[1].exc_info)                       # ความล้มเหลวที่คาดไว้ไม่พิมพ์ traceback
+
+    def test_missing_gmat_is_logged_as_error(self):
+        self.find_error = GmatNotFoundError("ไม่พบ GmatConsole")
+        self.m.ensure("A", [spec(25544)], self.w)
+        with self.assertLogs("gpredict_web.ephem", "ERROR") as logs:
+            self.m.drain()
+        self.assertRegex(logs.records[0].getMessage(), r"ล้มเหลว: ไม่พบ GmatConsole$")
+
+    def test_cancelled_job_is_logged_as_cancelled_not_as_an_error(self):
+        self.m.ensure("A", [spec(25544)], self.w)
+
+        def killed():
+            self.m.release("A")
+            raise GmatRunError("GMAT จบด้วย exit code -9")
+        self.fake.during = killed
+        with mock.patch("gpredict_web.ephem.os.killpg"), self.assertLogs("gpredict_web.ephem", "INFO") as logs:
+            self.m.drain()
+        self.assertEqual([r.levelname for r in logs.records], ["INFO", "INFO"])
+        self.assertRegex(logs.records[1].getMessage(), r"^งาน GMAT \S+ ถูกยกเลิก")
+
     def fail_once(self, sats, owner="A") -> None:
         self.fake.fail = GmatRunError("boom")
         self.m.ensure(owner, sats, self.w)
-        self.m.drain()
+        self.drain_failing()
         self.fake.fail = None
         self.assertEqual(codes(self.m.status(owner)), ("failed", ["GMAT_FAILED"]))
 
@@ -473,7 +525,7 @@ class ManagerTest(ManagerTestBase):
         self.fake.fail = GmatRunError("boom")
         self.m.ensure("A", [s1], self.w)
         self.m.ensure("B", [s1], self.w)
-        self.m.drain()
+        self.drain_failing()
         self.fake.fail = None
         self.assertEqual(codes(self.m.status("B")), ("failed", ["GMAT_FAILED"]))
         self.m.ensure("A", [s1, s2], self.w)
@@ -485,7 +537,7 @@ class ManagerTest(ManagerTestBase):
         self.fail_once([s1])
         self.fake.fail = GmatRunError("boom again")
         self.m.ensure("A", [s1, s2], self.w)
-        self.m.drain()
+        self.drain_failing()
         st = self.m.status("A")
         self.assertEqual(codes(st), ("failed", ["GMAT_FAILED"]))
         self.assertIn("boom again", st[1][0].text)
@@ -494,7 +546,7 @@ class ManagerTest(ManagerTestBase):
         s1 = spec(25544)
         self.fake.fail = GmatRunError("boom")
         self.m.ensure("A", [s1], self.w)
-        self.m.drain()
+        self.drain_failing()
         self.fake.fail = None
         w2 = window_for(self.w[1] + timedelta(days=3), +1)       # เวลาของ module ย้ายไปช่วงอื่น
         self.m.release("A", self.w)
@@ -506,7 +558,7 @@ class ManagerTest(ManagerTestBase):
     def test_gmat_not_found(self):
         self.find_error = GmatNotFoundError("ไม่พบ GmatConsole")
         self.m.ensure("A", [spec(25544)], self.w)
-        self.m.drain()
+        self.drain_failing()
         st = self.m.status("A")
         self.assertEqual(codes(st), ("failed", ["GMAT_NOT_FOUND"]))
         self.assertEqual(st[1][0].level, "error")
@@ -631,6 +683,13 @@ class DayBlockTest(ManagerTestBase):
         folder = self.day_file(D13, s1).parent
         self.assertEqual([p.name for p in folder.iterdir()], [self.day_file(D13, s1).name])   # ไม่มีไฟล์ชั่วคราวค้าง
 
+    def test_day_job_is_logged_with_its_own_label(self):
+        self.m.ensure_days("pass:A", [spec(25544)], D12, D14)
+        with self.assertLogs("gpredict_web.ephem", "INFO") as logs:
+            self.m.drain()
+        self.assertRegex(logs.records[0].getMessage(),
+                         r"^งาน GMAT \S+ เริ่ม: block รายวัน 2026-11-12T00:00:00Z ถึง 2026-11-15T00:00:00Z ดาว 1 ดวง$")
+
     def test_cached_days_are_not_recomputed(self):
         s1 = spec(25544)
         self.m.ensure_days("pass:A", [s1], D12, D14)
@@ -705,7 +764,7 @@ class DayBlockTest(ManagerTestBase):
         s1 = spec(25544)
         self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
         self.m.ensure_days("pass:A", [s1], D12, D13)
-        self.m.drain()
+        self.drain_failing()
         st = self.m.days_status("pass:A")
         self.assertEqual(codes(st), ("failed", ["GMAT_FAILED"]))
         self.assertEqual(st[1][0].level, "error")
@@ -727,7 +786,7 @@ class DayBlockTest(ManagerTestBase):
         s1 = spec(25544)
         self.fake.fail = GmatRunError("boom")
         self.m.ensure_days("sky:M", [s1], D12, D13)
-        self.m.drain()
+        self.drain_failing()
         self.fake.fail = None
         self.assertEqual(codes(self.m.days_status("sky:M")), ("failed", ["GMAT_FAILED"]))
         self.m.ensure_days("sky:M", [s1], D13, D14)                # T0 ของ module ย้าย: ช่วงวันต่างจากเดิม

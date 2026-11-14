@@ -20,6 +20,7 @@ import shutil
 import signal
 import sys
 import threading
+import time
 import uuid
 from array import array
 from bisect import bisect_left
@@ -242,6 +243,7 @@ def _read_array(path: Path, epochs: int) -> array | None:
 
 WINDOW, DAYS = "window", "days"                       # ชนิดงาน: ช่วงของ module หรือ block รายวัน
 _PRIORITY = {WINDOW: 0, DAYS: 1}                      # เลขน้อยได้ทำก่อน: การติดตามดาวไม่ต้องรองาน pass
+_JOB_LABEL = {WINDOW: "ช่วงของ module", DAYS: "block รายวัน"}        # ในบรรทัด log ของงาน GMAT
 
 Item = tuple[date, str]                               # (วัน, tle_key) ของ block หนึ่ง
 
@@ -258,6 +260,10 @@ class _Job:
     @property
     def priority(self) -> int:
         return _PRIORITY[self.kind]
+
+
+def _iso(t: datetime) -> str:
+    return f"{t.astimezone(_UTC):%Y-%m-%dT%H:%M:%SZ}"
 
 
 def _new_job_id() -> str:
@@ -663,12 +669,21 @@ class EphemManager:
     def _run(self, job: _Job) -> None:
         """ทำงานหนึ่งงาน (เรียกหลัง _take_locked) ไม่ว่าสำเร็จหรือล้มเหลว _running ถูกล้างเสมอ worker จึงไม่ตาย"""
         work = self._work_root / job.id
+        started = time.monotonic()
+        start, stop = job.window
+        _log.info("งาน GMAT %s เริ่ม: %s %s ถึง %s ดาว %d ดวง", job.id, _JOB_LABEL[job.kind], _iso(start), _iso(stop),
+                  len(job.specs))
         try:
             packed, missing = self._compute(job, work)
             blocks = self._save(job, packed)
         except Exception as exc:
+            # log ก่อนสถานะ failed ปรากฏ (ผู้ที่เห็นสถานะนั้นแล้วอ่าน log ต้องเจอบรรทัดนี้) cancelled ถูกตั้งก่อน kill GMAT จึงอ่านก่อนถือ lock ได้
             if not isinstance(exc, (GmatNotFoundError, GmatRunError, ReportError, _Cancelled)):
                 _log.exception("งาน GMAT %s ล้มเหลว", job.id)
+            elif job.cancelled:
+                _log.info("งาน GMAT %s ถูกยกเลิก (module ปิดหรือเลิกใช้ช่วงนี้แล้ว)", job.id)
+            else:
+                _log.error("งาน GMAT %s ล้มเหลว: %s", job.id, exc)
             with self._lock:
                 self._running = None
                 cancelled = job.cancelled
@@ -677,6 +692,8 @@ class EphemManager:
             if cancelled:
                 shutil.rmtree(work, ignore_errors=True)       # เก็บ work dir ไว้ดูสาเหตุเฉพาะงานที่ล้มเหลวจริง
             return
+        _log.info("งาน GMAT %s เสร็จ ใช้เวลา %.1f วินาที ได้ผล %d จาก %d ดวง", job.id, time.monotonic() - started, len(packed),
+                  len(job.specs))
         with self._lock:
             self._running = None
             if job.kind == DAYS:                      # block อยู่ใน LRU แม้คำขอถูกปล่อยระหว่างรัน (มีขอบเขตอยู่แล้ว)

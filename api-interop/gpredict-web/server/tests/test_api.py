@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import logging
 import threading
 import time
 import unittest
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from gpredict_web import app as app_module
+from gpredict_web import gplog
 from gpredict_web.app import create_app, host_allow_list
 from gpredict_web.clock import CLOCK_TIME_TEXT
 from gpredict_web.config import MAX_SATS, TLE_GROUPS
@@ -25,7 +27,7 @@ from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_C
                                  module_to_dict)
 from gpredict_web.observe import qth_geo
 from gpredict_web.passes import find_passes
-from gpredict_web.prefs import PREFS
+from gpredict_web.prefs import PREFS, Prefs
 from gpredict_web.satdb import SatRecord
 from gpredict_web.store import Store
 from gpredict_web.tlesources import cache_dir
@@ -1022,7 +1024,8 @@ class RuntimeApiTest(ApiTestBase):
 
     def test_retry_after_gmat_failure(self):
         self.fake.fail = GmatRunError("GMAT ล้ม")
-        self.open_module()
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            self.open_module()
         self.assertEqual(self.hub.get("M").tick()["status"], "failed")
         self.fake.fail = None
         self.assertEqual(self.client.post("/api/modules/M/retry").status_code, 204)
@@ -1216,6 +1219,137 @@ class MiscApiTest(ApiTestBase):
         r = self.client.post("/api/qth")
         self.assertEqual(r.status_code, 405)
         self.assertEqual(list(r.json()), ERROR_KEYS)
+
+
+# ---------------------------------------------------------------- Log (งานย่อย 4: spec §6, Task 8)
+
+LOG_LINE = r"\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\|"
+
+
+class LogApiTest(ApiTestBase):
+    """ไฟล์ log แบบ Gpredict ผ่าน session ที่ test เปิดเอง (start_background=False ไม่เปิด session) ระดับ 4 เห็นทุกบรรทัด"""
+
+    session_level = 4
+
+    def setUp(self):
+        super().setUp()
+        self.session = gplog.start_session(self.cfg.data_dir / "logs", self.session_level)
+        self.addCleanup(lambda: gplog.end_session(self.session, 0, time.time()))
+
+    @property
+    def log_path(self) -> Path:
+        return self.cfg.data_dir / "logs" / gplog.LOG_FILE
+
+    def log_lines(self) -> list[str]:
+        return self.log_path.read_text(encoding="utf-8").splitlines()
+
+    def post_log(self, body):
+        return self.client.post("/api/log", json=body)
+
+    def test_post_log_from_web(self):
+        r = self.post_log({"level": 1, "function": "multi_pass_response", "text": "multi_pass_response: PRINT not implemented"})
+        self.assertEqual((r.status_code, r.content), (204, b""))
+        self.assertRegex(self.log_lines()[-1], rf"^{LOG_LINE}1\|multi_pass_response: PRINT not implemented$")
+
+    def test_post_log_writes_the_text_under_the_function_with_the_level(self):
+        for level in (1, 2, 3, 4):
+            self.assertEqual(self.post_log({"level": level, "function": "map_view", "text": f"ข้อความ {level}"}).status_code, 204)
+        got = [l.split("|", 2)[1:] for l in self.log_lines()[-4:]]
+        self.assertEqual(got, [[str(n), f"map_view: ข้อความ {n}"] for n in (1, 2, 3, 4)])
+
+    def test_post_log_multiline_text_is_split(self):
+        self.post_log({"level": 2, "function": "f", "text": "a\nb"})
+        self.assertEqual([l.split("|", 2)[2] for l in self.log_lines()[-2:]], ["f: a", "f: b"])
+
+    def test_post_log_text_with_percent_is_written_as_is(self):
+        self.post_log({"level": 2, "function": "f", "text": "100% %s %(x)d"})
+        self.assertEqual(self.log_lines()[-1].split("|", 2)[2], "f: 100% %s %(x)d")
+
+    def test_post_log_respects_the_session_level(self):
+        """ระดับของ session มาจาก LOG/LEVEL ตอนเริ่ม: ระดับ 2 ไม่เขียน INFO ที่ POST มา"""
+        gplog.end_session(self.session, 0, time.time())
+        self.session = gplog.start_session(self.cfg.data_dir / "logs", 2)
+        self.assertEqual(self.post_log({"level": 3, "function": "f", "text": "info"}).status_code, 204)
+        self.assertEqual(self.post_log({"level": 2, "function": "f", "text": "warn"}).status_code, 204)
+        self.assertEqual([l.split("|", 2)[2] for l in self.log_lines()[1:]], ["f: warn"])
+
+    def test_post_log_invalid(self):
+        good = {"level": 1, "function": "multi_pass_response", "text": "x"}
+        before = self.log_lines()
+        bad = {"level 5": ({**good, "level": 5}, "level"), "level 0": ({**good, "level": 0}, "level"),
+               "level text": ({**good, "level": "1"}, "level"), "level bool": ({**good, "level": True}, "level"),
+               "text 501": ({**good, "text": "x" * 501}, "text"), "text empty": ({**good, "text": ""}, "text"),
+               "text number": ({**good, "text": 7}, "text"),
+               "function with space": ({**good, "function": "a b"}, "function"),
+               "function digit first": ({**good, "function": "1a"}, "function"),
+               "function 65": ({**good, "function": "f" * 65}, "function"),
+               "function colon": ({**good, "function": "f: x"}, "function"),
+               "no level": ({"function": "f", "text": "x"}, "level"),
+               "no function": ({"level": 1, "text": "x"}, "function"), "no text": ({"level": 1, "function": "f"}, "text"),
+               "extra key": ({**good, "extra": 1}, "extra")}
+        for label, (body, field) in bad.items():
+            with self.subTest(label):
+                self.assert_error(self.post_log(body), 422, "LOG_INVALID", field)
+        self.assertEqual(self.log_lines(), before)                              # ผิดแล้วไม่เขียนอะไร
+
+    def test_post_log_limits_are_inclusive(self):
+        for body in ({"level": 4, "function": "f" * 64, "text": "x" * 500}, {"level": 1, "function": "_", "text": "x"}):
+            self.assertEqual(self.post_log(body).status_code, 204)
+
+    def test_post_log_body_that_is_not_an_object(self):
+        self.assert_error(self.client.post("/api/log", json=[1]), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.client.post("/api/log", content=b"{no", headers={"content-type": "application/json"}), 422,
+                          "REQUEST_INVALID", None)
+
+    def test_post_log_is_guarded_like_other_writes(self):
+        r = self.client.post("/api/log", json={"level": 1, "function": "f", "text": "x"},
+                             headers={"origin": "http://evil.example"})
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_current_log_is_the_file_as_text(self):
+        self.post_log({"level": 2, "function": "f", "text": "ภาษาไทย"})
+        r = self.client.get("/api/logs/current")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["content-type"], "text/plain; charset=utf-8")
+        self.assertEqual(r.content, self.log_path.read_bytes())
+        self.assertRegex(r.text.split("\n")[0], rf"^{LOG_LINE}3\|sat_log_init: Session started$")
+        self.assertTrue(r.text.endswith("|2|f: ภาษาไทย\n"))
+
+    def test_module_open_close_logged(self):
+        """เปิดและปิด module มีบรรทัด INFO ตามข้อความของ mod-mgr.c และ gtk-sat-module.c (ลำดับหน้าตามลำดับที่เปิด)"""
+        self.put_module("A")
+        self.put_module("B")
+        self.open_module("A")
+        self.open_module("B")
+        self.client.post("/api/modules/A/close")
+        self.client.post("/api/modules/B/close")
+        got = [l.split("|", 1)[1] for l in self.log_lines() if "|3|mod_mgr_" in l or "|3|gtk_sat_module_" in l]
+        self.assertEqual(got, [
+            "3|mod_mgr_add_module: Added A to module manager (page 0).",
+            "3|mod_mgr_add_module: Added B to module manager (page 1).",
+            "3|mod_mgr_remove_module: Removed child from notebook page 0.",
+            "3|gtk_sat_module_close_cb: Module A closed.",
+            "3|mod_mgr_remove_module: Removed child from notebook page 0.",
+            "3|gtk_sat_module_close_cb: Module B closed."])
+
+    def test_module_already_open_or_closed_logs_nothing_more(self):
+        self.put_module("A")
+        self.open_module("A")
+        self.client.post("/api/modules/A/open")
+        self.client.post("/api/modules/A/close")
+        self.client.post("/api/modules/A/close")
+        self.assertEqual(len([l for l in self.log_lines() if "mod_mgr_add_module" in l]), 1)
+        self.assertEqual(len([l for l in self.log_lines() if "mod_mgr_remove_module" in l]), 1)
+
+
+class CurrentLogApiTest(ApiTestBase):
+    def test_no_file_is_an_empty_text(self):
+        r = self.client.get("/api/logs/current")
+        self.assertEqual((r.status_code, r.text, r.headers["content-type"]), (200, "", "text/plain; charset=utf-8"))
+        self.assertFalse((self.cfg.data_dir / "logs").exists())
+
+    def test_meta_log_dir_is_where_the_file_is_written(self):
+        self.assertEqual(Path(self.client.get("/api/meta").json()["log_dir"]), (self.cfg.data_dir / "logs").absolute())
 
 
 # ---------------------------------------------------------------- Preferences (งานย่อย 2: หัวข้อ 8.2 และ 9 ของ spec)
@@ -2208,7 +2342,8 @@ class PassesApiTest(PassApiTestBase):
     def test_gmat_failure_answers_503(self):
         n = NORADS[0]
         self.fake.fail = GmatRunError("GMAT ล้ม")
-        body = self.assert_error(self.passes("next", T0, n), 503, "GMAT_FAILED", str(n))
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            body = self.assert_error(self.passes("next", T0, n), 503, "GMAT_FAILED", str(n))
         self.assertIn("GMAT ล้ม", body["text"])
         self.assertEqual(self.pass_owners(), [])
         self.fake.fail = None                                                    # Retry ในกล่องรอส่งคำขอใหม่
@@ -2318,8 +2453,9 @@ class SkyGlanceApiTest(PassApiTestBase):
 
     def test_gmat_failure_shows_failed_and_reopening_retries(self):
         self.fake.fail = GmatRunError("GMAT ล้ม")
-        self.ok(self.sky(T0))
-        body = self.wait_status("failed")
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):                     # log ออกก่อนสถานะ failed
+            self.ok(self.sky(T0))
+            body = self.wait_status("failed")
         self.assertEqual(body["sats"], [])
         self.assertEqual([(m["code"], m["level"]) for m in body["messages"]], [("GMAT_FAILED", "error")])
         self.assertIn("GMAT ล้ม", body["messages"][0]["text"])
@@ -2596,6 +2732,84 @@ class LifespanTest(ApiTestBase):
         prune.assert_not_called()
         self.assertEqual(client.get("/api/qth").json(), {"qth": [], "default": None, "messages": []})
         self.assertEqual(self.opener.urls, [])
+
+
+    # ---- log ของ session (Task 8): เริ่มก่อน startup จบหลัง shutdown
+
+    @property
+    def log_path(self) -> Path:
+        return self.cfg.data_dir / "logs" / gplog.LOG_FILE
+
+    def log_lines(self) -> list[str]:
+        return self.log_path.read_text(encoding="utf-8").splitlines()
+
+    def fresh_ephem(self) -> EphemManager:
+        """app ตัวที่สองใน test เดียวกัน: ตัวเดิมถูก close() ตอน app แรกปิด"""
+        ephem = EphemManager(self.cfg, propagate_fn=OrbitPropagate(), find_console=lambda: Path("/fake/GmatConsole"),
+                             start_worker=False)
+        self.addCleanup(ephem.close)
+        return ephem
+
+    @staticmethod
+    def session_handlers() -> list[logging.Handler]:
+        return [h for h in logging.getLogger("gpredict_web").handlers if isinstance(h, gplog.GpredictLogHandler)]
+
+    def test_log_session_spans_the_server_life(self):
+        Prefs(self.cfg.data_dir).update({"LOG/LEVEL": 3}, [])
+        self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
+        with TestClient(self.make_app(start_background=True)):
+            self.assertEqual(len(self.session_handlers()), 1)
+            self.assertRegex(self.log_lines()[0], rf"^{LOG_LINE}3\|sat_log_init: Session started$")
+        lines = self.log_lines()
+        self.assertEqual(self.session_handlers(), [])
+        self.assertRegex(lines[-1], rf"^{LOG_LINE}3\|sat_log_close: Session ended$")
+        texts = [l.split("|", 2)[2] for l in lines]
+        order = [texts.index(t) for t in ("sat_log_init: Session started",
+                                          "mod_mgr_add_module: Added Amateur to module manager (page 0).",
+                                          "mod_mgr_remove_module: Removed child from notebook page 0.",
+                                          "gtk_sat_module_close_cb: Module Amateur closed.",
+                                          "sat_log_close: Session ended")]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(order[0], 0)
+        self.assertEqual(order[-1], len(lines) - 1)
+        self.assertTrue(self.log_path.exists())                                          # Always delete: ไฟล์ปัจจุบันคงอยู่
+
+    def test_level_changed_during_the_session_applies_at_the_next_start(self):
+        """ref-D §7.1: LOG/LEVEL มีผลตอนเริ่ม server ครั้งถัดไป (ตั้งต้น 2: INFO ไม่ถูกเขียน)"""
+        def post(client, level, text):
+            self.assertEqual(client.post("/api/log", json={"level": level, "function": "f", "text": text}).status_code, 204)
+
+        with TestClient(self.make_app(start_background=True)) as client:
+            self.assertEqual(client.put("/api/prefs", json={"set": {"LOG/LEVEL": 4}}).status_code, 200)
+            post(client, 3, "info รอบแรก")
+            post(client, 2, "warn รอบแรก")
+        first = [l.split("|", 2)[2] for l in self.log_lines()]
+        self.assertEqual(first, ["sat_log_init: Session started", "f: warn รอบแรก"])      # ไม่มี Session ended (INFO)
+        with TestClient(self.make_app(start_background=True, ephem=self.fresh_ephem())) as client:
+            post(client, 3, "info รอบสอง")
+        second = [l.split("|", 2)[2] for l in self.log_lines()]
+        self.assertEqual(second, ["sat_log_init: Session started", "f: info รอบสอง", "sat_log_close: Session ended"])
+
+    def test_clean_age_is_read_when_the_server_stops(self):
+        with TestClient(self.make_app(start_background=True)) as client:
+            self.assertEqual(client.put("/api/prefs", json={"set": {"LOG/CLEAN_AGE": 86400}}).status_code, 200)
+        names = sorted(p.name for p in self.log_path.parent.iterdir())
+        self.assertEqual(len(names), 1, names)
+        self.assertRegex(names[0], r"^gpredict-\d+\.log$")
+        self.assertRegex((self.log_path.parent / names[0]).read_text(encoding="utf-8"), r"\|3\|sat_log_init: Session started\n")
+
+    def test_log_session_ends_when_startup_fails(self):
+        with mock.patch.object(self.ephem, "prune", side_effect=RuntimeError("เริ่มไม่ได้")):
+            with self.assertRaisesRegex(RuntimeError, "เริ่มไม่ได้"):
+                with TestClient(self.make_app(start_background=True)):
+                    pass
+        self.assertEqual(self.session_handlers(), [])
+        self.assertTrue(self.log_path.exists())
+
+    def test_no_log_session_without_start_background(self):
+        self.enter(self.make_app(start_background=False))
+        self.assertEqual(self.session_handlers(), [])
+        self.assertFalse((self.cfg.data_dir / "logs").exists())
 
 
 if __name__ == "__main__":

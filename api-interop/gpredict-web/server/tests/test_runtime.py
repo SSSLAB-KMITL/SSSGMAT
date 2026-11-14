@@ -313,7 +313,8 @@ class TickTest(RuntimeTestBase):
     def test_gmat_failure_then_retry(self):
         self.fake.fail = GmatRunError("GMAT ล้ม")
         rt = self.runtime()
-        self.ephem.drain()
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            self.ephem.drain()
         tick = rt.tick()
         self.assertEqual(tick["status"], "failed")
         self.assertNotIn("sats", tick)
@@ -420,7 +421,8 @@ class WindowTest(RuntimeTestBase):
         self.fake.fail = GmatRunError("GMAT ล้ม")
         self.wall.t = datetime(2026, 11, 12, 18, 30, tzinfo=UTC)
         rt.tick()
-        self.ephem.drain()                                              # ช่วงถัดไปล้มเหลว: ยังใช้ช่วงเดิมได้
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            self.ephem.drain()                                          # ช่วงถัดไปล้มเหลว: ยังใช้ช่วงเดิมได้
         tick = rt.tick()
         self.assertEqual((tick["status"], tick["window"]["start"]), ("ok", iso(W0[0])))
         self.fake.fail = None

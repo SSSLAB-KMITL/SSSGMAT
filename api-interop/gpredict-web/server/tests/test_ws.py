@@ -107,7 +107,8 @@ class WebSocketTest(ApiTestBase):
                              [("EPHEM_COMPUTING", "info", None)])
             self.assertRegex(tick["messages"][0]["text"], r"[ก-๙]")
 
-            self.ephem.drain()                                       # งาน GMAT แรกล้มเหลว
+            with self.assertLogs("gpredict_web.ephem", "ERROR"):
+                self.ephem.drain()                                   # งาน GMAT แรกล้มเหลว
             tick = self.next_tick_with(ws, "failed")
             self.assertNotIn("sats", tick)
             self.assertEqual([(m["code"], m["level"]) for m in tick["messages"]], [("GMAT_FAILED", "error")])

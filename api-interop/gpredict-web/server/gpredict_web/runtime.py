@@ -491,18 +491,24 @@ class Hub:
             if rt is None:
                 rt = ModuleRuntime(*self._load(name), self._ephem, ModuleClock(self._now), self._twilight)
                 with self._lock:
+                    page = len(self._open)                       # หน้าที่ต่อท้าย (ลำดับที่เปิด)
                     self._open[name] = rt
+                _log.info("Added %s to module manager (page %d).", name, page, extra={"gp_function": "mod_mgr_add_module"})
             return rt
 
     def close(self, name: str) -> None:
         """ปิด module และปล่อยทุกช่วงคำนวณของมัน รวมถึง block รายวันของ Sky at a glance (owner sky:<name>)
         เอาออกจาก dict ทันที แล้วรอ tick ที่กำลังทำของ module นี้ก่อนปล่อยช่วง (โดยไม่ถือ _lock)
-        ไม่ได้เปิดอยู่: ปล่อยเฉพาะ owner ของ Sky at a glance ที่อาจค้าง (ไม่มี owner นั้นก็ไม่ทำอะไร)"""
+        ไม่ได้เปิดอยู่: ปล่อยเฉพาะ owner ของ Sky at a glance ที่อาจค้าง (ไม่มี owner นั้นก็ไม่ทำอะไร)
+        เปิดและปิด module มีบรรทัด INFO ตามข้อความของ Gpredict (mod-mgr.c, gtk-sat-module.c) หน้า = ลำดับที่เปิดอยู่ใน Hub"""
         with self._serial(name):
             with self._lock:
+                page = list(self._open).index(name) if name in self._open else -1
                 rt = self._open.pop(name, None)
             if rt is not None:
                 rt.close()
+                _log.info("Removed child from notebook page %d.", page, extra={"gp_function": "mod_mgr_remove_module"})
+                _log.info("Module %s closed.", name, extra={"gp_function": "gtk_sat_module_close_cb"})
             self._ephem.release_days(sky_owner(name))
 
     def get(self, name: str) -> ModuleRuntime | None:

@@ -390,7 +390,8 @@ class CurrentPassTest(PassServiceTestBase):
     def test_failed_and_missing_data(self):
         self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
         self.current(NORADS[0], T0)
-        self.ephem.drain()
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            self.ephem.drain()
         self.assertEqual(self.current(NORADS[0], T0), ("failed", None))
         self.service.release_current("rot:M")
         self.assertNotIn("rot:M", self.ephem._day_pairs)
@@ -626,7 +627,8 @@ class SkyTest(PassServiceTestBase):
     def test_sky_failed_status(self):
         self.fake.fail = GmatRunError("GMAT จบด้วย exit code 3")
         self.service.sky("M", T0)
-        self.ephem.drain()
+        with self.assertLogs("gpredict_web.ephem", "ERROR"):
+            self.ephem.drain()
         out = self.service.sky("M", T0)
         self.assertEqual((out["status"], out["sats"]), ("failed", []))
         self.assertEqual([(m["code"], m["level"]) for m in out["messages"]], [("GMAT_FAILED", "error")])

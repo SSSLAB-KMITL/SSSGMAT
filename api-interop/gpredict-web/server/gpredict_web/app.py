@@ -16,9 +16,11 @@
   GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
-- ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
+  + GET /api/logs/current (ข้อความของ data/logs/gpredict.log ไม่มีไฟล์ = "") และ POST /api/log (ข้อความจากหน้าเว็บ: gplog.py)
+- ตอนเริ่ม (start_background=True): เปิด log session (gplog.start_session ระดับ LOG/LEVEL) ก่อนอย่างอื่น แล้วลบช่วงคำนวณเก่า,
+  bootstrap (หัวข้อ 7.1) และเปิด module ที่ค้างอยู่ใน session.json
   ตอนปิด: ปลด controller ทุกตัว (S, q) -> หยุด tick -> ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT
-  อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป
+  อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป จบด้วยปิด log session (gplog.end_session หมุนไฟล์ตาม LOG/CLEAN_AGE ที่อ่านตอนนี้)
 - dev: `uvicorn gpredict_web.app:app --reload --port 8740` (app สร้างเมื่อถูกอ่านครั้งแรก การ import เฉยๆ จึงไม่แตะ data จริง)
 """
 
@@ -27,6 +29,7 @@ import json
 import logging
 import math
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
@@ -45,6 +48,7 @@ from starlette.datastructures import Headers
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import Message
 
+from . import gplog
 from . import module as M
 from . import store as S
 from . import trsp
@@ -602,18 +606,24 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if start_background:
-            app.state.startup_messages = await asyncio.to_thread(startup)
+        # log session ครอบทั้งชีวิตของ server: ระดับอ่านตอนเริ่มครั้งเดียว (มีผลครั้งถัดไปเหมือน Gpredict) ส่วน LOG/CLEAN_AGE อ่านตอนจบ
+        session = gplog.start_session(cfg.data_dir / LOG_DIR, prefs.get("LOG/LEVEL")) if start_background else None
         try:
-            yield
-        finally:                             # ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ
+            if start_background:
+                app.state.startup_messages = await asyncio.to_thread(startup)
             try:
-                await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
-            finally:
+                yield
+            finally:                             # ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ
                 try:
-                    await ticks.shutdown()
+                    await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
                 finally:
-                    await asyncio.to_thread(shutdown)
+                    try:
+                        await ticks.shutdown()
+                    finally:
+                        await asyncio.to_thread(shutdown)
+        finally:
+            if session is not None:
+                gplog.end_session(session, prefs.get("LOG/CLEAN_AGE"), time.time())
 
     app = FastAPI(title="Gpredict Web", lifespan=lifespan, openapi_url="/api/openapi.json", docs_url="/api/docs",
                   redoc_url=None)
@@ -1090,6 +1100,25 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     @app.get("/api/meta")
     def meta():
         return _meta(cfg)
+
+    # ---------------- Log (File → Log browser, Preferences → Message Logs)
+
+    @app.get("/api/logs/current")
+    def current_log():
+        """ข้อความของ gpredict.log ของ session นี้ (Log browser อ่านครั้งเดียวตอนเปิด) ไม่มีไฟล์หรืออ่านไม่ได้ = ข้อความว่าง"""
+        try:
+            data = (cfg.data_dir / LOG_DIR / gplog.LOG_FILE).read_bytes()
+        except OSError:
+            data = b""
+        return Response(data, media_type="text/plain; charset=utf-8")
+
+    @app.post("/api/log", status_code=204)
+    def post_log(body: dict = Body(...)):
+        """บรรทัด log จากหน้าเว็บ {level 1-4, function, text} เช่น Print ของ Upcoming passes ("multi_pass_response: PRINT not implemented")
+        ผ่านตัวกรองระดับของ session เหมือน record อื่น ผิดรูปแบบ: 422 LOG_INVALID"""
+        level, function, text = gplog.parse_entry(body)
+        _log.log(gplog.PYTHON_LEVEL[level], "%s", text, extra={"gp_function": function})
+        return Response(status_code=204)
 
     def repo_text(path: Path) -> PlainTextResponse:
         try:
