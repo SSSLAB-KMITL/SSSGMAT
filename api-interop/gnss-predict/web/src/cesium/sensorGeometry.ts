@@ -198,3 +198,26 @@ export function sensorViewFovDeg(halfAngleDeg: number, aspect: number, zoom = 1)
   const short = sensorViewShortFovDeg(halfAngleDeg, zoom);
   return 2 * Math.atan(Math.tan((short * RAD) / 2) * Math.max(aspect, 1 / aspect)) * DEG;
 }
+
+/**
+ * ความกว้างพื้นที่ (เมตร) ที่ภาพ Sensor View เห็นตามด้านสั้นที่จุดใต้ดาว (imagery spec §4.4): กล้องมองลงศูนย์กลางโลก ด้านสั้นกว้าง shortFovDeg
+ * ขอบภาพเอียงจากแนวดิ่ง β = fov / 2 จึงตกที่มุมศูนย์กลางเดียวกับขอบรอยของกรวยครึ่งมุม β (nadirCentralAngleRad: asin(k·sin β) − β, เกินจานโลกจบที่ขอบฟ้า)
+ * ความกว้าง = ส่วนโค้งบนผิว 2·Re·θ ไม่ใช้ 2·h·tan(fov/2): มุมแคบ (fov ≤ 2°) สองสูตรต่างกัน < 1% แต่มุมกว้างผิวโลกโค้งหนีกล้อง ผิวกว้างกว่า และเกินจานโลกสูตรแบนผิดมาก
+ * ดาวไม่อยู่เหนือผิวโลก (altKm ≤ 0) หรือ fov ไม่เป็นจำนวนบวก = 0
+ */
+export function sensorViewGroundWidthM(altKm: number, shortFovDeg: number): number {
+  if (!(altKm > 0 && shortFovDeg > 0) || !Number.isFinite(altKm) || !Number.isFinite(shortFovDeg)) return 0;
+  return 2 * RE_M * nadirCentralAngleRad(altKm, shortFovDeg / 2);
+}
+
+/**
+ * ระดับชิ้นภาพ (Web Mercator, 256 px) ที่ละเอียดพอให้ภาพกว้าง groundWidthM เมตรบน shortSidePx พิกเซลไม่ขยายจนเบลอ:
+ * ระดับต่ำสุด z ที่ metresPerPixel(z) ≤ groundWidthM / shortSidePx, z = ceil(log2(2π·Re / (groundWidthM / shortSidePx · 256))) ไม่ต่ำกว่า 0
+ * คิดที่เส้นศูนย์สูตร (ละติจูด φ ชิ้นแคบลง cos φ เท่า ระดับที่ต้องใช้จริงจึงต่ำกว่าเล็กน้อย: ประมาณการด้านที่เตือนเร็วไว้ก่อน)
+ * ความกว้างหรือจำนวนพิกเซลที่ไม่เป็นจำนวนบวกจำกัด = null (ไม่มีระดับให้เทียบ)
+ */
+export function neededImageryLevel(groundWidthM: number, shortSidePx: number): number | null {
+  if (!(groundWidthM > 0 && shortSidePx > 0) || !Number.isFinite(groundWidthM) || !Number.isFinite(shortSidePx)) return null;
+  const level = Math.ceil(Math.log2((2 * Math.PI * RE_M) / ((groundWidthM / shortSidePx) * 256)));
+  return Math.max(0, level);
+}

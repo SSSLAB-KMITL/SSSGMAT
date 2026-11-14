@@ -15,7 +15,7 @@ import type { SensorViewPose } from "../../src/cesium/sensorDraw";
 import { sensorViewFovDeg, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
 import { DEFAULT_GLOBE } from "../../src/layout/workbook";
-import { useImagery } from "../../src/stores/imagery";
+import { useImagery, type ImageryLayerInfo } from "../../src/stores/imagery";
 import { useLayout } from "../../src/stores/layout";
 import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
@@ -297,6 +297,54 @@ describe("Camera display of a Sensor View", () => {
     mainScene.destroy();
     sensorScene.destroy();
   });
+  test("zoom ×8192: the boresight and the position do not move, only the fov narrows; the HUD carries the view size", async () => {
+    const { mainScene, sensorScene } = await mountBoth();
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+    const wide = sensorScene.sensorCamera()!;
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 8192);
+    const deepest = sensorScene.sensorCamera()!;
+    expect(deepest.zoom).toBe(8192);
+    expect(deepest.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300, 8192), 12);
+    expect(deepest.fovDeg).toBeGreaterThan(0);
+    expect(deepest.fovDeg).toBeLessThan(0.02);
+    for (let i = 0; i < 3; i++) {
+      expect(deepest.position[i]).toBeCloseTo(wide.position[i], 3);
+      expect(deepest.direction[i]).toBeCloseTo(wide.direction[i], 9);
+      expect(deepest.up[i]).toBeCloseTo(wide.up[i], 9);
+    }
+    // ทิศกล้องยังชี้ลงศูนย์กลางโลก (nadir) ที่ ×8192 ไม่เกิน 0.01° (Review Focus 5)
+    const [px, py, pz] = deepest.position;
+    const r = Math.hypot(px, py, pz);
+    const cos = -(deepest.direction[0] * px + deepest.direction[1] * py + deepest.direction[2] * pz) / r;
+    expect((Math.acos(Math.min(1, cos)) * 180) / Math.PI).toBeLessThan(0.01);
+    const hud = sensorScene.sensorHud()!;
+    expect(hud).toMatchObject({ zoom: 8192, imagery: null, shortSidePx: 300 }); // canvas ปลอมกว้าง 400 สูง 300: ด้านสั้น 300 px
+    expect(hud.fovDeg).toBeCloseTo(sensorViewShortFovDeg(45, 8192), 12);
+    mainScene.destroy();
+    sensorScene.destroy();
+  });
+
+  test("the HUD imagery carries the source and max level of the top layer (GIBS, EOX, OSM)", async () => {
+    const layers: ImageryLayerInfo[] = [
+      { id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: "NASA GIBS / EOSDIS", source: "gibs" },
+      { id: "s2cloudless-2024_3857", title: "Sentinel-2 cloudless 2024", period: "static", max_level: 15, format: "jpg", credit: "EOX", source: "eox" },
+    ];
+    useImagery.setState({ sources: { gibs: true, eox: false, osm: false, ion: false }, layers, loaded: true });
+    useLayout.setState({ globe: { layers: { BlueMarble_NextGeneration: { show: true, translucency: 0 }, "s2cloudless-2024_3857": { show: true, translucency: 0 } }, ion: { assetId: null } } });
+    const { mainScene, sensorScene } = await mountBoth();
+    try {
+      sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+      expect(sensorScene.sensorHud()!.imagery).toMatchObject({ title: "Blue Marble", source: "gibs", maxLevel: 8 });
+      act(() => useImagery.setState({ sources: { gibs: true, eox: true, osm: false, ion: false } }));
+      expect(sensorScene.sensorHud()!.imagery).toMatchObject({ title: "Sentinel-2 cloudless 2024", source: "eox", maxLevel: 15 }); // EOX วาดทับ GIBS
+    } finally {
+      mainScene.destroy();
+      sensorScene.destroy();
+      useImagery.setState(useImagery.getInitialState(), true);
+      useLayout.setState({ globe: DEFAULT_GLOBE });
+    }
+  });
+
   // Ambient Level (3D Graphics Window Properties) ทำให้ด้านกลางคืนจาง: ชั้น GIBS ต้องจางเท่าภาพฐาน (index 0) ไม่ใช่สว่างทั้งลูก
   test("Ambient Level sets the night alpha of the GIBS layers like the base layer, at mount and when the window properties change", async () => {
     useImagery.setState({

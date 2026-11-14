@@ -785,10 +785,14 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const coneHalfAngle = coneHalfAngleOf(target.sensor);
     const zoom = this.view.kind === "sensor" ? this.view.zoom : 1;
     const top = imageryStatus(this.viewer).topLayer;
+    const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
     return {
       sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle,
       fovDeg: sensorViewShortFovDeg(coneHalfAngle, zoom), zoom,
-      imagery: top === null ? null : { title: top.title, label: top.label, missing: top.missingRatio > IMAGERY_MISSING_RATIO },
+      imagery: top === null ? null : {
+        title: top.title, label: top.label, missing: top.missingRatio > IMAGERY_MISSING_RATIO, source: top.source, maxLevel: top.max_level,
+      },
+      shortSidePx: Math.min(width, height),
     };
   }
 

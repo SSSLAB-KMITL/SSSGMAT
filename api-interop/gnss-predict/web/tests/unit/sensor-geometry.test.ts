@@ -12,7 +12,9 @@ import {
   EARTH_ROTATION_RAD_S,
   isNadir,
   nadirCentralAngleRad,
+  neededImageryLevel,
   sensorFootprint,
+  sensorViewGroundWidthM,
   sensorViewFovDeg,
   sensorViewShortFovDeg,
 } from "../../src/cesium/sensorGeometry";
@@ -178,4 +180,97 @@ test("cone rays are equally spaced at the half angle; every ninth of 72 is one o
     expect(r.y).toBeCloseTo(rays[9 * k].y, 12);
     expect(r.z).toBeCloseTo(rays[9 * k].z, 12);
   });
+});
+
+// ---------- ความกว้างพื้นที่ที่จุดใต้ดาวและระดับภาพที่ต้องใช้ (imagery spec §4.4) ----------
+
+/** ความกว้างพื้นที่ (เมตร) ที่มองจากดาวสูง altKm ตรงลงด้านสั้นกว้าง fovDeg คำนวณแยกด้วยเวกเตอร์: ยิงเส้นสองด้านของภาพไปตัดทรงกลมแล้ววัดส่วนโค้ง */
+function groundWidthByRays(altKm: number, fovDeg: number): number {
+  const r = (RE + altKm) * 1000;
+  const re = RE * 1000;
+  const beta = (fovDeg / 2) * D;
+  // ดาวที่ (r, 0), เส้นเอียงจากทิศลง (−1, 0) เป็นมุม β: p = (r − t·cos β, t·sin β), |p| = Re  ⇒  t² − 2·r·cos β·t + r² − Re² = 0
+  const b = r * Math.cos(beta);
+  const disc = b * b - (r * r - re * re);
+  // เส้นไม่โดนโลก (disc < 0, β เกินครึ่งมุมจานโลก) = ขอบภาพอยู่เหนือขอบฟ้า จบที่ขอบฟ้า มุมศูนย์กลาง acos(Re / r)
+  const theta = disc < 0 ? Math.acos(re / r) : Math.atan2((b - Math.sqrt(disc)) * Math.sin(beta), r - (b - Math.sqrt(disc)) * Math.cos(beta));
+  return 2 * re * theta;
+}
+
+test("ground width at the sub-satellite point: GPS cone at x1024 is about 10 km and at x8192 about 1.3 km (spec 4.4)", () => {
+  const alt = 20200;
+  const shortFov = (zoom: number) => sensorViewShortFovDeg(14.4, zoom);
+  const w1024 = sensorViewGroundWidthM(alt, shortFov(1024)) / 1000;
+  const w8192 = sensorViewGroundWidthM(alt, shortFov(8192)) / 1000;
+  expect(Math.abs(w1024 - 10) / 10).toBeLessThan(0.05);
+  expect(Math.abs(w8192 - 1.3) / 1.3).toBeLessThan(0.05);
+  // ซูมขึ้น 8 เท่า ความกว้างลด 8 เท่า (มุมแคบ = เชิงเส้น)
+  expect(w1024 / w8192).toBeCloseTo(8, 4);
+});
+
+test("ground width agrees with the flat 2·h·tan(fov/2) for fov up to 2° and with the ray-traced sphere at every fov", () => {
+  for (const alt of [800, 20200, 35786]) {
+    for (const fov of [0.004, 0.0295, 0.24, 1, 2]) {
+      const flat = 2 * alt * 1000 * Math.tan((fov / 2) * D);
+      const exact = sensorViewGroundWidthM(alt, fov);
+      expect(Math.abs(exact - flat) / flat, `alt ${alt} fov ${fov}`).toBeLessThan(0.01);
+      expect(exact, `alt ${alt} fov ${fov}`).toBeCloseTo(groundWidthByRays(alt, fov), 3);
+    }
+    for (const fov of [5, 20, 40, 90, 120]) {
+      expect(sensorViewGroundWidthM(alt, fov), `alt ${alt} fov ${fov}`).toBeCloseTo(groundWidthByRays(alt, fov), 3);
+    }
+  }
+});
+
+test("ground width beyond the flat regime: the sphere is wider than the flat estimate, and a fov wider than the Earth disc stops at the horizon", () => {
+  // LEO 800 km, fov 40°: ดาวมองลงตรงขอบภาพยังตัดโลก; ผิวโลกโค้งหนีดาว จึงกว้างกว่า 2·h·tan(fov/2) (≈ 582 km)
+  const leo = sensorViewGroundWidthM(800, 40) / 1000;
+  expect(leo).toBeGreaterThan(2 * 800 * Math.tan(20 * D));
+  expect(leo).toBeCloseTo(587.5, 1);
+  // GPS fov ×1 (30.2°) กว้างกว่าจานโลก (27.8°): ความกว้าง = 2·Re·acos(Re/(Re+h)) ≈ 16,930 km (ขอบฟ้า) ไม่ใช่ 2·h·tan(15.1°) ≈ 10,900 km
+  const horizon = 2 * RE * 1000 * Math.acos(RE / (RE + 20200));
+  const full = sensorViewGroundWidthM(20200, sensorViewShortFovDeg(14.4, 1));
+  expect(full).toBeCloseTo(horizon, 3);
+  expect(full / 1000).toBeGreaterThan(16000);
+  expect(sensorViewGroundWidthM(20200, 120)).toBeCloseTo(horizon, 3); // fov กว้างขึ้นอีกก็ไม่เกินขอบฟ้า
+});
+
+test("ground width of a degenerate view is 0", () => {
+  expect(sensorViewGroundWidthM(20200, 0)).toBe(0);
+  expect(sensorViewGroundWidthM(0, 10)).toBe(0); // ที่ผิวโลก ไม่เห็นพื้นที่ใต้ดาวเป็นความกว้าง
+  expect(sensorViewGroundWidthM(-5, 10)).toBe(0);
+  expect(sensorViewGroundWidthM(Number.NaN, 10)).toBe(0);
+  expect(sensorViewGroundWidthM(20200, Number.NaN)).toBe(0);
+});
+
+test("needed imagery level: the level whose ground pixel (2πRe / (256·2^z) m/px at the equator) is no coarser than width / pixels", () => {
+  const RE_M = RE * 1000;
+  const metresPerPx = (z: number) => (2 * Math.PI * RE_M) / (256 * 2 ** z);
+  // ตัวอย่างในมือ: 10 km บน 600 px = 16.7 m/px: ระดับ 14 ได้ 9.5 m/px, ระดับ 13 ได้ 19.1 m/px (หยาบเกิน)
+  expect(neededImageryLevel(10_000, 600)).toBe(14);
+  expect(metresPerPx(14)).toBeLessThanOrEqual(10_000 / 600);
+  expect(metresPerPx(13)).toBeGreaterThan(10_000 / 600);
+  // ทุกขนาดภาพ: ระดับที่ได้พอดี และระดับที่ต่ำลงหนึ่งขั้นหยาบเกิน
+  for (const width of [1_300, 10_400, 250_000, 1_000_000]) {
+    for (const px of [240, 600, 1080]) {
+      const z = neededImageryLevel(width, px)!;
+      expect(metresPerPx(z), `${width} m / ${px}px`).toBeLessThanOrEqual(width / px);
+      if (z > 0) expect(metresPerPx(z - 1), `${width} m / ${px}px`).toBeGreaterThan(width / px);
+    }
+  }
+  // ขอบของขั้น: กว้างขึ้น 0.1% จากจุดที่ระดับ 10 พอดี = 10, แคบลง 0.1% = 11
+  const exact10 = (2 * Math.PI * RE_M * 256) / (256 * 2 ** 10);
+  expect(neededImageryLevel(exact10 * 1.001, 256)).toBe(10);
+  expect(neededImageryLevel(exact10 * 0.999, 256)).toBe(11);
+  // สูตรเดียวกับ brief: ceil(log2(2πR / (width / px · 256)))
+  expect(neededImageryLevel(1_300, 600)).toBe(Math.ceil(Math.log2((2 * Math.PI * RE_M) / ((1_300 / 600) * 256))));
+});
+
+test("needed imagery level never goes below 0, and bad input has no level", () => {
+  expect(neededImageryLevel(40_000_000, 1)).toBe(0); // ทั้งโลกในหนึ่งพิกเซล
+  expect(neededImageryLevel(0, 600)).toBeNull();
+  expect(neededImageryLevel(-1, 600)).toBeNull();
+  expect(neededImageryLevel(10_000, 0)).toBeNull();
+  expect(neededImageryLevel(Number.NaN, 600)).toBeNull();
+  expect(neededImageryLevel(10_000, Number.POSITIVE_INFINITY)).toBeNull();
 });

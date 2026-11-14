@@ -7,6 +7,7 @@
 // - หา handle ของ sensor ตามชื่อ (test hook sensorViewCamera) จาก params.path ของ panel ใน dockview
 
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
+import type { ImagerySourceId } from "../../stores/imagery";
 import { useLayout } from "../../stores/layout";
 import { createSceneRegistry, type SceneRegistry } from "../graphics/sceneRegistry";
 
@@ -21,8 +22,8 @@ export type SensorViewUp = "north" | "velocity";
 /** camera = ซ่อนทุกอย่างที่ไม่ใช่ลูกโลกในหน้าต่างนี้ (ค่าตั้งต้น), sensor = แสดง object ของ scenario แบบหน้าต่าง 3D (imagery spec §5.3) */
 export type SensorViewDisplay = "camera" | "sensor";
 
-/** ขั้นของการซูม: มุมกว้างด้านสั้น = sensorViewShortFovDeg(α) / zoom */
-export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32, 64, 128] as const;
+/** ขั้นของการซูม: มุมกว้างด้านสั้น = sensorViewShortFovDeg(α) / zoom ถึง ×8192 (ดาว GPS ≈ 0.0037° ≈ 1.3 km บนพื้น: imagery spec §4.4) */
+export const ZOOM_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] as const;
 export type SensorViewZoom = (typeof ZOOM_STEPS)[number];
 
 /** ขั้นถัดไป (dir 1 = Zoom In, −1 = Zoom Out) ปลายทั้งสองคงที่ */
@@ -39,13 +40,17 @@ export interface SensorViewParams {
   zoom: SensorViewZoom;
 }
 
-/** แหล่งภาพพื้นโลกบนสุดที่แสดงอยู่ (ชั้น NASA GIBS) */
+/** ชั้นภาพพื้นโลกบนสุดที่แสดงอยู่ (NASA GIBS, EOX, OSM หรือ Cesium ion) */
 export interface SensorHudImagery {
   title: string;
   /** เวลาของภาพ (static = "") */
   label: string;
   /** ชิ้นที่ไม่มีภาพเวลานี้เกินครึ่งของชิ้นที่ได้ผลแล้ว */
   missing: boolean;
+  /** แหล่งของชั้น: ion ไม่มีตารางระดับซูมสูงสุด (HUD ไม่เตือน "ภาพละเอียดสุด") */
+  source: ImagerySourceId;
+  /** ระดับซูมละเอียดสุดของชั้น (Web Mercator, ชิ้น 256 px) null = ยังไม่รู้ (ชั้น ion ที่ยังไม่ได้ provider) */
+  maxLevel: number | null;
 }
 
 /** ข้อความบนภาพ ณ เวลาปัจจุบัน (P4) */
@@ -62,8 +67,10 @@ export interface SensorHud {
   /** มุมกว้างด้านสั้นของภาพ (องศา) = sensorViewShortFovDeg(α, zoom) */
   fovDeg: number;
   zoom: SensorViewZoom;
-  /** ชั้นภาพ GIBS บนสุดที่แสดงอยู่ ไม่มี (Natural Earth II ออฟไลน์) = null */
+  /** ชั้นภาพออนไลน์บนสุดที่แสดงอยู่ ไม่มี (Natural Earth II ออฟไลน์) = null */
   imagery: SensorHudImagery | null;
+  /** ด้านสั้นของภาพเป็นพิกเซล CSS (canvas) ภาพยังไม่มีขนาด = 0 ใช้หาระดับชิ้นภาพที่ต้องใช้ (neededImageryLevel) */
+  shortSidePx: number;
 }
 
 /**

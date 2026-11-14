@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
 import type { DockviewApi, IDockviewPanel } from "dockview-react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { sensorViewGroundWidthM, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { runCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
@@ -27,7 +28,7 @@ import {
   nextZoom, sensorViewParams, sensorViewScenes, ZOOM_STEPS, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle,
   type SensorViewUp, type SensorViewZoom,
 } from "../../src/windows/SensorView/registry";
-import { coneCircleRadius, registerSensorViewPanel } from "../../src/windows/SensorView/SensorView";
+import { coneCircleRadius, finestLevelReached, groundWidthText, registerSensorViewPanel } from "../../src/windows/SensorView/SensorView";
 import { sensorViewRenamed, startSensorViewTracking } from "../../src/windows/SensorView/track";
 import { Workspace } from "../../src/Workspace";
 import { resetWithCoreCommands } from "./helpers/chrome";
@@ -60,7 +61,7 @@ function fakeView(panelId: string): Fake {
 }
 
 const HUD: SensorHud = {
-  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1, imagery: null,
+  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1, imagery: null, shortSidePx: 600,
 };
 
 /** handle ที่หน้าต่างแต่ละบานได้ ตาม panelId; nextHud = ข้อความบนภาพของบานที่จะเปิดถัดไป */
@@ -240,7 +241,7 @@ describe("the window", () => {
     expect(views()[0].params).toEqual({ ...NEW("Sensor1"), display: "sensor", zoom: 2 });
   });
 
-  test("Zoom In three times gives ×8; the ends disable the buttons", async () => {
+  test("Zoom In three times gives ×8, thirteen times ×8192; the ends disable the buttons", async () => {
     const user = userEvent.setup();
     await mount({ G01: ["Sensor1"] });
     const fake = await open("Sensor1");
@@ -253,11 +254,13 @@ describe("the window", () => {
     expect(views()[0].params).toEqual({ ...NEW("Sensor1"), zoom: 8 });
     expect(within(bar).getByText("×8")).toBeDefined();
     await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 8]));
-    for (let i = 0; i < 6; i++) await user.click(zoomIn());
-    expect(views()[0].params?.zoom).toBe(128);
+    for (let i = 0; i < 10; i++) await user.click(zoomIn());
+    expect(views()[0].params?.zoom).toBe(8192);
+    expect(within(bar).getByText("×8192")).toBeDefined();
     expect((zoomIn() as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 8192]));
     await user.click(zoomOut());
-    expect(views()[0].params?.zoom).toBe(64);
+    expect(views()[0].params?.zoom).toBe(4096);
   });
 
   test("the mouse wheel without Shift zooms (and does not scroll the page); with Shift it does not zoom", async () => {
@@ -288,7 +291,7 @@ describe("the window", () => {
     expect(views()[0].params?.zoom).toBe(1);
   });
 
-  test("a trackpad swipe (many small wheel events) or a pinch (ctrlKey) moves the zoom by at most a couple of steps, not to ×128", async () => {
+  test("a trackpad swipe (many small wheel events) or a pinch (ctrlKey) moves the zoom by at most a couple of steps, not to the ×8192 end", async () => {
     await mount({ G01: ["Sensor1"] });
     await open("Sensor1");
     const stage = screen.getByTestId("sensor-view");
@@ -345,15 +348,78 @@ describe("the window", () => {
     await user.click(screen.getByRole("button", { name: t("sensorView.display.camera") }));
     await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
     // สวิตช์เปิด: ชั้นบนสุดที่แสดง ไม่มีคำแนะนำ
-    fake.hud = { ...fake.hud, imagery: { title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missing: false } };
+    fake.hud = { ...fake.hud, imagery: { title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missing: false, source: "gibs", maxLevel: 9 } };
     act(() => useImagery.setState({ sources: { gibs: true, eox: false, osm: false, ion: false } }));
     await waitFor(() => expect(lines()).toContain(msg("sensorView.hudImagery", { image: "VIIRS NOAA-20 True Color 2026-11-11" })));
     expect(lines()).toContain("ภาพพื้นโลก: VIIRS NOAA-20 True Color 2026-11-11");
     expect(lines()).not.toContain(msg("sensorView.hintGlobeManager"));
     // ชั้นบนสุดไม่มีภาพเกินครึ่ง: ต่อท้าย (HUD อ่านใหม่เองเป็นระยะ ไม่ต้องรอเวลาเปลี่ยน)
-    fake.hud = { ...fake.hud, imagery: { title: "Blue Marble", label: "", missing: true } };
+    fake.hud = { ...fake.hud, imagery: { title: "Blue Marble", label: "", missing: true, source: "gibs", maxLevel: 8 } };
     await waitFor(() => expect(lines()).toContain("ภาพพื้นโลก: Blue Marble — ไม่มีภาพเวลานี้"), { timeout: 3000 });
     act(() => useImagery.setState({ sources: { gibs: false, eox: false, osm: false, ion: false } }));
+  });
+
+  test("HUD shows the ground width at the sub-satellite point: km above 1 km, m below (imagery spec §4.4)", async () => {
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
+    const show = async (hud: SensorHud, line: string) => {
+      fake.hud = hud;
+      act(() => sensorViewScenes.notify());
+      await waitFor(() => expect(lines()).toContain(line));
+    };
+    // ดาว GPS (20,200 km, α 14.4°): ×1024 ≈ 10 km, ×8192 ≈ 1.3 km
+    const gps = (zoom: number): SensorHud => ({ ...HUD, altKm: 20200, coneHalfAngle: 14.4, fovDeg: sensorViewShortFovDeg(14.4, zoom), zoom: zoom as SensorViewZoom });
+    await show(gps(1024), msg("sensorView.hudGroundWidthKm", { width: "10.4" }));
+    await show(gps(8192), msg("sensorView.hudGroundWidthKm", { width: "1.30" }));
+    // FOV ที่ ×8192 ≈ 0.0037° ไม่ปัดเป็น 0.00; ×1024 ≈ 0.0295°; ×128 ≈ 0.24°
+    expect(lines()).toContain(msg("sensorView.hudFov", { fov: "0.0037", zoom: 8192 }));
+    await show(gps(1024), msg("sensorView.hudFov", { fov: "0.0295", zoom: 1024 }));
+    await show(gps(128), msg("sensorView.hudFov", { fov: "0.24", zoom: 128 }));
+    await show(gps(1024), msg("sensorView.hudGroundWidthKm", { width: "10.4" }));
+    // ×1: กว้างกว่าจานโลก = ขอบฟ้า (หลักหมื่น km ไม่ทศนิยม)
+    const full = gps(1);
+    await show(full, msg("sensorView.hudGroundWidthKm", { width: String(Math.round(sensorViewGroundWidthM(20200, full.fovDeg) / 1000)) }));
+    // ต่ำกว่า 1 km: เมตร
+    await show({ ...HUD, altKm: 800, fovDeg: 0.02, zoom: 8192 }, msg("sensorView.hudGroundWidthM", { width: "279" }));
+    // ข้อความไทย และไม่มีบรรทัดความกว้างเมื่อมองไม่เห็นพื้นที่ (fov = 0)
+    expect(msg("sensorView.hudGroundWidthKm", { width: "10.4" })).toBe("ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณ 10.4 km");
+    expect(msg("sensorView.hudGroundWidthM", { width: "279" })).toBe("ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณ 279 m");
+  });
+
+  test("HUD says the source is at its finest level only when the shown GIBS/EOX/OSM layer is shallower than the view needs; ion never", async () => {
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
+    const gps = (zoom: number, imagery: SensorHud["imagery"], shortSidePx = 600): SensorHud => ({
+      ...HUD, altKm: 20200, coneHalfAngle: 14.4, fovDeg: sensorViewShortFovDeg(14.4, zoom), zoom: zoom as SensorViewZoom, imagery, shortSidePx,
+    });
+    const layer = (source: "gibs" | "eox" | "osm" | "ion", maxLevel: number | null) => ({ title: "L", label: "", missing: false, source, maxLevel });
+    const note = (level: number) => msg("sensorView.hudFinestLevel", { level });
+    const anyNote = () => lines().some((l) => l?.startsWith("ภาพละเอียดสุดของแหล่งนี้แล้ว"));
+    /** ตั้ง HUD ใหม่แล้วตรวจว่าบอก "ภาพละเอียดสุด" ของระดับ level (หรือไม่บอกเลยเมื่อ level = null) */
+    const set = async (hud: SensorHud, level: number | null) => {
+      fake.hud = hud;
+      act(() => sensorViewScenes.notify());
+      if (level === null) await waitFor(() => expect(anyNote()).toBe(false));
+      else await waitFor(() => expect(lines()).toContain(note(level)));
+    };
+    // ×1024 ดาว GPS 600 px: ต้องใช้ระดับ 14 > GIBS 9 = บอก
+    await set(gps(1024, layer("gibs", 9)), 9);
+    // ต้องการระดับ 7 ≤ 9 (×8): ไม่บอก
+    await set(gps(8, layer("gibs", 9)), null);
+    // ×8192 ต้องการระดับ 17: EOX (15) บอก, OSM (19) ไม่บอก
+    await set(gps(8192, layer("eox", 15)), 15);
+    await set(gps(8192, layer("osm", 19)), null);
+    await set(gps(8192, layer("osm", 16)), 16);
+    // ion: ไม่รู้ระดับสูงสุด (หรือรู้แล้วก็ไม่เตือน) ไม่บอก
+    await set(gps(8192, layer("ion", null)), null);
+    await set(gps(8192, layer("ion", 12)), null);
+    // ไม่มีชั้นออนไลน์ (Natural Earth II ออฟไลน์) หรือภาพยังไม่มีขนาด: ไม่บอก
+    await set(gps(8192, null), null);
+    await set(gps(8192, layer("gibs", 9), 0), null);
   });
 
   test("the HUD is read again when the time moves and when the scene says it changed", async () => {
@@ -503,18 +569,23 @@ describe("Sensor View params (imagery spec §5.3)", () => {
   test("display falls back to camera and zoom to 1 for missing or bad values", () => {
     expect(sensorViewParams({ path: "*/Sensor/S", up: "north" })).toEqual({ path: "*/Sensor/S", up: "north", display: "camera", zoom: 1 });
     expect(sensorViewParams({ path: "*/Sensor/S", display: "sensor", zoom: 8 })).toEqual({ path: "*/Sensor/S", up: "north", display: "sensor", zoom: 8 });
+    expect(sensorViewParams({ zoom: 8192 }).zoom).toBe(8192);
+    expect(sensorViewParams({ zoom: 128 }).zoom).toBe(128); // workbook เก่า (สูงสุด ×128) ยังเปิดได้
     expect(sensorViewParams({ display: "Sensor" }).display).toBe("camera");
     expect(sensorViewParams({ display: 1 }).display).toBe("camera");
-    for (const bad of [3, 0, "8", 256, -2, 1.5, Number.NaN, null]) expect(sensorViewParams({ zoom: bad }).zoom, String(bad)).toBe(1);
+    for (const bad of [3, 0, "8", 16384, 12, -2, 1.5, Number.NaN, null]) expect(sensorViewParams({ zoom: bad }).zoom, String(bad)).toBe(1);
     expect(sensorViewParams(null)).toEqual({ path: "", up: "north", display: "camera", zoom: 1 });
   });
 
-  test("zoom steps are powers of two from 1 to 128 and nextZoom stops at both ends", () => {
-    expect(ZOOM_STEPS).toEqual([1, 2, 4, 8, 16, 32, 64, 128]);
+  test("zoom steps are the 14 powers of two from 1 to 8192 and nextZoom stops at both ends", () => {
+    expect(ZOOM_STEPS).toEqual([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]);
     expect(nextZoom(1, 1)).toBe(2);
     expect(nextZoom(4, -1)).toBe(2);
     expect(nextZoom(1, -1)).toBe(1);
-    expect(nextZoom(128, 1)).toBe(128);
+    expect(nextZoom(128, 1)).toBe(256);
+    expect(nextZoom(4096, 1)).toBe(8192);
+    expect(nextZoom(8192, 1)).toBe(8192);
+    expect(nextZoom(8192, -1)).toBe(4096);
   });
 });
 
@@ -532,6 +603,35 @@ describe("cone circle", () => {
     expect(coneCircleRadius(60)).toBeCloseTo(1, 12); // fov ด้านสั้น 120° พอดี
     expect(coneCircleRadius(75)).toBeCloseTo(Math.tan(75 * rad) / Math.tan(60 * rad), 12);
     expect(coneCircleRadius(90)).toBeNull();
+  });
+});
+
+describe("ground width text and the finest-level decision", () => {
+  test("km above 1 km (digits by magnitude), whole metres below", () => {
+    expect(groundWidthText(16_923_000)).toEqual({ unit: "km", width: "16923" });
+    expect(groundWidthText(99_960)).toEqual({ unit: "km", width: "100" });
+    expect(groundWidthText(10_409)).toEqual({ unit: "km", width: "10.4" });
+    expect(groundWidthText(1_301)).toEqual({ unit: "km", width: "1.30" });
+    expect(groundWidthText(1_000)).toEqual({ unit: "km", width: "1.00" });
+    expect(groundWidthText(999.6)).toEqual({ unit: "km", width: "1.00" }); // ปัดเป็น 1000 m แล้วเป็น 1 km ไม่ใช่ "1000 m"
+    expect(groundWidthText(999.4)).toEqual({ unit: "m", width: "999" });
+    expect(groundWidthText(279.3)).toEqual({ unit: "m", width: "279" });
+    expect(groundWidthText(0)).toEqual({ unit: "m", width: "0" });
+  });
+
+  test("the note needs a GIBS/EOX/OSM layer whose max level is below the needed level", () => {
+    const l = (source: "gibs" | "eox" | "osm" | "ion", maxLevel: number | null) => ({ title: "L", label: "", missing: false, source, maxLevel });
+    expect(finestLevelReached(l("gibs", 9), 14)).toBe(true);
+    expect(finestLevelReached(l("gibs", 9), 10)).toBe(true);
+    expect(finestLevelReached(l("gibs", 9), 9)).toBe(false); // ถึงระดับพอดี ยังไม่เบลอ
+    expect(finestLevelReached(l("gibs", 9), 3)).toBe(false);
+    expect(finestLevelReached(l("eox", 15), 16)).toBe(true);
+    expect(finestLevelReached(l("osm", 19), 20)).toBe(true);
+    expect(finestLevelReached(l("ion", 12), 20)).toBe(false);
+    expect(finestLevelReached(l("ion", null), 20)).toBe(false);
+    expect(finestLevelReached(l("gibs", null), 20)).toBe(false);
+    expect(finestLevelReached(null, 20)).toBe(false);
+    expect(finestLevelReached(l("gibs", 9), null)).toBe(false);
   });
 });
 

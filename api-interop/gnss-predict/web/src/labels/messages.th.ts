@@ -299,6 +299,10 @@ const MESSAGES = {
   "sensorView.hudImageryMissing": "ภาพพื้นโลก: {image} — ไม่มีภาพเวลานี้",
   "sensorView.hudImageryOffline": "ภาพพื้นโลก: Natural Earth II (ออฟไลน์)",
   "sensorView.hintGlobeManager": "เปิดภาพจริงได้ที่ View → Globe Manager",
+  // ความกว้างพื้นที่ที่จุดใต้ดาวตามด้านสั้นของภาพ ({width} = ตัวเลข) และ "ภาพละเอียดสุดของแหล่งนี้แล้ว" ({level} = ระดับซูมสูงสุดของชั้นบนสุด) (imagery spec §4.4)
+  "sensorView.hudGroundWidthKm": "ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณ {width} km",
+  "sensorView.hudGroundWidthM": "ความกว้างพื้นที่ที่จุดใต้ดาวโดยประมาณ {width} m",
+  "sensorView.hudFinestLevel": "ภาพละเอียดสุดของแหล่งนี้แล้ว (ระดับ {level}) ภาพจะขยายจนเบลอ",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;
