@@ -76,6 +76,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imagery/layers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Layers */
+        get: operations["get_layers_api_imagery_layers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tile */
+        get: operations["get_tile_api_imagery_tiles__layer___time___z___y___x__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -1056,6 +1090,34 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** LayerOut */
+        LayerOut: {
+            /** Credit */
+            credit: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "jpg" | "png";
+            /** Id */
+            id: string;
+            /** Max Level */
+            max_level: number;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "static" | "daily" | "10min";
+            /** Title */
+            title: string;
+        };
+        /** LayersOut */
+        LayersOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Layers */
+            layers: components["schemas"]["LayerOut"][];
+        };
         /** NewScenario */
         NewScenario: {
             /** Name */
@@ -1536,6 +1598,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    get_layers_api_imagery_layers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayersOut"];
+                };
+            };
+        };
+    };
+    get_tile_api_imagery_tiles__layer___time___z___y___x__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                layer: string;
+                time: string;
+                z: string;
+                y: string;
+                x: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ภาพ JPEG หรือ PNG ของชิ้นภาพ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -10,10 +10,12 @@ from .digests import FileDigests
 from .errors import install_error_handlers
 from .events import EventBus
 from .guard import install_guards
+from .imagery import TileFetcher
 from .jobs import JobManager, ProcessRunner
 from .log import make_logger
 from .plans import PlanCache
-from .routes import access, daily, events, health, jobs, objects, orbits, results, scenarios, settings, validation
+from .routes import (access, daily, events, health, imagery, jobs, objects, orbits, results, scenarios, settings,
+                     validation)
 from .scheduler import Scheduler
 from .store import ScenarioStore
 
@@ -52,6 +54,7 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     install_guards(app, config, app.state.logger)  # Host ของ server เอง และ Origin ของ server เองสำหรับคำขอที่แก้ข้อมูล
     app.state.plans = PlanCache(app.state.store, app.state.logger)
     app.state.digests = FileDigests()
+    app.state.imagery = TileFetcher(config.data_dir, logger=app.state.logger)   # ตัวเดียวต่อแอป; test แทน opener/นาฬิกาได้
     app.state.bus = EventBus(app.state.logger)
     app.state.jobs = JobManager(config.data_dir, app.state.bus, runner=ProcessRunner(gmat_bin=config.gmat_bin),
                                 logger=app.state.logger)
@@ -71,4 +74,5 @@ def create_app(config: Config, *, start_background: bool = True) -> FastAPI:
     app.include_router(daily.router, prefix="/api")
     app.include_router(validation.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
+    app.include_router(imagery.router, prefix="/api")
     return app

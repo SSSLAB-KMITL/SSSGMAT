@@ -497,6 +497,7 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | Job | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` | §6.8, §7 |
 | งานประจำวัน | `POST /daily/run` (ดึงจากเน็ต) `{for_date?}` สั่งพยากรณ์ของวันนั้นเอง | §6.8, §9.3 |
 | ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/{sc}/{day}` | §6.8 |
+| ภาพออนไลน์ | `GET /imagery/layers`, `GET /imagery/tiles/{layer}/{time}/{z}/{y}/{x}` (ดึงจาก NASA GIBS เมื่อเปิดสวิตช์เท่านั้น ดู 8.8) | ภาพออนไลน์ §4 |
 
 ยังไม่มีในรุ่นนี้: data provider, style และรายงาน (server §6.7) ซึ่งอยู่ในแผนของงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine
 
@@ -691,6 +692,53 @@ content-type: application/json
 
 **9. หยุด server**: `kill <pid>` (SIGTERM) ได้ `Shutting down` / `Application shutdown complete` / `Finished server process` ภายในไม่ถึง 5 วินาที
 ตรวจแล้วไม่มี process ของ server หรือ `GmatConsole` ค้าง และ port 8765 ปิด
+
+### 8.8 ภาพถ่ายออนไลน์ (NASA GIBS)
+
+server ดึงภาพถ่ายจริงจาก NASA GIBS (`gibs.earthdata.nasa.gov`) มาให้หน้าเว็บ **เฉพาะเมื่อผู้ใช้เปิดสวิตช์ `online_imagery.enabled`**
+(ตั้งต้นปิดเสมอ ดูตารางค่าตั้งใน 8.3: ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์รุ่นเก่าที่ไม่มีช่องนี้ = ปิด) สวิตช์ปิด = server ไม่ส่ง request ใดไป GIBS เลย
+และ `GET /api/imagery/tiles/...` ตอบ 403 `IMAGERY_DISABLED` **แม้ชิ้นนั้นอยู่ใน cache แล้ว** server อ่านสวิตช์จาก `settings.json` ทุกคำขอ
+`PUT /api/settings` จึงมีผลทันทีโดยไม่ต้องเปิด server ใหม่ ส่วน `GET /api/imagery/layers` ใช้ได้เสมอ (ไม่ต่อเน็ต)
+
+**สิ่งที่ส่งออกจากเครื่อง**: คำขอ HTTPS ไป `gibs.earthdata.nasa.gov` เท่านั้น ที่มีเพียงชื่อชั้นภาพ เวลาของภาพ พิกัดชิ้นภาพ (`z/y/x`)
+และ `User-Agent: gnss-studio/0.1` ไม่ส่ง scenario ตำแหน่งผู้ใช้ หรือข้อมูลอื่นของโปรแกรม URL ประกอบจากตารางชั้นภาพใน `imagery.py` กับค่าที่ตรวจแล้วเท่านั้น
+server ไม่รับ URL, host หรือ path จากผู้ใช้ และไม่ตาม redirect เลย (3xx นับเป็นดึงไม่สำเร็จ) browser ไม่ติดต่อ GIBS ตรง: ทุกคำขอไปที่ server ในเครื่อง
+
+**ชั้นภาพ** (ตารางเดียวใน `server/gnss_studio_server/imagery.py` ลำดับในตาราง = ลำดับวาด ชั้นหลังทับชั้นก่อน):
+`BlueMarble_NextGeneration` (คงที่), `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`,
+`MODIS_Terra_CorrectedReflectance_TrueColor` (รายวัน), `Himawari_AHI_Band3_Red_Visible_1km`, `Himawari_AHI_Band13_Clean_Infrared`,
+`GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor` (ทุก 10 นาที) ค่า TileMatrixSet, นามสกุลไฟล์และรูปแบบเวลาของแต่ละชั้นเป็นค่าที่คาดไว้ตาม spec
+และ **ยังไม่ได้ยืนยันกับ GIBS จริง** (ขั้น B0 ต้องได้รับอนุญาตก่อน ไม่มี test หรือโค้ดใดต่อเน็ตจริง) ถ้า GIBS ตอบต่างไปแก้ที่ตารางนั้นที่เดียว
+
+**Endpoint**
+
+- `GET /api/imagery/layers` -> `{"enabled", "layers": [{"id", "title", "period", "max_level", "format", "credit"}]}`
+- `GET /api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}` -> ไบต์ JPEG/PNG พร้อม `Content-Type` ที่ server กำหนดจากชนิดภาพที่ตรวจได้, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: private, max-age=86400` ตรวจตามลำดับและไม่ต่อเน็ตเมื่อไม่ผ่าน: สวิตช์ปิด 403 `IMAGERY_DISABLED` -> ไม่รู้จักชั้นภาพ 404 `IMAGERY_UNKNOWN_LAYER`
+  (id ต้องตรงทุกตัวอักษร รวมตัวพิมพ์) -> เวลาผิดรูปแบบของรอบภาพ 422 field `time` (คงที่ `default`, รายวัน `YYYY-MM-DD`, 10 นาที `YYYY-MM-DDTHH:MM:00Z` นาที 00-50 ทีละ 10
+  และต้องเป็นวันเวลาที่มีจริง) -> `z` ไม่ใช่เลขทศนิยม 0-999 ในช่วง 0..ระดับสูงสุดของชั้น หรือ `y`/`x` ไม่อยู่ใน 0..2^z-1 422 field `z`/`y`/`x`
+  หลังจากนั้น: ไม่มีภาพ (GIBS ตอบ 400/404) 404 `IMAGERY_NOT_AVAILABLE`, ดึงไม่สำเร็จ 502 `IMAGERY_FETCH_FAILED`, คำขอค้างมาก 503 `IMAGERY_BUSY`,
+  กำลังพักการดึง 503 `IMAGERY_PAUSED` (`detail` = เวลา UTC ที่ลองได้อีก)
+
+**ขีดจำกัดการดึง** (ปกป้อง GIBS และเครื่องของผู้ใช้ ไม่ลองซ้ำเองใน server):
+
+| เรื่อง | ค่า |
+|---|---|
+| timeout ต่อชิ้น | 20 วินาที |
+| ดึงพร้อมกัน | ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที ตอบ 503 `IMAGERY_BUSY` |
+| ขนาดชิ้น | อ่านไม่เกิน 2 MB (เกินตอบ 502 ไม่เก็บ) ไบต์แรกต้องเป็น JPEG (`FF D8 FF`) หรือ PNG (`89 50 4E 47 0D 0A 1A 0A`) ตรงกับชนิดของชั้น ไม่ถอดรหัสภาพ ไม่เชื่อ Content-Type ของ GIBS |
+| GIBS ตอบ 400/404 | จำไว้ในหน่วยความจำ 1 ชั่วโมง (สูงสุด 10,000 ชิ้น) ไม่ถามซ้ำ |
+| GIBS ตอบ 403 หรือ 429 | พักการดึงทุกชั้นภาพ 15 นาที (log ครั้งเดียว) |
+| ผิดพลาดติดกัน 20 ครั้ง (เครือข่าย, timeout, 5xx, ตอบผิดรูป) | พัก 5 นาที ได้ภาพที่ใช้ได้หนึ่งชิ้นตัวนับกลับเป็น 0 |
+
+ระหว่างพัก ชิ้นที่อยู่ใน cache ยังส่งได้ ชิ้นที่ไม่มีตอบ 503 `IMAGERY_PAUSED` โดยไม่ต่อเน็ต
+
+**Cache**: `data/imagery/tiles/<ชั้น>/<เวลา>/<z>/<y>/<x>.<jpg|png>` (`:` ในเวลาเป็น `-`) เขียนแบบ atomic ทุกชิ้นที่ผ่านการตรวจ
+ขนาดรวมไม่เกิน **2 GB** (2 × 1024³ ไบต์): เกินแล้วลบไฟล์ที่ mtime เก่าสุดจนเหลือ 90% (ส่งจาก cache = แตะ mtime) server นับขนาดครั้งแรกด้วยการสแกนแล้วจำยอดไว้
+ชั้นคงที่เก็บถาวรภายใต้เพดานเดียวกัน โฟลเดอร์ `data/imagery/` อยู่นอก `orbits/` และไม่ขึ้นต้นด้วย `_` จึงไม่ปนกับ snapshot ลบทิ้งทั้งโฟลเดอร์ได้เสมอ
+(ชิ้นที่ต้องใช้จะถูกดึงใหม่ถ้าสวิตช์เปิดอยู่) ถ้าเก็บลงดิสก์ไม่ได้ server ยังส่งภาพให้และเตือนใน `data/logs/server.log` หนึ่งครั้ง
+
+test: `server/tests/test_imagery.py` ใช้ opener ปลอมและกัน `urlopen`/`OpenerDirector.open`/`socket.create_connection` ทั้งโมดูล จึงไม่มีการต่อเน็ตจริง
 
 ## 9. GNSS Studio workspace
 

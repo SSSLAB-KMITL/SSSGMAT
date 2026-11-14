@@ -898,6 +898,74 @@
         "title": "Ionosphere",
         "type": "object"
       },
+      "LayerOut": {
+        "properties": {
+          "credit": {
+            "title": "Credit",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "jpg",
+              "png"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max_level": {
+            "title": "Max Level",
+            "type": "integer"
+          },
+          "period": {
+            "enum": [
+              "static",
+              "daily",
+              "10min"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "period",
+          "max_level",
+          "format",
+          "credit"
+        ],
+        "title": "LayerOut",
+        "type": "object"
+      },
+      "LayersOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/LayerOut"
+            },
+            "title": "Layers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "layers"
+        ],
+        "title": "LayersOut",
+        "type": "object"
+      },
       "NewScenario": {
         "properties": {
           "name": {
@@ -1819,6 +1887,106 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/api/imagery/layers": {
+      "get": {
+        "operationId": "get_layers_api_imagery_layers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Layers"
+      }
+    },
+    "/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}": {
+      "get": {
+        "operationId": "get_tile_api_imagery_tiles__layer___time___z___y___x__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "layer",
+            "required": true,
+            "schema": {
+              "title": "Layer",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "time",
+            "required": true,
+            "schema": {
+              "title": "Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "z",
+            "required": true,
+            "schema": {
+              "title": "Z",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "y",
+            "required": true,
+            "schema": {
+              "title": "Y",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "x",
+            "required": true,
+            "schema": {
+              "title": "X",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "ภาพ JPEG หรือ PNG ของชิ้นภาพ"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tile"
       }
     },
     "/api/jobs": {

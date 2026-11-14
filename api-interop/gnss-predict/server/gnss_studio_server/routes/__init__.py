@@ -5,6 +5,7 @@ from fastapi import Request
 from ..config import Config
 from ..digests import FileDigests
 from ..events import EventBus
+from ..imagery import TileFetcher
 from ..jobs import JobManager
 from ..plans import PlanCache
 from ..store import ScenarioStore
@@ -43,3 +44,8 @@ def get_digests(request: Request) -> FileDigests:
 def get_logger(request: Request) -> logging.Logger:
     """dependency: logger ของแอปที่รับ request นี้ (เขียนลง data/logs/server.log)"""
     return request.app.state.logger
+
+
+def get_imagery(request: Request) -> TileFetcher:
+    """dependency: ตัวดึงชิ้นภาพ GIBS ของแอปที่รับ request นี้ (ตัวเดียวต่อแอป: สถานะการพักและ "ไม่มีภาพ" ที่จำไว้ใช้ร่วมกันทุก request)"""
+    return request.app.state.imagery
