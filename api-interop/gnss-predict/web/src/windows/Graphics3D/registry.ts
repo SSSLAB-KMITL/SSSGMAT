@@ -23,6 +23,14 @@ export interface ViewFromToRequest {
 /** ok = กล้องตั้งแล้ว, same = From กับ To เป็น entity เดียวกัน (เช่นดาวกับสำเนาของมัน), notFound = ไม่มีในภาพหรือถูกซ่อน */
 export type ViewFromToResult = "ok" | "same" | "notFound";
 
+type Vec3 = [number, number, number];
+/** แกนของตัวดาว (หน่วยหนึ่ง) ในพิกัด ECEF */
+export interface SatelliteAxes {
+  x: Vec3;
+  y: Vec3;
+  z: Vec3;
+}
+
 export interface Scene3DHandle {
   readonly panelId: string;
   /** Home View: มองโลกจากระยะ 4.5 รัศมีโลก */
@@ -49,6 +57,10 @@ export interface Scene3DHandle {
   sensorFootprintPoints(name: string): number | null;
   /** จำนวนดาวที่แสดงเป็นโมเดล 3 มิติอยู่ (entity ดาวที่แสดงและมีโมเดลที่ไม่ได้ซ่อน) */
   modelCount(): number;
+  /** แกน +X, +Y, +Z ของตัวดาวชื่อ name ในพิกัด ECEF (หน่วยหนึ่ง) จากท่าทางที่วาดอยู่ ไม่มีโมเดลที่แสดงหรือยังไม่เคยคำนวณท่าทาง = null */
+  satelliteOrientation(name: string): SatelliteAxes | null;
+  /** จุดของดาวชื่อ name แสดงอยู่ไหม (ดาวแสดงเป็นโมเดล = จุดซ่อน) ไม่มีดาวนั้น = null */
+  pointShown(name: string): boolean | null;
   /**
    * Facility หรือดาว (path ของ object) ที่จุดอยู่ใกล้จุด (x, y) ของภาพที่สุด และห่างไม่เกิน 8 px (พิกเซลใน canvas ของหน้าต่างนี้ มุมซ้ายบน = 0, 0)
    * ไม่มี = null; ที่ซ่อนอยู่ อยู่หลังโลก หรืออยู่นอกภาพไม่นับ sensor เส้น access และพื้นโลกไม่ใช่ object ที่เลือกได้ (คลิกซ้ายเลือก คลิกขวาเปิดเมนู)

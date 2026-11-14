@@ -57,7 +57,7 @@ import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { attachImageryLayers, imageryStatus, setImageryNightAlpha } from "../../cesium/imageryLayers";
-import { modelCountOf, setModelSelection, updateModelAttitudes } from "../../cesium/satModelGraphics";
+import { modelBodyAxes, modelCountOf, setModelSelection, updateModelAttitudes } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
@@ -79,7 +79,7 @@ import { markersNear, selectOnClick } from "./pick";
 import { DEFAULT_PROPS_3D, props3d, type Props3D } from "./props";
 import { SatModelSource } from "./satModelSource";
 import {
-  noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
+  noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type SatelliteAxes, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
 import {
   notifySensorViews, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
@@ -1038,6 +1038,19 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (time === null || position === undefined) return null;
     const p = position.getValueInReferenceFrame(time, ReferenceFrame.FIXED, new Cartesian3());
     return p === undefined ? null : [p.x, p.y, p.z];
+  }
+
+  satelliteOrientation(name: string): SatelliteAxes | null {
+    const entity = this.entityByName(name);
+    const a = entity === undefined || this.destroyed ? null : modelBodyAxes(entity, this.viewer.clock.currentTime);
+    return a === null ? null : { x: [a.ex.x, a.ex.y, a.ex.z], y: [a.ey.x, a.ey.y, a.ey.z], z: [a.ez.x, a.ez.y, a.ez.z] };
+  }
+
+  pointShown(name: string): boolean | null {
+    const entity = this.entityByName(name);
+    if (entity === undefined) return null;
+    const point = entity.point;
+    return entity.isShowing && point !== undefined && (point.show?.getValue(this.viewer.clock.currentTime) ?? true) === true;
   }
 
   entityColor(name: string): string | null {

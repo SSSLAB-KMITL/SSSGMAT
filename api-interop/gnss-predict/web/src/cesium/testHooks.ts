@@ -8,12 +8,14 @@
 // และ sensorViewCamera(ชื่อ sensor): กล้องของ Sensor View ของ sensor นั้น (ทะเบียนของ Sensor View แยกจากหน้าต่าง 3D: P3) ไม่มีหน้าต่างหรือไม่มีตำแหน่ง = null
 //   พร้อม display ("camera" | "sensor"), zoom และ visibleEntityCount (entity ที่แสดงอยู่จริงใน viewer ของหน้าต่างนั้น: โหมด Camera = 0) (imagery spec §5.3)
 // และ modelCount(): จำนวน entity ดาวที่แสดงเป็นโมเดล 3 มิติอยู่ในหน้าต่าง 3D ตัวแรก (ไม่มีหน้าต่าง = 0) (models integration spec §5)
+// และ satelliteOrientation(ชื่อดาว): แกน +X, +Y, +Z ของตัวดาวในพิกัด ECEF (หน่วยหนึ่ง) จากท่าทางที่วาดอยู่ ไม่มีโมเดลที่แสดงหรือยังไม่เคยคำนวณท่าทาง = null
+//   และ pointShown(ชื่อดาว): จุดของดาวแสดงอยู่ไหม (แสดงเป็นโมเดล = false, ปิด Satellite Models = true) ไม่มีดาวนั้น = null
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useTime } from "../stores/time";
 import { parseIsoUtc } from "../time/parse";
 import { firstScene2D } from "../windows/Graphics2D/registry2d";
-import { firstScene, sceneLoadedAt } from "../windows/Graphics3D/registry";
+import { firstScene, sceneLoadedAt, type SatelliteAxes } from "../windows/Graphics3D/registry";
 import { sensorViewFor, type SensorCamera } from "../windows/SensorView/registry";
 
 export interface GnssStudioTestHooks {
@@ -28,6 +30,8 @@ export interface GnssStudioTestHooks {
   sensorFootprint(name: string, view: "3d" | "2d"): number | null;
   sensorViewCamera(sensorName: string): SensorCamera | null;
   modelCount(): number;
+  satelliteOrientation(name: string): SatelliteAxes | null;
+  pointShown(name: string): boolean | null;
 }
 
 declare global {
@@ -60,5 +64,7 @@ export function installTestHooks(): void {
     sensorFootprint: (name, view) => (view === "3d" ? firstScene()?.sensorFootprintPoints(name) : firstScene2D()?.sensorFootprintPoints(name)) ?? null,
     sensorViewCamera: (sensorName) => sensorViewFor(sensorName)?.sensorCamera() ?? null,
     modelCount: () => firstScene()?.modelCount() ?? 0,
+    satelliteOrientation: (name) => firstScene()?.satelliteOrientation(name) ?? null,
+    pointShown: (name) => firstScene()?.pointShown(name) ?? null,
   };
 }

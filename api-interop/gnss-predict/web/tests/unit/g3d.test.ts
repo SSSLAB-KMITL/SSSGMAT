@@ -44,6 +44,8 @@ function fakeScene(panelId: string, over: Partial<Scene3DHandle> = {}): Fake {
     frameCount: () => 7,
     sensorFootprintPoints: () => null,
     modelCount: () => 3,
+    satelliteOrientation: (name: string) => (name === "G01" ? { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] } : null),
+    pointShown: (name: string) => (name === "G01" ? false : null),
     pathAt: () => null,
     entityScreenPosition: (name: string) => (name === "G01" ? [320, 240] : null),
     ...over,
@@ -346,8 +348,14 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.entityPositionEcef("G01")).toBeNull(); // ยังไม่มีหน้าต่าง 3D
     expect(hooks.frameCount()).toBe(0);
     expect(hooks.modelCount()).toBe(0); // ไม่มีหน้าต่าง 3D
+    expect(hooks.satelliteOrientation("G01")).toBeNull();
+    expect(hooks.pointShown("G01")).toBeNull();
     registerScene(fakeScene("graphics3d"));
     expect(hooks.modelCount()).toBe(3);
+    expect(hooks.satelliteOrientation("G01")).toEqual({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] });
+    expect(hooks.satelliteOrientation("NOPE")).toBeNull();
+    expect(hooks.pointShown("G01")).toBe(false);
+    expect(hooks.pointShown("NOPE")).toBeNull();
     expect(hooks.entityPositionEcef("G01")).toEqual([1, 2, 3]);
     expect(hooks.entityPositionEcef("G01", "2026-11-11T06:00:00Z")).toEqual([1, 2, 4]);
     expect(hooks.entityPositionEcef("NOPE")).toBeNull();

@@ -15,7 +15,7 @@
 //   ModelVisualizer ตั้ง node.matrix = originalMatrix · TRS: หมุนรอบจุด pivot ของ node ในแกน glTF แกน +Y ของตัวดาวคือ −Z ของ glTF (WING_AXIS_GLTF)
 
 import {
-  Cartesian3, Color, ColorBlendMode, ConstantProperty, JulianDate, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion, ReferenceFrame,
+  Cartesian3, Color, ColorBlendMode, ConstantProperty, JulianDate, Matrix3, ModelGraphics, NodeTransformationProperty, PropertyBag, Quaternion, ReferenceFrame,
   type Entity, type EntityCollection,
 } from "cesium";
 import { bodyToEcefQuaternion, nadirVelocityFrame, sunPositionEcef, wingAngle, yawSteeringFrame, type AttitudeFrame } from "./attitude";
@@ -30,6 +30,7 @@ export const SELECTED_SILHOUETTE_PX = 2;
 
 /** การแก้แกนที่ต่อท้าย orientation: R_z(−90°) (ดูหัวไฟล์) */
 export const MODEL_AXIS_FIX: Readonly<Quaternion> = Object.freeze(Quaternion.fromAxisAngle(Cartesian3.UNIT_Z, -Math.PI / 2));
+const MODEL_AXIS_FIX_INVERSE: Readonly<Quaternion> = Object.freeze(Quaternion.conjugate(MODEL_AXIS_FIX as Quaternion, new Quaternion()));
 /** แกนหมุนของ node แผงในพิกัด glTF ดิบ = +Y ของตัวดาว */
 export const WING_AXIS_GLTF: Readonly<Cartesian3> = Object.freeze(new Cartesian3(0, 0, -1));
 
@@ -188,6 +189,19 @@ export function updateModelAttitudes(entities: EntityCollection, time: JulianDat
     if (suspended) entities.resumeEvents();
   }
   return n;
+}
+
+/**
+ * แกน +X, +Y, +Z ของตัวดาวในพิกัด ECEF จาก entity.orientation ที่เขียนไว้ล่าสุด (ถอด MODEL_AXIS_FIX ออก) ให้ test hook ของ e2e (testHooks.satelliteOrientation)
+ * ไม่มีโมเดล ยังไม่เคยคำนวณท่าทาง หรือซ่อนอยู่ = null ไม่ใช้ในการวาด
+ */
+export function modelBodyAxes(entity: Entity, time: JulianDate): AttitudeFrame | null {
+  const st = states.get(entity);
+  if (st === undefined || !st.hasFrame || !modelShown(entity, time)) return null;
+  const q = entity.orientation?.getValue(time) as Quaternion | undefined;
+  if (q === undefined) return null;
+  const m = Matrix3.fromQuaternion(Quaternion.multiply(q, MODEL_AXIS_FIX_INVERSE as Quaternion, new Quaternion()), new Matrix3());
+  return { ex: Matrix3.getColumn(m, 0, new Cartesian3()), ey: Matrix3.getColumn(m, 1, new Cartesian3()), ez: Matrix3.getColumn(m, 2, new Cartesian3()) };
 }
 
 /** จำนวน entity ดาว (sat/…) ที่แสดงโมเดลอยู่ใน entities */

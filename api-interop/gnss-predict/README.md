@@ -867,7 +867,7 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
   คลิกซ้ายและขวาที่ดาวในหน้าต่าง 3D, ลบดาวแล้วหน้าต่างปิด, scenario ที่ไม่มีผลลัพธ์; หัวข้อ 9.9), `imagery` (Sensor View เปิดเป็นโหมด Camera ไม่มี entity แสดง,
   Zoom In สี่ครั้ง (ทีละ ×√2) ได้มุมกว้างด้านสั้น 1/4 ของ ×1 คลาดไม่เกิน 1% และกล้องยังอยู่ที่ดาว, Zoom In 26 ครั้งถึง ×8192 (มุมกว้างด้านสั้น 1/8192 ของ ×1, ทิศกล้องคลาดไม่เกิน 0.01°, HUD แสดงความกว้างพื้นที่),
   ช่อง Width "1.5 km" ได้พื้นที่กว้าง 1.5 km คลาดไม่เกิน 3%,
-  สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (11 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+  สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (11 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `models` (ดาวที่แสดงในหน้าต่าง 3D เป็นโมเดลทุกดวง `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์, ปิด Satellite Models แล้วจุดกลับมาและเปิดใหม่ไม่ fetch ซ้ำ, +Z ของดาวชี้ลงโลกคลาดไม่เกิน 0.5° และตามเวลา; หัวข้อ 9.11), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
 - ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
   ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
   เมื่อตั้ง `GNSS_E2E_PERF_URL` (หัวข้อ 9.6) ตัวตรวจอนุญาต origin ของ URL นั้นเพิ่มอีกหนึ่ง origin ตรงตัว (เช่น `http://127.0.0.1:8767/`) ไม่กว้างกว่านั้น (ตรรกะอยู่ใน `tests/e2e/localRequest.ts`)
@@ -1162,3 +1162,85 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 **ยังไม่ทำ**: งานเสริม ข2: ดาวถ่ายภาพ
 (Himawari-9, GOES, Terra, Suomi NPP, NOAA-20/21) เป็น object ใน scenario และแถบ swath ของมัน, อ่านรายการช่วงเวลาที่มีภาพล่วงหน้าจาก GetCapabilities (ตอนนี้ใช้ผลตอบ 4xx ของแต่ละชิ้นแทน), ภาพบนหน้าต่าง 2D
 และการดาวน์โหลดภาพเก็บล่วงหน้าทั้งพื้นที่ (OpenStreetMap ห้ามโดยนโยบายของเขา)
+
+
+### 9.11 โมเดล 3 มิติของดาว (หน้าต่าง 3D)
+
+ดาวในหน้าต่าง 3D แสดงเป็น**โมเดล 3 มิติตามรุ่นของมัน**แทนจุด (แบบ STK): เสาอากาศลงโลก แผงโซลาร์หันหาดวงอาทิตย์ ซูมออกไกลโมเดลไม่เล็กกว่า **Model Pixel Size** (ค่าตั้งต้น 48 พิกเซล) ซูมเข้าใกล้เห็นขนาดจริงเป็นเมตร
+ชื่อ เส้นทาง สีของระบบ การคลิกเลือก (เลือกแล้วโมเดลมีขอบสีเดียวกับดาว) Sensor และเส้น Access ทำงานเหมือนเดิม สีของระบบผสมกับสีของโมเดล (30%) ให้ยังแยกระบบได้
+โมเดลมากับแอปเอง **ไม่ดึงอะไรจากเน็ต** หน้าต่าง 2D ยังแสดงเป็นจุด ใน Sensor View โมเดลใช้ค่าตั้งต้น (เปิด, 48 พิกเซล) และโมเดลของดาวแม่ที่กล้องติดอยู่ถูกซ่อน
+Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-14-gnss-studio-models-integration-design.md), brief ของโมเดล: [docs/2026-11-14-gnss-studio-models-brief.md](docs/2026-11-14-gnss-studio-models-brief.md),
+การตัดสินใจและเรื่องที่เลื่อน: [docs/2026-11-14-gnss-studio-imagery-decisions.md](docs/2026-11-14-gnss-studio-imagery-decisions.md) หัวข้อ "โมเดล 3 มิติในหน้าต่าง 3D"
+
+**โมเดลที่มี (23 ตัว ใน `models/catalog.json`)**
+
+| โมเดล | block (`satelliteInfo(norad).block` จากข้อมูล IGS) หรือ NORAD | ท่าทาง |
+|---|---|---|
+| `gps-iif` | GPS-IIF | yaw steering |
+| `gps-iii` | GPS-III, GPS-IIIA, GPS-III-1 | yaw steering |
+| `gps-iir` | GPS-IIR-A, GPS-IIR-B, GPS-IIR-M | yaw steering |
+| `glonass-m` | GLO-M, GLO-M+ | yaw steering |
+| `glonass-k1` | GLO-K1, GLO-K1+, GLO-K1A, GLO-K1B | yaw steering |
+| `glonass-k2` | GLO-K2 | yaw steering |
+| `galileo-iov` | GAL-1 | yaw steering |
+| `galileo-foc` | GAL-2 | yaw steering |
+| `bds2-igso` | BDS-2I, BDS-2G, BDS-2M | yaw steering |
+| `bds3-geo` | BDS-3G | yaw steering |
+| `bds3-igso` | BDS-3I | yaw steering |
+| `bds3-meo-cast` | BDS-3M-CAST, BDS-3SM-CAST | yaw steering |
+| `bds3-meo-secm` | BDS-3M-SECM-A, BDS-3M-SECM-B, BDS-3SM-SECM | yaw steering |
+| `qzss-igso` | QZS-2A, QZS-2I, QZS-1 | yaw steering |
+| `qzss-geo` | QZS-2G, QZS-3G | yaw steering |
+| `navic-irnss1` | IRS-1G, IRS-1I | yaw steering |
+| `navic-nvs` | IRS-2G, IRS-2I | yaw steering |
+| `generic` | block อื่นใน `fallback_blocks` (BDS-3S, BDS-3SI-CAST, BDS-3SI-SECM, GAL-0A, GAL-0B, GLO, GPS-I, GPS-II, GPS-IIA) และดาวที่ไม่มี block หรือไม่มีใน catalog | yaw steering ถ้าได้มาจาก block, ไม่งั้นตาม `generic` ด้านล่าง |
+| `terra` | NORAD 25994 | nadir + ความเร็ว |
+| `aqua` | NORAD 27424 | nadir + ความเร็ว |
+| `suomi-npp` | NORAD 37849 (Suomi NPP), 43013 (NOAA-20) | nadir + ความเร็ว |
+| `goes` | NORAD 41866, 43226, 51850, 60133 (GOES-16/17/18/19) | nadir + ความเร็ว |
+| `himawari-9` | NORAD 41836, 40267 (Himawari-9/8) | nadir + ความเร็ว |
+
+ลำดับเลือกโมเดลของดาวหนึ่งดวง: **block ตรงตัวกับ `blocks` ของโมเดล → `fallback_blocks` → `norad_ids` → `generic`** (block ที่ไม่รู้จักหรือไม่มี ข้ามไปที่ `norad_ids` แล้วถึง `generic`)
+โมเดลของดาวสำรวจโลก (Terra, Aqua, Suomi NPP/NOAA-20, GOES, Himawari) เลือกจาก NORAD ที่ตรงกับ `norad_ids` ข้อมูล GNSS ที่ engine ดึงมาไม่มีดาวเหล่านี้ จึงไม่ได้ใช้กับ scenario ปกติ
+ข้อมูลจริง 146 ดวง (`data/orbits/20261110T2147Z`) ทุกดวงได้โมเดลของ block ตัวเอง ยกเว้น BDS-3SI-CAST และ BDS-3SI-SECM (อย่างละดวง) ที่ใช้ `generic` และดวงที่ไม่มีข้อมูล IGS หนึ่งดวงที่ใช้ `generic`
+
+**ท่าทางของตัวดาว (คำนวณใน ECEF ณ เวลา Animation)** r, v = ตำแหน่งและความเร็วของดาว (ความเร็วจากผลต่างตำแหน่ง t ± 1 s เหมือน sensor), s = ตำแหน่งดวงอาทิตย์ (ฟังก์ชันของ Cesium ที่ใช้กับแสงในหน้าต่าง 3D)
+
+- **GNSS (ทุกโมเดลที่มี block รวม QZSS และ NavIC): yaw steering** `ez = −r̂` (+Z ชี้ศูนย์กลางโลก), `es` = ทิศไปดวงอาทิตย์, `ey = (ez × es)/|ez × es|`, `ex = ey × ez` ดวงอาทิตย์จึงอยู่ในระนาบ X-Z ฝั่ง +X เสมอ
+  ถ้าดวงอาทิตย์อยู่แนวเดียวกับทิศลงโลก (|ez × es| < 1e-6) ใช้ `ey` เดิม ถ้าไม่มีใช้เฟรมของ sensor
+- **ดาวสำรวจโลก: Nadir alignment with ECI velocity constraint** (เฟรมเดียวกับ sensor, [9.9](#99-sensor-และ-sensor-view)): +Z ชี้ลงโลก +X ตามส่วนของความเร็วเฉื่อยที่ตั้งฉากกับ +Z
+- **แผงโซลาร์**: หมุนรอบแกน +Y ของตัวดาวให้ normal ด้านเซลล์ชี้ไปทางดวงอาทิตย์ (ฉายลงระนาบ X-Z) ดาว GNSS คลาดไม่เกิน 1° (yaw steering ทำให้ดวงอาทิตย์อยู่ในระนาบ X-Z) ดาวสำรวจโลกคลาดตามมุม β ของวงโคจร
+  แผงเดี่ยว (`wing-Y`) ของดาวสำรวจโลกหมุนด้วยวิธีเดียวกัน ถ้าดวงอาทิตย์อยู่แนว ±Y ของตัวดาวพอดี มุมแผงคงค่าเดิม
+- +Z ของตัวดาวชี้ศูนย์กลางโลก (ตรวจใน unit test กับ `ModelUtility.getAxisCorrectionMatrix` จริงของ Cesium คลาด < 1e-6° และใน e2e ผ่าน test hook `satelliteOrientation` คลาด < 0.5°)
+
+**ข้อจำกัดของแบบจำลองท่าทาง**
+
+- **ไม่มีการหมุนช่วงเที่ยง/เที่ยงคืน (noon/midnight turn)** ของ yaw steering: ใช้แบบ nominal ทุกช่วง ตอนมุม β ของดวงอาทิตย์ต่ำ ดาวจริงหมุนเร็วหรือกลับเข้าโหมดพิเศษ โมเดลหมุนตามสูตรเรียบ ๆ
+- **BeiDou ไม่จำลองโหมด orbit-normal** (ตอน β ต่ำ ดาว BeiDou ใช้โหมดนี้แทน yaw steering): ใช้ yaw steering แบบ nominal ทุกช่วง
+- **ด้านเซลล์ของ `aqua` และ `suomi-npp` ไม่แน่นอน**: แผงสองหน้าใช้พื้นผิวเดียวกัน ระบบหมุนแผงให้ normal (แกน ±X) หันหาดวงอาทิตย์ แต่ด้านที่เห็นอาจเป็นด้านหลังแผง
+  ด้านเซลล์ของ `goes` เชื่อได้ระดับปานกลาง ส่วน `terra` เซลล์อยู่ทั้งสองหน้า (แกนแผงแน่นอน ด้านที่หันเป็นไปตามอำเภอใจ)
+- โมเดลนี้เป็นภาพประกอบ ไม่ใช่ท่าทางที่วัดได้ของดาว: ไม่มีการจำลอง attitude ของ eclipse หรือดาวที่ manoeuvre และโมเดลของดาวรุ่นที่ไม่มีใน catalog ใช้ `generic`
+- ภาพที่ออกมาตรวจด้วยคณิตศาสตร์ของ Cesium และ e2e (จำนวนโมเดล จุดซ่อนหรือแสดง ทิศ +Z) ไม่ได้ตรวจด้วยตาบน GPU จริง (e2e ใช้ SwiftShader และไม่ใช้ภาพจับหน้าจอ)
+
+**ตัวเลือก** (View → Toolbars → 3D Window Defaults → Properties เปิด 3D Graphics Window Properties หน้า **Details**; ค่าเก็บต่อหน้าต่างไปกับ workbook)
+
+| ตัวเลือก | ค่าตั้งต้น | หมายเหตุ |
+|---|---|---|
+| **Satellite Models** | เปิด | ปิด = ดาวกลับเป็นจุดทันที (ไม่ fetch ไฟล์ใหม่เมื่อเปิดอีกครั้ง) |
+| **Model Pixel Size** | 48 | จำนวนเต็ม 16–256 พิกเซล (ขนาดต่ำสุดบนจอ; ขยายโมเดลได้ไม่เกิน 20000 เท่า) |
+
+ป้ายสองตัวนี้ไม่มีใน STK reference จึงเป็นป้ายของเราเอง โหลดโมเดลล้มเหลว (ไม่มีไฟล์ ไฟล์เสีย หรือ catalog อ่านไม่ได้) = ดาวนั้นกลับเป็นจุด มีข้อความไทยใน Message Viewer ครั้งเดียวต่อโมเดล (ต่อหน้าเว็บสำหรับ catalog) การคลิก ป้ายชื่อ สี Sensor และ Access ไม่เสีย
+ไฟล์ glb แต่ละตัวถูกดึงครั้งเดียวต่อหน้าเว็บ (ตรวจหัวไฟล์ `glTF` v2 แล้วให้ Cesium โหลดจาก `blob:` ของ origin เดียวกัน) ใช้หน่วยความจำราว 1 MB ต่อโมเดลที่ใช้จริงตลอดอายุหน้า
+
+**การแพ็กเกจ** `catalog.json` และ `<id>/<ไฟล์>.glb` ทุกตัวที่ catalog ระบุถูกคัดลอกไป `web/dist/models/` ตอน `npm run build` (dev server ส่ง path เดียวกัน) แล้ว server ส่งที่ `/models/catalog.json` และ `/models/<id>/<ไฟล์>.glb`
+**ส่งเฉพาะไฟล์ที่ catalog ระบุ**: `_refs/` (ภาพอ้างอิงราว 55 MB), `_tools/`, `scripts/`, `renders/`, `vendor/`, `textures/` ไม่ถูกส่งไปกับแอป (path ใน catalog ที่ชี้เข้าโฟลเดอร์เหล่านี้ทำให้ build ล้ม)
+**ขนาด**: `dist/models` = 19.4 MB (23 glb + catalog) `dist` ทั้งหมดจึงจาก ราว 14 MB เป็นราว 33 MB (เพิ่ม ราว 19 MB; ตัวเลขที่วัดจาก build นี้ ไม่ใช่ค่าประมาณ)
+
+**เครดิตและสัญญาอนุญาต**
+
+- `terra`, `aqua`, `suomi-npp` (ใช้กับ NOAA-20 ด้วย) และ `goes`: ดัดแปลง (ปรับมาตราส่วน ทิศแกน และลดจำนวนสามเหลี่ยม แยกแผงโซลาร์เป็น node) จากโมเดลของ **NASA 3D Resources** (`nasa/NASA-3D-Resources`)
+  ภายใต้ NASA Images and Media Usage Guidelines: ใช้ได้โดยไม่ต้องขออนุญาต ห้ามสื่อว่า NASA รับรอง และต้องคงเครดิต **"NASA"** ต้นฉบับและรายละเอียดอยู่ใน `models/vendor/SOURCES.md` และ `NOTES.md` ของแต่ละโมเดล
+- โมเดลที่เหลือ (GNSS ทั้ง 17 ตัว, `generic` และ `himawari-9`) สร้างเองด้วยเรขาคณิตและพื้นผิวแบบ procedural ใน Blender (`models/<id>/scripts/build.py`) ไม่ใช้ไฟล์ของผู้อื่น ขนาดอ้างอิงจากเอกสารสาธารณะของผู้ผลิตและหน่วยงาน (ระบุใน `NOTES.md` ของแต่ละโมเดล)
+- โมเดลจาก Sketchfab ที่ `SOURCES.md` ระบุเป็นตัวเลือกไว้ **ไม่ได้ดาวน์โหลดและไม่ได้ใช้**
+
+**ทดสอบ**: unit test (`tests/unit/sat-model-*.test.ts`, `attitude.test.ts`, `models-packaging.test.ts`) และ e2e `web/tests/e2e/models.spec.ts` (`npm run e2e`): ดาวที่แสดงทุกดวงเป็นโมเดล ปิด Satellite Models แล้วเหลือ 0 และจุดกลับมา `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์ ไม่มี request ออกนอกเครื่อง +Z ชี้ลงโลกคลาด < 0.5°
