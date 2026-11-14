@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SatState, Tick } from "../types";
-import { canvasPixels, clickSelection, hitTest, INITIAL_GATE, isRefreshTick, nextEvent, stepRefreshGate } from "./canvasCommon";
+import {
+  canvasPixels,
+  clickSelection,
+  hitTest,
+  INITIAL_GATE,
+  isRefreshTick,
+  matchesSatFilter,
+  nextEvent,
+  stepRefreshGate,
+} from "./canvasCommon";
 import type { RefreshGate } from "./canvasCommon";
 
 describe("hitTest", () => {
@@ -165,5 +174,21 @@ describe("nextEvent", () => {
     expect(nextEvent(sats, NOW)?.sat.norad).toBe(5);
     expect(nextEvent(sats.slice(0, 4), NOW)).toBeNull();
     expect(nextEvent([], NOW)).toBeNull();
+  });
+});
+
+describe("matchesSatFilter", () => {
+  it("matches everything when the filter text is empty", () => {
+    expect(matchesSatFilter("ISS (ZARYA)", "")).toBe(true);
+  });
+
+  it("matches a name that has the text, ignoring case", () => {
+    expect(matchesSatFilter("ISS (ZARYA)", "zarya")).toBe(true);
+    expect(matchesSatFilter("ISS (ZARYA)", "ISS")).toBe(true);
+    expect(matchesSatFilter("ISS (ZARYA)", "iss (zarya)")).toBe(true);
+  });
+
+  it("does not match a name that lacks the text", () => {
+    expect(matchesSatFilter("ISS (ZARYA)", "NOAA")).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { gridFor, parseLayout, VIEW, VIEW_LABELS } from "../layout";
 import { useNumberFormat } from "../numfmt";
@@ -12,6 +12,7 @@ import { usePassRequest } from "../passes/usePassRequest";
 import { SatPopup } from "./SatPopup";
 import type { PopupSat, PopupView } from "../satPopup";
 import type { ModuleConfig, Tick } from "../types";
+import { matchesSatFilter } from "../views/canvasCommon";
 import { EventListView } from "../views/EventListView";
 import { ListView } from "../views/ListView";
 import { MapView } from "../views/MapView";
@@ -29,6 +30,12 @@ export interface ViewProps {
   selected: number | null;
   /** the number format of Preferences (time format and zone, N/S/E/W, Imperial units): every time, coordinate and distance a view shows goes through it */
   nf: NumberFormat;
+  /**
+   * (ของเรา) the text of the module's satellite filter (ModuleView's own bar, not Gpredict's): List hides a row whose name
+   * does not have it (ignoring case), Map neither draws nor lets the user click such a satellite. Empty: no filter. Not
+   * saved; ModuleView holds it and a new module starts with it empty.
+   */
+  satFilter: string;
   /** a view selects a satellite (null: unselects) */
   onSelect: (norad: number | null) => void;
   /** right click on a satellite: the view calls it with the client position; ModuleView opens the satellite's popup menu there */
@@ -59,7 +66,7 @@ export interface ViewProps {
  * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed), and `onOpenSatInfo` opens
  * a Satellite Info window (also the page's). The number format is read from Preferences here, once, and handed to every view.
  */
-export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onSatDoubleClick" | "onSatInfo" | "onPass" | "nf"> & {
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onSatDoubleClick" | "onSatInfo" | "onPass" | "nf" | "satFilter"> & {
   onOpenPassWindow: (w: PassWindow) => void;
   onOpenSatInfo: (norad: number) => void;
 };
@@ -105,6 +112,8 @@ export function ModuleView(props: ModuleViewProps) {
 function ModuleViews({ onOpenPassWindow, onOpenSatInfo, ...props }: ModuleViewProps) {
   const nf = useNumberFormat();
   const [popup, setPopup] = useState<OpenPopup | null>(null);
+  // (ของเรา) the satellite filter of List and Map: per module, never saved; a new module (key={module}) starts with it empty.
+  const [satFilter, setSatFilter] = useState("");
   const closePopup = useCallback(() => setPopup(null), []);
   const { onError } = props;
   const reportError = useCallback((text: string) => onError?.(text), [onError]);
@@ -127,6 +136,10 @@ function ModuleViews({ onOpenPassWindow, onOpenSatInfo, ...props }: ModuleViewPr
     if (sat !== undefined && props.tick !== null) setPopup({ view, sat: { norad, name: sat.name, el: sat.el, dir: sat.dir }, t: props.tick.t, x, y });
   };
 
+  // (ของเรา) counts for the filter bar; computed above any early return so the hook always runs, however the layout code parses.
+  const allSats = props.tick?.sats ?? [];
+  const shownCount = useMemo(() => allSats.filter((s) => matchesSatFilter(s.name, satFilter)).length, [allSats, satFilter]);
+
   let grid;
   try {
     grid = gridFor(parseLayout(props.config.layout_code));
@@ -137,8 +150,35 @@ function ModuleViews({ onOpenPassWindow, onOpenSatInfo, ...props }: ModuleViewPr
       </div>
     );
   }
+  // the filter bar shows only where it has something to filter: a layout with List or Map on screen.
+  const hasListOrMap = grid.areas.some((a) => a.type === VIEW.List || a.type === VIEW.Map);
   return (
     <>
+      {hasListOrMap && (
+        <div className="sat-filter-bar">
+          <input
+            type="search"
+            className="sat-filter-input"
+            placeholder="ค้นหาดาวเทียม..."
+            aria-label="ค้นหาดาวเทียม"
+            autoComplete="off"
+            spellCheck={false}
+            value={satFilter}
+            onChange={(e) => setSatFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && satFilter !== "") {
+                e.preventDefault(); // GtkSearchEntry's own convention (SatFilter.tsx): Escape clears the text, the bar stays
+                setSatFilter("");
+              }
+            }}
+          />
+          {satFilter !== "" && (
+            <span className="sat-filter-count">
+              {shownCount}/{allSats.length}
+            </span>
+          )}
+        </div>
+      )}
       <div
         className="view-grid"
         style={{
@@ -161,6 +201,7 @@ function ModuleViews({ onOpenPassWindow, onOpenSatInfo, ...props }: ModuleViewPr
                 <View
                   {...props}
                   nf={nf}
+                  satFilter={satFilter}
                   onSatContextMenu={popupView === undefined ? undefined : (norad, x, y) => openPopup(popupView, norad, x, y)}
                   onSatDoubleClick={onOpenSatInfo}
                   onSatInfo={onOpenSatInfo}

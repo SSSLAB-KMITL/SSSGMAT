@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { closeModule, errorText, getModules, putTabs, putWindow, quit as quitServer, resetClock, retryModule } from "./api";
+import { closeModule, errorText, getModules, putTabs, putWindow, resetClock, retryModule } from "./api";
 import { connectAppEvents, keepIfSame, withConfigReads, withControllerSync } from "./appEvents";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
@@ -32,7 +32,6 @@ import { closeSky, openSky, pruneSky } from "./passes/skyGlance";
 import type { SkyOpen } from "./passes/skyGlance";
 import { SkyGlanceWindow } from "./passes/SkyGlanceWindow";
 import { reloadPrefs, savePrefs, usePrefs } from "./prefs/prefsStore";
-import { runQuit } from "./quit";
 import { ControllerWindows } from "./radio/ControllerWindowsHost";
 import { CONFIGURE_BLOCKED_BOX, hasModule } from "./radio/controllerWindows";
 import { closeSatInfo, openSatInfo } from "./satInfo";
@@ -45,24 +44,12 @@ import { useModuleSocket } from "./useModuleSocket";
 
 const RELOAD_AFTER_ERROR_MS = 5000;
 
-/** The page. After File → Quit it is only the message that the server has stopped (the sockets and timers of the page go with it). */
+/** The page. (ของเรา) There is no File → Quit: the server is shared, so the web page cannot stop it. */
 export function App() {
-  const [stopped, setStopped] = useState(false);
-  return stopped ? <Stopped /> : <Main onStopped={() => setStopped(true)} />;
+  return <Main />;
 }
 
-/** (ของเรา) what File → Quit leaves: Gpredict closes its window, a web page cannot, so it says that the server has stopped. */
-function Stopped() {
-  return (
-    <div className="stopped" role="status">
-      <div className="stopped-title">Gpredict Web ปิดแล้ว</div>
-      <div>server หยุดทำงานแล้ว ปิดแท็บนี้ได้เลย</div>
-      <div className="stopped-detail">ถ้าจะใช้งานอีก ให้เริ่ม server ใหม่ แล้วเปิดหน้านี้อีกครั้ง</div>
-    </div>
-  );
-}
-
-function Main({ onStopped }: { onStopped: () => void }) {
+function Main() {
   const [open, setOpen] = useState<string[]>([]); // open modules in session order, the windows too
   const [windows, setWindows] = useState<string[]>([]); // the open modules that are windows of their own: not tabs (spec §8.1)
   const [modules, setModules] = useState<string[]>([]); // all modules, open or not
@@ -345,9 +332,6 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [restorePos, addLocalWarning],
   );
 
-  /** File → Quit (Ctrl+Q): stop the server and the page says so; a server that cannot be stopped from here says why instead */
-  const quit = useCallback(() => runQuit(quitServer, onStopped, addLocalError), [onStopped, addLocalError]);
-
   const barAction = useCallback(
     (action: BarAction) => {
       switch (action) {
@@ -357,8 +341,6 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return show({ kind: "open" });
         case "logBrowser":
           return show({ kind: "logBrowser" }); // a second time while it is open: nothing (showDialog), as in Gpredict
-        case "quit":
-          return void quit();
         case "updateTle":
           return show({ kind: "tle" });
         case "updateTleFiles":
@@ -375,10 +357,10 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return show({ kind: "about" });
       }
     },
-    [newModule, show, quit],
+    [newModule, show],
   );
 
-  // Ctrl+N, Ctrl+O, Ctrl+L, Ctrl+Q and F1, as far as the browser lets the page have them
+  // Ctrl+N, Ctrl+O, Ctrl+L and F1, as far as the browser lets the page have them
   const latestBarAction = useRef(barAction);
   latestBarAction.current = barAction;
   useEffect(() => {

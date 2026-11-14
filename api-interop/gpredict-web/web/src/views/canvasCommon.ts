@@ -66,6 +66,15 @@ export function nextEvent(sats: readonly SatState[], nowMs: number): { sat: SatS
   return best;
 }
 
+/**
+ * (ของเรา) Whether `name` matches the text of the module's satellite filter (List and Map, `ModuleView.tsx`): has `filterText`
+ * ignoring case; an empty text matches every name. Gpredict has no such filter, so this stays out of List's and Map's own
+ * configuration and is never saved.
+ */
+export function matchesSatFilter(name: string, filterText: string): boolean {
+  return filterText === "" || name.toLowerCase().includes(filterText.toLowerCase());
+}
+
 /** The size of a canvas in device pixels for a view of `size` CSS px on a screen with this device pixel ratio. */
 export function canvasPixels(size: Size, dpr: number): [number, number] {
   return [Math.round(size.w * dpr), Math.round(size.h * dpr)];

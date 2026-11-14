@@ -7,14 +7,13 @@ export const MENU_TITLES = ["File", "Edit", "Help"] as const;
 export type MenuTitle = (typeof MENU_TITLES)[number];
 
 /** What an enabled item of the menu bar does. */
-export type BarAction = "newModule" | "openModule" | "logBrowser" | "quit" | "updateTle" | "updateTleFiles" | "updateTrsp" | "preferences" | "onlineHelp" | "license" | "about";
+export type BarAction = "newModule" | "openModule" | "logBrowser" | "updateTle" | "updateTleFiles" | "updateTrsp" | "preferences" | "onlineHelp" | "license" | "about";
 
-/** Accelerators that work: Gpredict's Ctrl+N, Ctrl+O, Ctrl+L (Log browser), Ctrl+Q and F1 (Online help). */
+/** Accelerators that work: Gpredict's Ctrl+N, Ctrl+O, Ctrl+L (Log browser) and F1 (Online help). */
 const ACCEL: Readonly<Record<BarAction, string | undefined>> = {
   newModule: "Ctrl+N",
   openModule: "Ctrl+O",
   logBrowser: "Ctrl+L",
-  quit: "Ctrl+Q",
   updateTle: undefined,
   updateTleFiles: undefined,
   updateTrsp: undefined,
@@ -29,11 +28,14 @@ function item(label: string, action: BarAction): MenuSpec<BarAction> {
   return accel === undefined ? { kind: "item", label, action } : { kind: "item", label, action, accel };
 }
 
-/** The items of a menu in Gpredict's order. Labels are Gpredict's (menubar.c); "About Gpredict Web" and the lack of News are ours. */
+/**
+ * The items of a menu in Gpredict's order. Labels are Gpredict's (menubar.c); "About Gpredict Web" and the lack of News are
+ * ours, and so is the lack of Quit (ของเรา: removed, so the shared server cannot be stopped from the web page).
+ */
 export function barMenu(title: MenuTitle): MenuSpec<BarAction>[] {
   switch (title) {
     case "File":
-      return [item("New module", "newModule"), item("Open module", "openModule"), SEPARATOR, item("Log browser", "logBrowser"), SEPARATOR, item("Quit", "quit")];
+      return [item("New module", "newModule"), item("Open module", "openModule"), SEPARATOR, item("Log browser", "logBrowser")];
     case "Edit":
       return [
         item("Update TLE data from network", "updateTle"),
@@ -61,16 +63,15 @@ const CTRL_LETTER: Readonly<Record<string, { key: string; code: string; action: 
   n: { key: "n", code: "KeyN", action: "newModule" },
   o: { key: "o", code: "KeyO", action: "openModule" },
   l: { key: "l", code: "KeyL", action: "logBrowser" },
-  q: { key: "q", code: "KeyQ", action: "quit" },
 };
 
 const LATIN_LETTER = /^[a-z]$/i;
 
 /**
- * The action a key press stands for, or null. Ctrl+N, Ctrl+O, Ctrl+L, Ctrl+Q and F1, with no other modifier. The letter is the key
+ * The action a key press stands for, or null. Ctrl+N, Ctrl+O, Ctrl+L and F1, with no other modifier. The letter is the key
  * itself. Only when the layout gives something that is not a Latin letter (Thai, Cyrillic, a dead key) is the key found by its
- * place on the keyboard: on AZERTY or Dvorak the place of N, O or Q holds another Latin letter, and Ctrl+that letter must not
- * be taken for them (Ctrl+A on AZERTY sits where Ctrl+Q does on QWERTY).
+ * place on the keyboard: on AZERTY or Dvorak the place of N, O or L holds another Latin letter, and Ctrl+that letter must not
+ * be taken for them.
  */
 export function shortcutAction(e: KeyInfo): BarAction | null {
   if (e.shiftKey || e.altKey || e.metaKey) return null;

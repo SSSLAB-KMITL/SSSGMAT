@@ -222,8 +222,6 @@ export async function uploadMap(name: string, contentType: string, image: Blob):
 // ---------------------------------------------------------------- other
 
 export const getMeta = () => request<Meta>("GET", "/api/meta");
-/** (ของเรา) File → Quit stops the server */
-export const quit = () => request<void>("POST", "/api/quit");
 
 /**
  * File → Log browser: the text of gpredict.log of this run of the server, read once when the window opens; "" when there is no file (or it

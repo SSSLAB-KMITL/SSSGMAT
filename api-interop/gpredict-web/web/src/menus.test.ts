@@ -7,15 +7,12 @@ describe("menu bar (ref §1, spec §8.2)", () => {
     expect(MENU_TITLES).toEqual(["File", "Edit", "Help"]);
   });
 
-  it("File: New module, Open module, Log browser, Quit, with the accelerators of Gpredict", () => {
-    expect(outline(barMenu("File"))).toEqual([
-      "New module [Ctrl+N]",
-      "Open module [Ctrl+O]",
-      "-",
-      "Log browser [Ctrl+L]",
-      "-",
-      "Quit [Ctrl+Q]",
-    ]);
+  it("File: New module, Open module, Log browser, with the accelerators of Gpredict", () => {
+    expect(outline(barMenu("File"))).toEqual(["New module [Ctrl+N]", "Open module [Ctrl+O]", "-", "Log browser [Ctrl+L]"]);
+  });
+
+  it("has no Quit item (ของเรา: removed)", () => {
+    expect(barMenu("File").some((e) => e.kind === "item" && e.label === "Quit")).toBe(false);
   });
 
   it("File → Log browser is an item that can be chosen, with Ctrl+L, and its action is logBrowser", () => {
@@ -72,12 +69,15 @@ describe("shortcutAction", () => {
     ...extra,
   });
 
-  it("Ctrl+N is New module, Ctrl+O Open module, Ctrl+L Log browser, Ctrl+Q Quit and F1 Online help", () => {
+  it("Ctrl+N is New module, Ctrl+O Open module, Ctrl+L Log browser and F1 Online help", () => {
     expect(shortcutAction(key("n", { ctrlKey: true }))).toBe("newModule");
     expect(shortcutAction(key("o", { ctrlKey: true }))).toBe("openModule");
     expect(shortcutAction(key("l", { ctrlKey: true }))).toBe("logBrowser");
-    expect(shortcutAction(key("q", { ctrlKey: true }))).toBe("quit");
     expect(shortcutAction(key("F1"))).toBe("onlineHelp");
+  });
+
+  it("Ctrl+Q does nothing (ของเรา: the Quit button was removed)", () => {
+    expect(shortcutAction(key("q", { ctrlKey: true }))).toBeNull();
   });
 
   it("does not care about caps lock", () => {
@@ -87,12 +87,7 @@ describe("shortcutAction", () => {
 
   it("finds the key by its place on the keyboard when the layout gives another letter (a Thai layout)", () => {
     expect(shortcutAction(key("ะ", { ctrlKey: true, code: "KeyN" }))).toBe("newModule");
-    expect(shortcutAction(key("ๆ", { ctrlKey: true, code: "KeyQ" }))).toBe("quit");
     expect(shortcutAction(key("ส", { ctrlKey: true, code: "KeyL" }))).toBe("logBrowser");
-  });
-
-  it("does not use the place of the key when the layout gives a Latin letter: on AZERTY, Ctrl+A (physical KeyQ) is not Quit", () => {
-    expect(shortcutAction(key("a", { ctrlKey: true, code: "KeyQ" }))).toBeNull();
   });
 
   it("does not use the place of the key on Dvorak either: Ctrl+R (physical KeyO) is not Open module, Ctrl+B (physical KeyN) is not New module", () => {
@@ -102,8 +97,7 @@ describe("shortcutAction", () => {
     expect(shortcutAction(key("n", { ctrlKey: true, code: "KeyL" }))).toBe("newModule"); // Dvorak: the place of L holds N, which is New module
   });
 
-  it("still finds the key by its letter on those layouts: AZERTY and Dvorak have N, O and Q elsewhere on the keyboard", () => {
-    expect(shortcutAction(key("q", { ctrlKey: true, code: "KeyA" }))).toBe("quit");
+  it("still finds the key by its letter on those layouts: AZERTY and Dvorak have N, O and L elsewhere on the keyboard", () => {
     expect(shortcutAction(key("n", { ctrlKey: true, code: "KeyB" }))).toBe("newModule");
     expect(shortcutAction(key("o", { ctrlKey: true, code: "KeyR" }))).toBe("openModule");
     expect(shortcutAction(key("l", { ctrlKey: true, code: "KeyP" }))).toBe("logBrowser"); // Dvorak

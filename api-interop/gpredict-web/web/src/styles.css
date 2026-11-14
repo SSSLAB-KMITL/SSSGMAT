@@ -227,15 +227,43 @@ body:has(.app.detached) #root,
 
 .module-body {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }
 
+/* ---------------------------------------------------------------- satellite filter of List/Map (ของเรา) */
+
+.sat-filter-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.sat-filter-input {
+  min-width: 0;
+  width: 220px;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.sat-filter-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .view-grid {
   display: grid;
+  flex: 1;
+  min-height: 0;
   gap: 1px;
   width: 100%;
-  height: 100%;
   background: var(--border);
 }
 .view-cell {
@@ -2068,26 +2096,6 @@ body:has(.app.detached) #root,
 }
 .satinfo-trsp-item > :not(hr):not(.satinfo-trsp-name):not(.satinfo-trsp-gap) {
   white-space: pre; /* "Baudrate: %9.2f" pads with spaces */
-}
-
-/* ---------------------------------------------------------------- after File → Quit (ของเรา) */
-
-.stopped {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 100vh;
-  padding: 24px;
-  text-align: center;
-}
-.stopped-title {
-  font-size: 18px;
-  font-weight: 700;
-}
-.stopped-detail {
-  color: var(--text-dim);
 }
 
 /* ---------------------------------------------------------------- Log Browser (ref-D §7.3) */
