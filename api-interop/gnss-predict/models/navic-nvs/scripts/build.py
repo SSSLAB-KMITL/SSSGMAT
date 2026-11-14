@@ -17,19 +17,21 @@ args, ROOT, TEXDIR = pl.parse_build_args()
 scene = pl.init_scene()
 
 # --------------------------------------------------------------------------------------
-# Dimensions (metres). Sources: ISRO NVS-01/02 press releases, I-2K bus specs, IGS SNX
-#   - Bus: I-2K taller bus 1.650 (X) x 1.530 (Y) x 2.400 (Z) m (launch mass ~2250 kg)
-#   - Wings: 2 wings x 2 I-2K panels (2.540 m x 1.530 m, ESA/I-2K class, ~2.4-3.0 kW)
-#     with yoke 0.650 m, gap 0.060 m -> wing_tip = 0.765 + 0.65 + 5.08 + 0.06 = 6.555 m -> span 13.11 m
+# Dimensions (metres). Sources: IN-SPACe / ISRO I-2K bus, ISRO NVS-01/02 press releases, IGS SNX
+#   - Bus: official IN-SPACe I-2K standard platform 1.6 x 1.5 x 2.4 m (1.650 x 1.530 x 2.400 m;
+#     Astronautix secondary listing cites 1.65 x 1.53 x 3.0 m)
+#   - Wings: 2 wings x 2 panels (1.650 m x 1.500 m = 9.90 m^2 total, derived for ISRO 2.4-3.0 kW GaAs),
+#     with yoke 0.635 m, gap 0.050 m -> wing_tip = 0.765 + 0.635 + 3.300 + 0.050 = 4.750 m -> span 9.500 m
+#     (NVS-01 span ~9.50 m; ESA eoPortal I-2K class cites ~9.0 m)
 #   - Payload: Tri-band (L1 + L5 + S) phased patch + S-band helical array + C-band horn
 # --------------------------------------------------------------------------------------
 BUS = (1.650, 1.530, 2.400)
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
 N_PANELS = 2
-PANEL_L, PANEL_W, PANEL_T = 2.540, 1.530, 0.026
-PANEL_GAP = 0.060
-YOKE_LEN = 0.650
+PANEL_L, PANEL_W, PANEL_T = 1.650, 1.500, 0.026
+PANEL_GAP = 0.050
+YOKE_LEN = 0.635
 SADM_X, SADM_Z = 0.0, 0.0
 
 store = pl.MaterialStore()

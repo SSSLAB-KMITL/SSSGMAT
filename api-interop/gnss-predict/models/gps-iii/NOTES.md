@@ -2,7 +2,7 @@
 
 ## Files
 
-- **`gps-iii.glb`**: 620,348 bytes (0.592 MB), 4,070 triangles, 10 meshes, 16 materials, 7 generated PNG textures (max 1024×512).
+- **`gps-iii.glb`**: 611,016 bytes (0.583 MB), 4,070 triangles, 10 meshes, 16 materials, 7 generated PNG textures (max 1024×512).
 - **`scripts/build.py`**: builds the model, exports `gps-iii.glb`, and renders the preview JPEGs (`renders/01_earth_face.jpg`, `02_side_span.jpg`, `03_three_quarter.jpg`, `04_closeup.jpg`) using shared helpers in `models/_tools/`.
 - **`textures/`**: procedurally generated textures (`tex_mli_black`, `tex_mli_gold`, `tex_osr_tiles`, `tex_solar_front`, `tex_solar_back` and normal maps).
 
@@ -17,17 +17,17 @@
 | Item | Value | Status / source |
 |---|---|---|
 | Bus box (`X × Y × Z`) | 2.460 × 1.780 × 3.400 m | official / literature (Steigenberger, Thölert & Montenbruck 2020, Table 3) |
-| Solar array area | 28.20 m² total (14.10 m²/wing) | official / literature (Steigenberger et al. 2020, Table 3) |
-| Solar wing panels | 2 panels per wing, each 3.680 × 1.916 × 0.025 m | derived from 28.20 m² total area and Lockheed Martin A2100M 2-panel wing layout (panel thickness est.) |
-| Inter-panel hinge gap | 0.060 m | est. |
-| Yoke length (bus `±Y` face to inner panel) | 1.150 m | derived / est. |
-| Deployed wing span (`Y`) | 18.920 m | derived (`1.780 + 2 × (1.150 + 2×3.680 + 0.060)`) |
+| Solar array area | 28.20 m² total (14.10 m²/wing) | official / literature (Steigenberger et al. 2020, Table 3; Airforce Technology lists ~307 sq ft / ~28.5 m²) |
+| Solar wing panels | 2 panels per wing, each 2.878 × 2.450 × 0.025 m | derived from 28.20 m² total area and Lockheed Martin A2100M 2-panel wing layout (`2.878 m <= 3.400 m` bus Z so panels stow cleanly; thickness est.) |
+| Inter-panel hinge gap | 0.050 m | est. |
+| Yoke length (bus `±Y` face to inner panel) | 0.619 m | derived from 14.63 m deployed span (`2 × (0.890 + 0.619 + 2×2.878 + 0.050) = 14.630 m`) |
+| Deployed wing span (`Y`) | 14.630 m | official (Lockheed Martin GPS III spec: 48 ft = 14.63 m; ESA eoPortal lists ~15.0 m / ~49 ft) |
 | SADM axis offset | `x = 0.00 m, z = -0.20 m` | est. from Lockheed Martin GPS III drawings |
 | L-band helical array | 12 elements on `+Z` deck (`x = -0.20 m`): 4 inner (`r = 0.24 m`, `h = 0.44 m`) + 8 outer (`r = 0.58 m`, `h = 0.37 m`) | 8+4 element layout official; radii & heights est. |
 | Laser Retroreflector Array (`LRA_GPS_III`) | 48 CCR prisms (`6 × 8`) at `(1.103, 0.007, +Z)` m; tray `0.210 × 0.280 × 0.045 m` | X, Y position & 48 prism count official (`igs_satellite_metadata.snx`); tray dimensions derived / est. |
 | UHF cross-dipole, S-band TT&C, Earth sensor, `-Z` LAE nozzle | see `scripts/build.py` | est. from Lockheed Martin GPS III cleanroom photos |
 | OSR radiator panels on `±Y` | `1.92 × 1.75 m` & `1.60 × 0.82 m` per side | est. from cleanroom photos |
-| Overall bounding box (`X × Y × Z`) | 2.508 × 18.920 × 4.110 m | verified by `verify.py` |
+| Overall bounding box (`X × Y × Z`) | 2.508 × 14.630 × 4.110 m | verified by `verify.py` |
 
 ## 3. Simplifications
 
@@ -43,8 +43,8 @@
 ## 5. Verification output (`verify.py`)
 
 ```text
-GLB magic=b'glTF' version=2 length=620348 bytes
-FILE_SIZE_BYTES 620348 (0.592 MB)
+GLB magic=b'glTF' version=2 length=611016 bytes
+FILE_SIZE_BYTES 611016 (0.583 MB)
 REIMPORT_TRIANGLES 4070
 REIMPORT_MESHES (name, tris, materials):
   aux_antennas_sensors    402  ['mli_gold', 'titanium_grey', 'aluminium', 'black_paint', 'white_paint', 'mli_black']
@@ -57,12 +57,12 @@ REIMPORT_MESHES (name, tris, materials):
   thrusters               224  ['titanium_grey', 'black_paint']
   wing+Y                  144  ['bronze_anodised', 'titanium_grey', 'solar_cells', 'panel_back_cfrp', 'panel_edge', 'gold_flex']
   wing-Y                  144  ['bronze_anodised', 'titanium_grey', 'solar_cells', 'panel_back_cfrp', 'panel_edge', 'gold_flex']
-REIMPORT_BBOX_MIN (-1.254, -9.46, -1.92)
-REIMPORT_BBOX_MAX (1.254, 9.46, 2.19)
-REIMPORT_BBOX_SIZE (2.508, 18.92, 4.11)
+REIMPORT_BBOX_MIN (-1.254, -7.315, -1.92)
+REIMPORT_BBOX_MAX (1.254, 7.315, 2.19)
+REIMPORT_BBOX_SIZE (2.508, 14.63, 4.11)
 IMAGES [('tex_mli_black', (512, 512)), ('tex_mli_black_nrm', (512, 512)), ('tex_mli_gold', (512, 512)), ('tex_mli_gold_nrm', (512, 512)), ('tex_osr_tiles', (256, 256)), ('tex_solar_back', (512, 256)), ('tex_solar_front', (1024, 512))]
 WING_NODES wing+Y T=[0, -0.20000000298023224, -0.8899999856948853], wing-Y T=[0, -0.20000000298023224, 0.8899999856948853]
-EXPECTED_SIZE (2.5, 18.92, 4.11) REL_DIFF_PCT (0.32, 0.0, 0.0)
+EXPECTED_SIZE (2.508, 14.63, 4.11) REL_DIFF_PCT (0.0, 0.0, 0.0)
 VERIFY_STATUS PASS
 ```
 

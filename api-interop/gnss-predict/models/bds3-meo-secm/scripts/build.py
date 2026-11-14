@@ -30,14 +30,15 @@ scene = pl.init_scene()
 #   - IGS igs_satellite_metadata.snx:
 #       LRA_BDS_SHAO_42 (42 corner-cube prisms) at (+0.6096, +0.4316, +0.6204) m (SECM-A),
 #       consistent with +Z deck at Z = +0.5165 m + 0.104 m LRA height = +0.6205 m.
-#   - Solar wings: 2 wings, 2 panels/wing (2.150 m x 1.100 m = 4.73 m^2/wing, 9.46 m^2 total),
+#   - Solar wings: 2 wings, 2 panels/wing (2.150 m x 1.256 m = 5.40 m^2/wing, 10.80 m^2 total,
+#       matching official CSNO / Zhao et al. 2022 / Li et al. 10.8 m^2 solar array area),
 #       yoke 0.720 m, gap 0.060 m -> deployed span Y = 11.360 m.
 # --------------------------------------------------------------------------------------
 BUS = (2.150, 1.200, 1.033)                 # official/derived from CSNO panel areas (X, Y, Z) m
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
 N_PANELS = 2
-PANEL_L, PANEL_W, PANEL_T = 2.150, 1.100, 0.024
+PANEL_L, PANEL_W, PANEL_T = 2.150, 1.256, 0.024
 PANEL_GAP = 0.060
 YOKE_LEN = 0.720                            # wing_tip = 0.600 + 0.720 + 4.300 + 0.060 = 5.680 m -> span 11.360 m
 SADM_X, SADM_Z = 0.0, 0.0

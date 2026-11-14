@@ -2,7 +2,7 @@
 
 ## Files
 
-- **`gps-iif.glb`**: 568,812 bytes (0.542 MB), 3,538 triangles, 9 meshes, 14 materials, 7 generated PNG textures (max 1024×512).
+- **`gps-iif.glb`**: 565,488 bytes (0.539 MB), 3,538 triangles, 9 meshes, 14 materials, 7 generated PNG textures (max 1024×512).
 - **`scripts/build.py`**: builds the model, exports `gps-iif.glb`, and renders the preview JPEGs (`renders/01_earth_face.jpg`, `02_side_span.jpg`, `03_three_quarter.jpg`, `04_closeup.jpg`) using shared helpers in `models/_tools/`.
 - **`textures/`**: procedurally generated textures (`tex_mli_black`, `tex_mli_gold`, `tex_osr_tiles`, `tex_solar_front`, `tex_solar_back` and normal maps).
 
@@ -18,16 +18,16 @@
 |---|---|---|
 | Bus box (`X × Y × Z`) | 1.980 × 2.490 × 2.230 m | official / literature (Boeing GPS IIF fact sheet; Rodríguez-Solano et al. 2012, 2014) |
 | Solar array area | 22.25 m² total (~11.125 m²/wing) | official / literature (Rodríguez-Solano et al. 2012; IGS repro3 `PROPBOXW.f`) |
-| Solar wing panels | 3 panels per wing, each 1.940 × 1.880 × 0.025 m | derived from 22.25 m² total area and Boeing 3-panel wing layout (panel thickness est.) |
-| Inter-panel hinge gap | 0.050 m | est. |
-| Yoke length (bus `±Y` face to inner panel) | 1.150 m | derived from deployed span (16.63 m) |
-| Deployed wing span (`Y`) | 16.630 m | official / literature (16.6–18 m deployed span range in USAF / eoPortal sheets) |
+| Solar wing panels | 3 panels per wing, each 1.600 × 2.318 × 0.025 m | derived from 22.25 m² total area (`2×3×1.600×2.318 = 22.25 m²`), 13.11 m span, and Boeing 3-panel wing layout (panel thickness est.) |
+| Inter-panel hinge gap | 0.030 m | est. |
+| Yoke length (bus `±Y` face to inner panel) | 0.450 m | derived from 13.11 m deployed span (`2 × (1.245 + 0.450 + 3×1.600 + 2×0.030) = 13.110 m`) |
+| Deployed wing span (`Y`) | 13.110 m | official / literature (ESA eoPortal & InsideGNSS: 13.11 m / ~43.0 ft; Air & Space Forces Magazine lists 43.1 ft = 13.14 m) |
 | SADM axis offset | `x = 0.00 m, z = -0.15 m` | est. from Boeing drawings |
 | L-band helical array | 12 elements: 4 inner (`r = 0.25 m`, `h = 0.42 m`) + 8 outer (`r = 0.62 m`, `h = 0.35 m`) | element count & 4+8 layout official (Boeing / InsideGNSS); radii & heights derived / est. |
 | Octagonal `+Z` antenna platen | `r = 0.78 m`, height `0.045 m` | est. from Boeing cleanroom photos |
 | UHF cross-dipole, S-band TT&C, Earth sensor, `-X` APRA | see `scripts/build.py` | presence documented in Rodríguez-Solano (2012); dimensions & positions est. |
 | OSR radiator panels on `±Y` and `±X` | `±Y`: `1.05×1.45` & `0.55×1.10 m`; `±X`: `1.55×0.65 m` | est. from Boeing photos and radiator area budget |
-| Overall bounding box (`X × Y × Z`) | 2.300 × 16.630 × 2.875 m | verified by `verify.py` |
+| Overall bounding box (`X × Y × Z`) | 2.300 × 13.110 × 2.889 m | verified by `verify.py` |
 
 ## 3. Simplifications
 
@@ -45,8 +45,8 @@
 ## 5. Verification output (`verify.py`)
 
 ```text
-GLB magic=b'glTF' version=2 length=568812 bytes
-FILE_SIZE_BYTES 568812 (0.542 MB)
+GLB magic=b'glTF' version=2 length=565488 bytes
+FILE_SIZE_BYTES 565488 (0.539 MB)
 REIMPORT_TRIANGLES 3538
 REIMPORT_MESHES (name, tris, materials):
   aux_antennas_sensors    472  ['mli_gold', 'titanium_grey', 'aluminium', 'black_paint', 'white_paint', 'mli_black', 'radome_white']
@@ -58,12 +58,12 @@ REIMPORT_MESHES (name, tris, materials):
   thrusters               224  ['titanium_grey', 'black_paint']
   wing+Y                  204  ['bronze_anodised', 'titanium_grey', 'solar_cells', 'panel_back_cfrp', 'panel_edge', 'gold_flex']
   wing-Y                  204  ['bronze_anodised', 'titanium_grey', 'solar_cells', 'panel_back_cfrp', 'panel_edge', 'gold_flex']
-REIMPORT_BBOX_MIN (-1.29, -8.315, -1.295)
-REIMPORT_BBOX_MAX (1.01, 8.315, 1.58)
-REIMPORT_BBOX_SIZE (2.3, 16.63, 2.875)
+REIMPORT_BBOX_MIN (-1.29, -6.555, -1.309)
+REIMPORT_BBOX_MAX (1.01, 6.555, 1.58)
+REIMPORT_BBOX_SIZE (2.3, 13.11, 2.889)
 IMAGES [('tex_mli_black', (512, 512)), ('tex_mli_black_nrm', (512, 512)), ('tex_mli_gold', (512, 512)), ('tex_mli_gold_nrm', (512, 512)), ('tex_osr_tiles', (256, 256)), ('tex_solar_back', (512, 256)), ('tex_solar_front', (1024, 512))]
 WING_NODES wing+Y T=[0, -0.15000000596046448, -1.2450000047683716], wing-Y T=[0, -0.15000000596046448, 1.2450000047683716]
-EXPECTED_SIZE (2.29, 16.63, 2.865) REL_DIFF_PCT (0.44, 0.0, 0.35)
+EXPECTED_SIZE (2.3, 13.11, 2.889) REL_DIFF_PCT (0.0, 0.0, 0.0)
 VERIFY_STATUS PASS
 ```
 
