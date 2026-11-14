@@ -61,6 +61,34 @@ export interface SatRecord {
   updated: string | null;
   /** only from GET /api/satellites/{norad} */
   tle?: [string, string];
+  /** only from GET /api/satellites/{norad}: Gpredict's operational status ("Operational", "Non-operational", ..., "Unknown") */
+  status?: string;
+  /** only from GET /api/satellites/{norad}: the Orbit Info of Satellite Info; null when the stored TLE cannot be read */
+  orbit_info?: OrbitInfo | null;
+}
+
+/**
+ * The "orbit_info" of GET /api/satellites/{norad} (ref-D §8.1): the values of the TLE as numbers, in the order of the rows of the
+ * Orbit Info tab; the web writes them (satInfo.ts). `intl_designator` is the 8 raw characters of columns 10-17 (trailing spaces
+ * included), `epoch` ISO 8601 UTC, `ecc` is at least 1e-6, `ndot2` is ½ d/dt and `nddot6` 1/6 d²/dt² of the mean motion, `bstar` is B* × ae.
+ */
+export interface OrbitInfo {
+  name: string;
+  status: string;
+  catnum: number;
+  intl_designator: string;
+  element_set: number;
+  epoch: string;
+  revnum: number;
+  incl_deg: number;
+  raan_deg: number;
+  ecc: number;
+  argp_deg: number;
+  ma_deg: number;
+  mean_motion: number;
+  ndot2: number;
+  nddot6: number;
+  bstar: number;
 }
 
 export interface TleGroup {

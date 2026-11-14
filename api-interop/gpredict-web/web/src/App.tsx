@@ -10,6 +10,7 @@ import { ModuleMenu } from "./components/ModuleMenu";
 import { ModuleView } from "./components/ModuleView";
 import { NoticeStrip } from "./components/NoticeStrip";
 import { Overlay } from "./components/Overlay";
+import { SatInfoWindows } from "./components/SatInfoWindow";
 import { Tabs } from "./components/Tabs";
 import { TimeController } from "./components/TimeController";
 import { TleOldNotice } from "./components/TleOldNotice";
@@ -45,6 +46,8 @@ import {
 import type { ControllerBox, ControllerWindow } from "./radio/controllerWindows";
 import { closeController, getControllers, openController, postTarget } from "./radio/radioApi";
 import type { ControllerKind, ControllerRef } from "./radio/types";
+import { closeSatInfo, openSatInfo } from "./satInfo";
+import type { SatInfoOpen } from "./satInfo";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
 import { activeTab, windowTitle } from "./tabs";
@@ -96,6 +99,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [timeController, setTimeController] = useState<string | null>(null); // module whose Time Controller is open
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]); // the floating dialogs that are open
   const [passWindows, setPassWindows] = useState<readonly PassWindow[]>([]); // the Pass details and Upcoming passes windows that are open
+  const [satInfos, setSatInfos] = useState<readonly SatInfoOpen[]>([]); // the Satellite Info windows that are open (they belong to the page, not to a module)
   const [skyGlance, setSkyGlance] = useState<SkyOpen>(new Map()); // the modules whose "The sky at a glance" window is open (it shows with its module's tab)
   const [moduleMenu, setModuleMenu] = useState<{ x: number; y: number } | null>(null); // the Module menu, where it is open
   const [selections, setSelections] = useState<Selections>({}); // the selected satellite of each module (not saved)
@@ -313,6 +317,10 @@ function Main({ onStopped }: { onStopped: () => void }) {
   /** Open a Pass details or an Upcoming passes window; the pass items of the satellite popup and the Module menu call it with the server's answer (Task 13). */
   const openPassWindow = useCallback((w: PassWindow) => setPassWindows((l) => openWindow(l, w)), []);
   const closePassWindow = useCallback((id: string) => setPassWindows((l) => closeWindow(l, id)), []);
+
+  /** Satellite info (a popup item, the bold name, a double click on a satellite): a new Satellite Info window; any number can be open (Task 19). */
+  const showSatInfo = useCallback((norad: number) => setSatInfos((l) => openSatInfo(l, norad)), []);
+  const closeSatInfoWindow = useCallback((id: string) => setSatInfos((l) => closeSatInfo(l, id)), []);
 
   /** File → New module (Ctrl+N): the Create new module dialog */
   const newModule = useCallback(() => show({ kind: "newModule" }), [show]);
@@ -536,6 +544,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
                 onSaveConfig={saveConfig}
                 onError={addLocalError}
                 onOpenPassWindow={openPassWindow}
+                onOpenSatInfo={showSatInfo}
               />
             )}
             <Overlay state={overlayFor(tick, connected, closeCode)} onRetry={() => retry(current)} />
@@ -570,6 +579,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
         onTleUpdated={tleUpdated}
       />
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
+      <SatInfoWindows windows={satInfos} onClose={closeSatInfoWindow} />
       <ControllerWindows refs={controllers} onClosed={closeControl} onGone={controllerGone} />
       {current !== null && config !== null && skyGlance.has(current) && (
         <SkyGlanceWindow

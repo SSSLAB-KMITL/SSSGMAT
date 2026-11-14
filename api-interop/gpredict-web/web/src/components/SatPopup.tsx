@@ -23,24 +23,29 @@ interface Props {
   t: string;
   /** Show current pass, Show next pass or Future passes was chosen: the request outlives the popup, so ModuleView sends it */
   onPass: (norad: number, kind: PassKind, t: string) => void;
+  /** Satellite info (or the bold name) was chosen: the window outlives the popup, so the page opens it */
+  onSatInfo: (norad: number) => void;
   onClose: (restoreFocus: boolean) => void;
 }
 
 /**
  * The popup of a satellite (ref §4-§8): right click on a satellite in List, Map, Polar or Event list. Satellite info and (Event
- * list) the bold name are for a later sub-project; the pass items go to `onPass`; Highlight footprint, Ground Track and Sky track
- * are saved in the module's configuration. Built once, when it opens.
+ * list) the bold name go to `onSatInfo`; the pass items go to `onPass`; Highlight footprint, Ground Track and Sky track are saved
+ * in the module's configuration. Built once, when it opens.
  */
-export function SatPopup({ view, sat, config, x, y, onSaveConfig, onError, t, onPass, onClose }: Props) {
+export function SatPopup({ view, sat, config, x, y, onSaveConfig, onError, t, onPass, onSatInfo, onClose }: Props) {
   const save = useRef(onSaveConfig);
   save.current = onSaveConfig;
   const report = useRef(onError);
   report.current = onError;
   const pass = useRef(onPass);
   pass.current = onPass;
+  const satInfo = useRef(onSatInfo);
+  satInfo.current = onSatInfo;
   const [entries] = useState(() =>
     toEntries(satPopup(view, sat, config), (action) => {
       if (action.type === "pass") pass.current(sat.norad, action.kind, t);
+      else if (action.type === "satInfo") satInfo.current(sat.norad);
       else save.current(popupChange(action, sat.norad)).catch((e: unknown) => report.current(errorText(e)));
     }),
   );

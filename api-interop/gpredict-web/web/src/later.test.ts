@@ -17,7 +17,8 @@ const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
   // Help: "ไม่มี News" - there is no News item at all
   ["Detach module", 4, "Module menu"],
   ["Full screen", 4, "Module menu"],
-  ["Satellite info", 4, "popups of List, Map, Polar; the bold name of Single sat and Event list; the double click"],
+  // Satellite info (the popups of List, Map and Polar, the bold name of Single sat and Event list, the double click) works since
+  // sub-project 4 (Task 19), so it is not here any more
   // Show current pass, Show next pass and Future passes work since sub-project 2 (Task 13), and so does Sky at a glance (Task 14);
   // Radio Control, Antenna Control and Update transponder data work since sub-project 3 (Task 14): they are not here any more
 ];
@@ -52,6 +53,10 @@ describe("LATER (spec §8.2)", () => {
     expect(LATER).not.toHaveProperty("Update TLE data from local files");
   });
 
+  it("has no Satellite info: its popup items, the bold satellite name and the double click open the Satellite Info window", () => {
+    expect(LATER).not.toHaveProperty("Satellite info");
+  });
+
   it("has no pass items: Show current pass, Show next pass and Future passes open the pass windows", () => {
     for (const label of ["Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).not.toHaveProperty(label);
   });
@@ -60,7 +65,8 @@ describe("LATER (spec §8.2)", () => {
 describe("laterOf", () => {
   it("gives the sub-project of a label in LATER", () => {
     expect(laterOf("Detach module")).toBe(4);
-    expect(laterOf("Satellite info")).toBe(4);
+    expect(laterOf("Log browser")).toBe(4);
+    expect(laterOf("Full screen")).toBe(4);
   });
 
   it("throws for a label that is not in LATER, so that a typo cannot make an item look available", () => {
@@ -70,5 +76,6 @@ describe("laterOf", () => {
     expect(() => laterOf("Sky at a glance")).toThrow(); // and Sky at a glance
     expect(() => laterOf("Radio Control")).toThrow(); // and the controllers
     expect(() => laterOf("Update TLE data from local files")).toThrow(); // and the update from local files
+    expect(() => laterOf("Satellite info")).toThrow(); // and Satellite info
   });
 });

@@ -1,8 +1,7 @@
 // The popup menu of a satellite (ref §4-§8, spec §8.2): right click on a satellite in List, Map, Polar and Event list, and the
 // header button of Single sat. Pure; SatPopup.tsx shows it.
 
-import { laterOf } from "./later";
-import { laterItem, SEPARATOR } from "./menuSpec";
+import { SEPARATOR } from "./menuSpec";
 import type { MenuSpec } from "./menuSpec";
 import type { PassKind } from "./passes/types";
 import type { ModuleConfig } from "./types";
@@ -27,10 +26,11 @@ export type PopupLists = Pick<ModuleConfig, "footprint_off" | "ground_track" | "
 export type SwitchAction = { type: "footprint"; on: boolean } | { type: "groundTrack"; on: boolean } | { type: "skyTrack"; on: boolean };
 
 /**
- * What an enabled item does: set one of the three switches (saved in the module's configuration), or ask for passes of the
- * satellite (Show current pass, Show next pass, Future passes: SatPopup and SingleSatView send the request, passRequest.ts).
+ * What an item does: set one of the three switches (saved in the module's configuration), ask for passes of the satellite (Show
+ * current pass, Show next pass, Future passes: SatPopup and SingleSatView send the request, passRequest.ts), or open the Satellite
+ * Info window of the satellite ("Satellite info", or the bold name in Single sat and Event list).
  */
-export type PopupAction = SwitchAction | { type: "pass"; kind: PassKind };
+export type PopupAction = SwitchAction | { type: "pass"; kind: PassKind } | { type: "satInfo" };
 
 const passItem = (label: string, kind: PassKind): MenuSpec<PopupAction> => ({ kind: "item", label, action: { type: "pass", kind } });
 
@@ -40,11 +40,12 @@ const passItem = (label: string, kind: PassKind): MenuSpec<PopupAction> => ({ ki
  * 2. the passes: "Show current pass" (only while El > 0 when the popup is built), "Show next pass", "Future passes";
  * 3. Map: "Highlight footprint" (on unless the satellite is in footprint_off) and "Ground Track";
  *    Polar: "Sky track" (off for a GEO satellite).
- * Satellite info is for a later sub-project (spec §8.2); the pass items work since sub-project 2 (passes spec §4.1).
+ * Satellite info works since sub-project 4 (Task 19), the pass items since sub-project 2 (passes spec §4.1).
  */
 export function satPopup(view: PopupView, sat: PopupSat, lists: PopupLists): MenuSpec<PopupAction>[] {
+  const satInfo: PopupAction = { type: "satInfo" };
   const first: MenuSpec<PopupAction> =
-    view === "single" || view === "event" ? { kind: "item", label: sat.name, bold: true, later: laterOf("Satellite info") } : laterItem("Satellite info");
+    view === "single" || view === "event" ? { kind: "item", label: sat.name, bold: true, action: satInfo } : { kind: "item", label: "Satellite info", action: satInfo };
   const menu: MenuSpec<PopupAction>[] = [
     first,
     SEPARATOR,

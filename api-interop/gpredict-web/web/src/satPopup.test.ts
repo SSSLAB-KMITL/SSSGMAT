@@ -13,9 +13,9 @@ const lists = (over: Partial<Pick<ModuleConfig, "footprint_off" | "ground_track"
 const sat = (over: Partial<PopupSat> = {}): PopupSat => ({ norad: 25544, name: "ISS", el: -10, dir: "↑", ...over });
 
 describe("satPopup (ref §4-§8, spec §8.2)", () => {
-  it("List: Satellite info (later 4), then Show next pass and Future passes while the satellite is below the horizon (the pass items work since sub-project 2)", () => {
+  it("List: Satellite info, then Show next pass and Future passes while the satellite is below the horizon (the pass items work since sub-project 2)", () => {
     expect(outline(satPopup("list", sat(), lists()))).toEqual([
-      "Satellite info (later 4)",
+      "Satellite info",
       "-",
       "Show next pass",
       "Future passes",
@@ -24,7 +24,7 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
 
   it("List: Show current pass comes first while El > 0", () => {
     expect(outline(satPopup("list", sat({ el: 12.5 }), lists()))).toEqual([
-      "Satellite info (later 4)",
+      "Satellite info",
       "-",
       "Show current pass",
       "Show next pass",
@@ -54,7 +54,7 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
 
   it("Map: adds Highlight footprint (checked unless the satellite is in footprint_off) and Ground Track (checked if in ground_track)", () => {
     expect(outline(satPopup("map", sat(), lists()))).toEqual([
-      "Satellite info (later 4)",
+      "Satellite info",
       "-",
       "Show next pass",
       "Future passes",
@@ -82,11 +82,22 @@ describe("satPopup (ref §4-§8, spec §8.2)", () => {
   it("Single sat and Event list: the satellite name in bold takes the place of Satellite info", () => {
     for (const view of ["single", "event"] as const) {
       expect(outline(satPopup(view, sat({ name: "OSCAR 7" }), lists()))).toEqual([
-        "OSCAR 7 (bold) (later 4)",
+        "OSCAR 7 (bold)",
         "-",
         "Show next pass",
         "Future passes",
       ]);
+    }
+  });
+
+  it("popup items enabled: Satellite info and the bold satellite name have the action satInfo, and are not greyed out", () => {
+    for (const view of ["list", "map", "polar"] as const) {
+      const first = satPopup(view, sat(), lists())[0];
+      expect(first, view).toEqual({ kind: "item", label: "Satellite info", action: { type: "satInfo" } });
+    }
+    for (const view of ["single", "event"] as const) {
+      const first = satPopup(view, sat({ name: "OSCAR 7" }), lists())[0];
+      expect(first, view).toEqual({ kind: "item", label: "OSCAR 7", bold: true, action: { type: "satInfo" } });
     }
   });
 

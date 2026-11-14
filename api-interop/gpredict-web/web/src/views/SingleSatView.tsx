@@ -46,13 +46,13 @@ function useSatNames(satellites: readonly number[], shown: Tick | null): Readonl
  * - The satellite is `single.selected` if it is in the module, else the first by name. If the tick lacks it (GMAT dropped
  *   it) every value is "-".
  * - It redraws from the tick only every `refresh.single` ticks (the first at once).
- * - The header button (tooltip "Satellite options / shortcuts") opens the popup: the satellite's name in bold (Satellite
- *   info, a later sub-project), the pass items (sent through `onPass` with the time of the tick this view shows), and one radio
+ * - The header button (tooltip "Satellite options / shortcuts") opens the popup: the satellite's name in bold (it opens Satellite
+ *   info, through `onSatInfo`), the pass items (sent through `onPass` with the time of the tick this view shows), and one radio
  *   item per satellite sorted by name.
  *   Choosing one shows that satellite and saves it as `single.selected` with PUT /api/modules/{name}; if the server refuses,
  *   the Thai text goes to `onError` (the notice strip).
  */
-export function SingleSatView({ config, tick, nf, onSaveConfig, onError, onPass }: ViewProps) {
+export function SingleSatView({ config, tick, nf, onSaveConfig, onError, onPass, onSatInfo }: ViewProps) {
   const meta = useMeta();
   const shown = useRefreshGate(tick, config.refresh.single);
   const names = useSatNames(config.satellites, shown);
@@ -77,8 +77,10 @@ export function SingleSatView({ config, tick, nf, onSaveConfig, onError, onPass 
   // the satellite's name in bold (Satellite info) and the pass items, as in every satellite popup (satPopup.ts); then one radio item per satellite
   const items: MenuEntry[] = [
     ...toEntries(satPopup("single", { norad: norad ?? 0, name, el: sat?.el ?? null, dir: sat?.dir ?? "" }, config), (action) => {
-      // no satellite (an empty module) or no tick yet: there is nothing to ask passes of, or no time to start from
-      if (action.type === "pass" && norad !== null && shown !== null) onPass?.(norad, action.kind, shown.t);
+      // no satellite (an empty module): there is nothing to show or to ask passes of; no tick yet: no time to start the passes from
+      if (norad === null) return;
+      if (action.type === "satInfo") onSatInfo?.(norad);
+      else if (action.type === "pass" && shown !== null) onPass?.(norad, action.kind, shown.t);
     }),
     { kind: "separator" },
     ...choices.map((c): MenuEntry => ({ kind: "radio", label: c.name, checked: c.norad === norad, onChoose: () => choose(c.norad) })),

@@ -33,8 +33,10 @@ export interface ViewProps {
   onSelect: (norad: number | null) => void;
   /** right click on a satellite: the view calls it with the client position; ModuleView opens the satellite's popup menu there */
   onSatContextMenu?: (norad: number, clientX: number, clientY: number) => void;
-  /** double click on a satellite: Satellite info (sub-project 4, nothing yet) */
+  /** double click on a satellite (a row of List or Event list, a satellite of Map or Polar): Satellite info */
   onSatDoubleClick?: (norad: number) => void;
+  /** Single sat's popup chose Satellite info (its bold name) for `norad`; the other views' popups are opened by ModuleView, which opens the window itself */
+  onSatInfo?: (norad: number) => void;
   /**
    * Single sat's popup chose Show current pass, Show next pass or Future passes for `norad`; `t` is the time of the view (the
    * tick it shows). The other views' popups are opened by ModuleView, which sends the request itself.
@@ -54,10 +56,13 @@ export interface ViewProps {
 /**
  * What the page gives ModuleView. The selected satellite is held by the page (App), not here: the Module menu's "Select
  * satellite" and Autotrack change it too. `onOpenPassWindow` opens the Pass details or Upcoming passes window that the answer
- * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed). The number format is
- * read from Preferences here, once, and handed to every view.
+ * of a pass request asks for (the pass windows belong to the page: they stay open when the module is closed), and `onOpenSatInfo` opens
+ * a Satellite Info window (also the page's). The number format is read from Preferences here, once, and handed to every view.
  */
-export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onPass" | "nf"> & { onOpenPassWindow: (w: PassWindow) => void };
+export type ModuleViewProps = Omit<ViewProps, "onSatContextMenu" | "onSatDoubleClick" | "onSatInfo" | "onPass" | "nf"> & {
+  onOpenPassWindow: (w: PassWindow) => void;
+  onOpenSatInfo: (norad: number) => void;
+};
 
 /** The component of each view type (ref §3); a cell whose type has no entry is a labelled placeholder. */
 const VIEWS: Partial<Record<number, ComponentType<ViewProps>>> = {
@@ -89,14 +94,15 @@ interface OpenPopup {
 /**
  * The module's views laid out on the grid of its layout code; every column and row has the same size (ref §1, §3). It opens
  * the popup menu of a satellite where a view reports a right click (ref §4-§8), and sends the pass requests of the pass items of
- * every satellite popup (also Single sat's) and shows the waiting box and the no-pass message for them. A new module starts with
- * no satellite selected.
+ * every satellite popup (also Single sat's) and shows the waiting box and the no-pass message for them. Satellite info, the bold name
+ * of Single sat and Event list and the double click on a satellite open a Satellite Info window (`onOpenSatInfo`). A new module starts
+ * with no satellite selected.
  */
 export function ModuleView(props: ModuleViewProps) {
   return <ModuleViews key={props.module} {...props} />;
 }
 
-function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
+function ModuleViews({ onOpenPassWindow, onOpenSatInfo, ...props }: ModuleViewProps) {
   const nf = useNumberFormat();
   const [popup, setPopup] = useState<OpenPopup | null>(null);
   const closePopup = useCallback(() => setPopup(null), []);
@@ -156,6 +162,8 @@ function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
                   {...props}
                   nf={nf}
                   onSatContextMenu={popupView === undefined ? undefined : (norad, x, y) => openPopup(popupView, norad, x, y)}
+                  onSatDoubleClick={onOpenSatInfo}
+                  onSatInfo={onOpenSatInfo}
                   onPass={startPass}
                 />
               ) : (
@@ -177,6 +185,7 @@ function ModuleViews({ onOpenPassWindow, ...props }: ModuleViewProps) {
           onError={reportError}
           t={popup.t}
           onPass={startPass}
+          onSatInfo={onOpenSatInfo}
           onClose={closePopup}
         />
       )}
