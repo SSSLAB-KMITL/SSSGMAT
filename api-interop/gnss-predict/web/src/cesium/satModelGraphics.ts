@@ -10,7 +10,8 @@
 // - updateModelAttitudes: ท่าทางตามกฎของ block ของดาวแต่ละดวง (attitudeLaws.ts: spec.law) และมุมแผงของดาวที่แสดงอยู่ทุกดวง ณ เวลาหนึ่ง
 //   เขียนลง ConstantProperty เดิม (ไม่มี CallbackProperty: หน้าต่าง 3D ข้าม update ตอนอยู่เฉย ๆ ตาม event ของ EntityCollection: idleUpdates.ts)
 //   ผู้เรียกเรียกตามรอบ throttle 250 ms เดียวกับ sensor กฎทุกตัวไม่มีสถานะ: ท่าทาง ณ t ไม่ขึ้นกับรอบก่อนหน้า (scrub = throttle = เล่นต่อเนื่อง)
-//   ไม่สร้างออบเจ็กต์ใหม่ต่อดวงต่อรอบ (scratch ของโมดูลและสถานะต่อ entity)
+//   ผลเขียนลง scratch ของโมดูลและสถานะต่อ entity แต่ lawAttitude ยังสร้างออบเจ็กต์อายุสั้นราว 10 ตัวต่อดวงต่อรอบ (เรขาคณิต, yaw, กรอบของ sensorGeometry.bodyFrame)
+//   จำนวนมีขอบเขต (ราว 1,500 ตัวต่อรอบที่ 146 ดวง ≤ 4 รอบต่อวินาที) จึงไม่ทำ scratch เพิ่ม
 //
 // แกน (พิสูจน์กับ ModelUtility.getAxisCorrectionMatrix ของ Cesium จริงใน tests/unit/sat-model-render.test.ts):
 // - glb ส่งออกแบบ glTF Y-up: glTF (x, y, z) = body (x, z, −y)

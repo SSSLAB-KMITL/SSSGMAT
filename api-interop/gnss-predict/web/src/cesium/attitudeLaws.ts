@@ -7,7 +7,7 @@
 //   ŝ = ทิศจากดาวไปดวงอาทิตย์ (แบบเดียวกับ attitude.yawSteeringFrame) s_x, s_y, s_z = ŝ · x_ON, y_ON, z_ON
 //   β = asin(−s_y) (บวกเมื่อดวงอาทิตย์อยู่ฝั่ง +h), μ = atan2(s_x, s_z) (0 = เที่ยงคืน, ±180° = เที่ยงวัน, เพิ่มตามการเคลื่อนที่)
 // yaw ψ (spec §1.3): หมุนแบบมือขวารอบ +z_ON จาก +x_ON ไปทาง +y_ON: ex = cos ψ x_ON + sin ψ y_ON, ey = −sin ψ x_ON + cos ψ y_ON, ez = z_ON
-// ez = nadir เสมอทุกกฎ (NavIC ไม่ชี้เป้า 5°N 83°E: ดู spec §3.9 และหมายเหตุใน navic)
+// ez = nadir ทุกกฎ ยกเว้น NavIC ที่ +Z ชี้เป้า (5°N, 83°E) บนผิว WGS84 (spec §3.9, §4.3 ข้อ 4: navicFrame)
 
 import { Cartesian3, type JulianDate } from "cesium";
 import { nadirVelocityFrame, type AttitudeFrame } from "./attitude";
@@ -169,7 +169,8 @@ const YS = (g: OrbitSunGeometry): Yaw => ({ psi: g.sx === 0 && g.sy === 0 ? 0 : 
 const ON: Yaw = Object.freeze({ psi: 0, mode: "ON" });
 
 /**
- * การหมุนจำกัดอัตราแบบกึ่งกลาง node (spec §3.2, §3.5, §3.8, §4.2 "centered noon/midnight turn"): เส้นตรง ψ = ψ_node ± R |x| / μ̇
+ * การหมุนจำกัดอัตราแบบกึ่งกลาง node ตามคำว่า "centered" ในตาราง §3.1 (ใช้กับ §3.2, §3.5, §3.8): เส้นตรง ψ = ψ_node ± R |x| / μ̇
+ * (ไม่ใช่จุดเริ่มของ §4.2 / Kouba ที่แก้ |ψ̇_nom(μ_s)| = R: แบบนั้นไม่สมมาตร) คงขีดจำกัดอัตราและความต่อเนื่องไว้
  * ผ่าน ψ_node = −90° sign β ที่ node พอดี และตัดกับ nominal ที่สองข้างอย่างสมมาตร (ψ_nom สมมาตรแบบจุดรอบ (node, ψ_node))
  * เขียนแบบปิด: dev = wrap(ψ_nom − ψ_node), ψ = ψ_node + sign(dev) · min(|dev|, R |x| / μ̇) ไม่ต้องหาจุดตัดด้วยวิธีเชิงตัวเลข
  * - |dev| = atan(|sin x| / |tan β|) เว้าใน x และชันที่ node 1/|tan β| เท่า μ̇: เส้นชนะเมื่อ |β| < β0 = atan(μ̇/R) เท่านั้น
@@ -238,7 +239,8 @@ export const yawOrbitNormal = (_g: OrbitSunGeometry): Yaw => ON;
 
 /**
  * GPS IIR / IIR-M (spec §3.2): หมุนจำกัดอัตรา R = 0.20°/s ทั้ง noon และ midnight แบบกึ่งกลาง node (centredTurn) เมื่อ |β| < atan(μ̇/R) ≈ 2.4°
- * ต่างจากสูตร Kouba ใน §3.2 (เริ่มที่ |ψ̇_nom| = R แล้ววิ่งจนทัน) ตรงที่จุดเริ่ม/จบสมมาตร (ตามตาราง §3.1 "centered" และ §4.2) จึงผ่าน −90° sign β ตรง node
+ * ความต่างที่รู้: สูตร Kouba ใน §3.2 / §4.2 เริ่มที่ |ψ̇_nom(μ_s)| = R แล้ววิ่งจนทัน (ไม่สมมาตร) ของเราสมมาตรตาม "centered" ของตาราง §3.1
+ * จึงผ่าน −90° sign β ตรง node ที่ β = 0.5° สองแบบต่างกันราว 40° ที่ node (อัตราไม่เกิน R และต่อเนื่องทั้งคู่)
  */
 export const yawGpsIir = (g: OrbitSunGeometry): Yaw => centredTurn(g, R_IIR, true, true);
 
@@ -308,8 +310,9 @@ export function yawGalileoIov(g: OrbitSunGeometry): Yaw {
 /**
  * Galileo FOC (spec §3.6.2): เมื่อ |β| < 4.1° และมุม ε = acos(|cos β cos μ|) < 10° (ช่วง |x| < x_i = acos(cos 10° / cos β) รอบ node)
  * ψ = 90° s + (ψ_init − 90° s) cos(π τ), s = sign ψ_init, ψ_init = ψ_nom(node − x_i), τ = (x + x_i)/(2 x_i) ∈ [0, 1]
- * ทำให้เป็นสถานะไร้ความจำ: t_init คือจุดที่ ε ลดถึง 10° (หาเชิงวิเคราะห์) และครึ่งคาบ cosine ใช้ช่วงสมมาตร 2 x_i / μ̇ แทน 2828 s คงที่
- * (เท่ากับ 2828 s ภายใน 1% ที่ β ≈ 0 ของ Galileo; ด้วยค่าคงที่ 2828 s ท่าทางจะกระโดด ~1° ตอนกลับเข้า nominal ที่ β ≠ 0) จบตรง ψ_nom(node + x_i)
+ * ทำให้เป็นสถานะไร้ความจำ: t_init คือจุดที่ ε ลดถึง 10° (หาเชิงวิเคราะห์) และครึ่งคาบ cosine ใช้ช่วงสมมาตร 2 x_i / μ̇ แทน 2828 s คงที่ จบตรง ψ_nom(node + x_i)
+ * ความยาวการหมุนของ Galileo: 2816 s ที่ β = 0, 2759 s ที่ 2°, 2583 s ที่ 4° (สั้นกว่า 2828 s ได้ถึงราว 9% อัตราสูงสุดจึงสูงกว่าแบบตามตัวอักษรได้ราว 9%)
+ * แลกกับความต่อเนื่อง: ด้วย 2828 s คงที่ ท่าทางกระโดดตอนกลับเข้า nominal ราว 2.5° ที่ β = 4°
  */
 export function yawGalileoFoc(g: OrbitSunGeometry): Yaw {
   if (!(Math.abs(g.beta) < GAL_FOC_BETA)) return YS(g);
@@ -345,7 +348,7 @@ export const yawQzss2 = (g: OrbitSunGeometry): Yaw => centredTurn(g, OMEGA_C_QZS
 
 /**
  * NavIC IRNSS-1 / NVS (spec §3.9): YS + ON เมื่อ |β| < 4° (ประมาณการ: ISRO ไม่เผยเกณฑ์ ช่วงที่ใช้ในงานวิจัย 2.8°–5°)
- * ไม่จำลองการชี้เป้า (5°N, 83°E): +Z ชี้ศูนย์กลางโลกเหมือนดาวอื่น (คลาดจากของจริงไม่เกินราว 1° สำหรับ GEO/IGSO)
+ * ตัดสินโหมดจาก β ของกรอบ ON ทางภูมิศาสตร์ ส่วนกรอบจริงสร้างรอบแกนชี้เป้าใน navicFrame (lawAttitude)
  */
 export const yawNavic = (g: OrbitSunGeometry): Yaw => (Math.abs(g.beta) < NAVIC_ON_BETA_DEG * D ? ON : YS(g));
 
@@ -368,13 +371,58 @@ const YAW_OF: Readonly<Record<AttitudeLaw, (g: OrbitSunGeometry) => Yaw>> = {
   navic: yawNavic,
 };
 
+/** เป้าของ NavIC: (5°N, 83°E, 0 m) บน WGS84 ใน ECEF (spec §3.9 ข้อ 1) */
+export const NAVIC_TARGET_ECEF: Readonly<Cartesian3> = Object.freeze(Cartesian3.fromDegrees(83, 5, 0));
+
+const scratchY0 = new Cartesian3();
+const scratchX0 = new Cartesian3();
+
+/**
+ * กรอบของ NavIC (spec §4.3 ข้อ 4): ez = unit(r_tgt − r) ก่อน แล้วสร้างฐาน ON รอบแกนนี้ y0 = −h ฉายให้ตั้งฉากกับ ez, x0 = y0 × ez
+ * ON: ψ = 0 (ex = x0, ey = y0); YS: ψ = atan2(ŝ · y0, ŝ · x0) = การสร้าง yaw steering เดิม (ey = unit(ez × ŝ), ŝ อยู่ในระนาบ X-Z ฝั่ง +X)
+ * จุดเอกฐาน (ŝ ขนานกับ ez) ψ = 0; −h ขนานกับ ez (ไม่เกิดกับวงโคจรของ NavIC) ใช้ x_ON ฉายแทน ไม่มีกรอบ = false
+ */
+function navicFrame(g: OrbitSunGeometry, r: Cartesian3, sun: Cartesian3, mode: AttitudeMode, out: LawAttitude): boolean {
+  const ez = Cartesian3.subtract(NAVIC_TARGET_ECEF as Cartesian3, r, out.frame.ez);
+  const len = Cartesian3.magnitude(ez);
+  if (!(len > 0)) return false;
+  Cartesian3.divideByScalar(ez, len, ez);
+  const project = (a: Cartesian3, result: Cartesian3): number => {
+    Cartesian3.subtract(a, Cartesian3.multiplyByScalar(ez, Cartesian3.dot(a, ez), scratchA), result);
+    return Cartesian3.magnitude(result);
+  };
+  let ly = project(g.on.ey, scratchY0);
+  if (!(ly > 1e-9)) {
+    // −h ขนานกับ ez: ใช้ x_ON ฉายเป็น x0 แล้ว y0 = ez × x0
+    const lx = project(g.on.ex, scratchX0);
+    if (!(lx > 1e-9)) return false;
+    Cartesian3.cross(ez, Cartesian3.divideByScalar(scratchX0, lx, scratchX0), scratchY0);
+    ly = 1;
+  }
+  const y0 = Cartesian3.divideByScalar(scratchY0, ly, scratchY0);
+  const x0 = Cartesian3.cross(y0, ez, scratchX0);
+  let psi = 0;
+  if (mode !== "ON") {
+    const es = Cartesian3.normalize(Cartesian3.subtract(sun, r, scratchEs), scratchEs);
+    const a = Cartesian3.dot(es, x0);
+    const b = Cartesian3.dot(es, y0);
+    psi = a === 0 && b === 0 ? 0 : Math.atan2(b, a);
+  }
+  const c = Math.cos(psi);
+  const s = Math.sin(psi);
+  Cartesian3.add(Cartesian3.multiplyByScalar(x0, c, out.frame.ex), Cartesian3.multiplyByScalar(y0, s, scratchA), out.frame.ex);
+  Cartesian3.add(Cartesian3.multiplyByScalar(x0, -s, out.frame.ey), Cartesian3.multiplyByScalar(y0, c, scratchA), out.frame.ey);
+  out.yaw = psi;
+  return true;
+}
+
 const newResult = (): LawAttitude => ({ frame: { ex: new Cartesian3(), ey: new Cartesian3(), ez: new Cartesian3() }, yaw: 0, mode: "YS", beta: 0, mu: 0 });
 const scratchOn: AttitudeFrame = { ex: new Cartesian3(), ey: new Cartesian3(), ez: new Cartesian3() };
 const scratchA = new Cartesian3();
 
 /**
  * ท่าทางของกฎ law ณ เวลา t (spec §4.2 compute_attitude แบบไม่มีสถานะ): r, v = ตำแหน่ง/ความเร็ว ECEF, sun = ตำแหน่งดวงอาทิตย์ ECEF
- * nadir_velocity = กรอบ sensor §3.1 (ψ = 0 ของกรอบ ON) result (ถ้าให้) ถูกเขียนทับและคืนตัวเดียวกัน ไม่ให้ = object ใหม่
+ * nadir_velocity = กรอบ sensor §3.1 (ψ = 0 ของกรอบ ON); navic: ez ชี้เป้า yaw วัดรอบแกนนั้น (navicFrame) result (ถ้าให้) ถูกเขียนทับและคืนตัวเดียวกัน ไม่ให้ = object ใหม่
  * t ไม่ถูกใช้ในการคำนวณ (ทุกกฎเป็นฟังก์ชันของเรขาคณิต ณ t) คงไว้ในลายเซ็นให้กฎที่ต้องใช้เวลาในอนาคต
  */
 export function lawAttitude(law: AttitudeLaw, r: Cartesian3, v: Cartesian3, sun: Cartesian3, _t: JulianDate, result?: LawAttitude): LawAttitude | null {
@@ -382,6 +430,10 @@ export function lawAttitude(law: AttitudeLaw, r: Cartesian3, v: Cartesian3, sun:
   if (g === null) return null;
   const { psi, mode } = YAW_OF[law](g);
   const out = result ?? newResult();
+  out.mode = mode;
+  out.beta = g.beta;
+  out.mu = g.mu;
+  if (law === "navic") return navicFrame(g, r, sun, mode, out) ? out : null;
   const c = Math.cos(psi);
   const s = Math.sin(psi);
   const { ex: x, ey: y, ez: z } = g.on;
@@ -389,9 +441,6 @@ export function lawAttitude(law: AttitudeLaw, r: Cartesian3, v: Cartesian3, sun:
   Cartesian3.add(Cartesian3.multiplyByScalar(x, -s, out.frame.ey), Cartesian3.multiplyByScalar(y, c, scratchA), out.frame.ey);
   Cartesian3.clone(z, out.frame.ez);
   out.yaw = psi;
-  out.mode = mode;
-  out.beta = g.beta;
-  out.mu = g.mu;
   return out;
 }
 

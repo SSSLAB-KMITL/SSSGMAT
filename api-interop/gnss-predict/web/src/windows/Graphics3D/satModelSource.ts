@@ -7,7 +7,8 @@
 // - โหลดล้มเหลว = ดาวที่ใช้โมเดลนั้นเป็นจุดต่อไป (ไม่ลองซ้ำ) + ข้อความไทยใน Message Viewer ครั้งเดียวต่อ id ต่อหน้าเว็บ
 //   ทั้งตอนโหลดไฟล์ (loadModelGlb: ไฟล์หาย ไม่ใช่ glb ที่ Cesium อ่านได้) และหลังให้ Cesium แล้ว (modelFailed จาก satModelGraphics.watchModelErrors:
 //   ทุกหน้าต่างวาดดาวของโมเดลนั้นใหม่เป็นจุด)
-//   catalog ล้มเหลว: ทุกดวงเป็นจุด + ข้อความครั้งเดียว (loadModelCatalog ไม่จำความล้มเหลว: หน้าต่างที่เปิดใหม่ลองอีกครั้ง)
+//   catalog ล้มเหลว: ทุกดวงเป็นจุด + ข้อความครั้งเดียว
+//   cell_normal ของโมเดลอ่านไม่ได้: ใช้ตารางสำรอง (satModels.cellNormalOf) + ข้อความไทยครั้งเดียวต่อ id ต่อหน้าเว็บ (MODEL_CELL_NORMAL) (loadModelCatalog ไม่จำความล้มเหลว: หน้าต่างที่เปิดใหม่ลองอีกครั้ง)
 // - block ของดาวจาก catalog ของ snapshot (satelliteInfo().block) ตรงตัวกับ blocks ใน models/catalog.json (ตรวจกับ snapshot จริงแล้ว) ไม่ต้องแปลง
 //   block ว่าง ("") ถือเป็นไม่มี block block เดียวกันนี้เลือกกฎท่าทาง (attitudeLaws.attitudeLawFor): หลาย block ใช้โมเดล (glb) เดียวกันได้แต่กฎต่างกัน
 //   (เช่น BDS-2G orbit normal กับ BDS-2I YS ↔ ON) spec จึงมีหนึ่งตัวต่อ (โมเดล, กฎ)
@@ -15,7 +16,7 @@
 import { Cartesian3 } from "cesium";
 import { attitudeLawFor } from "../../cesium/attitudeLaws";
 import type { SatModelSpec } from "../../cesium/satModelGraphics";
-import { cellNormalOf, loadModelCatalog, loadModelGlb, resolveModel, wingNodesOf, type ModelCatalog, type ResolvedModel } from "../../cesium/satModels";
+import { cellNormalInvalid, cellNormalOf, loadModelCatalog, loadModelGlb, resolveModel, wingNodesOf, type ModelCatalog, type ResolvedModel } from "../../cesium/satModels";
 import { msg } from "../../labels/messages.th";
 import { report } from "../../stores/messages";
 
@@ -87,6 +88,8 @@ export class SatModelSource {
     const key = `${m.id}|${law}`;
     let spec = specs.get(key);
     if (spec === undefined || spec.uri !== uri) {
+      const bad = cellNormalInvalid(cat, m.id);
+      if (bad !== null) reportOnce(`cell:${m.id}`, "MODEL_CELL_NORMAL", msg("model.cellNormalInvalid", { model: m.id, value: bad }));
       spec = { id: m.id, uri, wingNodes: wingNodesOf(cat, m.id), law, zeroNormal: Cartesian3.fromArray([...cellNormalOf(cat, m.id)]) };
       specs.set(key, spec);
     }

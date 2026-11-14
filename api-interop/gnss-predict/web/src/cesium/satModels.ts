@@ -147,12 +147,19 @@ const CELL_NORMALS: Readonly<Record<string, readonly [number, number, number]>> 
 
 /**
  * normal ด้านเซลล์ของแผงโซลาร์ตอนมุมศูนย์ (θ = 0) ในกรอบตัวดาวของโมเดล id (ใช้กับ attitude.ts wingAngle)
- * จาก cell_normal ของ catalog ("+X", "-X", "+Z", "-Z"; ตัวพิมพ์เล็กได้) ไม่มีฟิลด์ ค่าอื่น หรือไม่มีโมเดลนี้ = ตารางสำรอง wingZeroNormal(id)
+ * จาก cell_normal ของ catalog: "+X", "-X", "+Z" หรือ "-Z" ตรงตัว (ตัวพิมพ์ใหญ่เท่านั้น) ไม่มีฟิลด์ ค่าอื่น (±Y, ตัวพิมพ์เล็ก, …)
+ * หรือไม่มีโมเดลนี้ = ตารางสำรอง wingZeroNormal(id) (ค่าอื่นที่มีอยู่จริงผู้เรียกแจ้งเตือนด้วย cellNormalInvalid)
  */
 export function cellNormalOf(cat: ModelCatalog, id: string): readonly [number, number, number] {
   const field = cat.models.find((m) => m.id === id)?.cell_normal;
-  const key = typeof field === "string" ? field.toUpperCase() : "";
-  return Object.hasOwn(CELL_NORMALS, key) ? CELL_NORMALS[key] : wingZeroNormal(id);
+  return typeof field === "string" && Object.hasOwn(CELL_NORMALS, field) ? CELL_NORMALS[field] : wingZeroNormal(id);
+}
+
+/** ค่า cell_normal ของโมเดล id ที่มีอยู่แต่อ่านไม่ได้ (ไม่ใช่ "+X", "-X", "+Z", "-Z") เป็นข้อความ ไม่มีฟิลด์หรืออ่านได้ = null */
+export function cellNormalInvalid(cat: ModelCatalog, id: string): string | null {
+  const field: unknown = cat.models.find((m) => m.id === id)?.cell_normal;
+  if (field === undefined) return null;
+  return typeof field === "string" && Object.hasOwn(CELL_NORMALS, field) ? null : String(field);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

@@ -21,7 +21,7 @@ import {
   SELECTED_SILHOUETTE_PX, setModelSelection, updateModelAttitudes, watchModelErrors, WING_AXIS_GLTF, type SatModelSpec,
 } from "../../src/cesium/satModelGraphics";
 import {
-  CESIUM_GLTF_EXTENSIONS, cellNormalOf, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
+  CESIUM_GLTF_EXTENSIONS, cellNormalInvalid, cellNormalOf, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
 } from "../../src/cesium/satModels";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
 import { msg } from "../../src/labels/messages.th";
@@ -235,8 +235,10 @@ describe("cell_normal of the catalog", () => {
     const stripped: ModelCatalog = { ...catalog, models: catalog.models.map(({ cell_normal: _drop, ...m }: ModelCatalog["models"][number]) => m) };
     expect(cellNormalOf(stripped, "terra")).toEqual(wingZeroNormal("terra"));
     expect(cellNormalOf(stripped, "goes")).toEqual([0, 0, 1]);
-    const odd: ModelCatalog = { ...catalog, models: catalog.models.map((m) => (m.id === "aqua" ? { ...m, cell_normal: "+Y" } : m)) };
+    const odd: ModelCatalog = { ...catalog, models: catalog.models.map((m) => (m.id === "aqua" ? { ...m, cell_normal: "+Y" } : m.id === "terra" ? { ...m, cell_normal: "-z" } : m)) };
     expect(cellNormalOf(odd, "aqua")).toEqual(wingZeroNormal("aqua"));
+    expect(cellNormalOf(odd, "terra")).toEqual(wingZeroNormal("terra")); // ตัวพิมพ์ใหญ่เท่านั้น
+    expect([cellNormalInvalid(odd, "aqua"), cellNormalInvalid(odd, "terra"), cellNormalInvalid(odd, "goes"), cellNormalInvalid(stripped, "goes")]).toEqual(["+Y", "-z", null, null]);
     expect(cellNormalOf(catalog, "no-such-model")).toEqual(wingZeroNormal("no-such-model"));
   });
 });
@@ -696,14 +698,14 @@ const glbBytes = (rel: string): ArrayBuffer => {
 };
 
 /** fetch ปลอม: /models/catalog.json และ glb จากโฟลเดอร์ models (path ใน fail ตอบ 404, ใน html ตอบหน้าแอปแบบ SPA fallback) */
-function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?: boolean; glbs?: Record<string, ArrayBuffer> } = {}) {
+function stubModelFetch(opts: { fail?: string[]; html?: string[]; catalogFails?: boolean; glbs?: Record<string, ArrayBuffer>; catalogJson?: unknown } = {}) {
   const calls: string[] = [];
   const fetch = vi.fn(async (input: unknown) => {
     const path = new URL(String(input), "http://localhost").pathname;
     calls.push(path);
     if (path === "/models/catalog.json") {
       if (opts.catalogFails) return new Response("nope", { status: 503 });
-      return new Response(JSON.stringify(catalog), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(opts.catalogJson ?? catalog), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     const rel = path.slice("/models/".length);
     if (opts.fail?.includes(rel)) return new Response("missing", { status: 404 });
@@ -805,6 +807,28 @@ describe("SatModelSource: catalog and glb loading", () => {
     await flush();
     expect(v3(src.specFor({ block: null, norad: 25994 })!.zeroNormal)).toEqual([0, 0, -1]);
     src.dispose();
+  });
+
+  test("an unreadable cell_normal (±Y, lower case, …) uses the fallback table with one Thai warning per model id in the Message Viewer", async () => {
+    const odd = { ...catalog, models: catalog.models.map((m) => (m.id === "aqua" ? { ...m, cell_normal: "+Y" } : m.id === "terra" ? { ...m, cell_normal: "-z" } : m)) };
+    stubModelFetch({ catalogJson: odd });
+    const a = new SatModelSource(() => undefined);
+    const b = new SatModelSource(() => undefined);
+    const sats = [{ block: null, norad: 27424 }, { block: null, norad: 25994 }, { block: "GPS-IIF", norad: 1 }];
+    for (let round = 0; round < 3; round++) {
+      for (const src of [a, b]) for (const s of sats) src.specFor(s);
+      await flush();
+    }
+    expect(v3(a.specFor(sats[0])!.zeroNormal)).toEqual([...wingZeroNormal("aqua")]);
+    expect(v3(b.specFor(sats[1])!.zeroNormal)).toEqual([...wingZeroNormal("terra")]);
+    expect(v3(a.specFor(sats[2])!.zeroNormal)).toEqual([-1, 0, 0]);
+    const items = useMessages.getState().items;
+    expect(items.map((m) => [m.level, m.code])).toEqual([["warning", "MODEL_CELL_NORMAL"], ["warning", "MODEL_CELL_NORMAL"]]);
+    expect(items.map((m) => m.text).sort()).toEqual(
+      [msg("model.cellNormalInvalid", { model: "aqua", value: "+Y" }), msg("model.cellNormalInvalid", { model: "terra", value: "-z" })].sort(),
+    );
+    a.dispose();
+    b.dispose();
   });
 
   test("glbs that arrive within one batch window make one changed() (one restyle); a glb arriving later makes another", async () => {

@@ -98,7 +98,8 @@ const LAWS: Record<AttitudeLaw, { orbit: Orbit; rate: (betaDeg: number, nDeg: nu
   bds3_secm: { orbit: "meo", rate: (b, n) => (Math.abs(b) <= 3 ? n / Math.tan(3 * D) : null) },
   qzss1_ys_on: { orbit: "geo", rate: (b) => (Math.abs(b) <= 20 ? 0 : null) },
   qzss2_pseudo_ys: { orbit: "geo", rate: () => 0.055 },
-  navic: { orbit: "geo", rate: (b) => (Math.abs(b) < 4 ? 0 : null) },
+  // NavIC YS วัดรอบแกนชี้เป้าซึ่งเอียงจาก nadir ได้ถึง asin(R⊕/|r|) ≈ 8.7°: β ที่มีผลจริงต่ำกว่า β ได้เท่านั้น (จำกัดล่างที่ 0.5° = ตรวจแค่ความต่อเนื่อง)
+  navic: { orbit: "geo", rate: (b, n) => (Math.abs(b) < 4 ? 0 : n / Math.tan(Math.max(Math.abs(b) - Math.asin(RE / RADIUS.geo) / D, 0.5) * D)) },
 };
 const ALL = Object.keys(LAWS) as AttitudeLaw[];
 const BETAS = [0.5, 2, 5, 15, -0.5, -2];
@@ -106,6 +107,26 @@ const BETAS = [0.5, 2, 5, 15, -0.5, -2];
 const OUTSIDE: Partial<Record<AttitudeLaw, number>> = { qzss1_ys_on: 25 };
 
 const nominalDeg = (a: LawAttitude): number => nominalYaw(a.beta, a.mu) / D;
+
+/** เป้าของ NavIC (5°N, 83°E, 0 m บน WGS84) คำนวณเองด้วยสูตร geodetic → ECEF (ไม่ใช้ Cesium) */
+const NAVIC_TARGET = (() => {
+  const a = 6_378_137;
+  const e2 = 6.69437999014e-3;
+  const φ = 5 * D;
+  const λ = 83 * D;
+  const N = a / Math.sqrt(1 - e2 * Math.sin(φ) ** 2);
+  return new Cartesian3(N * Math.cos(φ) * Math.cos(λ), N * Math.cos(φ) * Math.sin(λ), N * (1 - e2) * Math.sin(φ));
+})();
+const unitOf = (c: Cartesian3): Cartesian3 => Cartesian3.normalize(c, new Cartesian3());
+/** +Z ที่ควรได้: nadir ทุกกฎ ยกเว้น NavIC ที่ชี้เป้า (spec §3.9, §4.3 ข้อ 4) */
+const expectedEz = (law: AttitudeLaw, p: Pose): Cartesian3 => (law === "navic" ? unitOf(Cartesian3.subtract(NAVIC_TARGET, p.r, new Cartesian3())) : p.zOn);
+/** ฐานที่ yaw วัดจาก: กรอบ ON (x_ON, y_ON) หรือของ NavIC y0 = −h ที่ฉายให้ตั้งฉากกับ ez, x0 = y0 × ez */
+function yawBasis(law: AttitudeLaw, p: Pose): { x: Cartesian3; y: Cartesian3 } {
+  if (law !== "navic") return { x: p.xOn, y: p.yOn };
+  const ez = expectedEz(law, p);
+  const y = unitOf(Cartesian3.subtract(p.yOn, Cartesian3.multiplyByScalar(ez, Cartesian3.dot(p.yOn, ez), new Cartesian3()), new Cartesian3()));
+  return { x: Cartesian3.cross(y, ez, new Cartesian3()), y };
+}
 
 describe("attitudeLawFor (spec §3.1, §4.2)", () => {
   test.each([
@@ -153,8 +174,9 @@ describe("orbit-Sun geometry and sign conventions (spec §1.2, §1.3)", () => {
         for (const mu of [-120, -3, 0.5, 45, 178]) {
           const p = pose(LAWS[law].orbit, beta, mu);
           const a = ATTITUDE_LAWS[law](p.r, p.v, p.sun, p.t)!;
-          expect(Cartesian3.dot(a.frame.ex, p.xOn), `${law} β=${beta} μ=${mu}`).toBeCloseTo(Math.cos(a.yaw), 9);
-          expect(Cartesian3.dot(a.frame.ex, p.yOn), `${law} β=${beta} μ=${mu}`).toBeCloseTo(Math.sin(a.yaw), 9);
+          const b = yawBasis(law, p);
+          expect(Cartesian3.dot(a.frame.ex, b.x), `${law} β=${beta} μ=${mu}`).toBeCloseTo(Math.cos(a.yaw), 9);
+          expect(Cartesian3.dot(a.frame.ex, b.y), `${law} β=${beta} μ=${mu}`).toBeCloseTo(Math.sin(a.yaw), 9);
         }
   });
 
@@ -187,7 +209,7 @@ describe.each(ALL)("law %s", (law) => {
   const { orbit, rate } = LAWS[law];
   const n = meanMotionDeg(orbit);
 
-  test("the frame is orthonormal, right-handed, +Z at the Earth's centre, at every β and μ", () => {
+  test("the frame is orthonormal, right-handed, +Z at the Earth's centre (NavIC: at its target), at every β and μ", () => {
     for (const beta of BETAS)
       for (let mu = -180; mu < 180; mu += 7.3) {
         const p = pose(orbit, beta, mu);
@@ -197,7 +219,7 @@ describe.each(ALL)("law %s", (law) => {
         expect(Cartesian3.dot(f.ey, f.ez)).toBeCloseTo(0, 12);
         expect(Cartesian3.dot(f.ez, f.ex)).toBeCloseTo(0, 12);
         expect(Cartesian3.distance(Cartesian3.cross(f.ex, f.ey, new Cartesian3()), f.ez)).toBeLessThan(1e-12);
-        expect(Cartesian3.distance(f.ez, p.zOn)).toBeLessThan(1e-12);
+        expect(Cartesian3.distance(f.ez, expectedEz(law, p))).toBeLessThan(1e-12);
       }
   });
 
@@ -219,8 +241,16 @@ describe.each(ALL)("law %s", (law) => {
     const beta = OUTSIDE[law] ?? 15;
     for (let mu = -180; mu < 180; mu += 1.7) {
       const a = at(law, orbit, beta, mu);
-      expect(Math.abs(wrapDeg(a.yaw / D - nominalDeg(a))), `${law} μ=${mu}`).toBeLessThan(1e-9);
       expect(a.mode).toBe("YS");
+      if (law === "navic") {
+        // ชี้เป้า: yaw steering รอบ ez ของเป้า (ดวงอาทิตย์ในระนาบ X-Z ฝั่ง +X) ไม่ใช่ ψ_nom ของกรอบ ON
+        const p = pose(orbit, beta, mu);
+        const es = unitOf(Cartesian3.subtract(p.sun, p.r, new Cartesian3()));
+        expect(Cartesian3.dot(es, a.frame.ey)).toBeCloseTo(0, 12);
+        expect(Cartesian3.dot(es, a.frame.ex)).toBeGreaterThan(0);
+        continue;
+      }
+      expect(Math.abs(wrapDeg(a.yaw / D - nominalDeg(a))), `${law} μ=${mu}`).toBeLessThan(1e-9);
     }
   });
 
@@ -247,7 +277,6 @@ describe("orbit-normal laws: ex along the velocity", () => {
     ["nadir_velocity", 15],
     ["bds2_ys_on", 2],
     ["qzss1_ys_on", 15],
-    ["navic", -2],
   ] as const)("%s at β = %s°", (law, beta) => {
     for (const mu of [-170, -40, 0, 90, 180]) {
       const p = pose(LAWS[law].orbit, beta, mu);
@@ -257,6 +286,42 @@ describe("orbit-normal laws: ex along the velocity", () => {
       expect(Cartesian3.distance(a.frame.ex, p.xOn)).toBeLessThan(1e-9);
       expect(Cartesian3.distance(a.frame.ey, p.yOn)).toBeLessThan(1e-9);
     }
+  });
+});
+
+describe("NavIC target pointing (spec §3.9, §4.3 #4)", () => {
+  test("+Z points at (5°N, 83°E) on WGS84 within 0.01°: real GEO slots 32.5°E / 129.5°E, an IGSO at 55°E, and the synthetic orbits", () => {
+    const sun = new Cartesian3(AU * 0.3, -AU * 0.9, AU * 0.3);
+    const cases: { r: Cartesian3; v: Cartesian3 }[] = [];
+    for (const lon of [32.5, 83, 129.5]) cases.push({ r: new Cartesian3(42_164e3 * Math.cos(lon * D), 42_164e3 * Math.sin(lon * D), 0), v: new Cartesian3(0, 0, 0) });
+    // IGSO 29° เอียงเหนือ 55°E: ECEF ณ ขณะที่ดาวอยู่ละติจูด 20°N
+    const lat = 20 * D;
+    const lon = 55 * D;
+    cases.push({ r: new Cartesian3(42_164e3 * Math.cos(lat) * Math.cos(lon), 42_164e3 * Math.cos(lat) * Math.sin(lon), 42_164e3 * Math.sin(lat)), v: new Cartesian3(-300, 200, 2800) });
+    for (const beta of [0.5, 15]) for (const mu of [-120, 0, 60, 180]) cases.push(pose("geo", beta, mu));
+    for (const c of cases) {
+      const a = ATTITUDE_LAWS.navic(c.r, c.v, sun, T0)!;
+      const toTarget = unitOf(Cartesian3.subtract(NAVIC_TARGET, c.r, new Cartesian3()));
+      expect(Cartesian3.angleBetween(a.frame.ez, toTarget) / D).toBeLessThan(0.01);
+      // ต่างจาก nadir จริง (GEO 32.5°E: หลายองศา) ไม่ใช่แค่ nadir ที่บังเอิญใกล้เป้า
+      if (c === cases[0]) expect(Cartesian3.angleBetween(a.frame.ez, unitOf(Cartesian3.negate(c.r, new Cartesian3()))) / D).toBeGreaterThan(5);
+    }
+  });
+
+  test("low β: orbit normal around the target axis (ey = −h projected off ez, yaw 0); higher β: yaw steering around it", () => {
+    for (const mu of [-170, -40, 0, 90, 180]) {
+      const p = pose("geo", -2, mu);
+      const a = ATTITUDE_LAWS.navic(p.r, p.v, p.sun, p.t)!;
+      expect(a.mode).toBe("ON");
+      expect(a.yaw).toBe(0);
+      expect(Cartesian3.distance(a.frame.ey, yawBasis("navic", p).y)).toBeLessThan(1e-9);
+      const q = pose("geo", 5, mu);
+      const b = ATTITUDE_LAWS.navic(q.r, q.v, q.sun, q.t)!;
+      const es = unitOf(Cartesian3.subtract(q.sun, q.r, new Cartesian3()));
+      expect(b.mode).toBe("YS");
+      expect(Cartesian3.dot(es, b.frame.ey)).toBeCloseTo(0, 12);
+    }
+    expect(ESTIMATED_LAWS.has("navic")).toBe(true);
   });
 });
 
