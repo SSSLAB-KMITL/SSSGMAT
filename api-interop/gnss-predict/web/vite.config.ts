@@ -1,10 +1,14 @@
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import { defineConfig } from "vitest/config";
 import { devOriginRewrite } from "./devOrigin.ts";
+import { modelsPlugin } from "./modelsPackaging.ts";
 
 const SERVER_ORIGIN = "http://127.0.0.1:8000";
 const CESIUM_BUILD = "node_modules/cesium/Build/Cesium";
+// โมเดล 3 มิติของดาว (catalog.json + glb) อยู่ที่ ../models ของโปรเจกต์ (ไม่ใช่ใต้ web/)
+const MODELS_DIR = resolve(import.meta.dirname, "../models");
 
 export default defineConfig({
   plugins: [
@@ -18,6 +22,8 @@ export default defineConfig({
         rename: { stripBase: CESIUM_BUILD.split("/").length },
       })),
     }),
+    // /models/catalog.json และ /models/<id>/<id>.glb: build คัดลอกไป dist/models/ เฉพาะไฟล์ที่ catalog ระบุ (ไม่รวม _refs ฯลฯ), dev ส่ง path เดียวกัน (modelsPackaging.ts)
+    modelsPlugin(MODELS_DIR),
   ],
   define: { CESIUM_BASE_URL: JSON.stringify("/cesium") },
   build: {
