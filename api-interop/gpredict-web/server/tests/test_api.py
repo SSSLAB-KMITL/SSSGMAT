@@ -26,7 +26,9 @@ from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_HINTS, MAP_C
 from gpredict_web.observe import qth_geo
 from gpredict_web.passes import find_passes
 from gpredict_web.prefs import PREFS
+from gpredict_web.satdb import SatRecord
 from gpredict_web.store import Store
+from gpredict_web.tlesources import cache_dir
 from gpredict_web.trsp import MODES_URL, TRANSMITTERS_URL
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import GmatRunError
@@ -34,6 +36,8 @@ from tests.helpers import TEST_HOSTS, FakeNow, half_pass_s, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
 from tests.test_pass_service import GEO, HIDDEN, WOBBLE, PassPropagate, is_day_job, pass_records
 from tests.test_runtime import ISO_MS, NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
+from tests.test_tlesources import AMATEUR_URL, NASABARE, NASABARE_NORADS, NASABARE_URL
+from tests.test_tletext import line1 as tle_line1, line2 as tle_line2, tle_text
 from tests.fake_hamlib import FakeHamlib
 from tests.test_trsp import FakeSatnogs
 
@@ -41,7 +45,8 @@ ERROR_KEYS = ["code", "level", "text", "object"]
 
 
 class GroupOpener:
-    """opener ปลอมตามชื่อกลุ่มใน URL: bytes = ตอบ 200 ไม่มีในตาราง = ต่อเน็ตไม่ได้ (URLError) จด URL ที่ถูกเรียก"""
+    """opener ปลอม: URL ของ CelesTrak ตามชื่อกลุ่มใน URL, URL อื่น (เช่น AMSAT) ตาม URL เต็ม
+    bytes = ตอบ 200 ไม่มีในตาราง = ต่อเน็ตไม่ได้ (URLError) จด URL ที่ถูกเรียก"""
 
     def __init__(self, bodies: dict[str, bytes] | None = None, on_call=None):
         self.bodies = bodies or {}
@@ -49,12 +54,13 @@ class GroupOpener:
         self.urls: list[str] = []
 
     def __call__(self, request, timeout=None):
-        self.urls.append(request.full_url)
+        url = request.full_url
+        self.urls.append(url)
         if self.on_call is not None:
             self.on_call()
-        group = request.full_url.split("GROUP=")[1].split("&")[0]
-        if group in self.bodies:
-            return _Resp(self.bodies[group])
+        key = url.split("GROUP=")[1].split("&")[0] if "GROUP=" in url else url
+        if key in self.bodies:
+            return _Resp(self.bodies[key])
         raise URLError("ไม่มีเน็ตใน test")
 
 
@@ -456,6 +462,11 @@ class SatelliteApiTest(ApiTestBase):
 
 
 class TleApiTest(ApiTestBase):
+    def tle_logs(self, logs) -> list[tuple[str, str]]:
+        """บรรทัด log ของ Update TLE แบบ Gpredict (function ของ Gpredict, ข้อความ)"""
+        return [(getattr(r, "gp_function", None), r.getMessage()) for r in logs.records
+                if r.getMessage() == "TLE elements updated." or "new satellites" in r.getMessage()]
+
     def test_groups_with_last_fetch_from_shared_state_file(self):
         self.cfg.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.cfg.state_file.write_text(json.dumps({
@@ -465,7 +476,7 @@ class TleApiTest(ApiTestBase):
         r = self.client.get("/api/tle/groups")
         self.assertEqual(r.status_code, 200)
         groups = r.json()["groups"]
-        self.assertEqual([g["name"] for g in groups], list(TLE_GROUPS))
+        self.assertEqual([g["name"] for g in groups], ["nasabare", *TLE_GROUPS])         # ตาม TLE sources ตั้งต้น
         by_name = {g["name"]: g for g in groups}
         self.assertEqual(by_name["amateur"], {"name": "amateur", "last_request": "2026-11-12T06:00:00.000Z",
                                               "last_success": "2026-11-12T04:00:00.000Z"})
@@ -478,6 +489,7 @@ class TleApiTest(ApiTestBase):
         self.assertTrue(all(g["last_request"] is None and g["last_success"] is None for g in groups))
 
     def test_update_counts_and_reloads_open_modules(self):
+        """TLE sources ตั้งต้น (AMSAT + 10 กลุ่ม CelesTrak) ได้เฉพาะ amateur ที่เหลือต่อไม่ได้และไม่มี cache"""
         self.put_module()
         self.open_module()
         self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
@@ -486,19 +498,126 @@ class TleApiTest(ApiTestBase):
             r = self.client.post("/api/tle/update")
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
-        self.assertEqual(list(body), ["updated", "skipped", "missing", "messages"])
-        # ดาวใหม่ของ SAMPLE นับใน new (ref-D §5.3) ไม่นับใน updated อีกต่อไป; response ยังไม่มีช่อง new จนถึง Task 7
-        self.assertEqual((body["updated"], body["skipped"], body["missing"]), (0, 0, len(NORADS)))
+        self.assertEqual(list(body), ["updated", "skipped", "missing", "new", "add_new", "messages"])
+        # ดาวใหม่ของ SAMPLE นับใน new (ref-D §5.3) ไม่นับใน updated
+        self.assertEqual((body["updated"], body["skipped"], body["missing"], body["new"], body["add_new"]),
+                         (0, 0, len(NORADS), len(SAMPLE), True))
         saved = json.loads((self.cfg.data_dir / "satdb.json").read_text(encoding="utf-8"))["satellites"]
         self.assertEqual(len(saved), len(NORADS) + len(SAMPLE))
         failed = [m for m in body["messages"] if m["code"] == "ORBIT_DOWNLOAD_FAILED"]
-        self.assertEqual(sorted(m["object"] for m in failed), sorted(g for g in TLE_GROUPS if g != "amateur"))
+        self.assertEqual(sorted(m["object"] for m in failed),
+                         sorted([NASABARE_URL, *(g for g in TLE_GROUPS if g != "amateur")]))
         for m in body["messages"]:
             self.assertEqual(list(m), ERROR_KEYS)
-        self.assertEqual(len(self.opener.urls), len(TLE_GROUPS))
+        self.assertEqual(self.opener.urls[0], NASABARE_URL)
+        self.assertEqual(len(self.opener.urls), 1 + len(TLE_GROUPS))
         reload.assert_called_once_with("M")
         self.assertEqual(self.client.get(f"/api/satellites/{SAMPLE[0]['NORAD_CAT_ID']}").status_code, 200)
-        self.assertEqual(self.client.get("/api/tle/groups").json()["groups"][0]["last_success"], iso(T0))
+        groups = {g["name"]: g for g in self.client.get("/api/tle/groups").json()["groups"]}
+        self.assertEqual((groups["amateur"]["last_success"], groups["nasabare"]["last_request"]), (iso(T0), None))
+
+    def test_tle_update_uses_prefs_urls(self):
+        self.put_module()
+        self.open_module()
+        r = self.client.put("/api/prefs", json={"set": {"TLE/URLS": [NASABARE_URL]}})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.opener.bodies[NASABARE_URL] = NASABARE
+        with self.assertLogs("gpredict_web", "INFO") as logs, \
+                mock.patch.object(self.hub, "reload", wraps=self.hub.reload) as reload:
+            r = self.client.post("/api/tle/update")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"updated": 0, "skipped": 0, "missing": len(NORADS), "new": len(NASABARE_NORADS),
+                                    "add_new": True, "messages": []})
+        self.assertEqual(self.opener.urls, [NASABARE_URL])
+        reload.assert_called_once_with("M")
+        # log INFO แบบ Gpredict (tle-update.c: tle_update_from_files)
+        self.assertEqual(self.tle_logs(logs), [("tle_update_from_files", "Added 4 new satellites to local database"),
+                                               ("tle_update_from_files", "TLE elements updated.")])
+        found = self.client.get("/api/satellites", params={"group": "nasabare"}).json()["satellites"]
+        self.assertEqual(sorted(s["norad"] for s in found), NASABARE_NORADS)
+        self.assertEqual(self.client.get("/api/prefs").json()["values"]["TLE/LAST_UPDATE"], int(T0.timestamp()))
+
+        # ปิด "Add new satellites to local database": ไม่เพิ่มดวงใหม่ add_new false และไม่มีบรรทัด Added
+        self.client.put("/api/prefs", json={"set": {"TLE/ADD_NEW_SATS": False}})
+        self.wall.advance(3 * 3600)
+        with self.assertLogs("gpredict_web", "INFO") as logs:
+            body = self.client.post("/api/tle/update").json()
+        self.assertEqual((body["new"], body["add_new"], body["skipped"]), (0, False, len(NASABARE_NORADS)))
+        self.assertEqual(self.tle_logs(logs), [("tle_update_from_files", "TLE elements updated.")])
+
+    def test_tle_local_endpoint(self):
+        self.put_module()
+        self.open_module()
+        files = [{"name": "a.tle", "text": tle_text("ONE", tle_line1("1"), tle_line2("1"))},
+                 {"name": "b.json", "text": tle_text("TWO", tle_line1("2"), tle_line2("2"))},
+                 {"name": "bad.txt", "text": "ไม่มี TLE"}]
+        with self.assertLogs("gpredict_web", "INFO") as logs, \
+                mock.patch.object(self.hub, "reload", wraps=self.hub.reload) as reload:
+            r = self.client.post("/api/tle/local", json={"files": files})
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(list(body), ["updated", "skipped", "missing", "new", "add_new", "messages"])
+        self.assertEqual({k: body[k] for k in ("updated", "skipped", "missing", "new", "add_new")},
+                         {"updated": 0, "skipped": 0, "missing": len(NORADS), "new": 1, "add_new": True})
+        self.assertEqual([(m["code"], m["level"], m["object"]) for m in body["messages"]],
+                         [("TLE_FILE_INVALID", "warning", "bad.txt")])
+        reload.assert_called_once_with("M")
+        self.assertEqual(len(self.tle_logs(logs)), 2)
+        self.assertEqual(self.client.get("/api/satellites/1").json()["groups"], ["a"])
+        self.assert_error(self.client.get("/api/satellites/2"), 404, "NOT_FOUND")       # .json ไม่ถูกอ่าน
+        self.assertEqual(self.client.get("/api/prefs").json()["values"]["TLE/LAST_UPDATE"], int(T0.timestamp()))
+
+        for bad in ({}, {"files": "a.tle"}, {"files": ["a.tle"]}, {"files": [{"name": "a.tle"}]},
+                    {"files": [{"name": 1, "text": ""}]}, {"files": [{"name": "a.tle", "text": None}]},
+                    {"files": [{"name": "x" * 256 + ".tle", "text": ""}]}):
+            with self.subTest(body=bad):
+                self.assert_error(self.client.post("/api/tle/local", json=bad), 422, "TLE_FILE_INVALID", "files")
+
+    def test_tle_local_too_big_is_422(self):
+        self.assertEqual((app_module.TLE_LOCAL_FILES_MAX, app_module.TLE_LOCAL_BYTES_MAX), (200, 20 * 1024 * 1024))
+        many = [{"name": f"f{i}.txt", "text": ""} for i in range(200)]
+        r = self.client.post("/api/tle/local", json={"files": many})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assert_error(self.client.post("/api/tle/local", json={"files": many + [{"name": "g.txt", "text": ""}]}),
+                          422, "TLE_FILE_INVALID", "files")
+        limit = app_module.TLE_LOCAL_BYTES_MAX
+        half = "x" * (limit // 2)
+        r = self.client.post("/api/tle/local", json={"files": [{"name": "a.txt", "text": half},
+                                                               {"name": "b.txt", "text": half}]})
+        self.assertEqual(r.status_code, 200, r.text)                                   # 20 MB พอดีรับได้
+        self.assert_error(self.client.post("/api/tle/local", json={"files": [{"name": "a.txt", "text": half},
+                                                                            {"name": "b.txt", "text": half + "x"}]}),
+                          422, "TLE_FILE_INVALID", "files")
+        # นับเป็นไบต์ของ UTF-8 ไม่ใช่จำนวนตัวอักษร
+        thai = "ก" * (limit // 3 + 1)
+        self.assert_error(self.client.post("/api/tle/local", json={"files": [{"name": "t.txt", "text": thai}]}),
+                          422, "TLE_FILE_INVALID", "files")
+
+    def test_tle_groups_follow_sources(self):
+        science = SatRecord(99001, "SCI", ["amateur", "science"], record(25544).tle_lines, T0, T0)
+        self.write_satdb([*self.satdb_records(), science])
+        client = self.enter(self.make_app())
+        mirror = "https://mirror.example/keps/nasabare.txt"
+        weather = "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle"
+        client.put("/api/prefs", json={"set": {"TLE/URLS": [NASABARE_URL, weather, AMATEUR_URL, mirror]}})
+        self.cfg.state_file.parent.mkdir(parents=True, exist_ok=True)
+        self.cfg.state_file.write_text(json.dumps({                                      # state ของ engine (CelesTrak)
+            "amateur": {"last_request": "2026-11-12T06:00:00Z", "last_success": "2026-11-12T04:00:00Z"},
+            "weather": {"last_request": "2026-11-12T05:30:00Z"}}), encoding="utf-8")
+        state = cache_dir(self.cfg) / "state.json"                                      # state ของเรา (URL อื่น)
+        state.parent.mkdir(parents=True)
+        state.write_text(json.dumps({
+            NASABARE_URL: {"last_request": "2026-11-12T03:00:00Z", "last_success": "2026-11-12T03:00:00Z"},
+            mirror: {"last_request": "2026-11-12T05:00:00Z"}}), encoding="utf-8")
+        r = client.get("/api/tle/groups")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"groups": [
+            # สอง URL ในกลุ่มเดียว: เวลาล่าสุดของแต่ละช่อง
+            {"name": "nasabare", "last_request": "2026-11-12T05:00:00.000Z", "last_success": "2026-11-12T03:00:00.000Z"},
+            {"name": "weather", "last_request": "2026-11-12T05:30:00.000Z", "last_success": None},
+            {"name": "amateur", "last_request": "2026-11-12T06:00:00.000Z", "last_success": "2026-11-12T04:00:00.000Z"},
+            {"name": "science", "last_request": None, "last_success": None},          # กลุ่มในดัชนีที่ไม่มี source
+        ]})
 
 
 class TrspApiTest(ApiTestBase):

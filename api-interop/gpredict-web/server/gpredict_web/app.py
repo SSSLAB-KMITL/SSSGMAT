@@ -9,6 +9,8 @@
   + GET /api/controllers, POST /api/modules/{name}/target, /radio[/open|/close] และ /rotator[/open|/close] (Radio Control และ
     Antenna Control: controllers.py) PUT module ที่เปลี่ยน qth หรือ satellites ขณะ controller เปิดอยู่ตอบ 409 CONTROLLER_ACTIVE
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
+  + POST /api/tle/local (Edit → Update TLE data from local files) POST /api/tle/update และ GET /api/tle/groups ตาม TLE sources ของ
+    Preferences (tlesources.py: CelesTrak, ข้อความ TLE เช่น AMSAT, proxy)
 - module (spec งานย่อย 4 §9.1): ไฟล์เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ไม่ได้ตั้งสืบทอดค่ารวมของ Preferences → Modules
   PUT /api/modules/{name} รับ pin/unpin (รายการ path ใน module.MODULE_KEYS) ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
   GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
@@ -40,7 +42,6 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.datastructures import Headers
 
-from gnss_predict import omm
 from gnss_predict.config import REPO_ROOT
 from gnss_predict.errors import Message
 
@@ -57,8 +58,9 @@ from .hwconf import HwConf, radio_to_dict, rot_to_dict
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
-from .satdb import SatDb, SatRecord, update_from_network
+from .satdb import SatDb, SatRecord, UpdateResult
 from .store import Store, qth_from_dict
+from .tlesources import make_opener, source_times, update_from_files, update_from_sources
 
 SATDB_FILE = "satdb.json"
 SEARCH_LIMIT = 500                     # GET /api/satellites สูงสุด 500 แถว (หัวข้อ 7.3)
@@ -75,6 +77,11 @@ CLIENT_CLOSED = 499                    # status ของคำขอที่ b
 LICENSE_FILE = REPO_ROOT / "License.txt"
 README_FILE = REPO_ROOT / "api-interop" / "gpredict-web" / "README.md"      # คู่มือที่ Help → Online help แสดงในหน้าเว็บ
 LOG_DIR = "logs"                       # โฟลเดอร์ log ใต้ data dir (spec งานย่อย 4 §6.1: data/logs/gpredict.log)
+# POST /api/tle/local (ของเรา: Gpredict อ่านโฟลเดอร์เอง ไม่มีขีดจำกัด) จำนวนไฟล์, ขนาดรวมของข้อความเป็นไบต์ UTF-8, ความยาวชื่อไฟล์
+TLE_LOCAL_FILES_MAX = 200
+TLE_LOCAL_BYTES_MAX = 20 * 1024 * 1024
+TLE_LOCAL_NAME_MAX = 255
+TLE_LOG_FUNCTION = "tle_update_from_files"          # function ในบรรทัด log ของ Update TLE ตามต้นฉบับ (tle-update.c)
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -452,6 +459,33 @@ def _meta(cfg: Config) -> dict:
     }
 
 
+def _local_files(body: dict) -> list[tuple[str, str]]:
+    """{"files": [{"name", "text"}]} ของ POST /api/tle/local เป็น [(ชื่อ, ข้อความ)] (ชื่อเทียบกับโฟลเดอร์ที่เลือก หน้าเว็บอ่านไฟล์เป็นข้อความ)
+    รูปผิด, เกิน TLE_LOCAL_FILES_MAX ไฟล์ หรือข้อความรวมเกิน TLE_LOCAL_BYTES_MAX ไบต์: 422 TLE_FILE_INVALID (object "files")"""
+    def invalid(text: str) -> ApiError:
+        return ApiError("TLE_FILE_INVALID", 422, text, "files")
+
+    items = body.get("files")
+    if not isinstance(items, list):
+        raise invalid("รายการไฟล์ (files) ต้องเป็นรายการของ {name, text}")
+    if len(items) > TLE_LOCAL_FILES_MAX:
+        raise invalid(f"ส่งไฟล์ได้ไม่เกิน {TLE_LOCAL_FILES_MAX} ไฟล์ต่อครั้ง (ได้ {len(items)} ไฟล์)")
+    files = []
+    size = 0
+    for i, item in enumerate(items, 1):
+        name = item.get("name") if isinstance(item, dict) else None
+        text = item.get("text") if isinstance(item, dict) else None
+        if not isinstance(name, str) or not isinstance(text, str):
+            raise invalid(f"ไฟล์ที่ {i} ต้องเป็น object ที่มีชื่อ (name) และข้อความ (text) เป็นข้อความ")
+        if len(name) > TLE_LOCAL_NAME_MAX:
+            raise invalid(f"ชื่อไฟล์ที่ {i} ยาวเกิน {TLE_LOCAL_NAME_MAX} ตัวอักษร")
+        size += len(text.encode("utf-8"))
+        if size > TLE_LOCAL_BYTES_MAX:
+            raise invalid(f"ไฟล์รวมกันใหญ่เกิน {TLE_LOCAL_BYTES_MAX // (1024 * 1024)} MB")
+        files.append((name, text))
+    return files
+
+
 def _path_list(body: dict, key: str) -> list:
     """pin / unpin ของ PUT /api/modules/{name}: ไม่ส่ง = ว่าง ต้องเป็นรายการ (path แต่ละตัวตรวจที่ module.own_dict)"""
     v = body.get(key, [])
@@ -498,6 +532,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                allowed_hosts: Iterable[str] | None = None) -> FastAPI:
     """- start_background=False (test): ไม่ prune/bootstrap/เปิด session ตอนเริ่ม และ EphemManager ที่สร้างเองไม่มี worker thread
     - opener: ใช้ดึง OMM และข้อมูล transponder จาก SatNOGS (test ส่งตัวปลอม), now: เวลาเครื่อง (UTC), on_quit: เรียกเมื่อ POST /api/quit
+      Update TLE ใช้ make_opener(TLE/PROXY) เมื่อ opener เป็น urlopen ส่วน opener อื่น (ตัวปลอมของ test) ใช้กับทุก TLE source แทน
     - ephem: EphemManager ที่ใช้แทน (test ส่งตัวที่ใช้ propagate ปลอม) ตัวที่ส่งมาก็ถูก close() ตอนปิด app
     - allowed_hosts: ชื่อเครื่องที่รับใน Host และ Origin (None = host_allow_list() คือเครื่องตัวเองเท่านั้น)"""
     prefs = Prefs(cfg.data_dir)
@@ -512,7 +547,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                   decorate=lambda name, tick: {**tick, **controllers.on_tick(name, tick)})
     controllers = ControllerHub(hub, hwconf, cfg.data_dir, pass_service, ticks.wake)
     session_lock = threading.Lock()          # อ่าน-แก้-เขียน session.json ทีละคำขอ
-    tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine ไม่มี lock)
+    tle_lock = threading.Lock()              # Update TLE ทีละครั้ง (state file ของ engine และของ tlesources ไม่มี lock)
+    tle_opener_factory = make_opener if opener is urlopen else (lambda proxy: opener)       # opener ของ test ไม่ผ่าน proxy
     trsp_lock = threading.Lock()             # Update transponder ทีละครั้ง: คำขอที่ซ้อนรอตัวแรกจบแล้วได้ข้อมูลจาก cache (decision 13)
 
     def open_list() -> list[str]:
@@ -683,31 +719,51 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.get("/api/tle/groups")
     def tle_groups():
-        state = omm.read_state(cfg.state_file)            # celestrak_state.json ที่ใช้ร่วมกับ GNSS Studio
-        out = []
-        for g in TLE_GROUPS:
-            entry = state.get(g) if isinstance(state.get(g), dict) else {}
-            out.append({"name": g, "last_request": iso_ms(omm.parse_state_time(entry.get("last_request"))),
-                        "last_success": iso_ms(omm.parse_state_time(entry.get("last_success")))})
-        return {"groups": out}
+        """กลุ่มของ TLE sources ตามลำดับใน Preferences พร้อมเวลาขอล่าสุด (CelesTrak จาก celestrak_state.json ที่ใช้ร่วมกับ
+        GNSS Studio, URL อื่นจาก state ของ tlesources) ต่อด้วยกลุ่มในดัชนีดาวที่ไม่มี source (null ทั้งสองช่อง)"""
+        listed = source_times(cfg, prefs.get("TLE/URLS"))
+        names = {group for group, _, _ in listed}
+        return {"groups": [{"name": group, "last_request": iso_ms(req), "last_success": iso_ms(ok)} for group, req, ok in listed]
+                + [{"name": group, "last_request": None, "last_success": None} for group in satdb.groups() if group not in names]}
+
+    def tle_result(result: UpdateResult) -> dict:
+        """หลังรวม TLE (ถือ tle_lock อยู่): อ่านดาวของทุก module ที่เปิดอยู่ใหม่ log INFO แบบ Gpredict (tle-update.c) แล้วคืนตัวนับ
+        add_new = TLE/ADD_NEW_SATS (หน้าต่าง TLE Update แสดงบรรทัด "New Satellites:" เมื่อเปิด)"""
+        messages = list(result.messages)
+        for name in hub.open_names():
+            try:
+                hub.reload(name)
+            except ApiError as exc:
+                messages.append(Message(exc.code, "warning",
+                                        f"อ่าน module {name} ใหม่หลังอัปเดต TLE ไม่ได้: {exc.text}", name))
+        add_new = prefs.get("TLE/ADD_NEW_SATS")
+        gp = {"gp_function": TLE_LOG_FUNCTION}
+        if add_new:
+            _log.info("Added %d new satellites to local database", result.new, extra=gp)
+        _log.info("TLE elements updated.", extra=gp)
+        clear_startup_messages()
+        return {"updated": result.updated, "skipped": result.skipped, "missing": result.missing, "new": result.new,
+                "add_new": add_new, "messages": [m.to_dict() for m in messages]}
 
     def update_tle() -> dict:
+        """Edit → Update TLE data from network ตาม TLE sources และ proxy ของ Preferences (tlesources.update_from_sources)"""
         with tle_lock:
-            result = update_from_network(satdb, cfg, now(), TLE_GROUPS, opener)
-            messages = list(result.messages)
-            for name in hub.open_names():
-                try:
-                    hub.reload(name)
-                except ApiError as exc:
-                    messages.append(Message(exc.code, "warning",
-                                            f"อ่าน module {name} ใหม่หลังอัปเดต TLE ไม่ได้: {exc.text}", name))
-        clear_startup_messages()
-        return {"updated": result.updated, "skipped": result.skipped, "missing": result.missing,
-                "messages": [m.to_dict() for m in messages]}
+            return tle_result(update_from_sources(satdb, cfg, prefs, now(), tle_opener_factory))
 
     @app.post("/api/tle/update")
     async def tle_update():
         return await asyncio.to_thread(update_tle)
+
+    def update_tle_local(files: list[tuple[str, str]]) -> dict:
+        with tle_lock:
+            return tle_result(update_from_files(satdb, prefs, files, now()))
+
+    @app.post("/api/tle/local")
+    async def tle_local(body: dict = Body(...)):
+        """Edit → Update TLE data from local files: {"files": [{"name", "text"}]} ไฟล์ระดับบนที่ลงท้าย .tle/.txt (ไม่สนตัวพิมพ์)
+        ถูกอ่าน ไฟล์อื่นถูกข้าม ตอบตัวนับแบบ POST /api/tle/update (ตรวจขนาดที่ _local_files)"""
+        files = _local_files(body)
+        return await asyncio.to_thread(update_tle_local, files)
 
     # ---------------- transponder (Edit -> Update transponder data, spec §7)
 

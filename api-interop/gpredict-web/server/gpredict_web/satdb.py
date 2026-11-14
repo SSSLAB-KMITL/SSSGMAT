@@ -6,7 +6,7 @@
 เวลาทุกค่าเป็น ISO 8601 UTC ลงท้าย Z; status คือสถานะแบบ Gpredict (Unknown, Operational, ...) ไฟล์ของรุ่นก่อนไม่มีช่องนี้ อ่านได้เป็น Unknown
 
 การรวม TLE จากทุก source (ไฟล์ OMM ของ CelesTrak, ไฟล์ข้อความ TLE ของ AMSAT, ไฟล์ในเครื่อง) ตามกติกาของ Gpredict
-(ref-D §5.3, tle-update.c) อยู่ใน SatDb.apply_sets
+(ref-D §5.3, tle-update.c) อยู่ใน SatDb.apply_sets การดึงตาม TLE sources ของ Preferences อยู่ใน tlesources.py
 """
 
 import json
@@ -108,6 +108,30 @@ def _merge_source_set(best: dict[int, TleSet], s: TleSet) -> None:
         merged = cur
     name = s.name if cur.generated_name and not s.generated_name else cur.name
     best[s.norad] = merged if merged.name == name else replace(merged, name=name)
+
+
+def read_omm_sets(group: str, path: Path) -> tuple[list[TleSet] | None, list[Message]]:
+    """ไฟล์ OMM ของกลุ่ม CelesTrak เป็นชุด TLE (สถานะ Unknown) สำหรับ SatDb.apply_sets
+    None = อ่านไฟล์ไม่ได้ (ข้ามทั้งกลุ่ม) ดาวที่แปลงเป็น TLE ไม่ได้ข้ามเฉพาะดวง ทั้งสองกรณีมี Message เตือน (object = กลุ่ม)"""
+    try:
+        records = omm.read_omm(Path(path))
+    except (OSError, ValueError) as exc:
+        return None, [Message("ORBIT_DOWNLOAD_FAILED", "warning",
+                              f"อ่านไฟล์ OMM กลุ่ม {group} ({Path(path).name}) ไม่ได้ ({exc}) ข้ามกลุ่มนี้", group)]
+    sets: list[TleSet] = []
+    bad = []
+    for rec in records:
+        try:
+            lines = omm.to_tle_lines(rec)
+        except ValueError:
+            bad.append(rec.norad)
+            continue
+        sets.append(TleSet(rec.norad, rec.name, UNKNOWN_STATUS, lines, rec.epoch))
+    if not bad:
+        return sets, []
+    shown = ", ".join(str(n) for n in bad[:5]) + (f" และอีก {len(bad) - 5} ดวง" if len(bad) > 5 else "")
+    return sets, [Message("TLE_CONVERT_FAILED", "warning",
+                          f"แปลง OMM กลุ่ม {group} เป็น TLE ไม่ได้ {len(bad)} ดวง (NORAD {shown}) ข้ามดวงเหล่านี้", group)]
 
 
 class SatDb:
@@ -224,33 +248,16 @@ class SatDb:
     def apply_groups(self, files: dict[str, Path], now: datetime, add_new: bool = True) -> UpdateResult:
         """รวมไฟล์ OMM ของแต่ละกลุ่ม CelesTrak (กลุ่ม -> path) เข้าดัชนีด้วย apply_sets ยังไม่บันทึกลงดิสก์ (เรียก save())
 
-        OMM แต่ละรายการแปลงเป็น TleSet (สถานะ Unknown) ทุกกลุ่มที่อ่านไฟล์ได้อยู่ใน replace_groups: ดาวที่หายไปจากกลุ่มที่อ่านครั้งนี้
-        หลุดจากกลุ่มนั้น ส่วนกลุ่มที่อ่านไม่ได้คงสมาชิกเดิม (ดึงกลุ่มนั้นไม่ได้ ไม่ถือว่าออกจากกลุ่ม)
-        ไฟล์ที่อ่านไม่ได้ข้ามทั้งกลุ่ม, ดาวที่แปลงเป็น TLE ไม่ได้ข้ามเฉพาะดวง ทั้งสองกรณีมี Message เตือน
+        OMM แต่ละรายการแปลงเป็น TleSet ด้วย read_omm_sets ทุกกลุ่มที่อ่านไฟล์ได้อยู่ใน replace_groups: ดาวที่หายไปจากกลุ่มที่อ่าน
+        ครั้งนี้หลุดจากกลุ่มนั้น ส่วนกลุ่มที่อ่านไม่ได้คงสมาชิกเดิม (ดึงกลุ่มนั้นไม่ได้ ไม่ถือว่าออกจากกลุ่ม)
         """
         messages: list[Message] = []
         sources: dict[str, list[TleSet]] = {}
         for group, path in files.items():
-            try:
-                records = omm.read_omm(Path(path))
-            except (OSError, ValueError) as exc:
-                messages.append(Message("ORBIT_DOWNLOAD_FAILED", "warning",
-                                        f"อ่านไฟล์ OMM กลุ่ม {group} ({Path(path).name}) ไม่ได้ ({exc}) ข้ามกลุ่มนี้", group))
-                continue
-            sets: list[TleSet] = []
-            bad = []
-            for rec in records:
-                try:
-                    lines = omm.to_tle_lines(rec)
-                except ValueError:
-                    bad.append(rec.norad)
-                    continue
-                sets.append(TleSet(rec.norad, rec.name, UNKNOWN_STATUS, lines, rec.epoch))
-            sources[group] = sets
-            if bad:
-                shown = ", ".join(str(n) for n in bad[:5]) + (f" และอีก {len(bad) - 5} ดวง" if len(bad) > 5 else "")
-                messages.append(Message("TLE_CONVERT_FAILED", "warning",
-                                        f"แปลง OMM กลุ่ม {group} เป็น TLE ไม่ได้ {len(bad)} ดวง (NORAD {shown}) ข้ามดวงเหล่านี้", group))
+            sets, msgs = read_omm_sets(group, path)
+            messages.extend(msgs)
+            if sets is not None:
+                sources[group] = sets
         result = self.apply_sets(sources, now, add_new, frozenset(sources))
         result.messages = messages
         return result
@@ -262,7 +269,8 @@ class SatDb:
 
 
 def update_from_network(db: SatDb, cfg: Config, now: datetime, groups=TLE_GROUPS, opener=urlopen) -> UpdateResult:
-    """Edit -> Update TLE data from network: ดึงแต่ละกลุ่มลง OMM cache ที่ใช้ร่วมกับ GNSS Studio (cfg.omm_cache_dir, cfg.state_file)
+    """กลุ่ม CelesTrak ที่กำหนด (bootstrap ตอนเปิดครั้งแรกใช้กลุ่ม amateur; Edit -> Update TLE ใช้ tlesources.update_from_sources)
+    ดึงแต่ละกลุ่มลง OMM cache ที่ใช้ร่วมกับ GNSS Studio (cfg.omm_cache_dir, cfg.state_file)
     กลุ่มที่ส่ง request ไปไม่ถึง 2 ชม. ใช้ไฟล์ใน cache โดยไม่ส่ง request แล้วรวมเข้า db และบันทึก data/satdb.json
     messages: ข้อความของ fetch_group ตามเดิม + ORBIT_DOWNLOAD_FAILED (warning) ต่อกลุ่มที่ไม่มีไฟล์ใช้เลย (ข้ามกลุ่มนั้น)"""
     files: dict[str, Path] = {}
