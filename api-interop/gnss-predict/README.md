@@ -424,7 +424,8 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 >
 > ```json
 > {"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
->            "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}
+>            "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "",
+>  "online_imagery": {"enabled": false}}
 > ```
 >
 > หรือปิดตอน server รันอยู่ด้วย `PUT /api/settings` (ต้องส่งทั้งเอกสาร ช่องที่หายได้ 422) ตัวตั้งเวลาอ่านค่าใหม่ทันที และทุกรอบ
@@ -432,7 +433,7 @@ server ส่งหน้าเว็บจาก port เดียวกัน 
 >
 > ```bash
 > curl -s -X PUT http://127.0.0.1:8000/api/settings -H 'Content-Type: application/json' \
->   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}'
+>   -d '{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "", "online_imagery": {"enabled": false}}'
 > ```
 >
 > การปิดไม่หยุด job `daily` หรือ `validate` ที่สั่งไปแล้ว ถ้ามี job ที่รออยู่หรือกำลังรัน ให้หา id แล้วยกเลิก (Stop ฆ่า GMAT และ process ลูก):
@@ -475,6 +476,10 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | `daily.validation_retry_hours` | `3` | 1–168 | ระยะห่างของการลองตรวจย้อนหลังซ้ำ |
 | `daily.validation_give_up_days` | `14` | 1–365 | เลิกตรวจหลังจากวัน D ผ่านไปกี่วัน |
 | `cesium_ion_token` | `""` | ข้อความ | token ของ Cesium ion ที่หน้าเว็บอ่าน |
+| `online_imagery.enabled` | `false` | true/false | สวิตช์ภาพออนไลน์ของ NASA GIBS **ปิดเสมอจนกว่าผู้ใช้เปิดเอง** (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์ที่รุ่นเก่าเขียนซึ่งไม่มีช่องนี้ = ปิด และ server ไม่เขียนไฟล์ตอนโหลด) |
+
+`PUT /api/settings` ต้องส่งทั้งเอกสารรวม `online_imagery.enabled` (ขาด = 422 ที่ field `online_imagery` หรือ `online_imagery.enabled`
+ค่าต้องเป็น true/false จริง ไม่รับ `"true"`) หน้าต่าง Daily Forecast Settings ส่ง `online_imagery` ที่โหลดมาคืนไปตามเดิม ไม่เปลี่ยนค่านี้
 
 ### 8.4 สรุป endpoint
 
@@ -550,7 +555,7 @@ test ใช้ `data/` ชั่วคราวและไม่ใช้เน
 DEMO=$(mktemp -d); mkdir -p $DEMO/orbits
 cp -R data/orbits/20261110T2147Z $DEMO/orbits/
 cat > $DEMO/settings.json <<'JSON'
-{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": ""}
+{"daily": {"enabled": false, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30, "validation_retry_hours": 3, "validation_give_up_days": 14}, "cesium_ion_token": "", "online_imagery": {"enabled": false}}
 JSON
 
 cd server
@@ -562,7 +567,7 @@ GNSS_STUDIO_DATA=$DEMO GNSS_STUDIO_PORT=8765 .venv/bin/python -m gnss_studio_ser
 **2. ตรวจ health และว่างานประจำวันปิดอยู่** (`curl -s http://127.0.0.1:8765/api/settings` และ `/api/health`)
 
 ```
-{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}
+{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":"","online_imagery":{"enabled":false}}
 {"engine_version": "0.2.0", "gmat_found": true, "data_dir": "$DEMO", "writable": true,
  "daily": {"state": "idle", "last_run_utc": null, "next_run_utc": null, "for_date": null}}
 ```
@@ -714,7 +719,7 @@ npm ci
 ```bash
 cd api-interop/gnss-predict
 mkdir -p data
-[ -e data/settings.json ] || printf '%s\n' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}' > data/settings.json
+[ -e data/settings.json ] || printf '%s\n' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":"","online_imagery":{"enabled":false}}' > data/settings.json
 python3 -I -c 'import json; print(json.load(open("data/settings.json"))["daily"]["enabled"])'   # ต้องพิมพ์ False
 ```
 
@@ -809,7 +814,7 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 cd $REPO/api-interop/gnss-predict/web && npm run build
 # 2) โฟลเดอร์ data ชั่วคราว: เขียน settings.json ที่ปิดงานประจำวัน "ก่อน" เปิด server
 P=/tmp/gnss-perf; mkdir -p $P/scenarios $P/orbits
-printf '%s' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":""}' > $P/settings.json
+printf '%s' '{"daily":{"enabled":false,"run_at_utc":"21:00","facility":"THBK","retention_days":30,"validation_retry_hours":3,"validation_give_up_days":14},"cesium_ion_token":"","online_imagery":{"enabled":false}}' > $P/settings.json
 # 3) คัดลอกเท่านั้น (ไม่เปิด ไม่รันไฟล์ในนั้น): scenario รายวันที่มีผลแล้วกับ snapshot ที่มันใช้ (ชื่อใน orbit_snapshot ของ scenario.json)
 cd $REPO/api-interop/gnss-predict
 cp -R data/scenarios/acc_20261111 $P/scenarios/ && cp -R data/orbits/20261110T2147Z $P/orbits/

@@ -16,6 +16,7 @@ import { fakeFlow, type FakeFlow } from "./helpers/files";
 const SETTINGS = {
   daily: { enabled: true, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 },
   cesium_ion_token: "tok-abc",
+  online_imagery: { enabled: false },
 };
 const HEALTH = {
   engine_version: "1", gmat_found: true, data_dir: "/srv/gnss/data", free_bytes: 1e12, writable: true,
@@ -146,6 +147,7 @@ describe("Apply", () => {
     expect(puts(f)[0].body).toEqual({
       daily: { enabled: true, run_at_utc: "22:30", facility: "THBK", retention_days: 45, validation_retry_hours: 3, validation_give_up_days: 14 },
       cesium_ion_token: "tok-abc",
+      online_imagery: { enabled: false },
     });
     const body = puts(f)[0].body as { daily: Record<string, unknown> };
     expect(Object.keys(body.daily).sort()).toEqual(["enabled", "facility", "retention_days", "run_at_utc", "validation_give_up_days", "validation_retry_hours"]);
@@ -159,7 +161,36 @@ describe("Apply", () => {
     await replace(token(), "new-token");
     await user.click(apply());
     await waitFor(() => expect(puts(f)).toHaveLength(1));
-    expect(puts(f)[0].body).toEqual({ daily: { ...SETTINGS.daily, enabled: false }, cesium_ion_token: "new-token" });
+    expect(puts(f)[0].body).toEqual({ daily: { ...SETTINGS.daily, enabled: false }, cesium_ion_token: "new-token", online_imagery: { enabled: false } });
+  });
+
+  test("keeps online_imagery from the loaded settings on save", async () => {
+    const f = server({ "GET /api/settings": { json: { ...SETTINGS, online_imagery: { enabled: true } } } });
+    await mounted();
+    await replace(retention(), "45");
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { online_imagery: unknown }).online_imagery).toEqual({ enabled: true });
+    expect(useSettings.getState().settings?.online_imagery).toEqual({ enabled: true }); // the saved copy still has it on
+  });
+
+  test("never turns online_imagery on by itself: a loaded off stays off", async () => {
+    const f = server();
+    await mounted();
+    await user.click(enabled());
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { online_imagery: unknown }).online_imagery).toEqual({ enabled: false });
+  });
+
+  test("sends the online_imagery the store holds now, so a switch changed elsewhere while this window is open is not undone", async () => {
+    const f = server();
+    await mounted();
+    act(() => useSettings.setState({ settings: { ...SETTINGS, online_imagery: { enabled: true } } }));
+    await replace(retention(), "45");
+    await user.click(apply());
+    await waitFor(() => expect(puts(f)).toHaveLength(1));
+    expect((puts(f)[0].body as { online_imagery: unknown }).online_imagery).toEqual({ enabled: true });
   });
 
   test("an empty token is sent as an empty string (the server needs the field)", async () => {

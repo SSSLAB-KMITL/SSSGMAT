@@ -22,9 +22,15 @@ export interface DailySettings {
   validation_give_up_days: number;
 }
 
+/** ภาพออนไลน์ NASA GIBS (spec imagery §4.1): ค่าตั้งต้นปิด server ไม่ต่อเน็ตเองจนกว่าผู้ใช้เปิด */
+export interface OnlineImagerySettings {
+  enabled: boolean;
+}
+
 export interface Settings {
   daily: DailySettings;
   cesium_ion_token: string;
+  online_imagery: OnlineImagerySettings;
 }
 
 interface SettingsState {

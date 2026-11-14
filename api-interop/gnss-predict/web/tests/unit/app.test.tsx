@@ -148,7 +148,7 @@ test("Utilities opens the real Fetch Orbit Data and Daily Forecast Settings wind
     "GET /api/scenarios": { json: SCENARIOS },
     "GET /api/orbits": { json: [{ name: "20261112T0000Z", time_utc: "2026-11-12T00:00:00Z", groups: { G: 31 }, has_brdc: true }] },
     "GET /api/orbits/fetch-status": { json: { groups: { "gps-ops": { last_request_utc: null, next_allowed_utc: null }, "glo-ops": { last_request_utc: null, next_allowed_utc: null }, galileo: { last_request_utc: null, next_allowed_utc: null }, beidou: { last_request_utc: null, next_allowed_utc: null } } } },
-    "GET /api/settings": { json: { daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 }, cesium_ion_token: "" } },
+    "GET /api/settings": { json: { daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 }, cesium_ion_token: "", online_imagery: { enabled: false } } },
   });
   render(<App />);
   await waitFor(() => expect(isEnabled("utilities.fetchOrbitData")).toBe(true));

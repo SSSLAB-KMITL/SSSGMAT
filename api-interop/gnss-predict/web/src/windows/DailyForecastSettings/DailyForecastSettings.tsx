@@ -2,6 +2,7 @@
 // - ช่องครบทุกตัวของ §9.1: enabled, run_at_utc (HH:MM), facility (กติกาชื่อ object), retention_days 1-3650, validation_retry_hours 1-168,
 //   validation_give_up_days 1-365 และ Cesium Ion token (ช่องรหัสผ่าน) ตรวจก่อนส่งด้วยกติกาเดียวกับ server ข้อความไทยขึ้นที่ช่อง
 // - Apply = PUT /settings ทั้งก้อน (server ต้องการครบทุกช่อง) 422 ที่ field แบบ `daily.run_at_utc` ขึ้นที่ช่องนั้น (ขอบแดง) OK = Apply แล้วปิด
+// - `online_imagery` (สวิตช์ภาพออนไลน์ GIBS) ไม่ใช่ช่องของหน้าต่างนี้ แต่ PUT ต้องส่งครบทั้งเอกสาร: Apply ส่งค่าที่ store ถืออยู่คืนไปตามเดิมเสมอ ไม่เปิดและไม่ปิดให้
 // - แสดงเวลาตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี = UTCG) สถานะมาจาก event `daily` ของ SSE (useJobs.daily) หรือ /health ตอนเปิดหน้าต่าง
 //   ที่อยู่ CSV = `<data_dir>/daily/latest.csv` แสดงเป็นข้อความ (data_dir มาจาก /health)
 // - ผู้ใช้ห้ามถูกดาวน์โหลดโดยไม่ยินยอม: การเปิดหน้าต่างไม่ดึงอะไร Apply ถามยืนยันก่อนเมื่อการบันทึกอาจให้ server เริ่มดาวน์โหลดเอง (เปิดงาน = ตรวจย้อนหลังจาก CDDIS เสมอ,
@@ -23,7 +24,7 @@ import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels
 import { isActiveJob, useJobs } from "../../stores/jobs";
 import { useLayout } from "../../stores/layout";
 import { report } from "../../stores/messages";
-import { useSettings, type Settings } from "../../stores/settings";
+import { useSettings, type OnlineImagerySettings, type Settings } from "../../stores/settings";
 import { parseIsoUtc } from "../../time/parse";
 import { parseInteger } from "../fieldRules";
 
@@ -69,8 +70,11 @@ const EMPTY: Draft = { enabled: false, runAt: "", facility: "", retention: "", r
 
 const sameDraft = (a: Draft, b: Draft): boolean => (Object.keys(a) as Key[]).every((k) => a[k] === b[k]);
 
-/** ตรวจทุกช่อง (ครบทุกข้อผิดพลาดในครั้งเดียว) ผ่านหมด = เอกสารที่ส่ง PUT ได้ทั้งก้อน */
-function validate(d: Draft): { errors: Errors; doc: Settings | null } {
+/**
+ * ตรวจทุกช่อง (ครบทุกข้อผิดพลาดในครั้งเดียว) ผ่านหมด = เอกสารที่ส่ง PUT ได้ทั้งก้อน
+ * `onlineImagery` ไม่ใช่ช่องของหน้าต่างนี้ (สวิตช์อยู่ที่ Globe Manager): ส่งคืนไปตามที่ถืออยู่ ห้ามเปลี่ยน (PUT ต้องส่งครบทั้งเอกสาร)
+ */
+function validate(d: Draft, onlineImagery: OnlineImagerySettings): { errors: Errors; doc: Settings | null } {
   const errors: Errors = {};
   if (!TIME_RE.test(d.runAt)) errors.runAt = msg("daily.timeInvalid");
   if (!isObjectName(d.facility)) errors.facility = msg("ob.nameInvalid");
@@ -93,6 +97,7 @@ function validate(d: Draft): { errors: Errors; doc: Settings | null } {
         validation_give_up_days: giveUp.value,
       },
       cesium_ion_token: d.token,
+      online_imagery: { ...onlineImagery },
     },
   };
 }
@@ -186,7 +191,9 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
   const apply = async (): Promise<boolean> => {
     if (saving || !ready) return false;
     if (!dirty) return true;
-    const result = validate(draft);
+    const current = useSettings.getState().settings;    // ค่าล่าสุดที่ store ถือ: ถ้าสวิตช์ภาพออนไลน์ถูกเปลี่ยนที่อื่นระหว่างที่หน้าต่างนี้เปิดอยู่ ไม่ถูกทับกลับ
+    if (current === null) return false;
+    const result = validate(draft, current.online_imagery);
     setErrors(result.errors);
     setGeneral(null);
     setNotice(null);

@@ -24,11 +24,11 @@ ERROR_KEYS = {"code", "text", "field", "detail"}
 THAI = re.compile("[฀-๿]")
 DEFAULT_DAILY = {"enabled": True, "run_at_utc": "21:00", "facility": "THBK", "retention_days": 30,
                  "validation_retry_hours": 3, "validation_give_up_days": 14}
-DEFAULTS = {"daily": DEFAULT_DAILY, "cesium_ion_token": ""}
+DEFAULTS = {"daily": DEFAULT_DAILY, "cesium_ion_token": "", "online_imagery": {"enabled": False}}
 FAIL_SAFE = {**DEFAULTS, "daily": {**DEFAULT_DAILY, "enabled": False}}       # ไฟล์ค่าตั้งเสีย: ไม่เปิดงานดึงข้อมูลเอง
 CUSTOM = {"daily": {"enabled": False, "run_at_utc": "06:05", "facility": "BKK_2", "retention_days": 7,
                     "validation_retry_hours": 12, "validation_give_up_days": 3},
-          "cesium_ion_token": "tok-123"}
+          "cesium_ion_token": "tok-123", "online_imagery": {"enabled": True}}
 DAY_RECORD = {"day": DAY, "scenario": SC, "ephem_hash": "0123456789ab", "facility": "THBK", "pass": True,
               "systems": {"G": {"n": 2}}, "failing": [], "created_utc": "2026-11-11T01:00:00Z"}
 
@@ -170,6 +170,8 @@ def test_settings_rejects_wrong_types_of_the_whole_document(client, data_dir):
     assert_error(client.put("/api/settings", json=settings_with() | {"cesium_ion_token": 5}), 422, "SCENARIO_INVALID", "cesium_ion_token")
     assert_error(client.put("/api/settings", json={**CUSTOM, "daily": "x"}), 422, "SCENARIO_INVALID", "daily")
     assert_error(client.put("/api/settings", json={**CUSTOM, "daily": None}), 422, "SCENARIO_INVALID", "daily")
+    assert_error(client.put("/api/settings", json={**CUSTOM, "online_imagery": True}), 422, "SCENARIO_INVALID", "online_imagery")
+    assert_error(client.put("/api/settings", json={**CUSTOM, "online_imagery": None}), 422, "SCENARIO_INVALID", "online_imagery")
     assert client.put("/api/settings", json=[1]).status_code == 422
     assert client.put("/api/settings", json=None).status_code == 422
     assert client.put("/api/settings", content=b"{not json", headers={"Content-Type": "application/json"}).status_code == 422
@@ -192,7 +194,7 @@ def test_settings_put_requires_the_whole_document(client, data_dir):
     assert client.get("/api/settings").json() == CUSTOM
 
 
-MISSING_PATHS = ["daily", "cesium_ion_token", *(f"daily.{name}" for name in DEFAULT_DAILY)]
+MISSING_PATHS = ["daily", "cesium_ion_token", "online_imagery", "online_imagery.enabled", *(f"daily.{name}" for name in DEFAULT_DAILY)]
 
 
 @pytest.mark.parametrize("path", MISSING_PATHS)
@@ -219,6 +221,59 @@ def test_settings_put_empty_documents_never_enable_the_daily_job(client, data_di
 def test_settings_keeps_non_ascii_token_intact(client, data_dir):
     r = client.put("/api/settings", json={**CUSTOM, "cesium_ion_token": "โทเคน-ü"})
     assert r.status_code == 200 and client.get("/api/settings").json()["cesium_ion_token"] == "โทเคน-ü"
+
+
+# ---------- settings: online_imagery (ภาพออนไลน์ NASA GIBS ปิดไว้ก่อน) ----------
+
+OLD_DOCUMENT = {"daily": {**DEFAULT_DAILY, "enabled": False}, "cesium_ion_token": ""}   # ไฟล์ที่รุ่นก่อนเขียน (ไม่มี online_imagery)
+
+
+def test_settings_default_has_online_imagery_off(client, data_dir):
+    r = client.get("/api/settings")
+    assert r.status_code == 200 and r.json()["online_imagery"] == {"enabled": False}
+    assert not (data_dir / "settings.json").exists()
+
+
+def test_old_settings_file_without_online_imagery_loads_off(client, data_dir):
+    path = data_dir / "settings.json"
+    path.write_text(json.dumps(OLD_DOCUMENT, indent=2) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    r = client.get("/api/settings")
+    assert r.status_code == 200
+    assert r.json()["online_imagery"]["enabled"] is False
+    assert r.json()["daily"] == OLD_DOCUMENT["daily"]
+    assert path.read_bytes() == before                                                # โหลดแล้วไม่เขียนไฟล์
+    assert "settings.json" not in server_log(data_dir)                                # ไฟล์เก่าไม่ใช่ไฟล์เสีย: ไม่เตือน
+
+
+def test_hand_edited_online_imagery_is_read_and_never_written_on_load(client, data_dir):
+    path = data_dir / "settings.json"
+    path.write_text(json.dumps({"daily": {"enabled": False}, "online_imagery": {"enabled": True}}), encoding="utf-8")
+    before = path.read_bytes()
+    assert client.get("/api/settings").json()["online_imagery"] == {"enabled": True}
+    assert path.read_bytes() == before
+
+
+def test_put_requires_online_imagery(client, data_dir):
+    calls = []
+    client.app.state.settings_on_change = calls.append
+    assert_error(client.put("/api/settings", json=OLD_DOCUMENT), 422, "SCENARIO_INVALID", "online_imagery")
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {}}), 422, "SCENARIO_INVALID",
+                 "online_imagery.enabled")
+    assert not (data_dir / "settings.json").exists() and calls == []                  # ไม่บันทึก ไม่แจ้งใคร
+
+
+def test_put_online_imagery_strict_bool(client, data_dir):
+    for bad in ("true", 1, None):
+        assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": bad}}), 422,
+                     "SCENARIO_INVALID", "online_imagery.enabled")
+    assert_error(client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": True, "x": 1}}), 422,
+                 "SCENARIO_INVALID", "online_imagery.x")
+    assert not (data_dir / "settings.json").exists()
+    r = client.put("/api/settings", json={**OLD_DOCUMENT, "online_imagery": {"enabled": True}})
+    assert r.status_code == 200 and r.json()["online_imagery"] == {"enabled": True}
+    assert json.loads((data_dir / "settings.json").read_text(encoding="utf-8"))["online_imagery"] == {"enabled": True}
+    assert client.get("/api/settings").json()["online_imagery"] == {"enabled": True}
 
 
 # ---------- settings: callback ไปยังตัวตั้งเวลา ----------
@@ -318,6 +373,8 @@ def test_settings_save_then_load_roundtrip_is_atomic(data_dir):
     b'{"daily": {"enabled": NaN}}', b'{"daily": {"enabled": "false"}}', b'{"daily": {"enabled": 0}}',
     b'\xef\xbb\xbf{not json', b'{"daily": {"enabled": false, "retention_days": "30"}}',
     b'{"daily": {"enabled": true, "retention_days": "30"}}', b'{"daily": {"enabled": false, "facility": "a b"}}',
+    b'{"daily": {"enabled": true}, "online_imagery": {"enabled": "true"}}', b'{"daily": {"enabled": true}, "online_imagery": 1}',
+    b'{"daily": {"enabled": false}, "online_imagery": {"enabled": 1}}',                 # ภาพออนไลน์ผิดชนิด: ทั้งไฟล์ fail safe (ปิดทั้งคู่)
 ])
 def test_settings_corrupt_or_invalid_file_fails_safe_and_logs(client, data_dir, content):
     (data_dir / "settings.json").write_bytes(content)
@@ -356,7 +413,7 @@ def test_settings_partial_file_fills_missing_fields_with_defaults(client, data_d
     assert client.get("/api/settings").json() == DEFAULTS
     path.write_text(json.dumps({"daily": {"enabled": False, "facility": "BKK"}, "cesium_ion_token": "t"}))
     assert client.get("/api/settings").json() == {"daily": {**DEFAULT_DAILY, "enabled": False, "facility": "BKK"},
-                                                  "cesium_ion_token": "t"}
+                                                  "cesium_ion_token": "t", "online_imagery": {"enabled": False}}
 
 
 @pytest.mark.parametrize("content", [

@@ -1,10 +1,13 @@
 """ค่าตั้งงานประจำวัน `data/settings.json` (หัวข้อ 9.1 ของ spec server)
 
 - `Settings` (pydantic) รูปแบบตรง 9.1: `{"daily": {enabled, run_at_utc, facility, retention_days, validation_retry_hours,
-  validation_give_up_days}, "cesium_ion_token": ""}` ทุกช่องมีค่าตั้งต้นของ 9.1 ตรวจแบบ strict (ชนิดต้องตรง ไม่แปลง "30" เป็น 30)
+  validation_give_up_days}, "cesium_ion_token": "", "online_imagery": {"enabled": false}}` ทุกช่องมีค่าตั้งต้นของ 9.1 ตรวจแบบ strict
+  (ชนิดต้องตรง ไม่แปลง "30" เป็น 30)
+  - `online_imagery.enabled`: ภาพออนไลน์ NASA GIBS ค่าตั้งต้น `false` ทุกกรณี (ไม่มีไฟล์ ไฟล์เสีย หรือไฟล์รุ่นเก่าที่ไม่มีช่องนี้):
+    ต่างจาก `daily.enabled` ตรงที่ไม่มีค่า "อนุมัติแล้ว" ให้เปิดเอง ผู้ใช้ต้องเปิดเองเท่านั้น
   - `run_at_utc`: `HH:MM` ชั่วโมง 00-23 นาที 00-59, `facility`: ตรงกติกาชื่อ object, `retention_days` 1-3650,
     `validation_retry_hours` 1-168, `validation_give_up_days` 1-365
-- `SettingsIn` / `DailyIn` คือรูปแบบของ body ที่ PUT: ไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422) และ `missing_field` บอกช่องแรกที่
+- `SettingsIn` / `DailyIn` / `OnlineImageryIn` คือรูปแบบของ body ที่ PUT: ไม่รับช่องที่ไม่รู้จัก (พิมพ์ชื่อช่องผิดต้องได้ 422) และ `missing_field` บอกช่องแรกที่
   ไม่ได้ส่ง (PUT ต้องส่งทั้งเอกสาร: ช่องที่หายจะไม่ถูกเติมเป็นค่าตั้งต้น เพราะค่าตั้งต้นของ `daily.enabled` คือเปิด)
 - `load(data_dir)` ไม่มีการดึงข้อมูลจากเน็ตโดยที่ผู้ใช้ไม่ยินยอม:
   - ไม่มีไฟล์ = ค่าตั้งต้นของ 9.1 (เปิดงานประจำวัน เป็นการตั้งที่ผู้ใช้อนุมัติแล้ว) symlink ที่ชี้ไปไฟล์ที่ไม่มีไม่นับเป็น "ไม่มีไฟล์"
@@ -51,12 +54,21 @@ class Daily(_Model):
     validation_give_up_days: Annotated[int, Field(ge=1, le=365)] = 14
 
 
+class OnlineImagery(_Model):
+    enabled: bool = False
+
+
 class Settings(_Model):
     daily: Daily = Field(default_factory=Daily)
     cesium_ion_token: str = ""
+    online_imagery: OnlineImagery = Field(default_factory=OnlineImagery)
 
 
 class DailyIn(Daily):
+    model_config = ConfigDict(extra="forbid")
+
+
+class OnlineImageryIn(OnlineImagery):
     model_config = ConfigDict(extra="forbid")
 
 
@@ -64,6 +76,7 @@ class SettingsIn(Settings):
     """body ของ PUT /api/settings (ใช้ `Settings.model_validate(body.model_dump())` ก่อนบันทึก)"""
     model_config = ConfigDict(extra="forbid")
     daily: DailyIn = Field(default_factory=DailyIn)
+    online_imagery: OnlineImageryIn = Field(default_factory=OnlineImageryIn)
 
 
 def missing_field(model: BaseModel) -> str | None:

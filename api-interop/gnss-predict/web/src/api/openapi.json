@@ -941,6 +941,18 @@
         "title": "NewScenario",
         "type": "object"
       },
+      "OnlineImageryIn": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "OnlineImageryIn",
+        "type": "object"
+      },
       "PassSettings": {
         "additionalProperties": true,
         "properties": {
@@ -1467,6 +1479,9 @@
           },
           "daily": {
             "$ref": "#/components/schemas/DailyIn"
+          },
+          "online_imagery": {
+            "$ref": "#/components/schemas/OnlineImageryIn"
           }
         },
         "title": "SettingsIn",

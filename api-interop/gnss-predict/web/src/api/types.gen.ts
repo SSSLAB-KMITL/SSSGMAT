@@ -1072,6 +1072,14 @@ export interface components {
              */
             template: "thbk-gnss" | "empty";
         };
+        /** OnlineImageryIn */
+        OnlineImageryIn: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled?: boolean;
+        };
         /** PassSettings */
         PassSettings: {
             /**
@@ -1339,6 +1347,7 @@ export interface components {
              */
             cesium_ion_token?: string;
             daily?: components["schemas"]["DailyIn"];
+            online_imagery?: components["schemas"]["OnlineImageryIn"];
         };
         /** SwathSettings */
         SwathSettings: {

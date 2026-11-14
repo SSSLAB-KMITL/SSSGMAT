@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useSettings } from "../../src/stores/settings";
+import { useSettings, type Settings } from "../../src/stores/settings";
 import { stubFetch } from "./helpers/fake-fetch";
 
 const HEALTH = {
   engine_version: "1.0.0", gmat_found: true, data_dir: "/data", free_bytes: 5e9, writable: true,
   daily: { state: "idle", last_run_utc: null, next_run_utc: "2026-11-12T21:00:00.000Z", for_date: null },
 };
-const SETTINGS = {
+const SETTINGS: Settings = {
   daily: { enabled: false, run_at_utc: "21:00", facility: "THBK", retention_days: 30, validation_retry_hours: 3, validation_give_up_days: 14 },
   cesium_ion_token: "",
+  online_imagery: { enabled: false },
 };
 
 beforeEach(() => useSettings.setState(useSettings.getInitialState(), true));
@@ -28,13 +29,22 @@ describe("useSettings", () => {
     await useSettings.getState().loadSettings();
     expect(useSettings.getState().health?.free_bytes).toBe(5e9);
     expect(useSettings.getState().settings?.daily.run_at_utc).toBe("21:00");
+    expect(useSettings.getState().settings?.online_imagery).toEqual({ enabled: false });
   });
 
   test("saveSettings PUTs the settings and keeps the saved copy", async () => {
     const f = stubFetch({ "PUT /api/settings": (c) => ({ json: c.body }) });
     await useSettings.getState().saveSettings({ ...SETTINGS, cesium_ion_token: "t" });
     expect(f.calls[0].body).toEqual({ ...SETTINGS, cesium_ion_token: "t" });
+    expect(f.calls[0].body).toHaveProperty("online_imagery", { enabled: false }); // the server needs the whole document
     expect(useSettings.getState().settings?.cesium_ion_token).toBe("t");
+  });
+
+  test("saveSettings keeps an enabled online_imagery in the PUT body and in the store", async () => {
+    const f = stubFetch({ "PUT /api/settings": (c) => ({ json: c.body }) });
+    await useSettings.getState().saveSettings({ ...SETTINGS, online_imagery: { enabled: true } });
+    expect(f.calls[0].body).toHaveProperty("online_imagery", { enabled: true });
+    expect(useSettings.getState().settings?.online_imagery.enabled).toBe(true);
   });
 
   test("saveSettings with a rejected value throws the ApiError and keeps the old settings", async () => {
