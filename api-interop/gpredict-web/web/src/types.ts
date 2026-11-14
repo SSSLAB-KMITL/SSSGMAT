@@ -1,6 +1,8 @@
 // JSON shapes of the Gpredict Web server (spec §7.1-7.4). Times are ISO 8601 UTC strings ending in "Z".
 // The web never computes orbits: every number below comes from the server.
 
+import type { RadioState, RotatorState } from "./radio/types";
+
 export type Level = "info" | "warning" | "error";
 
 /** Message(code, level, text, object) of the engine; also the body of every API error (spec §7.4). */
@@ -185,6 +187,10 @@ export interface Tick {
   /** only when status is "ok" */
   sats?: SatState[];
   messages: ApiMessage[];
+  /** only while the Radio Control of the module is open (sub-project 3): the state of its controller */
+  radio?: RadioState;
+  /** only while the Antenna Control of the module is open */
+  rotator?: RotatorState;
 }
 
 // ---------------------------------------------------------------- tracks

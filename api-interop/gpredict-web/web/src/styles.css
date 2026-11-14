@@ -1496,6 +1496,149 @@ body {
   line-height: 1.2;
 }
 
+/* ---------------------------------------------------------------- Radio Control (ref-R §2) */
+
+/* the grid of §2.1: 5 px between the frames (the 10 px border is the padding of .float-body); a column is as wide as its widest frame */
+.rc-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px;
+}
+.rc-frame {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.rc-frame > legend {
+  margin-left: 6px;
+  padding: 0 2px;
+}
+/* the label of Downlink and Uplink is bold and in the middle of the frame, with a space on both sides */
+.rc-frame > .rc-legend {
+  margin: 0 auto;
+  white-space: pre;
+}
+.rc-countdown-frame {
+  grid-column: 1 / -1;
+}
+.rc-label {
+  white-space: pre; /* Gpredict's labels begin with a space (" Range:") */
+}
+.rc-label.right {
+  text-align: right;
+}
+.rc-value {
+  font-variant-numeric: tabular-nums;
+  white-space: pre; /* "   0.00°" keeps its blanks */
+}
+.rc-frame select,
+.rc-frame input[type="search"] {
+  min-width: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.rc-frame select:disabled {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+.rc-toggle[aria-pressed="true"] {
+  background: var(--pressed);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Downlink and Uplink: a 10 px border, the knob, a row with Doppler and LO 10 px below it, then the radio's knob */
+.rc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+.rc-knob {
+  display: flex;
+  justify-content: center;
+}
+.rc-doppler {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rc-doppler .rc-lo {
+  margin-left: auto;
+}
+.rc-radio {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.rc-radio > * {
+  flex: 1;
+}
+.rc-radio-label {
+  font-size: 1.2em; /* Pango's "large" */
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Satellite: four columns; the filter and the combos take the first three */
+.rc-sat {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.rc-sat .rc-wide {
+  grid-column: 1 / 4;
+  width: 100%;
+}
+.rc-sat .rc-trsp {
+  min-width: 30ch; /* the combo is 30 characters wide (width-chars) */
+}
+.rc-tl {
+  display: flex;
+  gap: 5px;
+}
+.rc-tl > * {
+  flex: 1;
+}
+
+/* Settings: label, control and a third column for Engage and "msec" */
+.rc-settings {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.rc-settings .rc-cycle-label {
+  grid-column: 1;
+}
+.rc-settings .spin {
+  justify-self: start;
+}
+
+/* the count-down: Pango's "large" until the first AOS or LOS time, then "xx-large" (1.728 like the knobs' digits), bold, 3 px above and below */
+.rc-countdown {
+  margin: 3px 0;
+  font-weight: 700;
+  text-align: center;
+}
+.rc-countdown.large {
+  font-size: 1.2em;
+}
+.rc-countdown.xx-large {
+  font-size: 1.728em;
+}
+.rc-status {
+  margin-top: 5px;
+}
+
 /* ---------------------------------------------------------------- after File → Quit (ของเรา) */
 
 .stopped {
