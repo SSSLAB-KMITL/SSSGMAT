@@ -692,6 +692,44 @@ def test_report_objects_with_different_stored_periods_are_refused(client, s1_com
     assert report(client, [OBJ, e11]).status_code == 200                                           # ช่วงเท่ากัน ตัดทั้งคู่
 
 
+CONSTELLATIONS = ["*/Constellation/GPS", "*/Constellation/GLONASS", "*/Constellation/Galileo", "*/Constellation/BeiDou"]
+WINDOW = {"mode": "specify", "start": T0300, "stop": T0400}
+E11 = "*/Facility/THBK */Satellite/E11"
+C01 = "*/Facility/THBK */Satellite/C01"
+
+
+def report_rows(client, obj):
+    r = report(client, [obj])
+    assert r.status_code == 200, r.text
+    return r.json()["sections"][0]["rows"]
+
+
+def test_report_uses_time_period_of_a_constellation_access(client, s1_computed):
+    """access ของแม่แบบ thbk-gnss เก็บปลายทางเป็น Constellation: ดาวที่เป็นสมาชิกต้องถูกตัดตาม time_period ของ access นั้น
+    เหมือน GET /access/intervals ที่ Timeline ใช้ (ไม่งั้นรายงานกับ Timeline ไม่ตรงกัน)"""
+    put_doc(client, lambda doc: doc["accesses"][0].update(time_period=WINDOW, computed=True))
+    assert report_rows(client, OBJ) == [[1, "2026-11-10T03:00:00.000Z", "2026-11-10T04:00:00.000Z", 3600.0]]
+    assert report_rows(client, E11) == [[1, "2026-11-10T03:17:40.700Z", "2026-11-10T04:00:00.000Z", 2539.3]]
+    timeline = client.get(f"{BASE}/access/intervals", params={"from": FAC, "to": CONSTELLATIONS}).json()
+    for name, obj in (("G01", OBJ), ("E11", E11)):
+        assert [[iv["start"], iv["stop"], iv["duration_s"]] for iv in timeline[name]] == [row[1:] for row in report_rows(client, obj)]
+    both = report(client, [OBJ, E11])                                      # สมาชิกของ access เดียวกัน ช่วงเท่ากัน รวมเป็นรายงานเดียวได้
+    assert both.status_code == 200 and both.json()["global_statistics"]
+
+
+def test_report_stored_period_choice_among_accesses(client, s1_computed):
+    """มีหลาย access ที่ครอบดาวเดียวกัน: ที่ Compute อยู่ก่อนที่ Clear แล้ว จากนั้นแบบระบุดาวตรง ๆ ก่อน Constellation แล้วตามลำดับในไฟล์"""
+    put_doc(client, lambda doc: doc["accesses"][0].update(to=CONSTELLATIONS[:3], time_period=WINDOW, computed=True))
+    full = report_rows(client, C01)                                        # BeiDou ไม่อยู่ใน access นี้: ช่วงวิเคราะห์เต็ม
+    assert full == [[1, "2026-11-10T02:54:24.164Z", "2026-11-10T06:00:00.000Z", 11135.836]]
+    compute_access(client, [SAT], {"mode": "specify", "start": "2026-11-10T05:00:00Z", "stop": "2026-11-10T06:00:00Z"})
+    assert report_rows(client, OBJ) == [[1, "2026-11-10T05:00:00.000Z", "2026-11-10T06:00:00.000Z", 3600.0]]     # ระบุดาวตรง ๆ ชนะ
+    assert report_rows(client, E11)[0][2] == "2026-11-10T04:00:00.000Z"                                       # ดาวอื่นยังตามของ Constellation
+    r = client.post(f"{BASE}/access/clear", json={"from": FAC, "to": [SAT]}, headers={"If-Match": etag_of(client)})
+    assert r.status_code == 200 and r.json()["cleared"] == 1
+    assert report_rows(client, OBJ) == [[1, "2026-11-10T03:00:00.000Z", "2026-11-10T04:00:00.000Z", 3600.0]]   # Clear แล้วแพ้ access ที่ยัง Compute อยู่
+
+
 def test_report_specify_time_and_step(client, s1_computed, data_dir):
     window = {"mode": "specify", "start": T0300, "stop": "2026-11-10T03:10:00Z", "step_s": 60}
     r = report(client, style_name="AER", time=window)
@@ -906,6 +944,26 @@ def test_report_pins_bundles_across_four_facilities(client, s1_computed, data_di
     app.state.tables = tables = TableCache(4)
     assert report(client, [f"*/Facility/{fac}" for fac in FACILITIES], "All DOPs").status_code == 200
     assert tables.loads == 4                                          # Facility ล้วน: ตาราง access 4 ชุด ไม่แตะ ephem
+
+
+def test_report_caps_distinct_facilities_at_four(client, s1_computed, data_dir):
+    """หนึ่ง request ตรึงตารางของทุก Facility ไว้พร้อมกัน (ราว 135 MB ต่อแห่ง) จึงจำกัด 4 Facility: เกินนี้ 422 ที่ `objects`
+    ตรวจก่อนอ่านผลลัพธ์ (Facility ที่ห้าไม่ต้องมีผล analyze ก็ได้ 422 ไม่ใช่ 409)"""
+    add_facilities(client, data_dir)
+    put_doc(client, lambda doc: doc["objects"].append({**next(o for o in doc["objects"] if o["name"] == "THBK"), "name": "UBON"}))
+    five = [f"*/Facility/{fac} */Satellite/G01" for fac in (*FACILITIES, "UBON")]
+    j = assert_error(report(client, five, "AER"), 422, "SCENARIO_INVALID", "objects")
+    assert "4" in j["text"]
+    assert_error(report(client, five, "AER", format="csv"), 422, "SCENARIO_INVALID", "objects")
+    assert_error(report(client, [f"*/Facility/{fac}" for fac in (*FACILITIES, "UBON")], "All DOPs"), 422, "SCENARIO_INVALID", "objects")
+    assert_error(report(client, [f"*/Facility/{fac}" for fac in ("a", "b", "c", "d", "e")], "All DOPs"), 422, "SCENARIO_INVALID", "objects")
+    # สี่แห่งพอดีได้ แม้มี object มากกว่าสี่ตัว และชื่อ Facility ซ้ำต่างตัวพิมพ์นับเป็นแห่งเดียว
+    ok = [f"*/Facility/{fac} */Satellite/{sat}" for sat in ("G01", "E11") for fac in FACILITIES] + ["*/Facility/thbk */Satellite/C01"]
+    r = report(client, ok, "AER")
+    assert r.status_code == 200 and len(r.json()["sections"]) == 9, r.text
+    # ดาวไม่ใช้ตาราง access ของ Facility จึงไม่นับ
+    sats = [f"*/Satellite/{name}" for name in ("C01", "C09", "C40", "E11", "E14", "G01", "G22", "R05", "R10")]
+    assert report(client, sats, "LLA Position").status_code == 200
 
 
 def test_pinned_tables_read_each_bundle_once(tmp_path):

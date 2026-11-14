@@ -22,10 +22,12 @@
     (`style` หรือช่องในตัว style เช่น `content[0].elements[1]`) `dynamic: true` กับ style ที่ `dynamic: false`: 422 ที่ `dynamic`
     ช่อง `dynamic` ในคำตอบคือที่ขอ (ไม่ใช่ที่ style รองรับ)
   - เวลา: `time` ไม่ส่ง = ใช้ `time` ของ style (`specify` ในตัว style ถูกแปลงเป็น start/stop/step ที่นี่ เพราะ engine ไม่อ่าน) ส่งแล้วตามคำขอทั้งก้อน
-    `mode: object` = Use Object Time Period: object แบบ Access ที่มี `time_period` mode `specify` ใน `accesses` ซึ่งตรงกับ (Facility, [ดาว])
-    ใช้ช่วงนั้น (ไม่ต้องคำนวณใหม่ spec §4) ไม่งั้นช่วงวิเคราะห์ `start`/`stop` ใน mode นี้ไม่ใช้ (เหมือน `time_period` ของ access)
+    `mode: object` = Use Object Time Period: object แบบ Access ที่ access ครอบมัน (`to` ตรงดาวพอดี หรือเป็น Constellation ที่มีดาวนี้ ขยายแบบ
+    `GET /access/intervals` เพื่อให้ตรงกับ Timeline) มี `time_period` mode `specify` ใช้ช่วงนั้น (ไม่ต้องคำนวณใหม่ spec §4) ไม่งั้นช่วงวิเคราะห์
+    `start`/`stop` ใน mode นี้ไม่ใช้ (เหมือน `time_period` ของ access)
     `mode: specify` ต้องมี start และ stop (422 `time.start` / `time.stop`) และ start < stop (422 `time.start`) step ไม่ใช่จำนวนเท่าหรือ ≤ 0: 422 `time.step`
     หลาย object ที่ช่วงที่เก็บต่างกันตัดเป็นรายงานเดียวไม่ได้ (Global Statistics รวมแถวทุก object): 422 ที่ `objects`
+  - object เลือกจาก Facility ได้ไม่เกิน 4 แห่งต่อ request (ชื่อไม่แยกตัวพิมพ์ ดาวไม่นับ): เกิน 422 ที่ `objects` (ตารางตรึงพร้อมกัน แห่งละราว 135 MB)
   - ผลลัพธ์ไม่ตรงกับ scenario หรือยังไม่มี: 409 `RESULTS_NOT_CURRENT` (ตรวจหลังตรวจคำขอทุกข้อ)
   - ตารางของ request เดียวถูกตรึง (`PinnedTables`): cache ของ server มี 4 bundle แต่รายงานหลาย Facility ใช้ ephem 1 + access N bundle
     ถ้าไม่ตรึงจะอ่านซ้ำใน request เดียว
@@ -306,6 +308,7 @@ def delete_style(name: str, my: MyStyles = Depends(get_my_styles)) -> Response:
 
 # ---------- /reports ----------
 
+MAX_REPORT_FACILITIES = 4           # Facility ต่อ request: ตรึงตารางของทุกแห่งพร้อมกัน (PinnedTables) แห่งละราว 135 MB
 MAX_STEP_S = 999_999_999            # เท่ากับ /data (9 หลัก) เกินนี้ timedelta ล้น: ต้องตอบ 422 ไม่ใช่ 500
 REPORT_MEDIA = {"txt": "text/plain; charset=utf-8", "csv": "text/csv; charset=utf-8"}
 
@@ -366,6 +369,15 @@ class ReportOut(BaseModel):
     dynamic: bool
 
 
+def _check_facility_count(objects: list[str]) -> None:
+    """รายงานหนึ่งครั้งใช้ผล access ได้ไม่เกิน MAX_REPORT_FACILITIES Facility (ชื่อไม่แยกตัวพิมพ์ ดาวไม่นับ) เกิน = 422 ที่ `objects`"""
+    parsed = [parse_object(obj) for obj in objects]
+    names = {name.casefold() for kind, name, _ in parsed if kind != "Satellite"}
+    if len(names) > MAX_REPORT_FACILITIES:
+        raise ApiError(422, INVALID, f"รายงานหนึ่งครั้งเลือก object ได้จาก Facility ไม่เกิน {MAX_REPORT_FACILITIES} แห่ง (ได้ {len(names)} แห่ง) "
+                                     "เพราะต้องอ่านผลของทุก Facility เข้าหน่วยความจำพร้อมกัน ให้แบ่งเป็นหลายรายงาน", "objects")
+
+
 def _checked_step(step: int | None) -> int | None:
     if step is not None and step > MAX_STEP_S:
         raise ApiError(422, INVALID, f"Step ต้องไม่เกิน {MAX_STEP_S} วินาที ได้ {step}", "time.step")
@@ -404,8 +416,29 @@ def _named_path(doc: dict, cls: str, name: str) -> str | None:
                  and isinstance(o.get("name"), str) and o["name"].casefold() == wanted), None)
 
 
+def _stored_period(doc: dict, obj: str, from_path: str, sat_path: str) -> dict | None:
+    """`time_period` ของ access ที่ครอบ (Facility, ดาว) ตามที่ `GET /access/intervals` (Timeline) ตัด: access ของ Facility นั้นที่ `to` ตรงกับ
+    ดาวพอดี หรือขยายแล้ว (`access.expand_targets` เหมือน intervals: Constellation เป็นสมาชิก) มีดาวนี้ ไม่มี = None
+    มีหลายรายการ: ที่ Compute อยู่ก่อนที่ Clear แล้ว แล้วแบบระบุดาวตรง ๆ ก่อนแบบ Constellation แล้วตามลำดับในไฟล์"""
+    sat_name, best = sat_path.rsplit("/", 1)[1], None
+    for index, entry in enumerate(doc.get("accesses", [])):
+        to = entry.get("to") if isinstance(entry, dict) and entry.get("from") == from_path else None
+        if not isinstance(to, list):
+            continue
+        exact = set(to) == {sat_path}
+        try:
+            if not exact and sat_name not in access.expand_targets(doc, to, set()):
+                continue
+        except ApiError:                                     # `to` ที่ชี้ไป object ที่ไม่มี (ไฟล์ที่แก้มือ)
+            raise ApiError(422, INVALID, f"access ของ {from_path} ใน scenario.json มีปลายทางที่ใช้ไม่ได้ ({obj})", "accesses") from None
+        rank = (not entry.get("computed"), not exact, index)
+        if best is None or rank < best[0]:
+            best = rank, entry
+    return None if best is None else best[1].get("time_period") or {"mode": "object"}
+
+
 def _access_window(doc: dict, obj: str) -> tuple[datetime, datetime] | None:
-    """ช่วงที่ตัดของ object แบบ Access ตาม `time_period` (mode specify) ของ access (Facility, [ดาว]) ที่เก็บไว้ ไม่มี = None (ช่วงวิเคราะห์)
+    """ช่วงที่ตัดของ object แบบ Access ตาม `time_period` (mode specify) ของ access ที่ครอบมัน ไม่มี = None (ช่วงวิเคราะห์)
     object ชนิดอื่น หรือ object ที่ไม่มีใน scenario (engine ตอบ 422 ที่ `object` เอง) = None"""
     kind, facility, satellite = parse_object(obj)
     if kind != "Access":
@@ -414,7 +447,7 @@ def _access_window(doc: dict, obj: str) -> tuple[datetime, datetime] | None:
     if from_path is None or sat_path is None:
         return None
     from_path, to = access.normalize(doc, from_path, [sat_path])
-    period = access.stored_time_period(doc, from_path, to)
+    period = _stored_period(doc, obj, from_path, to[0]) or {}
     if period.get("mode") != access.MODE_SPECIFY:
         return None
     try:
@@ -445,6 +478,7 @@ def create_report(sc: str, body: ReportBody, store: ScenarioStore = Depends(get_
         raise StyleError(f"style {style['name']} ใช้กับ Dynamic Display/Strip Chart ไม่ได้", "dynamic")
     export = ExportSetup(**body.export.model_dump()) if body.export is not None else None
     specify, start, stop, step = _report_time(body.time, style)
+    _check_facility_count(body.objects)
     date_format, ltz_offset = time_format_of(doc) if body.format != "json" else ("UTCG", "+07:00")
     rs = server_result_set(store, plans, PinnedTables(tables), sc)
     if not specify:
