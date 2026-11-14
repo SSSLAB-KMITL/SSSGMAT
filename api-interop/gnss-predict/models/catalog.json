@@ -116,7 +116,7 @@
       "id": "glonass-k2",
       "glb": "glonass-k2/glonass-k2.glb",
       "blocks": ["GLO-K2"],
-      "size_m": [2.082, 20.4, 3.46],
+      "size_m": [2.482, 17.74, 3.46],
       "triangles": 4990,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
