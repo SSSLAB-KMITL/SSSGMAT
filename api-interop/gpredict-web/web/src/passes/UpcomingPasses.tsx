@@ -4,6 +4,7 @@ import { FloatingWindow } from "../components/FloatingWindow";
 import { PopupMenu } from "../components/PopupMenu";
 import { useNumberFormat } from "../numfmt";
 import { usePrefs } from "../prefs/prefsStore";
+import { logPrintNotImplemented } from "./passApi";
 import { MULTI_COLUMNS, passCell } from "./passCells";
 import { columnTitles, moveRow, newId, upcomingMenu, upcomingTitle, visibleColumns } from "./passWindows";
 import type { PassWindow } from "./passWindows";
@@ -27,8 +28,8 @@ interface Props {
  * The Upcoming passes window (ref-P §3, spec §6.1): one row for each pass, in time order, with the columns that are on in Multiple
  * Passes. The columns cannot be sorted. A click selects a row, Up and Down move the selection; a double click or Enter opens Pass details
  * of the row (this window is its parent: it closes with it); a right click (which selects the row first) or Shift+F10 opens the row
- * popup (Show details; Polar plot and Az/El plot cannot be chosen). Buttons: Print does nothing, as in Gpredict (which only writes
- * "PRINT not implemented" in its log: sub-project 4 has that log), Save opens "Save Passes", Close closes. The list has the focus
+ * popup (Show details; Polar plot and Az/El plot cannot be chosen). Buttons: Print prints nothing, as in Gpredict, which only writes
+ * "PRINT not implemented" in its log (File → Log browser shows it), Save opens "Save Passes", Close closes. The list has the focus
  * when the window opens, so the keys work at once.
  */
 export function UpcomingPasses({ id, answer, onOpen, onClose, position }: Props) {
@@ -112,8 +113,8 @@ export function UpcomingPasses({ id, answer, onOpen, onClose, position }: Props)
             </table>
           </div>
           <div className="dialog-buttons">
-            {/* does nothing, as in Gpredict (ref-P §3.1) */}
-            <button type="button" className="button">
+            {/* prints nothing and logs the error "PRINT not implemented", as Gpredict does (ref-P §3.1); a log line that cannot be sent is dropped: there is nothing to tell the user, as in Gpredict */}
+            <button type="button" className="button" onClick={() => void logPrintNotImplemented().catch(() => undefined)}>
               Print
             </button>
             <button type="button" className="button" disabled={titles === null} onClick={() => setSaving(true)}>

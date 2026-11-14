@@ -11,7 +11,7 @@ describe("laterTooltip", () => {
 
 /** The column "กดไม่ได้" of the table in spec §8.2, row by row (the sub-project number is the one in brackets there). */
 const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
-  ["Log browser", 4, "File"],
+  // File → Log browser works since sub-project 4 (Task 20), so it is not here any more
   // Edit → Update TLE data from local files works since sub-project 4 (Task 18), so it is not here any more
   // Edit → Preferences works since sub-project 2 (the window and its Predict group), so it is not here any more
   // Help: "ไม่มี News" - there is no News item at all
@@ -49,6 +49,10 @@ describe("LATER (spec §8.2)", () => {
     expect(Object.values(LATER)).not.toContain(3);
   });
 
+  it("has no Log browser: File → Log browser (Ctrl+L) opens the Log Browser window", () => {
+    expect(LATER).not.toHaveProperty("Log browser");
+  });
+
   it("has no Update TLE data from local files: Edit → Update TLE data from local files opens its box", () => {
     expect(LATER).not.toHaveProperty("Update TLE data from local files");
   });
@@ -65,7 +69,6 @@ describe("LATER (spec §8.2)", () => {
 describe("laterOf", () => {
   it("gives the sub-project of a label in LATER", () => {
     expect(laterOf("Detach module")).toBe(4);
-    expect(laterOf("Log browser")).toBe(4);
     expect(laterOf("Full screen")).toBe(4);
   });
 
@@ -77,5 +80,6 @@ describe("laterOf", () => {
     expect(() => laterOf("Radio Control")).toThrow(); // and the controllers
     expect(() => laterOf("Update TLE data from local files")).toThrow(); // and the update from local files
     expect(() => laterOf("Satellite info")).toThrow(); // and Satellite info
+    expect(() => laterOf("Log browser")).toThrow(); // and the Log browser
   });
 });

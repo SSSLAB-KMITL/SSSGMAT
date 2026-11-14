@@ -1,6 +1,6 @@
 // REST client of the pass routes (spec §9). Throws ApiError for status >= 400, like api.ts.
 
-import { moduleUrl, request, seg } from "../api";
+import { moduleUrl, postLog, request, seg } from "../api";
 import type { PassAnswer, PassBody, SkyGlanceAnswer } from "./types";
 
 /**
@@ -30,3 +30,9 @@ export const releaseSkyGlance = (module: string) => request<void>("DELETE", `${m
 export function releaseSkyGlanceAtUnload(module: string): void {
   fetch(`${moduleUrl(module)}/skyglance`, { method: "DELETE", keepalive: true }).catch(() => undefined);
 }
+
+/**
+ * The Print button of Upcoming passes (ref-P §3.1): Gpredict prints nothing and writes the error "%s: PRINT not implemented" in its log
+ * (`sat-pass-dialogs.c:1095`, with the name of the function that writes it, `multi_pass_response`). Rejects like `postLog`.
+ */
+export const logPrintNotImplemented = () => postLog(1, "multi_pass_response", "multi_pass_response: PRINT not implemented");

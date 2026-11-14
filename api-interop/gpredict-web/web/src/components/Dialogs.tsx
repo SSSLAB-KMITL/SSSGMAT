@@ -7,6 +7,7 @@ import { TrspUpdateDialog } from "../radio/TrspUpdateDialog";
 import type { ModuleConfig } from "../types";
 import { CloneDialog, DeleteDialog } from "./CloneDialog";
 import { AboutDialog, LicenseDialog, OnlineHelpDialog } from "./HelpDialogs";
+import { LogBrowser } from "./LogBrowser";
 import { ModuleDialog } from "./ModuleDialog";
 import { OpenModuleDialog } from "./OpenModuleDialog";
 import { TleFilesDialog } from "./TleFilesDialog";
@@ -63,6 +64,8 @@ export const Dialogs = memo(function Dialogs({
             ) : null;
           case "open":
             return <OpenModuleDialog key={dialogKey(d)} open={open} onClose={close} onOpened={onOpened} />;
+          case "logBrowser":
+            return <LogBrowser key={dialogKey(d)} onClose={close} />;
           case "tle":
             return <TleUpdateDialog key={dialogKey(d)} source="network" run={updateTle} onClose={close} onUpdated={onTleUpdated} />;
           case "tleFiles":

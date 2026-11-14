@@ -171,6 +171,22 @@ export const getMeta = () => request<Meta>("GET", "/api/meta");
 /** (ของเรา) File → Quit stops the server */
 export const quit = () => request<void>("POST", "/api/quit");
 
+/**
+ * File → Log browser: the text of gpredict.log of this run of the server, read once when the window opens; "" when there is no file (or it
+ * cannot be read). logParse.ts reads the lines.
+ */
+export async function getCurrentLog(): Promise<string> {
+  return (await send("GET", "/api/logs/current")).text();
+}
+
+/**
+ * One line for the log (ref-D §7.2): `level` 1 ERROR, 2 WARNING, 3 INFO or 4 DEBUG, the name of the `fn` that writes it
+ * (`^[A-Za-z_][A-Za-z0-9_]{0,63}$`) and `text` (1 to 500 characters; a text that begins with "<fn>: " is not given the prefix again, and one
+ * of several lines is written as several lines). The server writes it if its level is not above the level of Preferences → Message
+ * Logs; 422 LOG_INVALID (ApiError) if something is wrong with the three.
+ */
+export const postLog = (level: 1 | 2 | 3 | 4, fn: string, text: string) => request<void>("POST", "/api/log", { level, function: fn, text });
+
 /** License.txt of the repo (Help → License) */
 export async function getLicense(): Promise<string> {
   return (await send("GET", "/api/license")).text();

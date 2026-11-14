@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
-import { getSkyGlance, releaseSkyGlance, releaseSkyGlanceAtUnload, requestPass } from "./passApi";
+import { getSkyGlance, logPrintNotImplemented, releaseSkyGlance, releaseSkyGlanceAtUnload, requestPass } from "./passApi";
 import type { PassBody } from "./types";
 
 type Call = { url: string; init: RequestInit | undefined };
@@ -107,5 +107,20 @@ describe("releaseSkyGlanceAtUnload (the page is going away)", () => {
     stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
     expect(() => releaseSkyGlanceAtUnload("A")).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0)); // an unhandled rejection would fail the run here
+  });
+});
+
+describe("logPrintNotImplemented (Upcoming passes: Print)", () => {
+  it("logs Gpredict's error \"%s: PRINT not implemented\" (sat-pass-dialogs.c:1095) with the function that writes it", async () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }));
+    await logPrintNotImplemented();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("/api/log");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      level: 1,
+      function: "multi_pass_response",
+      text: "multi_pass_response: PRINT not implemented",
+    });
   });
 });

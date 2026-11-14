@@ -4,6 +4,7 @@ export type Dialog =
   | { kind: "newModule" } // File → New module: "Create new module"
   | { kind: "editModule"; module: string } // Module menu → Configure: "Edit module"
   | { kind: "open" } // File → Open module: "Select a module"
+  | { kind: "logBrowser" } // File → Log browser (Ctrl+L): "Log Browser" (one at a time; asking again while it is open does nothing)
   | { kind: "tle" } // Edit → Update TLE data from network: "TLE Update"
   | { kind: "tleFiles" } // Edit → Update TLE data from local files: "Update TLE from files" (a modal), then "TLE Update"
   | { kind: "trsp" } // Edit → Update transponder data: "Transponder Update" (a modal)

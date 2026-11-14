@@ -3,11 +3,13 @@ import {
   ApiError,
   cloneModule,
   getClock,
+  getCurrentLog,
   getLicense,
   getLocations,
   getModules,
   getPrefs,
   getReadme,
+  postLog,
   putClock,
   putPrefs,
   putQthBatch,
@@ -146,6 +148,36 @@ describe("api", () => {
     const calls = stubFetch(() => new Response("# Gpredict Web\n\nคู่มือ", { status: 200 }));
     await expect(getReadme()).resolves.toBe("# Gpredict Web\n\nคู่มือ");
     expect(calls[0]!.url).toBe("/api/readme");
+  });
+
+  it("reads the current log as plain text, empty when there is no file (File → Log browser)", async () => {
+    const text = "2026/11/12 05:06:07|3|sat_log_init: Session started\n";
+    const calls = stubFetch(() => new Response(text, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } }));
+    await expect(getCurrentLog()).resolves.toBe(text);
+    expect(calls[0]!.url).toBe("/api/logs/current");
+    expect(calls[0]!.init?.method).toBe("GET");
+    stubFetch(() => new Response("", { status: 200 }));
+    await expect(getCurrentLog()).resolves.toBe("");
+  });
+
+  it("sends a line of the log as {level, function, text} and gets nothing back (204)", async () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }));
+    await expect(postLog(1, "multi_pass_response", "multi_pass_response: PRINT not implemented")).resolves.toBeUndefined();
+    expect(calls[0]!.url).toBe("/api/log");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      level: 1,
+      function: "multi_pass_response",
+      text: "multi_pass_response: PRINT not implemented",
+    });
+    expect(new Headers(calls[0]!.init?.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("a line of the log the server refuses is an ApiError LOG_INVALID", async () => {
+    stubFetch(() => json({ code: "LOG_INVALID", level: "error", text: "ข้อความ (text) ต้องยาว 1-500 ตัวอักษร", object: "text" }, 422));
+    const err = (await postLog(3, "f", "").catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect([err.code, err.status, err.object]).toEqual(["LOG_INVALID", 422, "text"]);
   });
 
   it("a README the server cannot find is an ApiError with its Thai text", async () => {

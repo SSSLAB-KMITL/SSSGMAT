@@ -42,4 +42,12 @@ describe("the list of open dialogs", () => {
     expect(dialogKey({ kind: "trsp" })).toBe("trsp");
     expect(dialogKey({ kind: "trsp" })).not.toBe(dialogKey({ kind: "tle" }));
   });
+
+  it("has one Log Browser window: File → Log browser does nothing while it is open", () => {
+    const list = showDialog([open], { kind: "logBrowser" });
+    expect(list).toEqual([open, { kind: "logBrowser" }]);
+    expect(showDialog(list, { kind: "logBrowser" })).toBe(list);
+    expect(dialogKey({ kind: "logBrowser" })).toBe("logBrowser");
+    expect(closeDialog(list, { kind: "logBrowser" })).toEqual([open]);
+  });
 });

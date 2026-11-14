@@ -5,7 +5,8 @@ import type { MenuSpec } from "./menuSpec";
 describe("laterItem", () => {
   it("makes a disabled item from a label of LATER", () => {
     expect(laterItem("Full screen")).toEqual({ kind: "item", label: "Full screen", later: 4 });
-    expect(laterItem("Log browser", "Ctrl+L")).toEqual({ kind: "item", label: "Log browser", accel: "Ctrl+L", later: 4 });
+    // (the accelerator is only a sample: neither of these items has one)
+    expect(laterItem("Detach module", "F11")).toEqual({ kind: "item", label: "Detach module", accel: "F11", later: 4 });
   });
 
   it("throws for a label that is not in LATER", () => {

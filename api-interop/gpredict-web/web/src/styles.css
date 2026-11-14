@@ -1989,3 +1989,77 @@ body {
 .stopped-detail {
   color: var(--text-dim);
 }
+
+/* ---------------------------------------------------------------- Log Browser (ref-D §7.3) */
+
+/*
+ * Gpredict's window is 600 x 300 in all: the 51 px are the title bar (29), the padding of .float-body (20) and its border (2), as in
+ * Upcoming passes. A box with 10 px between the list (which takes what the window has) and the frame of the summary (which does not grow).
+ */
+.log-browser {
+  gap: 0;
+  min-width: 280px;
+  height: calc(300px - 51px);
+}
+.log-browser .dialog-error {
+  margin-bottom: 8px;
+}
+.log-browser .dialog-buttons {
+  margin-top: 8px;
+}
+.log-main {
+  display: flex;
+  flex: 1 1 0;
+  gap: 10px;
+  min-height: 0;
+}
+/* a scrolled window with a scroll bar in either direction when it is needed; the header of a column stays on top */
+.log-list {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: auto;
+  scroll-padding-top: 26px;
+  background: var(--view);
+  border: 1px solid var(--border);
+}
+.log-table th.align-left {
+  text-align: left;
+}
+/* the frame is not stretched to the height of the list; its title is in the middle, with a space on both sides */
+.log-summary {
+  flex: none;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.log-summary > legend {
+  margin: 0 auto;
+  padding: 0;
+  white-space: pre;
+}
+/* a grid with a border of 10 px, two columns of one width and six rows of one height (the line is one of them) */
+.log-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+  align-items: center;
+  min-height: 140px;
+  padding: 10px;
+}
+.log-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.log-rule {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.log-file-input {
+  display: none; /* the Open button opens it */
+}

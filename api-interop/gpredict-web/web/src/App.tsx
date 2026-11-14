@@ -400,6 +400,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return newModule();
         case "openModule":
           return show({ kind: "open" });
+        case "logBrowser":
+          return show({ kind: "logBrowser" }); // a second time while it is open: nothing (showDialog), as in Gpredict
         case "quit":
           return void quit();
         case "updateTle":
@@ -421,7 +423,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [newModule, show, quit],
   );
 
-  // Ctrl+N, Ctrl+O, Ctrl+Q and F1, as far as the browser lets the page have them
+  // Ctrl+N, Ctrl+O, Ctrl+L, Ctrl+Q and F1, as far as the browser lets the page have them
   const latestBarAction = useRef(barAction);
   latestBarAction.current = barAction;
   useEffect(() => {
