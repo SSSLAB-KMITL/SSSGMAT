@@ -11,6 +11,8 @@
   การปลด Engage กลางทาง (ยกเลิกระหว่างรอ timer task จะยกเลิก task นั้นด้วยแล้ว S/q ไม่ถูกส่ง)
 - act ใช้ controller ที่ลงทะเบียนอยู่ตอนเริ่มเท่านั้น close เอา controller ออกก่อนรอให้ปิด act ที่มาทีหลังจึงได้ 404 ไม่ถูกเรียกหลัง close
 - on_tick ส่งแถวของดาวที่ controller เลือกอยู่ ณ ตอนเรียก จาก tick เดียวกัน (แถวใน tick ไม่มีเลขดาวให้ controller ตรวจเอง)
+  controller ที่ล้มใน on_tick หรือ snapshot ไม่ทำให้ tick ของ module ล้ม (ของเรา): log ครั้งแรกของ controller นั้น
+  tick และ controller อีกตัวไปต่อ ถ้า snapshot ยังได้ก็ไปกับ tick ตามปกติ (snapshot ที่ล้มทำให้ tick ไม่มีชนิดนั้น)
 """
 
 import asyncio
@@ -77,6 +79,7 @@ class ControllerHub:
         self._seq = itertools.count(1)
         self._locks: dict[str, list] = {}                            # module -> [asyncio.Lock, จำนวนผู้ถือหรือรอ]
         self._tasks: set[asyncio.Task] = set()
+        self._tick_failed: set[Controller] = set()                  # controller ที่ล้มใน on_tick แล้ว (log ครั้งเดียว)
         self._stopped = False
 
     # ---------------------------------------------------------------- อ่านสถานะ
@@ -161,15 +164,27 @@ class ControllerHub:
             return {}
         t = datetime.fromisoformat(tick["t"])
         rows = {s["norad"]: s for s in tick.get("sats") or ()}
-        out = {}
         if radio is not None:
-            radio.on_tick(t, rows.get(radio.norad))
-            out[RADIO] = radio.snapshot()
+            self._contained(module, RADIO, radio, lambda: radio.on_tick(t, rows.get(radio.norad)))
         if rot is not None:
             q = tick["qth"]
-            rot.on_tick(t, rows.get(rot.norad), (q["lat_deg"], q["lon_deg"]))
-            out[ROTATOR] = rot.snapshot()
+            self._contained(module, ROTATOR, rot, lambda: rot.on_tick(t, rows.get(rot.norad), (q["lat_deg"], q["lon_deg"])))
+        out = {}
+        for kind, ctl in ((RADIO, radio), (ROTATOR, rot)):
+            snap = None if ctl is None else self._contained(module, kind, ctl, ctl.snapshot)
+            if snap is not None:
+                out[kind] = snap
         return out
+
+    def _contained[T](self, module: str, kind: str, ctl: Controller, step: Callable[[], T]) -> T | None:
+        """ทำหนึ่งขั้นของ on_tick ให้ controller ตัวเดียว: error ไม่ออกไปนอกนี้ (คืน None) log เฉพาะครั้งแรกของ controller นั้น"""
+        try:
+            return step()
+        except Exception:
+            if ctl not in self._tick_failed:
+                self._tick_failed.add(ctl)
+                _log.exception("%s ของ module %s รับค่าจาก tick ไม่ได้ (บันทึกเฉพาะครั้งแรก)", TITLES[kind], module)
+            return None
 
     # ---------------------------------------------------------------- งานจริง (ใน task ของตัวเอง)
 
@@ -213,6 +228,7 @@ class ControllerHub:
         except Exception:                                        # controller ปิดได้แม้มี error: ตัวอื่นต้องปิดต่อ
             _log.exception("ปิด %s ของ module %s ไม่สำเร็จ", TITLES[kind], module)
         finally:
+            self._tick_failed.discard(ctl)
             if kind == ROTATOR:                                  # timer หยุดแล้ว: ไม่มีใครขอ pass ให้ owner นี้อีก
                 self._passes.release_current(rot_owner(module))
 

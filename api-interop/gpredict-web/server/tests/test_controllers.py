@@ -17,7 +17,7 @@ from gpredict_web.hwconf import HwConf
 from gpredict_web.module import module_from_dict
 from gpredict_web.pass_service import PassService
 from gpredict_web.prefs import Prefs
-from gpredict_web.rig import doppler_down
+from gpredict_web.rig import RigController, doppler_down
 from gpredict_web.runtime import Hub
 from gpredict_web.store import Store
 from tests.fake_hamlib import FakeHamlib
@@ -214,6 +214,23 @@ class ControllerHubTest(unittest.IsolatedAsyncioTestCase):
         radio = self.controllers.on_tick("M", tick)["radio"]
         self.assertEqual((radio["az"], radio["rate_kms"]), (rows[43017]["az"], rows[43017]["range_rate_kms"]))
         self.assertEqual(self.snapshots()["radio"]["rate_kms"], rows[43017]["range_rate_kms"])   # ไม่มีแถว: คงค่าเดิม
+
+    async def test_controller_error_in_a_tick_is_contained(self):
+        # controller ที่ล้มใน on_tick หรือ snapshot ไม่ทำให้ tick ของ module ล้ม: อีกตัวได้ค่าต่อ log ครั้งเดียวต่อ controller
+        await self.open_both()
+        tick = self.ok_tick()
+        with mock.patch.object(RigController, "on_tick", side_effect=RuntimeError("boom")):
+            with self.assertLogs("gpredict_web.controllers", "ERROR") as logs:
+                first = self.controllers.on_tick("M", tick)
+                second = self.controllers.on_tick("M", tick)
+                with mock.patch.object(RigController, "snapshot", side_effect=RuntimeError("boom")):
+                    third = self.controllers.on_tick("M", tick)
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("Radio Control", logs.output[0])
+        self.assertEqual((list(first), list(second)), (["radio", "rotator"], ["radio", "rotator"]))
+        self.assertIsNone(first["radio"]["az"])                             # snapshot ยังได้ (ค่าก่อน tick นี้)
+        self.assertEqual(list(third), ["rotator"])                         # snapshot ล้ม: tick ไม่มี radio
+        self.assertEqual(third["rotator"]["norad"], FIRST_BY_NAME)
 
     async def test_act_returns_snapshot_and_404_when_not_open(self):
         await self.assert_api_error(self.controllers.act("M", "radio", {"action": "track", "on": True}), 404, "NOT_FOUND")
