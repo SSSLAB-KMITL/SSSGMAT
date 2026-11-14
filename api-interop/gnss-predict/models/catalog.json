@@ -36,8 +36,8 @@
       "id": "bds3-meo-cast",
       "glb": "bds3-meo-cast/bds3-meo-cast.glb",
       "blocks": ["BDS-3M-CAST", "BDS-3SM-CAST"],
-      "size_m": [1.97, 14.46, 1.955],
-      "triangles": 3230,
+      "size_m": [1.97, 13.998, 1.955],
+      "triangles": 3350,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
       "status": "done"

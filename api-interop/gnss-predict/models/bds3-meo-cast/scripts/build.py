@@ -24,17 +24,18 @@ scene = pl.init_scene()
 #       -> Bus box (X x Y x Z): 1.970 x 1.140 x 1.070 m
 #         (X * Z = 2.11 m^2 + payload step -> 2.68 m^2; Y * Z = 1.14 * 1.07 = 1.220 m^2;
 #          X * Y = 1.97 * 1.14 = 2.246 m^2)
-#       Solar array area: 20.44 m^2 total (10.22 m^2 per wing; 2 panels/wing)
+#       Solar array area: 20.44 m^2 total (10.22 m^2 per wing; alternative eoPortal 14.10 m^2
+#       = 2 x 4.7 x 1.5 m noted in NOTES.md).
 #   - IGS igs_satellite_metadata.snx:
 #       LRA_BDS_NCRIEO_38 (38 prisms) at (0.5933, -0.0870, 1.2600) m
 # --------------------------------------------------------------------------------------
 BUS = (1.970, 1.140, 1.070)                 # derived from official CSNO face areas (1.22 / 2.25 m^2)
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
-N_PANELS = 2                                # 2 panels per wing (CAST MEO platform)
-PANEL_L, PANEL_W, PANEL_T = 2.840, 1.800, 0.025  # 2 * 2.840 * 1.800 = 10.224 m^2/wing (20.45 m^2 total, official 20.44)
-PANEL_GAP = 0.060                           # est. inter-panel hinge gap
-YOKE_LEN = 0.920                            # est. yoke length -> wing tip Y = 7.230 m (span 14.460 m)
+N_PANELS = 3                                # 3 panels/wing so PANEL_L <= BUS X_B (1.893 <= 1.970 m) stows flush
+PANEL_L, PANEL_W, PANEL_T = 1.893, 1.800, 0.025  # 3 * 1.893 * 1.800 = 10.222 m^2/wing (20.44 m^2 total, CSNO official)
+PANEL_GAP = 0.050                           # est. inter-panel hinge gap
+YOKE_LEN = 0.650                            # est. yoke -> wing_tip = 0.570 + 0.650 + 5.679 + 0.100 = 6.999 m (span 13.998 m)
 SADM_X, SADM_Z = 0.0, 0.0
 
 # Official IGS LRA_BDS_NCRIEO_38 eccentricity: X = +0.5933 m, Y = -0.0870 m, Z = +1.2600 m
