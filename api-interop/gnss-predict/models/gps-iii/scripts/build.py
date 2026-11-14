@@ -22,17 +22,18 @@ scene = pl.init_scene()
 #   - Steigenberger, Thoelert & Montenbruck (2020), "GPS III Vespucci: Results of half a year
 #     in orbit", Adv. Space Res. 66(9):2123-2134, Table 3:
 #       Bus box (X x Y x Z): 2.46 x 1.78 x 3.40 m
-#       Solar array total area: 28.2 m^2 (14.1 m^2 per wing)
+#       Solar array total area: 28.2 m^2 (14.1 m^2 per wing; Airforce Tech lists ~28.5 m^2 / 307 sq ft)
+#   - Lockheed Martin GPS III spec: deployed wing span 48 ft (14.63 m); eoPortal lists ~15.0 m
 #   - IGS igs_satellite_metadata.snx: LRA_GPS_III (48 prisms) at (1.1030, 0.0070, 2.1730) m
 #   - Lockheed Martin GPS III fact sheet (A2100M bus, 2 panels/wing, 8+4 L-band array)
 # --------------------------------------------------------------------------------------
 BUS = (2.460, 1.780, 3.400)                 # official (Steigenberger et al. 2020)
 HX, HY, HZ = BUS[0] / 2, BUS[1] / 2, BUS[2] / 2
 
-N_PANELS = 2                                # 2 panels per wing (Lockheed Martin A2100M GPS III)
-PANEL_L, PANEL_W, PANEL_T = 3.680, 1.916, 0.025  # 2 * 3.680 * 1.916 = 14.10 m^2/wing (28.20 m^2 total, official)
-PANEL_GAP = 0.060                           # est. inter-panel hinge gap
-YOKE_LEN = 1.150                            # derived from span (~18.92 m tip-to-tip)
+N_PANELS = 2                                # official: 2 panels per wing (Lockheed Martin A2100M GPS III)
+PANEL_L, PANEL_W, PANEL_T = 2.878, 2.450, 0.025  # derived: 2*2*2.878*2.450 = 28.20 m^2; 2.878 m <= 3.40 m bus Z
+PANEL_GAP = 0.050                           # est. inter-panel hinge gap
+YOKE_LEN = 0.619                            # derived: 2*(0.890 + 0.619 + 2*2.878 + 0.050) = 14.630 m (48 ft)
 SADM_X, SADM_Z = 0.0, -0.20                 # est. from Lockheed Martin A2100M drawings
 
 ARRAY_C = Vector((-0.20, 0.0, HZ))          # L-band array centre on +Z deck (offset -X to clear LRA on +X)

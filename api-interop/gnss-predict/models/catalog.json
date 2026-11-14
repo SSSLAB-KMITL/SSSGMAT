@@ -26,7 +26,7 @@
       "id": "gps-iii",
       "glb": "gps-iii/gps-iii.glb",
       "blocks": ["GPS-III", "GPS-IIIA", "GPS-III-1"],
-      "size_m": [2.508, 18.92, 4.11],
+      "size_m": [2.508, 14.63, 4.11],
       "triangles": 4070,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
