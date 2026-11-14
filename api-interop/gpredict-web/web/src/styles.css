@@ -1052,6 +1052,74 @@ body {
   margin-top: auto;
 }
 
+/* Preferences → General → TLE Update (ref-D §4): the combo, the proxy and sources grid (label right-aligned, entry and list beside it) */
+.tle-freq-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tle-combo {
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tle-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 10px;
+}
+.tle-grid-label {
+  text-align: right;
+}
+.tle-grid-label.top {
+  align-self: start;
+  padding-top: 3px;
+}
+.hw-list.tle-list {
+  flex: none;
+  min-height: 0;
+  height: 150px; /* (the Interfaces lists are 200 px at least) a list that shows six rows; Gpredict's spans three of the five rows of its grid */
+}
+.tle-source {
+  white-space: nowrap;
+}
+.tle-source-edit {
+  width: 100%;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--text);
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+/* Edit → Update TLE data from local files (ref-D §6): "Select TLE directory:" and the folder button, 30 px around in Gpredict */
+.tle-files {
+  min-width: 420px;
+  padding: 20px;
+}
+.tle-files-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.tle-files-chooser {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tle-files-input {
+  display: none; /* the folder button opens it */
+}
+
 /* Module properties */
 .dtabs {
   display: flex;

@@ -4,7 +4,7 @@
 import { isModuleName } from "./moduleName";
 import { applyProps, propsChange, propsEqual } from "./moduleProps";
 import type { ModuleProps, PropsSource } from "./moduleProps";
-import type { ModuleConfig, SatRecord } from "./types";
+import type { ModuleConfig, SatRecord, TleGroup } from "./types";
 import { compareNames } from "./views/cells";
 
 // ---------------------------------------------------------------- texts
@@ -88,7 +88,15 @@ export interface GroupOption {
   label: string;
 }
 
-/** The group combo: "All satellites", then the CelesTrak groups. */
+/**
+ * The names of the groups of GET /api/tle/groups for the group combo: the groups of the TLE sources (nasabare, a group made from
+ * local files, CelesTrak's) and the groups of the index that have no source, once each, in the order the server gives them.
+ */
+export function tleGroupNames(groups: readonly Pick<TleGroup, "name">[]): string[] {
+  return [...new Set(groups.map((g) => g.name))];
+}
+
+/** The group combo: "All satellites", then the groups of the TLE sources and of the index. */
 export function groupOptions(groups: readonly string[]): GroupOption[] {
   return [{ value: "", label: GROUP_ALL }, ...groups.map((g) => ({ value: g, label: g }))];
 }

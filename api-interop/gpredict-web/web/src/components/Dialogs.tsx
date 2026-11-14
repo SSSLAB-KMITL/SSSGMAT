@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { updateTle } from "../api";
 import { dialogKey } from "../dialogs";
 import type { Dialog } from "../dialogs";
 import { PreferencesDialog } from "../prefs/PreferencesDialog";
@@ -8,6 +9,7 @@ import { CloneDialog, DeleteDialog } from "./CloneDialog";
 import { AboutDialog, LicenseDialog, OnlineHelpDialog } from "./HelpDialogs";
 import { ModuleDialog } from "./ModuleDialog";
 import { OpenModuleDialog } from "./OpenModuleDialog";
+import { TleFilesDialog } from "./TleFilesDialog";
 import { TleUpdateDialog } from "./TleUpdateDialog";
 
 interface Props {
@@ -62,7 +64,9 @@ export const Dialogs = memo(function Dialogs({
           case "open":
             return <OpenModuleDialog key={dialogKey(d)} open={open} onClose={close} onOpened={onOpened} />;
           case "tle":
-            return <TleUpdateDialog key={dialogKey(d)} onClose={close} onUpdated={onTleUpdated} />;
+            return <TleUpdateDialog key={dialogKey(d)} source="network" run={updateTle} onClose={close} onUpdated={onTleUpdated} />;
+          case "tleFiles":
+            return <TleFilesDialog key={dialogKey(d)} onClose={close} onUpdated={onTleUpdated} />;
           case "trsp":
             return <TrspUpdateDialog key={dialogKey(d)} onClose={close} />;
           case "preferences":

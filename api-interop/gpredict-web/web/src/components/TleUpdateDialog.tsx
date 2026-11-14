@@ -1,22 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { errorText, updateTle } from "../api";
-import { tleDialogView, TLE_HEADING, TLE_TITLE } from "../tleUpdate";
-import type { TlePhase } from "../tleUpdate";
+import { errorText } from "../api";
+import { tleDialogView, TLE_TITLE } from "../tleUpdate";
+import type { TlePhase, TleSource } from "../tleUpdate";
+import type { TleUpdateResult } from "../types";
 import { FloatingWindow } from "./FloatingWindow";
 
 interface Props {
+  /** which update this is: the bold heading says "network" or "files" */
+  source: TleSource;
+  /** does the update (POST /api/tle/update, or POST /api/tle/local with the files read first) and answers when it is done */
+  run: () => Promise<TleUpdateResult>;
   onClose: () => void;
   /** the update was done (also when the dialog was closed before it ended): the open modules have been reloaded by the server */
   onUpdated: () => void;
 }
 
 /**
- * Edit → Update TLE data from network (ref §1): the dialog "TLE Update" starts the update when it opens and shows
- * "Updating TLE files from network", then the counts "Satellites updated / Satellites skipped / Missing Satellites", then
- * "Finished" and enables Close. The warnings of the groups that could not be fetched follow in Thai (ของเรา). The server
- * answers when it is done (it fetches the CelesTrak groups one after the other), so the progress bar only moves.
+ * Edit → Update TLE data from network (ref §1) and from local files (ref-D §6): the dialog "TLE Update" starts the update when it opens and
+ * shows "Updating TLE files from network" (or "… from files"), then the counts "Satellites updated / Satellites skipped / Missing
+ * Satellites" (and "New Satellites" when satellites may be added), then "Finished" and enables Close. The warnings of the groups that
+ * could not be fetched follow in Thai (ของเรา). The server answers when it is done (it fetches the CelesTrak groups one after the
+ * other), so the progress bar only moves.
  */
-export function TleUpdateDialog({ onClose, onUpdated }: Props) {
+export function TleUpdateDialog({ source, run, onClose, onUpdated }: Props) {
   const [phase, setPhase] = useState<TlePhase>({ kind: "running" });
   const started = useRef(false);
   const updated = useRef(onUpdated);
@@ -27,7 +33,7 @@ export function TleUpdateDialog({ onClose, onUpdated }: Props) {
   useEffect(() => {
     if (started.current) return; // a second run of this effect (React's strict mode in development) must not update twice
     started.current = true;
-    updateTle().then(
+    run().then(
       (result) => {
         setPhase({ kind: "done", result });
         updated.current();
@@ -36,13 +42,13 @@ export function TleUpdateDialog({ onClose, onUpdated }: Props) {
     );
   }, []);
 
-  const view = tleDialogView(phase);
+  const view = tleDialogView(phase, source);
   return (
     <FloatingWindow title={TLE_TITLE} onClose={onClose} width={440}>
       <div className="dialog tle">
-        <b className="tle-heading">{TLE_HEADING}</b>
+        <b className="tle-heading">{view.heading}</b>
         <div className="tle-activity">{view.activity}</div>
-        {phase.kind === "running" ? <progress className="tle-progress" aria-label={TLE_HEADING} /> : <progress className="tle-progress" max={1} value={phase.kind === "done" ? 1 : 0} />}
+        {phase.kind === "running" ? <progress className="tle-progress" aria-label={view.heading} /> : <progress className="tle-progress" max={1} value={phase.kind === "done" ? 1 : 0} />}
         <div className="tle-stats">{view.stats}</div>
         {view.error !== null && (
           <p className="dialog-error" role="alert">

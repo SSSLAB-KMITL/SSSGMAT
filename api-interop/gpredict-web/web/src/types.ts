@@ -73,6 +73,10 @@ export interface TleUpdateResult {
   updated: number;
   skipped: number;
   missing: number;
+  /** satellites added to the database; 0 unless `add_new` */
+  new: number;
+  /** satellites may be added (TLE/ADD_NEW_SATS): the box shows the line "New Satellites:"; false when no source answered */
+  add_new: boolean;
   messages: ApiMessage[];
 }
 

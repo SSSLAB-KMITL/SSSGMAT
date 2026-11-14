@@ -12,7 +12,7 @@ describe("laterTooltip", () => {
 /** The column "กดไม่ได้" of the table in spec §8.2, row by row (the sub-project number is the one in brackets there). */
 const SPEC_8_2: [label: string, subProject: 2 | 3 | 4, where: string][] = [
   ["Log browser", 4, "File"],
-  ["Update TLE data from local files", 4, "Edit"],
+  // Edit → Update TLE data from local files works since sub-project 4 (Task 18), so it is not here any more
   // Edit → Preferences works since sub-project 2 (the window and its Predict group), so it is not here any more
   // Help: "ไม่มี News" - there is no News item at all
   ["Detach module", 4, "Module menu"],
@@ -48,6 +48,10 @@ describe("LATER (spec §8.2)", () => {
     expect(Object.values(LATER)).not.toContain(3);
   });
 
+  it("has no Update TLE data from local files: Edit → Update TLE data from local files opens its box", () => {
+    expect(LATER).not.toHaveProperty("Update TLE data from local files");
+  });
+
   it("has no pass items: Show current pass, Show next pass and Future passes open the pass windows", () => {
     for (const label of ["Show current pass", "Show next pass", "Future passes"]) expect(LATER, label).not.toHaveProperty(label);
   });
@@ -57,7 +61,6 @@ describe("laterOf", () => {
   it("gives the sub-project of a label in LATER", () => {
     expect(laterOf("Detach module")).toBe(4);
     expect(laterOf("Satellite info")).toBe(4);
-    expect(laterOf("Update TLE data from local files")).toBe(4);
   });
 
   it("throws for a label that is not in LATER, so that a typo cannot make an item look available", () => {
@@ -66,5 +69,6 @@ describe("laterOf", () => {
     expect(() => laterOf("Show next pass")).toThrow(); // so do the pass items
     expect(() => laterOf("Sky at a glance")).toThrow(); // and Sky at a glance
     expect(() => laterOf("Radio Control")).toThrow(); // and the controllers
+    expect(() => laterOf("Update TLE data from local files")).toThrow(); // and the update from local files
   });
 });

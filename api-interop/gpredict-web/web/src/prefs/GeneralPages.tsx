@@ -1,6 +1,6 @@
 // The General group of Preferences (ref-D §1, sat-pref-general.c): a notebook with the tabs Number Formats, Ground Stations, TLE Update
-// and Message Logs. This file has the pages that exist so far (Number Formats, Ground Stations and Message Logs); the others are added to
-// `TAB_PAGES` and take their place in Gpredict's order. Every change goes to the window's draft (PrefsPageApi); the labels, items and tooltips are in
+// and Message Logs. This file has Number Formats and Message Logs; Ground Stations and TLE Update are files of their own. A page is a
+// `TAB_PAGES` entry and takes its place in Gpredict's order. Every change goes to the window's draft (PrefsPageApi); the labels, items and tooltips are in
 // generalPrefs.ts. As in Gpredict, every page is built when the window opens and the tab only chooses which one is seen, so the
 // preview of the time format keeps running while another tab is shown.
 
@@ -31,6 +31,7 @@ import {
 import type { GeneralTab } from "./generalPrefs";
 import { GroundStationsPage } from "./GroundStationsPage";
 import type { PrefsPageApi } from "./prefGroups";
+import { TleUpdatePage } from "./TleUpdatePage";
 
 // ---------------------------------------------------------------- Number Formats
 
@@ -146,10 +147,11 @@ function MessageLogsPage({ api }: { api: PrefsPageApi }) {
 
 // ---------------------------------------------------------------- the notebook
 
-/** The page of each tab that has one. TLE Update is added here (sub-project 4, task 18). */
+/** The page of each tab that has one: all four of General's tabs have since sub-project 4, task 18 (`SHOWN_TABS` keeps Gpredict's order). */
 const TAB_PAGES: Partial<Record<GeneralTab, (props: { api: PrefsPageApi }) => ReactNode>> = {
   "Number Formats": NumberFormatsPage,
   "Ground Stations": GroundStationsPage,
+  "TLE Update": TleUpdatePage,
   "Message Logs": MessageLogsPage,
 };
 

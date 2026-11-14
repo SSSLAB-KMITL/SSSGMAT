@@ -18,10 +18,10 @@ describe("menu bar (ref §1, spec §8.2)", () => {
     ]);
   });
 
-  it("Edit: Update TLE data from network, Update transponder data and Preferences work; the other names its sub-project", () => {
+  it("Edit: Update TLE data from network, Update TLE data from local files, Update transponder data and Preferences all work", () => {
     expect(outline(barMenu("Edit"))).toEqual([
       "Update TLE data from network",
-      "Update TLE data from local files (later 4)",
+      "Update TLE data from local files",
       "Update transponder data",
       "-",
       "Preferences",
@@ -31,6 +31,11 @@ describe("menu bar (ref §1, spec §8.2)", () => {
   it("Edit menu enables Update transponder data: its action opens the Transponder Update dialog", () => {
     const item = barMenu("Edit").find((e) => e.kind === "item" && e.label === "Update transponder data");
     expect(item).toEqual({ kind: "item", label: "Update transponder data", action: "updateTrsp" });
+  });
+
+  it("edit menu enables local files: its action opens the box 'Update TLE from files'", () => {
+    const item = barMenu("Edit").find((e) => e.kind === "item" && e.label === "Update TLE data from local files");
+    expect(item).toEqual({ kind: "item", label: "Update TLE data from local files", action: "updateTleFiles" });
   });
 
   it("Edit → Preferences is an item that can be chosen, and its action is preferences", () => {

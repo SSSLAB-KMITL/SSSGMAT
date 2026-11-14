@@ -12,6 +12,7 @@ import { NoticeStrip } from "./components/NoticeStrip";
 import { Overlay } from "./components/Overlay";
 import { Tabs } from "./components/Tabs";
 import { TimeController } from "./components/TimeController";
+import { TleOldNotice } from "./components/TleOldNotice";
 import { closeDialog, showDialog } from "./dialogs";
 import type { Dialog } from "./dialogs";
 import { shortcutAction } from "./menus";
@@ -101,6 +102,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [autotrack, setAutotrack] = useState<ReadonlySet<string>>(new Set()); // modules with Autotrack on (not saved)
   const [controllers, setControllers] = useState<readonly ControllerWindow[]>([]); // the Radio Control and Antenna Control windows of every module
   const [controllerBox, setControllerBox] = useState<ControllerBox | null>(null); // Gpredict's error box of the controllers (no device, Configure blocked)
+  const [tleOld, setTleOld] = useState<string | null>(null); // the text of the notice "TLE files are getting out of date", while it is shown
   const modulesAsked = useRef(0); // GET /api/modules sent so far: only the answer of the last one counts
   const controllersAsked = useRef(0); // GET /api/controllers sent so far: only the answer of the last one counts
   const closingControllers = useRef(new Set<string>()); // (refKey) the controllers whose window was closed and that the server is still closing
@@ -152,8 +154,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
         },
         prefsChanged: () => void reloadPrefs().catch(() => {}),
         modulesChanged: () => void reloadModules(),
-        // the TLE age check found old data: Task 18 shows Gpredict's box with this text
-        tleOld: (_text) => {},
+        // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
+        tleOld: setTleOld,
       }),
     [reloadModules],
   );
@@ -378,6 +380,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
     [syncControllers],
   );
   const closeControllerBox = useCallback(() => setControllerBox(null), []);
+  const closeTleOld = useCallback(() => setTleOld(null), []);
 
   /** File → Quit (Ctrl+Q): stop the server and the page says so; a server that cannot be stopped from here says why instead */
   const quit = useCallback(() => runQuit(quitServer, onStopped, addLocalError), [onStopped, addLocalError]);
@@ -393,6 +396,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
           return void quit();
         case "updateTle":
           return show({ kind: "tle" });
+        case "updateTleFiles":
+          return show({ kind: "tleFiles" });
         case "updateTrsp":
           return show({ kind: "trsp" });
         case "preferences":
@@ -587,6 +592,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
         />
       )}
       {controllerBox !== null && <MessageBox title={controllerBox.title} message={controllerBox.message} onOk={closeControllerBox} />}
+      {tleOld !== null && <TleOldNotice text={tleOld} onClose={closeTleOld} />}
     </div>
   );
 }

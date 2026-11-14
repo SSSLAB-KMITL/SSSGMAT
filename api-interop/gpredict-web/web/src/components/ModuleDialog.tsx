@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, errorText, getModules, getQthList, getSatellite, openModule, putModule } from "../api";
+import { ApiError, errorText, getModules, getQthList, getSatellite, getTleGroups, openModule, putModule } from "../api";
 import {
   editModuleChange,
   hasModuleChanges,
@@ -7,6 +7,7 @@ import {
   NO_SATS_ERROR,
   qthChoices,
   sortedSats,
+  tleGroupNames,
   validateModuleForm,
 } from "../moduleForm";
 import type { ModuleDraft, SelectedSat } from "../moduleForm";
@@ -71,6 +72,7 @@ export function ModuleDialog({ target, onClose }: Props) {
   const [name, setName] = useState(config?.name ?? "");
   const [qth, setQth] = useState<string | null>(config?.qth ?? null);
   const [qthNames, setQthNames] = useState<string[]>([]);
+  const [groups, setGroups] = useState<string[]>([]); // the groups of the satellite selector's combo
   const [sats, setSats] = useState<readonly SelectedSat[]>([]);
   const [namesLoaded, setNamesLoaded] = useState(!editing); // Edit module: the names of the satellites have been read
   const [edited, setEdited] = useState<ModuleProps | null>(null); // the properties after OK of Module properties
@@ -85,6 +87,18 @@ export function ModuleDialog({ target, onClose }: Props) {
     let alive = true;
     getQthList().then(
       (r) => alive && setQthNames(r.qth.map((q) => q.name)),
+      (e: unknown) => alive && setFailure(errorText(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // the groups of the TLE sources and of the index (nasabare and the groups made from local files are there; /api/meta's fixed list is not used)
+  useEffect(() => {
+    let alive = true;
+    getTleGroups().then(
+      (r) => alive && setGroups(tleGroupNames(r.groups)),
       (e: unknown) => alive && setFailure(errorText(e)),
     );
     return () => {
@@ -225,7 +239,7 @@ export function ModuleDialog({ target, onClose }: Props) {
             </div>
             <hr className="props-separator" />
             <b className="props-header">Satellites</b>
-            <SatSelector groups={meta?.tle_groups ?? []} selected={sats} onChange={setSats} loading={!namesLoaded} />
+            <SatSelector groups={groups} selected={sats} onChange={setSats} loading={!namesLoaded} />
           </fieldset>
           {meta === null && <p className="dialog-text">กำลังโหลดค่าตั้งต้นของ module จาก server...</p>}
           {failure !== null && (

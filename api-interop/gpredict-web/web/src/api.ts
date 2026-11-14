@@ -119,6 +119,8 @@ export function searchSatellites(q: string, group?: string) {
 export const getSatellite = (norad: number) => request<SatRecord>("GET", `/api/satellites/${norad}`);
 export const getTleGroups = () => request<{ groups: TleGroup[] }>("GET", "/api/tle/groups");
 export const updateTle = () => request<TleUpdateResult>("POST", "/api/tle/update");
+/** Edit → Update TLE data from local files: the text of the files of the chosen folder (the browser cannot give the server a path, plan decision 2). */
+export const updateTleLocal = (body: { files: readonly { name: string; text: string }[] }) => request<TleUpdateResult>("POST", "/api/tle/local", body);
 
 // ---------------------------------------------------------------- modules
 

@@ -18,13 +18,12 @@ export function laterTooltip(n: 2 | 3 | 4): string {
  * Gpredict writes it, and the sub-project that adds it. "Satellite info" is also the bold satellite name of the Single sat and
  * Event list popups and the double click on a satellite. Help has no News (spec §8.2). Show current pass, Show next pass and
  * Future passes were here until sub-project 2 made them real (Task 13), and so was "Sky at a glance" (Task 14); so were Radio
- * Control, Antenna Control and Update transponder data until sub-project 3 (Task 14).
+ * Control, Antenna Control and Update transponder data until sub-project 3 (Task 14); so was Update TLE data from local files
+ * until sub-project 4 (Task 18).
  */
 export const LATER: Readonly<Record<string, 2 | 3 | 4>> = {
   // File
   "Log browser": 4,
-  // Edit
-  "Update TLE data from local files": 4,
   // Module menu
   "Detach module": 4,
   "Full screen": 4,

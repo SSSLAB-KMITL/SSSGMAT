@@ -14,6 +14,7 @@ import {
   removeSat,
   sortedSats,
   TOO_MANY_HINT,
+  tleGroupNames,
 } from "./moduleForm";
 import type { ModuleDraft, SelectedSat } from "./moduleForm";
 import { propsOf } from "./moduleProps";
@@ -33,6 +34,12 @@ describe("texts of the satellite selector (ref §3)", () => {
       { value: "amateur", label: "amateur" },
       { value: "weather", label: "weather" },
     ]);
+  });
+  it("lists the groups of GET /api/tle/groups by name, in the order the server gives, once each", () => {
+    const g = (name: string) => ({ name, last_request: null, last_success: null });
+    // the sources first (nasabare is not a CelesTrak group), then the groups of the index that have no source
+    expect(tleGroupNames([g("nasabare"), g("amateur"), g("amateur"), g("my-files")])).toEqual(["nasabare", "amateur", "my-files"]);
+    expect(tleGroupNames([])).toEqual([]);
   });
   it("says in Thai that only the first 500 satellites are listed", () => {
     expect(TOO_MANY_HINT).toContain("500");
