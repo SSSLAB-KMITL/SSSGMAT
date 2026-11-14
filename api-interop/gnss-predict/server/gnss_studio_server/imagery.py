@@ -6,7 +6,7 @@ server เป็นจุดเดียวที่ต่อ GIBS และ EOX
 GIBS = `enabled`, EOX = `eox`) ตรวจที่ route ทุกคำขอ (อ่านจาก settings.json) และตัวดึงตรวจซ้ำอีกครั้งด้วย `enabled(source)` ที่ฉีดเข้ามา
 หลังได้คิวและก่อนต่อเน็ตเสมอ (คำขอที่รอคิวอยู่ตอนผู้ใช้ปิดสวิตช์ต้องไม่ถูกส่งไปที่นั่น) แต่ยังห้ามเรียก `TileFetcher.get` นอก route ที่ตรวจสวิตช์แล้ว
 
-- `SOURCES`: แหล่งภาพที่ server ต่อได้ (`gibs`, `eox`) แต่ละแหล่งมีแม่แบบ URL, สวิตช์, เพดานดึงพร้อมกัน (GIBS 4, EOX 2) และข้อความไทยของตัวเอง
+- `SOURCES`: แหล่งภาพที่ server ต่อได้ (`gibs`, `eox`) แต่ละแหล่งมีแม่แบบ URL, สวิตช์, เพดานดึงพร้อมกัน (GIBS 4, EOX 4) และข้อความไทยของตัวเอง
   การพัก ตัวนับความล้มเหลว และคิวแยกต่อแหล่ง (แหล่งหนึ่งโดนบล็อกหรือล่ม อีกแหล่งยังใช้ได้); memo ของ "ไม่มีภาพ" กับ cache ใช้ร่วมกัน (key มีรหัสชั้นภาพอยู่แล้ว)
 - `CATALOG`: ตารางเดียวของชั้นภาพ (ลำดับ = ลำดับวาด ชั้นหลังทับชั้นก่อน; แต่ละแถวบอก `source`) ค่า TileMatrixSet / ext / รูปแบบเวลายังรอยืนยันกับของจริง
   (GIBS ขั้น B0, EOX ขั้นยืนยันจริงของ spec ภาพละเอียด §5) แก้ที่ตารางนี้ที่เดียว
@@ -14,12 +14,15 @@ GIBS = `enabled`, EOX = `eox`) ตรวจที่ route ทุกคำขอ
   1. ชิ้นที่อยู่ใน cache ส่งเลย (แตะ mtime) แม้กำลังพักการดึง; ชิ้นที่ cache เสีย (ไม่ใช่ JPEG/PNG ตาม ext) ถูกลบแล้วนับเป็นไม่มี
   2. ชิ้นที่ GIBS เคยตอบ 400/404 ไม่ถามซ้ำ 1 ชั่วโมง (จำในหน่วยความจำ สูงสุด 10,000 รายการ) -> 404 `IMAGERY_NOT_AVAILABLE`
   3. แหล่งของชั้นนี้กำลังพัก -> 503 `IMAGERY_PAUSED` (detail = เวลา UTC ที่ลองได้อีก)
-  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้นต่อ GIBS และ 2 ชิ้นต่อ EOX รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ
+  4. ดึงพร้อมกันได้ไม่เกิน 4 ชิ้นต่อ GIBS และ 4 ชิ้นต่อ EOX รอคิวเกิน 15 วินาที -> 503 `IMAGERY_BUSY` (หลังได้คิวตรวจข้อ 1-3 ซ้ำ
      แล้วตรวจสวิตช์ของแหล่งนั้นอีกครั้ง ปิดอยู่ -> 403 `IMAGERY_DISABLED` ไม่ต่อเน็ต)
   5. ดึงครั้งเดียว ไม่ลองซ้ำ timeout 20 วินาที ไม่ตาม redirect (3xx = ล้มเหลว) อ่านไม่เกิน 2 MB + 1 ไบต์
      400/404 -> จำว่าไม่มีภาพ; 403/429 -> พักทุกชั้นภาพของแหล่งนั้น 15 นาที (log ครั้งเดียวต่อการพัก);
      ผิดพลาดอื่น (เครือข่าย timeout 5xx redirect ตอบผิดรูป ภาพที่ตัดกลางทาง ภาพเกิน 2 MB ไม่ใช่ JPEG/PNG ตรงกับ ext) -> 502 `IMAGERY_FETCH_FAILED`
      และนับ (ต่อแหล่ง): ติดกัน 20 ครั้ง -> พักแหล่งนั้น 5 นาที (ตัวนับกลับเป็น 0 เมื่อพัก และเมื่อได้ภาพที่ใช้ได้หนึ่งชิ้นจากแหล่งนั้น)
+     การส่งผ่าน `KeepAliveTransport` (`keepalive.py`): connection HTTPS ต่อ host ใช้ซ้ำหลัง response อ่านครบ ไม่ต้องเปิด TCP + TLS ใหม่ทุกชิ้น
+     ทิ้ง connection เมื่อผิดพลาด อ่านไม่ครบ ตัดกลางทาง เกินเพดาน หรือเซิร์ฟเวอร์ส่ง `Connection: close` (connection เก่าที่ว่างอยู่แล้วถูกเซิร์ฟเวอร์ตัดไปเอง
+     ส่งซ้ำบน connection ใหม่ครั้งเดียว: คำขอไม่เคยถึงปลายทางสองครั้ง); ต่อเฉพาะ `https` ไป host ของ `SOURCES`
   6. ภาพที่ผ่านการตรวจเขียน cache แบบ atomic (เขียนไม่ได้ = log เตือนครั้งเดียว ส่งภาพให้อยู่ดี)
   ชิ้นที่ "ยังไม่นิ่ง" (`is_settled` เป็นเท็จ: daily ที่วันที่ UTC >= วันนี้ - 1 วัน, 10min ที่เวลาของ token >= ตอนนี้ - 3 ชั่วโมง รวมอนาคต)
   ดึงและส่งได้ตามปกติแต่ไม่เขียน cache ไม่อ่านจาก cache (ไฟล์เก่าของ token นั้นถูกมองข้าม) และ "ไม่มีภาพ" จำแค่ 10 นาที: GIBS
@@ -38,6 +41,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -45,6 +49,7 @@ from pathlib import Path
 from typing import Callable, Literal
 
 from .errors import ApiError
+from .keepalive import KeepAliveTransport, content_length
 from .store import write_atomic
 
 # ---------- ค่าคงที่ (Global Constraints) ----------
@@ -54,7 +59,7 @@ EOX_URL = "https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/{tms}/{z}/{y}/{x
 USER_AGENT = "gnss-studio/0.1"
 FETCH_TIMEOUT_S = 20
 MAX_CONCURRENT = 4                             # ต่อ GIBS
-EOX_MAX_CONCURRENT = 2                         # ต่อ EOX (ผู้ให้บริการภาพฟรีรายเล็ก: ขอเบากว่า)
+EOX_MAX_CONCURRENT = 4                         # ต่อ EOX (ใช้ connection ซ้ำแล้วเบาต่อเซิร์ฟเวอร์ ไม่ต้อง TLS handshake ใหม่ทุกชิ้น)
 QUEUE_WAIT_S = 15
 PAUSE_FORBIDDEN_S = 15 * 60                    # GIBS ตอบ 403 หรือ 429
 FAILURE_LIMIT = 20                             # ผิดพลาดติดกันกี่ครั้งถึงพัก
@@ -231,8 +236,24 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def make_opener() -> urllib.request.OpenerDirector:
-    """opener ตั้งต้นของตัวดึง: urllib ธรรมดาแต่ใช้ `NoRedirect` แทนตัวตาม redirect"""
+    """opener แบบ urllib ธรรมดา (เปิด connection ใหม่ทุกคำขอ) ที่ใช้ `NoRedirect`: ไม่ใช่ตัวตั้งต้นของตัวดึงอีกแล้ว (ตัวตั้งต้นคือ `make_transport`)
+    เก็บไว้เป็นทางเลือกที่ฉีดเป็น `opener` ได้ และเป็นหลักฐานว่ากติกาไม่ตาม redirect ของ urllib เดิมยังเป็นจริง"""
     return urllib.request.build_opener(NoRedirect)
+
+
+def source_pool_sizes() -> dict[str, int]:
+    """host ของแต่ละแหล่ง (จาก `SOURCES` เท่านั้น) -> ขนาด pool ของ connection ที่ใช้ซ้ำ = เพดานดึงพร้อมกันของแหล่งนั้น
+    (ตัวดึงถือที่ว่างของแหล่งก่อนส่งคำขอเสมอ จึงไม่มีทางต้องใช้ connection ต่อ host เกินเพดานนี้)"""
+    sizes: dict[str, int] = {}
+    for source in SOURCES.values():
+        host = urllib.parse.urlsplit(source.url).hostname
+        sizes[host] = max(sizes.get(host, 0), source.concurrency)
+    return sizes
+
+
+def make_transport(connection_factory=None) -> KeepAliveTransport:
+    """ตัวส่งตั้งต้นของตัวดึง: HTTPS keep-alive ไปเฉพาะ host ใน `SOURCES` (ดู `keepalive.py`) connection_factory ฉีดตัวปลอมได้ใน test"""
+    return KeepAliveTransport(source_pool_sizes(), MAX_BODY_BYTES, connection_factory)
 
 
 def _short(text: object) -> str:
@@ -240,9 +261,7 @@ def _short(text: object) -> str:
 
 
 def _content_length(resp) -> int | None:
-    headers = getattr(resp, "headers", None)
-    value = headers.get("Content-Length") if headers is not None else None
-    return int(value) if isinstance(value, str) and value.strip().isascii() and value.strip().isdigit() else None
+    return content_length(getattr(resp, "headers", None))
 
 
 # ---------- cache บนดิสก์ ----------
@@ -355,7 +374,9 @@ class TileCache:
 class TileFetcher:
     """ดึงชิ้นภาพจาก GIBS และ EOX ตามกติกาที่หัวไฟล์ (ตัวเดียวต่อแอป: เก็บสถานะการพัก ตัวนับ และ "ไม่มีภาพ" ที่จำไว้)
 
-    opener: callable(request, timeout=...) -> response ที่มี `.read(n)` (และ `.status`, `.headers`, `.close()` ถ้ามี) ตั้งต้นคือ `make_opener().open`
+    opener: callable(request, timeout=...) -> response ที่มี `.read(n)` (และ `.status`, `.headers`, `.close()` ถ้ามี) ตั้งต้นคือ `.transport.open`
+    ของตัวส่ง HTTPS แบบ keep-alive (`make_transport(connection_factory)`: pool ต่อ host ใช้ connection ซ้ำ; test ฉีด `connection_factory` ปลอม)
+    ฉีดทั้ง `opener` และ `connection_factory` พร้อมกันไม่ได้ (ValueError); ฉีด `opener` แล้ว `transport` เป็น None
     now: นาฬิกา monotonic เป็นวินาที (การพักและอายุของ "ไม่มีภาพ")
     utcnow: นาฬิกาเวลาจริง คืน datetime ที่มี tzinfo ตั้งต้น `datetime.now(timezone.utc)` (ตัดสินว่าชิ้นภาพนิ่งหรือยัง)
     enabled: callable(source_id) -> bool อ่านสวิตช์ของแหล่งนั้น (`gibs` -> `online_imagery.enabled`, `eox` -> `online_imagery.eox`) ตอนนั้น
@@ -363,8 +384,11 @@ class TileFetcher:
     คิว การพัก และตัวนับความล้มเหลวแยกต่อแหล่ง: `_slots`, `_paused_until`, `_failures` เป็น dict ที่ key คือรหัสแหล่ง"""
 
     def __init__(self, data_dir: Path, opener=None, now=time.monotonic, logger: logging.Logger | None = None,
-                 utcnow: Callable[[], datetime] | None = None, enabled: Callable[[str], bool] | None = None):
-        self.opener = opener if opener is not None else make_opener().open
+                 utcnow: Callable[[], datetime] | None = None, enabled: Callable[[str], bool] | None = None, connection_factory=None):
+        if opener is not None and connection_factory is not None:
+            raise ValueError("pass either opener or connection_factory, not both")
+        self.transport = None if opener is not None else make_transport(connection_factory)
+        self.opener = opener if opener is not None else self.transport.open
         self.now = now
         self.utcnow = utcnow if utcnow is not None else (lambda: datetime.now(timezone.utc))
         self.enabled = enabled if enabled is not None else (lambda source: True)

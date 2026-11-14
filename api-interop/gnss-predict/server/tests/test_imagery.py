@@ -1,7 +1,7 @@
 """ภาพถ่ายออนไลน์ NASA GIBS ผ่าน server ในเครื่อง (spec ภาพออนไลน์ §3, §4, §6)
 
-ไม่มี test ใดต่อเน็ตจริง: ตัวดึงใช้ opener ปลอมที่ฉีดเข้าไป (บันทึกทุกครั้งที่ถูกเรียก) และ fixture `no_real_network` (autouse)
-ทำให้ urlopen, OpenerDirector.open และ socket.create_connection ล้มทันทีถ้ามีอะไรหลุดไปถึง
+ไม่มี test ใดต่อเน็ตจริง: ตัวดึงใช้ opener ปลอมที่ฉีดเข้าไป (บันทึกทุกครั้งที่ถูกเรียก) หรือ connection factory ปลอม (ทดสอบตัวส่ง keep-alive ตั้งต้น
+ท้ายไฟล์) และ fixture `no_real_network` (autouse) ทำให้ urlopen, OpenerDirector.open และ socket.create_connection ล้มทันทีถ้ามีอะไรหลุดไปถึง
 """
 
 import io
@@ -9,21 +9,25 @@ import os
 import re
 import socket
 import threading
+import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import Message
-from http.client import IncompleteRead
+from http.client import IncompleteRead, RemoteDisconnected
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 import pytest
 
 from conftest import make_client
-from gnss_studio_server import imagery, settings
+from gnss_studio_server import imagery, keepalive, settings
 from gnss_studio_server.app import create_app
 from gnss_studio_server.config import Config
+from gnss_studio_server.errors import ApiError
 from gnss_studio_server.imagery import (CATALOG, SOURCES, TileCache, TileFetcher, is_settled, layer_by_id, make_opener,
-                                        upstream_url, valid_time)
+                                        make_transport, source_pool_sizes, upstream_url, valid_time)
+from gnss_studio_server.keepalive import KeepAliveTransport
 
 ERROR_KEYS = {"code", "text", "field", "detail"}
 THAI = re.compile("[฀-๿]")
@@ -210,7 +214,7 @@ def test_sources_table():
     assert set(SOURCES) == {"gibs", "eox"}
     assert {layer.source for layer in CATALOG} == set(SOURCES)
     assert (SOURCES["gibs"].switch, SOURCES["gibs"].concurrency) == ("enabled", 4)
-    assert (SOURCES["eox"].switch, SOURCES["eox"].concurrency) == ("eox", 2)
+    assert (SOURCES["eox"].switch, SOURCES["eox"].concurrency) == ("eox", 4)
     assert SOURCES["gibs"].url == imagery.GIBS_URL
     assert SOURCES["eox"].url == imagery.EOX_URL
     assert imagery.EOX_URL == "https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/{tms}/{z}/{y}/{x}.{ext}"
@@ -233,7 +237,7 @@ def test_layer_by_id_is_exact_and_case_sensitive():
 def test_limits_match_global_constraints():
     assert imagery.FETCH_TIMEOUT_S == 20
     assert imagery.MAX_CONCURRENT == 4
-    assert imagery.EOX_MAX_CONCURRENT == 2
+    assert imagery.EOX_MAX_CONCURRENT == 4
     assert imagery.QUEUE_WAIT_S == 15
     assert imagery.PAUSE_FORBIDDEN_S == 15 * 60
     assert imagery.FAILURE_LIMIT == 20
@@ -1261,29 +1265,29 @@ def _blocking_for(env, host_marker, entered, gate):
     env.opener.default = opener
 
 
-def test_eox_concurrency_limit_is_2_and_gibs_has_its_own_slots(env, monkeypatch):
+def test_eox_concurrency_limit_is_4_and_gibs_has_its_own_slots(env, monkeypatch):
     env.enable(True, eox=True)
     monkeypatch.setattr(imagery, "QUEUE_WAIT_S", 0.05)
     gate, entered = threading.Event(), threading.Semaphore(0)
     _blocking_for(env, "tiles.maps.eox.at", entered, gate)
     layer, results = layer_by_id(EO), []
-    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(2)]
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(4)]
     for t in threads:
         t.start()
     try:
-        for _ in range(2):
-            assert entered.acquire(timeout=10)                       # EOX ทั้ง 2 อยู่ใน opener พร้อมกัน
-        j = assert_error(env.tile(EO, "default", 9, 0, 2), 503, "IMAGERY_BUSY")      # ที่ 3 รอคิวเกินเวลา
+        for _ in range(4):
+            assert entered.acquire(timeout=10)                       # EOX ทั้ง 4 อยู่ใน opener พร้อมกัน
+        j = assert_error(env.tile(EO, "default", 9, 0, 4), 503, "IMAGERY_BUSY")      # ที่ 5 รอคิวเกินเวลา
         assert j["text"] == "มีคำขอภาพค้างอยู่มาก ลองใหม่อีกครั้ง"
-        assert len(env.opener.calls) == 2
+        assert len(env.opener.calls) == 4
         assert env.tile(VI, DAY, 9, 0, 0).status_code == 200         # GIBS มีที่ว่างของตัวเอง ไม่ต้องรอ EOX
-        assert len(env.opener.calls) == 3
+        assert len(env.opener.calls) == 5
     finally:
         gate.set()
         for t in threads:
             t.join(10)
-    assert [r[1] for r in results] == ["image/jpeg"] * 2
-    assert env.tile(EO, "default", 9, 0, 3).status_code == 200      # ที่ว่างคืนแล้ว
+    assert [r[1] for r in results] == ["image/jpeg"] * 4
+    assert env.tile(EO, "default", 9, 0, 5).status_code == 200      # ที่ว่างคืนแล้ว
 
 
 def test_gibs_slots_are_not_used_by_eox(env, monkeypatch):
@@ -1313,28 +1317,28 @@ def test_eox_switch_is_rechecked_after_waiting_for_a_slot(env, monkeypatch):
     gate, entered = threading.Event(), threading.Semaphore(0)
     _blocking_for(env, "tiles.maps.eox.at", entered, gate)
     layer, results = layer_by_id(EO), []
-    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(2)]
-    third = []
-    queued_request = threading.Thread(target=lambda: third.append(env.tile(EO, "default", 9, 0, 2)))
+    threads = [threading.Thread(target=lambda x=x: results.append(env.fetcher.get(layer, "default", 9, 0, x))) for x in range(4)]
+    fifth = []
+    queued_request = threading.Thread(target=lambda: fifth.append(env.tile(EO, "default", 9, 0, 4)))
     for t in threads:
         t.start()
     try:
-        for _ in range(2):
+        for _ in range(4):
             assert entered.acquire(timeout=10)
         queued_request.start()                                       # ผ่านสวิตช์ของ route (เปิดอยู่) แล้วรอคิว
         assert slots.queued.wait(10)
-        assert len(env.opener.calls) == 2
-        env.enable(True, eox=False)                                  # ปิด EOX (GIBS ยังเปิด) ระหว่างที่คำขอที่ 3 รออยู่
+        assert len(env.opener.calls) == 4
+        env.enable(True, eox=False)                                  # ปิด EOX (GIBS ยังเปิด) ระหว่างที่คำขอที่ 5 รออยู่
     finally:
         gate.set()
         for t in threads + [queued_request]:
             t.join(10)
-    assert len(third) == 1
-    j = assert_error(third[0], 403, "IMAGERY_DISABLED")
+    assert len(fifth) == 1
+    j = assert_error(fifth[0], 403, "IMAGERY_DISABLED")
     assert j["text"] == EOX_DISABLED
-    assert len(env.opener.calls) == 2                                # ที่ 3 ไม่ถึง opener
-    assert not env.path(EO, "default", 9, 0, 2).exists()
-    assert [r[1] for r in results] == ["image/jpeg"] * 2
+    assert len(env.opener.calls) == 4                                # ที่ 5 ไม่ถึง opener
+    assert not env.path(EO, "default", 9, 0, 4).exists()
+    assert [r[1] for r in results] == ["image/jpeg"] * 4
 
 
 def test_switch_recheck_is_asked_about_the_layers_own_source(env):
@@ -1423,3 +1427,580 @@ def test_no_real_network(env, tmp_path):
     with pytest.raises(AssertionError, match="network"):
         fresh.state.imagery.opener(urllib.request.Request("https://gibs.earthdata.nasa.gov/"), timeout=1)
     assert env.opener.calls == []
+
+
+# ---------- ตัวส่ง keep-alive: HTTPSConnection ปลอม (ไม่ต่อเน็ต) ----------
+
+GIBS_HOST = "gibs.earthdata.nasa.gov"
+EOX_HOST = "tiles.maps.eox.at"
+
+
+class FakeHTTPResponse:
+    """http.client.HTTPResponse ปลอมที่ทำตัวเหมือนของจริงเท่าที่ตัวส่งพึ่ง: `.status`, `.headers`, `.read(amt)` (ตัดตาม Content-Length,
+    ปิดตัวเองเมื่ออ่านครบหรืออ่านได้ว่างเปล่า), `.isclosed()`, `.will_close` และ `.close()`
+    announce: None = Content-Length เท่าความยาวจริง, ตัวเลข = ประกาศค่านั้น (เช่น ยาวกว่าที่ส่งจริง = ตัดกลางทาง), False = ไม่ประกาศ"""
+
+    def __init__(self, body=JPEG, status=200, headers=None, announce=None, read_error=None):
+        self.status, self.reason = status, f"HTTP {status}"
+        self.headers = Message()
+        announced = len(body) if announce is None else announce
+        if announced is not False:
+            self.headers["Content-Length"] = str(announced)
+        for key, value in (headers or {}).items():
+            self.headers[key] = value
+        self.will_close = announced is False or "close" in (self.headers.get("Connection") or "").lower()   # เหมือน http.client
+        self.remaining = None if announced is False else announced
+        self.stream = io.BytesIO(body)
+        self.read_error = read_error
+        self.read_sizes: list = []
+        self.on_done = lambda: None
+        self.done = False
+        self.closed_by_caller = False
+
+    def isclosed(self):
+        return self.done
+
+    def _finish(self):
+        if not self.done:
+            self.done = True
+            self.on_done()
+
+    def read(self, amt=None):
+        self.read_sizes.append(amt)
+        if self.read_error is not None:
+            raise self.read_error
+        if self.done:
+            return b""
+        if amt is None:
+            data = self.stream.read()
+            self._finish()
+            return data
+        if self.remaining is not None:
+            amt = min(amt, self.remaining)
+        data = self.stream.read(amt)
+        if not data and amt:
+            self._finish()
+        elif self.remaining is not None:
+            self.remaining -= len(data)
+            if not self.remaining:
+                self._finish()
+        return data
+
+    def close(self):
+        self.closed_by_caller = True
+        self._finish()
+
+
+class FakeConn:
+    """HTTPSConnection ปลอม: จำคำขอที่ได้รับ; ใช้พร้อมกันสองคำขอ หรือส่งคำขอใหม่ทั้งที่ยังอ่านคำตอบเก่าไม่หมด = CannotSendRequest เหมือนของจริง
+    และห้ามส่งคำขอบน connection ที่ผู้เรียกปิดแล้ว (ตัวส่งต้องทิ้งตัวที่ปิดแล้วจริง ไม่ปล่อยให้ http.client เปิดใหม่เองเงียบ ๆ)"""
+
+    def __init__(self, factory, host, timeout):
+        self.factory, self.host, self.timeout = factory, host, timeout
+        self.index = len(factory.created)
+        self.sock = None
+        self.requests: list[tuple[str, str, dict]] = []
+        self.closed = False
+        self.busy = False
+
+    def request(self, method, url, body=None, headers=None):
+        assert not self.closed, "request on a connection that was closed"
+        with self.factory.lock:
+            if self.busy:
+                raise http_client_cannot_send()
+            self.busy = True
+            self.factory.inflight += 1
+            self.factory.max_inflight = max(self.factory.max_inflight, self.factory.inflight)
+        self.requests.append((method, url, dict(headers or {})))
+        if self.factory.send_script:
+            item = self.factory.send_script.pop(0)
+            if isinstance(item, BaseException):
+                self._idle()                                        # ส่งไม่สำเร็จ = ไม่มีคำตอบค้าง
+                raise item
+
+    def getresponse(self):
+        method, url, headers = self.requests[-1]
+        item = self.factory.script.pop(0) if self.factory.script else self.factory.default
+        if callable(item):
+            item = item(self, url)
+        if isinstance(item, BaseException):
+            self._idle()
+            raise item
+        item.on_done = self._idle
+        if item.done:
+            self._idle()
+        self.factory.responses.append(item)
+        return item
+
+    def _idle(self):
+        with self.factory.lock:
+            if self.busy:
+                self.busy = False
+                self.factory.inflight -= 1
+
+    def close(self):
+        self.closed = True
+        self._idle()
+
+
+def http_client_cannot_send():
+    import http.client
+    return http.client.CannotSendRequest("previous response not fully read")
+
+
+def _default_http_response(conn, url):
+    return FakeHTTPResponse(PNG if url.endswith(".png") else JPEG)
+
+
+class FakeFactory:
+    """connection_factory(host, timeout) ปลอม: เก็บทุก connection ที่สร้าง; script ของคำตอบ (response, exception, หรือ callable(conn, url))
+    ใช้ทีละรายการตอน getresponse, send_script ใช้ตอน request (exception = ส่งไม่สำเร็จ)"""
+
+    def __init__(self):
+        self.created: list[FakeConn] = []
+        self.responses: list[FakeHTTPResponse] = []
+        self.script: list = []
+        self.send_script: list = []
+        self.default = _default_http_response
+        self.lock = threading.Lock()
+        self.inflight = self.max_inflight = 0
+
+    def __call__(self, host, timeout):
+        with self.lock:
+            conn = FakeConn(self, host, timeout)
+            self.created.append(conn)
+        return conn
+
+    def requests(self):
+        return [(conn.index, *request) for conn in self.created for request in conn.requests]
+
+
+class Pooled:
+    """ตัวดึงที่ไม่ฉีด opener แต่ฉีด connection factory ปลอม (ตัวส่ง keep-alive ตั้งต้นทำงานจริง)"""
+
+    def __init__(self, tmp_path):
+        self.factory = FakeFactory()
+        self.fetcher = TileFetcher(tmp_path / "data", connection_factory=self.factory, now=Clock(), utcnow=Wall())
+
+    def bm(self, x):
+        return self.fetcher.get(layer_by_id(BM), "default", 8, 0, x)
+
+    def eo(self, x):
+        return self.fetcher.get(layer_by_id(EO), "default", 8, 0, x)
+
+    def fail(self, fn, x, code="IMAGERY_FETCH_FAILED", status=502):
+        with pytest.raises(ApiError) as exc:
+            fn(x)
+        assert (exc.value.status, exc.value.code) == (status, code)
+        return exc.value
+
+
+@pytest.fixture
+def pooled(tmp_path):
+    return Pooled(tmp_path)
+
+
+def _drain(transport, request):
+    """คำขอหนึ่งครั้งที่อ่านครบแล้วปิด (ทางปกติของตัวดึง)"""
+    resp = transport.open(request, timeout=5)
+    body = resp.read(MAX_BODY + 1)
+    resp.close()
+    return body
+
+
+def test_default_transport_pool_sizes_cover_each_sources_concurrency():
+    sizes = source_pool_sizes()
+    assert sizes == {GIBS_HOST: SOURCES["gibs"].concurrency, EOX_HOST: SOURCES["eox"].concurrency}
+    for source in SOURCES.values():                                  # host ของทุกแหล่งมี pool และใหญ่พอรับเพดานดึงพร้อมกันของแหล่งนั้น
+        host = urllib.parse.urlsplit(source.url).hostname
+        assert sizes[host] >= source.concurrency
+    assert make_transport(FakeFactory()).pool_sizes == sizes
+
+
+def test_two_sequential_fetches_reuse_one_connection(pooled):
+    assert pooled.bm(0)[1] == "image/jpeg"
+    assert pooled.bm(1)[1] == "image/jpeg"
+    assert len(pooled.factory.created) == 1
+    conn = pooled.factory.created[0]
+    assert len(conn.requests) == 2 and not conn.closed
+    assert [r.done for r in pooled.factory.responses] == [True, True]
+
+
+def test_each_host_gets_its_own_connection_and_keeps_it(pooled):
+    pooled.bm(0)
+    pooled.eo(0)
+    pooled.bm(1)
+    pooled.eo(1)
+    assert [(c.host, len(c.requests)) for c in pooled.factory.created] == [(GIBS_HOST, 2), (EOX_HOST, 2)]
+
+
+def test_request_carries_path_host_user_agent_and_timeout(pooled):
+    pooled.fetcher.get(layer_by_id(VI), DAY, 3, 2, 5)
+    pooled.eo(7)
+    gibs, eox = pooled.factory.created
+    assert (gibs.host, gibs.timeout) == (GIBS_HOST, 20)
+    method, url, headers = gibs.requests[0]
+    assert method == "GET"
+    assert url == f"/wmts/epsg3857/best/{VI}/default/{DAY}/GoogleMapsCompatible_Level9/3/2/5.jpg"        # path + query เท่านั้น ไม่มี scheme/host
+    lowered = {k.lower(): v for k, v in headers.items()}
+    assert lowered["host"] == GIBS_HOST
+    assert lowered["user-agent"] == "gnss-studio/0.1"
+    assert lowered["accept-encoding"] == "identity"                    # ตัวเลือกบีบอัดทำให้ Content-Length ไม่ตรงกับไบต์ที่อ่าน
+    assert not any(k.lower() in ("connection", "authorization", "cookie") for k in headers)
+    assert (eox.host, eox.timeout) == (EOX_HOST, 20)
+    assert eox.requests[0][1] == f"/wmts/1.0.0/{EO}/default/g/8/0/7.jpg"
+    assert {k.lower(): v for k, v in eox.requests[0][2].items()}["host"] == EOX_HOST
+
+
+def test_reused_connection_is_given_the_per_request_timeout(pooled):
+    class Sock:
+        timeout = None
+
+        def settimeout(self, value):
+            self.timeout = value
+
+    pooled.bm(0)
+    conn = pooled.factory.created[0]
+    conn.sock = Sock()
+    conn.timeout = 99
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 1 and conn.timeout == 20 and conn.sock.timeout == 20
+
+
+@pytest.mark.parametrize("error", [OSError("boom"), TimeoutError("timed out"), ConnectionRefusedError("refused"),
+                                   http_client_cannot_send()])
+def test_error_on_a_fresh_connection_drops_it_and_the_next_fetch_opens_a_new_one(pooled, error):
+    pooled.factory.script = [error]
+    exc = pooled.fail(pooled.bm, 0)
+    assert exc.detail.startswith("network error")
+    assert len(pooled.factory.created) == 1 and pooled.factory.created[0].closed
+    assert len(pooled.factory.created[0].requests) == 1                # connection ใหม่ล้มเหลว: ไม่ลองซ้ำ
+    assert pooled.bm(1)[1] == "image/jpeg"
+    assert len(pooled.factory.created) == 2 and not pooled.factory.created[1].closed
+    assert pooled.bm(2)[1] == "image/jpeg"
+    assert len(pooled.factory.created) == 2                            # และตัวใหม่ถูกใช้ซ้ำต่อ
+
+
+def test_truncated_body_drops_the_connection(pooled):
+    pooled.factory.script = [FakeHTTPResponse(JPEG, announce=len(JPEG) + 50)]
+    exc = pooled.fail(pooled.bm, 0)
+    assert exc.detail == f"truncated body ({len(JPEG)} of {len(JPEG) + 50} bytes)"
+    assert pooled.factory.created[0].closed
+    assert not pooled.factory.created[0].busy
+    assert pooled.bm(1)[1] == "image/jpeg"
+    assert len(pooled.factory.created) == 2
+
+
+def test_body_that_fails_midway_drops_the_connection(pooled):
+    pooled.factory.script = [FakeHTTPResponse(JPEG, read_error=IncompleteRead(b"\xff\xd8", 90))]
+    pooled.fail(pooled.bm, 0)
+    assert pooled.factory.created[0].closed and not pooled.factory.created[0].busy
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 2
+
+
+def test_oversized_body_drops_the_connection(pooled):
+    huge = FakeHTTPResponse(JPEG + b"x" * MAX_BODY)                    # ใหญ่กว่า 2 MB: ตัวดึงอ่านแค่ 2 MB + 1 ไบต์ ที่เหลือค้างอยู่ใน socket
+    pooled.factory.script = [huge]
+    exc = pooled.fail(pooled.bm, 0)
+    assert exc.detail == f"body larger than {MAX_BODY} bytes"
+    assert huge.stream.tell() == MAX_BODY + 1
+    assert pooled.factory.created[0].closed
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 2
+
+
+def test_body_exactly_one_byte_over_the_cap_is_read_fully_but_still_drops_the_connection(pooled):
+    just_over = FakeHTTPResponse(JPEG + b"x" * (MAX_BODY - len(JPEG) + 1))
+    pooled.factory.script = [just_over]
+    pooled.fail(pooled.bm, 0)
+    assert just_over.done                                               # อ่านครบแล้ว (ปิดตัวเอง) แต่เกินเพดาน
+    assert pooled.factory.created[0].closed
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 2
+
+
+def test_body_of_exactly_the_cap_is_accepted_and_the_connection_reused(pooled):
+    exact = FakeHTTPResponse(JPEG + b"x" * (MAX_BODY - len(JPEG)))
+    pooled.factory.script = [exact]
+    assert len(pooled.bm(0)[0]) == MAX_BODY
+    assert exact.read_sizes[0] == MAX_BODY + 1                          # ขออ่านไม่เกิน 2 MB + 1 ไบต์
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 1 and not pooled.factory.created[0].closed
+
+
+def test_connection_close_from_the_server_drops_the_connection(pooled):
+    pooled.factory.script = [FakeHTTPResponse(JPEG, headers={"Connection": "close"})]
+    assert pooled.bm(0)[1] == "image/jpeg"                              # ภาพที่ได้ครบยังใช้ได้
+    assert pooled.factory.created[0].closed
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 2 and not pooled.factory.created[1].closed
+    assert len(pooled.factory.created[0].requests) == 1
+
+
+def test_connection_close_header_is_matched_by_token_and_case(pooled):
+    pooled.factory.script = [FakeHTTPResponse(JPEG, headers={"Connection": "Keep-Alive, Close"}),
+                             FakeHTTPResponse(JPEG, headers={"Connection": "keep-alive"})]
+    pooled.bm(0)
+    assert pooled.factory.created[0].closed
+    pooled.bm(1)
+    pooled.bm(2)
+    assert len(pooled.factory.created) == 2 and not pooled.factory.created[1].closed
+
+
+def test_response_without_content_length_is_not_reused(pooled):
+    pooled.factory.script = [FakeHTTPResponse(JPEG, announce=False)]
+    assert pooled.bm(0)[1] == "image/jpeg"
+    assert pooled.factory.created[0].closed
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 2
+
+
+@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
+def test_3xx_is_not_followed(pooled, code):
+    pooled.factory.script = [FakeHTTPResponse(b"moved", code, headers={"Location": "https://evil.example/tile.jpg"})]
+    exc = pooled.fail(pooled.bm, 0)
+    assert exc.detail == f"HTTP {code}"
+    assert [(c.host, len(c.requests)) for c in pooled.factory.created] == [(GIBS_HOST, 1)]      # ไม่ถามที่ใหม่ ไม่ส่งซ้ำ
+    assert not pooled.factory.created[0].busy
+    assert pooled.fetcher._failures["gibs"] == 1                         # นับเป็นดึงไม่สำเร็จ ไม่ใช่ "ไม่มีภาพ"
+    assert pooled.fetcher._memo == {}
+
+
+@pytest.mark.parametrize("code, outcome", [(400, "missing"), (404, "missing"), (403, "paused"), (429, "paused"),
+                                           (500, "failed"), (502, "failed"), (503, "failed"), (304, "failed"), (204, "failed")])
+def test_status_mapping_through_the_pooled_transport(pooled, code, outcome):
+    pooled.factory.script = [FakeHTTPResponse(b"" if code == 204 else b"nope", code)]
+    if outcome == "missing":
+        exc = pooled.fail(pooled.bm, 0, "IMAGERY_NOT_AVAILABLE", 404)
+        assert len(pooled.fetcher._memo) == 1
+        pooled.fail(pooled.bm, 0, "IMAGERY_NOT_AVAILABLE", 404)          # จำไว้แล้ว: ไม่ถามซ้ำ
+        assert len(pooled.factory.created[0].requests) == 1
+    elif outcome == "paused":
+        exc = pooled.fail(pooled.bm, 0)
+        assert exc.detail == f"HTTP {code}"
+        assert pooled.fetcher._failures["gibs"] == 0                     # 403/429 ไม่นับ: พักแทน
+        pooled.fail(pooled.bm, 1, "IMAGERY_PAUSED", 503)
+    else:
+        exc = pooled.fail(pooled.bm, 0)
+        assert exc.detail == f"HTTP {code}"
+        assert pooled.fetcher._failures["gibs"] == 1
+
+
+@pytest.mark.parametrize("code", [404, 400, 302, 500])
+def test_small_error_body_is_drained_and_the_connection_reused(pooled, code):
+    err = FakeHTTPResponse(b"not here", code)
+    pooled.factory.script = [err]
+    with pytest.raises(ApiError):
+        pooled.bm(0)
+    assert err.done and not pooled.factory.created[0].closed
+    pooled.bm(1)
+    assert len(pooled.factory.created) == 1
+
+
+def test_large_or_broken_error_body_drops_the_connection(pooled):
+    big = FakeHTTPResponse(b"e" * (keepalive.ERROR_BODY_LIMIT + 1000), 500)
+    pooled.factory.script = [big]
+    pooled.fail(pooled.bm, 0)
+    assert pooled.factory.created[0].closed
+    pooled.factory.script = [FakeHTTPResponse(b"x", 404, read_error=IncompleteRead(b"", 5))]
+    pooled.fail(pooled.bm, 1, "IMAGERY_NOT_AVAILABLE", 404)              # อ่านเนื้อ error ไม่ได้ ยังตอบตามรหัสสถานะ
+    assert pooled.factory.created[1].closed
+    pooled.bm(2)
+    assert len(pooled.factory.created) == 3
+
+
+@pytest.mark.parametrize("stale", [RemoteDisconnected("Remote end closed connection without response"),
+                                   ConnectionResetError("reset"), BrokenPipeError("pipe")])
+def test_stale_idle_connection_is_retried_once_on_a_fresh_one(pooled, stale):
+    pooled.bm(0)
+    pooled.factory.script = [stale]
+    assert pooled.bm(1)[1] == "image/jpeg"                               # เซิร์ฟเวอร์ปิด connection ที่ว่างอยู่: ผู้ใช้ไม่เห็นความล้มเหลว
+    first, second = pooled.factory.created
+    assert first.closed and not second.closed
+    assert (len(first.requests), len(second.requests)) == (2, 1)
+    assert pooled.fetcher._failures["gibs"] == 0
+    pooled.bm(2)
+    assert len(pooled.factory.created) == 2
+
+
+def test_stale_error_on_send_is_retried_once(pooled):
+    pooled.bm(0)
+    pooled.factory.send_script = [BrokenPipeError("pipe")]
+    assert pooled.bm(1)[1] == "image/jpeg"
+    assert len(pooled.factory.created) == 2 and pooled.factory.created[0].closed
+
+
+def test_stale_retry_happens_at_most_once_and_only_for_connection_errors(pooled):
+    pooled.bm(0)
+    pooled.factory.script = [RemoteDisconnected("gone"), RemoteDisconnected("gone again")]
+    pooled.fail(pooled.bm, 1)                                            # ตัวที่สองก็ล้ม: ไม่ลองครั้งที่สาม
+    assert len(pooled.factory.created) == 2 and all(c.closed for c in pooled.factory.created)
+    pooled.bm(2)
+    pooled.factory.script = [TimeoutError("timed out")]
+    pooled.fail(pooled.bm, 3)                                            # timeout บน connection ที่ใช้ซ้ำ ไม่ใช่ตัวบอกว่าเก่า: ไม่ลองซ้ำ
+    assert len(pooled.factory.created) == 3 and pooled.factory.created[2].closed
+
+
+def test_stale_retry_flushes_other_idle_connections_of_the_host():
+    factory = FakeFactory()
+    transport = KeepAliveTransport({GIBS_HOST: 2}, MAX_BODY, factory)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg", headers={"User-Agent": "t"})
+    first, second = transport.open(request, timeout=5), transport.open(request, timeout=5)    # สอง connection พร้อมกัน
+    for resp in (first, second):
+        resp.read(MAX_BODY + 1)
+        resp.close()
+    assert len(factory.created) == 2 and not any(c.closed for c in factory.created)
+    factory.script = [RemoteDisconnected("gone")]
+    _drain(transport, request)
+    assert [c.closed for c in factory.created] == [True, True, False]    # ตัวที่ว่างทั้งหมดน่าจะเก่าพอกัน: ทิ้งหมด แล้วใช้ตัวใหม่
+
+
+def test_nothing_is_retried_on_a_connection_that_never_worked(pooled):
+    pooled.factory.script = [RemoteDisconnected("gone")]
+    pooled.fail(pooled.bm, 0)
+    assert len(pooled.factory.created) == 1 and len(pooled.factory.created[0].requests) == 1
+
+
+@pytest.mark.parametrize("url", ["http://gibs.earthdata.nasa.gov/a.jpg", "ftp://gibs.earthdata.nasa.gov/a.jpg",
+                                 "https://evil.example/a.jpg", "https://gibs.earthdata.nasa.gov.evil.example/a.jpg",
+                                 "https://evilgibs.earthdata.nasa.gov/a.jpg", "https://earthdata.nasa.gov/a.jpg",
+                                 "https://user@gibs.earthdata.nasa.gov/a.jpg", "https://gibs.earthdata.nasa.gov:8443/a.jpg",
+                                 "https://gibs.earthdata.nasa.gov@evil.example/a.jpg", "https:///a.jpg",
+                                 "https://127.0.0.1/a.jpg", "https://localhost/a.jpg"])
+def test_only_https_to_known_hosts_is_allowed(url):
+    factory = FakeFactory()
+    transport = make_transport(factory)
+    request = urllib.request.Request(url)                                # สร้างได้เสมอ: ผู้ปฏิเสธต้องเป็นตัวส่ง ไม่ใช่ urllib
+    with pytest.raises(ValueError):
+        transport.open(request, timeout=1)
+    assert factory.created == []
+
+
+def test_https_with_default_port_and_uppercase_host_is_allowed():
+    factory = FakeFactory()
+    make_transport(factory).open(urllib.request.Request("https://GIBS.earthdata.nasa.gov:443/a.jpg"), timeout=1).close()
+    assert [c.host for c in factory.created] == [GIBS_HOST]
+
+
+def test_pool_never_exceeds_its_size_under_threads():
+    factory = FakeFactory()
+    size, workers, rounds = 3, 12, 15
+    transport = KeepAliveTransport({GIBS_HOST: size}, MAX_BODY, factory)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg", headers={"User-Agent": "t"})
+    errors, start = [], threading.Barrier(workers)
+
+    def slow(conn, url):
+        time.sleep(0.002)                                                # ให้คำขอซ้อนกันจริง
+        return FakeHTTPResponse(JPEG)
+
+    factory.default = slow
+
+    def work():
+        try:
+            start.wait(10)
+            for _ in range(rounds):
+                resp = transport.open(request, timeout=5)
+                assert resp.read(MAX_BODY + 1) == JPEG
+                resp.close()
+        except BaseException as exc:                                     # noqa: BLE001 รวบรวมไว้ให้ thread หลักตรวจ
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work) for _ in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert errors == []                                                  # รวมถึง CannotSendRequest: ไม่มี connection ที่สองคำขอใช้พร้อมกัน
+    assert len(factory.created) <= size
+    assert factory.max_inflight <= size
+    assert sum(len(c.requests) for c in factory.created) == workers * rounds
+    assert not any(c.closed for c in factory.created)                    # ทุกคำขอจบสมบูรณ์: ใช้ซ้ำหมด ไม่มีตัวถูกทิ้ง
+
+
+def test_pool_blocks_at_its_size_then_times_out_without_opening_another(monkeypatch):
+    monkeypatch.setattr(keepalive, "POOL_WAIT_S", 0.05)
+    factory = FakeFactory()
+    transport = KeepAliveTransport({GIBS_HOST: 2}, MAX_BODY, factory)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg", headers={"User-Agent": "t"})
+    held = [transport.open(request, timeout=5), transport.open(request, timeout=5)]     # ยังไม่อ่าน: สองคำขอค้างอยู่
+    with pytest.raises(TimeoutError, match="pool"):
+        transport.open(request, timeout=5)
+    assert len(factory.created) == 2 and transport.live_connections() == 2
+    held[0].read(MAX_BODY + 1)
+    held[0].close()                                                      # คืนที่หนึ่ง: คำขอถัดไปใช้ตัวนั้น ไม่เปิดตัวที่สาม
+    assert _drain(transport, request) == JPEG
+    assert len(factory.created) == 2
+    held[1].close()                                                      # ปิดโดยไม่อ่าน: ทิ้ง connection ตัวนั้น แต่คืนที่ว่าง
+    assert factory.created[1].closed and transport.live_connections() == 1
+    a, b = transport.open(request, timeout=5), transport.open(request, timeout=5)
+    assert len(factory.created) == 3 and transport.live_connections() == 2
+    for resp in (a, b):
+        resp.read(MAX_BODY + 1)
+        resp.close()
+
+
+def test_pool_slot_is_released_when_the_request_fails():
+    factory = FakeFactory()
+    transport = KeepAliveTransport({GIBS_HOST: 1}, MAX_BODY, factory)
+    request = urllib.request.Request(f"https://{GIBS_HOST}/a.jpg")
+    for error in (OSError("boom"), AssertionError("anything"), RemoteDisconnected("gone")):
+        factory.script = [error]
+        with pytest.raises(type(error)):
+            transport.open(request, timeout=1)
+        assert transport.live_connections() == 0
+    assert _drain(transport, request) == JPEG                            # ขนาด 1 และล้มสามครั้ง: ถ้าที่ว่างรั่ว ครั้งนี้จะค้างจนหมดเวลา
+    assert len(factory.created) == 4
+
+
+def test_fetcher_concurrency_keeps_connections_within_the_sources_pool(pooled):
+    layer = layer_by_id(BM)
+    gate = threading.Event()
+
+    def hold(conn, url):
+        assert gate.wait(10)
+        return FakeHTTPResponse(JPEG)
+
+    pooled.factory.default = hold
+    threads = [threading.Thread(target=lambda x=x: pooled.fetcher.get(layer, "default", 8, 0, x)) for x in range(10)]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + 10
+    while pooled.factory.inflight < SOURCES["gibs"].concurrency and time.monotonic() < deadline:
+        time.sleep(0.005)
+    gate.set()
+    for t in threads:
+        t.join(20)
+    assert not any(t.is_alive() for t in threads)
+    assert len(pooled.factory.created) <= source_pool_sizes()[GIBS_HOST] == 4
+    assert pooled.factory.max_inflight <= 4
+
+
+# ---------- ตัวตั้งต้นจริงถูกกัน ไม่ต่อเน็ต ----------
+
+def test_guard_blocks_a_real_https_connection():
+    """socket.create_connection ถูก fixture กัน: HTTPSConnection จริงที่พยายามต่อ (http.client อ่าน socket.create_connection ตอนสร้าง) ต้องล้มทันที"""
+    import http.client
+    conn = http.client.HTTPSConnection(GIBS_HOST, timeout=1)
+    with pytest.raises(AssertionError, match="network"):
+        conn.request("GET", "/")
+    conn.close()
+
+
+def test_default_fetcher_goes_through_the_guarded_keepalive_transport(tmp_path):
+    default = TileFetcher(tmp_path)
+    assert isinstance(default.transport, KeepAliveTransport)
+    assert default.opener == default.transport.open
+    with pytest.raises(AssertionError, match="network"):
+        default.get(layer_by_id(BM), "default", 0, 0, 0)
+    with pytest.raises(AssertionError, match="network"):
+        default.get(layer_by_id(EO), "default", 0, 0, 0)
+    assert default.transport.live_connections() == 0                     # ล้มกลางทาง: ไม่ทิ้ง connection หรือที่ว่างค้าง
+
+
+def test_injected_opener_bypasses_the_transport(tmp_path):
+    opener = FakeOpener()
+    fetcher = TileFetcher(tmp_path, opener=opener)
+    assert fetcher.opener is opener and fetcher.transport is None
+    with pytest.raises(ValueError):
+        TileFetcher(tmp_path, opener=opener, connection_factory=FakeFactory())

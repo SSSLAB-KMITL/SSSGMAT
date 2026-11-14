@@ -708,7 +708,7 @@ server ดึงภาพถ่ายจริงมาให้หน้าเ�
 | แหล่งที่ server ต่อ | สวิตช์ | แม่แบบ URL (ประกอบใน `imagery.py` เท่านั้น) | ดึงพร้อมกัน |
 |---|---|---|---|
 | GIBS | `online_imagery.enabled` | `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/{layer}/default/{time}/{tms}/{z}/{y}/{x}.{ext}` | ไม่เกิน 4 ชิ้น |
-| EOX (Sentinel-2 cloudless) | `online_imagery.eox` | `https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/g/{z}/{y}/{x}.jpg` | ไม่เกิน 2 ชิ้น |
+| EOX (Sentinel-2 cloudless) | `online_imagery.eox` | `https://tiles.maps.eox.at/wmts/1.0.0/{layer}/default/g/{z}/{y}/{x}.jpg` | ไม่เกิน 4 ชิ้น |
 
 **OpenStreetMap และ Cesium ion ไม่ผ่าน server**: browser ดึงเองโดยตรงเมื่อผู้ใช้เปิดสวิตช์ (`online_imagery.osm`, `online_imagery.ion`)
 server แค่เก็บค่าสวิตช์และ Cesium ion token (`cesium_ion_token`) ใน `settings.json` ให้หน้าเว็บอ่าน ไม่มี endpoint ไม่ต่อเน็ตให้ และไม่เก็บชิ้นภาพของสองแหล่งนี้ ดูหัวข้อ 9.10
@@ -742,7 +742,7 @@ TileMatrixSet `g`, ระดับสูงสุด 15, jpg, เวลาใน
 | เรื่อง | ค่า |
 |---|---|
 | timeout ต่อชิ้น | 20 วินาที |
-| ดึงพร้อมกัน | GIBS ไม่เกิน 4 ชิ้น, EOX ไม่เกิน 2 ชิ้น รอคิวเกิน 15 วินาที ตอบ 503 `IMAGERY_BUSY` |
+| ดึงพร้อมกัน | GIBS ไม่เกิน 4 ชิ้น, EOX ไม่เกิน 4 ชิ้น รอคิวเกิน 15 วินาที ตอบ 503 `IMAGERY_BUSY` |
 | ขนาดชิ้น | อ่านไม่เกิน 2 MB (เกินตอบ 502 ไม่เก็บ) ไบต์แรกต้องเป็น JPEG (`FF D8 FF`) หรือ PNG (`89 50 4E 47 0D 0A 1A 0A`) ตรงกับชนิดของชั้น ไม่ถอดรหัสภาพ ไม่เชื่อ Content-Type ของโฮสต์ |
 | โฮสต์ตอบ 400/404 | จำไว้ในหน่วยความจำ 1 ชั่วโมง (ชิ้นที่ยังไม่นิ่ง 10 นาที; สูงสุด 10,000 ชิ้น) ไม่ถามซ้ำ |
 | โฮสต์ตอบ 403 หรือ 429 | พักการดึงทุกชั้นภาพของแหล่งนั้น 15 นาที (log ครั้งเดียว) |
