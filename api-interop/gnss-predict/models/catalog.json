@@ -46,7 +46,7 @@
       "id": "glonass-m",
       "glb": "glonass-m/glonass-m.glb",
       "blocks": ["GLO-M", "GLO-M+"],
-      "size_m": [2.16, 16.0, 3.9],
+      "size_m": [2.4, 16.0, 3.9],
       "triangles": 4646,
       "wing_nodes": ["wing+Y", "wing-Y"],
       "cell_normal": "-X",
