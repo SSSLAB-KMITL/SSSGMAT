@@ -262,6 +262,30 @@ class CycleTest(RigTestCase):
         self.assertEqual(self.since(n), [b"f currVFO\n", b"i currVFO\n"])
         self.assertEqual(ctl.snapshot()["up"]["sat_hz"], 435_100_300)
 
+    async def test_tick_during_a_cycle_keeps_its_doppler(self):
+        """tick ของ module ที่มาถึงขณะรอบรอคำตอบของ rigctld ไม่เปลี่ยน Doppler ของส่วนที่เหลือของรอบนั้น ปุ่มหมุน "Radio:" ทั้งสองจึงเป็น
+        ค่าที่วิทยุได้รับ (Gpredict ทำทั้งรอบรวดเดียวใน timer เดียว Doppler เปลี่ยนกลางรอบไม่ได้) Doppler ใหม่ใช้ในรอบถัดไป"""
+        self.write_radio("A", Type=3, VFO_UP=4, VFO_DOWN=3)
+        ctl = self.controller()
+        await ctl.act({"action": "track", "on": True})
+        ctl.on_tick(T0, row(rate=7.0))
+        await self.engage(ctl)
+
+        def reply(cmd: bytes) -> bytes | None:
+            if cmd.startswith(b"F "):                                           # tick ถัดไปมาถึงระหว่างรอคำตอบของ F
+                ctl.on_tick(T0 + timedelta(seconds=0.3), row(rate=7.1))
+            return self.fake.default_reply(cmd)
+
+        self.fake.reply = reply
+        await ctl.run_cycle()
+        self.assertEqual(self.fake.log, [*PROBE, b"S 1 Sub\n", b"F  145896593\n", b"f\n", b"I  435110159\n", b"i\n"])
+        snap = ctl.snapshot()
+        self.assertEqual((round(snap["down"]["radio_hz"]), round(snap["up"]["radio_hz"])), (145_896_593, 435_110_159))
+        self.assertAlmostEqual(snap["down"]["doppler_hz"], doppler_down(145_900_000, 7.1))    # ป้าย Doppler ตาม tick ล่าสุด
+        n = len(self.fake.log)
+        await ctl.run_cycle()
+        self.assertEqual(self.since(n), [b"f\n", b"F  145896545\n", b"f\n", b"i\n", b"I  435110304\n", b"i\n"])
+
     async def test_ft817_auto(self):
         self.write_radio("A", Type=4, PTT=1)
         clock = [1000.0]

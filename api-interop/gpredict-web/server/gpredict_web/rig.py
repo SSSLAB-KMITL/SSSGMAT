@@ -314,6 +314,9 @@ class RigController:
         # ค่าจาก tick ล่าสุด
         self._az = self._el = self._range = self._rate = None
         self._dd = self._du = 0.0
+        # Doppler ที่ใช้ตลอดหนึ่งรอบ: จำตอนเริ่มรอบ (ของเรา) tick ที่มาถึงขณะรอบรอ rigctld จึงไม่เปลี่ยนค่าที่ส่งกลางรอบ
+        # Gpredict ทำทั้งรอบรวดเดียวใน timer Doppler จึงเปลี่ยนกลางรอบไม่ได้
+        self._cycle_dd = self._cycle_du = 0.0
         self._have_doppler = False
         self._countdown = COUNTDOWN_IDLE
         # AOS/LOS: el ของเป้าหมายปัจจุบัน (None หลังเปลี่ยนดาวจนกว่า tick ของดาวใหม่มาถึง) และ el ของรอบก่อน
@@ -684,6 +687,7 @@ class RigController:
         async with self._busy:
             if not self.engaged:
                 return
+            self._cycle_dd, self._cycle_du = self._dd, self._du
             devices = [d for d in (self._dev1, self._dev2) if d is not None]
             for dev in devices:
                 dev.down = False
@@ -838,10 +842,10 @@ class RigController:
     # ---------------------------------------------------------------- ส่วนย่อยของ cycle
 
     def _forward_down(self, lo: float) -> None:
-        self._down_radio = _knob(self._down_radio, radio_freq(self._down_sat, self._dd, lo, self._track))
+        self._down_radio = _knob(self._down_radio, radio_freq(self._down_sat, self._cycle_dd, lo, self._track))
 
     def _forward_up(self, lo_up: float) -> None:
-        self._up_radio = _knob(self._up_radio, radio_freq(self._up_sat, self._du, lo_up, self._track))
+        self._up_radio = _knob(self._up_radio, radio_freq(self._up_sat, self._cycle_du, lo_up, self._track))
 
     async def _dial(self, dev: _Device, down: bool, lo: float, split: bool = False) -> bool:
         """dial feedback (ref-R §3.5): อ่านความถี่ ต่างจากที่ส่งล่าสุด ≥ 1 Hz คือผู้ใช้หมุนวิทยุ ปุ่มหมุนวิทยุแสดงค่าที่อ่าน
@@ -857,12 +861,12 @@ class RigController:
             return False
         if down:
             self._down_radio, self._last_rx = _knob(self._down_radio, read), read
-            self._down_sat = _knob(self._down_sat, sat_from_radio(read, self._dd, lo, self._track))
+            self._down_sat = _knob(self._down_sat, sat_from_radio(read, self._cycle_dd, lo, self._track))
             if self._lock:
                 self._track_downlink()
         else:
             self._up_radio, self._last_tx = _knob(self._up_radio, read), read
-            self._up_sat = _knob(self._up_sat, sat_from_radio(read, self._du, lo, self._track))
+            self._up_sat = _knob(self._up_sat, sat_from_radio(read, self._cycle_du, lo, self._track))
             if self._lock:
                 self._track_uplink()
         return True
