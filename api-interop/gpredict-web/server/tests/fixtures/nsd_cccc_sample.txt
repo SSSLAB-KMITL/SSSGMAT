@@ -1,0 +1,10 @@
+AGGH;91;520;Honiara / Henderson;;Solomon Islands;5;09-25S;160-03E;;;8;9;P
+EDDF;10;637;Frankfurt / M-Flughafen;;Germany;6;50-03N;008-36E;50-03N;008-35E;111;113;P
+EDHK;--;---;Kiel / Holtenau Civilian;;Germany;;54-23N;010-10E;;;31;;
+FACT;68;816;Cape Town, Cape Town International Airport;;South Africa;1;33-59S;018-36E;33-58S;018-36E;42;0;P
+KATP;--;---;Atlantis;LA;United States;4;27-11-44N;090-01-37W;;;;;;
+KSTZ;--;---;South Timbalier;United States;4;28-09-35N;090-39-59W;;;;;;
+NZSP;89;009;Amundsen-Scott South Pole Station;;Antarctica;7;90-00S;00-00E;90-00S;000-00E;2830;2835;P
+SAEZ;87;576;Ezeiza Aerodrome;;Argentina;3;34-49S;058-32W;34-49S;058-32W;20;20;P
+VTBS;48;459;Chon Buri;;Thailand;2;13-22N;100-59E;;;1;2;P
+VTCC;48;327;Chiang Mai;;Thailand;2;18-47N;098-59E;18-47N;098-59E;312;314;P

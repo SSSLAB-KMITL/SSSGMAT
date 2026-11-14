@@ -64,6 +64,7 @@ from .controllers import RADIO, ROTATOR, ControllerHub
 from .ephem import EphemManager
 from .errors import ApiError
 from .hwconf import HwConf, radio_to_dict, rot_to_dict
+from .locations import locations_json
 from .maps import check_upload_size, list_maps, map_entry, resolve as resolve_map, save_upload
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
@@ -775,6 +776,18 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         except ValueError:                   # (ของเรา) ไฟล์ดัชนีที่แก้มือจน TLE อ่านไม่ได้: ยังตอบดาวได้ Satellite Info ไม่มีค่า Orbit Info
             info = None
         return {**_sat_dict(r, with_tle=True), "status": r.status, "orbit_info": info}
+
+    # ---------------- รายชื่อเมืองและสถานีอากาศ (ปุ่ม Select ของ Location และ Weather St)
+
+    @app.get("/api/locations")
+    def get_locations():
+        """เนื้อของ data/locations.json {source, downloaded, locations: [[continent, country, city, lat, lon, alt_m, icao], ...]}
+        (สร้างจาก NOAA) อ่านจากดิสก์ครั้งเดียวแล้วส่งไบต์เดิมทุกครั้ง"""
+        try:
+            data = locations_json()
+        except OSError:
+            raise ApiError("NOT_FOUND", 404, "ไม่พบไฟล์รายชื่อเมือง locations.json") from None
+        return Response(data, media_type="application/json")
 
     # ---------------- ภาพแผนที่ (Map View: Background Map)
 
