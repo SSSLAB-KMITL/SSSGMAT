@@ -20,6 +20,7 @@ ap.add_argument("--expected-size", default="")
 ap.add_argument("--max-tris", type=int, default=15000)
 ap.add_argument("--max-bytes", type=int, default=int(1.5 * 1048576))
 ap.add_argument("--tol", type=float, default=0.02)
+ap.add_argument("--single-wing", action="store_true")
 ap.add_argument("--render", default="")
 args = ap.parse_args(argv)
 glb = os.path.abspath(args.glb)
@@ -110,9 +111,7 @@ for cand in (("wing+Y", "wing-Y"), ("solar_wing_+Y", "solar_wing_-Y")):
     if cand[0] in nodes_by_name and cand[1] in nodes_by_name:
         wing_pair = cand
         break
-if wing_pair is None:
-    errors.append("Missing wing+Y / wing-Y nodes")
-else:
+if wing_pair is not None:
     w_pos = nodes_by_name[wing_pair[0]]
     w_neg = nodes_by_name[wing_pair[1]]
     t_pos = w_pos.get("translation", [0.0, 0.0, 0.0])
@@ -121,6 +120,15 @@ else:
     if not (t_pos[2] < -0.05 and t_neg[2] > 0.05):
         errors.append(f"Wing node pivots not on +-Y axis (glTF T_pos={t_pos}, T_neg={t_neg})")
     print(f"WING_NODES {wing_pair[0]} T={t_pos}, {wing_pair[1]} T={t_neg}")
+elif args.single_wing and ("wing+Y" in nodes_by_name or "wing-Y" in nodes_by_name):
+    w_nm = "wing+Y" if "wing+Y" in nodes_by_name else "wing-Y"
+    t_w = nodes_by_name[w_nm].get("translation", [0.0, 0.0, 0.0])
+    ok = (t_w[2] < -0.05) if w_nm == "wing+Y" else (t_w[2] > 0.05)
+    if not ok:
+        errors.append(f"Single wing node {w_nm} pivot not on matching +-Y axis (glTF T={t_w})")
+    print(f"WING_NODE {w_nm} T={t_w}")
+else:
+    errors.append("Missing wing+Y / wing-Y nodes")
 
 if args.expected_size:
     exp = [float(x) for x in args.expected_size.split(",")]
