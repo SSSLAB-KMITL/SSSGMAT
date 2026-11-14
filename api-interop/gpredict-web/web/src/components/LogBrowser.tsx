@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { errorText, getCurrentLog } from "../api";
-import { currentLogPath, LEVEL_NAMES, logBrowserTitle, logSummary, parseLog } from "../logParse";
+import { currentLogPath, LEVEL_NAMES, logBrowserTitle, logFileTooLarge, logFileTooLargeText, logSummary, parseLog } from "../logParse";
 import type { LogRow } from "../logParse";
 import { useMeta } from "../useMeta";
 import { FloatingWindow } from "./FloatingWindow";
@@ -20,7 +20,8 @@ type Source = { kind: "current" } | { kind: "file"; name: string };
  * When it opens it reads the log of this run once (GET /api/logs/current): what is logged later is not shown, and the title is "Log
  * Browser: <the file>" if there was a log. Open asks the browser for a file (its chooser cannot be told to start in the folder of the
  * logs, as Gpredict's "Select Log File" is, and gives only the name of the file), clears the list, reads the file and takes its name for
- * the title; Clear empties the list and the counts. Every text of the log is shown as a text node: the server writes any text it is given.
+ * the title; Clear empties the list and the counts. A file of more than 10 MB is not read (a line in Thai says so). Every text of the log is
+ * shown as a text node: the server writes any text it is given.
  */
 export function LogBrowser({ onClose }: { onClose: () => void }) {
   const meta = useMeta();
@@ -58,6 +59,10 @@ export function LogBrowser({ onClose }: { onClose: () => void }) {
     setRows([]); // Gpredict clears the list as soon as a file is chosen, then reads it
     setSource(null);
     setError(null);
+    if (logFileTooLarge(file.size)) {
+      setError(logFileTooLargeText(file.name)); // not read: the list stays empty and the title is "Log Browser", as after a read that failed
+      return;
+    }
     try {
       const text = await file.text();
       if (read !== reads.current) return;

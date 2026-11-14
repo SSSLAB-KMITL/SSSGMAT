@@ -110,3 +110,16 @@ export function currentLogPath(logDir: string): string {
   const sep = logDir.includes("/") || !logDir.includes("\\") ? "/" : "\\";
   return logDir.endsWith(sep) ? `${logDir}gpredict.log` : `${logDir}${sep}gpredict.log`;
 }
+
+/**
+ * (ของเรา) The largest file the Open button reads: 10 MB (10 * 1024 * 1024 bytes). The chooser takes any file, and a file of 50 MB has
+ * hundreds of thousands of lines, each a row of the list. The log of this run is not held to this: the server rotates it for each
+ * session and keeps every line to 500 characters.
+ */
+export const LOG_FILE_MAX = 10 * 1024 * 1024;
+
+/** Whether a file of `size` bytes is too big for Open: more than LOG_FILE_MAX. */
+export const logFileTooLarge = (size: number): boolean => size > LOG_FILE_MAX;
+
+/** (ของเรา) What the window says about a file that is refused for its size. */
+export const logFileTooLargeText = (name: string): string => `ไฟล์ ${name} ใหญ่เกิน ${LOG_FILE_MAX / (1024 * 1024)} MB เปิดใน Log Browser ไม่ได้`;

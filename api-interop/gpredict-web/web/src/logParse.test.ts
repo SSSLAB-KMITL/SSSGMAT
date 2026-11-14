@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { currentLogPath, LEVEL_NAMES, logBrowserTitle, logSummary, LOG_CORRUPT_TEXT, parseLog, parseLogLine } from "./logParse";
+import {
+  currentLogPath,
+  LEVEL_NAMES,
+  logBrowserTitle,
+  logFileTooLarge,
+  logFileTooLargeText,
+  LOG_CORRUPT_TEXT,
+  LOG_FILE_MAX,
+  logSummary,
+  parseLog,
+  parseLogLine,
+} from "./logParse";
 
 describe("LEVEL_NAMES (ref-D §7.3)", () => {
   it("is Gpredict's level text, indexed by the numeric level", () => {
@@ -153,5 +164,19 @@ describe("currentLogPath", () => {
 
   it("uses the separator of the folder it is given", () => {
     expect(currentLogPath("C:\\Users\\me\\logs")).toBe("C:\\Users\\me\\logs\\gpredict.log");
+  });
+});
+
+describe("logFileTooLarge (ของเรา: the Open button takes any file the user picks)", () => {
+  it("the limit is 10 MB: a file of exactly that size is read, one byte more is refused", () => {
+    expect(LOG_FILE_MAX).toBe(10 * 1024 * 1024);
+    expect(logFileTooLarge(0)).toBe(false);
+    expect(logFileTooLarge(LOG_FILE_MAX)).toBe(false);
+    expect(logFileTooLarge(LOG_FILE_MAX + 1)).toBe(true);
+    expect(logFileTooLarge(50 * 1024 * 1024)).toBe(true);
+  });
+
+  it("says in Thai which file is refused and the limit", () => {
+    expect(logFileTooLargeText("big.log")).toBe("ไฟล์ big.log ใหญ่เกิน 10 MB เปิดใน Log Browser ไม่ได้");
   });
 });
