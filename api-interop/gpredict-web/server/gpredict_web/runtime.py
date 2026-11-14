@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 from gnss_predict.astro import subpoint, sun_ecef_km
@@ -279,6 +279,14 @@ class ModuleRuntime:
                     self._ephem.ensure(self._owner, self._specs(), w)
             self._prune_passes()
 
+    def drop_qth_reference(self) -> None:
+        """ไฟล์ module เปลี่ยนเป็น ** DEFAULT ** ขณะที่ module เปิดอยู่ (batch ลบสถานีของมัน): อ้างอิง qth ของ runtime เป็น None ตามไฟล์
+        แต่สถานีที่ถืออยู่ (_qth, _q) ไม่เปลี่ยน เหมือน Gpredict ที่ module ที่เปิดอยู่ถือสถานีเดิมจนถูกสร้างใหม่
+        การบันทึก view ที่ส่ง qth: None กลับมาจึงไม่ใช่การเปลี่ยนสถานี (check_configurable ไม่ตอบ 409) และ Hub.reload ไม่ย้ายสถานีให้"""
+        with self._lock:
+            self._check_open()
+            self._module = replace(self._module, qth=None)
+
     def retry(self) -> None:
         """ปุ่ม Retry หลัง GMAT ล้มเหลว **(ของเรา)**"""
         with self._lock:
@@ -503,11 +511,20 @@ class Hub:
 
     def reload(self, name: str) -> None:
         """อ่าน module, QTH และ TLE ใหม่หลัง PUT module หรือ Update TLE (นาฬิกาและ TLE เดิมระหว่างรอค่าใหม่คงอยู่)
+        สถานีเปลี่ยนเมื่อ qth ของ module เปลี่ยนเท่านั้น (ดู _station) ไม่ย้ายตามสถานีตั้งต้นใหม่หรือเพราะไฟล์สถานีหาย
         ไม่ได้เปิดอยู่: ไม่ทำอะไร ApiError จาก store ไม่เปลี่ยน runtime (close ถือ lock ประจำชื่อเดียวกัน จึงไม่ปิดแทรกระหว่างนี้)"""
         with self._serial(name):
             rt = self.get(name)
             if rt is not None:
-                rt.update(*self._load(name))
+                module, sats = self._read(name)
+                rt.update(module, self._station(module, rt), sats)
+
+    def drop_qth_reference(self, name: str) -> None:
+        """ไฟล์ module เปลี่ยนเป็น ** DEFAULT ** (batch ลบสถานีของมัน): runtime ที่เปิดอยู่เก็บสถานีเดิมไว้ ไม่เปิดอยู่: ไม่ทำอะไร"""
+        with self._serial(name):
+            rt = self.get(name)
+            if rt is not None:
+                rt.drop_qth_reference()
 
     def open_names(self) -> list[str]:
         """ชื่อ module ที่เปิดอยู่ตามลำดับที่เปิด"""
@@ -536,14 +553,31 @@ class Hub:
             return TWILIGHT_SUN_EL_DEG
         return float(self._prefs.get("PREDICT/TWILIGHT_THRESHOLD"))
 
-    def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord]]:
-        """module, QTH ของมัน และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
+    def _read(self, name: str) -> tuple[ModuleConfig, list[SatRecord]]:
+        """module และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
         module = self._store.get_module(name)
+        return module, [r for r in (self._satdb.get(n) for n in module.satellites) if r is not None]
+
+    def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord]]:
+        """module, QTH ของมัน (หาใหม่ทั้งหมด) และ SatRecord ตอนสร้าง runtime"""
+        module, sats = self._read(name)
+        return module, self._station(module, None), sats
+
+    def _station(self, module: ModuleConfig, current: ModuleRuntime | None) -> Qth:
+        """สถานีของ module ที่สร้างใหม่ (current เป็น None) หรือที่อ้างอิง qth เปลี่ยนจากของ runtime ที่เปิดอยู่ (current):
+        ชื่อใน qth หรือสถานีตั้งต้น (** DEFAULT **) อ้างอิงไม่เปลี่ยน: สถานีที่ runtime ถืออยู่ต่อ อ่านใหม่ตามชื่อ (แก้ผ่าน PUT /api/qth/{name} ยังถึง) ถ้าไฟล์ของมันหายแล้วใช้ตัวที่ถืออยู่
+        ไม่ย้ายตามสถานีตั้งต้นใหม่ (เหมือน Gpredict: module ที่เปิดอยู่ถือสถานีเดิมจนถูกสร้างใหม่ spec งานย่อย 4 §4.2)"""
+        if current is not None and module.qth == current.module.qth:
+            held = current.qth
+            try:
+                return self._store.get_qth(held.name)
+            except ApiError as exc:
+                if exc.status != 404:
+                    raise
+                return held
         qth_name = module.qth if module.qth is not None else self._store.default_qth()
         if qth_name is None:
             raise ApiError("QTH_INVALID", 422,
-                           f"module {name} ใช้สถานีตั้งต้น (** DEFAULT **) แต่ยังไม่มีสถานีตั้งต้น "
+                           f"module {module.name} ใช้สถานีตั้งต้น (** DEFAULT **) แต่ยังไม่มีสถานีตั้งต้น "
                            "ให้สร้าง QTH แล้วตั้งเป็นสถานีตั้งต้น หรือเลือก QTH ให้ module นี้", "qth")
-        qth = self._store.get_qth(qth_name)
-        sats = [r for r in (self._satdb.get(n) for n in module.satellites) if r is not None]
-        return module, qth, sats
+        return self._store.get_qth(qth_name)

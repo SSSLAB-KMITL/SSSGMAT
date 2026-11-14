@@ -217,7 +217,8 @@ class Store:
           ไฟล์สถานีที่หายถูกลบหลังสุด ดิสก์ล้มกลางทางจึงไม่มี module หรือสถานีตั้งต้นที่ชี้ไฟล์ที่ไม่มี
         - module ที่ช่องอื่นผิดก็เปลี่ยนเป็น ** DEFAULT ** (แก้เฉพาะ qth ในไฟล์) ไม่งั้น OK ของ Preferences จะค้างเพราะไฟล์ module เสีย
           ไฟล์ที่ไม่ใช่ JSON object ไม่ถูกแตะ (modules_using_qth ก็ไม่นับ)
-        - ไม่แตะ runtime ที่เปิดอยู่: ผู้เรียกไม่ hub.reload module ที่เปิดอยู่ใช้สถานีเดิมจนกว่าจะถูกสร้างใหม่ (spec §4.2 เหมือน Gpredict)"""
+        - ไม่แตะ runtime ที่เปิดอยู่: ผู้เรียกไม่ hub.reload แต่เรียก hub.drop_qth_reference กับชื่อที่คืนไป module ที่เปิดอยู่ใช้สถานีเดิม
+          จนกว่าจะถูกสร้างใหม่ (spec §4.2 เหมือน Gpredict)"""
         if not stations:
             raise ApiError("QTH_LAST", 422, "ลบสถานีทั้งหมดไม่ได้ ต้องมีสถานีอย่างน้อย 1 สถานี", "stations")
         new = [validate_qth(q) for q in stations]

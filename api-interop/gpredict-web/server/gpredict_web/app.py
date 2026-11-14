@@ -628,7 +628,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         """{"stations": [QTH], "default": ชื่อ} แทนทั้งชุดสถานีและสถานีตั้งต้นในครั้งเดียว (OK ของ Preferences → Ground Stations)
         ตรวจทุกตัวก่อนเขียน ผิดตัวเดียวไม่เขียนเลย: ว่าง -> QTH_LAST, ผิดช่อง/ชื่อซ้ำ/default ไม่อยู่ในรายการ -> QTH_INVALID
         module ที่ใช้สถานีที่หายเปลี่ยนเป็น ** DEFAULT ** (changed_modules) ส่วน module ที่เปิดอยู่ไม่ถูก reload ใช้สถานีเดิมต่อจน
-        เปิดใหม่ รวมถึงที่มี controller เปิดอยู่ (spec §4.2) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log"""
+        เปิดใหม่ รวมถึงที่มี controller เปิดอยู่ (spec §4.2): hub.drop_qth_reference ตั้งอ้างอิง qth ของ runtime เป็น None ตามไฟล์
+        แต่เก็บสถานีที่ถืออยู่ (Hub.reload ครั้งหลังก็ไม่ย้าย) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log"""
         stations = body.get("stations")
         if not isinstance(stations, list):
             raise ApiError("QTH_INVALID", 422, "รายการสถานี (stations) ต้องเป็นรายการของ object", "stations")
@@ -642,6 +643,9 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 raise ApiError(exc.code, exc.status, f"{label}: {exc.text}", exc.object) from None
         default = body.get("default")
         changed = store.replace_qth(parsed, default, dry_run)
+        if not dry_run:
+            for name in changed:                          # module ที่เปิดอยู่ถือสถานีเดิมต่อ แต่อ้างอิง qth ตามไฟล์ (** DEFAULT **)
+                hub.drop_qth_reference(name)
         return {"qth": [asdict(q) for q in sorted(parsed, key=lambda q: q.name)], "default": default,
                 "changed_modules": changed}
 

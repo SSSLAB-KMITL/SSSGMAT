@@ -670,6 +670,67 @@ class HubTest(unittest.TestCase):
         self.assertEqual([s["norad"] for s in tick["sats"]], list(NORADS[:2]))
         hub.reload("NotOpen")                                           # ไม่ได้เปิดอยู่: ไม่ทำอะไร
 
+    # ---- สถานีของ module ที่เปิดอยู่ (spec งานย่อย 4 §4.2): เปลี่ยนเมื่ออ้างอิง qth เปลี่ยนหรือเปิดใหม่เท่านั้น เหมือน Gpredict
+
+    def test_reload_keeps_the_station_of_a_default_module(self):
+        """module ** DEFAULT ** ที่เปิดอยู่ไม่ย้ายตามสถานีตั้งต้นใหม่ตอน reload (เช่น หลัง Update TLE) เปิดใหม่ถึงจะย้าย"""
+        self.put_module()
+        hub = self.hub()
+        rt = hub.open("M")
+        self.ephem.drain()
+        self.store.set_default_qth("OTHER")
+        hub.reload("M")
+        self.assertEqual((rt.qth, rt.tick()["qth"]["name"]), (ORIGIN, "ORIGIN"))
+        hub.close("M")
+        self.assertEqual(hub.open("M").tick()["qth"]["name"], "OTHER")
+
+    def test_reload_rereads_the_station_it_holds_by_name(self):
+        """แก้พิกัดของสถานีที่ module ใช้อยู่ (PUT /api/qth/{name}) ยังถึง module ที่เปิดอยู่ ทั้งแบบระบุชื่อและแบบ ** DEFAULT **"""
+        self.put_module("Named", qth="OTHER")
+        self.put_module("Dflt")
+        hub = self.hub()
+        rts = {n: hub.open(n) for n in ("Named", "Dflt")}
+        self.store.put_qth(dataclasses.replace(OTHER, lat_deg=11.5))
+        self.store.put_qth(dataclasses.replace(ORIGIN, lat_deg=1.5))
+        for n in rts:
+            hub.reload(n)
+        self.assertEqual((rts["Named"].qth.lat_deg, rts["Dflt"].qth.lat_deg), (11.5, 1.5))
+        self.assertEqual((rts["Named"].qth.name, rts["Dflt"].qth.name), ("OTHER", "ORIGIN"))
+
+    def test_reload_follows_a_changed_qth_reference(self):
+        """อ้างอิง qth เปลี่ยน (Configure → OK) = เปลี่ยนสถานีทันที ทั้งระบุชื่อ → ระบุชื่ออื่น และระบุชื่อ → ** DEFAULT **"""
+        self.put_module(qth="OTHER")
+        hub = self.hub()
+        rt = hub.open("M")
+        self.put_module(qth="ORIGIN")
+        hub.reload("M")
+        self.assertEqual((rt.module.qth, rt.qth.name), ("ORIGIN", "ORIGIN"))
+        self.put_module(qth="OTHER")
+        hub.reload("M")
+        self.store.set_default_qth("ORIGIN")
+        self.put_module(qth=None)
+        hub.reload("M")
+        self.assertEqual((rt.module.qth, rt.qth.name), (None, "ORIGIN"))
+
+    def test_dropped_qth_reference_keeps_the_held_station_even_when_its_file_is_gone(self):
+        """batch ลบสถานีของ module ที่เปิดอยู่: ไฟล์เป็น ** DEFAULT ** runtime ถือสถานีเดิมในหน่วยความจำต่อ ไม่ย้ายแม้ reload"""
+        self.put_module(qth="ORIGIN")
+        hub = self.hub()
+        rt = hub.open("M")
+        self.ephem.drain()
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.store.replace_qth([OTHER], "OTHER"), ["M"])
+        hub.drop_qth_reference("M")
+        self.assertEqual((rt.module.qth, rt.qth), (None, ORIGIN))          # อ้างอิงตามไฟล์ แต่สถานีที่ถืออยู่ยังเดิม
+        self.assertEqual(rt._q, runtime.qth_geo(ORIGIN))
+        for _ in range(2):
+            hub.reload("M")                                                # เช่น Update TLE: ไม่ย้ายไป OTHER และไม่ล้ม
+            self.assertEqual((rt.module.qth, rt.qth, rt._q), (None, ORIGIN, runtime.qth_geo(ORIGIN)))
+        self.assertEqual(rt.tick()["qth"]["name"], "ORIGIN")
+        hub.close("M")
+        self.assertEqual(hub.open("M").tick()["qth"]["name"], "OTHER")     # เปิดใหม่ = สถานีตั้งต้นใหม่
+        hub.drop_qth_reference("NotOpen")                                  # ไม่ได้เปิดอยู่: ไม่ทำอะไร
+
     def test_reload_after_tle_update_keeps_old_values_until_new_ready(self):
         self.put_module()
         records = {n: record(n) for n in NORADS}

@@ -309,6 +309,45 @@ class QthApiTest(ApiTestBase):
         self.open_module()
         self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "OTHER")
 
+    def test_open_modules_keep_their_station_after_batch_and_update_tle(self):
+        """Review (งานย่อย 4 task 4): สถานีของ module ที่เปิดอยู่เปลี่ยนเมื่ออ้างอิง qth เปลี่ยนหรือเปิดใหม่เท่านั้น Update TLE หลัง OK
+        ของ Preferences ไม่ย้ายทั้ง module ที่ถูกลบสถานี (M) และ module ** DEFAULT ** (N) ส่วน module ที่ใช้สถานีที่ยังอยู่ (K) ได้พิกัดใหม่"""
+        self.put_module()                                                            # M ใช้ ORIGIN (ตั้งต้น)
+        self.put_module("N", qth=None)                                               # N ใช้ ** DEFAULT ** (= ORIGIN)
+        self.put_module("K", qth="OTHER")
+        for name in ("M", "N", "K"):
+            self.open_module(name)
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            r = self.put_batch([self.station("OTHER", lat_deg=10.0, lon_deg=20.0)], "OTHER")
+        self.assertEqual(r.json()["changed_modules"], ["M"])
+        self.assertEqual(self.client.post("/api/tle/update").status_code, 200)       # hub.reload ทุก module ที่เปิดอยู่
+        self.assertEqual({n: self.hub.get(n).tick()["qth"]["name"] for n in ("M", "N", "K")},
+                         {"M": "ORIGIN", "N": "ORIGIN", "K": "OTHER"})
+        self.assertEqual(self.hub.get("M").module.qth, None)                         # runtime กับไฟล์ตรงกัน (ทั้งคู่ ** DEFAULT **)
+        self.assertIsNone(self.client.get("/api/modules/M").json()["qth"])
+        r = self.client.put("/api/qth/OTHER", json=self.station("OTHER", location="Moved", lat_deg=11.5, lon_deg=20.0))
+        self.assertEqual(r.status_code, 200, r.text)                                 # แก้สถานีที่ระบุชื่อยังถึง module ที่เปิดอยู่
+        self.assertEqual(self.hub.get("K").tick()["qth"]["lat_deg"], 11.5)
+        self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "ORIGIN")          # ...แต่ไม่ดึง module ที่ถือสถานีเก่าไปที่ OTHER
+        self.assertEqual(self.hub.get("N").tick()["qth"]["name"], "ORIGIN")
+        for name in ("M", "N"):                                                      # เปิดใหม่ = สถานีตั้งต้นใหม่
+            self.client.post(f"/api/modules/{name}/close")
+            self.open_module(name)
+        self.assertEqual({n: self.hub.get(n).tick()["qth"]["name"] for n in ("M", "N")}, {"M": "OTHER", "N": "OTHER"})
+
+    def test_view_only_put_after_batch_is_accepted_and_keeps_the_station(self):
+        """GET /api/modules/M ให้ qth: None หลัง batch และ runtime ยังถือ ORIGIN: บันทึกที่ส่งค่านั้นกลับ (Ground Track ฯลฯ) ต้องผ่านและไม่ย้ายสถานี"""
+        self.put_module()
+        self.open_module()
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.put_batch([self.station("OTHER")], "OTHER").status_code, 200)
+        saved = self.client.get("/api/modules/M").json()
+        self.assertIsNone(saved["qth"])
+        r = self.client.put("/api/modules/M", json={**saved, "ground_track": [NORADS[0]]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.store.get_module("M").ground_track, [NORADS[0]])
+        self.assertEqual(self.hub.get("M").tick()["qth"]["name"], "ORIGIN")
+
     def test_batch_dry_run_changes_nothing(self):
         self.put_module("N", qth="ORIGIN")
         before = self.qth_state()
@@ -1654,7 +1693,8 @@ class ControllerApiTest(ApiTestBase):
 
     def test_batch_deleting_the_station_of_a_module_with_open_controllers(self):
         """ลบสถานีของ module ที่มี controller เปิดอยู่ใน OK ของ Preferences: ไฟล์ module เป็น ** DEFAULT ** (ตามที่ Gpredict ทำ)
-        แต่ runtime และ controller ไม่ถูกบังคับให้เปลี่ยนสถานี (batch ไม่ผ่าน PUT module และไม่ hub.reload) จนกว่า controller จะปิดแล้วถูกบันทึกใหม่"""
+        แต่ runtime และ controller ไม่ถูกบังคับให้เปลี่ยนสถานี (batch ไม่ผ่าน PUT module และไม่ hub.reload, reload ครั้งหลังก็ไม่ย้าย
+        เพราะอ้างอิง qth ไม่เปลี่ยน) จนกว่าจะเปิด module ใหม่"""
         self.put_hw([self.radio("A")], [self.rotator("R")])
         self.open_module()
         self.open_ctl("radio")
@@ -1668,15 +1708,26 @@ class ControllerApiTest(ApiTestBase):
         self.assertIsNone(self.store.get_module_own("M")["qth"])
         self.assertEqual(self.listed(), both)                                       # controller ยังเปิดอยู่ ไม่ถูกปิด
         self.assertIs(self.hub.get("M"), rt)
-        self.assertEqual((rt.qth.name, rt.module.qth, rt.tick()["qth"]["name"]), ("ORIGIN", "ORIGIN", "ORIGIN"))
+        self.assertEqual((rt.qth.name, rt.module.qth, rt.tick()["qth"]["name"]), ("ORIGIN", None, "ORIGIN"))
+        # Update TLE (hub.reload ทุก module) หลัง OK: controller ที่ทำงานอยู่ไม่ถูกย้ายสถานี
+        self.assertEqual(self.client.post("/api/tle/update").status_code, 200)
+        self.assertEqual((self.hub.get("M").qth.name, rt.tick()["qth"]["name"]), ("ORIGIN", "ORIGIN"))
+        self.assertEqual(self.listed(), both)
         self.assertEqual(self.act("radio", action="track", on=False)["norad"], SAT_BY_NAME)    # ยังสั่ง controller ได้ตามปกติ
         self.assertEqual(self.act("rotator", action="track", on=False)["norad"], SAT_BY_NAME)
-        # กฎ 409 ยังอยู่: runtime ใช้ ORIGIN แต่ไฟล์เป็น ** DEFAULT ** (= OTHER) การบันทึกที่ส่ง qth: None จึงเป็นการเปลี่ยนสถานี
-        self.assert_error(self.client.put("/api/modules/M", json=self.module_body(qth=None)), 409, "CONTROLLER_ACTIVE", "qth")
+        # บันทึก view อย่างเดียว (qth ที่ GET ให้คือ ** DEFAULT ** ตรงกับ runtime) ผ่านขณะ controller เปิดอยู่ ไม่ย้ายสถานี
+        saved = self.client.get("/api/modules/M").json()
+        self.assertIsNone(saved["qth"])
+        self.put_module(qth=None, ground_track=[ISS])
+        self.assertEqual(self.store.get_module("M").ground_track, [ISS])
+        self.assertEqual((self.hub.get("M").qth.name, self.listed()), ("ORIGIN", both))
+        # เปลี่ยนสถานีจริง (อ้างอิง qth เปลี่ยน) ยังถูกห้ามขณะ controller เปิดอยู่
+        self.assert_error(self.client.put("/api/modules/M", json=self.module_body(qth="OTHER")), 409, "CONTROLLER_ACTIVE", "qth")
         self.assertEqual(rt.qth.name, "ORIGIN")
         self.post("radio/close")
         self.post("rotator/close")
-        self.put_module(qth=None)                                                   # ปิด controller แล้วบันทึกได้ runtime ตามสถานีตั้งต้นใหม่
+        self.client.post("/api/modules/M/close")                                    # เปิดใหม่ = สถานีตั้งต้นใหม่
+        self.open_module()
         self.assertEqual(self.hub.get("M").qth.name, "OTHER")
 
     def test_configure_validation_comes_before_conflict(self):
