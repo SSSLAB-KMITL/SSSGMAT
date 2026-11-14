@@ -5,10 +5,13 @@ from pathlib import Path
 
 from gpredict_web.config import MAX_SATS
 from gpredict_web.errors import ApiError
-from gpredict_web.module import (LAYOUT_PRESETS, LIST_COLUMNS, LIST_DEFAULT, LIST_HINTS, MAP_CONTENTS,
-                                 MAP_DEFAULT_OFF, POLAR_CONTENTS, POLAR_DEFAULT_OFF, POLAR_ORIENTATIONS,
-                                 SINGLE_DEFAULT, SINGLE_FIELDS, SINGLE_HINTS, ModuleConfig, ViewCell,
-                                 module_from_dict, module_to_dict, parse_layout)
+from gpredict_web.module import (DEFAULT_MAP, GLOBAL_LAYOUT_EXTRA, LAYOUT_PRESETS, LIST_COLUMNS, LIST_DEFAULT,
+                                 LIST_HINTS, MAP_COLOURS_DEFAULT, MAP_CONTENTS, MAP_DEFAULT_OFF, MAP_SHADOW_DEFAULT,
+                                 MODULE_KEYS, PAGE_PATHS, POLAR_COLOURS_DEFAULT, POLAR_CONTENTS, POLAR_DEFAULT_OFF,
+                                 POLAR_ORIENTATIONS, SINGLE_DEFAULT, SINGLE_FIELDS, SINGLE_HINTS, ModuleConfig,
+                                 ViewCell, del_path, effective_dict, get_path, module_from_dict, module_to_dict,
+                                 own_dict, parse_layout, set_path, strip_defaults)
+from gpredict_web.prefs import PREFS, Prefs
 from gpredict_web.store import Qth, Store
 from tests.helpers import temp_config
 
@@ -172,11 +175,14 @@ class ModuleFromDictTests(unittest.TestCase):
             "list_columns": ["Az", "Satellite", "Lat"],
             "list_sort": {"column": "Az", "ascending": False},
             "map": {"contents": {n: i % 2 == 0 for i, n in enumerate(MAP_CONTENTS)},
-                    "track_orbits": 7, "center_lon": -120},
+                    "track_orbits": 7, "center_lon": -120, "file": "earth_800.png", "shadow_alpha": 100,
+                    "colours": {n: 0x10203040 + i for i, n in enumerate(MAP_COLOURS_DEFAULT)}},
             "polar": {"orientation": "S/W/N/E", "contents": {n: i % 2 == 1 for i, n in enumerate(POLAR_CONTENTS)},
-                      "auto_skytrack": True},
+                      "auto_skytrack": True,
+                      "colours": {n: 0x50607080 + i for i, n in enumerate(POLAR_COLOURS_DEFAULT)}},
             "single": {"fields": ["Azimuth", "Visibility"], "selected": 43013},
             "footprint_off": [40069], "ground_track": [25544, 43013], "sky_track": [43013],
+            "window": {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600},
         }
         m = module_from_dict(d, QTHS, NORADS)
         self.assertEqual(module_to_dict(m), d)
@@ -305,6 +311,546 @@ class ModuleFromDictTests(unittest.TestCase):
                 module_from_dict({"name": "A", "satellites": sats}, QTHS, norads)
             self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_TOO_MANY_SATS", 422))
             self.assertEqual(cm.exception.object, "satellites")
+
+
+# ---------------------------------------------------------------- ช่อง map / polar / window ใหม่ (งานย่อย 4)
+
+class NewFieldTests(unittest.TestCase):
+    def test_new_defaults(self):
+        m = build()
+        self.assertEqual(m.map["file"], DEFAULT_MAP)
+        self.assertEqual(m.map["shadow_alpha"], MAP_SHADOW_DEFAULT)
+        self.assertEqual(m.map["colours"], MAP_COLOURS_DEFAULT)
+        self.assertEqual(len(m.map["colours"]), 11)
+        self.assertEqual(m.polar["colours"], POLAR_COLOURS_DEFAULT)
+        self.assertEqual(len(m.polar["colours"]), 7)
+        self.assertEqual(m.window, {"state": 0, "x": None, "y": None, "width": None, "height": None})
+
+    def test_new_defaults_are_not_shared(self):
+        a = build()
+        a.map["colours"]["grid"] = 1
+        a.polar["colours"]["axes"] = 1
+        a.window["state"] = 1
+        b = build()
+        self.assertEqual(b.map["colours"], MAP_COLOURS_DEFAULT)
+        self.assertEqual(b.polar["colours"], POLAR_COLOURS_DEFAULT)
+        self.assertEqual(b.window["state"], 0)
+        self.assertEqual(MAP_COLOURS_DEFAULT["grid"], 0x7F7F7FC8)
+        self.assertEqual(POLAR_COLOURS_DEFAULT["axes"], 0x0F0F0F7F)
+
+    def test_new_fields_round_trip(self):
+        colours = {n: i + 1 for i, n in enumerate(MAP_COLOURS_DEFAULT)}
+        polar_colours = {n: 0xFFFFFFFF - i for i, n in enumerate(POLAR_COLOURS_DEFAULT)}
+        window = {"state": 1, "x": 0, "y": 20, "width": 100, "height": 10000}
+        m = build(map={"file": "my_map-1.png", "colours": colours, "shadow_alpha": 255},
+                  polar={"colours": polar_colours}, window=window)
+        self.assertEqual((m.map["file"], m.map["shadow_alpha"]), ("my_map-1.png", 255))
+        self.assertEqual(m.map["colours"], colours)
+        self.assertEqual(m.polar["colours"], polar_colours)
+        self.assertEqual(m.window, window)
+        self.assertEqual(module_to_dict(module_from_dict(module_to_dict(m), QTHS, NORADS)), module_to_dict(m))
+        json.dumps(module_to_dict(m))
+
+    def test_partial_colours_and_window_fill_in_defaults(self):
+        m = build(map={"colours": {"grid": 0}}, polar={"colours": {"info": 5}}, window={"x": 7})
+        self.assertEqual(m.map["colours"], {**MAP_COLOURS_DEFAULT, "grid": 0})
+        self.assertEqual(m.polar["colours"], {**POLAR_COLOURS_DEFAULT, "info": 5})
+        self.assertEqual(m.window, {"state": 0, "x": 7, "y": None, "width": None, "height": None})
+        m = build(window={"x": None, "width": None})
+        self.assertEqual(m.window["x"], None)
+
+    def test_window_validation(self):
+        cases = [
+            ("state 2", {"state": 2}, "window.state"),
+            ("state -1", {"state": -1}, "window.state"),
+            ("state bool", {"state": True}, "window.state"),
+            ("state None", {"state": None}, "window.state"),
+            ("state str", {"state": "1"}, "window.state"),
+            ("x -1", {"x": -1}, "window.x"),
+            ("y -1", {"y": -1}, "window.y"),
+            ("x float", {"x": 1.5}, "window.x"),
+            ("x bool", {"x": False}, "window.x"),
+            ("width 50", {"width": 50}, "window.width"),
+            ("width 99", {"width": 99}, "window.width"),
+            ("width 10001", {"width": 10001}, "window.width"),
+            ("height 50", {"height": 50}, "window.height"),
+            ("height 10001", {"height": 10001}, "window.height"),
+            ("height str", {"height": "300"}, "window.height"),
+        ]
+        for label, window, field in cases:
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                build(window=window)
+            self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+            self.assertEqual(cm.exception.object, field)
+        for bad in (None, [], 5):
+            with self.subTest(bad), self.assertRaises(ApiError) as cm:
+                build(window=bad)
+            self.assertEqual((cm.exception.code, cm.exception.object), ("MODULE_INVALID", "window"))
+        self.assertEqual(build(window={"state": 1, "x": 0, "y": 0, "width": 100, "height": 100}).window["state"], 1)
+
+    def test_map_colours_validation(self):
+        cases = [
+            ("negative", {"colours": {"grid": -1}}, "map.colours.grid"),
+            ("too big", {"colours": {"grid": 0x100000000}}, "map.colours.grid"),
+            ("float", {"colours": {"grid": 1.0}}, "map.colours.grid"),
+            ("bool", {"colours": {"grid": True}}, "map.colours.grid"),
+            ("str", {"colours": {"grid": "#ffffff"}}, "map.colours.grid"),
+            ("None", {"colours": {"infoBg": None}}, "map.colours.infoBg"),
+            ("unknown name", {"colours": {"nope": 1}}, "map.colours"),
+            ("polar name on map", {"colours": {"background": 1}}, "map.colours"),
+            ("not dict", {"colours": [1]}, "map.colours"),
+            ("shadow 256", {"shadow_alpha": 256}, "map.shadow_alpha"),
+            ("shadow -1", {"shadow_alpha": -1}, "map.shadow_alpha"),
+            ("shadow float", {"shadow_alpha": 1.5}, "map.shadow_alpha"),
+            ("file empty", {"file": ""}, "map.file"),
+            ("file too long", {"file": "a" * 101}, "map.file"),
+            ("file slash", {"file": "a/b.jpg"}, "map.file"),
+            ("file parent", {"file": "../x.jpg"}, "map.file"),
+            ("file dotdot", {"file": ".."}, "map.file"),
+            ("file dot", {"file": "."}, "map.file"),
+            ("file space", {"file": "a b.jpg"}, "map.file"),
+            ("file newline", {"file": "a.jpg\n"}, "map.file"),
+            ("file thai", {"file": "แผนที่.jpg"}, "map.file"),
+            ("file not str", {"file": 5}, "map.file"),
+        ]
+        for label, over, field in cases:
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                build(map=over)
+            self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+            self.assertEqual(cm.exception.object, field)
+        for colour in (0, 0xFFFFFFFF):
+            self.assertEqual(build(map={"colours": {"tick": colour}}).map["colours"]["tick"], colour)
+        for name in ("a", "a" * 100, "earth_800.png", "Nasa-BMNG.07_1024.jpg", ".hidden"):
+            self.assertEqual(build(map={"file": name}).map["file"], name)
+
+    def test_polar_colours_validation(self):
+        cases = [
+            ("negative", {"colours": {"axes": -1}}, "polar.colours.axes"),
+            ("too big", {"colours": {"axes": 2 ** 32}}, "polar.colours.axes"),
+            ("bool", {"colours": {"axes": False}}, "polar.colours.axes"),
+            ("str", {"colours": {"axes": "red"}}, "polar.colours.axes"),
+            ("unknown name", {"colours": {"grid": 1}}, "polar.colours"),
+            ("not dict", {"colours": 5}, "polar.colours"),
+        ]
+        for label, over, field in cases:
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                build(polar=over)
+            self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+            self.assertEqual(cm.exception.object, field)
+
+    def test_version_pin_unpin_are_accepted_and_skipped(self):
+        m = build(version=2, pin=["map.file"], unpin=["layout_code"])
+        self.assertEqual(module_to_dict(m), module_to_dict(build()))
+        self.assertFalse(hasattr(m, "version"))
+
+
+# ---------------------------------------------------------------- การสืบทอดค่า: ค่าของ module → ค่ารวม → ค่าตั้งต้น
+
+# ช่องที่เป็นของ module อย่างเดียว (เก็บในไฟล์เสมอ ไม่สืบทอด) เขียนซ้ำตรงนี้ตั้งใจ ไม่อ้างจาก module.py
+MODULE_ONLY = ("name", "qth", "satellites", "list_sort", "single.selected", "footprint_off", "ground_track",
+               "sky_track", "window")
+
+
+def leaves(d: dict, prefix: str = "") -> list[str]:
+    """path ของทุก leaf (list นับเป็น leaf)"""
+    out = []
+    for k, v in d.items():
+        path = f"{prefix}{k}"
+        out.extend(leaves(v, path + ".") if isinstance(v, dict) else [path])
+    return out
+
+
+def is_module_only(path: str) -> bool:
+    return any(path == m or path.startswith(m + ".") for m in MODULE_ONLY)
+
+
+def full_body(**over) -> dict:
+    """ค่าเต็มของ module แบบที่ web ส่งมา (module_to_dict)"""
+    return module_to_dict(build(**over))
+
+
+class PathTests(unittest.TestCase):
+    def test_get_set_del(self):
+        d = {}
+        set_path(d, "map.contents.Satellite Name", False)
+        set_path(d, "map.track_orbits", 5)
+        set_path(d, "layout_code", "1;0;2;0;1")
+        self.assertEqual(d, {"map": {"contents": {"Satellite Name": False}, "track_orbits": 5},
+                             "layout_code": "1;0;2;0;1"})
+        self.assertIs(get_path(d, "map.contents.Satellite Name"), False)
+        self.assertEqual(get_path(d, "map.track_orbits"), 5)
+        self.assertEqual(get_path(d, "map.contents"), {"Satellite Name": False})
+        del_path(d, "map.track_orbits")
+        self.assertNotIn("track_orbits", d["map"])
+
+    def test_get_missing(self):
+        d = {"map": {"track_orbits": 5}, "name": "A", "qth": None}
+        for path in ("zzz", "map.zzz", "map.track_orbits.x", "name.x", "map.contents.Grid Lines", ""):
+            with self.subTest(path), self.assertRaises(KeyError):
+                get_path(d, path)
+            self.assertEqual(get_path(d, path, "dflt"), "dflt")
+        self.assertIsNone(get_path(d, "qth"))                      # None เป็นค่าจริง ไม่ใช่ "ไม่มี"
+        self.assertIsNone(get_path(d, "qth", "dflt"))
+
+    def test_set_replaces_non_dict_parent(self):
+        d = {"map": 5}
+        set_path(d, "map.track_orbits", 2)
+        self.assertEqual(d, {"map": {"track_orbits": 2}})
+
+    def test_del_prunes_emptied_parents_and_ignores_missing(self):
+        d = {"map": {"contents": {"Grid Lines": False}}, "name": "A"}
+        del_path(d, "map.contents.Grid Lines")
+        self.assertEqual(d, {"name": "A"})
+        del_path(d, "map.contents.Grid Lines")
+        del_path(d, "zzz.yyy")
+        del_path(d, "name.x")
+        self.assertEqual(d, {"name": "A"})
+        d = {"map": {"contents": {"Grid Lines": False, "QTH Info": True}}}
+        del_path(d, "map.contents.Grid Lines")
+        self.assertEqual(d, {"map": {"contents": {"QTH Info": True}}})
+
+
+class InheritanceTests(unittest.TestCase):
+    def setUp(self):
+        self.cfg = temp_config(self)
+        self.prefs = Prefs(self.cfg.data_dir)
+
+    def globals_(self, **over) -> dict:
+        g = dict(self.prefs.values())
+        g.update(over)
+        return g
+
+    # ---- ตารางชื่อ
+
+    def test_module_keys_cover_every_inheritable_leaf(self):
+        inheritable = {p for p in leaves(module_to_dict(ModuleConfig("x"))) if not is_module_only(p)}
+        self.assertEqual(set(MODULE_KEYS), inheritable)
+        self.assertEqual(len(MODULE_KEYS), 1 + 6 + 1 + 8 + 4 + 11 + 1 + 6 + 1 + 7 + 1)
+        for path, key in MODULE_KEYS.items():
+            with self.subTest(path):
+                self.assertIn(key, PREFS)
+                self.assertTrue(key.startswith("MODULES/"))
+        self.assertEqual(len(set(MODULE_KEYS.values())), len(MODULE_KEYS))          # key ไม่ซ้ำ
+        self.assertEqual(set(MODULE_KEYS.values()), {k for k in PREFS if k.startswith("MODULES/")})
+
+    def test_module_keys_match_the_defaults_of_prefs(self):
+        base = module_to_dict(ModuleConfig("x"))
+        for path, key in MODULE_KEYS.items():
+            with self.subTest(path):
+                self.assertEqual(get_path(base, path), PREFS[key].default)
+
+    def test_module_keys_examples(self):
+        for path, key in {
+            "layout_code": "MODULES/GRID", "refresh.data_ms": "MODULES/DATA_TIMEOUT",
+            "refresh.list": "MODULES/LIST_REFRESH", "refresh.map": "MODULES/MAP_REFRESH",
+            "refresh.polar": "MODULES/POLAR_REFRESH", "refresh.single": "MODULES/SINGLE_SAT_REFRESH",
+            "refresh.event": "MODULES/EVENT_LIST_REFRESH", "list_columns": "MODULES/LIST_COLUMNS",
+            "map.contents.Satellite Name": "MODULES/MAP_SAT_NAME", "map.contents.Satellite Footprint": "MODULES/MAP_SAT_FOTPRINT",
+            "map.contents.Solar Terminator": "MODULES/MAP_SHOW_TERMINATOR", "map.track_orbits": "MODULES/MAP_TRACK_NUM",
+            "map.center_lon": "MODULES/MAP_CENTER", "map.file": "MODULES/MAP_FILE",
+            "map.shadow_alpha": "MODULES/MAP_SHADOW_ALPHA", "map.colours.infoBg": "MODULES/MAP_INFO_BGD_COLOUR",
+            "map.colours.groundStation": "MODULES/MAP_QTH_COLOUR", "map.colours.earthShadow": "MODULES/MAP_EARTH_SHADOW_COLOUR",
+            "polar.orientation": "MODULES/POLAR_CHART_ORIENT", "polar.auto_skytrack": "MODULES/POLAR_SHOW_TRACK_AUTO",
+            "polar.contents.Extra Az Ticks": "MODULES/POLAR_EXTRA_AZ_TICKS", "polar.colours.background": "MODULES/POLAR_BGD_COLOUR",
+            "polar.colours.info": "MODULES/POLAR_INFO_COLOUR", "single.fields": "MODULES/SINGLE_SAT_FIELDS",
+        }.items():
+            with self.subTest(path):
+                self.assertEqual(MODULE_KEYS[path], key)
+
+    def test_page_paths(self):
+        self.assertEqual(list(PAGE_PATHS), ["layout", "refresh", "list", "map", "polar", "single"])
+        self.assertEqual(PAGE_PATHS["layout"], ("layout_code",))
+        self.assertEqual(PAGE_PATHS["list"], ("list_columns",))
+        self.assertEqual(PAGE_PATHS["single"], ("single.fields",))
+        self.assertEqual(set(PAGE_PATHS["refresh"]), {f"refresh.{k}" for k in ("data_ms", "list", "map", "polar", "single", "event")})
+        self.assertEqual(len(PAGE_PATHS["map"]), 8 + 4 + 11)
+        self.assertIn("map.colours.terminator", PAGE_PATHS["map"])
+        self.assertIn("map.colours.earthShadow", PAGE_PATHS["map"])
+        self.assertIn("map.file", PAGE_PATHS["map"])
+        self.assertIn("map.shadow_alpha", PAGE_PATHS["map"])
+        self.assertEqual(len(PAGE_PATHS["polar"]), 1 + 6 + 1 + 7)
+        self.assertTrue(all(isinstance(v, tuple) for v in PAGE_PATHS.values()))
+        every = [p for paths in PAGE_PATHS.values() for p in paths]
+        self.assertEqual(len(every), len(set(every)))                  # หน้าละ path ไม่ซ้ำกัน
+        self.assertEqual(set(every), set(MODULE_KEYS))                 # ทุก path อยู่ในหน้าใดหน้าหนึ่งพอดี
+
+    def test_global_layout_extra(self):
+        self.assertEqual(GLOBAL_LAYOUT_EXTRA, ("GLOBAL/MAIN_WIN_POS", "GLOBAL/MOD_WIN_POS", "GLOBAL/MOD_STATE"))
+        for key in GLOBAL_LAYOUT_EXTRA:
+            self.assertIn(key, PREFS)
+
+    # ---- effective_dict
+
+    def test_effective_prefers_module_then_global(self):
+        own = {"name": "A", "satellites": [1], "layout_code": "1;0;2;0;1"}
+        g = dict(Prefs(self.cfg.data_dir).values())
+        g["MODULES/MAP_TRACK_NUM"] = 5
+        e = effective_dict(own, g)
+        self.assertEqual(e["layout_code"], "1;0;2;0;1")
+        self.assertEqual(e["map"]["track_orbits"], 5)
+
+    def test_effective_module_value_beats_a_different_global(self):
+        own = {"name": "A", "satellites": [1], "layout_code": "1;0;2;0;1", "map": {"contents": {"Grid Lines": False}}}
+        e = effective_dict(own, self.globals_(**{"MODULES/GRID": "2;0;1;0;1", "MODULES/MAP_SHOW_GRID": True}))
+        self.assertEqual(e["layout_code"], "1;0;2;0;1")
+        self.assertIs(e["map"]["contents"]["Grid Lines"], False)
+        self.assertIs(e["map"]["contents"]["QTH Info"], True)
+
+    def test_effective_falls_back_to_defaults_without_globals(self):
+        own = {"name": "A", "satellites": [25544]}
+        for g in ({}, self.prefs.values()):
+            with self.subTest(len(g)):
+                e = effective_dict(own, g)
+                self.assertEqual(module_to_dict(module_from_dict(e, QTHS, NORADS)),
+                                 module_to_dict(build(name="A", satellites=[25544])))
+        e = effective_dict(own, {"MODULES/GRID": "2;0;1;0;1"})        # ขาดบาง key: key ที่ขาดใช้ค่าตั้งต้น
+        self.assertEqual(e["layout_code"], "2;0;1;0;1")
+        self.assertEqual(e["refresh"]["data_ms"], 300)
+
+    def test_effective_is_a_full_valid_module(self):
+        own = {"version": 2, "name": "A", "qth": "CNX", "satellites": [25544, 43013], "footprint_off": [43013],
+               "ground_track": [25544], "sky_track": [], "list_sort": {"column": "Az", "ascending": False},
+               "single": {"selected": 43013}, "window": {"state": 1, "x": 3, "y": 4, "width": 500, "height": 400}}
+        e = effective_dict(own, self.globals_())
+        m = module_from_dict(e, QTHS, NORADS)
+        self.assertEqual((m.name, m.qth, m.satellites), ("A", "CNX", [25544, 43013]))
+        self.assertEqual((m.footprint_off, m.ground_track), ([43013], [25544]))
+        self.assertEqual(m.list_sort, {"column": "Az", "ascending": False})
+        self.assertEqual(m.single["selected"], 43013)
+        self.assertEqual(m.single["fields"], SINGLE_DEFAULT)
+        self.assertEqual(m.window, own["window"])
+        self.assertNotIn("version", e)
+
+    def test_effective_passes_every_global_to_its_leaf(self):
+        g = self.globals_(**{
+            "MODULES/GRID": "0;0;2;0;1", "MODULES/DATA_TIMEOUT": 1500, "MODULES/EVENT_LIST_REFRESH": 9,
+            "MODULES/LIST_COLUMNS": ["Az", "El"], "MODULES/SINGLE_SAT_FIELDS": ["Azimuth"],
+            "MODULES/MAP_FILE": "earth_800.png", "MODULES/MAP_SHADOW_ALPHA": 7, "MODULES/MAP_CENTER": -90,
+            "MODULES/MAP_INFO_BGD_COLOUR": 0x11223344, "MODULES/POLAR_CHART_ORIENT": "S/W/N/E",
+            "MODULES/POLAR_SHOW_TRACK_AUTO": True, "MODULES/POLAR_INFO_COLOUR": 0x01020304,
+            "MODULES/POLAR_EXTRA_AZ_TICKS": True, "MODULES/MAP_SHOW_TERMINATOR": True,
+        })
+        e = effective_dict({"name": "A", "satellites": [25544]}, g)
+        self.assertEqual(e["layout_code"], "0;0;2;0;1")
+        self.assertEqual((e["refresh"]["data_ms"], e["refresh"]["event"]), (1500, 9))
+        self.assertEqual(e["list_columns"], ["Az", "El"])
+        self.assertEqual(e["single"]["fields"], ["Azimuth"])
+        self.assertEqual((e["map"]["file"], e["map"]["shadow_alpha"], e["map"]["center_lon"]), ("earth_800.png", 7, -90))
+        self.assertEqual(e["map"]["colours"]["infoBg"], 0x11223344)
+        self.assertIs(e["map"]["contents"]["Solar Terminator"], True)
+        self.assertEqual(e["polar"]["orientation"], "S/W/N/E")
+        self.assertIs(e["polar"]["auto_skytrack"], True)
+        self.assertEqual(e["polar"]["colours"]["info"], 0x01020304)
+        self.assertIs(e["polar"]["contents"]["Extra Az Ticks"], True)
+        module_from_dict(e, QTHS, NORADS)
+
+    def test_effective_does_not_alias_inputs(self):
+        g = self.globals_()
+        own = {"name": "A", "satellites": [25544], "map": {"contents": {"Grid Lines": False}}}
+        e = effective_dict(own, g)
+        e["list_columns"].append("Lat")
+        e["satellites"].append(1)
+        e["map"]["contents"]["QTH Info"] = False
+        e["map"]["colours"]["grid"] = 0
+        self.assertEqual(g["MODULES/LIST_COLUMNS"], LIST_DEFAULT)
+        self.assertEqual(own, {"name": "A", "satellites": [25544], "map": {"contents": {"Grid Lines": False}}})
+        self.assertEqual(g["MODULES/MAP_GRID_COLOUR"], MAP_COLOURS_DEFAULT["grid"])
+
+    def test_effective_ignores_unknown_keys_and_corrupt_sections(self):
+        own = {"name": "A", "satellites": [25544], "bogus": 1, "map": 5, "refresh": [1], "pin": ["layout_code"]}
+        e = effective_dict(own, self.globals_(**{"MODULES/MAP_CENTER": 10}))
+        self.assertNotIn("bogus", e)
+        self.assertNotIn("pin", e)
+        self.assertEqual(e["map"]["center_lon"], 10)
+        self.assertEqual(e["refresh"]["data_ms"], 300)
+
+    # ---- own_dict
+
+    def test_own_dict_ignores_unpinned_inherited_values(self):
+        body = full_body(layout_code="1;0;2;0;1", refresh={"data_ms": 777}, map={"center_lon": 33, "file": "earth_800.png"})
+        own = own_dict(body, None, (), ())
+        self.assertEqual(own["version"], 2)
+        for path in MODULE_KEYS:
+            with self.subTest(path), self.assertRaises(KeyError):
+                get_path(own, path)
+        self.assertNotIn("layout_code", own)
+        self.assertEqual(own["name"], "A")
+        self.assertEqual(own["satellites"], [25544, 43013])
+
+    def test_own_dict_stores_the_module_only_fields_always(self):
+        body = full_body(qth="CNX", footprint_off=[43013], ground_track=[25544], sky_track=[25544],
+                         list_sort={"column": "Az", "ascending": False}, single={"selected": 25544})
+        own = own_dict(body, None, (), ())
+        self.assertEqual(own, {
+            "version": 2, "name": "A", "qth": "CNX", "satellites": [25544, 43013],
+            "list_sort": {"column": "Az", "ascending": False}, "single": {"selected": 25544},
+            "footprint_off": [43013], "ground_track": [25544], "sky_track": [25544],
+            "window": {"state": 0, "x": None, "y": None, "width": None, "height": None}})
+        # ค่าตั้งต้นของช่องของ module ก็เก็บ (qth None = ** DEFAULT **)
+        own = own_dict(full_body(), None, (), ())
+        self.assertIsNone(own["qth"])
+        self.assertEqual(own["list_sort"], {"column": "Satellite", "ascending": True})
+        self.assertEqual(own["single"], {"selected": None})
+        self.assertEqual((own["footprint_off"], own["ground_track"], own["sky_track"]), ([], [], []))
+
+    def test_own_dict_pin_and_unpin(self):
+        body = full_body()                                           # ค่าเท่าค่ารวมทั้งหมด
+        own = own_dict(body, None, PAGE_PATHS["map"], ())
+        for path in PAGE_PATHS["map"]:
+            with self.subTest(path):
+                self.assertEqual(get_path(own, path), get_path(body, path))
+        for path in PAGE_PATHS["polar"] + PAGE_PATHS["layout"]:
+            with self.assertRaises(KeyError):
+                get_path(own, path)
+        self.assertEqual(own["map"]["colours"], MAP_COLOURS_DEFAULT)
+        again = own_dict(body, own, (), PAGE_PATHS["map"])
+        self.assertNotIn("map", again)
+        for path in PAGE_PATHS["map"]:
+            with self.assertRaises(KeyError):
+                get_path(again, path)
+        one = own_dict(body, own, (), ["map.center_lon"])
+        self.assertNotIn("center_lon", one["map"])
+        self.assertIn("track_orbits", one["map"])
+        self.assertEqual(len(leaves(one["map"])), len(PAGE_PATHS["map"]) - 1)
+
+    def test_own_dict_pin_takes_the_new_value_from_body(self):
+        own = own_dict(full_body(map={"center_lon": 100}), None, ["map.center_lon", "layout_code"], ())
+        self.assertEqual(own["map"], {"center_lon": 100})
+        self.assertEqual(own["layout_code"], full_body()["layout_code"])
+
+    def test_own_dict_keeps_pinned_with_new_value(self):
+        old = own_dict(full_body(layout_code="1;0;2;0;1", map={"center_lon": 10}), None, ["layout_code", "map.center_lon"], ())
+        new = own_dict(full_body(layout_code="2;0;1;0;1", map={"center_lon": 20, "track_orbits": 9}), old, (), ())
+        self.assertEqual(new["layout_code"], "2;0;1;0;1")
+        self.assertEqual(new["map"], {"center_lon": 20})              # track_orbits ยังสืบทอด จึงถูกข้าม
+
+    def test_own_dict_keeps_pinned_value_when_body_omits_it(self):
+        old = own_dict(full_body(layout_code="1;0;2;0;1"), None, ["layout_code"], ())
+        body = full_body()
+        del body["layout_code"]
+        self.assertEqual(own_dict(body, old, (), ())["layout_code"], "1;0;2;0;1")
+
+    def test_own_dict_unpin_beats_old_own_and_body(self):
+        old = own_dict(full_body(layout_code="1;0;2;0;1"), None, ["layout_code"], ())
+        self.assertNotIn("layout_code", own_dict(full_body(layout_code="2;0;1;0;1"), old, (), ["layout_code"]))
+
+    def test_own_dict_does_not_touch_the_old_own(self):
+        old = own_dict(full_body(), None, ["list_columns"], ())
+        snapshot = json.loads(json.dumps(old))
+        body = full_body(list_columns=["Az"])
+        new = own_dict(body, old, ["map.center_lon"], ())
+        new["list_columns"].append("Lat")
+        new["satellites"].append(1)
+        new["window"]["state"] = 1
+        self.assertEqual(old, snapshot)
+        self.assertEqual(body["list_columns"], ["Az"])
+        self.assertEqual(body["satellites"], [25544, 43013])
+
+    def test_own_dict_keeps_window_from_old(self):
+        old = own_dict(full_body(), None, (), ())
+        old["window"] = {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600}
+        new = own_dict(full_body(window={"state": 0, "x": 1, "y": 2, "width": 300, "height": 200}), old, (), ())
+        self.assertEqual(new["window"], {"state": 1, "x": 10, "y": 20, "width": 800, "height": 600})
+        new["window"]["x"] = 99
+        self.assertEqual(old["window"]["x"], 10)
+
+    def test_own_dict_new_module_has_a_default_window(self):
+        own = own_dict(full_body(window={"state": 1, "x": 1, "y": 2, "width": 300, "height": 200}), None, (), ())
+        self.assertEqual(own["window"], {"state": 0, "x": None, "y": None, "width": None, "height": None})
+
+    def test_own_dict_rejects_bad_pin_and_unpin(self):
+        body = full_body()
+        for label, pin, unpin, field in [
+            ("pin unknown", ["nope"], (), "pin"),
+            ("pin module-only", ["name"], (), "pin"),
+            ("pin window", ["window"], (), "pin"),
+            ("pin partial path", ["map"], (), "pin"),
+            ("pin not str", [5], (), "pin"),
+            ("pin a bare string", "layout_code", (), "pin"),
+            ("unpin unknown", (), ["map.nope"], "unpin"),
+            ("unpin module-only", (), ["satellites"], "unpin"),
+            ("both", ["layout_code"], ["layout_code"], "unpin"),
+        ]:
+            with self.subTest(label), self.assertRaises(ApiError) as cm:
+                own_dict(body, None, pin, unpin)
+            self.assertEqual((cm.exception.code, cm.exception.status), ("MODULE_INVALID", 422))
+            self.assertEqual(cm.exception.object, field)
+
+    def test_own_dict_pin_without_a_value_is_invalid(self):
+        body = full_body()
+        del body["layout_code"]
+        with self.assertRaises(ApiError) as cm:
+            own_dict(body, None, ["layout_code"], ())
+        self.assertEqual((cm.exception.code, cm.exception.object), ("MODULE_INVALID", "layout_code"))
+
+    def test_own_dict_accepts_any_iterable(self):
+        own = own_dict(full_body(), None, (p for p in ["map.file"]), iter(["layout_code"]))
+        self.assertEqual(own["map"], {"file": DEFAULT_MAP})
+
+    def test_own_dict_round_trips_through_effective(self):
+        g = self.globals_(**{"MODULES/MAP_TRACK_NUM": 5})
+        body = full_body(layout_code="1;0;2;0;1", map={"center_lon": 40, "track_orbits": 6})
+        own = own_dict(body, None, ["layout_code", "map.center_lon"], ())
+        m = module_from_dict(effective_dict(own, g), QTHS, NORADS)
+        self.assertEqual((m.layout_code, m.map["center_lon"], m.map["track_orbits"]), ("1;0;2;0;1", 40, 5))
+        json.dumps(own)
+
+    # ---- strip_defaults
+
+    def test_strip_defaults(self):
+        v1 = module_to_dict(build(qth="CNX", footprint_off=[43013], ground_track=[25544], sky_track=[43013],
+                                  list_sort={"column": "Az", "ascending": False}, single={"selected": 25544},
+                                  map={"center_lon": 100}))
+        out = strip_defaults(v1, self.prefs.defaults())
+        self.assertEqual(out, {
+            "version": 2, "name": "A", "qth": "CNX", "satellites": [25544, 43013],
+            "list_sort": {"column": "Az", "ascending": False}, "single": {"selected": 25544},
+            "footprint_off": [43013], "ground_track": [25544], "sky_track": [43013],
+            "window": {"state": 0, "x": None, "y": None, "width": None, "height": None},
+            "map": {"center_lon": 100}})
+        self.assertEqual(get_path(out, "map.center_lon"), 100)
+
+    def test_strip_defaults_core_file_without_the_new_fields(self):
+        v1 = module_to_dict(build(refresh={"data_ms": 500}, list_columns=["Az", "El"]))
+        for path in ("map.file", "map.colours", "map.shadow_alpha", "polar.colours", "window"):
+            del_path(v1, path)
+        out = strip_defaults(v1, self.prefs.defaults())
+        self.assertEqual(out["refresh"], {"data_ms": 500})
+        self.assertEqual(out["list_columns"], ["Az", "El"])
+        for path in ("layout_code", "map", "polar"):
+            self.assertNotIn(path, out)
+        self.assertEqual(out["window"], {"state": 0, "x": None, "y": None, "width": None, "height": None})
+        self.assertEqual(out["single"], {"selected": None})            # single.fields เท่าค่าตั้งต้นจึงถูกลบ
+
+    def test_strip_defaults_keeps_a_window_that_is_there(self):
+        v1 = module_to_dict(build(window={"state": 1, "x": 1, "y": 2, "width": 300, "height": 200}))
+        self.assertEqual(strip_defaults(v1, self.prefs.defaults())["window"],
+                         {"state": 1, "x": 1, "y": 2, "width": 300, "height": 200})
+
+    def test_strip_defaults_keeps_values_that_differ_even_in_type(self):
+        v1 = module_to_dict(build())
+        v1["refresh"]["list"] = True                                    # True == 1 แต่ไม่ใช่ค่าเดียวกัน
+        out = strip_defaults(v1, self.prefs.defaults())
+        self.assertEqual(out["refresh"], {"list": True})
+
+    def test_strip_defaults_compares_with_the_mapping_it_is_given(self):
+        v1 = module_to_dict(build(map={"center_lon": 100}))
+        out = strip_defaults(v1, {**self.prefs.defaults(), "MODULES/MAP_CENTER": 100})
+        self.assertNotIn("map", out)
+
+    def test_strip_defaults_does_not_modify_or_alias_the_input(self):
+        v1 = module_to_dict(build(list_columns=["Az"]))
+        snapshot = json.loads(json.dumps(v1))
+        out = strip_defaults(v1, self.prefs.defaults())
+        out["list_columns"].append("El")
+        out["satellites"].append(1)
+        self.assertEqual(v1, snapshot)
+
+    def test_strip_defaults_then_effective_keeps_effective_values(self):
+        v1 = module_to_dict(build(layout_code="1;0;2;0;1", map={"center_lon": 100, "track_orbits": 3},
+                                  refresh={"map": 20}))
+        own = strip_defaults(v1, self.prefs.defaults())
+        self.assertEqual(module_to_dict(module_from_dict(effective_dict(own, self.prefs.values()), QTHS, NORADS)), v1)
 
 
 class ModuleStoreTests(unittest.TestCase):
