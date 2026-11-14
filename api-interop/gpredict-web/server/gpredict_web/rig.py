@@ -18,7 +18,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from .errors import ApiError
-from .hamlib import HamlibClient, HamlibError, is_error, is_ok
+from .hamlib import READ, SET, HamlibClient, HamlibError, is_error, is_ok
 from .hwconf import CYCLE_DEFAULT_MS, CYCLE_MS, DEFAULT_FREQ_HZ, HwConf, RadioConf
 from .observe import C_KMS
 
@@ -713,8 +713,8 @@ class RigController:
             self._fail(dev, exc)
             return
         _log.debug("Connection opened to %s:%d", conf.host, conf.port)
-        await self._cmd(dev, CMD_SET_VFO_OPT)                    # คำตอบไม่ใช้
-        reply = await self._cmd(dev, CMD_CHK_VFO)
+        await self._cmd(dev, CMD_SET_VFO_OPT)                    # คำตอบไม่ใช้และไม่ตรวจ (rigctld รุ่นเก่าไม่รู้จักคำสั่งนี้)
+        reply = await self._cmd(dev, CMD_CHK_VFO, READ)
         dev.vfo_opt = bool(reply) and not is_error(reply) and reply[0].startswith("1")
         _log.debug("VFO opt=%d" if dev.primary else "VFO opt2=%d", dev.vfo_opt)
         if dev.primary and self._dev2 is None:
@@ -916,13 +916,14 @@ class RigController:
 
     # ---------------------------------------------------------------- คำสั่งและ error
 
-    async def _cmd(self, dev: _Device, cmd: str | bytes) -> list[str] | None:
-        """หนึ่งคำสั่ง คืนคำตอบ หรือ None เมื่อการเชื่อมต่อล้ม (หรือล้มไปแล้วในรอบนี้)"""
+    async def _cmd(self, dev: _Device, cmd: str | bytes, expect: str | None = None) -> list[str] | None:
+        """หนึ่งคำสั่ง คืนคำตอบ หรือ None เมื่อการเชื่อมต่อล้ม (หรือล้มไปแล้วในรอบนี้) รวมคำตอบที่เหลื่อมกับคำสั่ง (expect: SET/READ
+        ของ hamlib.py) ซึ่งปิดการเชื่อมต่อและนับเป็นการเชื่อมต่อที่ล้ม รอบถัดไปจึงต่อใหม่"""
         if dev.down:
             return None
         _log.debug('sending %d bytes to rigctld as "%s"', len(cmd), _shown(cmd))
         try:
-            reply = await dev.client.command(cmd)
+            reply = await dev.client.command(cmd, expect=expect)
         except HamlibError as exc:
             _log.error("%s", exc)                                # (ของเรา) ข้อความไทยของ hamlib.py
             self._fail(dev, exc)
@@ -932,7 +933,7 @@ class RigController:
 
     async def _set(self, dev: _Device, cmd: str) -> bool:
         """คำสั่งตั้งค่า: สำเร็จเมื่อตอบ RPRT 0"""
-        reply = await self._cmd(dev, cmd)
+        reply = await self._cmd(dev, cmd, SET)
         if reply is None:
             return False
         if is_ok(reply):
@@ -943,7 +944,7 @@ class RigController:
     async def _read(self, dev: _Device, split: bool) -> float | None:
         """f หรือ i: ความถี่ หรือ None เมื่อล้ม (ตอบ RPRT หรือไม่ใช่ตัวเลข)"""
         cmd = (cmd_get_split_freq if split else cmd_get_freq)(dev.vfo_opt)
-        reply = await self._cmd(dev, cmd)
+        reply = await self._cmd(dev, cmd, READ)
         if reply is None:
             return None
         value = parse_freq(reply)
@@ -954,7 +955,7 @@ class RigController:
     async def _get_ptt(self, dev: _Device) -> bool:
         """PTT (ref-R §3.6): "Read PTT" อ่านด้วย t ค่าอื่นอ่าน DCD (get_ptt ของ Gpredict) อ่านไม่ได้ถือว่าปิด"""
         cmd = cmd_get_ptt(dev.vfo_opt) if dev.conf.ptt == PTT_CAT else CMD_GET_DCD
-        return parse_flag(await self._cmd(dev, cmd) or [])
+        return parse_flag(await self._cmd(dev, cmd, READ) or [])
 
     async def _signal(self, dev: _Device, cmd: str) -> None:
         """AOS/LOS/IQRECORD: อ่านคำตอบหนึ่งบรรทัดไม่ตรวจ ล้มไม่นับ error (ref-R §3.7, decision 12)"""
@@ -1005,7 +1006,7 @@ class RigController:
         if dev1 is not None and dev1.conf.type in _FT817 and dev1.client.connected:
             cmd = cmd_ft817_split(False, dev1.vfo_opt)
             try:
-                reply = await dev1.client.command(cmd)
+                reply = await dev1.client.command(cmd, expect=SET)
             except HamlibError as exc:
                 _log.error("%s", exc)
             else:

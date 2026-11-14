@@ -567,6 +567,66 @@ class ErrorAndTimerTest(RigTestCase):
         self.assertIn("MAX_ERROR_COUNT (5) reached. Disengaging device!", logs.output[-1])
         self.assertIn("RPRT -11", ctl.snapshot()["status"])
 
+    async def test_extra_reply_line_reconnects_instead_of_staying_out_of_step(self):
+        """safety net (spec §4.3): rigctld ตอบ DCD เกินมาหนึ่งบรรทัดในรอบแรก (แบบ rigctld 4.7.2 กับ `\\x8b currVFO`)
+        คำตอบที่เหลื่อมถูกจับได้เมื่อการอ่าน (i) ได้ RPRT 0: ตัดการเชื่อมต่อ นับ error แล้วรอบถัดไปต่อใหม่ คำตอบกลับมาตรงกับคำสั่ง"""
+        self.write_radio("A", Type=3, PTT=2, VFO_UP=1, VFO_DOWN=2)
+        self.fake.vfo_opt = "1"
+        extra = [True]
+        self.fake.reply = lambda cmd: (b"0\nRPRT -1\n" if cmd == b"\x8b\n" and extra[0] else self.fake.default_reply(cmd))
+        ctl = self.controller()
+        await self.engage(ctl)
+        with self.assertLogs(LOGGER, "ERROR") as logs:
+            await ctl.run_cycle()
+        self.assertTrue(any('"RPRT 0"' in line for line in logs.output))      # i currVFO ได้คำตอบของ I
+        self.assertIn("เหลื่อม", ctl.snapshot()["status"])
+        await until(lambda: self.fake.log[-1:] == [b"i currVFO\n"])            # fake อ่าน i หลัง client ตัดการเชื่อมต่อแล้ว
+        extra[0] = False
+        n = len(self.fake.log)
+        await ctl.run_cycle()
+        self.assertEqual(self.since(n), [*PROBE, b"S VFOB 1 VFOA\n", b"\x8b\n", b"F currVFO  145900000\n",
+                                         b"f currVFO\n", b"i currVFO\n"])      # ต่อใหม่ uplink ตั้งไว้แล้วตั้งแต่รอบแรก
+        self.assertEqual((self.fake.freq, self.fake.split_freq), (145_900_000, 435_100_000))
+        self.assertIsNone(ctl.snapshot()["status"])
+        n = len(self.fake.log)
+        await ctl.run_cycle()
+        self.assertEqual(self.since(n), [b"\x8b\n", b"f currVFO\n", b"i currVFO\n"])
+        self.assertTrue(ctl.engaged)
+
+    async def test_set_answered_with_a_value_reconnects(self):
+        """safety net (spec §4.3): F ได้ค่าความถี่แทน RPRT (คำตอบที่ค้างของ f ที่ตอบสองบรรทัดในรอบแรก) ตัดการเชื่อมต่อ
+        แล้วรอบถัดไปต่อใหม่ (F ที่ส่งก่อนตัดอาจถึงวิทยุแล้ว dial feedback จึงอาจรับค่านั้น) และการตั้งครั้งต่อไปตรงกับคำสั่ง"""
+        self.write_radio("A")
+        extra = [True]
+
+        def reply(cmd: bytes) -> bytes | None:
+            data = self.fake.default_reply(cmd)
+            if cmd == b"f\n" and extra[0]:
+                extra[0] = False
+                return data + data
+            return data
+
+        self.fake.reply = reply
+        ctl = self.controller()
+        await self.engage(ctl)
+        await ctl.run_cycle()                                                   # F แล้วอ่านกลับ f ได้สองบรรทัด
+        await ctl.act({"action": "freq", "link": "down", "hz": 145_900_100})
+        with self.assertLogs(LOGGER, "ERROR") as logs:
+            await ctl.run_cycle()                                               # f ได้บรรทัดที่ค้าง F ได้คำตอบของ f
+        self.assertTrue(any('"145900000"' in line for line in logs.output))
+        self.assertIn("เหลื่อม", ctl.snapshot()["status"])
+        n = len(self.fake.log)
+        await ctl.run_cycle()                                                   # ต่อใหม่ คำตอบตรงกับคำสั่งอีกครั้ง
+        self.assertEqual(self.since(n)[:3], [*PROBE, b"f\n"])
+        self.assertEqual(ctl.snapshot()["down"]["radio_hz"], self.fake.freq)
+        await ctl.act({"action": "freq", "link": "down", "hz": 145_900_200})
+        n = len(self.fake.log)
+        await ctl.run_cycle()
+        self.assertEqual(self.since(n), [b"f\n", b"F  145900200\n", b"f\n"])
+        self.assertEqual(self.fake.freq, 145_900_200)
+        self.assertIsNone(ctl.snapshot()["status"])
+        self.assertTrue(ctl.engaged)
+
     async def test_skipped_cycles_do_not_queue(self):
         self.write_radio("A")
         # อ่านกลับได้ค่าอื่นเสมอ: ทุกรอบต้องส่ง F ใหม่ จำนวน F จึงเท่ากับจำนวนรอบที่ทำจริง

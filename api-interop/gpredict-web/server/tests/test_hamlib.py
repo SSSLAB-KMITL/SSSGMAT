@@ -80,6 +80,32 @@ class HamlibClientTest(unittest.IsolatedAsyncioTestCase):
             await self.client.command("f\n")
         self.assertFalse(self.client.connected)
 
+    async def test_set_answered_with_a_value_drops_the_connection(self):
+        # คำตอบเหลื่อมกับคำสั่ง (spec §4.3): คำสั่งตั้งค่าได้ค่าแทน RPRT คือได้คำตอบของคำสั่งก่อนหน้า ปิดการเชื่อมต่อให้ผู้เรียกต่อใหม่
+        self.fake.reply = lambda cmd: b"145890000\n"
+        with self.assertRaises(HamlibError) as raised:
+            await self.client.command("F  145900000\n", expect=hamlib.SET)
+        self.assertIn(f"127.0.0.1:{self.port}", str(raised.exception))
+        self.assertIn('"145890000"', str(raised.exception))
+        self.assertFalse(self.client.connected)
+
+    async def test_read_answered_rprt_0_drops_the_connection(self):
+        self.fake.reply = lambda cmd: b"RPRT 0\n"
+        with self.assertRaises(HamlibError) as raised:
+            await self.client.command("f\n", expect=hamlib.READ)
+        self.assertIn('"RPRT 0"', str(raised.exception))
+        self.assertFalse(self.client.connected)
+
+    async def test_replies_in_step_keep_the_connection(self):
+        self.assertEqual(await self.client.command("F  145900000\n", expect=hamlib.SET), ["RPRT 0"])
+        self.assertEqual(await self.client.command("f\n", expect=hamlib.READ), ["145900000"])
+        self.fake.reply = lambda cmd: b"RPRT -11\n"                       # ถูกปฏิเสธก็ยังตรงกับคำสั่ง
+        self.assertEqual(await self.client.command("F  1\n", expect=hamlib.SET), ["RPRT -11"])
+        self.assertEqual(await self.client.command("f\n", expect=hamlib.READ), ["RPRT -11"])
+        self.fake.reply = lambda cmd: b"RPRT 0\n"
+        self.assertEqual(await self.client.command("f\n"), ["RPRT 0"])   # ไม่บอกชนิดคำสั่ง: ไม่ตรวจ
+        self.assertTrue(self.client.connected)
+
     async def test_bytes_command(self):
         self.assertEqual(await self.client.command(b"\x8b\n"), ["0"])
         self.assertEqual(self.fake.log[-1], b"\x8b\n")

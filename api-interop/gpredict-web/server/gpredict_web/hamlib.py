@@ -6,6 +6,9 @@
   ชื่อ host ที่หาไม่เจอเป็น error ปกติ ทุกกรณีเป็น HamlibError ข้อความไทยมีป้ายอุปกรณ์กับ host:port พร้อมแสดงเป็น status ของ controller
 - คำสั่งที่ล้ม (timeout, ปลายทางปิด, เครือข่ายขัดข้อง, ถูกยกเลิกกลางทาง) ปิดการเชื่อมต่อทันทีโดยไม่ส่ง q เพราะคำตอบที่ยังค้างจะถูกอ่านเป็น
   คำตอบของคำสั่งถัดไป connected เป็น False และ controller เรียก connect ใหม่เอง (Gpredict ก็ต่อใหม่ทุกรอบเมื่อไม่มี socket)
+- safety net ของคำตอบที่เหลื่อมกับคำสั่ง (ของเรา, spec §4.3): ผู้เรียกบอกชนิดคำสั่งได้ คำสั่งตั้งค่า (SET) ที่ได้บรรทัดที่ไม่ใช่ RPRT
+  หรือคำสั่งอ่าน (READ) ที่ได้ RPRT 0 แทนค่า คือได้คำตอบของคำสั่งอื่น (rigctld ตอบบางคำสั่งเกินมา) ล้มเป็น HamlibError
+  และปิดการเชื่อมต่อแบบเดียวกับข้อบน การต่อใหม่ทำให้คำตอบกลับมาตรงกับคำสั่ง แทนที่จะเหลื่อมไปตลอด
 - ต่อด้วยชื่อ host ทุกตระกูลที่ resolver ให้ (ลำดับของ getaddrinfo) ไม่ใช่เฉพาะ IPv4 แบบ gethostbyname ของ Gpredict เพราะ rigctld บน macOS
   อาจฟังเฉพาะ ::1 เมื่อใช้ localhost (ของเรา)
 """
@@ -18,6 +21,9 @@ CONNECT_TIMEOUT_S = 3.0
 REPLY_TIMEOUT_S = 2.0
 
 _RPRT = "RPRT"
+
+SET = "set"                                     # คำสั่งตั้งค่า: คำตอบต้องเป็นบรรทัด RPRT
+READ = "read"                                   # คำสั่งอ่านค่า: คำตอบต้องไม่ใช่ RPRT 0
 
 
 class HamlibError(Exception):
@@ -59,6 +65,15 @@ def _reason(exc: BaseException) -> str:
     return ", ".join(reasons)
 
 
+def _out_of_step(reply: list[str], expect: str | None) -> bool:
+    """คำตอบเป็นของคำสั่งอื่น: SET ได้บรรทัดที่ไม่ใช่ RPRT หรือ READ ได้ RPRT 0 (ถูกปฏิเสธด้วย RPRT อื่นยังตรงกับคำสั่ง)"""
+    if expect == SET:
+        return not is_error(reply)
+    if expect == READ:
+        return is_ok(reply)
+    return False
+
+
 class HamlibClient:
     def __init__(self, host: str, port: int, label: str) -> None:
         self.host = host
@@ -93,15 +108,19 @@ class HamlibClient:
             except (OSError, ExceptionGroup) as exc:
                 raise HamlibError(f"เชื่อมต่อ {self._where} ไม่ได้ ({_reason(exc)})") from None
 
-    async def command(self, cmd: str | bytes, lines: int = 1) -> list[str]:
+    async def command(self, cmd: str | bytes, lines: int = 1, expect: str | None = None) -> list[str]:
         """ส่งหนึ่งคำสั่ง (ผู้เรียกใส่ \\n ท้ายเอง; str ส่งเป็น ASCII) แล้วอ่านคำตอบไม่เกิน lines บรรทัด หยุดเมื่อเจอบรรทัดที่ขึ้นต้น RPRT
-        บรรทัดตัด \\r และ \\n ท้ายออก ล้มเป็น HamlibError และปิดการเชื่อมต่อ"""
+        บรรทัดตัด \\r และ \\n ท้ายออก ล้มเป็น HamlibError และปิดการเชื่อมต่อ expect (SET หรือ READ) ตรวจว่าคำตอบเหลื่อมหรือไม่
+        None ไม่ตรวจ"""
         data = cmd.encode("ascii") if isinstance(cmd, str) else cmd
         async with self._lock:
             if self._writer is None:
                 raise HamlibError(f"ยังไม่ได้เชื่อมต่อ {self._where}")
             try:
-                return await self._exchange(data, lines)
+                reply = await self._exchange(data, lines)
+                if _out_of_step(reply, expect):
+                    raise HamlibError(f"คำตอบของ {self._where} เหลื่อมกับคำสั่ง (ได้ \"{reply[0]}\") จึงตัดการเชื่อมต่อ")
+                return reply
             except BaseException:                       # ล้มหรือถูกยกเลิกกลางทาง คำตอบที่ค้างอยู่ทำให้ stream เหลื่อมกับคำสั่ง
                 self._abort()
                 raise
