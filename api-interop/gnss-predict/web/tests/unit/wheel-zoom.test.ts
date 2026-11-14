@@ -2,9 +2,10 @@
 // trackpad ของ macOS ส่งเหตุการณ์ล้อถี่ ๆ ที่ deltaY เล็ก: ห้ามนับทีละเหตุการณ์ (เดิมปัดนิ้วครั้งเดียว ×1 → ×128)
 // - สะสม deltaY เป็นพิกเซล (deltaMode 1 = บรรทัด ×33, 2 = หน้า ×ความสูงหน้าต่าง) ครบ 100 px = หนึ่งขั้น
 // - ไม่เกินหนึ่งขั้นต่อ 150 ms; เงียบเกิน 200 ms เริ่มสะสมใหม่
+// - ไม่เกิน 2 ขั้นต่อการปัดหนึ่งครั้ง (เหตุการณ์ที่ห่างกันไม่เกิน 200 ms นับเป็นการปัดเดียวกัน รวม momentum ที่ตามมา)
 
 import { describe, expect, test } from "vitest";
-import { createWheelZoom, LINE_PX, STEP_PX, STEP_INTERVAL_MS, IDLE_RESET_MS } from "../../src/windows/SensorView/wheelZoom";
+import { createWheelZoom, IDLE_RESET_MS, LINE_PX, MAX_STEPS_PER_GESTURE, STEP_INTERVAL_MS, STEP_PX } from "../../src/windows/SensorView/wheelZoom";
 
 function setup() {
   let t = 1000;
@@ -40,6 +41,38 @@ describe("createWheelZoom", () => {
     expect(steps.length).toBeGreaterThanOrEqual(1);
     expect(steps.length).toBeLessThanOrEqual(2);
     expect(steps.every((s) => s === 1)).toBe(true);
+  });
+
+  test("at most 2 steps per gesture", () => {
+    expect(MAX_STEPS_PER_GESTURE).toBe(2);
+  });
+
+  test("a 1.5 s macOS momentum stream (a flick: big deltas decaying every 16 ms) gives at most 2 steps", () => {
+    const { feed, steps, advance } = setup();
+    let delta = -120;
+    for (let elapsed = 0; elapsed <= 1500; elapsed += 16) {
+      feed(Math.min(-1, Math.round(delta)));
+      delta *= 0.97;
+      advance(16);
+    }
+    expect(steps.length).toBeGreaterThanOrEqual(1);
+    expect(steps.length).toBeLessThanOrEqual(2);
+    expect(steps.every((s) => s === 1)).toBe(true);
+  });
+
+  test("after the gesture ends (more than 200 ms of silence) the next one gets its 2 steps again", () => {
+    const { feed, steps, advance } = setup();
+    for (let i = 0; i < 60; i++) {
+      feed(-80);
+      advance(16);
+    }
+    expect(steps).toEqual([1, 1]);
+    advance(IDLE_RESET_MS + 1);
+    for (let i = 0; i < 60; i++) {
+      feed(80);
+      advance(16);
+    }
+    expect(steps).toEqual([1, 1, -1, -1]);
   });
 
   test("one mouse notch (deltaMode 0, −100) = one step in; +100 = one step out", () => {

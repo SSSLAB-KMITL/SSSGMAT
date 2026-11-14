@@ -165,6 +165,8 @@ const MESSAGES = {
   "imagery.ionReasonOther": "Cesium ion ตอบกลับด้วยรหัส HTTP {status}",
   "imagery.ionReasonNotImagery": "asset นี้ไม่ใช่ชั้นภาพ หรือเป็นชนิดภาพที่โปรแกรมไม่รู้จัก",
   "imagery.ionReasonNetwork": "เชื่อมต่อ api.cesium.com ไม่ได้ (ตรวจการเชื่อมต่ออินเทอร์เน็ต)",
+  "imagery.ionReasonTiles": "ชิ้นภาพของ asset นี้โหลดไม่ได้ {failed} จาก {settled} ชิ้น (อินเทอร์เน็ตหลุด หรือ Cesium ion/ผู้ให้ภาพไม่ส่งภาพให้) เลือก asset ใหม่ หรือปิดแล้วเปิดสวิตช์ Cesium ion เพื่อลองใหม่",
+  "imagery.osmFailed": "ชิ้นภาพ OpenStreetMap ส่วนใหญ่โหลดไม่ได้ (tile.openstreetmap.org อาจบล็อกการใช้งานนี้ หรืออินเทอร์เน็ตหลุด) ส่วนที่โหลดไม่ได้จึงว่างอยู่ ปิดสวิตช์ OpenStreetMap ได้ที่หน้าต่าง Globe Manager",
 
   // หน้าต่าง Globe Manager (spec imagery §5.1, spec ภาพละเอียด §4.3): สี่กลุ่มตามแหล่ง แต่ละกลุ่มมีสวิตช์และกล่องยืนยันของตัวเอง
   // กล่องยืนยันต้องบอก host ที่ติดต่อจริงและบอกว่าใครเป็นผู้ติดต่อ: GIBS และ EOX ผ่าน server ในเครื่องนี้ (host ตรงกับ GIBS_URL / EOX_URL ใน server/imagery.py ซึ่ง test ตรวจ)
@@ -297,6 +299,7 @@ const MESSAGES = {
   "sensorView.hudFov": "มุมกว้าง FOV {fov}° ×{zoom}",
   "sensorView.hudImagery": "ภาพพื้นโลก: {image}",
   "sensorView.hudImageryMissing": "ภาพพื้นโลก: {image} — ไม่มีภาพเวลานี้",
+  "sensorView.hudImageryFailed": "ภาพพื้นโลก: {image} — ชิ้นภาพส่วนใหญ่โหลดไม่ได้",
   "sensorView.hudImageryOffline": "ภาพพื้นโลก: Natural Earth II (ออฟไลน์)",
   "sensorView.hintGlobeManager": "เปิดภาพจริงได้ที่ View → Globe Manager",
   // ความกว้างพื้นที่ที่จุดใต้ดาวตามด้านสั้นของภาพ ({width} = ตัวเลข) และ "ภาพละเอียดสุดของแหล่งนี้แล้ว" ({level} = ระดับซูมสูงสุดของชั้นบนสุด) (imagery spec §4.4)

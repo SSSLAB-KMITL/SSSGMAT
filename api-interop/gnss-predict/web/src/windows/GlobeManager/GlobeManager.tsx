@@ -11,14 +11,14 @@
 //   ทุกสวิตช์ปิดใช้พร้อมข้อความไทยหนึ่งข้อความ เหลือแต่ Natural Earth II
 // - Cesium ion: ช่อง token (password ไม่ใส่ค่าที่บันทึกไว้กลับลงช่อง ไม่แสดงเป็นข้อความ บอกแค่ว่ามีหรือไม่) บันทึกด้วย PUT ทั้งเอกสารที่เก็บทุกสวิตช์ไว้ตามที่ server มี
 //   ไม่เขียน token ลง console, Message Viewer หรือ URL; ข้อความผิดพลาดมีแต่ข้อความของ server/เครือข่าย
-//   บันทึกสำเร็จแล้วสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ (useImagery.updateSettings ตัวเดียวกับสวิตช์) ; ปิดสวิตช์ ion สำเร็จ = ลืมการปฏิเสธของ ion (setIonFailure(null))
+//   บันทึกสำเร็จแล้วสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ (useImagery.updateSettings ตัวเดียวกับสวิตช์) ; แผนของ ion เปลี่ยน (สวิตช์, asset, token) = ionState.ts ลืมการปฏิเสธเอง
 //   asset แบบ radio (None, preset ของ ionAssets.ts, Asset ID ที่กรอกเอง จำนวนเต็ม > 0) เขียนลง useLayout.globe.ion; เปิดสวิตช์ ion ที่ยังไม่มี asset = เลือก preset แรก
 //   ion แสดงอยู่ (ionState.ts: สวิตช์ ion เปิด + มี asset + มี token และ ion ไม่ปฏิเสธ) = ชั้นอื่นทั้งหมดถูกซ่อนในทุก viewer: ทุกแถวของแหล่งอื่น (รวม Natural Earth II) บอกด้วยข้อความไทย
 
 import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";
 import { errorText } from "../../api/client";
 import { ION_PRESETS } from "../../cesium/ionAssets";
-import { ionStatus, onIonStatusChange, setIonFailure, type IonStatus } from "../../cesium/ionState";
+import { ionStatus, onIonStatusChange, type IonStatus } from "../../cesium/ionState";
 import { confirm } from "../../chrome/Dialogs";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg, type MsgKey } from "../../labels/messages.th";
@@ -373,8 +373,6 @@ export function GlobeManager(_props: Partial<PanelProps>) {
     exclusive(async () => {
       if (on && !(await confirm(msg(def.consent)))) return;
       await useImagery.getState().setSource(def.id, on);
-      // ปิด ion แล้ว (บันทึกสำเร็จ): ลืมว่า ion เคยปฏิเสธ asset + token นี้ เปิดใหม่จะได้ลองใหม่แม้ไม่มีหน้าต่าง 3D เปิดอยู่ (ตัวที่ลืมให้เองอยู่ใน viewer)
-      if (!on && def.id === "ion" && !useImagery.getState().sources.ion) setIonFailure(null);
       // เปิด ion แล้ว (บันทึกสำเร็จ) แต่ยังไม่เคยเลือก asset: เลือก preset แรกให้ (ไม่มี asset = ion ไม่แสดง)
       if (on && def.id === "ion" && useImagery.getState().sources.ion && (useLayout.getState().globe.ion?.assetId ?? null) === null) {
         useLayout.getState().setGlobeIon(ION_PRESETS[0].id);

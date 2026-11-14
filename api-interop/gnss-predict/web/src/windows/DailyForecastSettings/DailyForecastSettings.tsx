@@ -2,9 +2,12 @@
 // - ช่องครบทุกตัวของ §9.1: enabled, run_at_utc (HH:MM), facility (กติกาชื่อ object), retention_days 1-3650, validation_retry_hours 1-168,
 //   validation_give_up_days 1-365 และ Cesium Ion token (ช่องรหัสผ่าน) ตรวจก่อนส่งด้วยกติกาเดียวกับ server ข้อความไทยขึ้นที่ช่อง
 // - Apply = PUT /settings ทั้งก้อน (server ต้องการครบทุกช่อง) 422 ที่ field แบบ `daily.run_at_utc` ขึ้นที่ช่องนั้น (ขอบแดง) OK = Apply แล้วปิด
-// - `online_imagery` (สวิตช์ภาพออนไลน์ทั้งสี่แหล่ง) ไม่ใช่ช่องของหน้าต่างนี้ แต่ PUT ต้องส่งครบทั้งเอกสาร: Apply ส่งค่าที่ store ถืออยู่คืนไปตามเดิมเสมอ ไม่เปิดและไม่ปิดให้
+// - `online_imagery` (สวิตช์ภาพออนไลน์ทั้งสี่แหล่ง) ไม่ใช่ช่องของหน้าต่างนี้ แต่ PUT ต้องส่งครบทั้งเอกสาร: Apply ใช้ useImagery.updateSettings
+//   (GET /settings ใหม่ แล้ว PUT) ส่งสวิตช์ที่ server มีตอนนั้นคืนไปตามเดิม ไม่เปิดและไม่ปิดให้ (สวิตช์ที่ปิดจากแท็บอื่น, curl หรือแก้ไฟล์ จึงไม่ถูกเขียนกลับเป็นเปิด)
+//   และสวิตช์ของหน้านี้ตามเอกสารที่บันทึก
 // - token ของ Cesium ion แก้ได้จาก Globe Manager ด้วย (บันทึกลง store ตัวเดียวกัน): ช่อง token ที่ผู้ใช้ยังไม่ได้แก้ในหน้าต่างนี้ตามค่าที่ store ถืออยู่เสมอ
-//   (store เปลี่ยนระหว่างที่หน้าต่างเปิดอยู่ = ช่องเปลี่ยนตาม และไม่นับเป็นการแก้) Apply จึงไม่ส่ง token เก่าที่ฟอร์มอ่านมาตอนเปิดไปทับ token ใหม่ ; token ที่ผู้ใช้พิมพ์เองในหน้านี้ถูกเก็บและส่งตามที่พิมพ์
+//   (store เปลี่ยนระหว่างที่หน้าต่างเปิดอยู่ = ช่องเปลี่ยนตาม และไม่นับเป็นการแก้) Apply ส่ง token ที่เพิ่งอ่านจาก server เมื่อช่องไม่ได้ถูกแก้
+//   จึงไม่ส่ง token เก่าที่ฟอร์มอ่านมาตอนเปิดไปทับ token ใหม่ ; token ที่ผู้ใช้พิมพ์เองในหน้านี้ถูกเก็บและส่งตามที่พิมพ์
 // - แสดงเวลาตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี = UTCG) สถานะมาจาก event `daily` ของ SSE (useJobs.daily) หรือ /health ตอนเปิดหน้าต่าง
 //   ที่อยู่ CSV = `<data_dir>/daily/latest.csv` แสดงเป็นข้อความ (data_dir มาจาก /health)
 // - ผู้ใช้ห้ามถูกดาวน์โหลดโดยไม่ยินยอม: การเปิดหน้าต่างไม่ดึงอะไร Apply ถามยืนยันก่อนเมื่อการบันทึกอาจให้ server เริ่มดาวน์โหลดเอง (เปิดงาน = ตรวจย้อนหลังจาก CDDIS เสมอ,
@@ -24,6 +27,7 @@ import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
 import { isActiveJob, useJobs } from "../../stores/jobs";
+import { useImagery } from "../../stores/imagery";
 import { useLayout } from "../../stores/layout";
 import { report } from "../../stores/messages";
 import { useSettings, type OnlineImagerySettings, type Settings } from "../../stores/settings";
@@ -74,7 +78,7 @@ const sameDraft = (a: Draft, b: Draft): boolean => (Object.keys(a) as Key[]).eve
 
 /**
  * ตรวจทุกช่อง (ครบทุกข้อผิดพลาดในครั้งเดียว) ผ่านหมด = เอกสารที่ส่ง PUT ได้ทั้งก้อน
- * `onlineImagery` ไม่ใช่ช่องของหน้าต่างนี้ (สวิตช์อยู่ที่ Globe Manager): ส่งคืนไปตามที่ถืออยู่ ห้ามเปลี่ยน (PUT ต้องส่งครบทั้งเอกสาร)
+ * `onlineImagery` ไม่ใช่ช่องของหน้าต่างนี้ (สวิตช์อยู่ที่ Globe Manager): ส่งคืนไปตามที่ได้มา ห้ามเปลี่ยน (PUT ต้องส่งครบทั้งเอกสาร)
  */
 function validate(d: Draft, onlineImagery: OnlineImagerySettings): { errors: Errors; doc: Settings | null } {
   const errors: Errors = {};
@@ -204,10 +208,10 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
   const apply = async (): Promise<boolean> => {
     if (saving || !ready) return false;
     if (!dirty) return true;
-    const current = useSettings.getState().settings;    // ค่าล่าสุดที่ store ถือ: ถ้าสวิตช์ภาพออนไลน์ถูกเปลี่ยนที่อื่นระหว่างที่หน้าต่างนี้เปิดอยู่ ไม่ถูกทับกลับ
+    const current = useSettings.getState().settings;
     if (current === null) return false;
-    // token ที่ไม่ได้แก้ในหน้านี้ = ค่าที่ store ถืออยู่ตอนนี้ (กัน token ที่ฟอร์มอ่านมาตอนเปิดไปทับ token ที่บันทึกจากที่อื่นไปแล้ว)
-    const result = validate(draft.token === base.token ? { ...draft, token: current.cesium_ion_token } : draft, current.online_imagery);
+    const tokenEdited = draft.token !== base.token;
+    const result = validate(draft, current.online_imagery);
     setErrors(result.errors);
     setGeneral(null);
     setNotice(null);
@@ -216,7 +220,14 @@ export function DailyForecastSettings({ panelId = "dailyForecastSettings" }: Par
     try {
       const question = consentQuestion(base, result.doc, new Date());
       if (question !== null && !(await confirm(question))) return false;
-      await useSettings.getState().saveSettings(result.doc);
+      const doc = result.doc;
+      // GET ใหม่แล้ว PUT: สวิตช์ภาพออนไลน์ตามที่ server มีตอนนี้ (ไม่ใช่ที่ store ถือ ซึ่งอาจเก่า: แท็บอื่น, curl, แก้ไฟล์)
+      // token ที่ไม่ได้แก้ในหน้านี้ = ค่าที่เพิ่งอ่านจาก server (กัน token ที่ฟอร์มอ่านมาตอนเปิดไปทับ token ที่บันทึกจากที่อื่นไปแล้ว)
+      await useImagery.getState().updateSettings((fresh) => ({
+        ...doc,
+        cesium_ion_token: tokenEdited ? doc.cesium_ion_token : fresh.cesium_ion_token,
+        online_imagery: { ...fresh.online_imagery },
+      }));
       const saved = useSettings.getState().settings;
       if (saved !== null) {
         const next = draftOf(saved);

@@ -45,7 +45,7 @@ export interface SensorHudImagery {
   title: string;
   /** เวลาของภาพ (static = "") */
   label: string;
-  /** ชิ้นที่ไม่มีภาพเวลานี้เกินครึ่งของชิ้นที่ได้ผลแล้ว */
+  /** ชิ้นที่ขาดเกินครึ่งของชิ้นที่ได้ผลแล้ว: GIBS/EOX = ไม่มีภาพเวลานี้ (404) ; OSM และ ion = ชิ้นที่โหลดไม่ได้ทุกแบบ */
   missing: boolean;
   /** แหล่งของชั้น: ion ไม่มีตารางระดับซูมสูงสุด (HUD ไม่เตือน "ภาพละเอียดสุด") */
   source: ImagerySourceId;

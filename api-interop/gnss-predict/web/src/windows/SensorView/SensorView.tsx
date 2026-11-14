@@ -13,9 +13,10 @@
 //   Camera ไม่วาดวงขอบกรวย; วงในโหมด Sensor ใช้ fov ด้านสั้นที่หารด้วย zoom แล้ว
 //   HUD เพิ่มบรรทัดมุมกว้าง (FOV ×zoom) และแหล่งภาพพื้นโลก (ชั้นออนไลน์บนสุดจาก handle.sensorHud().imagery หรือ Natural Earth II ออฟไลน์)
 //   ซูมถึง ×8192 (imagery spec §4.4): HUD เพิ่มความกว้างพื้นที่ที่จุดใต้ดาวตามด้านสั้น (sensorViewGroundWidthM จาก altKm และ FOV ด้านสั้น km เมื่อ ≥ 1 km ไม่งั้น m)
-//   และ "ภาพละเอียดสุดของแหล่งนี้แล้ว" เมื่อชั้นบนสุดเป็น GIBS/EOX/OSM ที่ max_level ต่ำกว่าระดับที่ภาพต้องใช้ (neededImageryLevel จากความกว้างนั้นและความสูงด้านสั้นของภาพ
-//   ชิ้น 256 px Web Mercator ที่เส้นศูนย์สูตร) ชั้น ion ไม่เตือน (ระดับสูงสุดของ asset ไม่รู้ล่วงหน้า)
-//   สวิตช์ภาพออนไลน์ปิด + Camera + zoom ≥ 8 = แนะนำ Globe Manager; สวิตช์เปิดอยู่ HUD อ่านใหม่ทุก IMAGERY_POLL_MS (ชิ้นภาพโหลดโดยที่เวลาไม่เปลี่ยน)
+//   และ "ภาพละเอียดสุดของแหล่งนี้แล้ว" เมื่อชั้นบนสุดเป็น GIBS/EOX/OSM ที่ max_level ต่ำกว่าระดับที่ภาพต้องใช้ลบหนึ่ง (finestLevelReached: Cesium เลือกภาพที่ราว
+//   2 พิกเซลต่อ texel; neededImageryLevel จากความกว้างนั้นและความสูงด้านสั้นของภาพ ชิ้น 256 px Web Mercator ที่เส้นศูนย์สูตร) ชั้น ion ไม่เตือน (ระดับสูงสุดของ asset ไม่รู้ล่วงหน้า)
+//   ไม่มีชั้นออนไลน์แสดงอยู่จริง (ชั้นบนสุด null แม้สวิตช์บางแหล่งเปิด) + Camera + zoom ≥ 8 = แนะนำ Globe Manager
+//   สวิตช์แหล่งใดเปิดอยู่ HUD อ่านใหม่ทุก IMAGERY_POLL_MS (ชิ้นภาพโหลดโดยที่เวลาไม่เปลี่ยน)
 
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useReducer, useRef, useSyncExternalStore, type RefObject } from "react";
@@ -39,7 +40,7 @@ import { createWheelZoom } from "./wheelZoom";
 const RAD = Math.PI / 180;
 const UPS: readonly SensorViewUp[] = ["north", "velocity"];
 const DISPLAYS: readonly SensorViewDisplay[] = ["camera", "sensor"];
-/** แนะนำ Globe Manager เมื่อซูมถึงขั้นนี้ในโหมด Camera และสวิตช์ภาพออนไลน์ปิด */
+/** แนะนำ Globe Manager เมื่อซูมถึงขั้นนี้ในโหมด Camera และไม่มีชั้นภาพออนไลน์แสดงอยู่ */
 const HINT_ZOOM = 8;
 /** สวิตช์ภาพออนไลน์เปิดอยู่: อ่าน HUD ใหม่ทุกช่วงนี้ (สัดส่วนชิ้นที่ไม่มีภาพเปลี่ยนระหว่างโหลดโดยที่เวลาไม่เปลี่ยน) */
 const IMAGERY_POLL_MS = 1000;
@@ -109,12 +110,14 @@ export function groundWidthText(widthM: number): { unit: "km" | "m"; width: stri
 }
 
 /**
- * ชั้นภาพบนสุดละเอียดสุดแล้วแต่ภาพต้องการระดับ needed ที่ลึกกว่า (ภาพจะถูกขยายจนเบลอ): ชั้น GIBS, EOX หรือ OSM ที่ maxLevel < needed
+ * ชั้นภาพบนสุดละเอียดสุดแล้วแต่ภาพต้องการระดับที่ลึกกว่า (ภาพจะถูกขยายจนเบลอ): ชั้น GIBS, EOX หรือ OSM ที่ maxLevel < needed − 1
+ * needed (neededImageryLevel) คิดที่ 1 พิกเซล CSS ต่อ texel แต่ Cesium เลือกระดับภาพที่ราว 2 พิกเซลต่อ texel (maximumScreenSpaceError 2 ของ globe)
+ * จึงใช้ระดับต่ำกว่า needed หนึ่งระดับอยู่แล้วแม้แหล่งมีระดับที่ลึกกว่า: เตือนที่ needed − 1 > maxLevel (ไม่งั้นเตือนเร็วไปหนึ่งระดับ ทั้งที่ภาพยังเหมือนเดิม)
  * ion ไม่เตือนเลย (ระดับสูงสุดของ asset ไม่รู้ล่วงหน้า และบางชั้นไม่ประกาศ) ไม่มีชั้น ไม่รู้ระดับ หรือไม่มีระดับที่ต้องใช้ (ภาพยังไม่มีขนาด) = false
  */
 export function finestLevelReached(imagery: SensorHudImagery | null, needed: number | null): boolean {
   if (imagery === null || needed === null || imagery.source === "ion" || imagery.maxLevel === null) return false;
-  return needed > imagery.maxLevel;
+  return needed - 1 > imagery.maxLevel;
 }
 
 /** บรรทัดความกว้างพื้นที่ของ HUD ไม่เห็นพื้นที่ (ความกว้าง 0) = ไม่มีบรรทัด */
@@ -124,11 +127,12 @@ function groundWidthLine(widthM: number): string | null {
   return msg(unit === "km" ? "sensorView.hudGroundWidthKm" : "sensorView.hudGroundWidthM", { width });
 }
 
-/** บรรทัดแหล่งภาพพื้นโลกของ HUD */
+/** บรรทัดแหล่งภาพพื้นโลกของ HUD ชิ้นขาดเกินครึ่ง: GIBS/EOX = ไม่มีภาพเวลานี้ (404) ; OSM และ ion (browser ดึงตรง) = ชิ้นภาพโหลดไม่ได้ */
 function imageryLine(imagery: SensorHudImagery | null): string {
   if (imagery === null) return msg("sensorView.hudImageryOffline");
   const image = `${imagery.title} ${imagery.label}`.trim();
-  return msg(imagery.missing ? "sensorView.hudImageryMissing" : "sensorView.hudImagery", { image });
+  if (!imagery.missing) return msg("sensorView.hudImagery", { image });
+  return msg(imagery.source === "osm" || imagery.source === "ion" ? "sensorView.hudImageryFailed" : "sensorView.hudImageryMissing", { image });
 }
 
 /** สวิตช์ภาพออนไลน์แหล่งใดเปิดอยู่: วาดใหม่ทุก IMAGERY_POLL_MS (HUD อ่านสถานะชั้นภาพใหม่) */
@@ -142,7 +146,8 @@ function useImageryPoll(enabled: boolean): void {
 }
 
 /**
- * ล้อเมาส์ไม่กด Shift บนภาพ (รวม pinch ของ trackpad = ctrlKey + ล้อ) = ซูมตามยอดที่สะสม (wheelZoom.ts: 100 px ต่อขั้น ไม่เกินขั้นละ 150 ms)
+ * ล้อเมาส์ไม่กด Shift บนภาพ (รวม pinch ของ trackpad = ctrlKey + ล้อ) = ซูมตามยอดที่สะสม (wheelZoom.ts: 100 px ต่อขั้น ไม่เกินขั้นละ 150 ms
+ * และไม่เกิน 2 ขั้นต่อการปัดหนึ่งครั้ง รวม momentum)
  * Shift + ล้อเป็นของ useShiftWheelSteps ไม่ให้หน้าเลื่อน (หรือซูมทั้งหน้า) และไม่ส่งต่อถึง canvas ของ Cesium
  */
 function useWheelZoom(host: RefObject<HTMLDivElement | null>, zoom: SensorViewZoom, setZoom: (z: SensorViewZoom) => void): void {
@@ -186,7 +191,8 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
   }
   const sensor = doc?.objects.find((o) => o.class === "Sensor" && objectPath(o) === path) as SensorObj | undefined;
   const radius = display === "sensor" ? coneCircleRadius(hud.coneHalfAngle, zoom) : null;
-  const hint = !online && display === "camera" && zoom >= HINT_ZOOM;
+  // ไม่มีชั้นออนไลน์บนจอจริง (สวิตช์ปิดทั้งหมด หรือเปิดแต่ไม่มีชั้นที่แสดง เช่น ion ยังไม่เลือก asset / ion ล้มเหลว / ซ่อนทุกแถว) = แนะนำ Globe Manager
+  const hint = hud.imagery === null && display === "camera" && zoom >= HINT_ZOOM;
   const groundWidth = sensorViewGroundWidthM(hud.altKm, hud.fovDeg);
   const groundLine = groundWidthLine(groundWidth);
   const maxLevel = hud.imagery?.maxLevel ?? null;

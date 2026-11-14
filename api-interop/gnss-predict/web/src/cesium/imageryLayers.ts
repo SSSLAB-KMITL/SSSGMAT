@@ -10,6 +10,7 @@
 //   ชั้นใหม่จึงอยู่ใต้เส้น Lat/Lon ที่วางไว้ก่อนเสมอ ส่วนเส้น Lat/Lon ที่เปิดทีหลัง scene3d.ts ต่อท้ายรายการ (บนสุด) เอง
 // - ชั้นละหนึ่ง UrlTemplateImageryProvider ของ viewer นี้เอง (ไม่ใช้ร่วมกับ viewer อื่น) Web Mercator, maximumLevel = max_level (ซูมลึกกว่านั้น Cesium ขยายจากระดับสูงสุด)
 //   credit ของชั้น (NASA GIBS / EOSDIS, JMA, NOAA, EOX, © OpenStreetMap contributors) เป็น Credit ที่แสดงบนภาพ (showOnScreen) ไม่ใช่แค่ในกล่อง Data attribution
+//   credit ของ OpenStreetMap เป็นลิงก์ไปหน้า https://www.openstreetmap.org/copyright (OSM_CREDIT_HTML ตามนโยบายของ OSM) ของแหล่งอื่นเป็นข้อความที่กันอักขระพิเศษแล้ว
 //   proxy: url /api/imagery/tiles/{id}/{token}/{z}/{y}/{x} (same-origin)
 //   tileDiscardPolicy = NeverTileDiscardPolicy: ไม่ทิ้งชิ้นใด แต่ทำให้ ImageryProvider.loadImage ของ Cesium โหลดด้วย XHR (preferBlob)
 //   ทุก browser รหัส HTTP จึงมาถึง errorEvent ด้วย (ไม่มี policy: Safari/Firefox ที่ createImageBitmap ไม่รับ option โหลดด้วย <img> ไม่มีรหัส HTTP)
@@ -21,9 +22,10 @@
 //   ion shown = ชั้นอื่นทั้งหมดถูกเอาออก (ไม่มีคำขอไปแหล่งอื่น) และ alpha ของ Natural Earth II = 0 ในทุก viewer (ทุก viewer อ่าน store ชุดเดียวกัน)
 //   ตั้งแต่ขอ provider (ไม่รอให้ ion ตอบ) จนเลิกแสดง ion แล้วคืนชั้นเดิมตาม store และ alpha เดิมของ Natural Earth II
 //   token ว่าง (หลังอ่านค่าตั้งแล้ว) = ไม่มีชั้น ion ชั้นอื่นแสดงตามเดิม คำเตือนไทยครั้งเดียว ; ยังไม่ได้อ่านค่าตั้ง = รอ (ไม่ทำอะไร)
-//   ion ปฏิเสธ (401/404, ไม่ใช่ภาพ, เครือข่าย) = ถอดชั้น ion ทุก viewer ข้อความไทยครั้งเดียว (ไม่มี token) แล้วไม่ลองซ้ำกับ asset + token เดิม
-//   จนกว่าจะเปลี่ยน asset หรือ token หรือเลิกแสดง ion แล้วแสดงใหม่ (IonImageryProvider ของ Cesium จำผลของ endpoint ต่อ asset + token ไว้:
-//   ล้มเหลวเพราะเครือข่ายแล้วลองซ้ำด้วยค่าเดิมจะได้ผลเดิมจนโหลดหน้าใหม่)
+//   ion ปฏิเสธ (401/404, ไม่ใช่ภาพ, เครือข่าย) หรือชิ้นภาพของ ion พลาดเกินเกณฑ์ (tilesFailing: เกณฑ์เดียวกันทุก viewer) = failIon: ถอดชั้น ion ทุก viewer
+//   ข้อความไทยครั้งเดียว (ไม่มี token) แล้วไม่ลองซ้ำกับ asset + token เดิมจนกว่าแผนของ ion เปลี่ยน (asset, None, สวิตช์, token: ionState.ts ลืมการปฏิเสธให้เอง
+//   แม้ไม่มี viewer) ; IonImageryProvider.fromAssetId ของ Cesium จำ promise ของ endpoint ต่อ asset + token + server ไว้ใน _endpointCache และไม่ลบตัวที่ล้มเหลว
+//   failIon จึงลบรายการนั้นเอง (ionEndpointCacheKey: คีย์แบบเดียวกับ Cesium) การลองใหม่จึงขอ endpoint ใหม่จริง
 // - alpha = 1 − translucency/100 ; Ambient Level แบบภาพฐาน (scene3d.ts applyProps): dayAlpha = 1, nightAlpha = ระดับ/100
 //   (Cesium คูณ alpha ด้วย mix(dayAlpha, nightAlpha) ด้านกลางคืนจึงจางเท่าภาพฐานโดยไม่แตะ translucency) ค่าจาก opts.nightAlpha และ setImageryNightAlpha
 // - token ของเวลา (imageryTime.ts) เปลี่ยน → เปลี่ยนชั้นนั้นเป็น provider ของ token ใหม่ ไม่เกิน 1 ครั้งต่อ TOKEN_INTERVAL_MS ต่อ viewer
@@ -34,8 +36,11 @@
 // - ชิ้นที่โหลดไม่ได้ (errorEvent ของ provider): ไม่ลองซ้ำ (retry = false) มีตัวฟังแล้ว Cesium จึงไม่พิมพ์ error ของมันเอง ชิ้นนั้นโปร่งใส
 //   404 = ไม่มีภาพเวลานี้ นับต่อ (ชั้น, token) ไว้ให้ HUD (imageryStatus) ; 403 ของ proxy = server ปิดสวิตช์ของแหล่งนั้น (IMAGERY_DISABLED)
 //   → useImagery.sources[แหล่งของชั้น] = false ทุก viewer เอาชั้นของแหล่งนั้นออก (403 ของ OpenStreetMap ไม่แตะสวิตช์ใด)
-//   ข้อผิดพลาดอื่น (503 BUSY/PAUSED, เครือข่าย) ไม่นับเป็นไม่มีภาพ
+//   ข้อผิดพลาดอื่นของ GIBS/EOX (503 BUSY/PAUSED, เครือข่าย) ไม่นับเป็นไม่มีภาพ
 //   รหัส HTTP มาจาก RequestErrorEvent.statusCode (XHR ของ preferBlob ข้างบน)
+// - OpenStreetMap และ ion (browser ดึงตรง): ทุกข้อผิดพลาดนับเป็นชิ้นที่ขาด ไม่ว่ามีรหัส HTTP หรือไม่ (OSM ไม่มี tileDiscardPolicy: Safari โหลดด้วย <img> ไม่มีรหัส)
+//   HUD จึงบอกสัดส่วนชิ้นที่ขาดจริง ; ชิ้นที่ได้ผลครบ TILE_FAILURE_MIN_SETTLED และพลาด ≥ TILE_FAILURE_RATIO (tilesFailing) =
+//   OSM: ข้อความไทยครั้งเดียวต่อการเปิดหน้า (OSM อาจบล็อก หรือเน็ตหลุด) ไม่เปลี่ยนวิธีขอชิ้นภาพของ OSM ; ion: failIon (ข้างบน)
 // - ทุกการเปลี่ยนเรียก scene.requestRender() (viewer ใช้ requestRenderMode)
 
 import {
@@ -57,6 +62,14 @@ export { ionStatus, onIonStatusChange, type IonStatus } from "./ionState";
 /** เปลี่ยนชั้นตามเวลาได้ไม่เกินหนึ่งครั้งต่อช่วงนี้ต่อ viewer */
 export const TOKEN_INTERVAL_MS = 1000;
 
+/** เกณฑ์ "ชิ้นภาพพลาดต่อเนื่อง" ของ OSM และ ion (ทุก viewer ใช้เกณฑ์เดียวกัน): ได้ผลแล้วอย่างน้อยเท่านี้ชิ้น ... */
+export const TILE_FAILURE_MIN_SETTLED = 8;
+/** ... และสัดส่วนที่พลาดอย่างน้อยเท่านี้ */
+export const TILE_FAILURE_RATIO = 0.75;
+
+/** credit ของ OpenStreetMap บนจอ: ลิงก์ไปหน้าลิขสิทธิ์ตามนโยบายของ OSM (Cesium กรอง HTML ของ credit ด้วย DOMPurify ก่อนวาด) */
+const OSM_CREDIT_HTML = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
+
 /** ส่วนของ Viewer ที่ใช้ (test ส่งตัวปลอมได้) */
 type ImageryViewer = Pick<Viewer, "imageryLayers" | "scene">;
 
@@ -65,7 +78,10 @@ export interface ImageryTopLayer {
   title: string;
   /** เวลาของภาพสำหรับ HUD (tokenLabel) static = "" */
   label: string;
-  /** สัดส่วนชิ้นที่ server ตอบ 404 (ไม่มีภาพเวลานี้) ในชิ้นที่ได้ผลแล้วของ token ที่แสดงอยู่ ยังไม่มีชิ้นใด = 0 */
+  /**
+   * สัดส่วนชิ้นที่ขาดในชิ้นที่ได้ผลแล้วของ token ที่แสดงอยู่ ยังไม่มีชิ้นใด = 0
+   * GIBS/EOX: ชิ้นที่ server ตอบ 404 (ไม่มีภาพเวลานี้) ; OSM และ ion: ทุกชิ้นที่โหลดไม่ได้ (ไม่ว่ารหัสใด)
+   */
   missingRatio: number;
   source: ImagerySourceId;
   /** ระดับซูมละเอียดสุดของชั้น null = ยังไม่รู้ (ชั้น ion ที่ยังไม่ได้ provider) */
@@ -77,6 +93,19 @@ interface TileCounts {
   missing: number;
   failed: number;
 }
+
+/** ชิ้นภาพพลาดเกินเกณฑ์ (ได้ผลครบ TILE_FAILURE_MIN_SETTLED ชิ้น และพลาด ≥ TILE_FAILURE_RATIO) ชิ้นที่ "พลาด" = missing + failed */
+const tilesFailing = (c: TileCounts): boolean => {
+  const settled = c.loaded + c.missing + c.failed;
+  return settled >= TILE_FAILURE_MIN_SETTLED && c.missing + c.failed >= TILE_FAILURE_RATIO * settled;
+};
+
+/** สัดส่วนชิ้นที่ขาดสำหรับ HUD: GIBS/EOX นับแค่ 404 (ไม่มีภาพเวลานี้) ; OSM และ ion นับทุกข้อผิดพลาด (ชิ้นนั้นว่างบนจอ) */
+const missingRatioOf = (c: TileCounts, source: ImagerySourceId): number => {
+  const settled = c.loaded + c.missing + c.failed;
+  if (settled === 0) return 0;
+  return (source === "osm" || source === "ion" ? c.missing + c.failed : c.missing) / settled;
+};
 
 /** ชั้นของ id หนึ่งบน viewer: ชั้นปัจจุบัน + ชั้นเดิมที่ยังแสดงอยู่จนชั้นปัจจุบันเริ่มโหลด */
 interface Managed {
@@ -101,10 +130,17 @@ const managers = new WeakMap<object, Manager>();
 
 /** คำเตือน "ไม่มี token" ที่แจ้งไปแล้ว (แจ้งครั้งเดียวต่อการเข้าสถานะนี้ ไม่ว่ามีกี่ viewer) */
 let ionNotice: string | null = null;
+/** แจ้งเรื่องชิ้นภาพ OpenStreetMap พลาดต่อเนื่องไปแล้วในหน้านี้ (ครั้งเดียวต่อการเปิดหน้า) */
+let osmNoticeShown = false;
 
-/** หลังอ่านแผน: ไม่ขอ ion แล้ว = ลืมการปฏิเสธ (แสดงใหม่ = ลองใหม่) ; ไม่มี token = คำเตือนไทยครั้งเดียว */
+/** สำหรับ test: ลืมคำเตือนที่แจ้งไปแล้ว (เหมือนเปิดหน้าใหม่) */
+export function resetImageryNoticesForTest(): void {
+  ionNotice = null;
+  osmNoticeShown = false;
+}
+
+/** หลังอ่านแผน: ไม่มี token = คำเตือนไทยครั้งเดียว (การลืมการปฏิเสธเมื่อแผนเปลี่ยนอยู่ใน ionState.ts) */
 function noteIon(plan: IonPlan): void {
-  if (plan.kind === "off") setIonFailure(null);
   if (plan.kind !== "noToken") {
     ionNotice = null;
     return;
@@ -131,13 +167,39 @@ function ionReason(error: unknown): string {
   return msg("imagery.ionReasonNetwork");
 }
 
-/** ion ปฏิเสธ asset + token นี้: จำไว้ แจ้งครั้งเดียว แล้วบอกทุก viewer (ถอดชั้น ion คืนชั้นอื่น) */
-function failIon(assetId: number, token: string, error: unknown): void {
+/** option ของ IonImageryProvider.fromAssetId: token อย่างเดียว ไม่มี server (ใช้ทั้งตอนขอและตอนสร้างคีย์ของ cache) */
+const ionOptions = (token: string): { accessToken: string; server?: undefined } => ({ accessToken: token });
+
+/**
+ * คีย์ของ IonImageryProvider._endpointCache แบบเดียวกับ Cesium 1.147 (IonImageryProvider.fromAssetId):
+ * assetId.toString() + options.accessToken + options.server (ไม่ส่ง server จึงต่อท้ายด้วย "undefined")
+ */
+export function ionEndpointCacheKey(assetId: number, token: string): string {
+  const options = ionOptions(token);
+  return assetId.toString() + options.accessToken + String(options.server);
+}
+
+/** ลบ promise ของ endpoint ที่ Cesium จำไว้ (Cesium ไม่ลบตัวที่ล้มเหลวเอง: ลองใหม่ด้วยค่าเดิมจะได้ผลเดิมจนโหลดหน้าใหม่) */
+function forgetIonEndpoint(assetId: number, token: string): void {
+  const cache = (IonImageryProvider as unknown as { _endpointCache?: Record<string, unknown> })._endpointCache;
+  if (cache !== undefined) delete cache[ionEndpointCacheKey(assetId, token)];
+}
+
+/** ion ใช้ asset + token นี้ไม่ได้: ลืม endpoint ที่ Cesium จำไว้ จำการปฏิเสธ แจ้งครั้งเดียว แล้วบอกทุก viewer (ถอดชั้น ion คืนชั้นอื่น) เรียกซ้ำได้ */
+function failIon(assetId: number, token: string, reason: string): void {
+  forgetIonEndpoint(assetId, token);
   const failure = getIonFailure();
   if (failure !== null && failure.assetId === assetId && failure.token === token) return;
   setIonFailure({ assetId, token });
-  report("warning", "IMAGERY_ION_FAILED", msg("imagery.ionFailed", { assetId, reason: ionReason(error) }));
+  report("warning", "IMAGERY_ION_FAILED", msg("imagery.ionFailed", { assetId, reason }));
   notifyIonListeners();
+}
+
+/** ชิ้นภาพ OpenStreetMap พลาดเกินเกณฑ์: ข้อความไทยครั้งเดียวต่อการเปิดหน้า (ไม่ว่ามีกี่ viewer) */
+function noteOsmFailing(): void {
+  if (osmNoticeShown) return;
+  osmNoticeShown = true;
+  report("warning", "IMAGERY_OSM_FAILED", msg("imagery.osmFailed"));
 }
 
 // ---------- ชั้นของ catalog และ OpenStreetMap ----------
@@ -163,12 +225,13 @@ const alphaOf = (id: string): number => {
 /** ข้อความเครดิตเป็น HTML ของ Credit: กันอักขระพิเศษไว้ (ค่ามาจาก catalog ของ server) */
 const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** ชั้น ion บน viewer: layer = null ระหว่างรอ provider */
+/** ชั้น ion บน viewer: layer = null ระหว่างรอ provider ; tiles = ชิ้นของชั้นนี้ (ทุกข้อผิดพลาดนับใน failed) */
 interface IonManaged {
   key: string;
   assetId: number;
   layer: ImageryLayer | null;
   maxLevel: number | null;
+  tiles: TileCounts;
 }
 
 /**
@@ -224,11 +287,16 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   };
 
   const makeLayer = (info: ImageryLayerInfo, token: string): ImageryLayer => {
-    const common = { tilingScheme: new WebMercatorTilingScheme(), maximumLevel: info.max_level, credit: new Credit(escapeHtml(info.credit), true) };
+    const credit = new Credit(info.source === "osm" ? OSM_CREDIT_HTML : escapeHtml(info.credit), true);
+    const common = { tilingScheme: new WebMercatorTilingScheme(), maximumLevel: info.max_level, credit };
     const provider = info.source === "osm"
       ? new UrlTemplateImageryProvider({ url: OSM_URL, ...common })
       : new UrlTemplateImageryProvider({ url: `/api/imagery/tiles/${info.id}/${token}/{z}/{y}/{x}`, ...common, tileDiscardPolicy: new NeverTileDiscardPolicy() });
     const tiles = countsFor(info.id, token);
+    /** OSM: ชิ้นพลาดเกินเกณฑ์ = ข้อความไทย (ครั้งเดียวต่อหน้า) */
+    const checkFailing = (): void => {
+      if (info.source === "osm" && tilesFailing(tiles)) noteOsmFailing();
+    };
     const started = (): void => {
       const m = managed.get(info.id);
       if (detached || m === undefined || m.layer !== layer || m.started) return;
@@ -245,6 +313,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       p?.then(
         () => {
           tiles.loaded++;
+          checkFailing();
           started();
         },
         () => undefined, // ข้อผิดพลาดนับใน errorEvent (การยกเลิกของ Cesium ไม่ใช่ข้อผิดพลาด)
@@ -263,6 +332,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       }
       if (code === 404) tiles.missing++;
       else tiles.failed++;
+      checkFailing();
       started();
     });
     const layer = new ImageryLayer(provider);
@@ -324,19 +394,46 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
     }
     if (plan.kind !== "shown" || key === null) return true;
     const { assetId, token } = plan;
-    const cur: IonManaged = { key, assetId, layer: null, maxLevel: null };
+    const cur: IonManaged = { key, assetId, layer: null, maxLevel: null, tiles: { loaded: 0, missing: 0, failed: 0 } };
     ion = cur;
+    /** ชิ้นของ ion พลาดเกินเกณฑ์: failIon หลังตัวแจ้งของ Cesium จบ (ไม่ถอดชั้นระหว่างที่ ImageryLayer ยังอยู่ในตัวจัดการของตัวเอง) */
+    const checkFailing = (): void => {
+      if (!tilesFailing(cur.tiles)) return;
+      const settled = cur.tiles.loaded + cur.tiles.missing + cur.tiles.failed;
+      const failed = cur.tiles.missing + cur.tiles.failed;
+      queueMicrotask(() => {
+        if (detached || ion !== cur) return;
+        failIon(assetId, token, msg("imagery.ionReasonTiles", { failed, settled }));
+        sync(); // viewer อื่นบันทึกไปก่อนแล้ว: failIon ไม่แจ้งซ้ำ viewer นี้คืนชั้นเอง
+      });
+    };
     let pending: Promise<IonImageryProvider>;
     try {
-      pending = IonImageryProvider.fromAssetId(assetId, { accessToken: token });
+      pending = IonImageryProvider.fromAssetId(assetId, ionOptions(token));
     } catch (e) {
       pending = Promise.reject(e);
     }
     pending.then(
       (provider) => {
         if (detached || ion !== cur) return; // เลิกต้องการแล้ว (asset/token เปลี่ยน, เลิกแสดง, ถอด viewer)
+        const request = provider.requestImage.bind(provider);
+        provider.requestImage = (x, y, level, req) => {
+          const p = request(x, y, level, req);
+          p?.then(
+            () => {
+              if (detached || ion !== cur) return;
+              cur.tiles.loaded++;
+              checkFailing();
+            },
+            () => undefined, // ข้อผิดพลาดนับใน errorEvent (การยกเลิกของ Cesium ไม่ใช่ข้อผิดพลาด)
+          );
+          return p;
+        };
         provider.errorEvent.addEventListener((error: { retry?: boolean }) => {
           error.retry = false; // ชิ้นที่โหลดไม่ได้ไม่ลองซ้ำ (มีตัวฟังแล้ว Cesium จึงไม่พิมพ์ error เอง)
+          if (detached || ion !== cur) return;
+          cur.tiles.failed++; // ทุกรหัส หรือไม่มีรหัส
+          checkFailing();
         });
         const layer = new ImageryLayer(provider);
         layer.alpha = 1;
@@ -350,7 +447,7 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
       (error: unknown) => {
         if (detached || ion !== cur) return;
         ion = null;
-        failIon(assetId, token, error);
+        failIon(assetId, token, ionReason(error));
         sync(); // viewer อื่นบันทึกการปฏิเสธไปก่อนแล้ว: failIon ไม่แจ้งซ้ำ viewer นี้คืนชั้นเอง
       },
     );
@@ -429,7 +526,9 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
   const manager: Manager = {
     status: () => {
       if (ion !== null) {
-        return { topLayer: { id: "ion", title: ionAssetTitle(ion.assetId), label: "", missingRatio: 0, source: "ion", max_level: ion.maxLevel } };
+        return {
+          topLayer: { id: "ion", title: ionAssetTitle(ion.assetId), label: "", missingRatio: missingRatioOf(ion.tiles, "ion"), source: "ion", max_level: ion.maxLevel },
+        };
       }
       const order = shownLayers();
       for (let i = order.length - 1; i >= 0; i--) {
@@ -438,10 +537,9 @@ export function attachImageryLayers(viewer: ImageryViewer, opts: { now?: () => n
         // ชั้นใหม่ยังไม่ได้ชิ้นใด: ภาพบนจอยังเป็นชั้นเดิม
         const token = !m.started && m.retiringToken !== null ? m.retiringToken : m.token;
         const c = counts.get(`${m.info.id}/${token}`) ?? { loaded: 0, missing: 0, failed: 0 };
-        const settled = c.loaded + c.missing + c.failed;
         return {
           topLayer: {
-            id: m.info.id, title: m.info.title, label: tokenLabel(m.info.period, token), missingRatio: settled === 0 ? 0 : c.missing / settled,
+            id: m.info.id, title: m.info.title, label: tokenLabel(m.info.period, token), missingRatio: missingRatioOf(c, m.info.source),
             source: m.info.source, max_level: m.info.max_level,
           },
         };

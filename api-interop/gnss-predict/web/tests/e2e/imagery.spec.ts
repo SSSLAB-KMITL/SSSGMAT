@@ -251,7 +251,6 @@ test.describe("Sensor View Camera mode", () => {
 
     const start = (await sensorCamera(page))!;
     const fovAt1 = (await shortSideFovDeg(page))!;
-    expect(fovAt1, "short-side fov at ×1").not.toBeNull();
     // ×1 มีบรรทัดความกว้างพื้นที่แล้ว (ภาพกว้างกว่าจานโลก = กว้างถึงขอบฟ้า) ยังไม่ต่ำกว่า 1 km
     expect(await groundWidthKm(page), "ground width at ×1 (km)").toBeGreaterThan(1000);
 
@@ -401,7 +400,12 @@ test.describe("Globe Manager", () => {
     await expect(page.getByRole("radiogroup", { name: "Cesium ion asset", exact: true }).getByRole("radio").first()).toBeDisabled();
 
     // ติ๊กสวิตช์ของแต่ละแหล่ง -> กล่องยืนยันภาษาไทยที่บอก host ของแหล่งนั้น -> Cancel: ไม่เปลี่ยนค่า (server ยังปิดทั้งสี่ช่อง และช่องติ๊กกลับเป็นไม่ติ๊ก)
+    // และหน้าเว็บไม่ส่ง PUT /api/settings เลย (บันทึก request ของ browser ไว้ตรวจหลัง Cancel / Esc ทุกครั้ง)
     // หน้าต่างลอยของ Globe Manager ก็มี role dialog (dockview): เลือกกล่องยืนยันของแอปจากชื่อ "Confirm"
+    const settingsPuts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings") settingsPuts.push(`${r.method()} ${r.url()}`);
+    });
     const dialog = page.getByRole("dialog", { name: "Confirm", exact: true });
     for (const source of SOURCES) {
       await onlineSwitch(page, source.label).click();
@@ -412,12 +416,16 @@ test.describe("Globe Manager", () => {
       await expect(dialog).toBeHidden();
       await expect(onlineSwitch(page, source.label)).not.toBeChecked();
       expect(await settingsOnServer(page), `GET /api/settings after Cancel of ${source.host}`).toEqual(settingsBefore);
+      expect(settingsPuts, `PUT /api/settings after Cancel of ${source.host}`).toEqual([]);
     }
     // GIBS: บอกที่เก็บ data/imagery ; OpenStreetMap และ Cesium ion: browser ต่อเอง (ไม่มีที่เก็บของ server)
     await onlineSwitch(page, SOURCES[0].label).click();
     await expect(dialog).toContainText("data/imagery");
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
+    await expect(onlineSwitch(page, SOURCES[0].label)).not.toBeChecked();
+    expect(await settingsOnServer(page), "GET /api/settings after Escape of the GIBS confirmation").toEqual(settingsBefore);
+    expect(settingsPuts, "PUT /api/settings after Escape of the GIBS confirmation").toEqual([]);
     await onlineSwitch(page, SOURCES[2].label).click();
     await expect(dialog).toContainText("browser");
     await expect(dialog).not.toContainText("data/imagery");
@@ -426,6 +434,7 @@ test.describe("Globe Manager", () => {
     await expect(dialog).toBeHidden();
     for (const source of SOURCES) await expect(onlineSwitch(page, source.label)).not.toBeChecked();
     expect(await settingsOnServer(page), "GET /api/settings after Escape").toEqual(settingsBefore);
+    expect(settingsPuts, "PUT /api/settings after Escape").toEqual([]);
     const after = await page.request.get("/api/imagery/layers");
     const afterDoc = (await after.json()) as { enabled: boolean; sources: Record<string, boolean> };
     expect(afterDoc.enabled).toBe(false);

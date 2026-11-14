@@ -359,6 +359,43 @@ describe("the window", () => {
     act(() => useImagery.setState({ sources: { gibs: false, eox: false, osm: false, ion: false } }));
   });
 
+  test("the Globe Manager hint shows whenever no online layer is actually shown, even with a source switch on (ion without asset, or its layers hidden)", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    try {
+      for (const sources of [{ gibs: false, eox: false, osm: false, ion: true }, { gibs: true, eox: true, osm: true, ion: false }]) {
+        act(() => useImagery.setState({ sources }));
+        fake.hud = { ...HUD, fovDeg: 30.198 / 8, zoom: 8, imagery: null };
+        act(() => sensorViewScenes.notify());
+        await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
+        expect(lines()).toContain(msg("sensorView.hudImageryOffline"));
+        // ชั้นออนไลน์แสดงจริง: ไม่แนะนำ
+        fake.hud = { ...fake.hud, imagery: { title: "OpenStreetMap", label: "", missing: false, source: "osm", maxLevel: 19 } };
+        act(() => sensorViewScenes.notify());
+        await waitFor(() => expect(lines()).not.toContain(msg("sensorView.hintGlobeManager")));
+      }
+    } finally {
+      act(() => useImagery.setState({ sources: { gibs: false, eox: false, osm: false, ion: false } }));
+    }
+  });
+
+  test("HUD flags OpenStreetMap or Cesium ion tiles that do not load as tiles that failed to load, not as no imagery for this time", async () => {
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
+    for (const source of ["osm", "ion"] as const) {
+      fake.hud = { ...HUD, imagery: { title: "OpenStreetMap", label: "", missing: true, source, maxLevel: 19 } };
+      act(() => sensorViewScenes.notify());
+      await waitFor(() => expect(lines()).toContain(msg("sensorView.hudImageryFailed", { image: "OpenStreetMap" })));
+    }
+    expect(msg("sensorView.hudImageryFailed", { image: "OpenStreetMap" })).toBe("ภาพพื้นโลก: OpenStreetMap — ชิ้นภาพส่วนใหญ่โหลดไม่ได้");
+  });
+
   test("HUD shows the ground width at the sub-satellite point: km above 1 km, m below (imagery spec §4.4)", async () => {
     await mount({ G01: ["Sensor1"] });
     const fake = await open("Sensor1");
@@ -406,14 +443,15 @@ describe("the window", () => {
       if (level === null) await waitFor(() => expect(anyNote()).toBe(false));
       else await waitFor(() => expect(lines()).toContain(note(level)));
     };
-    // ×1024 ดาว GPS 600 px: ต้องใช้ระดับ 14 > GIBS 9 = บอก
+    // ×1024 ดาว GPS 600 px: ต้องใช้ระดับ 14 (Cesium พอใจที่ 13) > GIBS 9 = บอก
     await set(gps(1024, layer("gibs", 9)), 9);
     // ต้องการระดับ 7 ≤ 9 (×8): ไม่บอก
     await set(gps(8, layer("gibs", 9)), null);
-    // ×8192 ต้องการระดับ 17: EOX (15) บอก, OSM (19) ไม่บอก
+    // ×8192 ต้องการระดับ 17 (Cesium พอใจที่ 16): EOX (15) บอก, OSM (19) ไม่บอก, ชั้นที่ละเอียดสุด 16 ไม่บอก (ภาพยังไม่เบลอ), 15 บอก
     await set(gps(8192, layer("eox", 15)), 15);
     await set(gps(8192, layer("osm", 19)), null);
-    await set(gps(8192, layer("osm", 16)), 16);
+    await set(gps(8192, layer("osm", 16)), null);
+    await set(gps(8192, layer("osm", 15)), 15);
     // ion: ไม่รู้ระดับสูงสุด (หรือรู้แล้วก็ไม่เตือน) ไม่บอก
     await set(gps(8192, layer("ion", null)), null);
     await set(gps(8192, layer("ion", 12)), null);
@@ -619,14 +657,17 @@ describe("ground width text and the finest-level decision", () => {
     expect(groundWidthText(0)).toEqual({ unit: "m", width: "0" });
   });
 
-  test("the note needs a GIBS/EOX/OSM layer whose max level is below the needed level", () => {
+  test("the note needs a GIBS/EOX/OSM layer more than one level below the needed level (Cesium already settles for about 2 px per texel)", () => {
     const l = (source: "gibs" | "eox" | "osm" | "ion", maxLevel: number | null) => ({ title: "L", label: "", missing: false, source, maxLevel });
     expect(finestLevelReached(l("gibs", 9), 14)).toBe(true);
-    expect(finestLevelReached(l("gibs", 9), 10)).toBe(true);
-    expect(finestLevelReached(l("gibs", 9), 9)).toBe(false); // ถึงระดับพอดี ยังไม่เบลอ
+    expect(finestLevelReached(l("gibs", 9), 11)).toBe(true);
+    expect(finestLevelReached(l("gibs", 9), 10)).toBe(false); // ต้องการ 10 แต่ Cesium เองก็ใช้ระดับ 9 (≈ 2 px ต่อ texel) ภาพยังเท่าเดิม
+    expect(finestLevelReached(l("gibs", 9), 9)).toBe(false);
     expect(finestLevelReached(l("gibs", 9), 3)).toBe(false);
-    expect(finestLevelReached(l("eox", 15), 16)).toBe(true);
-    expect(finestLevelReached(l("osm", 19), 20)).toBe(true);
+    expect(finestLevelReached(l("eox", 15), 17)).toBe(true);
+    expect(finestLevelReached(l("eox", 15), 16)).toBe(false);
+    expect(finestLevelReached(l("osm", 19), 21)).toBe(true);
+    expect(finestLevelReached(l("osm", 19), 20)).toBe(false);
     expect(finestLevelReached(l("ion", 12), 20)).toBe(false);
     expect(finestLevelReached(l("ion", null), 20)).toBe(false);
     expect(finestLevelReached(l("gibs", null), 20)).toBe(false);

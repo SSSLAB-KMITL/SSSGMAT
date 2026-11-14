@@ -100,7 +100,7 @@ const INERTIAL_BY_WINDOW = "Inertial by Window";
 const SENSOR_INTERVAL_MS = 250;
 /** Sensor View: near ของ frustum (เมตร) กล้องอยู่ที่ดาวพอดี (ความเสี่ยง S3) */
 const SENSOR_VIEW_NEAR_M = 1;
-/** HUD: ชั้นบนสุดที่ไม่มีภาพเกินสัดส่วนนี้ของชิ้นที่ได้ผลแล้ว = "ไม่มีภาพเวลานี้" (imagery spec §5.3) */
+/** HUD: ชั้นบนสุดที่ชิ้นขาดเกินสัดส่วนนี้ของชิ้นที่ได้ผลแล้ว = "ไม่มีภาพเวลานี้" (GIBS/EOX) หรือ "ชิ้นภาพส่วนใหญ่โหลดไม่ได้" (OSM, ion) (imagery spec §5.3) */
 const IMAGERY_MISSING_RATIO = 0.5;
 /** Sensor View: แสงกลางวัน/กลางคืนเปิดเสมอ ค่าอื่นตามค่าตั้งต้นของหน้าต่าง 3D (P8: ไม่มี 3D Graphics Window Properties ของตัวเอง) */
 const SENSOR_VIEW_PROPS: Readonly<Props3D> = { ...DEFAULT_PROPS_3D, enableLighting: true };

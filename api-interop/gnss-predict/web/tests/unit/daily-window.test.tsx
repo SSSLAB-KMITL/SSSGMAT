@@ -188,14 +188,37 @@ describe("Apply", () => {
     expect((puts(f)[0].body as { online_imagery: unknown }).online_imagery).toEqual(IMAGERY_OFF);
   });
 
-  test("sends the online_imagery the store holds now, so a switch changed elsewhere while this window is open is not undone", async () => {
-    const f = server();
+  test("Apply reads the settings again (GET) right before the PUT and sends the switches the server has now: one turned off in a second tab is not written back as on", async () => {
+    let doc: typeof SETTINGS = { ...SETTINGS, online_imagery: IMAGERY_MIXED };
+    const f = server({ "GET /api/settings": () => ({ json: doc }) });
     await mounted();
-    act(() => useSettings.setState({ settings: { ...SETTINGS, online_imagery: IMAGERY_MIXED } }));
+    // แท็บที่สอง (หรือ curl / แก้ไฟล์) ปิด OSM และ ion และบันทึก token ใหม่ที่ server ขณะที่หน้าต่างนี้เปิดอยู่: store ของแท็บนี้ยังถือค่าเดิม
+    doc = { ...doc, cesium_ion_token: "tok-tab2", online_imagery: { ...IMAGERY_MIXED, osm: false, ion: false } };
+    expect(useSettings.getState().settings?.online_imagery).toEqual(IMAGERY_MIXED);
     await replace(retention(), "45");
+    const getsBefore = f.count("GET /api/settings");
     await user.click(apply());
     await waitFor(() => expect(puts(f)).toHaveLength(1));
-    expect((puts(f)[0].body as { online_imagery: unknown }).online_imagery).toEqual(IMAGERY_MIXED);
+    const order = f.calls.map((c) => `${c.method} ${c.path}`).filter((c) => c.endsWith("/api/settings"));
+    expect(order.slice(getsBefore)).toEqual(["GET /api/settings", PUT]);
+    expect(puts(f)[0].body).toEqual({
+      daily: { ...SETTINGS.daily, retention_days: 45 }, cesium_ion_token: "tok-tab2", online_imagery: { enabled: true, eox: false, osm: false, ion: false },
+    });
+    // สวิตช์ของหน้านี้ตามเอกสารที่บันทึก
+    expect(useImagery.getState().sources).toEqual({ gibs: true, eox: false, osm: false, ion: false });
+  });
+
+  test("a GET that fails on Apply sends no PUT and says so", async () => {
+    let fail = false;
+    const f = server({
+      "GET /api/settings": () => (fail ? { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } : { json: SETTINGS }),
+    });
+    await mounted();
+    fail = true;
+    await user.click(enabled());
+    await user.click(apply());
+    expect((await screen.findByRole("alert")).textContent).toBe(msg("daily.applyFailed", { message: "พัง" }));
+    expect(puts(f)).toHaveLength(0);
   });
 
   test("an empty token is sent as an empty string (the server needs the field)", async () => {
@@ -824,13 +847,19 @@ describe("a token saved elsewhere while this window is open (Globe Manager)", ()
   /** server ที่จำเอกสารล่าสุด: GET ตอบสิ่งที่ PUT ครั้งก่อนบันทึก (ต่างจาก server() ที่ตอบค่าเดิมเสมอ) */
   function statefulServer() {
     let doc: unknown = SETTINGS;
-    return server({
+    const f = server({
       "GET /api/settings": () => ({ json: doc }),
       [PUT]: (call) => {
         doc = call.body;
         return { json: doc };
       },
     });
+    /** อีกหน้าต่างบันทึก token ใหม่: server ได้ค่าใหม่ และ store ของหน้านี้ถือเอกสารที่ server ตอบ (แบบ updateSettings) */
+    const savedElsewhere = (token: string) => {
+      doc = { ...SETTINGS, cesium_ion_token: token };
+      act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: token } }));
+    };
+    return Object.assign(f, { savedElsewhere });
   }
 
   /** เปิดทั้งสองหน้าต่างพร้อมกัน (Daily อ่านค่าตั้งแล้วจึงถือ token เดิมไว้ในฟอร์ม) แล้วบันทึก token ใหม่จาก Globe Manager ด้วยหน้าต่างจริง */
@@ -872,7 +901,7 @@ describe("a token saved elsewhere while this window is open (Globe Manager)", ()
     const f = statefulServer();
     const daily = await mounted();
     await replace(dailyToken(daily.container), "typed-here");
-    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-elsewhere" } }));
+    f.savedElsewhere("tok-elsewhere");
     expect(dailyToken(daily.container).value).toBe("typed-here");
     await user.click(dailyApply(daily.container));
     await waitFor(() => expect(puts(f)).toHaveLength(1));
@@ -882,7 +911,7 @@ describe("a token saved elsewhere while this window is open (Globe Manager)", ()
   test("clearing the token in this window still sends the empty string after another window changed it", async () => {
     const f = statefulServer();
     const daily = await mounted();
-    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-elsewhere" } }));
+    f.savedElsewhere("tok-elsewhere");
     await replace(dailyToken(daily.container), "");
     await user.click(dailyApply(daily.container));
     await waitFor(() => expect(puts(f)).toHaveLength(1));
@@ -893,7 +922,7 @@ describe("a token saved elsewhere while this window is open (Globe Manager)", ()
     const f = statefulServer();
     const daily = await mounted();
     await replace(within(daily.container).getByLabelText(t("field.retention")) as HTMLInputElement, "45");
-    act(() => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-late" } }));
+    f.savedElsewhere("tok-late");
     expect((within(daily.container).getByLabelText(t("field.retention")) as HTMLInputElement).value).toBe("45");
     await user.click(dailyApply(daily.container));
     await waitFor(() => expect(puts(f)).toHaveLength(1));

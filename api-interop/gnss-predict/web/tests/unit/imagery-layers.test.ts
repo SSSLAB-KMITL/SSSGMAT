@@ -56,12 +56,17 @@ vi.mock("cesium", async (importOriginal) => {
   const IonImageryProvider = {
     fromAssetId: vi.fn((assetId: number, options: Record<string, unknown>) =>
       new Promise((resolve, reject) => made.ion.push({ assetId, options, resolve, reject }))),
+    /** แทน IonImageryProvider._endpointCache ของ Cesium (promise ของ endpoint ต่อ asset + token + server) */
+    _endpointCache: {} as Record<string, unknown>,
   };
   return { ...actual, UrlTemplateImageryProvider, WebMercatorTilingScheme, ImageryLayer, IonImageryProvider };
 });
 
 const { Credit, Event: CEvent, ImageryProvider, Ion, IonImageryProvider, NeverTileDiscardPolicy, Resource, WebMercatorTilingScheme } = await import("cesium");
-const { attachImageryLayers, imageryStatus, setImageryNightAlpha, TOKEN_INTERVAL_MS } = await import("../../src/cesium/imageryLayers");
+const {
+  attachImageryLayers, imageryStatus, ionEndpointCacheKey, resetImageryNoticesForTest, setImageryNightAlpha, TILE_FAILURE_MIN_SETTLED, TILE_FAILURE_RATIO, TOKEN_INTERVAL_MS,
+} = await import("../../src/cesium/imageryLayers");
+const { getIonFailure, setIonFailure } = await import("../../src/cesium/ionState");
 const { useImagery } = await import("../../src/stores/imagery");
 const { useSettings } = await import("../../src/stores/settings");
 const { useMessages } = await import("../../src/stores/messages");
@@ -79,6 +84,7 @@ const ION = "ion";
 const TOKEN = "tok-SECRET-1234";
 const EOX_CREDIT = "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)";
 const OFF = { gibs: false, eox: false, osm: false, ion: false };
+const OSM_CREDIT_LINK = '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
 const GIBS_ON = { ...OFF, gibs: true };
 
 const CATALOG = [
@@ -151,6 +157,7 @@ beforeEach(() => {
   made.schemes.length = 0;
   made.ion.length = 0;
   vi.mocked(IonImageryProvider.fromAssetId).mockClear();
+  resetImageryNoticesForTest();
   useImagery.setState({ sources: GIBS_ON, layers: [...CATALOG], loaded: true });
   useMessages.setState(useMessages.getInitialState(), true);
   useLayout.setState({ globe: DEFAULT_GLOBE });
@@ -159,6 +166,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const off of offs.splice(0)) off();
   vi.useRealTimers();
+  setIonFailure(null);
   useImagery.setState(useImagery.getInitialState(), true);
   useSettings.setState(useSettings.getInitialState(), true);
 });
@@ -516,7 +524,11 @@ const SETTINGS = {
 const setToken = (token: string) => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: token } });
 const ionAsset = (id: number | null) => useLayout.getState().setGlobeIon(id);
 const warnings = () => useMessages.getState().items.filter((m) => m.level === "warning");
-const fakeIonProvider = () => ({ errorEvent: new CEvent(), maximumLevel: 20 });
+const osmWarnings = () => warnings().filter((m) => m.code === "IMAGERY_OSM_FAILED");
+/** viewer ของ test ที่ต้องอ่านชั้น ion ปัจจุบันจากตัวช่วย (test.each ของการลองใหม่) */
+let viewer: ReturnType<typeof fakeViewer>;
+const currentIon = () => viewer.gibs().find((l) => idOf(l) === ION)!;
+const fakeIonProvider = () => ({ errorEvent: new CEvent(), maximumLevel: 20, requestImage: vi.fn((_x: number, _y: number, _level: number) => Promise.resolve({ image: true })) });
 /** ทุก promise ของ fromAssetId ที่ค้างอยู่สำเร็จ แล้วรอ then ของ manager */
 async function resolveIon() {
   for (const c of made.ion.splice(0)) c.resolve(fakeIonProvider());
@@ -606,7 +618,7 @@ describe("sources: OpenStreetMap straight from the browser", () => {
     expect(o.url).toBe("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
     expect(o.tilingScheme).toBeInstanceOf(WebMercatorTilingScheme);
     expect(o.maximumLevel).toBe(19);
-    expect((o.credit as InstanceType<typeof Credit>).html).toBe("© OpenStreetMap contributors");
+    expect((o.credit as InstanceType<typeof Credit>).html).toBe(OSM_CREDIT_LINK);
     expect((o.credit as InstanceType<typeof Credit>).showOnScreen).toBe(true);
     // นโยบายเดิมของ Cesium (ไม่ตั้งตัวทิ้งชิ้น ไม่ส่ง header เพิ่ม) และ translucency ของแถว osm
     expect(o.tileDiscardPolicy).toBeUndefined();
@@ -639,6 +651,78 @@ describe("sources: OpenStreetMap straight from the browser", () => {
     await Promise.resolve();
     expect(useImagery.getState().sources).toEqual({ ...OFF, osm: true });
     expect(v.ids()).toEqual([OSM]);
+  });
+
+  test("the OpenStreetMap credit is an on-screen link to its copyright page; other credits stay escaped text", () => {
+    useImagery.setState({ layers: [...CATALOG, EOX_LAYER, { ...EOX_LAYER, id: "x", credit: "A <b>&</b> B", source: "gibs" }] });
+    sources({ gibs: true, eox: true, osm: true });
+    show({ ...ALL_SHOWN, x: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    const credit = (id: string) => v.gibs().find((l) => idOf(l) === id)!.imageryProvider.options.credit as InstanceType<typeof Credit>;
+    expect(credit(OSM).html).toBe(OSM_CREDIT_LINK);
+    expect(credit(OSM).showOnScreen).toBe(true);
+    // Cesium วาด credit ผ่าน DOMPurify: ลิงก์ยังอยู่ครบ (href, target, rel) บนจอ
+    const a = credit(OSM).element.querySelector("a");
+    expect(a?.getAttribute("href")).toBe("https://www.openstreetmap.org/copyright");
+    expect(a?.textContent).toBe("© OpenStreetMap contributors");
+    expect(credit("x").html).toBe("A &lt;b&gt;&amp;&lt;/b&gt; B");
+    expect(credit(EOX).html).toBe(EOX_CREDIT);
+  });
+
+  test("the failure rule is the same for every viewer and source: at least 8 settled tiles with at least 75 % failed", () => {
+    expect([TILE_FAILURE_MIN_SETTLED, TILE_FAILURE_RATIO]).toEqual([8, 0.75]);
+  });
+
+  test("OpenStreetMap tiles failing past the threshold (any status, or none as in Safari): one Thai message per page session, the HUD flags missing imagery, no retry", async () => {
+    sources({ osm: true });
+    show({ [OSM]: { show: true, translucency: 0 } });
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    const p = a.gibs()[0].imageryProvider;
+    await p.requestImage(0, 0, 1);
+    const errors = [{ retry: true }, { retry: true, error: { statusCode: 403 } }, { retry: true, error: new Error("Failed to fetch") }, { retry: true, error: { statusCode: 404 } }];
+    // 1 ชิ้นได้ + 6 ชิ้นพลาด = 7 ชิ้น: ยังไม่ครบ 8 ชิ้น ไม่แจ้ง
+    for (let i = 0; i < 6; i++) {
+      const error = { ...errors[i % errors.length] };
+      p.errorEvent.raiseEvent(error);
+      expect(error.retry).toBe(false);
+    }
+    await Promise.resolve();
+    expect(osmWarnings()).toEqual([]);
+    expect(imageryStatus(a.viewer).topLayer?.missingRatio).toBeCloseTo(6 / 7, 12);
+    // ชิ้นที่ 8 พลาด: 7/8 ≥ 75 % = ข้อความไทยหนึ่งข้อความ ชั้นยังอยู่ (ไม่เปลี่ยนวิธีขอของ OSM) สวิตช์ไม่ถูกแตะ
+    p.errorEvent.raiseEvent({ retry: true });
+    await Promise.resolve();
+    expect(osmWarnings()).toHaveLength(1);
+    expect(osmWarnings()[0].text).toMatch(/[฀-๿]/);
+    expect(osmWarnings()[0].text).toContain("OpenStreetMap");
+    expect(a.ids()).toEqual([OSM]);
+    expect(useImagery.getState().sources).toEqual({ ...OFF, osm: true });
+    // อีก viewer ก็พลาดเกินเกณฑ์ หรือเปิดชั้นใหม่: ไม่แจ้งซ้ำในหน้านี้
+    for (let i = 0; i < 10; i++) b.gibs()[0].imageryProvider.errorEvent.raiseEvent({ retry: true });
+    expect(imageryStatus(b.viewer).topLayer).toMatchObject({ source: "osm", missingRatio: 1 });
+    show({});
+    show({ [OSM]: { show: true, translucency: 0 } });
+    for (let i = 0; i < 10; i++) a.gibs()[0].imageryProvider.errorEvent.raiseEvent({ retry: true });
+    await Promise.resolve();
+    expect(osmWarnings()).toHaveLength(1);
+    expect(providers().every((pr) => pr.options.tileDiscardPolicy === undefined)).toBe(true);
+  });
+
+  test("OpenStreetMap below the threshold stays silent: 8 settled tiles with 5 failed (62.5 %)", async () => {
+    sources({ osm: true });
+    show({ [OSM]: { show: true, translucency: 0 } });
+    const v = fakeViewer();
+    attach(v.viewer);
+    const p = v.gibs()[0].imageryProvider;
+    for (let i = 0; i < 3; i++) await p.requestImage(0, 0, 1);
+    for (let i = 0; i < 5; i++) p.errorEvent.raiseEvent({ retry: true });
+    await Promise.resolve();
+    expect(osmWarnings()).toEqual([]);
+    expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBeCloseTo(5 / 8, 12);
   });
 
   test("the app sets no Referrer-Policy (index.html meta or server header), so tile.openstreetmap.org gets the browser's default Referer", () => {
@@ -853,6 +937,115 @@ describe("sources: Cesium ion (exclusive)", () => {
     v.gibs()[0].imageryProvider.errorEvent.raiseEvent(error);
     expect(error.retry).toBe(false);
     expect(useImagery.getState().sources.ion).toBe(true);
+  });
+
+  test("ion tiles failing past the threshold (any status, or none): one Thai message, the ion layer goes in every viewer, the others and the base come back", async () => {
+    const a = fakeViewer();
+    const b = fakeViewer();
+    attach(a.viewer);
+    attach(b.viewer);
+    sources({ gibs: true, eox: true, osm: true, ion: true });
+    ionAsset(3830182);
+    await resolveIon();
+    const p = a.gibs()[0].imageryProvider;
+    await p.requestImage(0, 0, 3);
+    const errors = [{ retry: true, error: { statusCode: 500 } }, { retry: true }, { retry: true, error: new Error("Failed to fetch") }, { retry: true, error: { statusCode: 403 } }];
+    for (let i = 0; i < 6; i++) {
+      const error = { ...errors[i % errors.length] };
+      p.errorEvent.raiseEvent(error);
+      expect(error.retry).toBe(false);
+    }
+    await Promise.resolve();
+    // 7 ชิ้น (6 พลาด): ยังไม่ถึงเกณฑ์ HUD บอกสัดส่วนจริง
+    expect(a.ids()).toEqual([ION]);
+    expect(imageryStatus(a.viewer).topLayer?.missingRatio).toBeCloseTo(6 / 7, 12);
+    expect(warnings()).toEqual([]);
+    p.errorEvent.raiseEvent({ retry: true });
+    await vi.advanceTimersByTimeAsync(0);
+    for (const v of [a, b]) {
+      expect(v.ids()).toEqual([BM, VIIRS, EOX, OSM]);
+      expect(v.base.alpha).toBe(1);
+    }
+    expect(warnings()).toHaveLength(1);
+    expect(warnings()[0].text).toMatch(/[฀-๿]/);
+    expect(warnings()[0].text).toContain("3830182");
+    expect(JSON.stringify(useMessages.getState().items)).not.toContain(TOKEN);
+    expect(getIonFailure()).toEqual({ assetId: 3830182, token: TOKEN });
+  });
+
+  test("ion below the threshold keeps the layer: 7 failed tiles alone, or 8 settled with 5 failed", async () => {
+    sources({ ion: true });
+    ionAsset(3830182);
+    const v = fakeViewer();
+    attach(v.viewer);
+    await resolveIon();
+    const p = v.gibs()[0].imageryProvider;
+    for (let i = 0; i < 7; i++) p.errorEvent.raiseEvent({ retry: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(v.ids()).toEqual([ION]);
+    expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBe(1);
+    ionAsset(2);
+    await resolveIon();
+    const q = v.gibs()[0].imageryProvider;
+    for (let i = 0; i < 3; i++) await q.requestImage(0, 0, 3);
+    for (let i = 0; i < 5; i++) q.errorEvent.raiseEvent({ retry: true, error: { statusCode: 404 } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(v.ids()).toEqual([ION]);
+    expect(imageryStatus(v.viewer).topLayer?.missingRatio).toBeCloseTo(5 / 8, 12);
+    expect(warnings()).toEqual([]);
+  });
+
+  test("our endpoint cache key is built exactly as Cesium's IonImageryProvider.fromAssetId builds it (no server option)", async () => {
+    const real = (await vi.importActual<typeof import("cesium")>("cesium")).IonImageryProvider as unknown as {
+      fromAssetId(id: number, o: object): Promise<unknown>; _endpointCache: Record<string, unknown>;
+    };
+    const fetchJson = vi.spyOn(Resource.prototype, "fetchJson").mockImplementation(() => new Promise(() => undefined)); // ไม่ต่อเน็ต
+    try {
+      const options = { accessToken: "tok-key-check" };
+      void real.fromAssetId(424242, options).catch(() => undefined);
+      expect(fetchJson).toHaveBeenCalledTimes(1);
+      const key = ionEndpointCacheKey(424242, "tok-key-check");
+      expect(Object.keys(real._endpointCache)).toContain(key);
+      delete real._endpointCache[key];
+    } finally {
+      fetchJson.mockRestore();
+    }
+  });
+
+  test.each([
+    ["the endpoint request fails", async () => void (await rejectIon(new Error("Failed to fetch")))],
+    ["its tiles fail past the threshold", async () => {
+      await resolveIon();
+      const p = currentIon().imageryProvider;
+      for (let i = 0; i < 8; i++) p.errorEvent.raiseEvent({ retry: true });
+      await vi.advanceTimersByTimeAsync(0);
+    }],
+  ])("when ion fails (%s), Cesium's cached endpoint promise is dropped, so switch off→on and None→asset make a real new attempt", async (_name, fail) => {
+    const cache = (IonImageryProvider as unknown as { _endpointCache: Record<string, unknown> })._endpointCache;
+    const key = ionEndpointCacheKey(3830182, TOKEN);
+    sources({ ion: true });
+    ionAsset(3830182);
+    viewer = fakeViewer();
+    attach(viewer.viewer);
+    cache[key] = Promise.resolve({}); // ที่ Cesium จำไว้ตอนขอครั้งแรก
+    cache["other"] = Promise.resolve({});
+    await fail();
+    expect(getIonFailure()).not.toBeNull();
+    expect(key in cache).toBe(false);
+    expect("other" in cache).toBe(true);
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(1);
+    // ปิดแล้วเปิดสวิตช์ ion: ลองใหม่จริง
+    sources({});
+    sources({ ion: true });
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(2);
+    cache[key] = Promise.resolve({});
+    await rejectIon({ statusCode: 401 });
+    expect(key in cache).toBe(false);
+    // None แล้วเลือก asset เดิม: ลองใหม่จริง
+    ionAsset(null);
+    ionAsset(3830182);
+    expect(IonImageryProvider.fromAssetId).toHaveBeenCalledTimes(3);
+    delete cache["other"];
   });
 
   test("detach while ion is shown: the ion layer goes, the base alpha comes back, and a late provider adds nothing", async () => {

@@ -70,6 +70,36 @@ describe("ionStatus", () => {
   });
 });
 
+describe("a refusal is forgotten as soon as the ion plan changes, with no viewer attached", () => {
+  test.each([
+    ["switch off", () => useImagery.setState({ sources: { gibs: false, eox: false, osm: false, ion: false } })],
+    ["None", () => useLayout.getState().setGlobeIon(null)],
+    ["another asset", () => useLayout.getState().setGlobeIon(3830183)],
+    ["another token", () => useSettings.setState({ settings: { ...SETTINGS, cesium_ion_token: "tok-2" } })],
+  ])("%s clears it and tells the listeners; going back to the same asset and token is shown (a real new attempt)", (_name, change) => {
+    setup();
+    setIonFailure({ assetId: ASSET, token: "tok-1" });
+    expect(ionStatus()).toEqual({ kind: "failed", assetId: ASSET });
+    const listener = vi.fn();
+    const off = onIonStatusChange(listener);
+    change();
+    expect(getIonFailure()).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+    off();
+    setup();
+    expect(ionStatus()).toEqual({ kind: "shown", assetId: ASSET });
+  });
+
+  test("a store change that keeps the plan (another source switch, the same token read again) keeps it", () => {
+    setup();
+    setIonFailure({ assetId: ASSET, token: "tok-1" });
+    useImagery.setState({ sources: { gibs: true, eox: false, osm: false, ion: true } });
+    useSettings.setState({ settings: { ...SETTINGS } });
+    useLayout.setState((s) => ({ globe: { ...s.globe, layers: { osm: { show: true, translucency: 0 } } } }));
+    expect(ionStatus()).toEqual({ kind: "failed", assetId: ASSET });
+  });
+});
+
 describe("onIonStatusChange", () => {
   test("listeners are told by notifyIonListeners until they unsubscribe", () => {
     const listener = vi.fn();
