@@ -4,11 +4,14 @@
   + GET/PUT /api/prefs (Preferences: ตรวจ schema ที่ prefs.py ที่เดียว) + POST /api/modules/{name}/passes (pass_service.py)
   + GET/PUT /api/hwconf (Preferences → Interfaces: วิทยุและ rotator ตรวจและเก็บที่ hwconf.py)
   + POST /api/trsp/update และ GET /api/trsp/{norad} (Edit → Update transponder data และรายการ transponder ของดาว: trsp.py)
+  + GET /api/controllers, POST /api/modules/{name}/target, /radio[/open|/close] และ /rotator[/open|/close] (Radio Control และ
+    Antenna Control: controllers.py) PUT module ที่เปลี่ยน qth หรือ satellites ขณะ controller เปิดอยู่ตอบ 409 CONTROLLER_ACTIVE
   + GET/DELETE /api/modules/{name}/skyglance (pass_service.py)
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
 - ตอนเริ่ม (start_background=True): ลบช่วงคำนวณเก่า, bootstrap (หัวข้อ 7.1) แล้วเปิด module ที่ค้างอยู่ใน session.json
-  ตอนปิด: ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT อยู่ใน session ของตัวเอง)
+  ตอนปิด: ปลด controller ทุกตัว (S, q) -> หยุด tick -> ปิด runtime ทุกตัว และ EphemManager.close() (kill GMAT ที่กำลังรัน เพราะ GMAT
+  อยู่ใน session ของตัวเอง) ขั้นที่ล้มไม่ข้ามขั้นถัดไป
 - dev: `uvicorn gpredict_web.app:app --reload --port 8740` (app สร้างเมื่อถูกอ่านครั้งแรก การ import เฉยๆ จึงไม่แตะ data จริง)
 """
 
@@ -42,7 +45,7 @@ from . import trsp
 from .bootstrap import bootstrap
 from .clock import STATES, THROTTLE_MAX, THROTTLE_MIN, ModuleClock, parse_clock_time
 from .config import MAX_SATS, NAME_RE, TLE_GROUPS, Config
-from .controllers import ControllerHub
+from .controllers import RADIO, ROTATOR, ControllerHub
 from .ephem import EphemManager
 from .errors import ApiError
 from .hwconf import HwConf, radio_to_dict, rot_to_dict
@@ -542,10 +545,14 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             app.state.startup_messages = await asyncio.to_thread(startup)
         try:
             yield
-        finally:
-            await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
-            await ticks.shutdown()
-            await asyncio.to_thread(shutdown)
+        finally:                             # ขั้นที่ล้มไม่ข้ามขั้นถัดไป: GMAT ที่ค้างต้องถูก kill เสมอ
+            try:
+                await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนหยุด tick และปิด module
+            finally:
+                try:
+                    await ticks.shutdown()
+                finally:
+                    await asyncio.to_thread(shutdown)
 
     app = FastAPI(title="Gpredict Web", lifespan=lifespan, openapi_url="/api/openapi.json", docs_url="/api/docs",
                   redoc_url=None)
@@ -681,26 +688,55 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     def get_module(name: str):
         return M.module_to_dict(store.get_module(name))
 
-    @app.put("/api/modules/{name}")
-    def put_module(name: str, body: dict = Body(...)):
+    def check_configurable(name: str, m: M.ModuleConfig) -> None:
+        """controller เปิดอยู่: ห้ามเปลี่ยนสถานี (qth) และรายชื่อดาว (satellites) ที่ controller สร้างจากมัน (spec §4.6, decision 4)
+        ค่าของ view (Ground Track, Highlight footprint, Sky track, ดาวของ Single sat, Map) ที่ core บันทึกด้วย PUT เดียวกันเปลี่ยนได้
+        เทียบกับ config ที่ runtime ใช้อยู่ ไม่ใช่ไฟล์ (ไฟล์ที่ถูกแก้ด้วยมือยังไม่ถึง runtime)"""
+        rt = hub.get(name)
+        if rt is None:                       # ไม่ได้เปิดอยู่ (controller ค้างไม่ได้): ไม่มีอะไรให้ป้องกัน
+            return
+        current = rt.module
+        for field in ("qth", "satellites"):
+            if getattr(m, field) != getattr(current, field):
+                raise ApiError("CONTROLLER_ACTIVE", 409,
+                               f"แก้สถานีหรือรายชื่อดาวของ module {name} ไม่ได้ขณะที่ Radio Control หรือ Antenna Control เปิดอยู่ "
+                               "ให้ปิด Radio Control และ Antenna Control ของ module นี้ก่อน แล้วลองบันทึกใหม่", field)
+
+    def put_module_sync(name: str, body: dict, controller_active: bool) -> dict:
         if body.get("name") != name:
             raise ApiError("MODULE_INVALID", 422, f"ชื่อ module (name) ต้องตรงกับชื่อใน URL ({name})", "name")
         _check_case_clash(store.list_modules(), name, "MODULE_INVALID", "name", "module")
         m = M.module_from_dict(body, set(store.qth_names()), satdb.norads())
+        if controller_active:
+            check_configurable(name, m)
         store.put_module(m)
         hub.reload(name)                     # เปิดอยู่: tick ถัดไปของทุกแท็บใช้ค่าใหม่ (ไม่ได้เปิด: ไม่ทำอะไร)
         clear_startup_messages()
         return M.module_to_dict(m)
+
+    @app.put("/api/modules/{name}")
+    async def put_module(name: str, body: dict = Body(...)):
+        async with controllers.hold(name):   # controller ของ module นี้ไม่ถูกเปิดแทรกระหว่างตรวจกับเขียน
+            return await asyncio.to_thread(put_module_sync, name, body, controllers.active(name))
 
     def delete_module_sync(name: str) -> None:
         hub.close(name)                      # เปิดอยู่: ปิดก่อน
         with session_lock:
             store.delete_module(name)        # เอาออกจาก session ด้วย
 
+    async def retire_module[T](name: str, work: Callable[[], T]) -> T:
+        """ปิดหรือลบ module: ปลด controller ก่อน (S, q ถึงอุปกรณ์ขณะ runtime ยังอยู่) ทำ work (ปิด runtime) แล้วปิด WebSocket ของ module
+        controller ที่อีกแท็บเปิดแทรกระหว่าง work (hub.close รอ tick ที่กำลังคำนวณได้หลายวินาที) ถูกปิดด้วยการปิดครั้งที่สอง
+        ไม่ให้ค้างอยู่กับ module ที่ปิดไปแล้ว"""
+        await controllers.close_module(name)
+        result = await asyncio.to_thread(work)
+        await controllers.close_module(name)
+        await ticks.end(name)
+        return result
+
     @app.delete("/api/modules/{name}", status_code=204)
     async def delete_module(name: str):
-        await asyncio.to_thread(delete_module_sync, name)
-        await ticks.end(name)
+        await retire_module(name, lambda: delete_module_sync(name))
         return Response(status_code=204)
 
     @app.post("/api/modules/{name}/open")
@@ -718,9 +754,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
 
     @app.post("/api/modules/{name}/close")
     async def close_module(name: str):
-        opened = await asyncio.to_thread(close_module_sync, name)
-        await ticks.end(name)
-        return {"open": opened}
+        return {"open": await retire_module(name, lambda: close_module_sync(name))}
 
     @app.post("/api/modules/{name}/clone")
     def clone_module(name: str, body: dict = Body(...)):
@@ -880,6 +914,44 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 raise ApiError("HWCONF_INVALID", 422, f"รายการ {key} ต้องเป็นรายการของ object (ส่งมาทั้งชุดที่จะเก็บ)", key)
         hwconf.replace(radios, rotators)
         return _hwconf_dict(hwconf)
+
+    # ---------------- Radio Control และ Antenna Control (spec §8)
+
+    @app.get("/api/controllers")
+    async def list_controllers():
+        """controller ที่เปิดอยู่ทุก module (หน้าเว็บอ่านตอนเปิดหน้าเพื่อคืนหน้าต่างที่ยังเปิดอยู่ใน server)"""
+        return {"open": controllers.open_list()}
+
+    @app.post("/api/modules/{name}/target", status_code=204)
+    async def set_target(name: str, body: dict = Body(...)):
+        """ดาวเป้าหมายของ module เปลี่ยน (Select satellite, คลิกเลือกใน view, Autotrack): controller ที่เปิดอยู่เลือกดาวตาม"""
+        norad = body.get("norad")
+        if isinstance(norad, bool) or not isinstance(norad, int):
+            raise ApiError("CONTROLLER_INVALID", 422, "ดาวเป้าหมาย (norad) ต้องเป็นจำนวนเต็ม", "norad")
+        await controllers.set_target(name, norad)
+        return Response(status_code=204)
+
+    def controller_routes(kind: str) -> None:
+        """เปิด ปิด และสั่งงาน controller ชนิดหนึ่ง (radio หรือ rotator) งานจริงอยู่ใน task ของ ControllerHub (shield): คำขอที่ถูกยกเลิก
+        ไม่ตัดการปลด Engage กลางทาง"""
+        base = f"/api/modules/{{name}}/{kind}"
+
+        @app.post(f"{base}/open")
+        async def open_controller(name: str):
+            await controllers.open(name, kind)
+            return {"open": controllers.open_list()}
+
+        @app.post(f"{base}/close")
+        async def close_controller(name: str):
+            await controllers.close(name, kind)
+            return {"open": controllers.open_list()}
+
+        @app.post(base)
+        async def act_controller(name: str, body: dict = Body(...)):
+            return {kind: _finite(await controllers.act(name, kind, body))}
+
+    controller_routes(RADIO)
+    controller_routes(ROTATOR)
 
     # ---------------- อื่นๆ
 

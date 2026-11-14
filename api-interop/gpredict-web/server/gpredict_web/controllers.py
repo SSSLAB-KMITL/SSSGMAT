@@ -6,6 +6,7 @@
 - ทุกเมธอดถูกเรียกใน event loop เดียวกับ controller งานที่ต้องรอ lock ของ runtime (รายชื่อดาว, ตรวจ NORAD) ทำใน thread
   ไม่ถือ lock รวมของ hub ระหว่างรอ act/close ของ controller (engage off อาจรอ rigctld ที่ตายหลายวินาที)
   open/close/close_module/shutdown ของ module เดียวกันทำทีละงานด้วย lock ประจำ module (สร้างเมื่อมีคนใช้ ลบเมื่อไม่มีใครใช้)
+  hold(module) ถือ lock นั้นให้ผู้เรียกที่ต้องไม่ให้ controller ของ module เปิดหรือปิดแทรก (PUT module ตรวจ active() แล้วเขียน)
 - open, close, close_module, act และ shutdown ทำใน task ของตัวเองแล้ว shield: คำขอที่ถูกยกเลิก (browser ตัดการเชื่อมต่อ) ไม่ตัด
   การปลด Engage กลางทาง (ยกเลิกระหว่างรอ timer task จะยกเลิก task นั้นด้วยแล้ว S/q ไม่ถูกส่ง)
 - act ใช้ controller ที่ลงทะเบียนอยู่ตอนเริ่มเท่านั้น close เอา controller ออกก่อนรอให้ปิด act ที่มาทีหลังจึงได้ 404 ไม่ถูกเรียกหลัง close
@@ -133,6 +134,13 @@ class ControllerHub:
         """server ปิด: ไม่รับการเปิดใหม่ แล้วปิด controller ทุกตัว (รวมตัวที่กำลังเปิดอยู่)"""
         self._stopped = True
         await self._shielded(self._shutdown())
+
+    @asynccontextmanager
+    async def hold(self, module: str) -> AsyncIterator[None]:
+        """ถือ lock ประจำ module: open/close ของ module นี้รอจนออกจาก with ใช้กับ PUT module ที่ตรวจ active() แล้วเขียน
+        (ไม่มี controller เปิดแทรกหลังตรวจ) อย่า await open/close/close_module ของ module เดียวกันข้างใน (lock ไม่ reentrant)"""
+        async with self._serial(module):
+            yield
 
     # ---------------------------------------------------------------- tick
 

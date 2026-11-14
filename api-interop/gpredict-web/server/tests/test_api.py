@@ -32,6 +32,7 @@ from tests.helpers import TEST_HOSTS, FakeNow, half_pass_s, temp_config
 from tests.test_bootstrap import SAMPLE, _Resp
 from tests.test_pass_service import GEO, HIDDEN, WOBBLE, PassPropagate, is_day_job, pass_records
 from tests.test_runtime import ISO_MS, NORADS, ORIGIN, OTHER, T0, OrbitPropagate, dusk_station, iso, peak, record
+from tests.fake_hamlib import FakeHamlib
 from tests.test_trsp import FakeSatnogs
 
 ERROR_KEYS = ["code", "level", "text", "object"]
@@ -53,6 +54,41 @@ class GroupOpener:
         if group in self.bodies:
             return _Resp(self.bodies[group])
         raise URLError("ไม่มีเน็ตใน test")
+
+
+class HamlibThread:
+    """rigctld/rotctld ปลอม (FakeHamlib) ใน event loop และ thread ของตัวเอง: อยู่ได้นอกเหนือ loop ของ TestClient
+    จึงเห็นคำสั่ง S และ q ที่ส่งตอน server ปิด (หลังออกจาก with TestClient)"""
+
+    def __init__(self, testcase: unittest.TestCase):
+        self.fake = FakeHamlib()
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+        testcase.addCleanup(self.close)
+        self.port = self._run(self.fake.start())
+
+    @property
+    def log(self) -> list[bytes]:
+        return list(self.fake.log)
+
+    def _run(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(5)
+
+    def close(self) -> None:
+        self._run(self.fake.stop())
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(5)
+        self._loop.close()
+
+
+def wait_until(predicate, timeout: float = 3.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
 
 
 class ApiTestBase(unittest.TestCase):
@@ -959,6 +995,388 @@ class HwconfApiTest(ApiTestBase):
         self.assertIn("BROKEN.rig.json", "\n".join(logs.output))
 
 
+# ---------------------------------------------------------------- Radio Control และ Antenna Control (Task 9)
+
+LINEAR = {"name": "Mode U/V linear", "up_low": 435_000_000, "up_high": 435_100_000,
+          "down_low": 145_900_000, "down_high": 146_000_000, "invert": False, "mode": "SSB", "baud": 0.0}
+BEACON = {"name": "Beacon", "up_low": 0, "up_high": 0, "down_low": 145_800_000, "down_high": 145_800_000,
+          "invert": False, "mode": "CW", "baud": 0.0}
+INVERTING = {**LINEAR, "name": "Mode U/V inverting", "invert": True}
+ISS, AO91, SAT_BY_NAME = NORADS[0], NORADS[1], NORADS[2]          # SAT-7530 มาก่อนในลำดับชื่อ: เป้าหมายตั้งต้นของ controller
+RX_ONLY, TX_ONLY, FT817_MANUAL = 0, 1, 5
+
+
+class ControllerApiTest(ApiTestBase):
+    """route ของ controller ด้วย rigctld/rotctld ปลอม (HamlibThread) ControllerHub อยู่ใน event loop ของ app (portal ของ TestClient)"""
+
+    def setUp(self):
+        super().setUp()
+        self.rig = HamlibThread(self)
+        self.rot = HamlibThread(self)
+        self.put_module(refresh={"data_ms": 100})
+        trsp = self.cfg.data_dir / "trsp"
+        trsp.mkdir(parents=True, exist_ok=True)
+        (trsp / f"{ISS}.json").write_text(json.dumps([LINEAR, BEACON, INVERTING]), encoding="utf-8")
+
+    def radio(self, name: str, kind: int = RX_ONLY) -> dict:
+        return {**HW_RADIO, "name": name, "Port": self.rig.port, "Type": kind, "PTT": 0}
+
+    def rotator(self, name: str) -> dict:
+        return {**HW_ROTATOR, "name": name, "Port": self.rot.port}
+
+    def put_hw(self, radios=(), rotators=(), cycles: dict[str, int] | None = None) -> None:
+        """เก็บอุปกรณ์ทางหน้า Preferences (PUT /api/hwconf ไม่รับ Cycle: ค่านั้นเป็นของหน้าต่างควบคุม) แล้วตั้ง Cycle ของแต่ละชื่อ"""
+        r = self.client.put("/api/hwconf", json={"radios": list(radios), "rotators": list(rotators)})
+        self.assertEqual(r.status_code, 200, r.text)
+        hwconf = self.app.state.hwconf
+        for name, ms in (cycles or {}).items():
+            if hwconf.radio(name) is not None:
+                hwconf.save_radio_cycle(name, ms)
+            else:
+                hwconf.save_rotator_runtime(name, ms, 5.0)
+
+    def post(self, path: str, body=None):
+        return self.client.post(f"/api/modules/M/{path}", json=body)
+
+    def open_ctl(self, kind: str) -> list[dict]:
+        r = self.post(f"{kind}/open")
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()["open"]
+
+    def act(self, kind: str, **body) -> dict:
+        r = self.post(kind, body)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(list(r.json()), [kind])
+        return r.json()[kind]
+
+    def listed(self) -> list[dict]:
+        r = self.client.get("/api/controllers")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(list(r.json()), ["open"])
+        return r.json()["open"]
+
+    # ---------------------------------------------------------------- เปิด ปิด รายการ
+
+    def test_open_close_and_list(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.assertEqual(self.listed(), [])
+        self.open_module()
+        self.assertEqual(self.open_ctl("radio"), [{"module": "M", "kind": "radio"}])
+        both = [{"module": "M", "kind": "radio"}, {"module": "M", "kind": "rotator"}]
+        self.assertEqual(self.open_ctl("rotator"), both)
+        self.assertEqual(self.open_ctl("radio"), both)                          # เปิดซ้ำคงเดิม
+        self.assertEqual(self.listed(), both)
+        r = self.post("radio/close")
+        self.assertEqual((r.status_code, r.json()), (200, {"open": [{"module": "M", "kind": "rotator"}]}))
+        self.assertEqual(self.post("radio/close").json(), {"open": [{"module": "M", "kind": "rotator"}]})    # ปิดซ้ำได้
+        self.assertEqual(self.post("rotator/close").json(), {"open": []})
+        self.assertEqual(self.listed(), [])
+
+    def test_open_without_config_is_409(self):
+        self.open_module()
+        self.assert_error(self.post("radio/open"), 409, "NO_RADIO_CONFIG")
+        self.assert_error(self.post("rotator/open"), 409, "NO_ROTATOR_CONFIG")
+        self.put_hw([self.radio("A")])                                            # มีวิทยุแต่ไม่มี rotator
+        self.assertEqual(self.open_ctl("radio"), [{"module": "M", "kind": "radio"}])
+        self.assert_error(self.post("rotator/open"), 409, "NO_ROTATOR_CONFIG")
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "radio"}])
+
+    def test_open_module_not_open_is_404(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        for kind in ("radio", "rotator"):
+            with self.subTest(kind=kind):
+                self.assert_error(self.post(f"{kind}/open"), 404, "NOT_FOUND")                 # module มีแต่ไม่ได้เปิด
+                self.assert_error(self.client.post(f"/api/modules/Nope/{kind}/open"), 404, "NOT_FOUND")
+        self.assertEqual(self.listed(), [])
+
+    # ---------------------------------------------------------------- action
+
+    def test_every_radio_action(self):
+        """ทุก action ของ spec §8 ตอบ 200 พร้อม snapshot ใหม่ และ engage/ptt_toggle ส่งคำสั่งถึง rigctld จริง"""
+        self.put_hw([self.radio("A"), self.radio("B"), self.radio("C", TX_ONLY), self.radio("F", FT817_MANUAL)],
+                    cycles={"B": 500, "F": 300})
+        self.open_module()
+        self.open_ctl("radio")
+        snap = self.act("radio", action="track", on=True)
+        self.assertEqual((snap["track"], snap["lock"], snap["engaged"], snap["norad"]), (True, False, False, SAT_BY_NAME))
+        self.assertEqual((snap["devices"], snap["device1"], snap["device2"]), (["A", "B", "C", "F"], "A", "None"))
+        self.assertEqual((snap["devices2"][0], sorted(snap["devices2"][1:])), ("None", ["C", "F"]))   # ไม่รวม RX only
+        snap = self.act("radio", action="satellite", norad=ISS)                  # เลือกดาวแล้วจูนไป transponder แรก
+        self.assertEqual((snap["norad"], snap["transponders"], snap["transponder"]),
+                         (ISS, ["Mode U/V linear", "Beacon", "Mode U/V inverting"], 0))
+        self.assertEqual((snap["down"]["sat_hz"], snap["up"]["sat_hz"]), (145_950_000, 435_050_000))
+        snap = self.act("radio", action="transponder", index=1)
+        self.assertEqual((snap["transponder"], snap["down"]["sat_hz"]), (1, 145_800_000))
+        snap = self.act("radio", action="freq", link="down", hz=145_810_000)
+        self.assertEqual(snap["down"]["sat_hz"], 145_810_000)
+        snap = self.act("radio", action="freq", link="up", hz=435_020_000)
+        self.assertEqual(snap["up"]["sat_hz"], 435_020_000)
+        snap = self.act("radio", action="tune")
+        self.assertEqual(snap["down"]["sat_hz"], 145_800_000)
+        snap = self.act("radio", action="lock", on=True)
+        self.assertTrue(snap["lock"])
+        snap = self.act("radio", action="lock", on=False)
+        self.assertFalse(snap["lock"])
+        snap = self.act("radio", action="device1", name="B")
+        self.assertEqual((snap["device1"], snap["cycle_ms"]), ("B", 500))        # Cycle ตามไฟล์ของอุปกรณ์
+        snap = self.act("radio", action="device2", name="C")
+        self.assertEqual(snap["device2"], "C")
+        snap = self.act("radio", action="device2", name="None")
+        self.assertEqual(snap["device2"], "None")
+        snap = self.act("radio", action="cycle", ms=700)
+        self.assertEqual(snap["cycle_ms"], 700)
+        snap = self.act("radio", action="device1", name="F")
+        self.assertEqual((snap["device1"], snap["space_ptt"], snap["cycle_ms"]), ("F", True, 300))
+        snap = self.act("radio", action="engage", on=True)
+        self.assertTrue(snap["engaged"])
+        self.assertTrue(wait_until(lambda: any(c.startswith(b"F") for c in self.rig.log)))        # ส่งความถี่แล้ว
+        self.assert_error(self.post("radio", {"action": "device1", "name": "A"}), 422, "CONTROLLER_INVALID", "name")
+        self.assertEqual(self.act("radio", action="ptt_toggle")["engaged"], True)
+        self.assertTrue(wait_until(lambda: b"T 1\n" in self.rig.log))              # SPACE: PTT เปิด
+        snap = self.act("radio", action="engage", on=False)
+        self.assertFalse(snap["engaged"])
+        self.assertTrue(wait_until(lambda: self.rig.log[-1:] == [b"q\n"]))
+
+    def test_every_rotator_action(self):
+        self.put_hw(rotators=[self.rotator("R1"), self.rotator("R2")], cycles={"R2": 400})
+        self.open_module()
+        self.open_ctl("rotator")
+        snap = self.act("rotator", action="satellite", norad=AO91)
+        self.assertEqual((snap["norad"], snap["device"], snap["devices"]), (AO91, "R1", ["R1", "R2"]))
+        snap = self.act("rotator", action="device", name="R2")
+        self.assertEqual((snap["device"], snap["cycle_ms"]), ("R2", 400))
+        snap = self.act("rotator", action="cycle", ms=700)
+        self.assertEqual(snap["cycle_ms"], 700)
+        snap = self.act("rotator", action="threshold", deg=2.5)
+        self.assertEqual(snap["threshold_deg"], 2.5)
+        snap = self.act("rotator", action="az", deg=90)
+        self.assertEqual(snap["knob"]["az"], 90)
+        snap = self.act("rotator", action="el", deg=30)
+        self.assertEqual((snap["knob"], snap["setpoint"]), ({"az": 90, "el": 30}, {"az": 90, "el": 30}))
+        snap = self.act("rotator", action="monitor", on=True)
+        self.assertEqual((snap["monitor"], snap["knobs_enabled"]), (True, False))
+        self.assert_error(self.post("rotator", {"action": "track", "on": True}), 422, "CONTROLLER_INVALID", "on")
+        snap = self.act("rotator", action="monitor", on=False)
+        self.assertEqual((snap["monitor"], snap["knobs_enabled"]), (False, True))
+        snap = self.act("rotator", action="track", on=True)
+        self.assertEqual((snap["track"], snap["monitor_enabled"], snap["knobs_enabled"]), (True, False, False))
+        snap = self.act("rotator", action="track", on=False)
+        self.assertEqual((snap["track"], snap["monitor_enabled"]), (False, True))
+        snap = self.act("rotator", action="engage", on=True)
+        self.assertTrue(snap["engaged"])
+        self.assertTrue(wait_until(lambda: b"p\n" in self.rot.log))                # อ่านตำแหน่งแล้ว
+        snap = self.act("rotator", action="engage", on=False)
+        self.assertFalse(snap["engaged"])
+        self.assertTrue(wait_until(lambda: self.rot.log[-1:] == [b"q\n"]))
+        self.assertEqual(self.rot.log[-2:], [b"S\n", b"q\n"])                      # หยุด rotator แล้วปิดการเชื่อมต่อ
+
+    def test_invalid_action_is_422(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        self.open_ctl("radio")
+        self.open_ctl("rotator")
+        self.act("radio", action="cycle", ms=700)
+        self.act("rotator", action="threshold", deg=2.5)
+        radio_bad = [{"action": "fly"}, {}, {"action": 5}, {"action": "engage"}, {"action": "engage", "on": "yes"},
+                     {"action": "freq", "link": "down", "hz": -1}, {"action": "freq", "link": "down", "hz": 10_000_000_000},
+                     {"action": "freq", "link": "side", "hz": 145_000_000}, {"action": "freq", "link": "up"},
+                     {"action": "cycle", "ms": 5}, {"action": "cycle", "ms": 30001}, {"action": "cycle", "ms": "700"},
+                     {"action": "satellite", "norad": 99999}, {"action": "satellite", "norad": "25544"},
+                     {"action": "transponder", "index": 0}, {"action": "device1", "name": "Nope"},
+                     {"action": "device2", "name": "A"}]
+        rotator_bad = [{"action": "fly"}, {}, {"action": "threshold", "deg": 60}, {"action": "threshold", "deg": 0},
+                       {"action": "cycle", "ms": 5}, {"action": "az", "deg": "north"}, {"action": "el"},
+                       {"action": "device", "name": "Nope"}, {"action": "satellite", "norad": 99999},
+                       {"action": "monitor", "on": 1}]
+        for kind, bodies in (("radio", radio_bad), ("rotator", rotator_bad)):
+            for body in bodies:
+                with self.subTest(kind=kind, body=body):
+                    self.assert_error(self.post(kind, body), 422, "CONTROLLER_INVALID")
+        self.assert_error(self.post("radio", [1]), 422, "REQUEST_INVALID", None)            # ไม่ใช่ JSON object
+        self.assertEqual(self.act("radio", action="track", on=False)["cycle_ms"], 700)       # ไม่มีอะไรเปลี่ยน
+        self.assertEqual(self.act("rotator", action="track", on=False)["threshold_deg"], 2.5)
+
+    def test_action_on_closed_controller_is_404(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        for kind in ("radio", "rotator"):
+            with self.subTest(kind=kind):
+                self.assert_error(self.post(kind, {"action": "track", "on": True}), 404, "NOT_FOUND")    # ยังไม่เปิด
+                self.open_ctl(kind)
+                self.act(kind, action="track", on=True)
+                self.post(f"{kind}/close")
+                self.assert_error(self.post(kind, {"action": "track", "on": False}), 404, "NOT_FOUND")  # ปิดแล้ว
+                self.assert_error(self.post(kind, {"action": "fly"}), 404, "NOT_FOUND")                  # 404 มาก่อน 422
+        self.assert_error(self.client.post("/api/modules/Nope/radio", json={"action": "tune"}), 404, "NOT_FOUND")
+
+    # ---------------------------------------------------------------- เป้าหมาย
+
+    def test_target_route(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        r = self.post("target", {"norad": AO91})
+        self.assertEqual((r.status_code, r.content), (204, b""))
+        self.open_ctl("radio")                                                      # เปิดตามเป้าหมายของ module
+        self.open_ctl("rotator")
+        self.assertEqual(self.act("radio", action="track", on=False)["norad"], AO91)
+        self.assertEqual(self.act("rotator", action="track", on=False)["norad"], AO91)
+        self.assertEqual(self.post("target", {"norad": ISS}).status_code, 204)      # controller ที่เปิดอยู่เปลี่ยนดาวตาม
+        self.assertEqual(self.act("radio", action="track", on=False)["norad"], ISS)
+        self.assertEqual(self.act("rotator", action="track", on=False)["norad"], ISS)
+        for bad in ({}, {"norad": "25544"}, {"norad": 25544.5}, {"norad": True}, {"norad": None}, {"norad": [ISS]}):
+            with self.subTest(body=bad):
+                self.assert_error(self.post("target", bad), 422, "CONTROLLER_INVALID", "norad")
+        self.assert_error(self.post("target", [ISS]), 422, "REQUEST_INVALID", None)
+        self.assert_error(self.post("target", {"norad": 99999}), 404, "NOT_FOUND", "99999")      # ไม่อยู่ใน module
+        self.assert_error(self.client.post("/api/modules/Nope/target", json={"norad": ISS}), 404, "NOT_FOUND")
+        self.assertEqual(self.act("radio", action="track", on=False)["norad"], ISS)             # เป้าหมายเดิมคงอยู่
+
+    def test_target_on_module_not_open_is_404(self):
+        self.assert_error(self.post("target", {"norad": ISS}), 404, "NOT_FOUND")
+
+    # ---------------------------------------------------------------- Configure ถูกห้ามขณะ controller เปิดอยู่
+
+    def test_configure_blocked_while_active(self):
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.put_module(single={"selected": ISS})
+        self.open_module()
+        file = self.cfg.data_dir / "modules" / "M.json"
+        before = file.read_bytes()
+        for kind in ("radio", "rotator"):                                           # controller ตัวเดียวก็ห้าม
+            with self.subTest(kind=kind):
+                self.open_ctl(kind)
+                for field, body in (("satellites", self.module_body(sats=NORADS[:2])),
+                                    ("satellites", self.module_body(sats=NORADS[::-1])),       # ลำดับก็นับว่าเปลี่ยน
+                                    ("qth", self.module_body(qth="OTHER")),
+                                    ("qth", self.module_body(qth=None)),
+                                    ("qth", self.module_body(qth="OTHER", sats=NORADS[:2]))):
+                    r = self.client.put("/api/modules/M", json=body)
+                    err = self.assert_error(r, 409, "CONTROLLER_ACTIVE", field)
+                    self.assertIn("Radio Control", err["text"])
+                    self.assertIn("Antenna Control", err["text"])
+                self.assertEqual(file.read_bytes(), before)                         # ไฟล์ module ไม่เปลี่ยน
+                self.assertEqual(self.hub.get("M").module.qth, "ORIGIN")
+                self.post(f"{kind}/close")
+        self.put_module(sats=NORADS[:2])                                            # ปิด controller แล้วแก้ได้
+        self.assertEqual(self.store.get_module("M").satellites, list(NORADS[:2]))
+
+    def test_configure_validation_comes_before_conflict(self):
+        self.put_hw([self.radio("A")])
+        self.put_module()
+        self.open_module()
+        self.open_ctl("radio")
+        self.assert_error(self.client.put("/api/modules/M", json=self.module_body(qth="NOPE")), 422, "MODULE_INVALID", "qth")
+
+    def test_put_module_view_change_allowed_while_active(self):
+        """Review Focus 2: เลือกดาวใน Map, Ground Track, Autotrack (PUT module ของ core) บันทึกได้ขณะ controller เปิดอยู่"""
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.put_module()
+        self.open_module()
+        self.open_ctl("radio")
+        self.open_ctl("rotator")
+        file = self.cfg.data_dir / "modules" / "M.json"
+        before = file.read_bytes()
+        body = self.put_module(ground_track=[ISS], single={"selected": AO91}, map={"track_orbits": 5})
+        self.assertNotEqual(file.read_bytes(), before)
+        saved = self.store.get_module("M")
+        self.assertEqual((saved.ground_track, saved.single["selected"], saved.map["track_orbits"]), ([ISS], AO91, 5))
+        self.assertEqual((body["ground_track"], body["single"]["selected"], body["map"]["track_orbits"]), ([ISS], AO91, 5))
+        self.put_module(sats=NORADS, qth="ORIGIN", ground_track=[], footprint_off=[ISS], sky_track=[AO91])    # ค่าเดิมของ qth และดาว
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "radio"}, {"module": "M", "kind": "rotator"}])
+
+    # ---------------------------------------------------------------- อายุของ controller กับ module
+
+    def engage_both(self) -> None:
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.open_module()
+        self.open_ctl("radio")
+        self.open_ctl("rotator")
+        self.act("radio", action="engage", on=True)
+        self.act("rotator", action="engage", on=True)
+        self.assertTrue(wait_until(lambda: self.rig.log and b"p\n" in self.rot.log))      # ต่ออุปกรณ์ทั้งสองแล้ว
+
+    def assert_disengaged(self) -> None:
+        self.assertEqual(self.listed(), [])
+        self.assertTrue(wait_until(lambda: self.rig.log[-1:] == [b"q\n"] and self.rot.log[-1:] == [b"q\n"]))
+        self.assertEqual(self.rot.log[-2:], [b"S\n", b"q\n"])
+
+    def test_close_module_closes_controllers(self):
+        self.engage_both()
+        self.assertEqual(self.client.post("/api/modules/M/close").json(), {"open": []})
+        self.assert_disengaged()
+        self.assertIsNone(self.hub.get("M"))
+
+    def test_close_module_forgets_target(self):
+        self.put_hw([self.radio("A")])
+        self.open_module()
+        self.assertEqual(self.post("target", {"norad": AO91}).status_code, 204)
+        self.assertEqual(self.client.post("/api/modules/M/close").status_code, 200)
+        self.open_module()
+        self.open_ctl("radio")
+        self.assertEqual(self.act("radio", action="track", on=False)["norad"], SAT_BY_NAME)     # เป้าหมายเก่าถูกลืม
+
+    def test_delete_module_closes_controllers(self):
+        self.engage_both()
+        self.assertEqual(self.client.delete("/api/modules/M").status_code, 204)
+        self.assert_disengaged()
+        self.assertIsNone(self.hub.get("M"))
+        self.assertEqual(self.store.list_modules(), [])
+
+    def test_close_unknown_module_is_404_and_changes_no_controller(self):
+        self.put_hw([self.radio("A")])
+        self.open_module()
+        self.open_ctl("radio")
+        self.assert_error(self.client.post("/api/modules/Nope/close"), 404, "NOT_FOUND", "Nope")
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "radio"}])
+
+    def test_closing_one_module_keeps_the_other_modules_controllers(self):
+        self.put_hw([self.radio("A")])
+        self.put_module("N")
+        self.open_module("M")
+        self.open_module("N")
+        self.open_ctl("radio")
+        self.assertEqual(self.client.post("/api/modules/N/radio/open").status_code, 200)
+        self.assertEqual(self.client.post("/api/modules/N/close").json(), {"open": ["M"]})
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "radio"}])
+
+    def assert_controller_opened_during_retire_is_closed(self, retire) -> None:
+        """อีกแท็บเปิด controller หลังที่ route ปิด controller รอบแรกแล้ว แต่ก่อน hub.close ของ module เสร็จ: ต้องไม่ค้างอยู่"""
+        self.put_hw([self.radio("A")])
+        self.open_module()
+        real_close = self.hub.close
+
+        def close_after_another_tab_opens(name):
+            self.client.portal.call(self.app.state.controllers.open, name, "radio")
+            real_close(name)
+
+        with mock.patch.object(self.hub, "close", close_after_another_tab_opens):
+            retire()
+        self.assertEqual(self.listed(), [])
+        self.assertIsNone(self.hub.get("M"))
+
+    def test_controller_opened_while_module_closes_is_closed(self):
+        self.assert_controller_opened_during_retire_is_closed(lambda: self.client.post("/api/modules/M/close"))
+
+    def test_controller_opened_while_module_is_deleted_is_closed(self):
+        self.assert_controller_opened_during_retire_is_closed(lambda: self.client.delete("/api/modules/M"))
+
+    def test_shutdown_disengages(self):
+        """ออกจาก TestClient context (lifespan จบ): ปลด Engage ก่อนปิด server rotator ได้ S แล้ว q"""
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        app = self.make_app()
+        with TestClient(app) as client:
+            self.assertEqual(client.post("/api/modules/M/open").status_code, 200)
+            self.ephem.drain()
+            for kind in ("radio", "rotator"):
+                self.assertEqual(client.post(f"/api/modules/M/{kind}/open").status_code, 200)
+                self.assertEqual(client.post(f"/api/modules/M/{kind}", json={"action": "engage", "on": True}).status_code, 200)
+            self.assertTrue(wait_until(lambda: self.rig.log and b"p\n" in self.rot.log))
+            self.assertNotEqual(self.rot.log[-1:], [b"q\n"])                          # ยังไม่ปลด
+        self.assertTrue(wait_until(lambda: self.rig.log[-1:] == [b"q\n"] and self.rot.log[-1:] == [b"q\n"]))
+        self.assertEqual(self.rot.log[-2:], [b"S\n", b"q\n"])
+        self.assertEqual(app.state.controllers.open_list(), [])
+
+
 # ---------------------------------------------------------------- Pass predictions
 
 PASS_KEYS = ["orbit", "aos", "tca", "los", "max_el", "aos_az", "max_el_az", "los_az", "vis", "rows"]
@@ -1477,6 +1895,55 @@ class LifespanTest(ApiTestBase):
             close.assert_called_once_with()
         self.assertTrue(rt.closed)
         self.assertEqual(self.store.session(), ["Amateur"])                  # ปิด server ไม่ใช่ปิด module: เปิดค้างไว้ครั้งหน้า
+
+    def shutdown_steps(self, controllers_fail: bool) -> tuple[list[str], object]:
+        """เริ่มแล้วปิด app (มี module Amateur เปิดอยู่) คืนลำดับขั้นตอนตอนปิด และ runtime ของ Amateur
+        controllers.shutdown พังเมื่อ controllers_fail (RuntimeError ส่งออกจาก with TestClient)"""
+        self.opener.bodies["amateur"] = json.dumps(SAMPLE).encode("utf-8")
+        app = self.make_app(start_background=True)
+        controllers, ticks, hub = app.state.controllers, app.state.ticks, app.state.hub
+        steps: list[str] = []
+        real_controllers, real_ticks, real_hub, real_ephem = controllers.shutdown, ticks.shutdown, hub.close, self.ephem.close
+
+        async def controllers_shutdown():
+            steps.append("controllers")
+            if controllers_fail:
+                raise RuntimeError("ปิด controller ไม่สำเร็จ")
+            await real_controllers()
+
+        async def ticks_shutdown():
+            steps.append("ticks")
+            await real_ticks()
+
+        def hub_close(name):
+            steps.append(f"hub:{name}")
+            real_hub(name)
+
+        def ephem_close():
+            steps.append("ephem")
+            real_ephem()
+
+        with (mock.patch.object(controllers, "shutdown", controllers_shutdown), mock.patch.object(ticks, "shutdown", ticks_shutdown),
+              mock.patch.object(hub, "close", hub_close), mock.patch.object(self.ephem, "close", ephem_close)):
+            if controllers_fail:
+                with self.assertRaisesRegex(RuntimeError, "ปิด controller ไม่สำเร็จ"):
+                    with TestClient(app):
+                        rt = hub.get("Amateur")
+            else:
+                with TestClient(app):
+                    rt = hub.get("Amateur")
+        return steps, rt
+
+    def test_shutdown_order_is_controllers_ticks_hub_ephem(self):
+        steps, rt = self.shutdown_steps(controllers_fail=False)
+        self.assertEqual(steps, ["controllers", "ticks", "hub:Amateur", "ephem"])
+        self.assertTrue(rt.closed)
+
+    def test_shutdown_continues_when_controllers_fail(self):
+        """controllers.shutdown พัง: ticks, runtime ของ module และ EphemManager (kill GMAT) ยังถูกปิด"""
+        steps, rt = self.shutdown_steps(controllers_fail=True)
+        self.assertEqual(steps, ["controllers", "ticks", "hub:Amateur", "ephem"])
+        self.assertTrue(rt.closed)
 
     def test_no_background_work_without_start_background(self):
         with mock.patch.object(self.ephem, "prune") as prune:

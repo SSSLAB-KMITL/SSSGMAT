@@ -123,6 +123,23 @@ class ControllerHubTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.controllers.active("N"))
         self.assertEqual(self.woken, ["M"])                                  # producer ของ module เริ่มแม้ไม่มี socket
 
+    async def test_hold_blocks_open_and_close_until_released(self):
+        # PUT module ตรวจ active() แล้วเขียนใต้ hold: controller ไม่ถูกเปิดหรือปิดแทรกระหว่างนั้น
+        self.write_radio()
+        async with self.controllers.hold("M"):
+            opening = asyncio.create_task(self.controllers.open("M", "radio"))
+            await asyncio.sleep(0.05)
+            self.assertFalse(self.controllers.active("M"))
+            self.assertFalse(opening.done())
+        await opening
+        self.assertTrue(self.controllers.active("M"))
+        async with self.controllers.hold("M"):
+            closing = asyncio.create_task(self.controllers.close("M", "radio"))
+            await asyncio.sleep(0.05)
+            self.assertTrue(self.controllers.active("M"))
+        await closing
+        self.assertFalse(self.controllers.active("M"))
+
     async def test_initial_target(self):
         self.write_radio()
         self.write_rotator()
