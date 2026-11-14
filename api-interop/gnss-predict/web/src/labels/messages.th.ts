@@ -263,7 +263,6 @@ const MESSAGES = {
   "report.needsAccessDeclined": "ยังไม่ได้คำนวณ เพราะสถานีนี้ยังไม่มี Access ใช้ Access tool คำนวณ Access ของสถานีนี้ก่อน แล้วกด Refresh",
   "report.noSatellites": "คำนวณผลลัพธ์ของสถานี {facility} ไม่ได้ เพราะ scenario ยังไม่มีดาว เพิ่มดาวหรือ Constellation ก่อน",
 
-  // หน้าต่างกราฟ (spec §6.2, §8)
   // Access tool (spec §4): {message} = ข้อความของ server
   "access.forFacilityOrSatellite": "Access... ใช้ได้กับ Facility หรือ Satellite เลือก object ชนิดนั้นก่อน",
   "access.selectAccessFor": "ยังไม่ได้เลือก object ของ Access For กด Select Object... แล้วเลือก Facility หรือ Satellite",
@@ -271,9 +270,11 @@ const MESSAGES = {
   "access.nothingToClear": "ไม่มี access ที่ตรงกับรายการที่เลือกให้ Clear",
   "access.nothingToRemove": "ไม่มี access ที่ตรงกับรายการที่เลือกให้ Remove",
   "access.failed": "สั่งงาน Access ไม่สำเร็จ: {message}",
-  "access.timeInvalid": "ใส่เวลาแบบ 12 Nov 2026 06:00:00.000 ตาม DateFormat ของ scenario และ Stop ต้องอยู่หลัง Start",
+  // {example} = เวลาเริ่มของช่วงวิเคราะห์ในรูปแบบ DateFormat ปัจจุบันของ scenario
+  "access.timeInvalid": "ใส่เวลาแบบ {example} ตาม DateFormat ของ scenario และ Stop ต้องอยู่หลัง Start",
   "access.busy": "กำลังคำนวณอยู่ ปุ่มจะใช้ได้อีกครั้งเมื่องานของ scenario นี้เสร็จ",
 
+  // หน้าต่างกราฟ (spec §6.2, §8)
   "graph.loading": "กำลังสร้างกราฟ...",
   "graph.badParams": "หน้าต่างกราฟนี้ไม่มีข้อมูลว่าจะสร้างกราฟอะไร ปิดหน้าต่างแล้วสร้างใหม่จาก Report & Graph Manager",
   "graph.styleInvalid": "สร้างกราฟไม่ได้ เพราะ style นี้อ้างข้อมูลที่ไม่มี ดูรายละเอียดใน Message Viewer แล้วแก้ style ก่อนกด Refresh",

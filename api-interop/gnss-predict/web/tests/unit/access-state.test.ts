@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  allSelections, associatedTree, computedSatellites, leavesOf, reportObjects, selections, targetsOf,
+  allSelections, associatedTree, computedSatellites, leavesOf, reportObjects, selections, storedSettings, targetsOf,
 } from "../../src/windows/AccessTool/state";
 import { makeDoc, type ScenarioDoc } from "./helpers/chrome";
 
@@ -120,5 +120,31 @@ describe("what is sent", () => {
     expect(reportObjects(doc(), THBK, new Set([E11, G01]))).toEqual([`${THBK} ${G01}`, `${THBK} ${E11}`]);
     expect(reportObjects(doc(), G01, new Set([KMIT]))).toEqual([`${KMIT} ${G01}`]);
     expect(reportObjects(doc(), null, new Set([G01]))).toEqual([]);
+  });
+});
+
+describe("storedSettings", () => {
+  const graphics = { show: false, static_highlight: true, animate_highlight: false, animate_line: true, color_mode: "custom", custom_color: "#ff8800", inherit: false };
+  const period = { mode: "specify", start: "2026-11-12T06:00:00Z", stop: "2026-11-12T18:00:00Z" };
+
+  test("the stored access with the same target set gives its graphics and period, filled with defaults", () => {
+    const d = doc([{ from: THBK, to: [C20, GPS], computed: true, graphics, time_period: period }, { from: KMIT, to: [C20], computed: false }]);
+    expect(storedSettings(d, THBK, new Set([G01, G02, C20]))).toEqual({ graphics, time_period: period });
+    expect(storedSettings(d, KMIT, new Set([C20]))).toEqual({
+      graphics: { show: true, static_highlight: false, animate_highlight: false, animate_line: true, color_mode: "object", custom_color: null, inherit: true },
+      time_period: { mode: "object" },
+    });
+    expect(storedSettings(d, THBK, new Set([G01]))).toBeNull(); // ชุดต่างกัน = access ใหม่
+    expect(storedSettings(d, THBK, new Set())).toBeNull();
+  });
+
+  test("a satellite needs every ticked facility stored, with the same settings", () => {
+    const same = { computed: true, graphics, time_period: period };
+    const d = doc([{ from: THBK, to: [G01], ...same }, { from: KMIT, to: [G01], ...same }]);
+    expect(storedSettings(d, G01, new Set([THBK, KMIT]))).toEqual({ graphics, time_period: period });
+    const differ = doc([{ from: THBK, to: [G01], ...same }, { from: KMIT, to: [G01], ...same, time_period: { mode: "object" } }]);
+    expect(storedSettings(differ, G01, new Set([THBK, KMIT]))).toBeNull();
+    expect(storedSettings(differ, G01, new Set([KMIT]))).toEqual({ graphics, time_period: { mode: "object" } });
+    expect(storedSettings(doc([{ from: THBK, to: [G01], ...same }]), G01, new Set([THBK, KMIT]))).toBeNull();
   });
 });

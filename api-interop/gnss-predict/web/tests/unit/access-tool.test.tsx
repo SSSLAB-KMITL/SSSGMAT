@@ -15,6 +15,7 @@ import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
+import { postAccess } from "../../src/api/access";
 import { AccessTool, registerAccessToolPanel } from "../../src/windows/AccessTool/AccessTool";
 import { registerAccessCommands } from "../../src/windows/AccessTool/commands";
 import { openReport } from "../../src/windows/Report/Report";
@@ -36,7 +37,10 @@ const BASE = "/api/scenarios/S1";
 const COMPUTE = `POST ${BASE}/access/compute`;
 const CLEAR = `POST ${BASE}/access/clear`;
 const REMOVE = `POST ${BASE}/access/remove`;
-const GRAPHICS = { show: true, static_highlight: false, animate_highlight: false, animate_line: true, color_mode: "object", custom_color: null, inherit: true };
+// กราฟิกตั้งต้นของ access ใหม่: ไม่มีสีที่ตั้งเอง = ไม่ส่ง custom_color (server คงค่าเดิม)
+const GRAPHICS = { show: true, static_highlight: false, animate_highlight: false, animate_line: true, color_mode: "object", inherit: true };
+const STORED_GRAPHICS = { show: true, static_highlight: true, animate_highlight: false, animate_line: false, color_mode: "custom", custom_color: "#ff8800", inherit: false };
+const STORED_PERIOD = { mode: "specify", start: "2026-11-12T06:00:00Z", stop: "2026-11-12T18:00:00Z" };
 
 function doc(accesses: unknown[] = []): ScenarioDoc {
   return makeDoc({
@@ -70,7 +74,8 @@ function server(routes: Record<string, Handler>, after: ScenarioDoc = doc()) {
   });
 }
 
-const ok = (json: object, status = 200): Handler => ({ status, json, headers: { ETag: '"e2"' } });
+/** คำตอบสำเร็จ: header ETag ตรงกับ etag ใน body (ไม่มี = "e2") */
+const ok = (json: { etag?: string; [key: string]: unknown }, status = 200): Handler => ({ status, json, headers: { ETag: `"${json.etag ?? "e2"}"` } });
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -312,6 +317,67 @@ describe("time period and timeline", () => {
   });
 });
 
+describe("time fields", () => {
+  test("Start/Stop follow the DateFormat and the analysis period until edited; the hint uses the current format", async () => {
+    const d = doc();
+    openScenario(d);
+    mount();
+    await user.click(screen.getByRole("radio", { name: t("access.specifyTimePeriod") }));
+    const start = () => screen.getByLabelText(t("field.analysisStart")) as HTMLInputElement;
+    const stop = () => screen.getByLabelText(t("field.analysisStop")) as HTMLInputElement;
+    expect(start().value).toBe("12 Nov 2026 00:00:00.000 UTCG");
+    act(() => useScenario.setState({ doc: { ...d, units: { date_format: "LTZG", ltz_offset: "+07:00" } } }));
+    expect(start().value).toBe("12 Nov 2026 07:00:00.000 LTZG+07:00");
+    expect(stop().value).toBe("13 Nov 2026 07:00:00.000 LTZG+07:00");
+    await user.clear(start());
+    await user.type(start(), "garbage");
+    expect(screen.getByText(msg("access.timeInvalid", { example: "12 Nov 2026 07:00:00.000 LTZG+07:00" }))).toBeTruthy();
+    act(() => useScenario.setState({
+      doc: { ...d, units: { date_format: "UTCG", ltz_offset: "+07:00" }, analysis_period: { start: "2026-11-14T00:00:00Z", stop: "2026-11-15T00:00:00Z" } },
+    }));
+    expect(start().value).toBe("garbage"); // แก้เองแล้ว: ไม่ทับ
+    expect(stop().value).toBe("15 Nov 2026 00:00:00.000 UTCG");
+  });
+});
+
+describe("postAccess", () => {
+  test("posts each body in the write queue, chaining the ETag, records jobs and pulls the doc once", async () => {
+    openScenario(doc());
+    let n = 1;
+    const f = server({
+      [COMPUTE]: () => {
+        n += 1;
+        return n === 2
+          ? { status: 202, json: { job: "j7", etag: `e${n}` }, headers: { ETag: `"e${n}"` } }
+          : { json: { computed: ["G01"], etag: `e${n}` }, headers: { ETag: `"e${n}"` } };
+      },
+    });
+    const result = await postAccess("S1", "compute", [{ from: THBK, to: [G01] }, { from: KMIT, to: [G01] }]);
+    expect(result).toEqual({ jobs: ["j7"], matched: 0 });
+    expect(f.calls.filter((c) => `${c.method} ${c.path}` === COMPUTE).map((c) => c.headers.get("If-Match"))).toEqual(['"e1"', '"e2"']);
+    expect(useJobs.getState().jobs.j7).toMatchObject({ kind: "analyze", scenario: "S1", state: "queued" });
+    expect(f.count(`GET ${BASE}`)).toBe(1);
+    expect(useScenario.getState().etag).toBe('"e2"'); // doc ที่ดึงมา (ETag ของ GET)
+  });
+
+  test("clear counts matches and does not pull when nothing changed; a 412 sets the conflict", async () => {
+    openScenario(doc());
+    const f = server({ [CLEAR]: ok({ cleared: 0, etag: "e1" }), [REMOVE]: { status: 412, json: { code: "PRECONDITION_FAILED", text: "เก่า" } } });
+    useScenario.setState({ etag: '"e1"' });
+    expect(await postAccess("S1", "clear", [{ from: THBK, to: "all" }])).toEqual({ jobs: [], matched: 0 });
+    expect(f.count(`GET ${BASE}`)).toBe(0);
+    await expect(postAccess("S1", "remove", [{ from: THBK, to: "all" }])).rejects.toMatchObject({ status: 412 });
+    expect(useScenario.getState().conflict).toBe(true);
+  });
+
+  test("a scenario that is not open is refused without a request", async () => {
+    openScenario(doc());
+    const f = server({});
+    await expect(postAccess("OTHER", "compute", [{ from: THBK, to: [G01] }])).rejects.toThrow();
+    expect(f.calls).toEqual([]);
+  });
+});
+
 describe("graphics", () => {
   test("graphics options map to the access graphics", async () => {
     openScenario(doc());
@@ -328,7 +394,6 @@ describe("graphics", () => {
     await user.click(within(g).getByRole("radio", { name: t("access.useCustomColor") }));
     expect(color.disabled).toBe(false);
     fireEvent.change(color, { target: { value: "#ff8800" } });
-    await user.click(within(g).getByRole("checkbox", { name: t("access.inheritSettings") }));
     await user.click(button("access.compute"));
     await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
     expect((lastBody(f.calls, COMPUTE) as { graphics: unknown }).graphics).toEqual({
@@ -336,7 +401,36 @@ describe("graphics", () => {
     });
   });
 
-  test("object colors send no custom color", async () => {
+  test("changing a graphics control unticks Inherit Settings from Scenario, and it can be ticked back", async () => {
+    openScenario(doc());
+    const f = server({ [COMPUTE]: ok({ computed: ["G01"], etag: "e2" }) });
+    mount();
+    await user.click(box("G01"));
+    const g = group("access.animationGraphics");
+    const inherit = within(g).getByRole("checkbox", { name: t("access.inheritSettings") }) as HTMLInputElement;
+    const tick = (name: string) => () => user.click(within(g).getByRole("checkbox", { name }));
+    // ทีละช่อง: ติ๊ก Inherit กลับแล้วแก้ช่องถัดไป = เลิกติ๊กอีก
+    for (const pick of [
+      tick(t("ob.show")),
+      tick(t("access.staticHighlight")),
+      tick(t("access.animateHighlight")),
+      tick(t("access.showAnimateLine")),
+      () => user.click(within(g).getByRole("radio", { name: t("access.useCustomColor") })),
+      async () => fireEvent.change(within(g).getByLabelText(t("field.color")), { target: { value: "#123456" } }),
+      () => user.click(within(g).getByRole("radio", { name: t("access.useObjectColors") })),
+    ]) {
+      if (!inherit.checked) await user.click(inherit);
+      expect(inherit.checked).toBe(true);
+      await pick();
+      expect(inherit.checked).toBe(false);
+    }
+    await user.click(inherit);
+    await user.click(button("access.compute"));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    expect((lastBody(f.calls, COMPUTE) as { graphics: { inherit: boolean } }).graphics.inherit).toBe(true);
+  });
+
+  test("object colors with no colour picked send no custom_color", async () => {
     openScenario(doc());
     const f = server({ [COMPUTE]: ok({ computed: ["G01"], etag: "e2" }) });
     mount();
@@ -346,7 +440,75 @@ describe("graphics", () => {
     await user.click(within(g).getByRole("radio", { name: t("access.useObjectColors") }));
     await user.click(button("access.compute"));
     await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
-    expect((lastBody(f.calls, COMPUTE) as { graphics: { color_mode: string; custom_color: unknown } }).graphics).toMatchObject({ color_mode: "object", custom_color: null });
+    const sent = (lastBody(f.calls, COMPUTE) as { graphics: Record<string, unknown> }).graphics;
+    expect(sent.color_mode).toBe("object");
+    expect(sent).not.toHaveProperty("custom_color");
+  });
+});
+
+describe("stored settings", () => {
+  const stored = () => doc([{ from: THBK, to: [GPS], computed: true, timeline: true, time_period: STORED_PERIOD, graphics: STORED_GRAPHICS }]);
+
+  test("reopening a stored access shows its settings and Compute sends them unchanged", async () => {
+    openScenario(stored());
+    const f = server({ [COMPUTE]: ok({ computed: ["G01", "G02"], etag: "e2" }) }, stored());
+    mount();
+    await user.click(box("GPS"));
+    const g = group("access.animationGraphics");
+    await waitFor(() => expect((screen.getByRole("radio", { name: t("access.specifyTimePeriod") }) as HTMLInputElement).checked).toBe(true));
+    expect((screen.getByLabelText(t("field.analysisStart")) as HTMLInputElement).value).toBe("12 Nov 2026 06:00:00.000 UTCG");
+    expect((screen.getByLabelText(t("field.analysisStop")) as HTMLInputElement).value).toBe("12 Nov 2026 18:00:00.000 UTCG");
+    expect((within(g).getByRole("checkbox", { name: t("access.inheritSettings") }) as HTMLInputElement).checked).toBe(false);
+    expect((within(g).getByRole("checkbox", { name: t("access.staticHighlight") }) as HTMLInputElement).checked).toBe(true);
+    expect((within(g).getByRole("checkbox", { name: t("access.showAnimateLine") }) as HTMLInputElement).checked).toBe(false);
+    expect((within(g).getByRole("radio", { name: t("access.useCustomColor") }) as HTMLInputElement).checked).toBe(true);
+    expect((within(g).getByLabelText(t("field.color")) as HTMLInputElement).value).toBe("#ff8800");
+    await user.click(button("access.compute"));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    expect(lastBody(f.calls, COMPUTE)).toEqual({ from: THBK, to: [GPS], time_period: STORED_PERIOD, graphics: STORED_GRAPHICS, timeline: true });
+  });
+
+  test("use object colors keeps the stored colour", async () => {
+    openScenario(stored());
+    const f = server({ [COMPUTE]: ok({ computed: ["G01", "G02"], etag: "e2" }) }, stored());
+    mount();
+    await user.click(box("GPS"));
+    const g = group("access.animationGraphics");
+    await waitFor(() => expect((within(g).getByRole("radio", { name: t("access.useCustomColor") }) as HTMLInputElement).checked).toBe(true));
+    await user.click(within(g).getByRole("radio", { name: t("access.useObjectColors") }));
+    await user.click(button("access.compute"));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    expect((lastBody(f.calls, COMPUTE) as { graphics: unknown }).graphics).toMatchObject({ color_mode: "object", custom_color: "#ff8800" });
+  });
+
+  test("a selection with no stored access goes back to the defaults", async () => {
+    openScenario(stored());
+    mount();
+    const inherit = () => (within(group("access.animationGraphics")).getByRole("checkbox", { name: t("access.inheritSettings") }) as HTMLInputElement).checked;
+    const specify = () => (screen.getByRole("radio", { name: t("access.specifyTimePeriod") }) as HTMLInputElement).checked;
+    expect([inherit(), specify()]).toEqual([true, false]);
+    await user.click(box("GPS"));
+    await waitFor(() => expect([inherit(), specify()]).toEqual([false, true]));
+    await user.click(box("GPS"));
+    await user.click(box("E11"));
+    await waitFor(() => expect([inherit(), specify()]).toEqual([true, false]));
+  });
+
+  test("a satellite access-for seeds from the per-facility accesses only when they agree", async () => {
+    const same = { computed: true, time_period: STORED_PERIOD, graphics: STORED_GRAPHICS };
+    openScenario(doc([{ from: THBK, to: [G01], ...same }, { from: KMIT, to: [G01], ...same }]));
+    mount(G01);
+    const inherit = () => (within(group("access.animationGraphics")).getByRole("checkbox", { name: t("access.inheritSettings") }) as HTMLInputElement).checked;
+    await user.click(box("THBK"));
+    await user.click(box("KMIT"));
+    await waitFor(() => expect(inherit()).toBe(false));
+    cleanup();
+    openScenario(doc([{ from: THBK, to: [G01], ...same }, { from: KMIT, to: [G01], ...same, graphics: { ...STORED_GRAPHICS, show: false } }]));
+    mount(G01);
+    await user.click(box("THBK"));
+    await user.click(box("KMIT"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(inherit()).toBe(true); // ไม่ตรงกัน: ค่าตั้งต้น
   });
 });
 

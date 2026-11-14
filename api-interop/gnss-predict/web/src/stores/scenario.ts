@@ -110,6 +110,13 @@ interface ScenarioState {
   remove(cls: string, name: string): Promise<WriteResult>;
   /** New Group / ย้ายสมาชิก (members ต้องส่งเสมอ กลุ่มว่าง = []) */
   setGroup(name: string, members: string[]): Promise<WriteResult>;
+  /**
+   * POST body แต่ละตัวไปที่ suffix ของ scenario `name` ตามลำดับในคิวการเขียนเดียวกับการเขียนอื่น (Access tool: /access/compute|clear|remove)
+   * แต่ละคำขอใช้ ETag ล่าสุดของ store (ETag ใหม่ของคำขอก่อนหน้า) onReply ได้ body ของแต่ละคำตอบทันทีที่ได้ (คำขอหลังล้มเหลว ตัวก่อนหน้าก็ได้แล้ว)
+   * ETag เปลี่ยน = เขียนจริง: จบแล้ว (สำเร็จหรือไม่) โหลด doc + tree ใหม่ครั้งเดียว; ไม่มีอะไรเปลี่ยน (Clear ที่ไม่มีรายการตรง) ไม่โหลด
+   * name ไม่ใช่ scenario ที่เปิดอยู่ = โยนโดยไม่ส่ง; 412 ตั้ง conflict แล้วโยน ApiError ต่อ
+   */
+  postEach(name: string, suffix: string, bodies: readonly unknown[], onReply?: (data: unknown) => void): Promise<void>;
   onScenarioEvent(e: ScenarioEvent): Promise<void>;
 }
 
@@ -448,6 +455,30 @@ export const useScenario = create<ScenarioState>()((set, get) => {
     remove: (cls, name) => write("DELETE", `/objects/${enc(cls)}/${enc(name)}`),
 
     setGroup: (name, members) => write("POST", "/groups", { name, members }),
+
+    postEach: async (name, suffix, bodies, onReply) => {
+      if (get().name !== name) throw new Error("no scenario is open");
+      return serial(async () => {
+        let wrote = false;
+        try {
+          for (const body of bodies) {
+            const before = get().etag;
+            const res = await send<unknown>(name, "POST", suffix, body);
+            if (get().name !== name) return; // ปิดหรือสลับ scenario ระหว่างเขียน: ไม่ใช่เรื่องของ store นี้แล้ว
+            const bodyTag = isRecord(res.data) && typeof res.data.etag === "string" ? `"${res.data.etag}"` : null;
+            const tag = res.etag ?? bodyTag;
+            if (tag !== null && (before === null || normalizeEtag(tag) !== normalizeEtag(before))) {
+              version++;
+              set({ etag: tag, docStale: true }); // doc เก่ากว่า ETag จนกว่าจะโหลดใหม่ (applyDoc ล้าง)
+              wrote = true;
+            }
+            onReply?.(res.data);
+          }
+        } finally {
+          if (wrote && get().name === name) await pullQuiet();
+        }
+      });
+    },
 
     onScenarioEvent: async (e) => {
       if (opening !== null && e.name === opening.name) {

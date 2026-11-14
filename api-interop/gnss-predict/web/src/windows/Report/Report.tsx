@@ -20,8 +20,9 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Menubar from "@radix-ui/react-menubar";
 import { useVirtualizer, type Rect } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
-import { ApiError, apiSend, errorText, isAbortError } from "../../api/client";
-import { recordQueuedJob, startJob } from "../../api/startJob";
+import { postAccess } from "../../api/access";
+import { ApiError, errorText, isAbortError } from "../../api/client";
+import { startJob } from "../../api/startJob";
 import { confirm } from "../../chrome/Dialogs";
 import { useThrottledTime, useTimeFormatter } from "../../chrome/hooks";
 import {
@@ -332,23 +333,16 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
         computes.push(...plan.needsAccess);
       }
       if (computes.length === 0 && !plan.propagate) return; // ไม่มีอะไรคำนวณได้: ไม่สร้างรายงานซ้ำ (จะได้ 409 เดิม)
-      const jobs: string[] = [];
-      let etag = useScenario.getState().etag;
-      for (const body of computes) {
-        const res = await apiSend<{ job?: unknown; etag?: unknown }>("POST", `/scenarios/${encodeURIComponent(name)}/access/compute`, body, etag);
-        etag = res.etag ?? (typeof res.data?.etag === "string" ? `"${res.data.etag}"` : etag);
-        if (typeof res.data?.job === "string") {
-          recordQueuedJob(res.data.job, "analyze", name);
-          jobs.push(res.data.job);
-        }
-      }
+      // คิวการเขียนของ useScenario: ETag ต่อกันทีละคำขอ ดึง doc ใหม่หลังเขียน 412 = กล่อง Reload / Cancel ของทั้งแอป
+      const jobs = computes.length === 0 ? [] : (await postAccess(name, "compute", computes)).jobs;
       if (plan.propagate) jobs.push(await startJob(`/scenarios/${encodeURIComponent(name)}/propagate`, "propagate", name));
       const ok = await waitForJobs(jobs, signal);
       if (signal.aborted) return;
       if (ok) setRevision((r) => r + 1);
       else notify("error", `${text.codePrefix}_COMPUTE`, msg(text.computeJobFailed), object);
     } catch (e) {
-      if (!signal.aborted) notify("error", e instanceof ApiError ? e.code : `${text.codePrefix}_COMPUTE`, msg(text.computeFailed, { message: errorText(e) }), object);
+      const conflict = e instanceof ApiError && e.status === 412; // กล่องของ store แจ้งแล้ว
+      if (!signal.aborted && !conflict) notify("error", e instanceof ApiError ? e.code : `${text.codePrefix}_COMPUTE`, msg(text.computeFailed, { message: errorText(e) }), object);
     } finally {
       if (!signal.aborted) setComputing(false);
     }

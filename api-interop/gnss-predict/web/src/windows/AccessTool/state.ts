@@ -159,3 +159,39 @@ export function allSelections(doc: ScenarioDoc | null, from: string | null): Acc
   for (const a of doc.accesses ?? []) if (a.to.length === 1 && a.to[0] === from && a.from.startsWith(FACILITY)) facilities.add(a.from);
   return [...facilities].map((facility) => ({ from: facility, to: [from] }));
 }
+
+/** ค่าในฟอร์มของ access ที่เก็บไว้: กราฟิกครบทุกช่อง (ช่องที่ไม่ได้เก็บ = ค่าตั้งต้น) และช่วงเวลา (ไม่มี = object) */
+export interface StoredSettings {
+  graphics: AccessGraphics;
+  time_period: AccessTimePeriod;
+}
+
+const sameSet = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && new Set([...a, ...b]).size === new Set(a).size;
+
+function settingsOf(access: NonNullable<ScenarioDoc["accesses"]>[number]): StoredSettings {
+  const tp = access.time_period;
+  return {
+    graphics: { ...DEFAULT_GRAPHICS, ...(access.graphics ?? {}) },
+    time_period: tp?.mode === "specify" ? { mode: "specify", start: tp.start ?? null, stop: tp.stop ?? null } : { mode: "object" },
+  };
+}
+
+/**
+ * ค่าที่ฟอร์มควรเริ่มเมื่อรายการที่ติ๊กตรงกับ access ที่เก็บไว้ (from เดียวกันและชุด `to` เท่ากัน ไม่สนลำดับ):
+ * Facility = access ตัวนั้น; Satellite = ทุก Facility ที่ติ๊กต้องมี access (Facility, [ดาว]) และค่าตรงกันทุกตัว
+ * ไม่มี access ที่ตรง (access ใหม่) หรือค่าไม่ตรงกัน = null (ฟอร์มใช้ค่าตั้งต้น)
+ */
+export function storedSettings(doc: ScenarioDoc | null, from: string | null, checked: ReadonlySet<string>): StoredSettings | null {
+  const list = selections(doc, from, checked);
+  if (doc === null || list.length === 0) return null;
+  let found: StoredSettings | null = null;
+  for (const sel of list) {
+    const to = sel.to === "all" ? [] : sel.to;
+    const access = (doc.accesses ?? []).find((a) => a.from === sel.from && sameSet(a.to, to));
+    if (access === undefined) return null;
+    const settings = settingsOf(access);
+    if (found !== null && JSON.stringify(found) !== JSON.stringify(settings)) return null;
+    found = settings;
+  }
+  return found;
+}

@@ -3,20 +3,26 @@
 // - Associated Objects: ต้นไม้จาก state.ts ติ๊กได้ทั้งกลุ่มและรายดวง ตัวหนา = access ที่ computed และผลของ Facility current
 //   คลิกขวา: Select All; เปลี่ยน Access For = ล้างที่ติ๊ก
 // - Compute / Clear / Clear All / Remove / Remove All: POST /access/compute|clear|remove พร้อม If-Match (server §6.6)
-//   Access For เป็นดาว = หนึ่งคำขอต่อ Facility (ส่ง ETag ใหม่ของคำขอก่อนหน้าต่อ) เขียนสำเร็จแล้วดึง doc ใหม่ (resync) ก่อนปลดปุ่ม
+//   Access For เป็นดาว = หนึ่งคำขอต่อ Facility ทุกคำขอผ่าน postAccess (api/access.ts: คิวการเขียนของ useScenario, ETag ต่อกัน,
+//   ดึง doc ใหม่ครั้งเดียวหลังเขียน) ปุ่มปลดเมื่อทั้งหมดเสร็จ
 //   202 = job analyze (recordQueuedJob) ปุ่มทั้งชุดเป็นสีเทาระหว่างที่มี job ใดของ scenario นี้รอหรือรันอยู่ (แถบสถานะแสดงความคืบหน้า)
 //   Clear / Remove ที่ไม่มีรายการตรง (n = 0) = ข้อความ info ไม่ใช่ error (P8)
 //   412 = กล่อง Reload / Cancel ของทั้งแอป (useScenario.conflict) ไม่ลง Message Viewer; ข้อผิดพลาดอื่น = Message Viewer
 // - Time Period: Use Object Time Period ({mode: "object"}) / Specify Time Period (Start, Stop ตาม DateFormat ของ scenario) อ่านไม่ได้หรือ
 //   Stop ไม่หลัง Start = กรอบแดงและ Compute ใช้ไม่ได้
 // - Auto Add to Timeline (ติ๊กไว้ตั้งต้น) = `timeline` ของ Compute; Add Timeline = Compute รายการที่เลือกด้วย `timeline: true` อย่างเดียว
-// - Animation Graphics ส่งทั้งก้อนใน `graphics` ของ Compute (ชื่อช่องตรงกับ AccessGraphics ของ server)
+// - Animation Graphics ส่งทั้งก้อนใน `graphics` ของ Compute (ชื่อช่องตรงกับ AccessGraphics ของ server) custom_color ส่งเฉพาะเมื่อมีสี
+//   (สีที่เก็บไว้หรือที่เลือก) Use Object Colors จึงไม่ลบสีที่เก็บไว้ แก้ช่องกราฟิกใดก็ตาม = เลิกติ๊ก Inherit Settings from Scenario
+//   (แบบเดียวกับ ColorRow ของ Properties Browser: ค่าที่แก้ไม่มีผลถ้ายัง inherit) ผู้ใช้ติ๊กกลับเองได้
+// - ค่าในฟอร์ม (กราฟิก สี ช่วงเวลา) เริ่มจาก access ที่เก็บไว้เมื่อรายการที่ติ๊กตรงกับ access หนึ่งตัว (storedSettings) และเริ่มใหม่ทุกครั้งที่
+//   รายการที่ติ๊กเปลี่ยน รายการใหม่ที่ไม่มี access = ค่าตั้งต้น (ถ้าก่อนหน้านั้นฟอร์มมาจาก access ที่เก็บไว้) ไม่งั้นคงค่าที่ผู้ใช้ตั้งไว้
+// - Start/Stop ที่ผู้ใช้ยังไม่แก้แสดงตาม DateFormat และช่วงวิเคราะห์ (หรือช่วงที่เก็บไว้) ปัจจุบันเสมอ
 // - Reports / Graphs: Access..., AER... เปิดหน้าต่างรายงาน/กราฟของคู่ P1 ที่ติ๊ก (openReport) Report & Graph Manager... เรียกคำสั่งเดียวกับเมนู
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ApiError, apiSend, errorText } from "../../api/client";
-import { recordQueuedJob } from "../../api/startJob";
+import { postAccess } from "../../api/access";
+import { ApiError, errorText } from "../../api/client";
 import { useCommands, useTimeFormatter } from "../../chrome/hooks";
 import { commandTooltip, isEnabled, runCommand } from "../../commands";
 import { t } from "../../labels/labels";
@@ -31,14 +37,15 @@ import { SelectObjectDialog } from "../InsertObjects/SelectObjectDialog";
 import { openReport } from "../Report/Report";
 import { ACCESS_TOOL_KIND, openAccessTool } from "./commands";
 import {
-  accessForClass, allSelections, associatedTree, computedSatellites, DEFAULT_GRAPHICS, leavesOf, pairOf, reportObjects, selections,
-  type AccessGraphics, type AccessSelection, type AccessTimePeriod, type AssocNode, type StatusByFacility,
+  accessForClass, allSelections, associatedTree, computedSatellites, DEFAULT_GRAPHICS, leavesOf, pairOf, reportObjects, selections, storedSettings,
+  type AccessGraphics, type AccessSelection, type AccessTimePeriod, type AssocNode, type StatusByFacility, type StoredSettings,
 } from "./state";
 
 type Action = "compute" | "clear" | "remove";
 
 const EMPTY: ReadonlySet<string> = new Set();
-const enc = encodeURIComponent;
+/** สีที่ช่อง Color แสดงเมื่อยังไม่มีสีที่เก็บไว้หรือเลือกไว้ (ส่งเมื่อเลือก Use Custom Color แล้วไม่ได้เลือกสี) */
+const FALLBACK_COLOR = "#ffff00";
 
 /** เวลา UTC แบบที่ server รับ (UtcZ): ไม่มีเศษวินาที = ไม่เขียน .000 */
 const utcZ = (d: Date): string => d.toISOString().replace(".000Z", "Z");
@@ -75,11 +82,14 @@ export function AccessTool({ params }: PanelProps) {
   const setChecked = (next: ReadonlySet<string>): void => setTicks({ from, set: next });
 
   const [mode, setMode] = useState<AccessTimePeriod["mode"]>("object");
-  const [startText, setStartText] = useState(() => initialTime(doc?.analysis_period.start, formatter.format));
-  const [stopText, setStopText] = useState(() => initialTime(doc?.analysis_period.stop, formatter.format));
+  // ช่วงตั้งต้นของ Start/Stop (ISO; null = ช่วงวิเคราะห์) และข้อความที่ผู้ใช้พิมพ์เอง (null = ยังไม่แก้: แสดงช่วงตั้งต้นตาม DateFormat ปัจจุบัน)
+  const [period, setPeriod] = useState<{ start: string | null; stop: string | null }>({ start: null, stop: null });
+  const [startEdit, setStartEdit] = useState<string | null>(null);
+  const [stopEdit, setStopEdit] = useState<string | null>(null);
   const [autoAdd, setAutoAdd] = useState(true);
   const [graphics, setGraphics] = useState<AccessGraphics>({ ...DEFAULT_GRAPHICS });
-  const [customColor, setCustomColor] = useState("#ffff00");
+  /** สีของ Use Custom Color: ที่เก็บไว้หรือที่เลือก (null = ยังไม่มี ไม่ส่ง custom_color) */
+  const [customColor, setCustomColor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
 
@@ -91,6 +101,8 @@ export function AccessTool({ params }: PanelProps) {
     };
   }, []);
 
+  const startText = startEdit ?? isoText(period.start ?? doc?.analysis_period.start, formatter.format);
+  const stopText = stopEdit ?? isoText(period.stop ?? doc?.analysis_period.stop, formatter.format);
   const start = parseTime(startText, formatter.fmt, formatter.ltz);
   const stop = parseTime(stopText, formatter.fmt, formatter.ltz);
   const startBad = mode === "specify" && start === null;
@@ -103,56 +115,58 @@ export function AccessTool({ params }: PanelProps) {
   const canSelect = !locked && chosen.length > 0;
   const objects = reportObjects(doc, from, checked);
 
-  /** ส่งชุดที่เลือกไปทีละคำขอ (ETag ของคำขอก่อนหน้าไปกับคำขอถัดไป) เขียนจริงแล้วดึง doc ใหม่ก่อนปลดปุ่ม */
+  // ค่าในฟอร์มจาก access ที่เก็บไว้: เริ่มใหม่เมื่อรายการที่ติ๊กเปลี่ยน (ไม่ใช่เมื่อ doc เปลี่ยนเฉย ๆ เช่นหลัง Compute)
+  const stored = useMemo(() => storedSettings(doc, from, checked), [doc, from, checked]);
+  const latestStored = useRef(stored);
+  latestStored.current = stored;
+  const seededFromStore = useRef(false);
+  const selectionKey = JSON.stringify([from, chosen]);
+  useEffect(() => {
+    const seed = latestStored.current;
+    if (seed === null && !seededFromStore.current) return; // access ใหม่หลังค่าที่ผู้ใช้ตั้งเอง: คงไว้
+    seededFromStore.current = seed !== null;
+    applySettings(seed);
+  }, [selectionKey]);
+
+  /** ใส่ค่าของ access ที่เก็บไว้ลงฟอร์ม (null = ค่าตั้งต้น) ข้อความที่พิมพ์ไว้ใน Start/Stop ถูกทิ้ง */
+  function applySettings(seed: StoredSettings | null): void {
+    const tp = seed?.time_period ?? { mode: "object" as const };
+    setGraphics({ ...(seed?.graphics ?? DEFAULT_GRAPHICS) });
+    setCustomColor(seed?.graphics.custom_color ?? null);
+    setMode(tp.mode ?? "object");
+    setPeriod(tp.mode === "specify" ? { start: tp.start ?? null, stop: tp.stop ?? null } : { start: null, stop: null });
+    setStartEdit(null);
+    setStopEdit(null);
+  }
+
+  /** ส่งชุดที่เลือกผ่าน postAccess (คิวการเขียน ETag ต่อกัน ดึง doc ใหม่หลังเขียน) ปลดปุ่มเมื่อเสร็จทั้งหมด */
   const send = async (action: Action, list: AccessSelection[], extra: Record<string, unknown> = {}): Promise<void> => {
     const name = sc;
     if (name === null) return;
+    const none = (): void => notify("info", "ACCESS_NONE", msg(action === "clear" ? "access.nothingToClear" : "access.nothingToRemove"), from);
     if (list.length === 0) {
-      if (action !== "compute") notify("info", "ACCESS_NONE", msg(action === "clear" ? "access.nothingToClear" : "access.nothingToRemove"), from);
+      if (action !== "compute") none();
       return;
     }
     setBusy(true);
-    let etag = useScenario.getState().etag;
-    let wrote = false;
-    let matched = 0;
-    let failed = false;
     try {
-      for (const sel of list) {
-        const res = await apiSend<{ job?: unknown; etag?: unknown; cleared?: unknown; removed?: unknown }>(
-          "POST", `/scenarios/${enc(name)}/access/${action}`, { from: sel.from, to: sel.to, ...extra }, etag,
-        );
-        etag = res.etag ?? (typeof res.data?.etag === "string" ? `"${res.data.etag}"` : etag);
-        if (action === "compute") {
-          wrote = true;
-          if (typeof res.data?.job === "string") recordQueuedJob(res.data.job, "analyze", name);
-        } else {
-          const n = res.data?.[action === "clear" ? "cleared" : "removed"];
-          if (typeof n === "number" && n > 0) {
-            matched += n;
-            wrote = true;
-          }
-        }
-      }
+      const { matched } = await postAccess(name, action, list.map((sel) => ({ from: sel.from, to: sel.to, ...extra })));
+      if (action !== "compute" && matched === 0) none();
     } catch (e) {
-      failed = true;
-      if (e instanceof ApiError && e.status === 412) {
-        if (useScenario.getState().name === name) useScenario.setState({ conflict: true });
-      } else {
+      // 412: store ตั้ง conflict แล้ว กล่อง Reload / Cancel ของทั้งแอปเป็นตัวแจ้ง
+      if (!(e instanceof ApiError && e.status === 412)) {
         notify("error", e instanceof ApiError ? e.code : "ACCESS_FAILED", msg("access.failed", { message: errorText(e) }), from);
       }
     } finally {
-      if (!failed && action !== "compute" && matched === 0) {
-        notify("info", "ACCESS_NONE", msg(action === "clear" ? "access.nothingToClear" : "access.nothingToRemove"), from);
-      }
-      // ดึง doc ใหม่ (ETag ใหม่ + computed) ก่อนปลดปุ่ม ไม่งั้นกดซ้ำเร็ว ๆ จะส่ง ETag เก่าแล้วได้ 412 ปลอม
-      if (wrote && useScenario.getState().name === name) await useScenario.getState().resync();
       if (alive.current) setBusy(false);
     }
   };
 
   const compute = (): void => {
     if (!canSelect || timePeriod === null) return;
-    const g = { ...graphics, custom_color: graphics.color_mode === "custom" ? customColor : null };
+    const { custom_color: _unused, ...rest } = graphics;
+    const color = customColor ?? (graphics.color_mode === "custom" ? FALLBACK_COLOR : null);
+    const g = color === null ? rest : { ...rest, custom_color: color };
     void send("compute", chosen, { time_period: timePeriod, graphics: g, timeline: autoAdd });
   };
 
@@ -169,7 +183,8 @@ export function AccessTool({ params }: PanelProps) {
     setChecked(next);
   };
 
-  const setG = (patch: Partial<AccessGraphics>): void => setGraphics((g) => ({ ...g, ...patch }));
+  /** แก้ช่องกราฟิก = เลิกติ๊ก Inherit (ค่าที่แก้ไม่มีผลถ้ายัง inherit) */
+  const setG = (patch: Partial<AccessGraphics>): void => setGraphics((g) => ({ ...g, ...patch, inherit: false }));
   const isBold = (leaf: string): boolean => from !== null && bold.has(pairOf(from, leaf));
   const rgmEnabled = isEnabled("analysis.reportGraphManager");
 
@@ -265,7 +280,7 @@ export function AccessTool({ params }: PanelProps) {
             aria-invalid={startBad ? true : undefined}
             disabled={mode !== "specify"}
             value={startText}
-            onChange={(e) => setStartText(e.target.value)}
+            onChange={(e) => setStartEdit(e.target.value)}
           />
           <label htmlFor={`${ids}-stop`}>{t("field.analysisStop")}</label>
           <input
@@ -274,10 +289,10 @@ export function AccessTool({ params }: PanelProps) {
             aria-invalid={stopBad ? true : undefined}
             disabled={mode !== "specify"}
             value={stopText}
-            onChange={(e) => setStopText(e.target.value)}
+            onChange={(e) => setStopEdit(e.target.value)}
           />
         </div>
-        {(startBad || stopBad) && <p className="form-error">{msg("access.timeInvalid")}</p>}
+        {(startBad || stopBad) && <p className="form-error">{msg("access.timeInvalid", { example: isoText(doc?.analysis_period.start, formatter.format) })}</p>}
       </fieldset>
 
       <div className="access-columns">
@@ -356,12 +371,15 @@ export function AccessTool({ params }: PanelProps) {
                 className="color-input"
                 aria-label={t("field.color")}
                 disabled={graphics.color_mode !== "custom"}
-                value={customColor}
-                onChange={(e) => setCustomColor(e.target.value.toLowerCase())}
+                value={customColor ?? FALLBACK_COLOR}
+                onChange={(e) => {
+                  setCustomColor(e.target.value.toLowerCase());
+                  setG({});
+                }}
               />
             </label>
             <label className="access-choice">
-              <input type="checkbox" checked={graphics.inherit} onChange={(e) => setG({ inherit: e.target.checked })} />
+              <input type="checkbox" checked={graphics.inherit} onChange={(e) => setGraphics((g) => ({ ...g, inherit: e.target.checked }))} />
               {t("access.inheritSettings")}
             </label>
           </div>
@@ -384,8 +402,8 @@ export function AccessTool({ params }: PanelProps) {
   );
 }
 
-/** ข้อความเวลาเริ่มของช่อง Start/Stop จากเวลา ISO ของช่วงวิเคราะห์ (อ่านไม่ได้ = ว่าง) */
-function initialTime(iso: string | undefined, format: (d: Date) => string): string {
+/** ข้อความของเวลา ISO ตาม DateFormat (อ่านไม่ได้ = ว่าง) */
+function isoText(iso: string | undefined, format: (d: Date) => string): string {
   const d = iso === undefined ? null : parseIsoUtc(iso);
   return d === null ? "" : format(d);
 }
