@@ -20,6 +20,10 @@
 //   - Show Outline: เส้นแบ่งกลางวันกลางคืน คำนวณใหม่เมื่อเวลาของภาพเลื่อนไปอย่างน้อย 1 วินาที
 //   - IPP (ของเราเอง): aer.csv ของ Facility จาก ipp.ts ippSource โหลดเมื่อเปิดตัวเลือกเท่านั้น ผลไม่ current = ไม่แสดง
 //     โหลดไม่สำเร็จ = แจ้งเตือนแล้วลืมกุญแจ: การ refresh ผลลัพธ์ครั้งถัดไปโหลดใหม่
+// - Static / Animate Highlight ของ Access (access spec §4, cesium/accessHighlight.ts) เป็น entity `hl/…` ใน data source เดียวกับดาว (ไม่ใช่ overlay และไม่ใช่
+//   CallbackProperty): Static = เส้นหนาตามช่วง access แสดงตลอด, Animate = กรอบรอบดาวที่มี availability = ช่วง access ช่วงเวลามาจาก /access/intervals
+//   (HighlightIntervals: ดึงเฉพาะเมื่อมี access ที่ต้องวาด ดึงใหม่เมื่อชุด access หรือผลของ Facility เปลี่ยน) restyle วาดชุดนี้ใหม่ต่อจาก applyGraphics เสมอ
+//   (applyGraphics ซ่อน entity ที่ไม่ใช่ sat/fac/access) เมื่อคำตอบมาถึงทีหลังวาดเองครั้งเดียว
 // - เมาส์: พิกัดใต้เมาส์ → useSelection.cursorLatLon (ไม่เกินหนึ่งครั้งต่อเฟรม ออกจากภาพ = null), Zoom In ลากกรอบแล้วบินไปที่กรอบ
 //   (คลิกเฉย ๆ ซูมเข้าสองเท่า แล้วกลับเป็นลากเลื่อนแผนที่), Zoom Out = ภาพกว้างขึ้นสองเท่า
 
@@ -28,6 +32,7 @@ import {
   type Color, type ImageryLayer, type Viewer,
 } from "cesium";
 import { errorText } from "../../api/client";
+import { applyAccessHighlights, highlightCounts, HighlightIntervals } from "../../cesium/accessHighlight";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import { applyGraphics, cssColor, entityLooks, sceneStyle, sensorStatesAt, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
@@ -111,6 +116,8 @@ class Scene2D implements Scene2DHandle {
   private sensorFills: FillState[] | null = null;
   /** aer.csv ที่ใช้อยู่: key = scenario/Facility/hash, seq กันคำตอบที่มาช้า */
   private ipp: { key: string | null; index: IppIndex | null; seq: number } = { key: null, index: null, seq: 0 };
+  /** ช่วงเวลา access ของ Static / Animate Highlight: คำตอบมาถึง = วาด highlight ใหม่ */
+  private readonly highlights = new HighlightIntervals(() => this.highlightsArrived());
   private readonly offs: (() => void)[] = [];
   private readonly handler: ScreenSpaceEventHandler;
   private readonly zoom: ZoomBox;
@@ -161,6 +168,7 @@ class Scene2D implements Scene2DHandle {
     this.offs.push(
       useScenario.subscribe((s, prev) => {
         if (s.doc === prev.doc && s.catalog === prev.catalog) return;
+        this.syncHighlights(); // ก่อน restyle: restyle วาด highlight ด้วยคำตอบที่มีอยู่ตอนนี้
         this.restyle();
         this.refreshIpp();
         this.redraw();
@@ -169,6 +177,7 @@ class Scene2D implements Scene2DHandle {
     this.offs.push(
       useResults.subscribe((s, prev) => {
         if (s.info === prev.info && s.prnByNorad === prev.prnByNorad && s.status === prev.status) return;
+        this.syncHighlights();
         this.refreshScene();
         this.refreshIpp();
         this.redraw();
@@ -192,6 +201,7 @@ class Scene2D implements Scene2DHandle {
       }),
     );
     this.showRect(view ?? WORLD);
+    this.syncHighlights();
     this.refreshScene();
     this.refreshIpp();
     this.redraw();
@@ -239,11 +249,33 @@ class Scene2D implements Scene2DHandle {
     if (ds !== null) {
       ensureFacilities(ds.entities, doc);
       this.looks = applyGraphics(ds, doc, ctx);
+      this.applyHighlights(ctx);
     } else {
       this.looks = doc === null ? new Map() : entityLooks(doc, ctx);
     }
     this.fills = null; // สีหรือดาวอาจเปลี่ยน
     this.sensorFills = null;
+  }
+
+  // ---------- Static / Animate Highlight ----------
+
+  /** วาด highlight ของ access ลงใน data source ที่ใช้อยู่ (ยังไม่มี = ไม่ทำ: adopted เรียก restyle) ต้องเรียกหลัง applyGraphics เสมอ */
+  private applyHighlights(ctx: ApplyCtx = this.applyCtx()): void {
+    const ds = this.ds;
+    if (ds !== null) applyAccessHighlights(ds.entities, useScenario.getState().doc, this.highlights.replies, ctx);
+  }
+
+  /** บอกตัวดึงช่วงเวลาว่า doc หรือผลลัพธ์เปลี่ยน (ดึงเฉพาะเมื่อกุญแจเปลี่ยน ไม่วาด: ผู้เรียก restyle ต่อ) */
+  private syncHighlights(): void {
+    const { name, doc } = useScenario.getState();
+    this.highlights.sync(name, doc, useResults.getState().info);
+  }
+
+  /** คำตอบของช่วงเวลามาถึง: วาด highlight ใหม่ครั้งเดียว */
+  private highlightsArrived(): void {
+    if (this.destroyed) return;
+    this.applyHighlights();
+    this.viewer.scene.requestRender();
   }
 
   // ---------- ค่าตั้งของหน้าต่าง ----------
@@ -445,12 +477,18 @@ class Scene2D implements Scene2DHandle {
     const time = this.viewer.clock.currentTime;
     let groundTracks = 0;
     for (const e of this.ds?.entities.values ?? []) if (e.show && e.path?.show?.getValue(time) === true) groundTracks++;
-    return { groundTracks, ...this.overlays.counts(), shading: this.viewer.scene.globe.enableLighting ? 1 : 0, redraws: this.redraws, fillBuilds: this.fillBuilds };
+    // highlightTracks = เส้น Static Highlight ทุกท่อน, highlightBoxes = กรอบ Animate Highlight ที่อยู่ใน access ณ เวลาของภาพ
+    const hl = this.ds === null ? { tracks: 0, boxes: 0 } : highlightCounts(this.ds.entities, time);
+    return {
+      groundTracks, ...this.overlays.counts(), highlightTracks: hl.tracks, highlightBoxes: hl.boxes,
+      shading: this.viewer.scene.globe.enableLighting ? 1 : 0, redraws: this.redraws, fillBuilds: this.fillBuilds,
+    };
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.highlights.dispose();
     this.czml.dispose();
     for (const off of this.offs) off();
     this.overlayThrottle.dispose();
