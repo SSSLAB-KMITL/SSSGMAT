@@ -15,6 +15,9 @@
 - [2026-11-12-gpredict-web-passes-design.md](docs/2026-11-12-gpredict-web-passes-design.md): spec ของงานย่อยที่ 2 (Pass predictions)
 - [2026-11-12-gpredict-web-passes-plan.md](docs/2026-11-12-gpredict-web-passes-plan.md): แผนการทำงานของงานย่อยที่ 2
 - [2026-11-12-gpredict-reference-passes.md](docs/2026-11-12-gpredict-reference-passes.md): ชื่อหน้าต่าง คอลัมน์ ข้อความ และค่าตั้งต้นของส่วน Pass predictions และ Preferences → Predict ที่ตรวจกับ source code
+- [2026-11-12-gpredict-web-radio-design.md](docs/2026-11-12-gpredict-web-radio-design.md): spec ของงานย่อยที่ 3 (Radio & Rotator)
+- [2026-11-12-gpredict-web-radio-plan.md](docs/2026-11-12-gpredict-web-radio-plan.md): แผนการทำงานของงานย่อยที่ 3
+- [2026-11-12-gpredict-reference-radio.md](docs/2026-11-12-gpredict-reference-radio.md): ป้าย ปุ่ม tooltip ค่าตั้งต้น คำสั่ง hamlib และพฤติกรรมของ Radio Control, Antenna Control, Preferences → Interfaces และ Update transponder data ที่ตรวจกับ source code
 
 ## งานย่อยที่ 1 (Tracking core) มีอะไรบ้าง
 
@@ -70,6 +73,83 @@ pass ทุกรอบหาจากตำแหน่งที่ GMAT คำ
 | GET | `/api/modules/{name}/skyglance?t=` | Sky at a glance ตอบทันที `status` เป็น `computing`, `ok` หรือ `failed` (หน้าเว็บถามซ้ำทุก 1 วินาที) |
 | DELETE | `/api/modules/{name}/skyglance` | ปิดหน้าต่าง Sky at a glance: ปล่อยงาน GMAT ที่ค้างของหน้าต่างนั้น |
 
+## งานย่อยที่ 3 (Radio & Rotator) มีอะไรบ้าง
+
+ควบคุมวิทยุและเสาอากาศผ่าน hamlib `rigctld` และ `rotctld` (คุยทาง TCP ตาม protocol ของ hamlib) เหมือน Gpredict
+browser เปิด TCP เองไม่ได้ **server จึงเป็นเจ้าของ controller**: ติดตามดาวต่อแม้ปิดแท็บ browser ตราบที่ server ยังรัน (Gpredict ก็ติดตามต่อตราบที่โปรแกรมเปิด)
+Az, El และ range rate ที่ใช้คิด Doppler มาจาก tick ของ module ซึ่งคำนวณจาก GMAT ตามเวลาของ module (ตาม Time Controller)
+ป้าย ชื่อหน้าต่าง ปุ่ม tooltip และข้อความตรงกับ [รายการอ้างอิงส่วน Radio/Rotator](docs/2026-11-12-gpredict-reference-radio.md)
+
+### วิธีใช้
+
+- **Preferences → Interfaces** (Edit → Preferences แล้วกดกลุ่ม Interfaces): แท็บ Radios และ Rotators มีตารางอุปกรณ์และปุ่ม Add new (แท็บ Rotators เขียน Add New), Edit, Delete
+  - Add new, Edit หรือดับเบิลคลิกแถวเปิด "Edit radio configuration" หรือ "Edit rotator configuration" Ok ของ editor แก้แค่ตาราง
+  - ค่าถูกเขียนเมื่อกด OK ของหน้าต่าง Preferences เท่านั้น (Cancel ทิ้ง) server ตรวจทุกตัวก่อน ผิดตัวเดียวไม่เขียนเลย
+  - ชื่อที่ซ้ำกับอุปกรณ์อื่นถูกปฏิเสธพร้อมข้อความไทย (ของเรา: Gpredict ให้ตัวหลังทับตัวแรก)
+  - ไฟล์อยู่ที่ `hwconf/<ชื่อ>.rig.json` และ `hwconf/<ชื่อ>.rot.json` ใน data dir (key เดียวกับไฟล์ `.rig`/`.rot` ของ Gpredict)
+- **Radio Control** (Module menu → Radio Control): หน้าต่าง "Gpredict Radio Control: <module>"
+  - ยังไม่มีวิทยุ: กล่อง ERROR ของ Gpredict "You have no radio configuration!" ไม่เปิดหน้าต่าง
+  - Downlink และ Uplink มีปุ่มหมุนความถี่ของดาว (คลิกลูกศร ▴ ▾, คลิกที่หลัก ปุ่มซ้ายเพิ่ม ปุ่มขวาลด หรือหมุน wheel บนหลักนั้น) Doppler, LO และปุ่มหมุน "Radio:" ที่แสดงความถี่ที่ส่งให้วิทยุ
+  - Satellite: ช่อง Filter... และ combo ของดาว (เริ่มที่ดาวที่เลือกใน module และเปลี่ยนตามเมื่อเลือกดาวใน view, Select satellite หรือ Autotrack),
+    Track (ใส่ Doppler), combo ของ transponder, ปุ่ม T (จูนไปกลาง passband) และ L (ล็อก uplink กับ downlink)
+  - Settings: "1. Device", "2. Device" (dual-rig), Engage และ Cycle (ตั้งต้น 1000 msec) แล้วกล่องนับถอยหลัง AOS/LOS
+  - Engage แล้วทุก Cycle: อ่านความถี่จากวิทยุ (หมุนที่ตัววิทยุแล้วปุ่มหมุนของดาวเปลี่ยนตาม) แล้วส่ง (ความถี่ดาว + Doppler − LO)
+  - ผิดพลาดครบ 5 ครั้ง (เช่น rigctld ปิด) ปลด Engage เอง บรรทัดสถานะสีแดงใต้หน้าต่างบอกเหตุเป็นภาษาไทย (ของเรา)
+  - วิทยุแบบ "FT817/857/897 (manual)": ปุ่ม SPACE สลับ PTT
+- **Antenna Control** (Module menu → Antenna Control): หน้าต่าง "Gpredict Rotator Control: <module>"
+  - ยังไม่มี rotator: กล่อง ERROR "You have no rotator configuration!"
+  - ปุ่มหมุน Azimuth และ Elevation พร้อม "Read:" (ตำแหน่งที่อ่านจาก rotctld), Satellite (Filter..., combo, Track, Az, El, ΔT),
+    Settings (Device, Engage, Monitor, Cycle, Threshold) และ Polar plot ของ pass (วงกลม set-point, กากบาทตำแหน่งที่อ่านได้)
+  - Track แล้ว set-point ตามดาวและไปข้างหน้าดาวไม่เกิน Threshold (lead-ahead) ใต้ขอบฟ้าจอดรอที่ทิศ AOS
+    pass ที่ข้ามปลาย stop ของ Az ใช้ flip pass เมื่อ Max El ของ rotator ถึง 180° ไม่ถึงก็หมุนกลับทางอื่นแบบ Gpredict
+  - rotctld ตอบไม่ได้: "Read:" เป็น "ERROR" ครบ 5 ครั้งปลด Engage เอง
+- **หน้าต่างทั้งสอง**: เปิดได้ชนิดละหนึ่งหน้าต่างต่อ module (เปิดซ้ำได้หน้าต่างเดิมมาอยู่หน้า) อยู่ได้ทุกแท็บ ไม่ปิดด้วย Escape (ปิดด้วยปุ่มปิดเท่านั้น เหมือน Gpredict)
+  - ปิดหน้าต่างแล้วปลด Engage และเก็บ Cycle (และ Threshold ของ rotator) ลงไฟล์ของอุปกรณ์
+  - เปิดหน้าเว็บใหม่หรือเปิดอีก browser แล้วหน้าต่างที่ยังเปิดใน server กลับมาเอง ปิด module แล้วหน้าต่างของ module นั้นปิดตาม
+  - ระหว่างที่หน้าต่างของ module เปิดอยู่ Module menu → Configure ได้ข้อความของ Gpredict
+    "A module can not be configured while the radio or rotator controller is active." และไม่เปิด Edit module
+- **Edit → Update transponder data**: หน้าต่าง "Transponder Update" ดึง `modes` และ `transmitters` จาก SatNOGS DB แล้วเก็บเป็น `trsp/<NORAD>.json` ต่อดาว
+  - ขอ SatNOGS ได้ 1 ครั้งต่อ 2 ชั่วโมง (นับจากเวลาขอใน `trsp/_cache/state.json` รวมครั้งที่ล้มเหลว) กดซ้ำในช่วงนั้นใช้ข้อมูลใน `trsp/_cache/` โดยไม่ส่ง request
+  - ส่งเฉพาะ User-Agent `gpredict-web` ไม่ส่งอีเมลหรือข้อมูลผู้ใช้ timeout 30 วินาที
+  - ใต้ "Finished" มีบรรทัดภาษาไทยบอกว่าดึงเมื่อไร ใช้ cache หรือดึงไม่ได้เพราะอะไร (ของเรา) ดึงไม่ได้แล้วข้อมูลเดิมอยู่ครบ (Gpredict ล้างก่อนดึง)
+  - หน้าต่าง Radio Control ที่เปิดอยู่ใช้รายการ transponder เดิมจนกว่าจะเลือกดาวใหม่ (เหมือน Gpredict)
+
+### ทดลองกับ hamlib แบบ dummy (ไม่มีวิทยุจริง)
+
+ติดตั้ง hamlib (ทดสอบกับ 4.7.2 จาก Homebrew: `brew install hamlib`) แล้วเปิด daemon ของวิทยุและ rotator แบบ dummy (model 1) ที่ port ตั้งต้นของ Gpredict
+
+```bash
+rigctld -m 1 -t 4532 &    # วิทยุ dummy
+rotctld -m 1 -t 4533 &    # rotator dummy
+```
+
+แล้วเพิ่มอุปกรณ์ที่ Preferences → Interfaces: วิทยุ Host `localhost` Port 4532 และ rotator Host `localhost` Port 4533 (ค่าตั้งต้นของ editor)
+
+- วิทยุ dummy แบบ Full-duplex: เลือก VFO Up/Down "B ↑ / A ↓" (หรือ "SUB ↑ / MAIN ↓")
+  ค่าที่ editor ตั้งให้คือ "MAIN ↑ / SUB ↓" ซึ่ง dummy ถือว่า Main คือ VFO A ที่รับ downlink อยู่ uplink จึงทับ downlink
+- rotator dummy เริ่มที่ Az 0°, El 0° และหมุนราว 6° ต่อวินาที
+- ดูหรือตั้งค่าจากภายนอกได้พร้อมกัน เช่น `rigctl -m 2 -r localhost:4532 f` (อ่านความถี่), `rigctl -m 2 -r localhost:4532 F 145900000` (หมุนที่ตัววิทยุ),
+  `rotctl -m 2 -r localhost:4533 p` (อ่านตำแหน่ง)
+- หยุดด้วย `kill` ของ process ทั้งสอง (หรือ `pkill rigctld; pkill rotctld`)
+
+### API ที่เพิ่ม
+
+| Method | Path | ทำอะไร |
+|---|---|---|
+| GET | `/api/hwconf` | `{radios: [...], rotators: [...]}` ทุก object มี `name` และ key ของ Gpredict (`Host`, `Port`, `Cycle`, `LO`, `Type`, ...) |
+| PUT | `/api/hwconf` | แทนทั้งชุด (ต้องส่งทั้ง `radios` และ `rotators`) ตรวจทุกตัวก่อนเขียน |
+| GET | `/api/controllers` | `{open: [{module, kind}]}` controller ที่เปิดอยู่ (หน้าเว็บใช้คืนหน้าต่างตอนเปิดหน้า) |
+| POST | `/api/modules/{name}/target` | `{norad}` ดาวเป้าหมายของ module (ดาวที่เลือกใน module) controller ที่เปิดอยู่เลือกตาม |
+| POST | `/api/modules/{name}/radio/open`, `/radio/close` | เปิด/ปิด Radio Control (409 `NO_RADIO_CONFIG` เมื่อไม่มีวิทยุ) |
+| POST | `/api/modules/{name}/radio` | `{action, ...}`: `engage`, `track`, `lock` (`on`), `tune`, `satellite` (`norad`), `transponder` (`index`), `device1`, `device2` (`name`), `cycle` (`ms`), `freq` (`link`: `"down"` \| `"up"`, `hz`), `ptt_toggle` |
+| POST | `/api/modules/{name}/rotator/open`, `/rotator/close` | เปิด/ปิด Antenna Control (409 `NO_ROTATOR_CONFIG`) |
+| POST | `/api/modules/{name}/rotator` | `{action, ...}`: `engage`, `track`, `monitor` (`on`), `satellite` (`norad`), `device` (`name`), `cycle` (`ms`), `threshold`, `az`, `el` (`deg`) |
+| POST | `/api/trsp/update` | Update transponder data ตอบ `{status: "Finished", cached, fetched_at, satellites, messages}` (`cached` = ครั้งนี้ไม่ได้ดาวน์โหลดใหม่) |
+| GET | `/api/trsp/{norad}` | `{norad, transponders}` รายการ transponder ของดาวหลังปรับค่าแบบ Gpredict |
+
+tick ของ `/ws/modules/{name}` มี `radio` และ `rotator` เมื่อหน้าต่างนั้นเปิดอยู่: ทุกค่าที่หน้าต่างแสดง
+คำสั่งของผู้ใช้มีผลกับอุปกรณ์ในรอบ Cycle ถัดไปเหมือน Gpredict (ยกเว้นปลด Engage ซึ่งปิดอุปกรณ์ทันที)
+
 ## รายการที่กดไม่ได้ (อยู่ในงานย่อยถัดไป)
 
 รายการเหล่านี้แสดงตามตำแหน่งของ Gpredict แต่กดไม่ได้ และมี tooltip ภาษาไทยบอกว่าอยู่ในงานย่อยไหน
@@ -78,12 +158,9 @@ pass ทุกรอบหาจากตำแหน่งที่ GMAT คำ
 |---|---|---|
 | File | Log browser | 4 (Data & Preferences) |
 | Edit | Update TLE data from local files | 4 (Data & Preferences) |
-| Edit | Update transponder data | 3 (Radio & Rotator) |
 | Edit → Preferences | กลุ่ม General และ Modules | 4 |
-| Edit → Preferences | กลุ่ม Interfaces | 3 |
 | Module menu | Detach module, Full screen | 4 |
-| Module menu | Radio Control, Antenna Control | 3 |
-| คลิกขวาที่ดาว (List, Map, Polar) และเมนูของ Single sat, Event list | Satellite info (หรือชื่อดาวตัวหนา) | 4 |
+| คลิกขวาที่ดาว (List, Map, Polar) และเมนูของ Single sat, Event list | Satellite info (หรือชื่อดาวตัวหนา) รวมแท็บ Transponders | 4 |
 | ดับเบิลคลิกที่ดาว (List, Map, Polar, Event list) | Satellite info | 4 |
 | Module properties | สี, Select map, Window Placements | 4 |
 
@@ -101,6 +178,8 @@ Preferences เปิดที่กลุ่ม Predict จนกว่าง�
   ขั้นตอน build GMAT อยู่ใน [`api-interop/gnss-predict/README.md`](../gnss-predict/README.md) หัวข้อ "Build GMAT"
   ถ้าไม่เจอ GMAT หน้าเว็บจะแสดงข้อความว่าไม่พบ GMAT แทนค่าของดาว
 - อินเทอร์เน็ตสำหรับดึง TLE จาก CelesTrak ครั้งแรก (ไม่มีเน็ตก็ใช้ไฟล์ใน cache ได้ถ้ามี)
+- hamlib (`rigctld`, `rotctld`) เฉพาะเมื่อใช้ Radio Control หรือ Antenna Control ทดสอบกับ hamlib 4.7.2 ดูหัวข้อ "ทดลองกับ hamlib แบบ dummy"
+- อินเทอร์เน็ตสำหรับ Edit → Update transponder data (SatNOGS DB) ไม่บังคับ: ไม่มีข้อมูล transponder แล้ว combo ของ transponder ว่าง
 - Browser รุ่นปัจจุบัน หน้าจอกว้างอย่างน้อย 1024 px (ไม่มี layout สำหรับมือถือ)
 
 ## ติดตั้ง
@@ -181,6 +260,9 @@ server กันหน้าเว็บอื่นที่เปิดอย�
 | `ephem/` | ephemeris cache ของ GMAT รายดวงต่อช่วง (ช่วงที่เก่ากว่า 7 วันถูกลบเอง ช่วง 99 ดวงใช้ราว 9 MB) |
 | `ephem/day/<YYYYMMDD>/` | ephemeris รายวันของ GMAT สำหรับ pass: 1 ไฟล์ต่อดาวต่อวัน (138,288 ไบต์) โฟลเดอร์ของวันที่เก่ากว่า 7 วันถูกลบเอง ตอนตรวจรับ 98 ดวง × 3 วันใช้ราว 40 MB |
 | `preferences.json` | ค่า Preferences ที่ผู้ใช้ตั้ง เก็บเฉพาะ key ที่ตั้งเอง (`{"version": 1, "values": {...}}`) ไม่มีไฟล์หรือ `values` ว่าง = ค่าตั้งต้นของ Gpredict ทั้งหมด ไฟล์ที่แก้ด้วยมือจนบาง key ผิด: server ใช้ค่าตั้งต้นแทน key นั้นและบันทึก log (ไม่แก้ไฟล์) |
+| `hwconf/<ชื่อ>.rig.json`, `hwconf/<ชื่อ>.rot.json` | วิทยุและ rotator ของ Preferences → Interfaces (key ของไฟล์ `.rig`/`.rot` ของ Gpredict) ไฟล์ที่แก้ด้วยมือจนอ่านไม่ได้ถูกข้ามพร้อม log และเลือกไม่ได้ |
+| `trsp/<NORAD>.json` | transponder ของแต่ละดาวจาก SatNOGS DB (ตอนตรวจรับ 2,705 ดวง ราว 14 MB รวม cache) |
+| `trsp/_cache/` | `modes.json`, `transmitters.json` ที่ดึงล่าสุด และ `state.json` (เวลาขอและเวลาที่ดึงสำเร็จ สำหรับกติกา 2 ชั่วโมง) |
 
 เปิดครั้งแรกที่ยังไม่มีข้อมูล: สร้างสถานี THBK, ดึงกลุ่ม `amateur` จาก CelesTrak หนึ่งครั้ง แล้วสร้างและเปิด module `Amateur`
 สร้าง `Amateur` ในการเปิดครั้งแรกที่มีข้อมูล TLE เท่านั้น และไม่สร้างอีกเมื่อสร้างแล้ว (ธง `bootstrap_done` ใน `settings.json`)
@@ -218,6 +300,14 @@ File → Quit ใช้ไม่ได้ในโหมดนี้: server ท
 
 # 3. หน้าเว็บ (Vitest) และ build
 ( cd api-interop/gpredict-web/web && npm test && npm run build )
+```
+
+Radio Control และ Antenna Control กับ hamlib จริง (งานย่อยที่ 3): test สตาร์ต `rigctld -m 1` และ `rotctld -m 1` เองบน port ว่างของ 127.0.0.1
+แล้วตรวจว่าความถี่ที่ rigctld ได้รับ = ความถี่ดาว + Doppler − LO (ไม่เกิน 1 Hz ทุกรอบ) และ rotctld หมุนถึง set-point ภายใน Threshold
+ข้ามเมื่อหา `rigctld` หรือ `rotctld` ใน `PATH` ไม่เจอ (test อื่นทั้งหมดใช้ rigctld/rotctld ปลอมใน test ไม่ต้องมี hamlib)
+
+```bash
+( cd api-interop/gpredict-web/server && ../.venv/bin/python -m unittest tests.test_integration_hamlib -v )
 ```
 
 ความแม่นของ interpolation และ AOS/LOS เทียบกับ GMAT ที่รันทุก 1 วินาที (ISS, ดาว GEO, ดาว Molniya ช่วง 2 ชั่วโมง)
@@ -274,6 +364,22 @@ spec หัวข้อ 7.4 กำหนดรหัสไว้ชุดหน�
 `GMAT_FAILED` 503 (GMAT ล้มเหลวหรือไม่มีตำแหน่งที่ต้องใช้) และ `SAT_MISSING_FROM_GMAT` 503 (GMAT ไม่คืนค่าของดาวนั้น)
 Sky at a glance ใส่ `EPHEM_COMPUTING` (info) ใน `messages` ระหว่างรอ GMAT
 
+### รหัสที่เพิ่มในงานย่อยที่ 3 (spec หัวข้อ 8 ของงานย่อยที่ 3)
+
+| รหัส | HTTP / ที่แสดง | ความหมาย |
+|---|---|---|
+| `HWCONF_INVALID` | 422, `object` = key (`name` สำหรับชื่อ) | `PUT /api/hwconf` ที่ไม่มี `radios` หรือ `rotators`, อุปกรณ์ที่ไม่ใช่ object, ค่าผิดชนิดหรือนอกช่วงของ editor, ชื่อผิดรูปแบบหรือซ้ำ ผิดตัวเดียวไม่เขียนอะไรเลย หน้าต่าง Preferences แสดงข้อความนี้และไม่ปิด |
+| `NO_RADIO_CONFIG` | 409 | เปิด Radio Control เมื่อยังไม่มีวิทยุ หน้าเว็บแสดงกล่อง ERROR ของ Gpredict "You have no radio configuration!\nPlease configure a radio first." |
+| `NO_ROTATOR_CONFIG` | 409 | เปิด Antenna Control เมื่อยังไม่มี rotator กล่อง ERROR "You have no rotator configuration!\nPlease configure an antenna rotator first." |
+| `CONTROLLER_ACTIVE` | 409, `object` = `qth` หรือ `satellites` | `PUT /api/modules/{name}` ที่เปลี่ยนสถานีหรือรายชื่อดาว (รวมการสลับลำดับ) ขณะที่ Radio Control หรือ Antenna Control ของ module นั้นเปิดอยู่ ค่าของ view (Ground Track, Highlight footprint, Sky track, ดาวของ Single sat) บันทึกได้ตามปกติ |
+| `CONTROLLER_INVALID` | 422, `object` = ชื่อช่อง | `{action, ...}` ที่ผิด: action ที่ไม่รู้จัก, ค่าผิดชนิดหรือนอกช่วง, ดาวที่ไม่อยู่ใน module, เปลี่ยนอุปกรณ์ระหว่าง Engage, ปุ่มที่ Gpredict ไม่ให้กดในสถานะนั้น (เช่น Monitor ขณะ Track), หน้าต่างที่ปิดไปแล้ว และ `norad` ของ `POST …/target` ที่ไม่ใช่จำนวนเต็ม |
+| `TRSP_UPDATED` | info ใน `messages` ของ `POST /api/trsp/update` | ดึงจาก SatNOGS DB สำเร็จ: เวลาที่ดึง จำนวนดาวที่เขียนไฟล์ และเวลาที่ดึงได้อีกครั้ง |
+| `TRSP_RATE_LIMITED_LOCAL` | info (warning เมื่อยังไม่มีข้อมูลใน cache) | ยังไม่ครบ 2 ชั่วโมงจากการขอครั้งก่อน: ไม่ส่ง request ใช้ข้อมูลใน `trsp/_cache/` และบอกเวลาที่ดึงได้อีกครั้ง |
+| `TRSP_DOWNLOAD_FAILED` | warning | ดึงไม่สำเร็จ (ต่อเน็ตไม่ได้, HTTP error, timeout, คำตอบไม่ใช่ JSON ที่ใช้ได้) บอกสาเหตุเป็นภาษาไทย ไฟล์เดิมอยู่ครบ (หน้าต่างยังแสดง "Finished" แบบ Gpredict) |
+| `TRSP_WRITE_FAILED` | warning, `object` = NORAD | เขียนไฟล์ transponder ของบางดวงไม่ได้: ข้ามดวงนั้นแล้วเขียนดวงที่เหลือต่อ |
+
+action ของ controller ที่ไม่ได้เปิดอยู่ และ module ที่ไม่ได้เปิด ใช้รหัสเดิม `NOT_FOUND` 404
+
 ## ข้อตกลงที่เปลี่ยนพฤติกรรม
 
 ข้อตกลงที่ตัดสินระหว่างทำ ซึ่ง spec ไม่ได้ระบุหรือต่างจาก Gpredict
@@ -291,10 +397,41 @@ Sky at a glance ใส่ `EPHEM_COMPUTING` (info) ใน `messages` ระห�
   แต่เป็นกราฟใหม่เหมือนเปิดครั้งแรก และอยู่ที่ตำแหน่งตั้งต้น (ตำแหน่งและขนาดที่ลากไว้ไม่ถูกจำ)
   ส่วน Gpredict เป็นหน้าต่างแยกที่อยู่จนปิดเองหรือปิด module ไม่ขึ้นกับแท็บที่แสดง
 
+### งานย่อยที่ 3 (Radio & Rotator)
+
+ข้อบกพร่องของ Gpredict ที่แก้เพราะต่อกับวิทยุและ rotator จริง (ตารางเต็มพร้อมเหตุผลอยู่ใน [spec งานย่อยที่ 3](docs/2026-11-12-gpredict-web-radio-design.md) หัวข้อ 9.1)
+
+- เชื่อมต่อ rigctld/rotctld รอไม่เกิน 3 วินาที รอคำตอบไม่เกิน 2 วินาที ชื่อ host ที่หาไม่เจอนับเป็น error (Gpredict รอตลอดไป) รอบ Cycle ที่ถึงกำหนดระหว่างรอบก่อนยังไม่จบถูกข้าม ไม่ต่อคิว
+- ตั้ง PTT ส่ง `T 1` ไม่มี `q` ต่อท้าย (`q` สั่ง rigctld ปิดการเชื่อมต่อกลาง cycle)
+- **split ของ FT817/857/897** ส่ง `S 1 VFOB` ตอน Engage (รับ A ส่ง B) และ `S 0 VFOA` ตอนปลด ถ้ามี VFO option ส่ง `S VFOA 1 VFOB` และ `S VFOA 0 VFOA`
+  (Gpredict ส่งเลข VFO ที่ไม่ได้อ่านจากไฟล์ ค่าจึงไม่แน่นอน ยังต้องยืนยันกับวิทยุจริง)
+- rotctld ต่อไม่ได้หรือตอบผิด: "Read:" แสดง "ERROR" นับ error และปลด Engage เมื่อครบ 5 (Gpredict ไม่แสดงอะไรและปุ่มยังกดค้าง)
+- Monitor กดได้หรือไม่ได้ตาม Track และ Engage ทุกครั้งที่สองปุ่มนี้เปลี่ยน, timer ของ rotator มีตัวเดียว, OK ของ Preferences คง Cycle และ Threshold เดิมของอุปกรณ์ (Gpredict ตั้งเป็น 10 ms และ 0.1°),
+  ดับเบิลคลิกแถวเปิด editor ครั้งเดียว, ชื่ออุปกรณ์ซ้ำถูกปฏิเสธ
+- Update transponder data ไม่ล้างข้อมูลเดิมก่อนดึง และบอกสาเหตุเมื่อดึงไม่ได้
+
+ที่ตัดสินเองเพราะ spec และ Gpredict ไม่ได้กำหนดชัด
+
+- **"2. Device" ใช้ VFO option ของตัวเอง** (Gpredict ใช้ธงของอุปกรณ์ 1 กับทั้งสองตัว ซึ่งอาจทำให้อุปกรณ์ 2 ได้คำสั่งที่มันไม่รับ)
+- **ลำดับการคำนวณ set-point ของ rotator**: ค่าพื้นฐาน → flip → แปลงเป็น −180…+180 (rotator ชนิด ±180) → บีบเข้า Min/Max
+  (Gpredict ไม่บอกลำดับ ถ้าบีบก่อนแปลง rotator ชนิด −180…+180 หมุนไปทางทิศตะวันตกไม่ได้)
+- **Threshold เทียบในหน่วยของอุปกรณ์**: Az ที่ rotctld อ่านได้เทียบกับ set-point ตรงๆ ส่วน "Read:" แสดง Az ที่ห่อเป็น 0–360
+  (Gpredict ห่อค่าที่อ่านแต่ไม่ห่อ set-point จึงสั่ง rotator ชนิด ±180 ทุกรอบเมื่อ Az ติดลบ)
+- **409 `CONTROLLER_ACTIVE` เฉพาะการเปลี่ยนสถานีหรือรายชื่อดาว** ค่าของ view ที่หน้าเว็บบันทึกด้วย PUT เดียวกันยังบันทึกได้ ส่วน Module menu → Configure ถูกห้ามทั้งหมดแบบ Gpredict
+- **หน้าต่าง Radio Control และ Antenna Control ไม่ปิดด้วย Escape** ต่างจากหน้าต่างลอยอื่นของหน้าเว็บนี้ เพราะการปิดปลด Engage กลาง pass (Gpredict ก็ปิดได้ด้วยปุ่มปิดเท่านั้น)
+- **transmitter ของ SatNOGS ที่ไม่มี mode ได้ mode "0"** ตาม Gpredict (อ่านค่าว่างเป็นเลข 0) transmitter ที่ไม่มี `description` ถูกข้าม และ `alive` = false ก็เก็บ เหมือน Gpredict
+- Range และ Rate ในหน้าต่างเป็น km และ km/s เสมอ จนกว่างานย่อยที่ 4 จะมี Imperial units
+
+ที่ทำตาม Gpredict แม้ดูแปลก (spec หัวข้อ 9.2): Add new ได้ Default uplink 123.456 MHz, LO รับเฉพาะ MHz เต็ม, "2. Device" เรียงตามลำดับไฟล์ไม่เรียงชื่อ,
+ไม่จำกัดความถี่ไว้ใน passband, client loop ของ rotator (ราว 0.8 วินาทีต่อรอบ) ไม่ขึ้นกับ Cycle, ดาวอยู่ใต้ขอบฟ้าและไม่มี pass ให้อ้างตั้ง set-point เป็น Az 0°, El 45°
+
 ## ข้อจำกัดที่ทราบ
 
-- งานย่อยที่ 1 และ 2 เท่านั้น: Satellite info, Radio/Antenna Control, Preferences กลุ่ม General, Modules และ Interfaces,
+- งานย่อยที่ 1 ถึง 3 เท่านั้น: Satellite info (รวมแท็บ Transponders), Preferences กลุ่ม General และ Modules,
   Log browser, Detach/Full screen, สีและภาพแผนที่ที่เปลี่ยนได้ ยังไม่มี (ตารางข้างบน)
+- Radio Control และ Antenna Control ตรวจกับ `rigctld -m 1` และ `rotctld -m 1` (dummy ของ hamlib 4.7.2) เท่านั้น ยังไม่ได้ลองกับวิทยุหรือ rotator จริง
+  (คำสั่ง split ของ FT817/857/897 ยิ่งต้องยืนยันกับวิทยุจริง ดูหัวข้อข้อตกลงข้างบน)
+- controller ทำงานเฉพาะขณะ server รัน: File → Quit หรือหยุด server แล้วปลด Engage และปิดการเชื่อมต่อกับ rigctld/rotctld (เปิด server ใหม่แล้วต้องเปิดหน้าต่างและกด Engage ใหม่)
 - เวลาใน Pass details, Upcoming passes, ไฟล์ที่ Save, หน้าพิมพ์ และ Sky at a glance เป็น UTC ในรูปแบบตั้งต้นของ Gpredict (`%Y/%m/%d %H:%M:%S`) เสมอ
   ระยะเป็นกิโลเมตร Lat/Lon มีเครื่องหมาย (Time format, local time, Imperial units และ N/S/E/W อยู่ใน Preferences → General ของงานย่อยที่ 4)
 - Save ลงโฟลเดอร์ดาวน์โหลดของ browser เท่านั้น ถ้ามีไฟล์ชื่อเดิมอยู่แล้ว browser มักตั้งชื่อใหม่ให้ (เช่น Chrome ต่อท้าย ` (1)`) ส่วน Gpredict เขียนทับ
@@ -594,4 +731,182 @@ integration กับ GMAT จริงของงานย่อยที่ 2
 - **หน้าต่างพิมพ์ของ browser** ไม่ได้เปิดจริง (Chrome headless) ตรวจหน้าที่จะพิมพ์และ PDF ที่ Chrome สร้างจากหน้านั้นแทน
 - **"Show current pass"** ไม่ได้กดใน browser (ISS อยู่ใต้ขอบฟ้าตลอดการตรวจรับ) มี test ของ server (`kind: "current"`) และของ web (เมนูมีรายการนี้เฉพาะเมื่อ El > 0)
 - **Enter และคลิกขวา → Show details** ใน Upcoming passes ไม่ได้ลองใน browser (ลองแค่ดับเบิลคลิก) เมนู Show details มี test ของ web ส่วนปุ่ม Enter ยังไม่มี test
+- ตรวจเฉพาะ Google Chrome แบบ headless ไม่ได้ลอง Safari และ Firefox
+
+## ผลตรวจรับงานย่อยที่ 3
+
+ตรวจรับตามหัวข้อ 11 ของ [spec งานย่อยที่ 3](docs/2026-11-12-gpredict-web-radio-design.md) ด้วย hamlib 4.7.2 จริง (`rigctld -m 1 -t 4532`, `rotctld -m 1 -t 4533`
+ซึ่งเป็นวิทยุและ rotator แบบ dummy), GMAT จริง (`application/bin/GmatConsole`), SatNOGS DB จริง (ขอ 1 ครั้ง) และ data dir จริงของแอป
+(`api-interop/gpredict-web/data`: module `Amateur` 99 ดวงที่สถานี THBK, TLE ใน `satdb.json` ของวันที่ 2026-11-12 **ไม่ได้ขอ CelesTrak ใหม่**)
+หน้าเว็บ build ใหม่ เปิด server ด้วย `python -m gpredict_web` ขับด้วย Google Chrome แบบ headless (Chrome DevTools Protocol)
+ค่าจาก daemon อ่านด้วยการเชื่อมต่อของสคริปต์เอง (`f`, `i` ของ rigctld ทุก 0.1 ถึง 0.2 วินาที และ `p` ของ rotctld ทุก 0.4 วินาที) และ tick ทุกตัวของ `/ws/modules/Amateur` ถูกบันทึกไว้เทียบ
+วันที่ 2026-11-14 เวลาไทย 12:41 ถึง 13:14 ตรงกับ 05:41 ถึง 06:14 UTC เวลาทุกค่าข้างล่างเป็น UTC ("เวลา module" คือเวลาตาม Time Controller)
+ภาพหน้าจอ สคริปต์ และข้อมูลที่บันทึกเก็บไว้ใน scratchpad ของ session ตรวจรับ (ไม่ได้ commit)
+
+| # | เกณฑ์ | ผล |
+|---|---|---|
+| 1 | Preferences → Interfaces เพิ่มวิทยุ DUMMY (localhost:4532, Full-duplex) และ rotator ROT (localhost:4533) ปิดแล้วเปิด server ใหม่ ค่ายังอยู่ | ผ่าน |
+| 2 | Radio Control ของ `Amateur` เลือก ISS, Track, Engage: `f` ที่อ่านจาก rigctld = ความถี่ดาว + Doppler − LO ไม่เกิน 1 Hz ทุกรอบ และ Doppler ตาม range rate ของ GMAT | ผ่านหลังแก้ข้อบกพร่อง 1 จุด (ดูหัวข้อ 2) |
+| 3 | `rigctl -m 2 -r localhost:4532 F …` จากภายนอกแล้วปุ่มหมุนของดาวเปลี่ยนตาม | ผ่าน |
+| 4 | Antenna Control กับ rotctld ขณะ ISS อยู่เหนือขอบฟ้า: ตำแหน่งที่อ่านได้ตาม set-point ภายใน Threshold กากบาทบน Polar plot เดินตามดาว | ผ่าน (ใช้ Time Controller ตั้งเวลา module ไปที่ pass ของ ISS ดูหัวข้อ 4) |
+| 5 | หยุด rigctld ระหว่าง Engage: ภายใน 5 รอบปุ่ม Engage เด้งออก บรรทัดสถานะบอกเหตุ server ไม่ค้าง | ผ่าน (4.1 วินาที) |
+| 6 | Update transponder data ดึง SatNOGS ได้ 1 ครั้ง กดซ้ำใน 2 ชม. ใช้ cache, combo transponder ของ ISS มีรายการ, ปุ่ม T จูนไปกลาง passband | ผ่าน |
+| 7 | Configure ระหว่างเปิด Radio Control ได้ข้อความของ Gpredict | ผ่าน |
+| 8 | test ทั้งหมดผ่าน และ GNSS Studio ได้ผลเหมือนเดิมทุกไบต์ | ผ่าน |
+
+ไม่มี error หรือ warning ใน console ของ browser ทุกขั้น log ของ server มีเฉพาะบรรทัดที่ข้อ 5 ตั้งใจให้เกิด
+
+### 1. Preferences → Interfaces และเปิด server ใหม่
+
+05:42: Edit → Preferences → กลุ่ม Interfaces ได้หน้าต่าง "GPREDICT Preferences :: Interfaces" แท็บ Radios (ตารางว่าง คอลัมน์ Config Name, Host, Port, Rig Type, PTT Status, VFO Up, VFO Down,
+LO Down, LO Up, Downlink, Uplink, Signal AOS, Signal LOS, Signal AOIQ, Signal LOIQ) และ Rotators
+- Add new → "Edit radio configuration" (Host `localhost` และ Port 4532 เป็นค่าตั้งต้น Ok กดไม่ได้จนกว่าจะมีชื่อ) พิมพ์ Name `DUMMY` เลือก Radio type "Full-duplex"
+  (VFO Up/Down เปลี่ยนเป็น "MAIN ↑ / SUB ↓" เอง) แล้วเลือก "B ↑ / A ↓" (เหตุผลในหัวข้อ "ทดลองกับ hamlib แบบ dummy") Ok
+  แถวในตาราง: `DUMMY | localhost | 4532 | Full-duplex | None | VFO B | VFO A | 0.000 MHz | 0.000 MHz | 0.000 MHz | 123.456 MHz | NO | NO | NO | NO`
+- แท็บ Rotators → Add New → "Edit rotator configuration" พิมพ์ Name `ROT` (Host `localhost` Port 4533, Az type "0° → 180° → 360°", Min Az 0, Max Az 360, Min El 0, Max El 90 เป็นค่าตั้งต้น) Ok
+  แถว: `ROT | localhost | 4533 | 0° | 360° | 0° | 90° | 0° → 180° → 360°`
+- OK ของ Preferences: ได้ `data/hwconf/DUMMY.rig.json` (`Type` 3, `VFO_UP` 2, `VFO_DOWN` 1, `DefaultUplinkFreqHz` 123456000.0, `DefaultDownlinkFreqHz` 0.0, ...) และ `data/hwconf/ROT.rot.json`
+- 05:43:01 File → Quit (หน้าเว็บแสดง "Gpredict Web ปิดแล้ว", `POST /api/quit` ตอบ 204) แล้วเปิด server ใหม่: `GET /api/hwconf` และตารางทั้งสองแท็บใน Preferences → Interfaces ได้แถวเดิมทุกช่อง
+
+ภาพ: `c1/01-interfaces-empty.png`, `c1/02-radio-editor.png`, `c1/03-radios.png`, `c1/04-rotator-editor.png`, `c1/05-rotators.png`, `c1b/02-radios-after-restart.png`, `c1b/03-rotators-after-restart.png`
+
+### 2. Radio Control: ความถี่ที่ rigctld ได้รับและ Doppler
+
+ระหว่างตรวจรับ ISS ไม่ผ่านเหนือ THBK (pass ถัดไปเริ่ม 18:42 UTC) จึงเปิด Module menu → Time Controller กด Stop ตั้ง Hour 18 Min 40 Sec 30 แล้ว Play forward
+(ป้าย "Simulated Real-Time" throttle 1) controller ใช้ค่าจาก tick ของ module จึงทำงานตามเวลานั้นเหมือน Gpredict
+pass ของ ISS: AOS 18:42:07.470 LOS 18:52:40.576 Max El 31.76° (pass ที่ 3 ในตารางข้อ 2 ของผลตรวจรับงานย่อยที่ 2)
+
+Module menu → Radio Control ได้หน้าต่าง "Gpredict Radio Control: Amateur" ("1. Device" DUMMY, "2. Device" None, Cycle 1000) เลือก ISS (ZARYA) ใน combo ของดาว
+และ transponder "Mode V/V FM (crew R1)" (downlink 145.800 MHz uplink 145.200 MHz จาก SatNOGS ข้อ 6) กด Track แล้ว Engage ที่เวลา module 18:40:32
+rigctld -m 1 รับ VFO option (หลัง `\set_vfo_opt 1` แล้ว `\chk_vfo` ตอบ 1 ลองด้วยมือก่อนตรวจรับ) controller จึงใช้คำสั่งแบบมีชื่อ VFO: `S VFOA 1 VFOB` ตอน Engage
+แล้วทุกรอบ `f currVFO`/`F currVFO …` (downlink) และ `i currVFO`/`I VFOA …` (uplink) ตามที่ test ของ server ตรวจทุกตัวอักษร
+
+**รอบที่ 1** (เวลา module 18:40:32 ถึง 18:50:34, 1,997 tick): ทุกรอบที่ค่าเปลี่ยน (744 รอบของ downlink, 745 รอบของ uplink) ปุ่มหมุน "Radio:" = round(ความถี่ดาว + Doppler − LO) ไม่เกิน 0.5 Hz
+และ Doppler ในหน้าต่าง = ∓ความถี่ดาว × range rate / c ของ range rate ใน tick เดียวกัน (ต่าง 0 Hz) ซึ่งเป็น range rate ของ ISS ที่ GMAT คำนวณ (แถวของ ISS ใน tick เดียวกันตรงทุกตัว)
+
+| เวลา module | El | range rate (km/s) | Doppler downlink | Radio: downlink | Doppler uplink | Radio: uplink |
+|---|---|---|---|---|---|---|
+| 18:41:00 | −3.73° | −6.686 | +3251.7 Hz | 145 803 252 | −3238.3 Hz | 145 196 762 |
+| 18:42:10 | 0.17° | −6.623 | +3221.0 Hz | 145 803 222 | −3207.8 Hz | 145 196 792 |
+| 18:44:00 | 8.09° | −6.263 | +3046.2 Hz | 145 803 049 | −3033.6 Hz | 145 196 964 |
+| 18:46:00 | 22.50° | −4.413 | +2146.4 Hz | 145 802 160 | −2137.5 Hz | 145 197 848 |
+| 18:47:25 | 31.76° | +0.091 | −44.5 Hz | 145 799 985 | +44.3 Hz | 145 200 015 |
+| 18:48:30 | 25.18° | +3.791 | −1843.6 Hz | 145 798 174 | +1836.0 Hz | 145 201 818 |
+
+Doppler ของ downlink เปลี่ยนจาก +3255 Hz (18:40:32) ผ่าน 0 ที่ 18:47:23 (TCA, El 31.76°) ถึง −3010 Hz (18:50:34)
+`i` ที่อ่านจาก rigctld ตรงกับค่าที่ controller ส่งทั้ง 308 ครั้ง (ตัวอ่าน `f` ของสคริปต์ตรวจรับหยุดหลังวินาทีแรกเพราะข้อบกพร่องของสคริปต์เอง จึงอ่าน `f` ใหม่ในรอบที่ 2)
+
+**รอบที่ 2 พบข้อบกพร่อง** (เวลา module 18:46:20 ถึง 18:48:10 ผ่าน TCA ที่ Doppler เปลี่ยนเร็วที่สุด, อ่าน `f` 918 ครั้ง): 78 ครั้ง `f` ของ rigctld ต่างจากปุ่มหมุน "Radio:" 6 ถึง 7 Hz
+สาเหตุ: tick ของ module ที่มาถึงขณะที่รอบรอคำตอบของ `F` เปลี่ยน Doppler ของส่วนที่เหลือของรอบนั้น ส่วน TX ของ Full-duplex จึงคำนวณปุ่มหมุน downlink ใหม่ (ไม่ได้ส่ง)
+และส่ง uplink ด้วย Doppler ที่ใหม่กว่า downlink ของรอบเดียวกัน (Gpredict ทำทั้งรอบรวดเดียว Doppler เปลี่ยนกลางรอบไม่ได้)
+แก้ใน commit `fix(gpredict-web): keep one Doppler for the whole radio cycle` (รอบใช้ Doppler ของ tick ล่าสุดตอนเริ่มรอบ) พร้อม test `test_tick_during_a_cycle_keeps_its_doppler`
+ความถี่ที่ rigctld ได้รับเองถูกต้องตามสูตรทุกรอบทั้งก่อนและหลังแก้ (ค่าที่ต่างคือปุ่มหมุนที่แสดงและ uplink ที่ใช้ Doppler ของอีก tick)
+
+**รอบที่ 3 หลังแก้** (server เปิดใหม่ด้วยโค้ดที่แก้, เวลา module 18:46:22 ถึง 18:48:10, 107 รอบที่ค่าเปลี่ยน):
+`f` ของ rigctld ตรงกับปุ่มหมุน "Radio:" downlink ทั้ง **907 ครั้ง** และ `i` ตรงกับ uplink ทั้ง **852 ครั้ง** (ไม่เกิน 1 Hz)
+ปุ่มหมุนทุกค่า = round(ความถี่ดาว + Doppler − LO) ไม่เกิน 0.49 Hz (downlink) และ 0.50 Hz (uplink) Doppler จาก +1743 Hz (rr −3.583 km/s) ผ่าน 0 ที่ 18:47:23 ถึง −1393 Hz (rr +2.864 km/s)
+
+ภาพ: `c2/02-engaged.png`, `watch/pass-184140.png` ถึง `watch/pass-185000.png` (หน้าต่างทั้งสองข้างกันทุก 1 นาทีของ pass), `c2c/01-engaged.png`, `c2c/02-tca.png`, `c2c/03-end.png`
+
+### 3. หมุนที่ตัววิทยุ (dial feedback)
+
+เวลา module 18:48:46 (รอบที่ 1): ก่อนหน้านั้นปุ่มหมุนของดาว downlink 145 800 000 Hz, "Radio:" 145 797 901 Hz (Doppler −2114 Hz)
+สั่ง `rigctl -m 2 -r localhost:4532 F 145900000` (จบปกติ ไม่มีข้อความ) อีก 0.5 วินาทีต่อมา "Radio:" เป็น **145 900 000 Hz** และปุ่มหมุนของดาวเป็น **145 902 133 Hz**
+(= 145 900 000 − Doppler −2133 Hz ของรอบนั้น) รอบต่อมา controller ติดตามต่อจากความถี่ใหม่ ("Radio:" 145 899 984, 145 899 970, 145 899 952 Hz ตาม Doppler) uplink ไม่เปลี่ยน (L ไม่ได้กด)
+ภาพ: `c2/04-dial-feedback.png`
+
+### 4. Antenna Control: rotctld ตาม set-point และกากบาทตามดาว
+
+Module menu → Antenna Control ได้ "Gpredict Rotator Control: Amateur" (Device ROT, Cycle 1000, Threshold 5.00) เลือก ISS กด Track และ Engage ที่เวลา module 18:40:32 (pass เดียวกับข้อ 2)
+Polar plot ของหน้าต่างแสดง pass 18:42 ถึง 18:52 ป้ายเวลา 18:42, 18:44, ... 18:50
+
+- ก่อน AOS: set-point = Az ของ AOS 335.39°, El 0° rotctld หมุนจาก (0, 0) ถึงภายใน Threshold ใน 6.2 วินาที "Read:" 335.39° / 0.00°
+- หลัง AOS: set-point ไปข้างหน้าดาวไม่เกิน Threshold (lead-ahead) ช่วงปกติเปลี่ยนทุก 15 ถึง 88 วินาที และ rotctld ถึงภายใน 5° ของ set-point ใหม่ใน 0.4 ถึง 1.6 วินาที
+  (ทั้ง pass set-point เปลี่ยน 86 ครั้ง ราว 70 ครั้งอยู่ในช่วงที่ rotator หมุนกลับข้างล่าง ซึ่ง timer ให้เป้าใหม่ทุกรอบเพราะยังห่างเกิน Threshold)
+  ทุกค่า `p` ที่อ่านตอน ISS อยู่เหนือขอบฟ้า (นอกช่วงที่ rotator หมุนกลับข้างล่างและ 2 วินาทีแรกหลัง set-point ใหม่) **อยู่ภายใน Threshold ของ set-point ทั้ง 1,027 ค่า** (ต่างมากสุด 0.89° ทั้ง Az และ El)
+- pass นี้ข้ามทิศเหนือที่ 18:45:38 rotator ชนิด 0° → 180° → 360° ที่ Max El 90° ใช้ flip pass ไม่ได้ (ต้องมี El ถึง 180° แบบ Gpredict) จึงหมุนกลับจาก 355° ผ่านทิศใต้ไปที่ 5° (ราว 350° ที่ 6°/วินาที)
+  ช่วง 18:45:39 ถึง 18:46:49 กากบาทจึงอยู่ห่างดาว (ภาพ `watch/pass-184600.png`) เหมือน Gpredict กับ rotator แบบนี้
+- นอกช่วงนั้น กากบาท (ตำแหน่งที่อ่านได้) อยู่ห่าง ISS ไม่เกิน 6.34° ใน Az และ 5.12° ใน El ทุก tick เช่น
+
+| เวลา module | ISS Az / El | set-point | Read: |
+|---|---|---|---|
+| 18:42:10 | 335.53° / 0.17° | 335.39° / 0.00° | 335.39° / 0.00° |
+| 18:44:00 | 343.54° / 8.09° | 345.07° / 9.35° | 345.07° / 9.35° |
+| 18:47:25 | 52.09° / 31.76° | 55.44° / 31.68° | 53.37° / 31.68° (กำลังหมุนไป set-point) |
+| 18:48:30 | 88.89° / 25.18° | 86.36° / 26.07° | 86.36° / 26.07° |
+| 18:50:00 | 112.71° / 12.82° | 116.47° / 10.03° | 116.47° / 10.03° |
+
+ภาพ: `watch/pass-184310.png`, `watch/pass-184500.png`, `watch/pass-184725.png` (TCA: กากบาทและวงกลม set-point อยู่บนเส้น pass), `watch/pass-184910.png`
+
+### 5. หยุด rigctld ระหว่าง Engage
+
+เวลา 06:02:10.743 (เวลา module 18:50:31) ส่ง SIGTERM ให้ rigctld ขณะ Radio Control Engage อยู่ (Cycle 1000 ms)
+
+| หลังหยุด | Engage | บรรทัดสถานะ |
+|---|---|---|
+| 0.53 วินาที | กดอยู่ | "rigctld localhost:4532 ปิดการเชื่อมต่อก่อนตอบ" |
+| 1.03 ถึง 3.58 วินาที | กดอยู่ | "เชื่อมต่อ rigctld localhost:4532 ไม่ได้ (ถูกปฏิเสธ ยังไม่ได้เปิดโปรแกรมหรือพอร์ตผิด)" |
+| **4.08 วินาที** | **เด้งออก** | "ปลด Engage เองเพราะผิดพลาดครบ 5 ครั้ง: เชื่อมต่อ rigctld localhost:4532 ไม่ได้ (ถูกปฏิเสธ ยังไม่ได้เปิดโปรแกรมหรือพอร์ตผิด)" |
+
+ระหว่างนั้น `GET /api/modules` ตอบทุก 0.25 ถึง 0.5 วินาที ใช้เฉลี่ย 2.5 ms มากสุด 14 ms tick ของ module และ Antenna Control ทำงานต่อ (rotctld ยัง Engage และหมุนตาม ISS)
+log ของ server: `rigctld localhost:4532 ปิดการเชื่อมต่อก่อนตอบ`, `Failed to connect to localhost:4532` 4 ครั้ง, `MAX_ERROR_COUNT (5) reached. Disengaging device!`
+ภาพ: `c2/05-rigctld-stopped.png`
+
+### 6. Update transponder data (SatNOGS DB)
+
+05:44: เปิด Radio Control เลือก ISS (ZARYA): combo ของ transponder ว่าง (ยังไม่มี `data/trsp`) ปุ่มหมุนดาว downlink 0 Hz (Default downlink ของ DUMMY)
+
+- **ครั้งที่ 1 (ขอ SatNOGS จริงครั้งเดียวของการตรวจรับ)** 05:46:16: Edit → Update transponder data ได้ modal "Transponder Update" ตัวหนา "Updating transponder files from network"
+  บรรทัด "Fetching transmitters.json" แถบความคืบหน้าที่ 0 ปุ่ม Close กดไม่ได้ อีก 5.0 วินาที (คำขอใช้ 4.4 วินาที) เป็น "Finished" แถบเต็ม Close กดได้ และบรรทัด
+  "ดึงข้อมูล transponder จาก SatNOGS DB เมื่อ 2026-11-14 05:46:16 UTC อัปเดตไฟล์ของดาว 2705 ดวง ดึงได้อีกครั้งหลัง 2026-11-14 07:46:16 UTC" (`TRSP_UPDATED`)
+  ได้ `data/trsp/<NORAD>.json` 2,705 ไฟล์ และ `data/trsp/_cache/` (`modes.json` 1,583 ไบต์, `transmitters.json` 3,961,512 ไบต์, `state.json` ที่ `requested_at` = `succeeded_at` = `2026-11-14T05:46:16Z`) รวมราว 14 MB
+  ISS มี 50 transponder (เช่น "Mode V APRS" 145.825 MHz, "Mode V/V FM (crew R1)" ลง 145.800 ขึ้น 145.200 MHz, "Mode U/V FM Voice", "Mode V/U FM - Voice Repeater CTCSS 67.0 Hz")
+- **ครั้งที่ 2** 05:46:21: ไม่ส่ง request (`state.json` ไม่เปลี่ยน คำตอบ `cached: true` ใน 0.4 วินาที) "Finished" ทันที บรรทัด
+  "ยังไม่ส่งคำขอใหม่ เพราะส่งคำขอครั้งก่อนเมื่อ 2026-11-14 05:46:16 UTC ยังไม่ครบ 2 ชั่วโมง ใช้ข้อมูลที่ดึงเมื่อ 2026-11-14 05:46:16 UTC ดึงได้อีกครั้งหลัง 2026-11-14 07:46:16 UTC" (`TRSP_RATE_LIMITED_LOCAL`)
+- Radio Control ที่เปิดอยู่ยังใช้รายการเดิม (combo ว่าง) จนเลือกดาวอื่น (239ALFEROV (RS61S)) แล้วเลือก ISS อีกครั้ง: combo มี 50 รายการ (ชื่อยาวถูกตัดด้วย "…") transponder แรก "Mode V APRS" ถูกเลือกและจูนให้ (145 825 000 Hz)
+- **ปุ่ม T**: เลือก "Mode V/V FM (crew R1)" (ปุ่มหมุนเป็น 145 800 000 / 145 200 000 Hz) คลิกลูกศรหลักพันของ downlink 1 ครั้งเป็น 145 801 000 Hz กด T กลับเป็น **145 800 000 Hz**
+  ตัวอย่างที่มี passband จริง: RS-44 & BREEZE-KM R/B "Mode V/U - Transponder" (ลง 435.610 ถึง 435.670 MHz ขึ้น 145.935 ถึง 145.995 MHz แบบกลับข้าง) ได้ 435 640 000 / 145 965 000 Hz
+  +1 kHz เป็น 435 641 000 แล้ว T กลับเป็น **435 640 000 Hz** (กลาง passband ทั้งสองทาง)
+
+ไฟล์ transponder ที่ดึงมาเก็บไว้ใน `data/trsp/` ตามที่ผู้ใช้ต้องการ
+ภาพ: `c6/01-radio-iss-before-update.png`, `c6/02-update-1-a-fetching.png`, `c6/02-update-1-b-finished.png`, `c6/03-update-2-b-finished.png`, `c6/04-radio-iss-transponders.png`,
+`c6t/01-iss-a-moved.png`, `c6t/01-iss-b-after-T.png`, `c6t/02-rs44-a-moved.png`, `c6t/02-rs44-b-after-T.png`
+
+### 7. Configure ระหว่างเปิด Radio Control
+
+05:46:28 (Radio Control ของ `Amateur` เปิดอยู่): Module menu → Configure ได้กล่องไม่มีชื่อ ปุ่ม OK ข้อความ
+`A module can not be configured while the radio or rotator controller is active.\n\nPlease close the radio and rotator controllers and try again.` และไม่เปิดหน้าต่าง Edit module
+หลังปิด Radio Control และ Antenna Control แล้ว Module menu → Radio Control เมื่อไม่มีวิทยุได้กล่อง "ERROR" `You have no radio configuration!\nPlease configure a radio first.` (`NO_RADIO_CONFIG`)
+ภาพ: `c6/07-configure-blocked.png`, `c9/03-no-radio.png`
+
+### 8. test ครบทุกชุด
+
+| ชุด | คำสั่ง | ผล |
+|---|---|---|
+| engine | `( cd api-interop/gnss-predict && python3 -m unittest discover -s tests )` | 498 test OK (ข้าม 3 ที่ต้องใช้ GMAT เมื่อตั้ง `GMAT_BIN` ไม่ข้ามเลย) |
+| server | `( cd api-interop/gpredict-web/server && GMAT_BIN=… ../.venv/bin/python -m unittest discover -s tests )` | 781 test OK ไม่ข้ามเลย (รวม integration กับ GMAT จริง และ `test_integration_hamlib` กับ rigctld/rotctld จริง) ใช้ 64 วินาที |
+| web | `( cd api-interop/gpredict-web/web && npm test )` | 69 ไฟล์ 1025 test OK |
+| web | `( cd api-interop/gpredict-web/web && npm run build )` | สำเร็จ (143 modules, JS 393.94 kB) |
+
+`git diff feature/gpredict-web-passes -- api-interop/gnss-predict` ว่าง: งานย่อยที่ 3 ไม่แก้ engine จึงให้ผลกับ GNSS Studio เหมือนเดิมทุกไบต์
+
+integration กับ hamlib จริง (`tests.test_integration_hamlib`): rigctld dummy แบบ RX only ที่ LO 2256 MHz (downconverter 2.4 GHz) range rate 5 km/s ความถี่ดาวเปลี่ยนทุกรอบ:
+`f` ที่อ่านได้ = round(ความถี่ดาว + Doppler − LO) ไม่เกิน 1 Hz ทั้ง 5 รอบ (Doppler ราว −40 kHz) และ rotctld dummy ถึง set-point (20°, 5°) ภายใน Threshold
+(ตรวจแล้วว่า test จับข้อผิดได้: กลับเครื่องหมาย Doppler ในสูตรแล้ว `f` ต่าง 80 kHz ทั้ง 5 รอบ, สลับ Az กับ El ในคำสั่ง `P` แล้วต่าง 15°)
+
+### หลังตรวจรับ
+
+- File → Quit ขณะ Radio Control Engage และ Antenna Control Engage อยู่: server ปิดเรียบร้อย ไม่มีการเชื่อมต่อค้างที่ port 4532/4533 เปิด server ใหม่แล้ว `GET /api/controllers` ว่าง
+- Time Controller → Reset เวลา module กลับเป็นเวลาจริง ปิดหน้าต่าง Radio Control และ Antenna Control แล้วลบ DUMMY และ ROT ที่ Preferences → Interfaces → Delete แล้ว OK
+  (`data/hwconf/` ว่าง `GET /api/hwconf` ได้รายการว่าง) จากนั้น File → Quit และหยุด rigctld, rotctld
+- `preferences.json`, `modules/Amateur.json`, `session.json`, `settings.json`, `qth/THBK.json` และ `satdb.json` เหมือนก่อนตรวจรับทุกไบต์ (SHA-1 เดิม)
+  ที่เพิ่มคือ `trsp/` (ข้อมูล transponder ที่ดึงมา) และ cache ephemeris ของช่วงเวลาที่ตั้งด้วย Time Controller
+
+### สิ่งที่ไม่ได้ทำหรือทำต่างจากเกณฑ์
+
+- **ISS เหนือขอบฟ้า (ข้อ 2 และ 4)** ใช้ Time Controller ตั้งเวลา module ไปที่ pass 18:42 UTC (Simulated Real-Time throttle 1) เพราะ ISS ไม่ผ่านเหนือ THBK ระหว่างตรวจรับ ไม่ได้ตรวจกับเวลาจริง
+  การปิดหน้าต่าง Time Controller ทำให้ module กลับไปเวลาจริง (Reset แบบ Gpredict) จึงเปิดค้างไว้ตลอด pass
+- **VFO ของ DUMMY** ใช้ "B ↑ / A ↓" ไม่ใช่ "MAIN ↑ / SUB ↓" ที่ editor ตั้งให้ (ลองกับ rigctld -m 1 ด้วยคำสั่งชุดเดียวกับ controller แล้ว Main ทับ VFO A ที่รับ downlink)
+- **วิทยุและ rotator จริง** ไม่ได้ลอง มีแต่ dummy ของ hamlib (dummy rotator หมุนราว 6°/วินาที ช้ากว่าเครื่องจริงหลายรุ่น จึงเห็นช่วงตามไม่ทันหลัง set-point ใหม่ราว 1 วินาที)
+- **PTT, dual-rig, Lock, signalling AOS/LOS, FT817** ไม่ได้ลองในหน้าเว็บกับ rigctld จริง (มี test ของ server ที่ตรวจคำสั่งทุกตัวอักษรกับ rigctld ปลอม) rigctld -m 1 ตอบ `AOS` ด้วย `RPRT -18` ซึ่ง controller ไม่สนตาม Gpredict
 - ตรวจเฉพาะ Google Chrome แบบ headless ไม่ได้ลอง Safari และ Firefox
