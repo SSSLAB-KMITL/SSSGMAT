@@ -906,6 +906,7 @@ class RigController:
                 return
             dev = self._dev1
             dev.down = False
+            await self._open(dev)                                # การเชื่อมต่อหลุดไปหลังรอบก่อน: ต่อใหม่แบบต้นรอบ
             if not await self._get_ptt(dev):
                 _log.debug("PTT is OFF => Set TX freq and PTT=ON")
                 await self._toggle_tx_cycle(dev)

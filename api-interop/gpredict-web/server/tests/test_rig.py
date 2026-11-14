@@ -336,6 +336,21 @@ class CycleTest(RigTestCase):
         self.assertTrue(any("PTT is ON = Set PTT=OFF" in line for line in logs.output))
         self.assertNotIn(b"q\n", self.fake.log)                                 # spec §9.1 ข้อ 5: ไม่มี q ต่อท้าย T
 
+    async def test_space_reconnects_after_a_dropped_connection(self):
+        # rigctld ปิดการเชื่อมต่อระหว่างรอบ (เริ่ม rigctld ใหม่หรือสายหลุด): SPACE ต่อใหม่ก่อนแบบต้นรอบ ไม่ใช่แค่นับ error
+        self.write_radio("A", Type=5, PTT=1)
+        ctl = self.controller()
+        await self.engage(ctl)
+        await ctl.run_cycle()
+        self.fake.drop()
+        await until(lambda: not ctl._dev1.client.connected)                     # client เห็นว่าปลายทางปิดแล้ว
+        n = len(self.fake.log)
+        with self.assertNoLogs(LOGGER, "ERROR"):
+            await ctl.act({"action": "ptt_toggle"})
+        self.assertEqual(self.since(n), [*PROBE, b"S 1 VFOB\n", b"t\n", b"t\n", b"I  435100000\n", b"T 1\n"])
+        self.assertEqual(self.fake.ptt, 1)
+        self.assertIsNone(ctl.snapshot()["status"])
+
     async def test_space_not_engaged(self):
         self.write_radio("A", Type=5, PTT=1)
         ctl = self.controller()
