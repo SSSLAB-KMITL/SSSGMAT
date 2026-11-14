@@ -6,7 +6,7 @@
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { errorText } from "../api";
-import { NoPassMessage } from "../passes/NoPassMessage";
+import { MessageBox } from "../components/MessageBox";
 import type { PrefsPageApi } from "../prefs/prefGroups";
 import {
   BUTTON_TIPS,
@@ -185,8 +185,8 @@ function InterfacesNotebook({ api, hw }: { api: PrefsPageApi; hw: HwConf }) {
         />
       )}
       {state.message !== null && (
-        // the box of Gpredict's message dialogs (error icon, the text, OK), the one of "no pass" has the same look
-        <NoPassMessage
+        // Gpredict's message dialog: error icon, the text, OK
+        <MessageBox
           message={{ code: "NO_SELECTION", level: "error", text: state.message, object: null }}
           onOk={() => dispatch({ type: "dismiss" })}
         />

@@ -1164,45 +1164,48 @@ body {
   overflow: auto;
 }
 
-/* ---------------------------------------------------------------- pass request boxes: waiting for GMAT, no pass (Task 13) */
+/* ---------------------------------------------------------------- pass request boxes: waiting for GMAT (Task 13) */
 
 .pass-wait {
   min-width: 280px;
   max-width: 420px;
 }
-.no-pass {
+
+/* ---------------------------------------------------------------- Gpredict's message box (components/MessageBox.tsx) */
+
+.message-box {
   min-width: 300px;
   max-width: 480px;
 }
-.no-pass-row {
+.message-box-row {
   display: flex;
   align-items: flex-start;
   gap: 14px;
   padding: 6px 4px 4px;
 }
-.no-pass-icon {
+.message-box-icon {
   flex: none;
 }
-.no-pass-icon circle {
+.message-box-icon circle {
   stroke: none;
 }
-.no-pass-icon.error circle {
+.message-box-icon.error circle {
   fill: var(--error-border);
 }
-.no-pass-icon.info circle {
+.message-box-icon.info circle {
   fill: var(--accent);
 }
-.no-pass-icon path {
+.message-box-icon path {
   fill: none;
   stroke: #ffffff;
   stroke-width: 3;
   stroke-linecap: round;
 }
-.no-pass-icon circle.dot {
-  /* as specific as `.no-pass-icon.info circle` and after it, so the dot of the "i" stays white on the disc */
+.message-box-icon circle.dot {
+  /* as specific as `.message-box-icon.info circle` and after it, so the dot of the "i" stays white on the disc */
   fill: #ffffff;
 }
-.no-pass-text {
+.message-box-text {
   align-self: center;
 }
 

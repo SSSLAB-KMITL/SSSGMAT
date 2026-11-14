@@ -3,6 +3,7 @@ import { closeModule, errorText, getModules, putTabs, quit as quitServer, resetC
 import { autotrackTarget } from "./autotrack";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
+import { MessageBox } from "./components/MessageBox";
 import { ModuleHeader } from "./components/ModuleHeader";
 import { ModuleMenu } from "./components/ModuleMenu";
 import { ModuleView } from "./components/ModuleView";
@@ -18,7 +19,6 @@ import type { ModuleAction } from "./moduleMenu";
 import { pruneDismissed, rememberNames, startupNotices, tickNotices, visibleNotices } from "./notices";
 import type { Notice, SatNameMap } from "./notices";
 import { overlayFor } from "./overlay";
-import { NoPassMessage } from "./passes/NoPassMessage";
 import { PassWindows } from "./passes/PassWindowsHost";
 import { closeWindow, openWindow } from "./passes/passWindows";
 import type { PassWindow } from "./passes/passWindows";
@@ -557,7 +557,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
           onResetFailed={addLocalError}
         />
       )}
-      {controllerBox !== null && <NoPassMessage title={controllerBox.title} message={controllerBox.message} onOk={closeControllerBox} />}
+      {controllerBox !== null && <MessageBox title={controllerBox.title} message={controllerBox.message} onOk={closeControllerBox} />}
     </div>
   );
 }
