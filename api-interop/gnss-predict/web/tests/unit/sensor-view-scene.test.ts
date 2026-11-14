@@ -9,10 +9,16 @@ import {
   Camera, Cartesian3, Ellipsoid, Entity, GeographicProjection, Math as CesiumMath, Matrix4, PerspectiveFrustum, SceneMode, ScreenSpaceEventHandler,
   ScreenSpaceEventType,
 } from "cesium";
+import { act } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SensorViewPose } from "../../src/cesium/sensorDraw";
+import { sensorViewFovDeg, sensorViewShortFovDeg } from "../../src/cesium/sensorGeometry";
 import { createViewer, destroyViewer } from "../../src/cesium/viewer";
+import { useResults } from "../../src/stores/results";
+import { useScenario } from "../../src/stores/scenario";
+import { useTime } from "../../src/stores/time";
 import { mountScene3D, mountSensorView, placeSensorCamera, releaseContextMenu } from "../../src/windows/Graphics3D/scene3d";
+import { CATALOG, makeScenarioDoc } from "./helpers/objects";
 
 vi.mock("../../src/cesium/viewer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/cesium/viewer")>()),
@@ -138,5 +144,154 @@ describe("the right-click menu of a 3D window", () => {
     vi.mocked(createViewer).mockReturnValueOnce(sensor as never);
     expect(() => mountSensorView("sensorView", document.createElement("div"))).toThrow();
     expect(canvasOf(sensor).oncontextmenu).toBe(cesiumOwn);
+  });
+});
+
+// ---------- โหมด Camera (imagery spec §5.3, Review Focus 5) ----------
+// scene จริง (Scene3D) สองตัวบน viewer ปลอมที่มี EntityCollection, DataSourceCollection, Clock และ Camera ของ Cesium จริง (ไม่มี WebGL):
+// หน้าต่าง 3D หลัก + Sensor View ของ Sensor1 บนดาว G01 ในภาพมีดาว G01 G02 G05 (G05 ผู้ใช้ซ่อนไว้), Facility THBK, เส้น access และ sensor ของ G02
+
+describe("Camera display of a Sensor View", () => {
+  const ORBIT_R = 26_560_000;
+  const OMEGA = (2 * Math.PI) / 43_082;
+
+  function fakeViewer() {
+    const { camera } = realCamera();
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 400 });
+    Object.defineProperty(canvas, "clientHeight", { value: 300 });
+    const scene = {
+      canvas,
+      globe: { baseColor: Cesium.Color.BLUE, enableLighting: false, ellipsoid: Ellipsoid.WGS84 },
+      light: { intensity: 1 },
+      postRender: new Cesium.Event(),
+      renderError: new Cesium.Event(),
+      requestRender: () => undefined,
+      screenSpaceCameraController: { enableInputs: true, enableRotate: true, enableTranslate: true, enableTilt: true, enableLook: true },
+    };
+    return {
+      scene, camera, canvas,
+      clock: new Cesium.Clock(),
+      entities: new Cesium.EntityCollection(),
+      dataSources: new Cesium.DataSourceCollection(),
+      dataSourceDisplay: { update: () => true },
+      imageryLayers: new Cesium.ImageryLayerCollection(),
+      trackedEntity: undefined as Entity | undefined,
+      screenSpaceEventHandler: new ScreenSpaceEventHandler(canvas),
+      isDestroyed: () => false,
+      resize: () => undefined,
+    };
+  }
+  type FakeViewer = ReturnType<typeof fakeViewer>;
+
+  /** ตำแหน่งดาวในวงโคจรวงกลมบนเส้นศูนย์สูตร (ตัวอย่างทุก 60 s ±20 นาทีรอบเวลาปัจจุบัน) */
+  function orbit(phase: number): Cesium.SampledPositionProperty {
+    const p = new Cesium.SampledPositionProperty();
+    const now = Cesium.JulianDate.fromDate(useTime.getState().current);
+    for (let s = -1200; s <= 1200; s += 60) {
+      const a = OMEGA * s + phase;
+      p.addSample(Cesium.JulianDate.addSeconds(now, s, new Cesium.JulianDate()), new Cartesian3(ORBIT_R * Math.cos(a), ORBIT_R * Math.sin(a), 0));
+    }
+    return p;
+  }
+
+  /** ใส่ดาวและเส้น access ใน data source ของ viewer (แทน scene.czml) แล้วให้ scene ตั้งกราฟิกใหม่ (doc ใหม่) */
+  function fillScene(viewer: FakeViewer): void {
+    const ds = viewer.dataSources.get(0);
+    ds.entities.add(new Entity({ id: "sat/G01", position: orbit(1.75) }));
+    ds.entities.add(new Entity({ id: "sat/G02", position: orbit(1.9) }));
+    ds.entities.add(new Entity({ id: "sat/G05", position: orbit(2.2) }));
+    ds.entities.add(new Entity({ id: "access/THBK/G01", polyline: new Cesium.PolylineGraphics({ positions: [new Cartesian3(1, 0, 0), new Cartesian3(2, 0, 0)] }) }));
+  }
+
+  const shown = (viewer: FakeViewer): string[] => {
+    const out: string[] = [];
+    for (let i = 0; i < viewer.dataSources.length; i++) for (const e of viewer.dataSources.get(i).entities.values) if (e.isShowing) out.push(e.id);
+    for (const e of viewer.entities.values) if (e.isShowing) out.push(e.id);
+    return out.sort();
+  };
+
+  /** doc ของ S1: Sensor1 บน G01, Sensor2 บน G02, G05 ปิด Show ของหน้า 3D */
+  function scenarioDoc() {
+    const doc = makeScenarioDoc({}, { G01: ["Sensor1"], G02: ["Sensor2"] });
+    for (const o of doc.objects as { name: string; graphics3d?: unknown }[]) if (o.name === "G05") o.graphics3d = { show: false };
+    return doc;
+  }
+
+  async function mountBoth() {
+    const doc = scenarioDoc();
+    useScenario.setState({ name: "S1", doc, tree: null, catalog: new Map(CATALOG.map((e) => [e.norad, e])) });
+    useTime.getState().init(doc);
+    useResults.setState({ prnByNorad: new Map([[40101, "G01"], [40102, "G02"], [40105, "G05"]]) });
+    const main = fakeViewer();
+    const sensor = fakeViewer();
+    vi.mocked(createViewer).mockReturnValueOnce(main as never).mockReturnValueOnce(sensor as never);
+    const mainScene = mountScene3D("graphics3d", document.createElement("div"));
+    const sensorScene = mountSensorView("sensorView", document.createElement("div"));
+    await vi.waitFor(() => expect([main.dataSources.length, sensor.dataSources.length]).toEqual([1, 1]));
+    fillScene(main);
+    fillScene(sensor);
+    act(() => useScenario.setState({ doc: scenarioDoc() })); // restyle ทั้งสองภาพ
+    return { main, sensor, mainScene, sensorScene };
+  }
+
+  afterEach(() => {
+    useResults.setState({ prnByNorad: new Map() });
+    useScenario.setState({ name: null, doc: null, tree: null });
+  });
+
+  test("hides everything in its own viewer only; Sensor brings back exactly what the scenario shows (user-hidden stays hidden)", async () => {
+    const { main, sensor, mainScene, sensorScene } = await mountBoth();
+    const mainBefore = shown(main);
+    expect(mainBefore).toEqual(expect.arrayContaining(["sat/G01", "sat/G02", "fac/THBK", "access/THBK/G01", "sensor/Sensor1/ring", "sensor/Sensor2/ring"]));
+    expect(mainBefore).not.toContain("sat/G05");
+
+    expect(sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "sensor", 1)).toBe("ok");
+    const sensorMode = shown(sensor);
+    expect(sensorMode).toEqual(expect.arrayContaining(["sat/G02", "fac/THBK", "access/THBK/G01", "sensor/Sensor2/ring"]));
+    expect(sensorMode.filter((id) => id.startsWith("sensor/Sensor1/"))).toEqual([]);
+    expect(sensorMode).not.toContain("sat/G05");
+    expect(sensorScene.sensorCamera()?.visibleEntityCount).toBe(sensorMode.length);
+
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+    expect(shown(sensor)).toEqual([]);
+    expect(sensorScene.sensorCamera()).toMatchObject({ display: "camera", zoom: 1, visibleEntityCount: 0 });
+    expect(shown(main)).toEqual(mainBefore); // หน้าต่าง 3D หลักไม่ถูกแตะ
+
+    // doc ใหม่ เวลาเปลี่ยน และ data source ใหม่ระหว่างอยู่ในโหมด Camera ยังไม่มีอะไรโผล่
+    act(() => useScenario.setState({ doc: scenarioDoc() }));
+    act(() => useTime.getState().setCurrent(new Date(useTime.getState().current.getTime() + 60_000)));
+    await sensor.dataSources.add(new Cesium.CustomDataSource("late"));
+    sensor.dataSources.get(1).entities.add(new Entity({ id: "late/1" }));
+    expect(shown(sensor)).toEqual([]);
+    expect(shown(main)).toEqual(mainBefore);
+    sensor.dataSources.remove(sensor.dataSources.get(1));
+
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "sensor", 1);
+    expect(shown(sensor)).toEqual(sensorMode);
+    expect(shown(sensor)).not.toContain("sat/G05");
+
+    mainScene.destroy();
+    sensorScene.destroy();
+  });
+
+  test("zoom divides the short-side fov of the camera; position and direction stay on the satellite", async () => {
+    const { mainScene, sensorScene } = await mountBoth();
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 1);
+    const wide = sensorScene.sensorCamera()!;
+    expect(wide.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300), 9);
+    sensorScene.viewFromSensor("*/Sensor/Sensor1", "north", "camera", 8);
+    const narrow = sensorScene.sensorCamera()!;
+    expect(narrow.zoom).toBe(8);
+    expect(narrow.fovDeg).toBeCloseTo(sensorViewFovDeg(45, 400 / 300, 8), 9);
+    for (let i = 0; i < 3; i++) {
+      expect(narrow.position[i]).toBeCloseTo(wide.position[i], 3);
+      expect(narrow.direction[i]).toBeCloseTo(wide.direction[i], 12);
+    }
+    const hud = sensorScene.sensorHud()!;
+    expect(hud).toMatchObject({ zoom: 8, imagery: null });
+    expect(hud.fovDeg).toBeCloseTo(sensorViewShortFovDeg(45, 8), 12);
+    mainScene.destroy();
+    sensorScene.destroy();
   });
 });

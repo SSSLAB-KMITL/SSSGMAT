@@ -174,10 +174,11 @@ export interface SensorViewPose {
 
 /**
  * กล้องของ Sensor View (spec §5.4) จากสถานะของ sensor: ตำแหน่ง = ตำแหน่งดาว, ทิศ = boresight, ด้านบน = up (cameraOrientation)
- * fov ด้านสั้น = min(2α × 1.05, 120°) แปลงเป็นด้านยาวตาม aspect = กว้าง / สูง (sensorViewFovDeg)
+ * fov ด้านสั้น = min(2α × 1.05, 120°) / zoom (imagery spec §5.3) แปลงเป็นด้านยาวตาม aspect = กว้าง / สูง (sensorViewFovDeg)
+ * zoom ไม่เปลี่ยนตำแหน่งและทิศ
  */
-export function sensorViewPose(st: SensorDrawState, up: "north" | "velocity", aspect: number): SensorViewPose {
+export function sensorViewPose(st: SensorDrawState, up: "north" | "velocity", aspect: number, zoom = 1): SensorViewPose {
   const o = cameraOrientation(st.pos, st.boresight, st.frame, up);
   const sized = Number.isFinite(aspect) && aspect > 0;
-  return { position: st.pos, direction: o.direction, up: o.up, fovDeg: sized ? sensorViewFovDeg(coneHalfAngleOf(st.sensor), aspect) : null };
+  return { position: st.pos, direction: o.direction, up: o.up, fovDeg: sized ? sensorViewFovDeg(coneHalfAngleOf(st.sensor), aspect, zoom) : null };
 }

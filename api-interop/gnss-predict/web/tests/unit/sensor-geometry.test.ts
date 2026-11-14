@@ -14,6 +14,7 @@ import {
   nadirCentralAngleRad,
   sensorFootprint,
   sensorViewFovDeg,
+  sensorViewShortFovDeg,
 } from "../../src/cesium/sensorGeometry";
 import { EARTH_RADIUS_KM, WGS84_E2 } from "../../src/cesium/swath";
 
@@ -149,6 +150,16 @@ test("fov: square view equals the cone, wide view widens, capped at 120 on the s
   expect(sensorViewFovDeg(10, 1)).toBeCloseTo(21, 6);
   expect(sensorViewFovDeg(80, 1)).toBeCloseTo(120, 6);
   expect(sensorViewFovDeg(10, 2)).toBeCloseTo((2 * Math.atan(Math.tan(10.5 * D) * 2)) / D, 6);
+});
+
+test("zoom divides the short-side fov (imagery spec §5.3): GPS cone at ×8, the 120° cap applies before the zoom", () => {
+  expect(sensorViewShortFovDeg(13.88 + 0.5)).toBeCloseTo(2 * 14.38 * 1.05, 12);
+  expect(sensorViewShortFovDeg(13.88 + 0.5, 8)).toBeCloseTo(Math.min(2 * 14.38 * 1.05, 120) / 8, 12);
+  expect(sensorViewShortFovDeg(80, 4)).toBeCloseTo(30, 12);
+  expect(sensorViewShortFovDeg(13.88 + 0.5, 128)).toBeCloseTo(0.2359, 4); // แคบสุดของดาว GPS ≈ 0.24° (spec §1)
+  // ด้านยาวตาม aspect จากด้านสั้นที่หารแล้ว
+  expect(sensorViewFovDeg(10, 2, 4)).toBeCloseTo((2 * Math.atan(Math.tan((10.5 / 4) * D) * 2)) / D, 9);
+  expect(sensorViewFovDeg(10, 1, 2)).toBeCloseTo(10.5, 9);
 });
 
 test("cone rays are equally spaced at the half angle; every ninth of 72 is one of 8 (radial lines)", () => {

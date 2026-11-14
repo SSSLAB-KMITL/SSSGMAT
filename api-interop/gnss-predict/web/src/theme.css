@@ -1799,6 +1799,20 @@ body {
   padding: 0 6px;
 }
 
+/* ค่าซูมข้างปุ่ม Zoom In / Zoom Out ("×8") */
+.sensor-view-zoom-value {
+  min-width: 3.5em;
+  color: var(--menu-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* คำแนะนำ Globe Manager ใน HUD (โหมด Camera ซูมลึกโดยไม่มีภาพออนไลน์) */
+.sensor-view-hint {
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
 .sensor-view-hud {
   position: absolute;
   top: 6px;

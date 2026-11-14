@@ -218,7 +218,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
     }]]);
     expect(useSelection.getState().activePath).toBe(sensorPath("Sensor1")); // เลือก sensor ใหม่
     expect(info()).toEqual([msg("sensorView.created", { sensor: "Sensor1", satellite: "G01", angle: "14.4" })]);
-    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Sensor1"), up: "north" }]]);
+    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Sensor1"), up: "north", display: "camera", zoom: 1 }]]);
   });
 
   test("without a 3D position the new sensor gets 45", async () => {
@@ -275,7 +275,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
     runCommand("object.sensorView");
     await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
     expect(insert.mock.calls[0][0]).toMatchObject({ name: "Sensor2", parent: satPath("G01") });
-    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Sensor2"), up: "north" }]]);
+    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Sensor2"), up: "north", display: "camera", zoom: 1 }]]);
   });
 
   test("Sensor View on a satellite with sensors opens the first one", async () => {
@@ -285,7 +285,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
     useSelection.getState().select(satPath("G01"));
     runCommand("object.sensorView");
     await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
-    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Cam"), up: "north" }]]);
+    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Cam"), up: "north", display: "camera", zoom: 1 }]]);
     expect(insert).not.toHaveBeenCalled();
   });
 
@@ -295,7 +295,7 @@ describe("object.sensorView (sensor spec §5.1)", () => {
     expect(isEnabled("object.sensorView")).toBe(true);
     runCommand("object.sensorView");
     await vi.waitFor(() => expect(openPanel).toHaveBeenCalled());
-    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Nav"), up: "north" }]]);
+    expect(openPanel.mock.calls).toEqual([["sensorView", { path: sensorPath("Nav"), up: "north", display: "camera", zoom: 1 }]]);
   });
 
   test("an open window is brought back without resetting its Up", async () => {

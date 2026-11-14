@@ -23,7 +23,7 @@
 //   โหมด Zoom In ไม่เลือก; คลิกซ้ายและดับเบิลคลิกตั้งต้นของ Viewer (pickAndSelectObject / pickAndTrackObject) ยังอยู่ตามเดิม
 // - Sensor View (sensor spec §5.4, mountSensorView): scene เดียวกันนี้ใน viewer ของหน้าต่าง Sensor View ลงทะเบียนในทะเบียนของ Sensor View (P3)
 //   กล้องโหมด sensor (viewFromSensor): ตำแหน่ง = ตำแหน่ง Earth-fixed ของดาวแม่, ทิศ = boresight, ด้านบน = North หรือ Velocity
-//   fov ด้านสั้น = min(2α × 1.05, 120°) (sensorDraw.ts sensorViewPose) near = 1 m ตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน doc เปลี่ยน หรือหน้าต่างเปลี่ยนขนาด
+//   fov ด้านสั้น = min(2α × 1.05, 120°) / zoom (sensorDraw.ts sensorViewPose) near = 1 m ตั้งใหม่ทุกครั้งที่เวลาเปลี่ยน doc เปลี่ยน หรือหน้าต่างเปลี่ยนขนาด
 //   (ภาพขนาดศูนย์ เช่นแท็บที่ยุบอยู่ ไม่ตั้ง fov: คงค่าเดิมไว้) ปิดการลาก หมุน ซูมด้วยเมาส์ (enableInputs = false)
 //   ไม่วาดกราฟิกของ sensor ตัวนี้เลย (Radial Lines, วงรอย, Boresight Marker: P7 ตามที่ controller ปรับ วงขอบกรวยที่เห็นคือวงบน HUD ซึ่งเป็นภาพที่แน่นอนของขอบกรวย
 //   กราฟิกของ sensor วาดใหม่ช้ากว่ากล้องจึงแกว่งรอบวง HUD ตอน animation) sensor ตัวอื่นยังวาดครบ และซ่อนจุดกับป้ายของดาวแม่ที่อยู่ตรงตำแหน่งกล้อง
@@ -31,6 +31,12 @@
 //   ไม่อ่าน 3D Graphics Window Properties (P8)
 //   คลิกและดับเบิลคลิกตั้งต้นของ Viewer (เลือก entity / ตามหรือบินไปหา entity) ถูกถอดจาก viewer ของ Sensor View (enableInputs ไม่ได้ปิดสองอย่างนี้)
 //   และทุกครั้งที่วางกล้องจะเลิกตาม entity ยกเลิกการบิน และคืน transform เป็น identity ก่อน (placeSensorCamera)
+// - โหมด Camera ของ Sensor View (imagery spec §5.3, view.display = "camera"): ตั้ง show = false ที่ทุก data source ของ viewer นี้และที่ viewer.entities
+//   (ทั้งคอลเลกชัน: entity.isShowing ของ Cesium รวม show ของคอลเลกชัน เส้นวงโคจร จุด ป้าย Facility เส้น access sensor และ Inertial by Window จึงหายหมด
+//   รวมถึง entity ที่ applyGraphics / drawSensors / drawInertial ตั้งหรือสร้างใหม่ภายหลัง และ data source ที่เพิ่มเข้ามาทีหลัง: dataSourceAdded)
+//   ไม่จำค่าเดิม: กลับเป็น Sensor = คืน show ของคอลเลกชันแล้ว restyle คำนวณการแสดงของแต่ละ entity ใหม่จาก doc (object ที่ผู้ใช้ซ่อนยังซ่อน)
+//   scene นี้ไม่มี primitive ของตัวเองนอกจากที่ data source วาด ลูกโลก ชั้นภาพ บรรยากาศ ดาวพื้นหลัง และแสงคงไว้ หน้าต่างอื่นไม่ถูกแตะ (viewer ของตัวเอง)
+//   zoom: fov ด้านสั้น = sensorViewShortFovDeg(α) / zoom ตำแหน่งและทิศกล้องไม่เปลี่ยน
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
 
@@ -43,7 +49,7 @@ import {
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
-import { attachImageryLayers } from "../../cesium/imageryLayers";
+import { attachImageryLayers, imageryStatus } from "../../cesium/imageryLayers";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
   sensorStateAt, sensorStatesAt, type SceneObject, type SceneStyle, type SensorCtx,
@@ -51,7 +57,7 @@ import {
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
 import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
-import type { Vec3 } from "../../cesium/sensorGeometry";
+import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
@@ -66,7 +72,8 @@ import {
   noteSceneLoaded, notifyScenes, type MouseMode, type Scene3DHandle, type ViewFromToRequest, type ViewFromToResult,
 } from "./registry";
 import {
-  notifySensorViews, type SensorCamera, type SensorHud, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
+  notifySensorViews, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle, type SensorViewResult, type SensorViewUp,
+  type SensorViewZoom,
 } from "../SensorView/registry";
 import { currentSceneUrls, CzmlScene } from "../graphics/sceneSource";
 import { Throttle } from "../graphics/throttle";
@@ -93,6 +100,8 @@ const INERTIAL_BY_WINDOW = "Inertial by Window";
 const SENSOR_INTERVAL_MS = 250;
 /** Sensor View: near ของ frustum (เมตร) กล้องอยู่ที่ดาวพอดี (ความเสี่ยง S3) */
 const SENSOR_VIEW_NEAR_M = 1;
+/** HUD: ชั้นบนสุดที่ไม่มีภาพเกินสัดส่วนนี้ของชิ้นที่ได้ผลแล้ว = "ไม่มีภาพเวลานี้" (imagery spec §5.3) */
+const IMAGERY_MISSING_RATIO = 0.5;
 /** Sensor View: แสงกลางวัน/กลางคืนเปิดเสมอ ค่าอื่นตามค่าตั้งต้นของหน้าต่าง 3D (P8: ไม่มี 3D Graphics Window Properties ของตัวเอง) */
 const SENSOR_VIEW_PROPS: Readonly<Props3D> = { ...DEFAULT_PROPS_3D, enableLighting: true };
 
@@ -134,7 +143,7 @@ type View =
   | { kind: "free" }
   | { kind: "track"; path: string }
   | { kind: "fromTo"; req: ViewFromToRequest }
-  | { kind: "sensor"; path: string; up: SensorViewUp };
+  | { kind: "sensor"; path: string; up: SensorViewUp; display: SensorViewDisplay; zoom: SensorViewZoom };
 
 /** หน้าต่างที่ใช้ scene นี้: ทะเบียนที่ต้องแจ้งเมื่อสถานะเปลี่ยน และค่าตั้งคงที่ (ไม่ระบุ = อ่าน 3D Graphics Window Properties ของ panel) */
 interface SceneOptions {
@@ -283,6 +292,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.props = opts.props ?? props3d(useLayout.getState().windowProps[panelId]);
     this.applyProps();
     this.offs.push(attachImageryLayers(viewer)); // หลังภาพฐานและเส้น Lat/Lon: ชั้น GIBS อยู่ระหว่างสองอย่างนี้
+    // โหมด Camera: data source ที่เพิ่มเข้ามา (CZML ชุดใหม่ก่อน adopted) ซ่อนทันที ไม่รอ restyle
+    this.offs.push(viewer.dataSources.dataSourceAdded.addEventListener((_c: unknown, ds: { show: boolean }) => {
+      if (this.cameraDisplay()) ds.show = false;
+    }));
 
     this.zoom = new ZoomBox(el);
     this.handler = new ScreenSpaceEventHandler(scene.canvas);
@@ -359,8 +372,28 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.updateInertial(true);
     this.updateSensors(true);
     this.updateSensorCamera();
+    if (this.view.kind === "sensor") this.applyDisplay();
     this.viewer.scene.requestRender();
     if (this.view.kind === "sensor") this.opts.notify(); // ข้อความบนภาพอ่านใหม่ (doc หรือ entity เปลี่ยนโดยที่เวลาไม่เปลี่ยน)
+  }
+
+  /** Sensor View ในโหมด Camera */
+  private cameraDisplay(): boolean {
+    return this.view.kind === "sensor" && this.view.display === "camera";
+  }
+
+  /**
+   * show ของทุก data source และของ viewer.entities ใน viewer นี้: โหมด Camera = false, อื่น ๆ = true (ไม่มีโค้ดอื่นตั้งค่านี้ จึงไม่ต้องจำค่าเดิม)
+   * การแสดงของแต่ละ entity (ตาม doc) อยู่ที่ entity.show ซึ่ง restyle ตั้ง ไม่ถูกแตะที่นี่
+   */
+  private applyDisplay(): void {
+    const show = !this.cameraDisplay();
+    const { dataSources, entities } = this.viewer;
+    for (let i = 0; i < dataSources.length; i++) {
+      const ds = dataSources.get(i);
+      if (ds.show !== show) ds.show = show;
+    }
+    if (entities.show !== show) entities.show = show;
   }
 
   private entityForPath(path: string): Entity | undefined {
@@ -574,6 +607,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.viewer.camera.lookAtTransform(Matrix4.IDENTITY);
     if (wasSensor) {
       this.lockCamera(false);
+      this.applyDisplay(); // ไม่ใช่โหมด sensor แล้ว: คืน show ของคอลเลกชัน
       this.restyle();
     }
   }
@@ -667,14 +701,15 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   // ---------- Sensor View ----------
 
-  viewFromSensor(path: string, up: SensorViewUp): SensorViewResult {
+  viewFromSensor(path: string, up: SensorViewUp, display: SensorViewDisplay, zoom: SensorViewZoom): SensorViewResult {
     if (this.destroyed) return "notFound";
     if (this.view.kind !== "sensor") {
       this.release();
       this.lockCamera(true);
     }
     // จำ path ไว้แม้ doc ยังไม่มี sensor นี้ (เช่น Rename ที่มาถึงก่อน doc ใหม่): กล้องตามเองเมื่อ doc มี
-    this.view = { kind: "sensor", path, up };
+    this.view = { kind: "sensor", path, up, display, zoom };
+    this.applyDisplay(); // ก่อน restyle: กลับเป็น Sensor แล้ว restyle วาด sensor และ Inertial by Window ใหม่ตาม entity.show ของ doc
     this.restyle();
     if (this.ds === null) this.updateSensorCamera(); // ยังไม่มี data source (restyle ไม่ทำงาน): กล้องรอ adopted
     return this.sensorObj(path) === undefined ? "notFound" : "ok";
@@ -736,7 +771,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     }
     // ภาพขนาดศูนย์ (แท็บที่ยุบ หรือยังไม่ได้วางในหน้า): pose ไม่มี fov จนกว่าภาพจะมีขนาด (คงค่าเดิมไว้)
     const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
-    placeSensorCamera(this.viewer, sensorViewPose(target.state, this.view.up, width / height), SENSOR_VIEW_NEAR_M);
+    placeSensorCamera(this.viewer, sensorViewPose(target.state, this.view.up, width / height, this.view.zoom), SENSOR_VIEW_NEAR_M);
     this.viewer.scene.requestRender();
   }
 
@@ -745,7 +780,14 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const target = this.sensorTarget();
     if (target === null) return null;
     const sub = subSatellite(target.state.pos);
-    return { sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle: coneHalfAngleOf(target.sensor) };
+    const coneHalfAngle = coneHalfAngleOf(target.sensor);
+    const zoom = this.view.kind === "sensor" ? this.view.zoom : 1;
+    const top = imageryStatus(this.viewer).topLayer;
+    return {
+      sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle,
+      fovDeg: sensorViewShortFovDeg(coneHalfAngle, zoom), zoom,
+      imagery: top === null ? null : { title: top.title, label: top.label, missing: top.missingRatio > IMAGERY_MISSING_RATIO },
+    };
   }
 
   sensorCamera(): SensorCamera | null {
@@ -753,7 +795,19 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const camera = this.viewer.camera;
     const frustum = camera.frustum;
     if (!(frustum instanceof PerspectiveFrustum) || frustum.fov === undefined) return null;
-    return { position: tuple(camera.positionWC), direction: tuple(camera.directionWC), up: tuple(camera.upWC), fovDeg: CesiumMath.toDegrees(frustum.fov) };
+    return {
+      position: tuple(camera.positionWC), direction: tuple(camera.directionWC), up: tuple(camera.upWC), fovDeg: CesiumMath.toDegrees(frustum.fov),
+      display: this.view.display, zoom: this.view.zoom, visibleEntityCount: this.visibleEntityCount(),
+    };
+  }
+
+  /** จำนวน entity ที่แสดงอยู่จริง (isShowing: รวม show ของคอลเลกชันและ data source) ในทุก data source และ viewer.entities ของ viewer นี้ */
+  private visibleEntityCount(): number {
+    const { dataSources, entities } = this.viewer;
+    const collections = [entities, ...Array.from({ length: dataSources.length }, (_, i) => dataSources.get(i).entities)];
+    let n = 0;
+    for (const c of collections) for (const e of c.values) if (e.isShowing) n++;
+    return n;
   }
 
   // ---------- Grab Globe / Zoom In ----------

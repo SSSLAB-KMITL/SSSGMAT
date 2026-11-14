@@ -220,6 +220,17 @@ describe("sensorViewPose (Sensor View camera, spec §5.4)", () => {
     expect(sensorViewPose(st, "north", 9 / 16).fovDeg).toBeCloseTo(sensorViewFovDeg(10, 16 / 9), 12);
   });
 
+  test("zoom narrows the fov (short side = cone fov / zoom) and keeps the position and direction (imagery spec §5.3)", () => {
+    const st = sensorDrawState(sensor(), P, PREV, NEXT)!;
+    const wide = sensorViewPose(st, "north", 16 / 9);
+    const zoomed = sensorViewPose(st, "north", 16 / 9, 8);
+    expect(zoomed.fovDeg).toBeCloseTo(sensorViewFovDeg(10, 16 / 9, 8), 12);
+    expect(sensorViewPose(st, "north", 1, 8).fovDeg).toBeCloseTo(21 / 8, 12);
+    expect(zoomed.position).toEqual(wide.position);
+    expectVec(zoomed.direction, wide.direction);
+    expectVec(zoomed.up, wide.up);
+  });
+
   test("a picture without a size (collapsed panel: aspect 0, ∞ or NaN) gives no fov, so the last good one is kept", () => {
     const st = sensorDrawState(sensor(), P, PREV, NEXT)!;
     for (const aspect of [0, Number.POSITIVE_INFINITY, Number.NaN, -1]) {

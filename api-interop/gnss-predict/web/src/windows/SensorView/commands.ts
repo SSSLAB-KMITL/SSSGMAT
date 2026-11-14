@@ -79,7 +79,7 @@ function reportLimit(): void {
 }
 
 /**
- * เปิด Sensor View ของ sensor ที่ path (เปิดอยู่แล้ว = เรียกหน้าต่างเดิมขึ้นมา ค่า Up คงเดิม) คืน id ของหน้าต่าง
+ * เปิด Sensor View ของ sensor ที่ path (เปิดอยู่แล้ว = เรียกหน้าต่างเดิมขึ้นมา ค่า Up, Display และ zoom คงเดิม; บานใหม่ = North, Camera, ×1) คืน id ของหน้าต่าง
  * พื้นที่ทำงานยังไม่ mount หรือบานที่ 5 (ข้อความไทยใน Message Viewer) = null
  */
 export function openSensorView(path: string): string | null {
@@ -90,7 +90,7 @@ export function openSensorView(path: string): string | null {
     reportLimit();
     return null;
   }
-  return layout.openPanel(SENSOR_VIEW_KIND, open ? { path } : { path, up: "north" });
+  return layout.openPanel(SENSOR_VIEW_KIND, open ? { path } : { path, up: "north", display: "camera", zoom: 1 });
 }
 
 /** ดาวยังไม่มี sensor: สร้าง Sensor<n> ด้วย Cone Half Angle ตั้งต้นจากตำแหน่งดาว แล้วเปิดหน้าต่างของมัน */

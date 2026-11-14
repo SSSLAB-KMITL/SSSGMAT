@@ -510,6 +510,11 @@ const LABELS = {
   "sensorView.up": ours("Up"),
   "sensorView.up.north": ours("North"),
   "sensorView.up.velocity": ours("Velocity"),
+  // Display: Camera (เห็นแต่โลก) / Sensor (แบบหน้าต่าง 3D) และกลุ่มปุ่มซูม (imagery spec §5.3) ปุ่มใช้ toolbar.zoomIn / toolbar.zoomOut
+  "sensorView.display": ours("Display"),
+  "sensorView.display.camera": ours("Camera"),
+  "sensorView.display.sensor": ours("Sensor"),
+  "sensorView.zoom": ours("Zoom"),
 
   // ---------- Timeline View (spec §10, STK ref §D) ----------
   "timeline.globalTimeBar": stk("Global Time Bar", "D"),

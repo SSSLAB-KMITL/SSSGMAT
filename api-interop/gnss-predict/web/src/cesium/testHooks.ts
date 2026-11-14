@@ -6,6 +6,7 @@
 // และ entityScreenPosition(ชื่อ object): ตำแหน่ง [x, y] ในพิกเซลของ canvas (มุมซ้ายบน = 0, 0) ของ object ในหน้าต่าง 3D ตัวแรก ไว้ให้ e2e คลิกที่ดาว
 // ไม่แสดง อยู่หลังโลก หรืออยู่นอกภาพ = null
 // และ sensorViewCamera(ชื่อ sensor): กล้องของ Sensor View ของ sensor นั้น (ทะเบียนของ Sensor View แยกจากหน้าต่าง 3D: P3) ไม่มีหน้าต่างหรือไม่มีตำแหน่ง = null
+//   พร้อม display ("camera" | "sensor"), zoom และ visibleEntityCount (entity ที่แสดงอยู่จริงใน viewer ของหน้าต่างนั้น: โหมด Camera = 0) (imagery spec §5.3)
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useTime } from "../stores/time";

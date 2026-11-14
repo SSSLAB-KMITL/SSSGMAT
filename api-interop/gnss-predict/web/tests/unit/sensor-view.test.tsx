@@ -2,7 +2,7 @@
 // การสร้าง viewer (scene3d.mountSensorView) ถูกแทนด้วยตัวปลอมที่ทำตาม SensorViewHandle และ jsdom ได้ WebGLRenderingContext ปลอม
 // หน้าต่างเปิดใน Workspace จริง (dockview) เพราะชื่อหน้าต่าง params และการปิดเป็นเรื่องของ dockview
 
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +13,7 @@ import { runCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { useLayout } from "../../src/stores/layout";
+import { useImagery } from "../../src/stores/imagery";
 import { useMessages } from "../../src/stores/messages";
 import { useScenario, type ObjectTree, type ScenarioDoc } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
@@ -23,7 +24,8 @@ import { registerObjectBrowserPanel } from "../../src/windows/ObjectBrowser/Obje
 import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/objectCommands";
 import { openSensorView } from "../../src/windows/SensorView/commands";
 import {
-  sensorViewScenes, type SensorCamera, type SensorHud, type SensorViewHandle, type SensorViewUp,
+  nextZoom, sensorViewParams, sensorViewScenes, ZOOM_STEPS, type SensorCamera, type SensorHud, type SensorViewDisplay, type SensorViewHandle,
+  type SensorViewUp, type SensorViewZoom,
 } from "../../src/windows/SensorView/registry";
 import { coneCircleRadius, registerSensorViewPanel } from "../../src/windows/SensorView/SensorView";
 import { sensorViewRenamed, startSensorViewTracking } from "../../src/windows/SensorView/track";
@@ -43,8 +45,8 @@ function fakeView(panelId: string): Fake {
     calls,
     hud: null,
     camera: null,
-    viewFromSensor: (path: string, up: SensorViewUp) => {
-      calls.push(["viewFromSensor", path, up]);
+    viewFromSensor: (path: string, up: SensorViewUp, display: SensorViewDisplay, zoom: SensorViewZoom) => {
+      calls.push(["viewFromSensor", path, up, display, zoom]);
       return "ok";
     },
     sensorHud: () => fake.hud,
@@ -57,7 +59,9 @@ function fakeView(panelId: string): Fake {
   return fake;
 }
 
-const HUD: SensorHud = { sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38 };
+const HUD: SensorHud = {
+  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1, imagery: null,
+};
 
 /** handle ที่หน้าต่างแต่ละบานได้ ตาม panelId; nextHud = ข้อความบนภาพของบานที่จะเปิดถัดไป */
 let fakes: Map<string, Fake>;
@@ -99,6 +103,8 @@ const views = (): IDockviewPanel[] => apiOf().panels.filter((p) => p.api.compone
 const titles = () => views().map((p) => p.title);
 const title = (sensor: string, satellite: string) => t("window.sensorView", { sensor, satellite });
 const messages = (code: string) => useMessages.getState().items.filter((m) => m.code === code);
+/** params ของหน้าต่างใหม่: Up = North, Display = Camera, ×1 (imagery spec §5.3) */
+const NEW = (sensor: string) => ({ path: sensorPath(sensor), up: "north", display: "camera", zoom: 1 });
 
 async function mount(sensors: SensorsOf) {
   loadSensors(sensors);
@@ -144,12 +150,12 @@ describe("the window", () => {
     const first = await open("Sensor1");
     expect(titles()).toEqual([title("Sensor1", "G01")]);
     expect(views()[0].api.location.type).toBe("grid"); // Integrated แบบหน้าต่าง 3D
-    expect(first.calls).toContainEqual(["viewFromSensor", sensorPath("Sensor1"), "north"]);
+    expect(first.calls).toContainEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 1]);
     act(() => void openSensorView(sensorPath("Sensor1"))); // เปิดซ้ำ = บานเดิม
     expect(titles()).toEqual([title("Sensor1", "G01")]);
     await open("Sensor2");
     expect(titles()).toEqual([title("Sensor1", "G01"), title("Sensor2", "G02")]);
-    expect(views().map((p) => p.params)).toEqual([{ path: sensorPath("Sensor1"), up: "north" }, { path: sensorPath("Sensor2"), up: "north" }]);
+    expect(views().map((p) => p.params)).toEqual([NEW("Sensor1"), NEW("Sensor2")]);
   });
 
   test("its scenes live in their own registry, not with the 3D windows (P3)", async () => {
@@ -169,16 +175,16 @@ describe("the window", () => {
     expect(north.getAttribute("aria-pressed")).toBe("true");
     expect(velocity.getAttribute("aria-pressed")).toBe("false");
     await user.click(velocity);
-    expect(views()[0].params).toEqual({ path: sensorPath("Sensor1"), up: "velocity" });
-    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "velocity"]));
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), up: "velocity" });
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "velocity", "camera", 1]));
     expect(within(bar).getByRole("button", { name: t("sensorView.up.velocity") }).getAttribute("aria-pressed")).toBe("true");
     await user.click(within(bar).getByRole("button", { name: t("sensorView.up.north") }));
-    expect(views()[0].params).toEqual({ path: sensorPath("Sensor1"), up: "north" });
-    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north"]));
+    expect(views()[0].params).toEqual(NEW("Sensor1"));
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 1]));
     // เปิดซ้ำจากเมนูไม่ล้างค่า Up ที่เลือกไว้
     await user.click(within(bar).getByRole("button", { name: t("sensorView.up.velocity") }));
     act(() => void openSensorView(sensorPath("Sensor1")));
-    expect(views()[0].params).toEqual({ path: sensorPath("Sensor1"), up: "velocity" });
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), up: "velocity" });
   });
 
   test("HUD shows the sub-point, altitude and cone half angle", async () => {
@@ -191,10 +197,121 @@ describe("the window", () => {
     expect(lines).toContain(msg("sensorView.hudAltitude", { alt: "20181" }));
     expect(lines).toContain(msg("sensorView.hudCone", { angle: "14.4" }));
     expect(lines).toContain("12 Nov 2026 00:00:00.000 UTCG"); // เวลารูปแบบเดียวกับแถบ Animation
-    // วงขอบกรวย: รัศมีเทียบครึ่งด้านสั้นของภาพ
-    const circle = document.querySelector(".sensor-view-cone circle");
-    expect(Number(circle?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38)!, 9);
+    expect(lines).toContain(msg("sensorView.hudFov", { fov: "30.2", zoom: 1 }));
+    expect(lines).toContain(msg("sensorView.hudImageryOffline"));
     expect(screen.queryByText(msg("sensorView.noPosition", { satellite: "G01" }))).toBeNull();
+  });
+
+  test("the cone circle is drawn in Sensor display only, sized by the zoomed fov", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    expect(document.querySelector(".sensor-view-cone")).toBeNull(); // Camera (ตั้งต้น) ไม่มีวงขอบกรวย
+    await user.click(screen.getByRole("button", { name: t("sensorView.display.sensor") }));
+    // วงขอบกรวย: รัศมีเทียบครึ่งด้านสั้นของภาพ
+    const circle = () => document.querySelector(".sensor-view-cone circle");
+    await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38)!, 9));
+    await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38, 2)!, 9));
+  });
+
+  test("Display: new windows start in Camera; Sensor and back are stored in the params and sent to the scene", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    const bar = screen.getByRole("group", { name: t("sensorView.display") });
+    const camera = within(bar).getByRole("button", { name: t("sensorView.display.camera") });
+    const sensor = within(bar).getByRole("button", { name: t("sensorView.display.sensor") });
+    expect(camera.getAttribute("aria-pressed")).toBe("true");
+    expect(sensor.getAttribute("aria-pressed")).toBe("false");
+    await user.click(sensor);
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), display: "sensor" });
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "sensor", 1]));
+    expect(within(bar).getByRole("button", { name: t("sensorView.display.sensor") }).getAttribute("aria-pressed")).toBe("true");
+    await user.click(within(bar).getByRole("button", { name: t("sensorView.display.camera") }));
+    expect(views()[0].params).toEqual(NEW("Sensor1"));
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 1]));
+    // เปิดซ้ำจากเมนูไม่ล้าง Display และ zoom
+    await user.click(within(bar).getByRole("button", { name: t("sensorView.display.sensor") }));
+    await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    act(() => void openSensorView(sensorPath("Sensor1")));
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), display: "sensor", zoom: 2 });
+  });
+
+  test("Zoom In three times gives ×8; the ends disable the buttons", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    const zoomIn = () => screen.getByRole("button", { name: t("toolbar.zoomIn") });
+    const zoomOut = () => screen.getByRole("button", { name: t("toolbar.zoomOut") });
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    expect(within(bar).getByText("×1")).toBeDefined();
+    expect((zoomOut() as HTMLButtonElement).disabled).toBe(true);
+    for (let i = 0; i < 3; i++) await user.click(zoomIn());
+    expect(views()[0].params).toEqual({ ...NEW("Sensor1"), zoom: 8 });
+    expect(within(bar).getByText("×8")).toBeDefined();
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 8]));
+    for (let i = 0; i < 6; i++) await user.click(zoomIn());
+    expect(views()[0].params?.zoom).toBe(128);
+    expect((zoomIn() as HTMLButtonElement).disabled).toBe(true);
+    await user.click(zoomOut());
+    expect(views()[0].params?.zoom).toBe(64);
+  });
+
+  test("the mouse wheel without Shift zooms (and does not scroll the page); with Shift it does not zoom", async () => {
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    const stage = screen.getByTestId("sensor-view");
+    let notPrevented = true;
+    act(() => void (notPrevented = fireEvent.wheel(stage, { deltaY: -100 })));
+    expect(notPrevented).toBe(false); // preventDefault: หน้าไม่เลื่อน
+    expect(views()[0].params?.zoom).toBe(2);
+    act(() => void fireEvent.wheel(stage, { deltaY: -100 }));
+    expect(views()[0].params?.zoom).toBe(4);
+    act(() => void fireEvent.wheel(stage, { deltaY: 100 }));
+    expect(views()[0].params?.zoom).toBe(2);
+    await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Sensor1"), "north", "camera", 2]));
+    act(() => void fireEvent.wheel(stage, { deltaY: -100, shiftKey: true }));
+    act(() => void fireEvent.wheel(stage, { deltaY: 100, shiftKey: true }));
+    expect(views()[0].params?.zoom).toBe(2);
+    // ปลายทั้งสองไม่เลยช่วง
+    for (let i = 0; i < 5; i++) act(() => void fireEvent.wheel(stage, { deltaY: 100 }));
+    expect(views()[0].params?.zoom).toBe(1);
+  });
+
+  test("HUD: FOV line, imagery source line (top layer, missing, offline) and the Globe Manager hint", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    const fake = await open("Sensor1");
+    const hud = await screen.findByTestId("sensor-view-hud");
+    const lines = () => within(screen.getByTestId("sensor-view-hud")).getAllByText(/.+/).map((el) => el.textContent);
+    expect(hud).toBeDefined();
+    expect(lines()).toContain(msg("sensorView.hudImageryOffline"));
+    expect(msg("sensorView.hudImageryOffline")).toBe("ภาพพื้นโลก: Natural Earth II (ออฟไลน์)");
+    // ซูม ≥ 8 ในโหมด Camera และสวิตช์ปิด: แนะนำ Globe Manager
+    expect(lines()).not.toContain(msg("sensorView.hintGlobeManager"));
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
+    fake.hud = { ...HUD, fovDeg: 30.198 / 8, zoom: 8 };
+    act(() => sensorViewScenes.notify());
+    await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
+    expect(lines()).toContain(msg("sensorView.hudFov", { fov: "3.8", zoom: 8 }));
+    expect(msg("sensorView.hintGlobeManager")).toBe("เปิดภาพจริงได้ที่ View → Globe Manager");
+    // โหมด Sensor ไม่แนะนำ
+    await user.click(screen.getByRole("button", { name: t("sensorView.display.sensor") }));
+    await waitFor(() => expect(lines()).not.toContain(msg("sensorView.hintGlobeManager")));
+    await user.click(screen.getByRole("button", { name: t("sensorView.display.camera") }));
+    await waitFor(() => expect(lines()).toContain(msg("sensorView.hintGlobeManager")));
+    // สวิตช์เปิด: ชั้นบนสุดที่แสดง ไม่มีคำแนะนำ
+    fake.hud = { ...fake.hud, imagery: { title: "VIIRS NOAA-20 True Color", label: "2026-11-11", missing: false } };
+    act(() => useImagery.setState({ enabled: true }));
+    await waitFor(() => expect(lines()).toContain(msg("sensorView.hudImagery", { image: "VIIRS NOAA-20 True Color 2026-11-11" })));
+    expect(lines()).toContain("ภาพพื้นโลก: VIIRS NOAA-20 True Color 2026-11-11");
+    expect(lines()).not.toContain(msg("sensorView.hintGlobeManager"));
+    // ชั้นบนสุดไม่มีภาพเกินครึ่ง: ต่อท้าย (HUD อ่านใหม่เองเป็นระยะ ไม่ต้องรอเวลาเปลี่ยน)
+    fake.hud = { ...fake.hud, imagery: { title: "Blue Marble", label: "", missing: true } };
+    await waitFor(() => expect(lines()).toContain("ภาพพื้นโลก: Blue Marble — ไม่มีภาพเวลานี้"), { timeout: 3000 });
+    act(() => useImagery.setState({ enabled: false }));
   });
 
   test("the HUD is read again when the time moves and when the scene says it changed", async () => {
@@ -246,7 +363,7 @@ describe("the window", () => {
     const fake = await open("Sensor1");
     await open("Sensor2");
     expect(hooks.sensorViewCamera("Sensor1")).toBeNull(); // ยังไม่มีตำแหน่ง
-    fake.camera = { position: [1, 2, 3], direction: [0, 0, -1], up: [0, 1, 0], fovDeg: 31.5 };
+    fake.camera = { position: [1, 2, 3], direction: [0, 0, -1], up: [0, 1, 0], fovDeg: 31.5, display: "camera", zoom: 4, visibleEntityCount: 0 };
     expect(hooks.sensorViewCamera("Sensor1")).toEqual(fake.camera);
     expect(hooks.sensorViewCamera("Nope")).toBeNull();
   });
@@ -301,9 +418,9 @@ describe("following the scenario (track.ts)", () => {
       await user.type(field, "Cam{Enter}");
       await waitFor(() => expect(rename).toHaveBeenCalledWith("Sensor", "Sensor1", "Cam"));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      expect(views().map((p) => p.params)).toEqual([{ path: sensorPath("Cam"), up: "north" }]);
+      expect(views().map((p) => p.params)).toEqual([NEW("Cam")]);
       expect(titles()).toEqual([title("Cam", "G01")]);
-      await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Cam"), "north"]));
+      await waitFor(() => expect(fake.calls.at(-1)).toEqual(["viewFromSensor", sensorPath("Cam"), "north", "camera", 1]));
       expect(messages("SENSOR_VIEW_CLOSED")).toEqual([]);
     } finally {
       disposeOb();
@@ -340,7 +457,32 @@ describe("following the scenario (track.ts)", () => {
   });
 });
 
+describe("Sensor View params (imagery spec §5.3)", () => {
+  test("display falls back to camera and zoom to 1 for missing or bad values", () => {
+    expect(sensorViewParams({ path: "*/Sensor/S", up: "north" })).toEqual({ path: "*/Sensor/S", up: "north", display: "camera", zoom: 1 });
+    expect(sensorViewParams({ path: "*/Sensor/S", display: "sensor", zoom: 8 })).toEqual({ path: "*/Sensor/S", up: "north", display: "sensor", zoom: 8 });
+    expect(sensorViewParams({ display: "Sensor" }).display).toBe("camera");
+    expect(sensorViewParams({ display: 1 }).display).toBe("camera");
+    for (const bad of [3, 0, "8", 256, -2, 1.5, Number.NaN, null]) expect(sensorViewParams({ zoom: bad }).zoom, String(bad)).toBe(1);
+    expect(sensorViewParams(null)).toEqual({ path: "", up: "north", display: "camera", zoom: 1 });
+  });
+
+  test("zoom steps are powers of two from 1 to 128 and nextZoom stops at both ends", () => {
+    expect(ZOOM_STEPS).toEqual([1, 2, 4, 8, 16, 32, 64, 128]);
+    expect(nextZoom(1, 1)).toBe(2);
+    expect(nextZoom(4, -1)).toBe(2);
+    expect(nextZoom(1, -1)).toBe(1);
+    expect(nextZoom(128, 1)).toBe(128);
+  });
+});
+
 describe("cone circle", () => {
+  test("follows the zoom: the short side is the cone fov / zoom", () => {
+    const rad = Math.PI / 180;
+    expect(coneCircleRadius(10, 4)).toBeCloseTo(Math.tan(10 * rad) / Math.tan((10.5 / 4) * rad), 12);
+    expect(coneCircleRadius(10, 1)).toBeCloseTo(coneCircleRadius(10)!, 12);
+  });
+
   test("is the cone edge as a fraction of half the short side, beyond it when the fov is capped, and none at 90°", () => {
     const rad = Math.PI / 180;
     expect(coneCircleRadius(10)).toBeCloseTo(Math.tan(10 * rad) / Math.tan(10.5 * rad), 12);

@@ -266,6 +266,12 @@ const MESSAGES = {
   "sensorView.hudSubPoint": "จุดใต้ดาว {lat}, {lon}",
   "sensorView.hudAltitude": "ความสูง {alt} km",
   "sensorView.hudCone": "Cone Half Angle {angle}°",
+  // HUD ของโหมดกล้อง (imagery spec §5.3): {fov} = มุมกว้างด้านสั้น (องศา), {zoom} = ขั้นซูม, {image} = ชื่อชั้นภาพ NASA GIBS บนสุดและเวลาของภาพ
+  "sensorView.hudFov": "มุมกว้าง FOV {fov}° ×{zoom}",
+  "sensorView.hudImagery": "ภาพพื้นโลก: {image}",
+  "sensorView.hudImageryMissing": "ภาพพื้นโลก: {image} — ไม่มีภาพเวลานี้",
+  "sensorView.hudImageryOffline": "ภาพพื้นโลก: Natural Earth II (ออฟไลน์)",
+  "sensorView.hintGlobeManager": "เปิดภาพจริงได้ที่ View → Globe Manager",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;

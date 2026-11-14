@@ -182,16 +182,19 @@ export function cameraOrientation(_pos: Vec3, b: Vec3, f: BodyFrame, up: "north"
   return { direction, up: unitPerp(first, direction) ?? unitPerp(second, direction) ?? unitPerp(f.y, direction) ?? anyPerp(direction) };
 }
 
-/** fov (องศา) ของด้านสั้นของภาพ Sensor View: fs = min(2α × 1.05, 120°) (กรวยพอดีด้านสั้น ขยาย 5%) */
-export function sensorViewShortFovDeg(halfAngleDeg: number): number {
-  return Math.min(2 * halfAngleDeg * 1.05, 120);
+/**
+ * fov (องศา) ของด้านสั้นของภาพ Sensor View: fs = min(2α × 1.05, 120°) / zoom (กรวยพอดีด้านสั้น ขยาย 5% แล้วซูม: imagery spec §5.3)
+ * เพดาน 120° ใช้ก่อนหารด้วย zoom
+ */
+export function sensorViewShortFovDeg(halfAngleDeg: number, zoom = 1): number {
+  return Math.min(2 * halfAngleDeg * 1.05, 120) / zoom;
 }
 
 /**
  * fov (องศา) ของ PerspectiveFrustum.fov ซึ่งเป็นของด้านยาวของภาพ (aspect = กว้าง / สูง)
- * ด้านสั้นกว้าง fs = sensorViewShortFovDeg(α) ด้านยาวกว้าง 2·atan(tan(fs/2) × max(aspect, 1/aspect))
+ * ด้านสั้นกว้าง fs = sensorViewShortFovDeg(α, zoom) ด้านยาวกว้าง 2·atan(tan(fs/2) × max(aspect, 1/aspect))
  */
-export function sensorViewFovDeg(halfAngleDeg: number, aspect: number): number {
-  const short = sensorViewShortFovDeg(halfAngleDeg);
+export function sensorViewFovDeg(halfAngleDeg: number, aspect: number, zoom = 1): number {
+  const short = sensorViewShortFovDeg(halfAngleDeg, zoom);
   return 2 * Math.atan(Math.tan((short * RAD) / 2) * Math.max(aspect, 1 / aspect)) * DEG;
 }
