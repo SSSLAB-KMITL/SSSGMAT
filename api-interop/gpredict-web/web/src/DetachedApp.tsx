@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { closeModule, closeModuleKeepalive, errorText, getModules, openModule, putWindow, retryModule } from "./api";
-import { connectAppEvents } from "./appEvents";
+import { connectAppEvents, withConfigReads } from "./appEvents";
 import { Dialogs } from "./components/Dialogs";
 import { MessageBox } from "./components/MessageBox";
 import { ModuleHeader } from "./components/ModuleHeader";
@@ -60,23 +60,30 @@ interface Props {
 export function DetachedApp({ module, restored }: Props) {
   const [session] = useState(() => new DetachedSession(module, BROWSER));
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const [configRereads, setConfigRereads] = useState(0); // the reads of the module's configuration /ws/app asked for
 
   useEffect(() => void session.start(), [session]);
 
-  // the events of the program (/ws/app): the list of modules (an Attach, a Delete, the close of the page before this one), and the
-  // Preferences (number formats apply at once). The TLE notice is the main page's.
+  // the events of the program (/ws/app): the list of modules (an Attach, a Delete, the close of the page before this one), the
+  // Preferences (number formats apply at once) and the module's configuration (module_config_changed naming it, and every connect:
+  // `withConfigReads`). The TLE notice is the main page's.
   useEffect(
     () =>
-      connectAppEvents({
-        connected: () => {
-          void session.connected();
-          reloadPrefs().catch(() => {});
-        },
-        prefsChanged: () => void reloadPrefs().catch(() => {}),
-        modulesChanged: () => void session.sync(),
-        tleOld: () => {},
-      }),
-    [session],
+      connectAppEvents(
+        withConfigReads(
+          {
+            connected: () => {
+              void session.connected();
+              reloadPrefs().catch(() => {});
+            },
+            prefsChanged: () => void reloadPrefs().catch(() => {}),
+            modulesChanged: () => void session.sync(),
+            tleOld: () => {},
+          },
+          { shown: () => [module], reread: () => setConfigRereads((n) => n + 1) },
+        ),
+      ),
+    [session, module],
   );
 
   // the browser's close button (or a reload): Close module (spec §8.1), as long as the page has its module as a window
@@ -107,7 +114,16 @@ export function DetachedApp({ module, restored }: Props) {
     );
   }
   // a new epoch (the module was opened again) makes the views, its socket and its configuration again
-  return <DetachedModule key={state.epoch} module={module} restored={restored} session={session} modules={state.modules} />;
+  return (
+    <DetachedModule
+      key={state.epoch}
+      module={module}
+      restored={restored}
+      session={session}
+      modules={state.modules}
+      configRereads={configRereads}
+    />
+  );
 }
 
 const NOTHING = () => {};
@@ -117,9 +133,11 @@ interface ModuleProps extends Props {
   session: DetachedSession;
   /** every module, for Clone */
   modules: readonly string[];
+  /** counts the reads of the configuration /ws/app asked for: each new value reads it again (useModuleConfig) */
+  configRereads: number;
 }
 
-function DetachedModule({ module, restored, session, modules }: ModuleProps) {
+function DetachedModule({ module, restored, session, modules, configRereads }: ModuleProps) {
   const [local, setLocal] = useState<Notice[]>([]); // errors of this page's own requests
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [dialogs, setDialogs] = useState<readonly Dialog[]>([]);
@@ -140,7 +158,7 @@ function DetachedModule({ module, restored, session, modules }: ModuleProps) {
 
   const { tick, connected, closeCode } = useModuleSocket(module);
   const satNames = useSeenNames(module, tick);
-  const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(module);
+  const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(module, configRereads);
   const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(module, only, tick, config, saveConfig, addLocalError);
   const ctl = useControllers(true, addLocalError, module);
 

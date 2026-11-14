@@ -6,17 +6,17 @@
 // A write that builds its own copy of the configuration and PUTs it would send values that are out of date and silently undo
 // what the user changed through another view.
 
-import type { ModuleConfig, ModulePins } from "./types";
+import type { ModuleConfig, ModuleSaveOptions } from "./types";
 
 /**
- * Sends the whole configuration to the server (PUT /api/modules/{name}) with the paths to pin and unpin, if any; rejects if the server
- * refuses. A value the module inherits is only stored when it is pinned (plan decision 3).
+ * Sends the whole configuration to the server (PUT /api/modules/{name}) with the paths to pin and unpin and the re-create, if any;
+ * rejects if the server refuses. A value the module inherits is only stored when it is pinned (plan decision 3).
  */
-export type PutConfig = (config: ModuleConfig, opts?: ModulePins) => Promise<unknown>;
+export type PutConfig = (config: ModuleConfig, opts?: ModuleSaveOptions) => Promise<unknown>;
 
 interface Pending {
   change: (config: ModuleConfig) => ModuleConfig;
-  opts: ModulePins | undefined;
+  opts: ModuleSaveOptions | undefined;
   resolve: () => void;
   reject: (error: unknown) => void;
 }
@@ -72,10 +72,11 @@ export class ConfigStore {
    * and must return a new object; it may be applied again to another base if an earlier save is refused, so it should say
    * what to change ("select satellite 25544"), not what the result is.
    *
-   * `opts` (OK of Module properties only) are sent with this save's request and no other: the paths whose values the module keeps as
-   * its own (`pin`) and those it inherits again (`unpin`). Every other save leaves the module's inheritance as it is.
+   * `opts` (Configure → OK only) are sent with this save's request and no other: the paths whose values the module keeps as its own
+   * (`pin`), those it inherits again (`unpin`), and `recreate`, which makes the open module again with the global values of now. Every
+   * other save leaves the module's inheritance as it is, and an open module with the global values it was made with.
    */
-  save(change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins): Promise<void> {
+  save(change: (config: ModuleConfig) => ModuleConfig, opts?: ModuleSaveOptions): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.pending.push({ change, opts, resolve, reject });
       this.show();

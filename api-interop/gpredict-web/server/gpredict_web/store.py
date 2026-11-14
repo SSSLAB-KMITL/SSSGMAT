@@ -8,6 +8,7 @@ module ที่ data/modules/<name>.json และ session (module ที่เ
 ไฟล์เต็มแบบ core (ไม่มี "version": 2) อ่านได้ด้วยกติกาเดียวกัน (path ที่ไม่มีในไฟล์สืบทอด) และถูกย้ายครั้งเดียวตอนเปิด server
 """
 
+import copy
 import dataclasses
 import json
 import logging
@@ -29,6 +30,7 @@ SESSION_FILE = "session.json"
 QTH_DIR = "qth"
 MODULES_DIR = "modules"
 BACKUP_V1_DIR = "_backup_v1"          # สำเนาไฟล์ module แบบ core ก่อนย้าย: data/modules/_backup_v1/<name>.json (ของเรา)
+_INHERITABLE = tuple(dict.fromkeys(MODULE_KEYS.values()))       # key ของค่ารวมที่ module สืบทอดได้ ตามลำดับใน MODULE_KEYS
 
 DESCRIPTION_MAX = 256
 LOCATION_MAX = 50
@@ -372,10 +374,16 @@ class Store:
         """ค่าที่ตั้งเองในรูปของ version 2: ไฟล์แบบ core ลบค่าที่เท่าค่ารวมตอนนี้ (สิ่งที่ migrate_modules จะเขียน)"""
         return data if data.get("version") == OWN_VERSION else strip_defaults(data, globals_)
 
-    def get_module(self, name: str) -> ModuleConfig:
-        """ค่าที่ module ใช้จริง: ค่าในไฟล์ → ค่ารวมตอนนี้ → ค่าตั้งต้นของ Gpredict (ไม่ตรวจว่า QTH หรือ NORAD ยังมีอยู่
-        เพราะ store ไม่รู้จักดัชนีดาว) 404 ถ้าไม่มี, 422 ถ้าไฟล์เสีย"""
-        return self._effective(name, self._read_module(name), self._globals())
+    def inheritable_globals(self) -> dict[str, object]:
+        """สำเนาค่ารวมตอนนี้เฉพาะ key ที่ module สืบทอดได้ (ค่าของ MODULE_KEYS) ที่ runtime ของ module จำไว้ตอนถูกสร้าง
+        ค่ารวมมีผลกับ module ที่เปิดอยู่เมื่อมันถูกสร้างใหม่เท่านั้น (spec งานย่อย 4 §9.1)"""
+        g = self._globals()
+        return {key: copy.deepcopy(g[key]) for key in _INHERITABLE if key in g}
+
+    def get_module(self, name: str, globals_: Mapping[str, object] | None = None) -> ModuleConfig:
+        """ค่าที่ module ใช้จริง: ค่าในไฟล์ → ค่ารวม (globals_ ถ้าส่งมา เช่น ค่าที่ runtime จำไว้ตอนสร้าง ไม่งั้นค่ารวมตอนนี้)
+        → ค่าตั้งต้นของ Gpredict (ไม่ตรวจว่า QTH หรือ NORAD ยังมีอยู่ เพราะ store ไม่รู้จักดัชนีดาว) 404 ถ้าไม่มี, 422 ถ้าไฟล์เสีย"""
+        return self._effective(name, self._read_module(name), self._globals() if globals_ is None else globals_)
 
     def get_module_own(self, name: str) -> dict:
         """ค่าที่ module ตั้งเอง (เนื้อไฟล์ version 2) ไฟล์แบบ core ที่ยังไม่ย้ายคืนรูปที่จะย้ายเป็น (ไม่เขียน) ตรวจเหมือน get_module"""

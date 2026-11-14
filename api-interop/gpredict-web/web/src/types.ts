@@ -172,13 +172,19 @@ export interface ModuleWindow {
 }
 
 /**
- * What PUT /api/modules/{name} pins and unpins besides the configuration (paths of `Meta.module_keys`, plan decision 3): a pinned path
- * keeps the value sent as the module's own; an unpinned one is removed from the module, which inherits the global value again. A value
- * sent for a path that the module inherits and that is not pinned is not stored (the module goes on inheriting).
+ * What a save of a module's configuration (PUT /api/modules/{name}) does besides storing it.
+ *
+ * - `pin` / `unpin`: paths of `Meta.module_keys` (plan decision 3). A pinned path keeps the value sent as the module's own; an unpinned
+ *   one is removed from the module, which inherits the global value again. A value sent for a path that the module inherits and that
+ *   is not pinned is not stored (the module goes on inheriting).
+ * - `recreate` (Configure → OK only, `?recreate=true`): the open module is made again, as Gpredict does on every OK (ref-D §9). It takes
+ *   the global values of Preferences → Modules as they are now and its ground station again (a `** DEFAULT **` module the default
+ *   station of now). Every other save leaves an open module with the global values it was made with (spec §4.2, §9.1).
  */
-export interface ModulePins {
+export interface ModuleSaveOptions {
   pin?: readonly string[];
   unpin?: readonly string[];
+  recreate?: boolean;
 }
 
 export interface ModuleList {

@@ -12,12 +12,20 @@
   + POST /api/tle/local (Edit → Update TLE data from local files) POST /api/tle/update และ GET /api/tle/groups ตาม TLE sources ของ
     Preferences (tlesources.py: CelesTrak, ข้อความ TLE เช่น AMSAT, proxy)
   + WS /ws/app: เหตุการณ์ระดับโปรแกรมถึงทุก browser (appevents.py) prefs_changed หลัง PUT /api/prefs และ PUT /api/qth/batch ที่ไม่ใช่ dry run,
-    modules_changed หลัง PUT/DELETE/open/close/clone module และ PUT …/window, tle_old จากตัวตรวจอายุ TLE (tleage.py)
+    modules_changed หลัง PUT/DELETE/open/close/clone module และ PUT …/window, tle_old จากตัวตรวจอายุ TLE (tleage.py),
+    module_config_changed {"modules": [ชื่อ]} เมื่อ config ของ runtime ของ module ที่เปิดอยู่เปลี่ยน (หน้าเว็บที่แสดง module นั้นอ่าน GET ใหม่):
+    PUT module ที่เปลี่ยนค่า, Configure → OK (?recreate=true) เสมอ, batch ที่เปลี่ยน module เป็น ** DEFAULT **, PUT /api/qth/{name}
+    ของสถานีที่ module ที่เปิดอยู่ใช้ และ Update TLE ที่ reload แล้ว config เปลี่ยน
   + PUT /api/modules/{name}/window (Detach/Attach และจำขนาด/ตำแหน่งหน้าต่างแยก) GET /api/modules มี windows = module ที่เปิดอยู่และเป็นหน้าต่างแยก
     ตามลำดับ session (open ยังมีทุกตัวที่เปิดอยู่: หน้าเว็บกรองแท็บเอง) ไม่ผ่าน controllers.hold เพราะไม่แตะ qth หรือ satellites
 - module (spec งานย่อย 4 §9.1): ไฟล์เก็บเฉพาะค่าที่ตั้งเอง ค่าที่ไม่ได้ตั้งสืบทอดค่ารวมของ Preferences → Modules
   PUT /api/modules/{name} รับ pin/unpin (รายการ path ใน module.MODULE_KEYS) ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
   GET และคำตอบของ PUT/clone เป็นค่าที่ใช้จริง ตอนเริ่มย้ายไฟล์ module แบบเดิมก่อนเปิด module (store.migrate_modules)
+  ค่ารวมมีผลกับ module ที่เปิดอยู่เมื่อมันถูกสร้างใหม่เท่านั้น (spec §4.2, §9.1 เหมือน Gpredict): runtime จำค่ารวมตอนถูกสร้าง (เปิด,
+  เปิดค้างจาก session, clone ที่เปิด) การบันทึก view, PUT QTH และ Update TLE ประกอบ module กับค่าที่จำไว้
+  GET ของ module ที่เปิดอยู่ = config ของ runtime (window จากไฟล์) ?fresh=1 = ไฟล์ + ค่ารวมตอนนี้ (Edit module)
+  PUT ?recreate=true = Configure → OK: บันทึกแล้วสร้างใหม่ (ค่ารวมตอนนี้ สถานีหาใหม่ ** DEFAULT ** = สถานีตั้งต้นตอนนี้)
+  controller เปิดอยู่และสถานีหรือรายชื่อดาวจะเปลี่ยน: 409 CONTROLLER_ACTIVE ไม่เปลี่ยนอะไร
 - error ทุกชนิดตอบเป็น {code, level, text, object} (หัวข้อ 7.4) ข้อมูลที่อ่านไม่ได้หรือผิดชนิดตาม route เป็น 422 REQUEST_INVALID
 - เวลาใน API เป็น ISO 8601 UTC ความละเอียดมิลลิวินาที ลงท้าย Z
   + GET /api/logs/current (ข้อความของ data/logs/gpredict.log ไม่มีไฟล์ = "") และ POST /api/log (ข้อความจากหน้าเว็บ: gplog.py)
@@ -39,7 +47,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterable
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -102,6 +110,7 @@ TLE_NET_LOG_FUNCTION = "tle_update_from_network"
 # เหตุการณ์ของ /ws/app ที่ route ส่ง (tle_old ส่งจาก tleage.py) หน้าเว็บโหลดค่าที่เกี่ยวข้องใหม่เมื่อได้รับ
 EVENT_PREFS_CHANGED = "prefs_changed"
 EVENT_MODULES_CHANGED = "modules_changed"
+EVENT_MODULE_CONFIG_CHANGED = "module_config_changed"   # {"modules": [...]}: config ของ runtime ของ module ที่เปิดอยู่เปลี่ยน
 _SAFE_METHODS = ("GET", "HEAD", "OPTIONS")          # ไม่เปลี่ยนสถานะ จึงไม่ตรวจ Origin
 _UTC = timezone.utc
 _log = logging.getLogger(__name__)
@@ -706,6 +715,21 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             raise _not_open(name)
         return rt
 
+    def module_answer(name: str, fresh: bool = False) -> dict:
+        """config ของ module ที่หน้าเว็บอ่าน (GET, คำตอบของ PUT และ clone): module ที่เปิดอยู่ = config ของ runtime (ค่ารวมตอนถูกสร้าง)
+        แต่ window จากไฟล์ (PUT …/window ไม่ reload runtime และ Detach ต้องได้ขนาดล่าสุด) ไม่ได้เปิดหรือ fresh (Edit module) =
+        ไฟล์ + ค่ารวมตอนนี้"""
+        saved = store.get_module(name)
+        rt = None if fresh else hub.get(name)
+        if rt is None:
+            return M.module_to_dict(saved)
+        return M.module_to_dict(replace(rt.module, window=saved.window))
+
+    def config_changed(names: list[str]) -> None:
+        """บอกหน้าเว็บว่า config ของ runtime ของ module เหล่านี้ (ที่เปิดอยู่) เปลี่ยน ไม่มีชื่อ: ไม่ส่ง"""
+        if names:
+            events.publish({"type": EVENT_MODULE_CONFIG_CHANGED, "modules": list(names)})
+
     # ---------------- QTH
 
     @app.get("/api/qth")
@@ -728,7 +752,8 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         module ที่ใช้สถานีที่หายเปลี่ยนเป็น ** DEFAULT ** (changed_modules) ส่วน module ที่เปิดอยู่ไม่ถูก reload ใช้สถานีเดิมต่อจน
         เปิดใหม่ รวมถึงที่มี controller เปิดอยู่ (spec §4.2): hub.drop_qth_reference ตั้งอ้างอิง qth ของ runtime เป็น None ตามไฟล์
         แต่เก็บสถานีที่ถืออยู่ (Hub.reload ครั้งหลังก็ไม่ย้าย) ?dry_run=true: ตรวจและตอบรูปเดียวกันแต่ไม่เขียน ไม่ลบ ไม่ log ไม่ส่งเหตุการณ์
-        ที่เขียนจริงส่ง prefs_changed ทาง /ws/app"""
+        ที่เขียนจริงส่ง prefs_changed ทาง /ws/app และ module_config_changed ของ module ที่เปิดอยู่ซึ่งเปลี่ยนเป็น ** DEFAULT **
+        (หน้าที่แสดงมันอ่าน config ใหม่ ไม่งั้นการบันทึก view ครั้งต่อไปส่งชื่อสถานีที่ถูกลบแล้วได้ 422)"""
         stations = body.get("stations")
         if not isinstance(stations, list):
             raise ApiError("QTH_INVALID", 422, "รายการสถานี (stations) ต้องเป็นรายการของ object", "stations")
@@ -743,9 +768,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         default = body.get("default")
         changed = store.replace_qth(parsed, default, dry_run)
         if not dry_run:
-            for name in changed:                          # module ที่เปิดอยู่ถือสถานีเดิมต่อ แต่อ้างอิง qth ตามไฟล์ (** DEFAULT **)
-                hub.drop_qth_reference(name)
+            # module ที่เปิดอยู่ถือสถานีเดิมต่อ แต่อ้างอิง qth ตามไฟล์ (** DEFAULT **)
+            dropped = [name for name in changed if hub.drop_qth_reference(name)]
             events.publish({"type": EVENT_PREFS_CHANGED})
+            config_changed(dropped)
         return {"qth": [asdict(q) for q in sorted(parsed, key=lambda q: q.name)], "default": default,
                 "changed_modules": changed}
 
@@ -756,11 +782,19 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         _check_case_clash(store.qth_names(), name, "QTH_INVALID", "name", "QTH")
         q = qth_from_dict(body)
         store.put_qth(q)
-        for m in store.modules_using_qth(name):       # module ที่เปิดอยู่และใช้สถานีนี้ได้ตำแหน่งใหม่ใน tick ถัดไป
+        # module ที่เปิดอยู่และใช้สถานีนี้ (ตามไฟล์ หรือสถานีที่ runtime ถืออยู่) ได้ตำแหน่งใหม่ใน tick ถัดไป ค่ารวมยังเป็นของตอนสร้าง
+        users = dict.fromkeys(store.modules_using_qth(name))
+        users.update(dict.fromkeys(n for n in hub.open_names() if (rt := hub.get(n)) is not None and rt.qth.name == name))
+        reloaded = []
+        for m in users:
             try:
                 hub.reload(m)
             except ApiError as exc:
                 _log.warning("อ่าน module %s ใหม่หลังแก้ QTH %s ไม่ได้: %s", m, name, exc.text)
+            else:
+                if hub.get(m) is not None:
+                    reloaded.append(m)
+        config_changed(reloaded)
         return asdict(q)
 
     @app.delete("/api/qth/{name}", status_code=204)
@@ -833,12 +867,15 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         - หยุดก่อนรวม (result.aborted): ERROR ข้อความของ Gpredict แทนสองบรรทัดนั้น
         add_new = ค่าที่รอบนี้ใช้รวม TLE (หน้าต่าง TLE Update แสดงบรรทัด "New Satellites:" เมื่อเป็น true, หยุดก่อนรวม = false)"""
         messages = list(result.messages)
+        changed = []
         for name in hub.open_names():
             try:
-                hub.reload(name)
+                if hub.reload(name):             # ค่ารวมของตอนสร้าง: config เปลี่ยนเฉพาะเมื่อไฟล์ถูกแก้นอกโปรแกรม
+                    changed.append(name)
             except ApiError as exc:
                 messages.append(Message(exc.code, "warning",
                                         f"อ่าน module {name} ใหม่หลังอัปเดต TLE ไม่ได้: {exc.text}", name))
+        config_changed(changed)
         if result.aborted:
             _log.error("%s", result.aborted, extra={"gp_function": TLE_NET_LOG_FUNCTION})
         else:
@@ -927,8 +964,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 "messages": [m.to_dict() for m in app.state.startup_messages]}
 
     @app.get("/api/modules/{name}")
-    def get_module(name: str):
-        return M.module_to_dict(store.get_module(name))
+    def get_module(name: str, fresh: bool = Query(False)):
+        """module ที่เปิดอยู่: config ของ runtime (ค่ารวมตอนถูกสร้าง) window จากไฟล์ ?fresh=1 หรือไม่ได้เปิด: ไฟล์ + ค่ารวมตอนนี้
+        (Edit module ใช้ ?fresh=1 เพื่อแสดงและตรึงค่าปัจจุบัน)"""
+        return module_answer(name, fresh)
 
     def check_configurable(name: str, m: M.ModuleConfig) -> None:
         """controller เปิดอยู่: ห้ามเปลี่ยนสถานี (qth) และรายชื่อดาว (satellites) ที่ controller สร้างจากมัน (spec §4.6, decision 4)
@@ -944,8 +983,26 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                                f"แก้สถานีหรือรายชื่อดาวของ module {name} ไม่ได้ขณะที่ Radio Control หรือ Antenna Control เปิดอยู่ "
                                "ให้ปิด Radio Control และ Antenna Control ของ module นี้ก่อน แล้วลองบันทึกใหม่", field)
 
-    def put_module_sync(name: str, body: dict, controller_active: bool) -> dict:
-        """body = ค่าเต็มของ module + pin/unpin (decision 3): ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin คำตอบคือค่าที่ใช้จริงหลังบันทึก"""
+    def check_recreatable(name: str, m: M.ModuleConfig, controller_active: bool) -> None:
+        """ก่อน Configure → OK เขียนไฟล์ของ module ที่เปิดอยู่: หาสถานีที่การสร้างใหม่จะได้ (ไม่มีสถานีตั้งต้น -> 422 QTH_INVALID
+        ไม่เขียนอะไร) controller เปิดอยู่และจะได้สถานีอื่น (เช่น module ** DEFAULT ** หลังเปลี่ยนสถานีตั้งต้น): 409 CONTROLLER_ACTIVE
+        (SP3 decision 4 แบบ check_configurable ซึ่งตรวจรายชื่อดาว) เทียบชื่อสถานี: พิกัดใหม่ของสถานีเดิมถึง module ที่มี controller
+        เปิดอยู่ได้อยู่แล้วทาง PUT /api/qth/{name}"""
+        rt = hub.get(name)
+        if rt is None:
+            return
+        station = hub.station_for(m)
+        held = rt.qth
+        if controller_active and station.name != held.name:
+            raise ApiError("CONTROLLER_ACTIVE", 409,
+                           f"สร้าง module {name} ใหม่ (Configure → OK) จะเปลี่ยนสถานีจาก {held.name} เป็น {station.name} "
+                           "ซึ่งทำไม่ได้ขณะที่ Radio Control หรือ Antenna Control เปิดอยู่ ให้ปิด Radio Control และ Antenna Control "
+                           "ของ module นี้ก่อน แล้วกด OK ใหม่", "qth")
+
+    def put_module_sync(name: str, body: dict, controller_active: bool, recreate: bool) -> tuple[dict, bool]:
+        """body = ค่าเต็มของ module + pin/unpin (decision 3): ค่าที่สืบทอดอยู่เปลี่ยนเฉพาะเมื่อ pin
+        recreate (Configure → OK): บันทึกแล้วสร้าง module ที่เปิดอยู่ใหม่ (Hub.recreate) ไม่งั้น reload ด้วยค่ารวมที่ runtime จำไว้
+        คืน (config ที่หน้าเว็บอ่าน, config ของ runtime เปลี่ยนหรือถูกสร้างใหม่)"""
         if body.get("name") != name:
             raise ApiError("MODULE_INVALID", 422, f"ชื่อ module (name) ต้องตรงกับชื่อใน URL ({name})", "name")
         _check_case_clash(store.list_modules(), name, "MODULE_INVALID", "name", "module")
@@ -953,16 +1010,22 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
         pin, unpin = _path_list(body, "pin"), _path_list(body, "unpin")
         if controller_active:
             check_configurable(name, m)
+        if recreate:
+            check_recreatable(name, m, controller_active)
         store.put_module(m, pin, unpin)
-        hub.reload(name)                     # เปิดอยู่: tick ถัดไปของทุกแท็บใช้ค่าใหม่ (ไม่ได้เปิด: ไม่ทำอะไร)
+        # เปิดอยู่: tick ถัดไปของทุกแท็บใช้ค่าใหม่ (ไม่ได้เปิด: ไม่ทำอะไร)
+        changed = hub.recreate(name) if recreate else hub.reload(name)
         clear_startup_messages()
-        return M.module_to_dict(store.get_module(name))
+        return module_answer(name), changed
 
     @app.put("/api/modules/{name}")
-    async def put_module(name: str, body: dict = Body(...)):
+    async def put_module(name: str, body: dict = Body(...), recreate: bool = Query(False)):
+        """?recreate=true: Configure → OK ซึ่งหน้าเว็บส่งทุกครั้งแม้ไม่มีอะไรเปลี่ยน (Gpredict สร้าง module ใหม่ทุกครั้งที่กด OK, ref-D §9)"""
         async with controllers.hold(name):   # controller ของ module นี้ไม่ถูกเปิดแทรกระหว่างตรวจกับเขียน
-            saved = await asyncio.to_thread(put_module_sync, name, body, controllers.active(name))
+            saved, changed = await asyncio.to_thread(put_module_sync, name, body, controllers.active(name), recreate)
         events.publish({"type": EVENT_MODULES_CHANGED})
+        if changed:
+            config_changed([name])
         return saved
 
     def put_window_sync(name: str, body: dict) -> dict:
@@ -1051,7 +1114,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             hub.open(new_name)
             session_add(new_name)
         events.publish({"type": EVENT_MODULES_CHANGED})
-        return {"module": M.module_to_dict(store.get_module(new_name)), "open": open_list()}
+        return {"module": module_answer(new_name), "open": open_list()}
 
     @app.put("/api/session/tabs")
     def put_tabs(body: dict = Body(...)):

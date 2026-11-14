@@ -103,10 +103,6 @@ export function applyProps(config: ModuleConfig, props: ModuleProps): ModuleConf
 
 const same = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b);
 
-export function propsEqual(a: ModuleProps, b: ModuleProps): boolean {
-  return same(a, b);
-}
-
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**

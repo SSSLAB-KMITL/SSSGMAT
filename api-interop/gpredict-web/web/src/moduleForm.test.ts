@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULTS, META } from "./moduleDefaults.fixture";
+import { afterEach, vi } from "vitest";
 import {
   addSat,
   availableSats,
+  configureSave,
   DEFAULT_QTH,
   editModuleChange,
   editOpening,
   GROUP_ALL,
   groupOptions,
-  hasModuleChanges,
   HINT,
   newModuleConfig,
   qthChoices,
+  readEditOpening,
   removeSat,
   sortedSats,
   TOO_MANY_HINT,
@@ -136,14 +138,12 @@ describe("editModuleChange (OK of Edit module: a change of the open module's con
 
   it("says nothing changed when the draft is what the module had", () => {
     const c = base();
-    expect(hasModuleChanges(draftOf(c), draftOf(c))).toBe(false);
     expect(editModuleChange(draftOf(c), draftOf(c))(c)).toBe(c);
   });
 
   it("changes the ground station only", () => {
     const c = base();
     const draft = { ...draftOf(c), qth: null };
-    expect(hasModuleChanges(draftOf(c), draft)).toBe(true);
     const next = editModuleChange(draftOf(c), draft)(c);
     expect(next.qth).toBeNull();
     expect(next.satellites).toBe(c.satellites);
@@ -185,7 +185,7 @@ describe("editModuleChange (OK of Edit module: a change of the open module's con
 
   it("treats the same satellites in another order as no change", () => {
     const c = base();
-    expect(hasModuleChanges(draftOf(c), { ...draftOf(c), satellites: [3, 2, 1] })).toBe(false);
+    expect(editModuleChange(draftOf(c), { ...draftOf(c), satellites: [3, 2, 1] })(c)).toBe(c);
   });
 
   it("opens with the page's ground station and satellites and with the properties as the server resolves them now", () => {
@@ -221,5 +221,52 @@ describe("editModuleChange (OK of Edit module: a change of the open module's con
     const next = editModuleChange(draftOf(c), { ...draftOf(c), qth: null }, centre)(c);
     expect(next.map.center_lon).toBe(45);
     expect(next.qth).toBeNull();
+  });
+});
+
+describe("Configure → OK re-creates the module (ref-D §9, spec §4.2 and §9.1)", () => {
+  const base = (over: Partial<ModuleConfig> = {}): ModuleConfig => ({
+    ...structuredClone(DEFAULTS),
+    name: "Amateur",
+    qth: "THBK",
+    satellites: [1, 2, 3],
+    ...over,
+  });
+  const draftOf = (c: ModuleConfig): ModuleDraft => ({ qth: c.qth, satellites: [...c.satellites], props: propsOf(c) });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends the re-create also when nothing changed: the save keeps the configuration as it is", () => {
+    const c = base();
+    const saving = propsSave(draftOf(c).props, draftOf(c).props, NO_MARKS.dirty, NO_MARKS.reset, META);
+    const { change, opts } = configureSave(draftOf(c), draftOf(c), saving);
+    expect(opts).toEqual({ pin: [], unpin: [], recreate: true });
+    expect(change(c)).toEqual(c);
+  });
+
+  it("carries the changes and the pins with the re-create", () => {
+    const c = base();
+    const props = { ...propsOf(c), layout_code: "0;0;2;0;1" };
+    const marks = markEdited(NO_MARKS, "layout");
+    const saving = propsSave(propsOf(c), props, marks.dirty, marks.reset, META);
+    const { change, opts } = configureSave(draftOf(c), { ...draftOf(c), qth: null, props }, saving);
+    expect(opts).toEqual({ pin: ["layout_code"], unpin: [], recreate: true });
+    const next = change(c);
+    expect([next.qth, next.layout_code]).toEqual([null, "0;0;2;0;1"]);
+  });
+
+  it("Edit module opens with the fresh read (GET …?fresh=1: the module's values with the global values of now)", async () => {
+    const page = base({ qth: "OTHER" }); // the open module's configuration: the global values it was made with
+    const fresh = base();
+    fresh.map.track_orbits = 5;
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      urls.push(url);
+      return new Response(JSON.stringify(fresh), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    const d = await readEditOpening(page);
+    expect(urls).toEqual(["/api/modules/Amateur?fresh=1"]);
+    expect(d.qth).toBe("OTHER");
+    expect(d.props).toEqual(propsOf(fresh));
   });
 });

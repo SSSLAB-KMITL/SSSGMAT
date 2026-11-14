@@ -13,7 +13,7 @@ import { closeController, getControllers, openController, postTarget } from "./r
 import type { ControllerKind, ControllerRef } from "./radio/types";
 import { pruneToOpen, singleSatChange, withMember, withSelection } from "./selection";
 import type { Selections } from "./selection";
-import type { ModuleConfig, ModulePins, Tick } from "./types";
+import type { ModuleConfig, ModuleSaveOptions, Tick } from "./types";
 
 const NO_NAMES: SatNameMap = new Map();
 
@@ -28,7 +28,7 @@ export function useSeenNames(module: string | null, tick: Tick | null): SatNameM
   return names;
 }
 
-type SaveConfig = (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
+type SaveConfig = (change: (config: ModuleConfig) => ModuleConfig, opts?: ModuleSaveOptions) => Promise<void>;
 
 /**
  * The selected satellite and Autotrack of the modules of a page (not saved), for the module `current` that is shown:

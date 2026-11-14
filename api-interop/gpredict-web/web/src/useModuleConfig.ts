@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { errorText, getModule, putModule } from "./api";
 import { ConfigStore } from "./configStore";
-import type { ModuleConfig, ModulePins } from "./types";
+import type { ModuleConfig, ModuleSaveOptions } from "./types";
 
 interface Held {
   name: string | null;
@@ -17,14 +17,18 @@ const NO_UPDATES = () => () => undefined;
  *
  * Every write of the configuration must go through `save(change)`: it shows the change at once, sends the whole configuration
  * with PUT /api/modules/{name} one request at a time, and on a refusal goes back to the configuration the server holds and
- * rejects with the error (see configStore.ts). OK of Module properties gives `save` the paths to pin and unpin as well (`opts`). The views get it as `onSaveConfig`; the dialogs and popups of Task 18 (Module
+ * rejects with the error (see configStore.ts). Configure → OK gives `save` the paths to pin and unpin and the re-create as well (`opts`). The views get it as `onSaveConfig`; the dialogs and popups of Task 18 (Module
  * properties, Configure, the satellite popups' Highlight footprint / Ground Track / Sky track) must use it too, and never
  * PUT a configuration of their own: that would send out-of-date values and undo what another view saved.
  *
  * `reload` reads it from the server again; the stored configuration stays (with the saves still pending on top of it) until
- * the new one has arrived, and stays if reading fails (`error` says so).
+ * the new one has arrived, and stays if reading fails (`error` says so). A change of `rereads` reads it again too: the page counts the
+ * reads that /ws/app asks for (`withConfigReads`: module_config_changed and every connect).
+ *
+ * The read is the plain GET: for an open module what it runs with, the global values of Preferences → Modules it was made with (spec
+ * §9.1), so new Preferences reach it only when it is made again. Edit module reads freshly on its own (`readEditOpening`).
  */
-export function useModuleConfig(name: string | null) {
+export function useModuleConfig(name: string | null, rereads = 0) {
   const [held, setHeld] = useState<Held>({ name: null, store: null, error: null });
   const [version, setVersion] = useState(0);
   const current = useRef<{ name: string; store: ConfigStore } | null>(null);
@@ -50,14 +54,14 @@ export function useModuleConfig(name: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [name, version]);
+  }, [name, version, rereads]);
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   const mine = held.name === name ? held : null; // never the previous module's config
   const store = mine?.store ?? null;
   const config = useSyncExternalStore(store?.subscribe ?? NO_UPDATES, () => store?.config ?? null);
   const save = useCallback(
-    (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins): Promise<void> =>
+    (change: (config: ModuleConfig) => ModuleConfig, opts?: ModuleSaveOptions): Promise<void> =>
       store === null ? Promise.reject(new Error("the module's configuration has not been loaded")) : store.save(change, opts),
     [store],
   );

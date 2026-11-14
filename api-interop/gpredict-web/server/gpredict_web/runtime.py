@@ -14,10 +14,11 @@ pass หาครั้งเดียวต่อ (tle_key, ช่วง, ต�
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from types import MappingProxyType
 
 from gnss_predict.astro import subpoint, sun_ecef_km
 from gnss_predict.errors import Message
@@ -88,11 +89,14 @@ class _Sat:
 class ModuleRuntime:
     """module ที่เปิดอยู่หนึ่งตัว: ถือนาฬิกา ช่วงคำนวณ (ปัจจุบัน + ถัดไป) และ cache ของ pass ทุกเมธอดใช้ lock เดียว
     owner ของ EphemManager คือชื่อ module
-    twilight: คืน Twilight threshold (องศา) ที่ใช้ตอนนี้ เรียกครั้งเดียวต่อ tick เพื่อให้ Preferences มีผลที่ tick ถัดไปโดยไม่ต้องเปิด module ใหม่"""
+    twilight: คืน Twilight threshold (องศา) ที่ใช้ตอนนี้ เรียกครั้งเดียวต่อ tick เพื่อให้ Preferences มีผลที่ tick ถัดไปโดยไม่ต้องเปิด module ใหม่
+    globals_: ค่ารวมที่ module สืบทอดได้ ณ ตอนที่ถูกสร้าง (Store.inheritable_globals) Hub.reload ประกอบ module กับค่านี้
+    ค่ารวมใหม่จึงถึง module ที่เปิดอยู่เมื่อถูกสร้างใหม่เท่านั้น (Hub.recreate) เหมือน Gpredict (spec งานย่อย 4 §9.1)"""
 
     def __init__(self, module: ModuleConfig, qth: Qth, sats: list[SatRecord], ephem: EphemManager, clock: ModuleClock,
-                 twilight: Callable[[], float] = lambda: TWILIGHT_SUN_EL_DEG):
+                 twilight: Callable[[], float] = lambda: TWILIGHT_SUN_EL_DEG, globals_: Mapping[str, object] | None = None):
         self._lock = threading.Lock()
+        self._globals: Mapping[str, object] = MappingProxyType(dict(globals_ or {}))
         self._twilight = twilight
         self._ephem = ephem
         self._clock = clock
@@ -119,6 +123,12 @@ class ModuleRuntime:
     def module(self) -> ModuleConfig:
         with self._lock:
             return self._module
+
+    @property
+    def globals(self) -> Mapping[str, object]:
+        """ค่ารวมที่ module สืบทอดได้ ณ ตอนที่ runtime ถูกสร้างหรือสร้างใหม่ (อ่านอย่างเดียว)"""
+        with self._lock:
+            return self._globals
 
     @property
     def clock(self) -> ModuleClock:
@@ -264,11 +274,16 @@ class ModuleRuntime:
             return None
         return [{"t": iso_ms(p["t"]), "az": p["az"], "el": p["el"]} for p in points]
 
-    def update(self, module: ModuleConfig, qth: Qth, sats: list[SatRecord]) -> None:
-        """ใช้ module, QTH และ TLE ใหม่ (หลังแก้ module หรืออัปเดต TLE) นาฬิกาเดิม ดาวที่ TLE เปลี่ยนเก็บ SatSpec เดิมไว้"""
+    def update(self, module: ModuleConfig, qth: Qth, sats: list[SatRecord],
+               globals_: Mapping[str, object] | None = None) -> bool:
+        """ใช้ module, QTH และ TLE ใหม่ (หลังแก้ module หรืออัปเดต TLE) นาฬิกาเดิม ดาวที่ TLE เปลี่ยนเก็บ SatSpec เดิมไว้
+        globals_: ค่ารวมใหม่ที่จำไว้ (เฉพาะตอนสร้างใหม่) None = คงของเดิม คืน True เมื่อ config ของ module ต่างจากเดิม"""
         with self._lock:
             self._check_open()
+            changed = module != self._module
             self._module = module
+            if globals_ is not None:
+                self._globals = MappingProxyType(dict(globals_))
             self._sats = self._build(sats, self._sats)
             if qth != self._qth:
                 self._qth, self._q = qth, qth_geo(qth)
@@ -278,6 +293,7 @@ class ModuleRuntime:
                 if w is not None:
                     self._ephem.ensure(self._owner, self._specs(), w)
             self._prune_passes()
+            return changed
 
     def drop_qth_reference(self) -> None:
         """ไฟล์ module เปลี่ยนเป็น ** DEFAULT ** ขณะที่ module เปิดอยู่ (batch ลบสถานีของมัน): อ้างอิง qth ของ runtime เป็น None ตามไฟล์
@@ -489,7 +505,8 @@ class Hub:
         with self._serial(name):
             rt = self.get(name)                                  # อีก thread อาจเปิดเสร็จระหว่างรอ
             if rt is None:
-                rt = ModuleRuntime(*self._load(name), self._ephem, ModuleClock(self._now), self._twilight)
+                module, qth, sats, globals_ = self._load(name)
+                rt = ModuleRuntime(module, qth, sats, self._ephem, ModuleClock(self._now), self._twilight, globals_)
                 with self._lock:
                     page = len(self._open)                       # หน้าที่ต่อท้าย (ลำดับที่เปิด)
                     self._open[name] = rt
@@ -515,22 +532,45 @@ class Hub:
         with self._lock:
             return self._open.get(name)
 
-    def reload(self, name: str) -> None:
-        """อ่าน module, QTH และ TLE ใหม่หลัง PUT module หรือ Update TLE (นาฬิกาและ TLE เดิมระหว่างรอค่าใหม่คงอยู่)
+    def reload(self, name: str) -> bool:
+        """อ่าน module, QTH และ TLE ใหม่หลัง PUT module, PUT QTH หรือ Update TLE (นาฬิกาและ TLE เดิมระหว่างรอค่าใหม่คงอยู่)
+        ประกอบ module กับค่ารวมที่ runtime จำไว้ตอนสร้าง ไม่ใช่ค่ารวมตอนนี้ (spec งานย่อย 4 §9.1)
         สถานีเปลี่ยนเมื่อ qth ของ module เปลี่ยนเท่านั้น (ดู _station) ไม่ย้ายตามสถานีตั้งต้นใหม่หรือเพราะไฟล์สถานีหาย
-        ไม่ได้เปิดอยู่: ไม่ทำอะไร ApiError จาก store ไม่เปลี่ยน runtime (close ถือ lock ประจำชื่อเดียวกัน จึงไม่ปิดแทรกระหว่างนี้)"""
+        คืน True เมื่อ config ของ runtime เปลี่ยน ไม่ได้เปิดอยู่: ไม่ทำอะไร (False)
+        ApiError จาก store ไม่เปลี่ยน runtime (close ถือ lock ประจำชื่อเดียวกัน จึงไม่ปิดแทรกระหว่างนี้)"""
         with self._serial(name):
             rt = self.get(name)
-            if rt is not None:
-                module, sats = self._read(name)
-                rt.update(module, self._station(module, rt), sats)
+            if rt is None:
+                return False
+            module, sats = self._read(name, rt.globals)
+            return rt.update(module, self._station(module, rt), sats)
 
-    def drop_qth_reference(self, name: str) -> None:
-        """ไฟล์ module เปลี่ยนเป็น ** DEFAULT ** (batch ลบสถานีของมัน): runtime ที่เปิดอยู่เก็บสถานีเดิมไว้ ไม่เปิดอยู่: ไม่ทำอะไร"""
+    def recreate(self, name: str) -> bool:
+        """สร้าง module ที่เปิดอยู่ใหม่ (Configure → OK, ref-D §9): ค่ารวมตอนนี้ (จำแทนของเดิม) และสถานีที่หาใหม่ทั้งหมด
+        (** DEFAULT ** = สถานีตั้งต้นตอนนี้) แบบ open (ของเรา) ใช้ runtime ตัวเดิม: นาฬิกา ช่วงคำนวณและ pass ที่หาไว้คงอยู่
+        ไม่ต้องรอ GMAT ใหม่ คืน True เมื่อเปิดอยู่ ไม่ได้เปิดอยู่: ไม่ทำอะไร (False) ApiError จาก store ไม่เปลี่ยน runtime"""
         with self._serial(name):
             rt = self.get(name)
-            if rt is not None:
-                rt.drop_qth_reference()
+            if rt is None:
+                return False
+            module, qth, sats, globals_ = self._load(name)
+            rt.update(module, qth, sats, globals_)
+            return True
+
+    def station_for(self, module: ModuleConfig) -> Qth:
+        """สถานีที่ module นี้จะได้ถ้าถูกสร้างตอนนี้ (ชื่อใน qth หรือสถานีตั้งต้นตอนนี้) ApiError แบบ open
+        (ให้ PUT ?recreate=true ตรวจก่อนเขียนไฟล์)"""
+        return self._station(module, None)
+
+    def drop_qth_reference(self, name: str) -> bool:
+        """ไฟล์ module เปลี่ยนเป็น ** DEFAULT ** (batch ลบสถานีของมัน): runtime ที่เปิดอยู่เก็บสถานีเดิมไว้ คืน True
+        ไม่เปิดอยู่: ไม่ทำอะไร (False)"""
+        with self._serial(name):
+            rt = self.get(name)
+            if rt is None:
+                return False
+            rt.drop_qth_reference()
+            return True
 
     def open_names(self) -> list[str]:
         """ชื่อ module ที่เปิดอยู่ตามลำดับที่เปิด"""
@@ -559,15 +599,16 @@ class Hub:
             return TWILIGHT_SUN_EL_DEG
         return float(self._prefs.get("PREDICT/TWILIGHT_THRESHOLD"))
 
-    def _read(self, name: str) -> tuple[ModuleConfig, list[SatRecord]]:
-        """module และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
-        module = self._store.get_module(name)
+    def _read(self, name: str, globals_: Mapping[str, object]) -> tuple[ModuleConfig, list[SatRecord]]:
+        """module (ประกอบกับค่ารวม globals_) และ SatRecord ของดาวตามลำดับใน module (ดาวที่ไม่อยู่ในดัชนีถูกข้าม ดัชนีไม่เคยลบดาว)"""
+        module = self._store.get_module(name, globals_)
         return module, [r for r in (self._satdb.get(n) for n in module.satellites) if r is not None]
 
-    def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord]]:
-        """module, QTH ของมัน (หาใหม่ทั้งหมด) และ SatRecord ตอนสร้าง runtime"""
-        module, sats = self._read(name)
-        return module, self._station(module, None), sats
+    def _load(self, name: str) -> tuple[ModuleConfig, Qth, list[SatRecord], dict[str, object]]:
+        """ตอนสร้าง runtime (open, recreate): module, QTH ของมัน (หาใหม่ทั้งหมด), SatRecord และค่ารวมตอนนี้ที่ runtime จำไว้"""
+        globals_ = self._store.inheritable_globals()
+        module, sats = self._read(name, globals_)
+        return module, self._station(module, None), sats, globals_
 
     def _station(self, module: ModuleConfig, current: ModuleRuntime | None) -> Qth:
         """สถานีของ module ที่สร้างใหม่ (current เป็น None) หรือที่อ้างอิง qth เปลี่ยนจากของ runtime ที่เปิดอยู่ (current):

@@ -14,6 +14,11 @@ export interface AppEventHandlers {
   prefsChanged(): void;
   /** a module was opened, closed, created, deleted, cloned, saved or changed its window */
   modulesChanged(): void;
+  /**
+   * the configuration of these open modules, as they run, changed outside the page that shows them: a save of another page,
+   * Configure → OK, a deleted ground station (the module is `** DEFAULT **` now), an edited one. A page showing one reads it again.
+   */
+  moduleConfigChanged(modules: readonly string[]): void;
   /** the TLE data is old: `text` is the message of Gpredict's notice, to show in a box */
   tleOld(text: string): void;
   /** the socket is open, at the first connect and after every reconnect: events sent while it was not are lost, so read the state again */
@@ -32,9 +37,18 @@ export function appSocketUrl(loc: { protocol: string; host: string }): string {
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws/app`;
 }
 
-type AppEvent = { type: "prefs_changed" } | { type: "modules_changed" } | { type: "tle_old"; text: string };
+type AppEvent =
+  | { type: "prefs_changed" }
+  | { type: "modules_changed" }
+  | { type: "module_config_changed"; modules: string[] }
+  | { type: "tle_old"; text: string };
 
-/** The event a message carries, or null for anything else (not JSON, not an object, a type this page does not know, a `tle_old` without text). */
+const isNames = (v: unknown): v is string[] => Array.isArray(v) && v.every((n) => typeof n === "string");
+
+/**
+ * The event a message carries, or null for anything else (not JSON, not an object, a type this page does not know, a `tle_old` without
+ * text, a `module_config_changed` without a list of names).
+ */
 function parseEvent(data: unknown): AppEvent | null {
   if (typeof data !== "string") return null;
   let value: unknown;
@@ -44,8 +58,9 @@ function parseEvent(data: unknown): AppEvent | null {
     return null;
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const { type, text } = value as { type?: unknown; text?: unknown };
+  const { type, text, modules } = value as { type?: unknown; text?: unknown; modules?: unknown };
   if (type === "prefs_changed" || type === "modules_changed") return { type };
+  if (type === "module_config_changed") return isNames(modules) ? { type, modules } : null;
   return type === "tle_old" && typeof text === "string" ? { type, text } : null;
 }
 
@@ -85,6 +100,7 @@ export function connectAppEvents(h: AppEventHandlers, options: AppEventOptions =
       if (event === null) return;
       if (event.type === "prefs_changed") h.prefsChanged();
       else if (event.type === "modules_changed") h.modulesChanged();
+      else if (event.type === "module_config_changed") h.moduleConfigChanged(event.modules);
       else h.tleOld(event.text);
     };
     made.onerror = () => {
@@ -108,6 +124,31 @@ export function connectAppEvents(h: AppEventHandlers, options: AppEventOptions =
       old.onopen = old.onmessage = old.onclose = old.onerror = null;
       old.close(1000);
     }
+  };
+}
+
+/** The modules whose configuration a page shows, and how it reads one of them again (GET /api/modules/{name}). */
+export interface ConfigReads {
+  /** the modules shown now: the tab's on the main page, the window's own in a module window */
+  shown(): readonly string[];
+  reread(name: string): void;
+}
+
+/**
+ * `h` and the reads of the configuration of the modules the page shows: when `module_config_changed` names one of them, and on every
+ * connect (the events sent while the socket was not connected are lost; after a restart of the server every module was made again). An
+ * open module's configuration is what it runs with (spec §9.1), so new Preferences alone read nothing again.
+ */
+export function withConfigReads(h: Omit<AppEventHandlers, "moduleConfigChanged">, reads: ConfigReads): AppEventHandlers {
+  return {
+    ...h,
+    connected: () => {
+      for (const name of reads.shown()) reads.reread(name);
+      h.connected?.();
+    },
+    moduleConfigChanged: (modules) => {
+      for (const name of reads.shown()) if (modules.includes(name)) reads.reread(name);
+    },
   };
 }
 

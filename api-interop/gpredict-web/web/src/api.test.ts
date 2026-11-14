@@ -8,6 +8,8 @@ import {
   getLicense,
   getLocations,
   getMaps,
+  getModule,
+  getModuleFresh,
   getModules,
   getPrefs,
   getReadme,
@@ -66,6 +68,27 @@ describe("api", () => {
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ ...m, pin: ["map.center_lon"], unpin: ["list_columns"] });
     await putModule(m);
     expect(JSON.parse(String(calls[1]!.init?.body))).toEqual(m);
+  });
+
+  it("PUTs Configure → OK to ?recreate=true with the configuration and the pins, and without recreate in the body", async () => {
+    const m = { ...structuredClone(DEFAULTS), name: "Amateur", satellites: [25544] };
+    const calls = stubFetch(() => json(m));
+    await putModule(m, { pin: ["layout_code"], unpin: ["list_columns"], recreate: true });
+    expect(calls[0]!.url).toBe("/api/modules/Amateur?recreate=true");
+    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ ...m, pin: ["layout_code"], unpin: ["list_columns"] });
+    await putModule(m, { recreate: true });
+    expect(calls[1]!.url).toBe("/api/modules/Amateur?recreate=true");
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual(m);
+    await putModule(m, { recreate: false });
+    expect(calls[2]!.url).toBe("/api/modules/Amateur");
+  });
+
+  it("reads a module plainly (an open one: what it runs with), and freshly for Edit module (?fresh=1)", async () => {
+    const calls = stubFetch(() => json({}));
+    await getModule("a b");
+    await getModuleFresh("a b");
+    expect(calls.map((c) => c.url)).toEqual(["/api/modules/a%20b", "/api/modules/a%20b?fresh=1"]);
   });
 
   it("encodes names in the path", async () => {

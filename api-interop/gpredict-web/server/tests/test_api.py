@@ -1013,6 +1013,128 @@ class ModuleInheritanceApiTest(ApiTestBase):
         self.assertEqual(meta["log_dir"], str(self.cfg.data_dir / "logs"))
 
 
+class ModuleLifetimeApiTest(ApiTestBase):
+    """module ที่เปิดอยู่ใช้ค่ารวมของ Preferences → Modules และสถานีตั้งแต่ตอนถูกสร้าง จนกว่าจะถูกสร้างใหม่ (เปิด, Configure → OK
+    ที่ส่ง ?recreate=true, เปิด server ใหม่) เหมือน Gpredict (spec งานย่อย 4 §4.2, §9.1, §11 "ทำตามแม้ดูแปลก")"""
+
+    NEW_GLOBALS = {"MODULES/DATA_TIMEOUT": 2000, "MODULES/MAP_TRACK_NUM": 5, "MODULES/GRID": "0;0;2;0;1"}
+
+    def set_globals(self, values: dict) -> None:
+        r = self.client.put("/api/prefs", json={"set": values})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def get(self, name: str = "M", query: str = "") -> dict:
+        r = self.client.get(f"/api/modules/{name}{query}")
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def put(self, body: dict, query: str = ""):
+        return self.client.put(f"/api/modules/{body['name']}{query}", json=body)
+
+    def inherited(self, config: dict) -> tuple:
+        """ค่าที่สืบทอดซึ่ง test นี้เปลี่ยน: ช่วง tick, จำนวนรอบของ ground track และ layout"""
+        return config["refresh"]["data_ms"], config["map"]["track_orbits"], config["layout_code"]
+
+    def runtime_inherited(self, name: str = "M") -> tuple:
+        """ค่าเดียวกันที่ server ใช้เอง: ช่วงของ producer (_compute_round) และ track_orbits ที่ ModuleRuntime.track ใช้"""
+        rt = self.hub.get(name)
+        _, data_ms = app_module._compute_round(rt)
+        return data_ms, rt.module.map["track_orbits"], rt.module.layout_code
+
+    def test_saves_qth_put_and_tle_update_keep_the_globals_of_creation(self):
+        """(i) view save, PUT /api/qth/{name} และ Update TLE หลังเปลี่ยนค่ารวม: module ที่เปิดอยู่ยังใช้ค่ารวมตอนสร้าง ช่วง tick ไม่เปลี่ยน"""
+        self.put_module()
+        self.open_module()
+        old = self.inherited(self.get())
+        self.assertEqual(old, (300, 3, LAYOUT_PRESETS[0][1]))
+        self.set_globals(self.NEW_GLOBALS)
+        self.assertEqual(self.inherited(self.get()), old)                       # GET ของ module ที่เปิดอยู่ = ค่าของ runtime
+        r = self.put({**self.get(), "ground_track": [NORADS[0]]})               # view save (Ground Track)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.inherited(r.json()), old)
+        self.assertEqual((self.get()["ground_track"], self.inherited(self.get())), ([NORADS[0]], old))
+        self.assertEqual(self.runtime_inherited(), old)
+        r = self.client.put("/api/qth/ORIGIN", json={**asdict(ORIGIN), "location": "Moved"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((self.hub.get("M").qth.location, self.runtime_inherited()), ("Moved", old))
+        with self.assertLogs("gpredict_web.app", "ERROR"):                       # ไม่มีเน็ตใน test: หยุดก่อนรวม TLE แต่ reload ทุก module
+            self.assertEqual(self.client.post("/api/tle/update").status_code, 200)
+        self.assertEqual((self.inherited(self.get()), self.runtime_inherited()), (old, old))
+        new = (2000, 5, "0;0;2;0;1")
+        self.assertEqual(self.inherited(self.get(query="?fresh=1")), new)       # Edit module อ่านค่ารวมตอนนี้
+        self.put_module("N")
+        self.assertEqual(self.inherited(self.get("N")), new)                    # module ที่ไม่ได้เปิดอ่านจากไฟล์ + ค่ารวมตอนนี้
+        self.client.post("/api/modules/M/close")
+        self.open_module()                                                       # เปิดใหม่ = สร้างใหม่
+        self.assertEqual((self.inherited(self.get()), self.runtime_inherited()), (new, new))
+
+    def test_recreate_takes_the_globals_and_the_default_station_of_now(self):
+        """(ii) Configure → OK (?recreate=true แม้ไม่มีอะไรเปลี่ยน): ค่ารวมตอนนี้และสถานีตั้งต้นตอนนี้ (module ** DEFAULT **)
+        runtime ตัวเดิม (นาฬิกาและค่าที่คำนวณไว้คงอยู่)"""
+        self.put_module(qth=None)                                                # ** DEFAULT ** = ORIGIN
+        self.open_module()
+        rt = self.hub.get("M")
+        held = self.get()
+        self.set_globals(self.NEW_GLOBALS)
+        r = self.client.put("/api/qth/batch", json={"stations": [asdict(ORIGIN), asdict(OTHER)], "default": "OTHER"})
+        self.assertEqual((r.status_code, r.json()["changed_modules"]), (200, []))
+        self.assertEqual(self.put(held).status_code, 200)                       # view save: ไม่ย้ายสถานี ไม่เอาค่ารวมใหม่
+        self.assertEqual((rt.qth.name, self.runtime_inherited()), ("ORIGIN", (300, 3, LAYOUT_PRESETS[0][1])))
+        r = self.put(held, "?recreate=true")
+        self.assertEqual(r.status_code, 200, r.text)
+        new = (2000, 5, "0;0;2;0;1")
+        self.assertEqual(self.inherited(r.json()), new)
+        self.assertIs(self.hub.get("M"), rt)
+        self.assertEqual((rt.qth.name, rt.tick()["qth"]["name"]), ("OTHER", "OTHER"))
+        self.assertEqual((self.inherited(self.get()), self.runtime_inherited()), (new, new))
+        self.assertIsNone(self.get()["qth"])
+        self.set_globals({"MODULES/DATA_TIMEOUT": 700})
+        self.assertEqual(self.put(self.get(), "?recreate=1").status_code, 200)  # อีกครั้ง: ค่ารวมล่าสุด
+        self.assertEqual(self.runtime_inherited()[0], 700)
+
+    def test_recreate_keeps_pinned_values_and_follows_a_named_station(self):
+        self.put_module(qth="OTHER", refresh={"data_ms": 1000}, pin=["refresh.data_ms"])
+        self.open_module()
+        self.set_globals(self.NEW_GLOBALS)
+        r = self.put(self.get(), "?recreate=true")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.runtime_inherited(), (1000, 5, "0;0;2;0;1"))      # ค่าที่ตรึงไว้ไม่ตามค่ารวม
+        self.assertEqual(self.hub.get("M").qth.name, "OTHER")
+
+    def test_recreate_of_a_closed_module_is_a_save(self):
+        self.put_module()
+        r = self.put({**self.get(), "ground_track": [NORADS[1]]}, "?recreate=true")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.store.get_module("M").ground_track, [NORADS[1]])
+        self.assertIsNone(self.hub.get("M"))
+        self.assert_error(self.client.put("/api/modules/M?recreate=maybe", json=self.get()), 422, "REQUEST_INVALID", "recreate")
+
+    def test_recreate_without_a_default_station_writes_nothing(self):
+        self.put_module(qth=None)
+        self.open_module()
+        file = self.cfg.data_dir / "modules" / "M.json"
+        before = file.read_bytes()
+        (self.cfg.data_dir / "settings.json").unlink()                           # ไม่มีสถานีตั้งต้นแล้ว (แก้ไฟล์ด้วยมือ)
+        self.assert_error(self.put({**self.get(), "ground_track": [NORADS[0]]}, "?recreate=true"), 422, "QTH_INVALID")
+        self.assertEqual(file.read_bytes(), before)
+        self.assertEqual(self.hub.get("M").qth.name, "ORIGIN")
+
+    def test_get_of_an_open_module_is_its_runtime_config_with_the_window_of_the_file(self):
+        """(iv) GET ของ module ที่เปิดอยู่ = config ของ runtime แต่ window จากไฟล์ (PUT …/window ไม่ reload runtime และ Detach ต้องได้ขนาดล่าสุด)"""
+        self.put_module()
+        self.open_module()
+        self.set_globals(self.NEW_GLOBALS)
+        window = {"state": 1, "x": 10, "y": 20, "width": 640, "height": 480}
+        r = self.client.put("/api/modules/M/window", json=window)
+        self.assertEqual(r.status_code, 200, r.text)
+        got = self.get()
+        self.assertEqual((got["window"], self.inherited(got)), (window, (300, 3, LAYOUT_PRESETS[0][1])))
+        self.assertEqual(self.hub.get("M").module.window["width"], None)       # สำเนาของ runtime ไม่ถูกแก้ตอนบันทึกหน้าต่าง
+        self.assertEqual(self.get(query="?fresh=1")["window"], window)
+        self.client.post("/api/modules/M/close")
+        self.assertEqual(self.inherited(self.get()), (2000, 5, "0;0;2;0;1"))    # ปิดแล้ว: ไฟล์ + ค่ารวมตอนนี้
+
+
 class ModuleWindowApiTest(ApiTestBase):
     """PUT /api/modules/{name}/window, windows ใน GET /api/modules (spec งานย่อย 4 §8, §12): หน้าต่างแยกของ module"""
 
@@ -2177,6 +2299,37 @@ class ControllerApiTest(ApiTestBase):
                 self.post(f"{kind}/close")
         self.put_module(sats=NORADS[:2])                                            # ปิด controller แล้วแก้ได้
         self.assertEqual(self.store.get_module("M").satellites, list(NORADS[:2]))
+
+    def test_recreate_refused_while_active_when_the_station_or_satellites_would_change(self):
+        """(iii) Configure → OK (?recreate=true) ขณะ Radio/Antenna Control เปิดอยู่: 409 CONTROLLER_ACTIVE ถ้าสถานีที่ได้ใหม่
+        (module ** DEFAULT ** ตามสถานีตั้งต้นตอนนี้) หรือรายชื่อดาวจะเปลี่ยน ไม่เปลี่ยนอะไรเลย (SP3 decision 4) ไม่เปลี่ยนก็สร้างใหม่ได้"""
+        self.put_hw([self.radio("A")], [self.rotator("R")])
+        self.put_module(qth=None, refresh={"data_ms": 100})                         # ** DEFAULT ** = ORIGIN (data_ms ยังตรึงจาก setUp)
+        self.open_module()
+        self.open_ctl("rotator")
+        rt = self.hub.get("M")
+        r = self.client.put("/api/qth/batch", json={"stations": [asdict(ORIGIN), asdict(OTHER)], "default": "OTHER"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.client.put("/api/prefs", json={"set": {"MODULES/MAP_TRACK_NUM": 5}}).status_code, 200)
+        file = self.cfg.data_dir / "modules" / "M.json"
+        before = file.read_bytes()
+        held = self.client.get("/api/modules/M").json()
+        for field, body in (("qth", held),                                         # สถานีตั้งต้นใหม่: สถานีจะเปลี่ยน
+                            ("satellites", {**held, "satellites": list(NORADS[:2])})):
+            with self.subTest(field=field):
+                r = self.client.put("/api/modules/M?recreate=true", json=body)
+                err = self.assert_error(r, 409, "CONTROLLER_ACTIVE", field)
+                self.assertIn("Antenna Control", err["text"])
+                self.assertEqual(file.read_bytes(), before)
+                self.assertEqual((rt.qth.name, rt.module.map["track_orbits"], rt.module.satellites),
+                                 ("ORIGIN", 3, list(NORADS)))
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "rotator"}])      # controller ไม่ถูกแตะ
+        r = self.client.put("/api/qth/batch", json={"stations": [asdict(ORIGIN), asdict(OTHER)], "default": "ORIGIN"})
+        self.assertEqual(r.status_code, 200, r.text)
+        r = self.client.put("/api/modules/M?recreate=true", json=held)            # สถานีและดาวเหมือนเดิม: สร้างใหม่ได้
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((rt.qth.name, rt.module.map["track_orbits"]), ("ORIGIN", 5))
+        self.assertEqual(self.listed(), [{"module": "M", "kind": "rotator"}])
 
     def test_batch_deleting_the_station_of_a_module_with_open_controllers(self):
         """ลบสถานีของ module ที่มี controller เปิดอยู่ใน OK ของ Preferences: ไฟล์ module เป็น ** DEFAULT ** (ตามที่ Gpredict ทำ)

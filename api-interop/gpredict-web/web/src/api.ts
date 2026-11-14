@@ -11,7 +11,7 @@ import type {
   Meta,
   ModuleConfig,
   ModuleList,
-  ModulePins,
+  ModuleSaveOptions,
   ModuleWindow,
   PrefsAnswer,
   PrefValue,
@@ -136,14 +136,24 @@ export const updateTleLocal = (body: { files: readonly { name: string; text: str
 // ---------------------------------------------------------------- modules
 
 export const getModules = () => request<ModuleList>("GET", "/api/modules");
+/**
+ * A module's configuration as the pages show it: for an open module what it runs with (the global values of Preferences → Modules it was
+ * made with, spec §9.1) and the window geometry stored last; for a closed one its file with the global values of now.
+ */
 export const getModule = (name: string) => request<ModuleConfig>("GET", moduleUrl(name));
+/** Edit module only: the module's own values with the global values of now (`?fresh=1`), what Module properties shows and pins. */
+export const getModuleFresh = (name: string) => request<ModuleConfig>("GET", `${moduleUrl(name)}?fresh=1`);
 /**
  * Saves the whole configuration; the answer is what the module uses then. `opts`: the paths of `Meta.module_keys` to pin (the module keeps
  * the values sent as its own) and to unpin (it inherits the global values again); a value of a path the module inherits and that is not
- * pinned is not stored (plan decision 3). 422 MODULE_INVALID for a path that is not one of them.
+ * pinned is not stored (plan decision 3). 422 MODULE_INVALID for a path that is not one of them. `recreate` (Configure → OK) goes to
+ * `?recreate=true`, not in the body: the open module is made again (409 CONTROLLER_ACTIVE, nothing saved, when a Radio or Antenna
+ * Control of it is open and its ground station or satellites would change).
  */
-export const putModule = (m: ModuleConfig, opts?: ModulePins) =>
-  request<ModuleConfig>("PUT", moduleUrl(m.name), opts === undefined ? m : { ...m, ...opts });
+export function putModule(m: ModuleConfig, opts?: ModuleSaveOptions) {
+  const { recreate, ...pins } = opts ?? {};
+  return request<ModuleConfig>("PUT", recreate ? `${moduleUrl(m.name)}?recreate=true` : moduleUrl(m.name), { ...m, ...pins });
+}
 export const deleteModule = (name: string) => request<void>("DELETE", moduleUrl(name));
 export const openModule = (name: string) => request<{ open: string[] }>("POST", `${moduleUrl(name)}/open`);
 export const closeModule = (name: string) => request<{ open: string[] }>("POST", `${moduleUrl(name)}/close`);

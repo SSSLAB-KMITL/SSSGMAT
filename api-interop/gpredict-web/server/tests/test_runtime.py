@@ -845,6 +845,58 @@ class HubTest(unittest.TestCase):
         self.ephem.drain()
         self.assertEqual(new.tick()["status"], "ok")
 
+    # ---- ค่ารวมของ module ที่เปิดอยู่ (spec งานย่อย 4 §9.1): ใช้ค่าตอนสร้างจนกว่าจะถูกสร้างใหม่ เหมือน Gpredict
+
+    def globals_hub(self, values: dict) -> tuple[Hub, dict]:
+        """Hub ที่ store มีค่ารวม (dict ที่คืนไปแก้ได้ระหว่าง test)"""
+        current = dict(values)
+        store = Store(self.cfg.data_dir, globals_=lambda: dict(current))
+        return Hub(store, self.satdb, self.ephem, self.wall), current
+
+    def test_reload_resolves_against_the_globals_of_creation(self):
+        self.put_module()
+        hub, current = self.globals_hub({"MODULES/DATA_TIMEOUT": 500, "PREDICT/NUMBER_OF_PASSES": 7})
+        rt = hub.open("M")
+        self.assertEqual(dict(rt.globals), {"MODULES/DATA_TIMEOUT": 500})     # เฉพาะ key ที่ module สืบทอดได้
+        self.assertEqual(rt.module.refresh["data_ms"], 500)
+        current["MODULES/DATA_TIMEOUT"] = 2000
+        self.assertFalse(hub.reload("M"))                                      # config ไม่เปลี่ยน
+        self.assertEqual(rt.module.refresh["data_ms"], 500)
+        self.put_module(ground_track=[NORADS[0]])
+        self.assertTrue(hub.reload("M"))                                       # config เปลี่ยน (ค่าของ module เอง)
+        self.assertEqual((rt.module.ground_track, rt.module.refresh["data_ms"]), ([NORADS[0]], 500))
+        self.assertFalse(hub.reload("NotOpen"))
+
+    def test_recreate_takes_the_globals_and_station_of_now(self):
+        self.put_module()                                                      # ** DEFAULT ** = ORIGIN
+        hub, current = self.globals_hub({"MODULES/DATA_TIMEOUT": 500})
+        rt = hub.open("M")
+        self.ephem.drain()
+        rt.clock.set(state="stop")
+        current["MODULES/DATA_TIMEOUT"] = 2000
+        self.store.set_default_qth("OTHER")
+        self.assertEqual(hub.station_for(rt.module), OTHER)                    # สถานีที่ module ที่สร้างตอนนี้จะได้
+        self.assertTrue(hub.recreate("M"))
+        self.assertIs(hub.get("M"), rt)                                        # runtime ตัวเดิม นาฬิกาเดิม
+        self.assertEqual(rt.clock.state, "stop")
+        self.assertEqual((rt.module.refresh["data_ms"], rt.globals["MODULES/DATA_TIMEOUT"], rt.qth), (2000, 2000, OTHER))
+        current["MODULES/DATA_TIMEOUT"] = 900
+        hub.reload("M")
+        self.assertEqual(rt.module.refresh["data_ms"], 2000)                   # reload ใช้ค่าที่จำไว้ตอนสร้างใหม่
+        self.assertFalse(hub.recreate("NotOpen"))
+
+    def test_recreate_after_the_station_was_dropped_follows_the_default(self):
+        self.put_module(qth="ORIGIN")
+        hub = self.hub()
+        rt = hub.open("M")
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            self.assertEqual(self.store.replace_qth([OTHER], "OTHER"), ["M"])
+        self.assertTrue(hub.drop_qth_reference("M"))
+        self.assertEqual(rt.qth.name, "ORIGIN")
+        hub.recreate("M")
+        self.assertEqual((rt.module.qth, rt.qth.name), (None, "OTHER"))
+        self.assertFalse(hub.drop_qth_reference("NotOpen"))
+
     def test_reload_during_open_is_not_lost(self):
         """PUT module + reload ระหว่างที่อีก thread กำลังเปิด module เดียวกัน: reload ต้องรอแล้วใช้ค่าใหม่ ไม่ใช่หลุดไปเพราะยังไม่เปิด"""
         self.put_module()

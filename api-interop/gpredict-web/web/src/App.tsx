@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { closeModule, errorText, getModules, putTabs, putWindow, quit as quitServer, resetClock, retryModule } from "./api";
-import { connectAppEvents, keepIfSame } from "./appEvents";
+import { connectAppEvents, keepIfSame, withConfigReads } from "./appEvents";
 import { Dialogs } from "./components/Dialogs";
 import { MenuBar } from "./components/MenuBar";
 import { MessageBox } from "./components/MessageBox";
@@ -80,6 +80,8 @@ function Main({ onStopped }: { onStopped: () => void }) {
   const [tleOld, setTleOld] = useState<string | null>(null); // the text of the notice "TLE files are getting out of date", while it is shown
   const [ownWindows, setOwnWindows] = useState<ReadonlyMap<string, PopupWindow>>(new Map()); // the module windows this page has opened
   const [savedPage, setSavedPage] = useState<number | null>(null); // GLOBAL/CURRENT_PAGE as read at load or written since; null before
+  const [configRereads, setConfigRereads] = useState(0); // the reads of the shown module's configuration /ws/app asked for
+  const shown = useRef<string | null>(null); // the module of the tab shown, for the handlers of /ws/app
   const modulesAsked = useRef(0); // GET /api/modules sent so far: only the answer of the last one counts
   const moduleButton = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null); // what Full screen makes full screen (spec §8.3)
@@ -126,24 +128,30 @@ function Main({ onStopped }: { onStopped: () => void }) {
   }, [reloadModules]);
 
   // the events of the program (/ws/app, spec §12): the page follows what changes on the server, from another browser tab too. Events sent
-  // while the socket was not connected are lost, so the page reads again every time it connects. A read that fails (the server is
-  // going away) leaves what the page holds: the socket's reconnect reads again.
+  // while the socket was not connected are lost, so the page reads again every time it connects, the configuration of the module shown
+  // too (`withConfigReads`). A read that fails (the server is going away) leaves what the page holds: the socket's reconnect reads again.
   useEffect(
     () =>
-      connectAppEvents({
-        connected: () => {
-          void reloadModules();
-          reloadPrefs().catch(() => {});
-        },
-        // New Preferences do not read the open modules again: a module keeps the Modules values it was made with until it is made
-        // again (opened, Configure → OK, server restart), as in Gpredict (ref-D §10, spec §9.1 and §11). Edit module reads its module
-        // from the server when it opens (moduleForm.ts `editOpening`), so Module properties shows and pins the current values, and its
-        // OK reads the module again (ModuleDialog: Configure → OK re-creates the module, ref-D §9).
-        prefsChanged: () => void reloadPrefs().catch(() => {}),
-        modulesChanged: () => void reloadModules(),
-        // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
-        tleOld: setTleOld,
-      }),
+      connectAppEvents(
+        withConfigReads(
+          {
+            connected: () => {
+              void reloadModules();
+              reloadPrefs().catch(() => {});
+            },
+            // New Preferences do not read the open modules again: a module keeps the Modules values it was made with until it is made
+            // again (opened, Configure → OK, server restart), as in Gpredict (ref-D §10, spec §9.1 and §11); GET /api/modules/{name}
+            // answers what it runs with. Edit module reads its module freshly when it opens (moduleForm.ts `readEditOpening`), so Module
+            // properties shows and pins the current values, and its OK re-creates the module (the save's `recreate`, ref-D §9).
+            prefsChanged: () => void reloadPrefs().catch(() => {}),
+            modulesChanged: () => void reloadModules(),
+            // the TLE age check found old data (once per server run): Gpredict's notice, which does not block the page
+            tleOld: setTleOld,
+          },
+          // module_config_changed (a deleted ground station, a save of another page, Configure → OK) and every connect
+          { shown: () => (shown.current === null ? [] : [shown.current]), reread: () => setConfigRereads((n) => n + 1) },
+        ),
+      ),
     [reloadModules],
   );
 
@@ -169,6 +177,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   }
 
   const current = activeTab(tabs, chosen);
+  shown.current = current;
   // a chosen tab that went (detached, closed, deleted) leaves the choice to the tab shown instead: a module that comes back as a tab
   // (Attach module: the last tab, spec §8.2) is not chosen again by it
   if (chosen !== null && chosen !== current) setChosen(current);
@@ -188,7 +197,7 @@ function Main({ onStopped }: { onStopped: () => void }) {
   // only the active tab's module holds a WebSocket (it is closed when the tab changes)
   const { tick, connected, closeCode } = useModuleSocket(current);
   const satNames = useSeenNames(current, tick);
-  const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current);
+  const { config, error: configError, reload: reloadConfig, save: saveConfig } = useModuleConfig(current, configRereads);
 
   // the selection and Autotrack of each module (forgotten when it is not open any more), and the target its controllers follow
   const { selected, select, selectEverywhere, autotracking, setAutotracking } = useSelection(current, open, tick, config, saveConfig, addLocalError);

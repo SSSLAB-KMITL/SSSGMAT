@@ -280,6 +280,53 @@ class AppSocketTest(ApiTestBase):
         self.assertEqual(ws_receive_json(ws), MODULES)
         self.assertEqual(self.flush(ws), [])
 
+    def config_changed(self, *names: str) -> dict:
+        return {"type": "module_config_changed", "modules": list(names)}
+
+    def test_station_delete_names_the_module_and_its_reread_config_saves(self):
+        """(v) Preferences → Ground Stations ลบสถานีของ module M ที่เปิดอยู่: module_config_changed บอกชื่อ M หน้าที่แสดง M อ่าน config
+        ใหม่ (qth null ตามไฟล์และ runtime) แล้วบันทึก view ได้ ไม่ 422 (final review server Important 2 / web I1)"""
+        self.put_module()                                                     # M ใช้ ORIGIN
+        self.put_module("N", qth="OTHER")
+        self.open_module()
+        held = self.client.get("/api/modules/M").json()                      # ที่หน้าเว็บถือไว้ตั้งแต่แสดงแท็บ
+        ws = self.connect()
+        station = {"name": "OTHER", "location": "There", "lat_deg": 1.5, "lon_deg": 2.5, "alt_m": 3.0}
+        with self.assertLogs("gpredict_web.store", "ERROR"):
+            r = self.client.put("/api/qth/batch", json={"stations": [station], "default": "OTHER"})
+        self.assertEqual((r.status_code, r.json()["changed_modules"]), (200, ["M"]))
+        self.assertEqual(self.flush(ws), [PREFS, self.config_changed("M")])
+        stale = self.client.put("/api/modules/M", json={**held, "ground_track": [held["satellites"][0]]})
+        self.assert_error(stale, 422, "MODULE_INVALID", "qth")                # ค่าเก่าที่ยังไม่อ่านใหม่ (เหตุที่ต้องอ่านใหม่)
+        reread = self.client.get("/api/modules/M").json()
+        self.assertIsNone(reread["qth"])
+        r = self.client.put("/api/modules/M", json={**reread, "ground_track": [held["satellites"][0]]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.hub.get("M").qth.name, "ORIGIN")                # สถานีเดิมจนกว่าจะสร้างใหม่
+
+    def test_module_config_changed_event(self):
+        """เหตุการณ์บอกชื่อ module ที่เปิดอยู่ซึ่ง config ของ runtime เปลี่ยนจากนอกหน้าที่แสดงมัน: บันทึก module (view save จากอีกหน้า),
+        Configure → OK (?recreate=true) และ PUT /api/qth/{name} ที่ module ที่เปิดอยู่ใช้ module ที่ไม่ได้เปิดหรือไม่เปลี่ยนไม่ถูกบอก"""
+        self.put_module()                                                     # M ใช้ ORIGIN
+        self.put_module("C", qth="ORIGIN")                                    # C ใช้ ORIGIN แต่ไม่ได้เปิด
+        self.open_module()
+        ws = self.connect()
+        body = self.client.get("/api/modules/M").json()
+        self.assertEqual(self.client.put("/api/modules/M", json={**body, "ground_track": [body["satellites"][0]]}).status_code, 200)
+        self.assertEqual(self.flush(ws), [MODULES, self.config_changed("M")])
+        self.assertEqual(self.client.put("/api/modules/M", json=self.client.get("/api/modules/M").json()).status_code, 200)
+        self.assertEqual(self.flush(ws), [MODULES])                           # ไม่มีอะไรเปลี่ยน
+        self.assertEqual(self.client.put("/api/modules/M?recreate=true", json=self.client.get("/api/modules/M").json()).status_code, 200)
+        self.assertEqual(self.flush(ws), [MODULES, self.config_changed("M")])  # Configure → OK บอกเสมอ
+        station = {"name": "ORIGIN", "location": "Moved", "lat_deg": 0.5, "lon_deg": 0.0, "alt_m": 0.0}
+        self.assertEqual(self.client.put("/api/qth/ORIGIN", json=station).status_code, 200)
+        self.assertEqual(self.flush(ws), [self.config_changed("M")])
+        self.assertEqual(self.client.put("/api/qth/OTHER", json={**station, "name": "OTHER"}).status_code, 200)
+        self.assertEqual(self.flush(ws), [])                                  # ไม่มี module ที่เปิดอยู่ใช้ OTHER
+        with self.assertLogs("gpredict_web.app", "ERROR"):                     # ไม่มีเน็ต: reload ทุก module แต่ config ไม่เปลี่ยน
+            self.assertEqual(self.client.post("/api/tle/update").status_code, 200)
+        self.assertEqual(self.flush(ws), [])
+
     def test_failed_module_requests_publish_nothing(self):
         self.put_module()
         ws = self.connect()

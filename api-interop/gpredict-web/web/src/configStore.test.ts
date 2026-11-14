@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ConfigStore } from "./configStore";
 import { popupChange } from "./satPopup";
 import { singleSatChange } from "./selection";
-import type { ModuleConfig, ModulePins } from "./types";
+import type { ModuleConfig, ModuleSaveOptions } from "./types";
 import { sortChange } from "./views/listSort";
 
 function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
@@ -26,8 +26,8 @@ function cfg(over: Partial<ModuleConfig> = {}): ModuleConfig {
 
 /** A `put` the test settles by hand, one call at a time. */
 function fakePut() {
-  const calls: { body: ModuleConfig; opts: ModulePins | undefined; resolve: () => void; reject: (e: unknown) => void }[] = [];
-  const put = (body: ModuleConfig, opts?: ModulePins) => new Promise<void>((resolve, reject) => calls.push({ body, opts, resolve, reject }));
+  const calls: { body: ModuleConfig; opts: ModuleSaveOptions | undefined; resolve: () => void; reject: (e: unknown) => void }[] = [];
+  const put = (body: ModuleConfig, opts?: ModuleSaveOptions) => new Promise<void>((resolve, reject) => calls.push({ body, opts, resolve, reject }));
   return { put, calls };
 }
 
@@ -266,6 +266,20 @@ describe("ConfigStore", () => {
     calls[1]!.resolve();
     await flush();
     expect(sort.state).toBe("saved");
+  });
+
+  it("sends the re-create of Configure → OK with its own save only, also a save that changes nothing", async () => {
+    const { put, calls } = fakePut();
+    const initial = cfg();
+    const store = new ConfigStore(initial, put);
+    const ok = track(store.save((c) => c, { pin: [], unpin: [], recreate: true }));
+    void store.save(sortBy("El"));
+    expect(calls[0]!.opts).toEqual({ pin: [], unpin: [], recreate: true });
+    expect(calls[0]!.body).toEqual(initial);
+    calls[0]!.resolve();
+    await flush();
+    expect(ok.state).toBe("saved");
+    expect(calls[1]!.opts).toBeUndefined();
   });
 
   it("does not hand the pins of a refused save to the next one", async () => {

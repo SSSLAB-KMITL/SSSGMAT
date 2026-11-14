@@ -1,10 +1,11 @@
 // The Create new module / Edit module dialog (ref §3): what OK checks, the ground station combo, the satellite selector's
 // lists, and how the form becomes a configuration or a change of an open module's configuration. Pure; ModuleDialog.tsx shows it.
 
+import { getModuleFresh } from "./api";
 import { isModuleName } from "./moduleName";
-import { applyProps, propsChange, propsEqual, propsOf } from "./moduleProps";
-import type { ModuleProps, PropsSource } from "./moduleProps";
-import type { ModuleConfig, SatRecord, TleGroup } from "./types";
+import { applyProps, propsChange, propsOf } from "./moduleProps";
+import type { ModuleProps, PropsSave, PropsSource } from "./moduleProps";
+import type { ModuleConfig, ModuleSaveOptions, SatRecord, TleGroup } from "./types";
 import { compareNames } from "./views/cells";
 
 // ---------------------------------------------------------------- texts
@@ -154,12 +155,17 @@ export interface ModuleDraft {
 
 /**
  * What Edit module opens with: the ground station and the satellites of the page's configuration (with the saves still pending on it),
- * and the properties of `fresh`, the module read from the server when the dialog opens. The server resolves an inherited value when it
- * is read, so `fresh` has the current global values; the page's copy can still hold the ones of when the module was loaded, which
- * Module properties must neither show nor pin (ref-D §10: a page shows the module's value, else the current global one).
+ * and the properties of `fresh`, the module read with the fresh read when the dialog opens (`readEditOpening`): its own values with the
+ * current global values. The page's copy holds the global values the open module was made with (spec §9.1), which Module properties must
+ * neither show nor pin (ref-D §10: a page shows the module's value, else the current global one).
  */
 export function editOpening(config: ModuleConfig, fresh: ModuleConfig): ModuleDraft {
   return { qth: config.qth, satellites: [...config.satellites], props: propsOf(fresh) };
+}
+
+/** Edit module's `editOpening`, with the module read freshly from the server (GET /api/modules/{name}?fresh=1, not the plain read). */
+export async function readEditOpening(config: ModuleConfig): Promise<ModuleDraft> {
+  return editOpening(config, await getModuleFresh(config.name));
 }
 
 /** The same satellites, whatever the order. */
@@ -167,11 +173,6 @@ function sameSatellites(a: readonly number[], b: readonly number[]): boolean {
   if (a.length !== b.length) return false;
   const inB = new Set(b);
   return inB.size === b.length && a.every((n) => inB.has(n));
-}
-
-/** Whether `draft` differs from what the dialog opened with. */
-export function hasModuleChanges(initial: ModuleDraft, draft: ModuleDraft): boolean {
-  return initial.qth !== draft.qth || !sameSatellites(initial.satellites, draft.satellites) || !propsEqual(initial.props, draft.props);
 }
 
 const keepOnly = (list: readonly number[], keep: ReadonlySet<number>): number[] => list.filter((n) => keep.has(n));
@@ -204,4 +205,17 @@ export function editModuleChange(
     }
     return next;
   };
+}
+
+/**
+ * OK of Edit module (Configure → OK) as one save of the page: the change (none: the configuration stays as it is) with the pins of
+ * Module properties, and always `recreate`. Gpredict makes the module again on every OK, also when nothing changed (ref-D §9), and that
+ * is when an open module takes the global values of now and its ground station again (spec §4.2, §9.1).
+ */
+export function configureSave(
+  initial: ModuleDraft,
+  draft: ModuleDraft,
+  saving: PropsSave,
+): { change: (config: ModuleConfig) => ModuleConfig; opts: ModuleSaveOptions } {
+  return { change: editModuleChange(initial, draft, saving.change), opts: { pin: saving.pin, unpin: saving.unpin, recreate: true } };
 }

@@ -12,7 +12,6 @@ import {
   presetIndexOf,
   propsChange,
   propsOf,
-  propsEqual,
   propsSave,
   propsValue,
   resetTab,
@@ -168,15 +167,6 @@ describe("applyProps", () => {
     expect(c.list_sort).toEqual({ column: "El", ascending: false });
     expect(c.ground_track).toEqual([25544]);
     expect(c.name).toBe("Amateur");
-  });
-});
-
-describe("propsEqual", () => {
-  it("compares by value", () => {
-    expect(propsEqual(propsOf(config()), propsOf(config()))).toBe(true);
-    const p = propsOf(config());
-    p.map.center_lon = 10;
-    expect(propsEqual(propsOf(config()), p)).toBe(false);
   });
 });
 

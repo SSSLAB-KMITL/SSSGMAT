@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, errorText, getModule, getModules, getQthList, getSatellite, getTleGroups, openModule, putModule } from "../api";
+import { ApiError, errorText, getModules, getQthList, getSatellite, getTleGroups, openModule, putModule } from "../api";
 import {
-  editModuleChange,
-  editOpening,
-  hasModuleChanges,
+  configureSave,
   newModuleConfig,
   NO_SATS_ERROR,
   qthChoices,
+  readEditOpening,
   sortedSats,
   tleGroupNames,
   validateModuleForm,
@@ -19,7 +18,7 @@ import { useNumberFormat } from "../numfmt";
 import { globalProps } from "../prefs/modulesPrefs";
 import { usePrefs } from "../prefs/prefsStore";
 import { loadSatNames } from "../satNames";
-import type { ModuleConfig, ModulePins, Qth } from "../types";
+import type { ModuleConfig, ModuleSaveOptions, Qth } from "../types";
 import { useMeta } from "../useMeta";
 import { FloatingWindow } from "./FloatingWindow";
 import { ModuleProperties } from "./ModuleProperties";
@@ -40,10 +39,10 @@ export type ModuleTarget =
       /** the open module's configuration as it is now */
       config: ModuleConfig;
       /** the page's one `save` of the open module's configuration (useModuleConfig): the only way to write it, with its pins */
-      save: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModulePins) => Promise<void>;
+      save: (change: (config: ModuleConfig) => ModuleConfig, opts?: ModuleSaveOptions) => Promise<void>;
       /**
-       * read the configuration again: OK re-creates the module (ref-D §9 "Configure → OK"), which then takes the global values it
-       * inherits now; until then an open module keeps the ones it was made with (spec §9.1)
+       * read the configuration again: OK re-creates the module (ref-D §9 "Configure → OK", the save's `recreate`), which then takes the
+       * global values it inherits now and its ground station again; until then an open module keeps the ones it was made with (spec §9.1)
        */
       reload: () => void;
     };
@@ -118,13 +117,14 @@ export function ModuleDialog({ target, onClose }: Props) {
     };
   }, []);
 
-  // Edit module: the properties as the server resolves them now (`editOpening`): the page's copy can hold the global values of when
-  // the module was loaded, which Module properties would show and pin. Properties and OK wait for it; a failure is shown and they stay off.
+  // Edit module: the properties with the global values of now (the fresh read, `readEditOpening`): the page's copy holds the global
+  // values the open module was made with, which Module properties would show and pin. Properties and OK wait for it; a failure is shown
+  // and they stay off.
   useEffect(() => {
     if (config === null) return;
     let alive = true;
-    getModule(config.name).then(
-      (fresh) => alive && setInitial(editOpening(config, fresh)),
+    readEditOpening(config).then(
+      (opening) => alive && setInitial(opening),
       (e: unknown) => alive && setFailure(errorText(e)),
     );
     return () => {
@@ -178,11 +178,10 @@ export function ModuleDialog({ target, onClose }: Props) {
       return;
     }
     const draft: ModuleDraft = { qth, satellites: sats.map((s) => s.norad), props: props! };
-    const saving = propsSave(initial!.props, draft.props, marks.dirty, marks.reset, meta!);
-    if (hasModuleChanges(initial!, draft) || saving.pin.length > 0 || saving.unpin.length > 0) {
-      await t.save(editModuleChange(initial!, draft, saving.change), { pin: saving.pin, unpin: saving.unpin });
-    }
-    t.reload(); // Gpredict re-creates the module on OK, also when nothing changed
+    // Gpredict re-creates the module on OK, also when nothing changed: the save always carries `recreate`
+    const { change, opts } = configureSave(initial!, draft, propsSave(initial!.props, draft.props, marks.dirty, marks.reset, meta!));
+    await t.save(change, opts);
+    t.reload(); // what the module runs with now (the global values of now)
     onClose();
   };
 

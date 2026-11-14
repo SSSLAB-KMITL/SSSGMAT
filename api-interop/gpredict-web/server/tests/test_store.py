@@ -667,7 +667,7 @@ class ModuleInheritanceStoreTests(unittest.TestCase):
         self.prefs.update({}, ["MODULES/GRID"])
         self.assertEqual(self.store.get_module("Free").layout_code, DEFAULT_LAYOUT_CODE)
 
-    def test_open_runtime_keeps_old_globals_until_reload(self):
+    def test_open_runtime_keeps_old_globals_until_recreated(self):
         self.put("M")
         ephem = EphemManager(self.cfg, find_console=lambda: Path("/fake/GmatConsole"), start_worker=False)
         self.addCleanup(ephem.close)
@@ -679,7 +679,10 @@ class ModuleInheritanceStoreTests(unittest.TestCase):
         self.assertIs(hub.open("M"), rt)
         self.assertEqual(rt.module.map["track_orbits"], 3)                    # ค่ารวมมีผลเมื่อ module ถูกสร้างใหม่
         self.assertEqual(self.store.get_module("M").map["track_orbits"], 7)
-        hub.reload("M")
+        hub.reload("M")                                                       # บันทึก view, PUT QTH, Update TLE: ยังค่าตอนสร้าง
+        self.assertEqual(rt.module.map["track_orbits"], 3)
+        self.assertEqual(self.store.get_module("M", rt.globals).map["track_orbits"], 3)
+        hub.recreate("M")                                                     # Configure → OK
         self.assertEqual(rt.module.map["track_orbits"], 7)
 
     def test_put_module_without_pin_stores_only_module_fields(self):
