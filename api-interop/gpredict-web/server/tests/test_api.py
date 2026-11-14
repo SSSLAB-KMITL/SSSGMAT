@@ -487,7 +487,10 @@ class TleApiTest(ApiTestBase):
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertEqual(list(body), ["updated", "skipped", "missing", "messages"])
-        self.assertEqual((body["updated"], body["skipped"], body["missing"]), (len(SAMPLE), 0, len(NORADS)))
+        # ดาวใหม่ของ SAMPLE นับใน new (ref-D §5.3) ไม่นับใน updated อีกต่อไป; response ยังไม่มีช่อง new จนถึง Task 7
+        self.assertEqual((body["updated"], body["skipped"], body["missing"]), (0, 0, len(NORADS)))
+        saved = json.loads((self.cfg.data_dir / "satdb.json").read_text(encoding="utf-8"))["satellites"]
+        self.assertEqual(len(saved), len(NORADS) + len(SAMPLE))
         failed = [m for m in body["messages"] if m["code"] == "ORBIT_DOWNLOAD_FAILED"]
         self.assertEqual(sorted(m["object"] for m in failed), sorted(g for g in TLE_GROUPS if g != "amateur"))
         for m in body["messages"]:
