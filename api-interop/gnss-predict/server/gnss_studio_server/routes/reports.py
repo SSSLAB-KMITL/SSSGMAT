@@ -15,6 +15,21 @@
   ชื่อซ้ำกับ Installed Styles (ไม่แยกตัวพิมพ์) หรือกับ My Style ที่มีอยู่: 409 `NAME_EXISTS` ที่ `name` (ชื่อซ้ำกับ Scenario Style เป็นเรื่องของหน้าเว็บ ที่รู้ scenario)
   path เป็น `{name:path}` เพื่อให้ `a/b` ถึง route แล้วตอบ 422 (ไม่ใช่ 404) และชื่อถูกตรวจก่อนสร้าง path ทุกครั้ง
 
+- `POST /scenarios/{sc}/reports` `{style, kind?, objects[], time?, format, dynamic, export?}`: รายงานหรือกราฟของ style กับ object ที่เลือก
+  `format` `json` (`report_json` ของ engine) หรือไฟล์ `txt` / `csv` (`text/plain` / `text/csv` charset utf-8 พร้อม `Content-Disposition: attachment`
+  ชื่อไฟล์จาก `report_filename`) DateFormat/LTZ ของไฟล์มาจาก `units` ของ scenario `export` (ตัวคั่น ฯลฯ) ใช้กับ csv เท่านั้นแต่ตรวจทุก format
+  - style: Scenario Styles → My Styles → Installed Styles (ไม่สนตัวพิมพ์) `kind` ไม่ระบุ = report ก่อน ไม่พบ/เสีย: 422 `STYLE_INVALID`
+    (`style` หรือช่องในตัว style เช่น `content[0].elements[1]`) `dynamic: true` กับ style ที่ `dynamic: false`: 422 ที่ `dynamic`
+    ช่อง `dynamic` ในคำตอบคือที่ขอ (ไม่ใช่ที่ style รองรับ)
+  - เวลา: `time` ไม่ส่ง = ใช้ `time` ของ style (`specify` ในตัว style ถูกแปลงเป็น start/stop/step ที่นี่ เพราะ engine ไม่อ่าน) ส่งแล้วตามคำขอทั้งก้อน
+    `mode: object` = Use Object Time Period: object แบบ Access ที่มี `time_period` mode `specify` ใน `accesses` ซึ่งตรงกับ (Facility, [ดาว])
+    ใช้ช่วงนั้น (ไม่ต้องคำนวณใหม่ spec §4) ไม่งั้นช่วงวิเคราะห์ `start`/`stop` ใน mode นี้ไม่ใช้ (เหมือน `time_period` ของ access)
+    `mode: specify` ต้องมี start และ stop (422 `time.start` / `time.stop`) และ start < stop (422 `time.start`) step ไม่ใช่จำนวนเท่าหรือ ≤ 0: 422 `time.step`
+    หลาย object ที่ช่วงที่เก็บต่างกันตัดเป็นรายงานเดียวไม่ได้ (Global Statistics รวมแถวทุก object): 422 ที่ `objects`
+  - ผลลัพธ์ไม่ตรงกับ scenario หรือยังไม่มี: 409 `RESULTS_NOT_CURRENT` (ตรวจหลังตรวจคำขอทุกข้อ)
+  - ตารางของ request เดียวถูกตรึง (`PinnedTables`): cache ของ server มี 4 bundle แต่รายงานหลาย Facility ใช้ ephem 1 + access N bundle
+    ถ้าไม่ตรึงจะอ่านซ้ำใน request เดียว
+
 ข้อมูลอ่านจาก bundle ที่ `current` เท่านั้น (`server_result_set`) ผ่าน `PlanCache` (hash ของ plan ไม่คำนวณซ้ำต่อ request) กับ `app.state.tables`
 (ตารางที่อ่านแล้วต่อ bundle) ไม่เรียก `open_result_set` ของ engine ซึ่งคำนวณ hash ใหม่ทุกครั้ง (0.42-0.45 วินาทีกับข้อมูลจริง)
 route ที่อ่านดิสก์เป็น `def` ธรรมดา (รันใน thread pool)
@@ -23,22 +38,29 @@ route ที่อ่านดิสก์เป็น `def` ธรรมดา 
 import logging
 import math
 import re
-from datetime import datetime
-from typing import Any, Literal
+from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from gnss_predict.dataproviders import (PROVIDERS, ProviderInfo, ResultSet, TableCache, list_providers, object_period,
                                         parse_object, provider_rows)
 from gnss_predict.errors import ScenarioError, StyleError
-from gnss_predict.report_style import check_style, installed_styles
+from gnss_predict.report_format import (ExportSetup, format_csv, format_txt, report_filename, report_json,
+                                        time_format_of)
+from gnss_predict.report_style import build_report, check_style, installed_styles, resolve_style
 from gnss_predict.scenario import EngineScenario, load_scenario
 
+from .. import access
 from ..errors import ApiError
 from ..jobs import iso_ms
+from ..objects import path_of
 from ..plans import PlanCache
-from ..schema import parse_utc_z
+from ..schema import UtcZ, parse_utc_z
 from ..store import SCENARIO_FILE, ScenarioStore
 from ..styles import MyStyles, check_name
 from . import get_logger, get_my_styles, get_plans, get_store, get_tables
@@ -64,6 +86,35 @@ def server_result_set(store: ScenarioStore, plans: PlanCache, tables: TableCache
     access_dirs = {name: directory / ACCESS_DIR / name / entry["hash"]
                    for name, entry in access_entries(directory, plan).items() if entry["status"] == "current"}
     return ResultSet(scenario, ephem_dir, access_dirs, tables)
+
+
+class PinnedTables(TableCache):
+    """ตารางของ request เดียวที่ตรึงไว้ ดึงจาก cache ของ server (`shared`) ครั้งแรกที่ขอ แล้วถือ reference ไว้จน request จบ
+
+    cache ของ server เก็บแค่ 4 bundle (LRU) แต่รายงานหลาย Facility ต้องใช้ ephem 1 + access ของทุก Facility ที่เลือก ถ้าเกิน 4 แล้วเรียงสลับ
+    (THBK-G01, PHUK-G01, ..., THBK-E11) bundle ที่เพิ่งใช้ถูกไล่ออกแล้วอ่านซ้ำจากดิสก์ใน request เดียว (0.2-0.5 วินาทีต่อครั้ง)
+    ที่นี่แต่ละ (ชนิด, bundle) อ่านผ่าน cache ครั้งเดียวต่อ request หน่วยความจำเพิ่มชั่วคราวตามจำนวน Facility ใน request (ราว 135 MB ต่อ bundle)
+    ใช้ในเธรดเดียวของ request (build_report เรียงทีละ object) จึงไม่ต้องล็อก ใช้ตัวนี้แทน `TableCache` ที่ส่งให้ `ResultSet`"""
+
+    def __init__(self, shared: TableCache):
+        super().__init__(1)                                # ไม่ใช้ที่เก็บของคลาสแม่ ทุกอย่างอยู่ใน _pinned
+        self._shared = shared
+        self._pinned: dict[tuple[str, Path], object] = {}
+
+    def _pin(self, kind: str, path: Path, load: Callable[[Path], object]):
+        key = kind, Path(path)
+        if key not in self._pinned:
+            self._pinned[key] = load(path)
+        return self._pinned[key]
+
+    def access(self, path: Path):
+        return self._pin("access", path, self._shared.access)
+
+    def ephem_manifest(self, path: Path):
+        return self._pin("manifest", path, self._shared.ephem_manifest)
+
+    def ephem(self, path: Path):
+        return self._pin("ephem", path, self._shared.ephem)
 
 
 # ---------- พารามิเตอร์ ----------
@@ -188,9 +239,9 @@ class StylesOut(BaseModel):
     scenario: list[dict[str, Any]]
 
 
-def _scenario_styles(store: ScenarioStore, sc: str, logger: logging.Logger) -> list[dict]:
-    """Scenario Styles ใน scenario.json (ไม่มี scenario -> 404) รายการที่ไม่ใช่ object ข้ามพร้อมเตือน (ไฟล์ที่แก้มือ)"""
-    styles = store.read(sc)[0].get("styles", [])
+def _scenario_styles(doc: dict, sc: str, logger: logging.Logger) -> list[dict]:
+    """Scenario Styles ใน `doc` (scenario.json ของ sc) รายการที่ไม่ใช่ object ข้ามพร้อมเตือน (ไฟล์ที่แก้มือ)"""
+    styles = doc.get("styles", [])
     if not isinstance(styles, list):
         logger.warning("Scenario Styles ของ %s ใช้ไม่ได้ ข้ามไป: styles ไม่ใช่รายการ", sc)
         return []
@@ -204,7 +255,7 @@ def _scenario_styles(store: ScenarioStore, sc: str, logger: logging.Logger) -> l
 def get_styles(object_type: str | None = None, scenario: str | None = None, store: ScenarioStore = Depends(get_store),
                my: MyStyles = Depends(get_my_styles), logger: logging.Logger = Depends(get_logger)) -> dict:
     object_type, scenario = _blank_none(object_type), _blank_none(scenario)
-    scenario_styles = _scenario_styles(store, scenario, logger) if scenario is not None else []
+    scenario_styles = _scenario_styles(store.read(scenario)[0], scenario, logger) if scenario is not None else []   # ไม่มี scenario -> 404
 
     def keep(styles: list[dict]) -> list[dict]:
         return [s for s in styles if object_type is None or s.get("object_type") == object_type]
@@ -251,3 +302,158 @@ def delete_style(name: str, my: MyStyles = Depends(get_my_styles)) -> Response:
     except FileNotFoundError:
         raise ApiError(404, "NOT_FOUND", f"ไม่พบ My Style ชื่อ {name}") from None
     return Response(status_code=204)
+
+
+# ---------- /reports ----------
+
+MAX_STEP_S = 999_999_999            # เท่ากับ /data (9 หลัก) เกินนี้ timedelta ล้น: ต้องตอบ 422 ไม่ใช่ 500
+REPORT_MEDIA = {"txt": "text/plain; charset=utf-8", "csv": "text/csv; charset=utf-8"}
+
+
+class _Body(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+
+class ReportTime(_Body):
+    """ตัวเลือกเวลาของ Generate: `object` = Use Object Time Period (start/stop ไม่ใช้ ไม่ตรวจเหมือน `time_period` ของ access)
+    `specify` = Specify Time Properties (ต้องมี start และ stop) `step_s` ว่าง = Use default time points"""
+    mode: Literal["object", "specify"] = "object"
+    start: UtcZ | None = None
+    stop: UtcZ | None = None
+    step_s: int | None = None                  # เท่าของ step ของ scenario และ > 0: engine ตรวจ (422 time.step)
+
+
+class ExportBody(_Body):
+    """Export Setup ของ csv (ค่าตั้งต้นตรงกับ `ExportSetup` ของ engine)"""
+    delimiter: str = Field(",", min_length=1, max_length=1)
+    quote_headers: bool = False
+    title: bool = False
+    headers: bool = True
+
+
+class ReportBody(_Body):
+    style: str
+    kind: Literal["report", "graph"] | None = None
+    objects: list[str] = Field(min_length=1)
+    time: ReportTime | None = None             # ไม่ส่ง = ใช้ time ของ style
+    format: Literal["json", "txt", "csv"] = "json"
+    dynamic: bool = False
+    export: ExportBody | None = None
+
+
+class StatisticOut(BaseModel):
+    name: str
+    value: float | int | None
+
+
+class SectionOut(BaseModel):
+    object: str
+    title: str
+    columns: list[ColumnOut]
+    rows: list[list[str | int | float | None]]
+    summary: list[StatisticOut]
+    summary_only: bool
+
+
+class ReportOut(BaseModel):
+    scenario: str
+    style: str
+    kind: Literal["report", "graph"]
+    created_utc: str
+    sections: list[SectionOut]
+    global_statistics: list[StatisticOut]
+    graph: dict[str, Any] | None
+    dynamic: bool
+
+
+def _checked_step(step: int | None) -> int | None:
+    if step is not None and step > MAX_STEP_S:
+        raise ApiError(422, INVALID, f"Step ต้องไม่เกิน {MAX_STEP_S} วินาที ได้ {step}", "time.step")
+    return step
+
+
+def _style_time(style: dict) -> tuple[bool, datetime | None, datetime | None, int | None]:
+    """`time` ของ style (ผ่าน check_style แล้ว) เป็น (specify, start, stop, step_s) engine ไม่อ่านช่องนี้ ผู้เรียกต้องแปลงเอง"""
+    time = style.get("time") or {}
+    step = _checked_step(time.get("step_s"))
+    if time.get("mode") != "specify":
+        return False, None, None, step
+    return (True, *(datetime.fromisoformat(time[key]).astimezone(timezone.utc) for key in ("start", "stop")), step)
+
+
+def _report_time(time: ReportTime | None, style: dict) -> tuple[bool, datetime | None, datetime | None, int | None]:
+    """(specify, start, stop, step_s) ของคำขอ: ไม่ส่ง `time` = ของ style ส่งแล้วตามคำขอทั้งก้อน"""
+    if time is None:
+        return _style_time(style)
+    step = _checked_step(time.step_s)
+    if time.mode != "specify":
+        return False, None, None, step
+    if time.start is None or time.stop is None:
+        field = "time.start" if time.start is None else "time.stop"
+        raise ApiError(422, INVALID, f"Specify Time Properties ต้องมีทั้ง start และ stop (ไม่มี {field.split('.')[1]})", field)
+    start, stop = parse_utc_z(time.start), parse_utc_z(time.stop)
+    if start >= stop:
+        raise ApiError(422, INVALID, "เวลาเริ่มต้องอยู่ก่อนเวลาจบ", "time.start")
+    return True, start, stop, step
+
+
+def _named_path(doc: dict, cls: str, name: str) -> str | None:
+    """path ใน scenario ของ object ชนิด cls ชื่อ name (ชื่อไม่แยกตัวพิมพ์ เหมือน engine) ไม่มี = None"""
+    wanted = name.casefold()
+    return next((path_of(o) for o in doc.get("objects", []) if isinstance(o, dict) and o.get("class") == cls
+                 and isinstance(o.get("name"), str) and o["name"].casefold() == wanted), None)
+
+
+def _access_window(doc: dict, obj: str) -> tuple[datetime, datetime] | None:
+    """ช่วงที่ตัดของ object แบบ Access ตาม `time_period` (mode specify) ของ access (Facility, [ดาว]) ที่เก็บไว้ ไม่มี = None (ช่วงวิเคราะห์)
+    object ชนิดอื่น หรือ object ที่ไม่มีใน scenario (engine ตอบ 422 ที่ `object` เอง) = None"""
+    kind, facility, satellite = parse_object(obj)
+    if kind != "Access":
+        return None
+    from_path, sat_path = _named_path(doc, "Facility", facility), _named_path(doc, "Satellite", satellite)
+    if from_path is None or sat_path is None:
+        return None
+    from_path, to = access.normalize(doc, from_path, [sat_path])
+    period = access.stored_time_period(doc, from_path, to)
+    if period.get("mode") != access.MODE_SPECIFY:
+        return None
+    try:
+        return parse_utc_z(period["start"]), parse_utc_z(period["stop"])
+    except (KeyError, TypeError, ValueError):
+        raise ApiError(422, INVALID, f"time_period ของ access {obj} ใน scenario.json อ่านไม่ได้", "accesses") from None
+
+
+def _stored_window(doc: dict, objects: list[str]) -> tuple[datetime | None, datetime | None]:
+    """Use Object Time Period: ช่วงของ object ทั้งชุด (build_report รับช่วงเดียว) ต่างกัน = 422 ที่ `objects`"""
+    windows = {_access_window(doc, obj) for obj in objects}
+    if len(windows) > 1:
+        raise ApiError(422, INVALID, "object ที่เลือกมี Time Period ของ access ไม่เท่ากัน รวมเป็นรายงานเดียวไม่ได้ "
+                                     "ให้เลือกทีละช่วงเดียวกัน หรือใช้ Specify Time Properties", "objects")
+    return windows.pop() or (None, None)
+
+
+@router.post("/scenarios/{sc}/reports", response_model=None, responses={200: {
+    "model": ReportOut, "description": "format json: ตารางของรายงาน; txt/csv: ไฟล์แนบ",
+    "content": {"text/plain": {"schema": {"type": "string"}}, "text/csv": {"schema": {"type": "string"}}}}})
+def create_report(sc: str, body: ReportBody, store: ScenarioStore = Depends(get_store), plans: PlanCache = Depends(get_plans),
+                  tables: TableCache = Depends(get_tables), my: MyStyles = Depends(get_my_styles),
+                  logger: logging.Logger = Depends(get_logger)) -> Response:
+    doc, _ = store.read(sc)                                                      # ไม่มี scenario -> 404
+    style = resolve_style(body.style, body.kind, my.list(), _scenario_styles(doc, sc, logger))
+    check_style(style)                                                           # style ที่แก้มือผิด: 422 ที่ช่องนั้น
+    if body.dynamic and not style.get("dynamic", False):
+        raise StyleError(f"style {style['name']} ใช้กับ Dynamic Display/Strip Chart ไม่ได้", "dynamic")
+    export = ExportSetup(**body.export.model_dump()) if body.export is not None else None
+    specify, start, stop, step = _report_time(body.time, style)
+    date_format, ltz_offset = time_format_of(doc) if body.format != "json" else ("UTCG", "+07:00")
+    rs = server_result_set(store, plans, PinnedTables(tables), sc)
+    if not specify:
+        start, stop = _stored_window(doc, body.objects)
+    built = build_report(rs, style, body.objects, start, stop, step, datetime.now(timezone.utc))
+    built = replace(built, dynamic=body.dynamic)
+    if body.format == "json":
+        return JSONResponse(report_json(built))
+    text = (format_txt(built, date_format, ltz_offset) if body.format == "txt"
+            else format_csv(built, date_format, ltz_offset, export or ExportSetup()))
+    return Response(text, media_type=REPORT_MEDIA[body.format],
+                    headers={"Content-Disposition": f'attachment; filename="{report_filename(built, body.format)}"'})

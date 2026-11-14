@@ -546,6 +546,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scenarios/{sc}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Report */
+        post: operations["create_report_api_scenarios__sc__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/scenarios/{sc}/results": {
         parameters: {
             query?: never;
@@ -951,6 +968,32 @@ export interface components {
             /** Unit */
             unit: string | null;
         };
+        /**
+         * ExportBody
+         * @description Export Setup ของ csv (ค่าตั้งต้นตรงกับ `ExportSetup` ของ engine)
+         */
+        ExportBody: {
+            /**
+             * Delimiter
+             * @default ,
+             */
+            delimiter?: string;
+            /**
+             * Headers
+             * @default true
+             */
+            headers?: boolean;
+            /**
+             * Quote Headers
+             * @default false
+             */
+            quote_headers?: boolean;
+            /**
+             * Title
+             * @default false
+             */
+            title?: boolean;
+        };
         /** FacilityConstraints */
         FacilityConstraints: {
             /**
@@ -1352,6 +1395,71 @@ export interface components {
             /** Uses */
             uses: ("Reports" | "Dynamic Displays")[];
         };
+        /** ReportBody */
+        ReportBody: {
+            /**
+             * Dynamic
+             * @default false
+             */
+            dynamic?: boolean;
+            export?: components["schemas"]["ExportBody"] | null;
+            /**
+             * Format
+             * @default json
+             * @enum {string}
+             */
+            format?: "json" | "txt" | "csv";
+            /** Kind */
+            kind?: ("report" | "graph") | null;
+            /** Objects */
+            objects: string[];
+            /** Style */
+            style: string;
+            time?: components["schemas"]["ReportTime"] | null;
+        };
+        /** ReportOut */
+        ReportOut: {
+            /** Created Utc */
+            created_utc: string;
+            /** Dynamic */
+            dynamic: boolean;
+            /** Global Statistics */
+            global_statistics: components["schemas"]["StatisticOut"][];
+            /** Graph */
+            graph: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "report" | "graph";
+            /** Scenario */
+            scenario: string;
+            /** Sections */
+            sections: components["schemas"]["SectionOut"][];
+            /** Style */
+            style: string;
+        };
+        /**
+         * ReportTime
+         * @description ตัวเลือกเวลาของ Generate: `object` = Use Object Time Period (start/stop ไม่ใช้ ไม่ตรวจเหมือน `time_period` ของ access)
+         *     `specify` = Specify Time Properties (ต้องมี start และ stop) `step_s` ว่าง = Use default time points
+         */
+        ReportTime: {
+            /**
+             * Mode
+             * @default object
+             * @enum {string}
+             */
+            mode?: "object" | "specify";
+            /** Start */
+            start?: string | null;
+            /** Step S */
+            step_s?: number | null;
+            /** Stop */
+            stop?: string | null;
+        };
         /** SatelliteFilter */
         SatelliteFilter: {
             /**
@@ -1443,6 +1551,21 @@ export interface components {
             units?: components["schemas"]["Units"] | null;
         } & {
             [key: string]: unknown;
+        };
+        /** SectionOut */
+        SectionOut: {
+            /** Columns */
+            columns: components["schemas"]["ColumnOut"][];
+            /** Object */
+            object: string;
+            /** Rows */
+            rows: (string | number | null)[][];
+            /** Summary */
+            summary: components["schemas"]["StatisticOut"][];
+            /** Summary Only */
+            summary_only: boolean;
+            /** Title */
+            title: string;
         };
         /** SelectBody */
         SelectBody: {
@@ -1561,6 +1684,13 @@ export interface components {
             ion: boolean;
             /** Osm */
             osm: boolean;
+        };
+        /** StatisticOut */
+        StatisticOut: {
+            /** Name */
+            name: string;
+            /** Value */
+            value: number | null;
         };
         /** StylesOut */
         StylesOut: {
@@ -2821,6 +2951,43 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_report_api_scenarios__sc__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sc: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportBody"];
+            };
+        };
+        responses: {
+            /** @description format json: ตารางของรายงาน; txt/csv: ไฟล์แนบ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportOut"];
+                    "text/csv": string;
+                    "text/plain": string;
                 };
             };
             /** @description Validation Error */

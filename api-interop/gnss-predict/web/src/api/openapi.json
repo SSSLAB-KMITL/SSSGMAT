@@ -556,6 +556,36 @@
         "title": "ElementOut",
         "type": "object"
       },
+      "ExportBody": {
+        "additionalProperties": false,
+        "description": "Export Setup ของ csv (ค่าตั้งต้นตรงกับ `ExportSetup` ของ engine)",
+        "properties": {
+          "delimiter": {
+            "default": ",",
+            "maxLength": 1,
+            "minLength": 1,
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "headers": {
+            "default": true,
+            "title": "Headers",
+            "type": "boolean"
+          },
+          "quote_headers": {
+            "default": false,
+            "title": "Quote Headers",
+            "type": "boolean"
+          },
+          "title": {
+            "default": false,
+            "title": "Title",
+            "type": "boolean"
+          }
+        },
+        "title": "ExportBody",
+        "type": "object"
+      },
       "FacilityConstraints": {
         "additionalProperties": true,
         "properties": {
@@ -1371,6 +1401,195 @@
         "title": "ProviderOut",
         "type": "object"
       },
+      "ReportBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dynamic": {
+            "default": false,
+            "title": "Dynamic",
+            "type": "boolean"
+          },
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "format": {
+            "default": "json",
+            "enum": [
+              "json",
+              "txt",
+              "csv"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "report",
+                  "graph"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "objects": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Objects",
+            "type": "array"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "style",
+          "objects"
+        ],
+        "title": "ReportBody",
+        "type": "object"
+      },
+      "ReportOut": {
+        "properties": {
+          "created_utc": {
+            "title": "Created Utc",
+            "type": "string"
+          },
+          "dynamic": {
+            "title": "Dynamic",
+            "type": "boolean"
+          },
+          "global_statistics": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticOut"
+            },
+            "title": "Global Statistics",
+            "type": "array"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph"
+          },
+          "kind": {
+            "enum": [
+              "report",
+              "graph"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionOut"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "style",
+          "kind",
+          "created_utc",
+          "sections",
+          "global_statistics",
+          "graph",
+          "dynamic"
+        ],
+        "title": "ReportOut",
+        "type": "object"
+      },
+      "ReportTime": {
+        "additionalProperties": false,
+        "description": "ตัวเลือกเวลาของ Generate: `object` = Use Object Time Period (start/stop ไม่ใช้ ไม่ตรวจเหมือน `time_period` ของ access)\n`specify` = Specify Time Properties (ต้องมี start และ stop) `step_s` ว่าง = Use default time points",
+        "properties": {
+          "mode": {
+            "default": "object",
+            "enum": [
+              "object",
+              "specify"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "step_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step S"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop"
+          }
+        },
+        "title": "ReportTime",
+        "type": "object"
+      },
       "SatelliteFilter": {
         "additionalProperties": true,
         "properties": {
@@ -1603,6 +1822,69 @@
         "title": "ScenarioDoc",
         "type": "object"
       },
+      "SectionOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOut"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "object": {
+            "title": "Object",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticOut"
+            },
+            "title": "Summary",
+            "type": "array"
+          },
+          "summary_only": {
+            "title": "Summary Only",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "title",
+          "columns",
+          "rows",
+          "summary",
+          "summary_only"
+        ],
+        "title": "SectionOut",
+        "type": "object"
+      },
       "SelectBody": {
         "properties": {
           "from": {
@@ -1783,6 +2065,34 @@
           "ion"
         ],
         "title": "SourcesOut",
+        "type": "object"
+      },
+      "StatisticOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "StatisticOut",
         "type": "object"
       },
       "StylesOut": {
@@ -3879,6 +4189,65 @@
           }
         },
         "summary": "Propagate"
+      }
+    },
+    "/api/scenarios/{sc}/reports": {
+      "post": {
+        "operationId": "create_report_api_scenarios__sc__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "format json: ตารางของรายงาน; txt/csv: ไฟล์แนบ"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Report"
       }
     },
     "/api/scenarios/{sc}/results": {

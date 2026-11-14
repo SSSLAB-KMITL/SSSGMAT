@@ -1,4 +1,4 @@
-"""Data provider, ข้อมูล และ style ของรายงาน (หัวข้อ 6.7 ของ spec server): `/dataproviders`, `/data`, `/styles`, cache ของตาราง
+"""Data provider, ข้อมูล และ style ของรายงาน (หัวข้อ 6.7 ของ spec server): `/dataproviders`, `/data`, `/styles`, `/reports`, cache ของตาราง
 
 route แค่เรียก engine (`gnss_predict.dataproviders`, `report_style`) ค่าที่คาดอ่านจาก engine โดยตรงบน bundle เดียวกับที่ fixture
 `s1_computed` เขียน (GMAT ปลอม ไม่ใช้เน็ต) scenario S1 ของแม่แบบ thbk-gnss: 6 ชั่วโมง step 30 วินาที Facility THBK และดาว G01 มี access 1 ช่วง
@@ -6,18 +6,21 @@ route แค่เรียก engine (`gnss_predict.dataproviders`, `report_sty
 
 import json
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import pytest
 
-from gnss_predict import studio
+from gnss_predict import report_style, studio
 from gnss_predict.dataproviders import TableCache, open_result_set, provider_rows
 from gnss_predict.errors import StyleError
-from gnss_predict.report_style import installed_styles
+from gnss_predict.report_format import ExportSetup, format_csv, format_txt, report_json, time_unit
+from gnss_predict.report_style import build_report, installed_styles, resolve_style
 from gnss_studio_server import plans as plans_module
 from gnss_studio_server.errors import ApiError
-from gnss_studio_server.routes.reports import server_result_set
+from gnss_studio_server.plans import PlanCache
+from gnss_studio_server.routes.reports import PinnedTables, server_result_set
 from gnss_studio_server.styles import MyStyles
 
 SC = "S1"
@@ -544,3 +547,416 @@ def test_my_styles_unit(data_dir):
         with pytest.raises(StyleError):
             store.delete(bad)
     assert style_files(data_dir) == []
+
+
+# ---------- POST /reports ----------
+
+T0300, T0400 = "2026-11-10T03:00:00Z", "2026-11-10T04:00:00Z"
+
+
+def report(client, objects=(OBJ,), style_name="Access", **extra):
+    return client.post(f"{BASE}/reports", json={"style": style_name, "objects": list(objects), **extra})
+
+
+def stored_intervals(s1_computed, prn):
+    stored = json.loads((s1_computed["access_dir"] / "intervals.json").read_text(encoding="utf-8"))
+    return stored["intervals"][prn]
+
+
+def compute_access(client, to, time_period=None):
+    """Compute THBK -> to (ผล analyze ของ THBK current อยู่แล้ว จึงตอบ 200 ทันทีไม่ส่ง job)"""
+    body = {"from": FAC, "to": to, **({} if time_period is None else {"time_period": time_period})}
+    r = client.post(f"{BASE}/access/compute", json=body, headers={"If-Match": etag_of(client)})
+    assert r.status_code == 200, r.text
+
+
+def engine_report(data_dir, style_name, objects, kind=None, start=None, stop=None, step=None, doc_styles=()):
+    rs = open_result_set(scenario_dir(data_dir), data_dir)
+    style_doc = resolve_style(style_name, kind, [], list(doc_styles))
+    return build_report(rs, style_doc, list(objects), start, stop, step, datetime(2026, 11, 15, tzinfo=timezone.utc))
+
+
+def test_report_json_matches_engine(client, s1_computed, data_dir):
+    r = report(client)
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/json")
+    body = r.json()
+    assert set(body) == {"scenario", "style", "kind", "created_utc", "sections", "global_statistics", "graph", "dynamic"}
+    assert (body["scenario"], body["style"], body["kind"], body["dynamic"]) == ("S1", "Access", "report", False)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", body["created_utc"])
+    section = body["sections"][0]
+    assert len(body["sections"]) == 1 and section["title"] == "THBK-To-G01" and section["object"] == OBJ
+    assert [c["name"] for c in section["columns"]] == ["Access", "Start Time", "Stop Time", "Duration"]
+    stored = stored_intervals(s1_computed, "G01")
+    assert stored and section["rows"] == [[i, iv["start"], iv["stop"], iv["duration_s"]] for i, iv in enumerate(stored, 1)]
+    expected = report_json(engine_report(data_dir, "Access", [OBJ]))
+    assert body["sections"] == expected["sections"] and body["global_statistics"] == expected["global_statistics"]
+
+
+def test_report_txt_csv_files(client, s1_computed, data_dir):
+    engine = engine_report(data_dir, "Access", [OBJ])
+    r = report(client, format="txt")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "text/plain; charset=utf-8"
+    assert r.headers["content-disposition"] == 'attachment; filename="THBK-To-G01_Access.txt"'
+    assert "THBK-To-G01:  Access" in r.text and "Start Time (UTCG)" in r.text
+    assert r.text.split("\n", 1)[1] == format_txt(engine, "UTCG", "+07:00").split("\n", 1)[1]        # บรรทัดแรกคือเวลาสร้าง
+
+    r = report(client, format="csv")
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "text/csv; charset=utf-8"
+    assert r.headers["content-disposition"] == 'attachment; filename="THBK-To-G01_Access.csv"'
+    assert r.text.splitlines()[0] == "Access,Start Time (UTCG),Stop Time (UTCG),Duration (sec)"
+    assert r.text == format_csv(engine, "UTCG", "+07:00")
+
+    quoted = {"delimiter": ";", "quote_headers": True, "title": False, "headers": True}
+    r = report(client, format="csv", export=quoted)
+    assert r.text.splitlines()[0] == '"Access";"Start Time (UTCG)";"Stop Time (UTCG)";"Duration (sec)"'
+    assert r.text == format_csv(engine, "UTCG", "+07:00", ExportSetup(";", True, False, True))
+
+    titled = {"delimiter": "\t", "quote_headers": False, "title": True, "headers": False}
+    r = report(client, format="csv", export=titled)
+    assert r.text.splitlines()[0] == "THBK-To-G01:  Access" and "Start Time" not in r.text
+    assert r.text == format_csv(engine, "UTCG", "+07:00", ExportSetup("\t", False, True, False))
+
+    assert report(client, format="csv", export={"delimiter": ";"}).text.splitlines()[0].startswith("Access;Start Time")   # ช่องที่ไม่ส่ง = ค่าตั้งต้น
+    assert report(client, format="json", export=quoted).headers["content-type"].startswith("application/json")      # export ใช้กับ csv เท่านั้น
+
+
+def test_report_file_names(client, s1_computed):
+    two = [OBJ, "*/Facility/THBK */Satellite/E11"]
+    r = report(client, two, format="txt")
+    assert r.headers["content-disposition"] == 'attachment; filename="Access.txt"'
+    assert "Global Statistics" in r.text and "THBK-To-E11:  Access" in r.text
+    assert report(client, ["*/Facility/THBK */Satellite/G01"], "AER", format="csv").headers["content-disposition"] == \
+        'attachment; filename="THBK-To-G01_AER.csv"'
+    assert report(client, ["*/Facility/THBK */Satellite/G01"], "Az El Polar", format="txt").headers["content-disposition"] == \
+        'attachment; filename="THBK-To-G01_Az_El_Polar.txt"'                                           # ช่องว่างในชื่อ style เป็น _
+
+
+def test_report_multiple_objects_has_global_statistics(client, s1_computed, data_dir):
+    objects = [OBJ, "*/Facility/THBK */Satellite/E11"]
+    body = report(client, objects).json()
+    expected = report_json(engine_report(data_dir, "Access", objects))
+    assert [s["title"] for s in body["sections"]] == ["THBK-To-G01", "THBK-To-E11"]
+    assert body["global_statistics"] and body["global_statistics"] == expected["global_statistics"]
+    assert body["sections"] == expected["sections"]
+    assert report(client).json()["global_statistics"] == []                                        # หนึ่ง object ไม่มี
+
+
+@pytest.mark.parametrize("period, rows", [
+    ({"mode": "specify", "start": "2026-11-10T01:00:00Z", "stop": "2026-11-10T02:00:00Z"}, []),       # ช่วงก่อน access ของ G01
+    ({"mode": "specify", "start": T0300, "stop": T0400}, [[1, "2026-11-10T03:00:00.000Z", "2026-11-10T04:00:00.000Z", 3600.0]]),
+])
+def test_report_uses_stored_time_period(client, s1_computed, period, rows):
+    full = report(client).json()["sections"][0]["rows"]
+    assert full == [[1, "2026-11-10T02:38:19.004Z", "2026-11-10T06:00:00.000Z", 12100.996]]       # ยังไม่เก็บช่วง: ช่วงวิเคราะห์เต็ม
+    compute_access(client, [SAT], period)
+    body = report(client).json()
+    assert body["sections"][0]["rows"] == rows
+    lo, hi = utc(period["start"]), utc(period["stop"])
+    assert all(lo <= utc(row[1]) and utc(row[2]) <= hi for row in body["sections"][0]["rows"])
+    aer = report(client, style_name="AER").json()["sections"][0]["rows"]                          # รายงานอื่นของ access เดียวกันตัดเหมือนกัน
+    assert all(lo <= utc(row[0]) <= hi for row in aer) and bool(aer) == bool(rows)
+    gaps = report(client, style_name="Gaps").json()["sections"][0]["rows"]                        # Gaps คิดในช่วงเดียวกัน (ส่วนเติมเต็ม)
+    assert gaps == ([] if rows else [[1, "2026-11-10T01:00:00.000Z", "2026-11-10T02:00:00.000Z", 3600.0]])
+
+
+def test_report_stored_time_period_applies_only_to_the_matching_access(client, s1_computed):
+    compute_access(client, [SAT], {"mode": "specify", "start": T0300, "stop": T0400})
+    other = report(client, ["*/Facility/THBK */Satellite/E11"]).json()["sections"][0]["rows"]
+    assert other == [[1, "2026-11-10T03:17:40.700Z", "2026-11-10T06:00:00.000Z", 9739.3]]           # ไม่ใช่ access นั้น: ช่วงวิเคราะห์เต็ม
+    assert report(client, [FAC], "All DOPs").status_code == 200                                    # ชนิดอื่นไม่ใช้ time_period ของ access
+    compute_access(client, [SAT], {"mode": "object"})                                              # แก้กลับเป็น object: เต็มช่วง
+    assert report(client).json()["sections"][0]["rows"][0][1] == "2026-11-10T02:38:19.004Z"
+
+
+def test_report_request_time_overrides_stored_time_period(client, s1_computed, data_dir):
+    compute_access(client, [SAT], {"mode": "specify", "start": T0300, "stop": T0400})
+    window = {"mode": "specify", "start": "2026-11-10T02:00:00Z", "stop": "2026-11-10T05:00:00Z"}
+    rows = report(client, time=window).json()["sections"][0]["rows"]
+    assert rows == [[1, "2026-11-10T02:38:19.004Z", "2026-11-10T05:00:00.000Z", 8500.996]]
+    start, stop = datetime(2026, 11, 10, 2, tzinfo=timezone.utc), datetime(2026, 11, 10, 5, tzinfo=timezone.utc)
+    assert rows == report_json(engine_report(data_dir, "Access", [OBJ], start=start, stop=stop))["sections"][0]["rows"]
+    # mode object ไม่ใช้ start/stop (เหมือน time_period ของ access) จึงไม่ตรวจและไม่ตัด
+    ignored = report(client, time={"mode": "object", "start": "2026-11-10T01:00:00Z", "stop": "2026-11-10T02:00:00Z"})
+    assert ignored.json()["sections"][0]["rows"][0][2] == "2026-11-10T04:00:00.000Z"                # ใช้ time_period ที่เก็บ
+
+
+def test_report_objects_with_different_stored_periods_are_refused(client, s1_computed):
+    e11 = "*/Facility/THBK */Satellite/E11"
+    compute_access(client, [SAT], {"mode": "specify", "start": T0300, "stop": T0400})
+    assert_error(report(client, [OBJ, e11]), 422, "SCENARIO_INVALID", "objects")                   # หนึ่งช่วงตัด อีกอันช่วงวิเคราะห์
+    assert report(client, [OBJ, e11], time={"mode": "specify", "start": T0300, "stop": T0400}).status_code == 200
+    compute_access(client, [e11.split(" ")[1]], {"mode": "specify", "start": T0300, "stop": T0400})
+    assert report(client, [OBJ, e11]).status_code == 200                                           # ช่วงเท่ากัน ตัดทั้งคู่
+
+
+def test_report_specify_time_and_step(client, s1_computed, data_dir):
+    window = {"mode": "specify", "start": T0300, "stop": "2026-11-10T03:10:00Z", "step_s": 60}
+    r = report(client, style_name="AER", time=window)
+    assert r.status_code == 200, r.text
+    start, stop = utc(T0300), utc("2026-11-10T03:10:00Z")
+    expected = engine_rows(data_dir, OBJ, "AER Data", None, AER, start, stop, 60)
+    assert r.json()["sections"][0]["rows"] == expected and len(expected) == 11
+    default = report(client, style_name="AER", time={"mode": "specify", "start": T0300, "stop": "2026-11-10T03:10:00Z"})
+    assert len(default.json()["sections"][0]["rows"]) == 21                                         # step_s ว่าง = ทุกจุดของ scenario (30 วินาที)
+    stepped = report(client, style_name="AER", time={"mode": "object", "step_s": 600}).json()["sections"][0]["rows"]
+    assert stepped == engine_rows(data_dir, OBJ, "AER Data", None, AER, step=600)
+    outside = report(client, style_name="AER", time={"mode": "specify", "start": "2026-11-12T00:00:00Z", "stop": "2026-11-12T01:00:00Z"})
+    assert outside.status_code == 200 and outside.json()["sections"][0]["rows"] == []              # นอกช่วงวิเคราะห์ทั้งหมด: แถวว่าง ไม่ใช่ error
+
+
+def test_report_style_time_applies_when_request_has_none(client, s1_computed, data_dir):
+    timed = style("Timed", time={"mode": "specify", "start": T0300, "stop": "2026-11-10T03:10:00Z", "step_s": 60})
+    put_doc(client, lambda doc: doc.update(styles=[timed]))
+    rows = report(client, style_name="Timed").json()["sections"][0]["rows"]                        # ไม่ส่ง time: ใช้ time ของ style
+    assert rows == engine_rows(data_dir, OBJ, "AER Data", None, ["Time", "Azimuth", "Elevation"], utc(T0300), utc("2026-11-10T03:10:00Z"), 60)
+    assert len(rows) == 11
+    whole = report(client, style_name="Timed", time={"mode": "object"}).json()["sections"][0]["rows"]
+    assert len(whole) > 11 and whole == engine_rows(data_dir, OBJ, "AER Data", None, ["Time", "Azimuth", "Elevation"])   # ส่ง time: ตามคำขอ
+    other = report(client, style_name="Timed", time={"mode": "specify", "start": T0300, "stop": T0400}).json()
+    assert len(other["sections"][0]["rows"]) == 121                                                # step ของ style ไม่ตามมา (step_s ว่าง = 30 วินาที)
+    only_step = style("OnlyStep", time={"mode": "object_period", "step_s": 600})
+    put_doc(client, lambda doc: doc.update(styles=[only_step]))
+    assert report(client, style_name="OnlyStep").json()["sections"][0]["rows"] == engine_rows(
+        data_dir, OBJ, "AER Data", None, ["Time", "Azimuth", "Elevation"], step=600)
+    bad_step = style("BadStep", time={"mode": "object_period", "step_s": 45})                      # style ที่เก็บ step ผิด: 422 ที่ time.step
+    put_doc(client, lambda doc: doc.update(styles=[bad_step]))
+    assert_error(report(client, style_name="BadStep"), 422, "SCENARIO_INVALID", "time.step")
+
+
+T_RANGE = ("2026-11-10T03:00:00Z", "2026-11-10T04:00:00Z")
+
+
+@pytest.mark.parametrize("time_body, field", [
+    ({"mode": "object", "step_s": 45}, "time.step"),
+    ({"mode": "object", "step_s": 0}, "time.step"),
+    ({"mode": "object", "step_s": -30}, "time.step"),
+    ({"mode": "object", "step_s": 3_000_000_000}, "time.step"),                                    # ใหญ่เกิน timedelta: ต้องไม่ล้มเป็น 500
+    ({"mode": "specify", "start": T_RANGE[0], "step_s": 60}, "time.stop"),
+    ({"mode": "specify", "stop": T_RANGE[1]}, "time.start"),
+    ({"mode": "specify"}, "time.start"),
+    ({"mode": "specify", "start": T_RANGE[0], "stop": T_RANGE[0]}, "time.start"),
+    ({"mode": "specify", "start": T_RANGE[1], "stop": T_RANGE[0]}, "time.start"),
+    ({"mode": "specify", "start": T_RANGE[0], "stop": T_RANGE[1], "step_s": 45}, "time.step"),
+    ({"mode": "specify", "start": "yesterday", "stop": T_RANGE[1]}, "time.start"),
+    ({"mode": "specify", "start": T_RANGE[0], "stop": "2026-11-10T04:00:00+07:00"}, "time.stop"),
+    ({"mode": "bogus"}, "time.mode"),
+    ({"mode": "object", "mystery": 1}, "time.mystery"),
+])
+def test_report_time_errors(client, s1_computed, time_body, field):
+    assert_error(report(client, time=time_body), 422, "SCENARIO_INVALID", field)
+
+
+def test_report_time_errors_win_over_stale_results(client, s1_computed):
+    make_stale(client)
+    assert_error(report(client, time={"mode": "object", "step_s": 45}), 422, "SCENARIO_INVALID", "time.step")
+    assert_error(report(client, time={"mode": "specify", "start": T_RANGE[1], "stop": T_RANGE[0]}), 422, "SCENARIO_INVALID", "time.start")
+
+
+def test_report_on_stale_results_is_409(client, s1_computed):
+    assert report(client).status_code == 200
+    make_stale(client)
+    assert_error(report(client), 409, "RESULTS_NOT_CURRENT")
+    assert_error(report(client, format="txt"), 409, "RESULTS_NOT_CURRENT")
+    assert_error(report(client, [FAC], "All DOPs"), 409, "RESULTS_NOT_CURRENT")
+
+
+def test_report_before_any_compute_is_409(client, s1):
+    assert_error(report(client), 409, "RESULTS_NOT_CURRENT")
+    assert_error(report(client, ["*/Satellite/G01"], "LLA Position"), 409, "RESULTS_NOT_CURRENT")
+
+
+def test_report_style_errors(client, s1_computed, data_dir):
+    assert_error(report(client, style_name="NoSuchStyle"), 422, "STYLE_INVALID", "style")
+    assert_error(report(client, style_name="Gaps", kind="graph"), 422, "STYLE_INVALID", "style")        # ชื่อมี แต่ไม่มีชนิดนี้
+    (data_dir / "styles").mkdir()
+    bogus = style("Hand", content=[{"provider": "AER Data", "group": "Default", "elements": ["Time", "Bogus"]}])
+    (data_dir / "styles" / "Hand.json").write_text(json.dumps(bogus), encoding="utf-8")
+    assert_error(report(client, style_name="Hand"), 422, "STYLE_INVALID", "content[0].elements[1]")
+    assert_error(report(client, style_name="Access", dynamic=True), 422, "STYLE_INVALID", "dynamic")      # Access ใช้ Dynamic Display ไม่ได้
+    assert_error(report(client, style_name="Access", kind="graph", dynamic=True), 422, "STYLE_INVALID", "dynamic")
+    assert_error(report(client, style_name="Hand", dynamic=True), 422, "STYLE_INVALID", "content[0].elements[1]")   # style เสียก่อน dynamic
+
+
+def test_report_object_errors(client, s1_computed):
+    assert_error(report(client, [FAC]), 422, "SCENARIO_INVALID", "object")                           # ชนิดไม่ตรง style
+    assert_error(report(client, ["*/Facility/NOPE */Satellite/G01"]), 422, "SCENARIO_INVALID", "object")
+    assert_error(report(client, ["*/Facility/THBK */Satellite/NOPE"]), 422, "SCENARIO_INVALID", "object")
+    assert_error(report(client, ["THBK-To-G01"]), 422, "SCENARIO_INVALID", "object")
+    assert report(client, ["*/Facility/thbk */Satellite/g01"]).status_code == 200                       # ชื่อ object ไม่แยกตัวพิมพ์เหมือน engine
+
+
+@pytest.mark.parametrize("body, field", [
+    ({"style": "Access", "objects": []}, "objects"),
+    ({"style": "Access"}, "objects"),
+    ({"objects": [OBJ]}, "style"),
+    ({"style": "Access", "objects": [OBJ], "format": "pdf"}, "format"),
+    ({"style": "Access", "objects": [OBJ], "kind": "chart"}, "kind"),
+    ({"style": "Access", "objects": [OBJ], "dynamic": "yes"}, "dynamic"),
+    ({"style": "Access", "objects": [OBJ], "mystery": 1}, "mystery"),
+    ({"style": "Access", "objects": [OBJ], "time": "now"}, "time"),
+    ({"style": "Access", "objects": [OBJ], "time": {"mode": "object", "step_s": "60"}}, "time.step_s"),
+    ({"style": "Access", "objects": [OBJ], "export": {"delimiter": ";;"}}, "export.delimiter"),
+    ({"style": "Access", "objects": [OBJ], "export": {"delimiter": ""}}, "export.delimiter"),
+    ({"style": "Access", "objects": [OBJ], "export": {"delimiter": '"'}}, "export.delimiter"),          # engine ปฏิเสธตัวคั่นที่ชนกับ CSV
+    ({"style": "Access", "objects": [OBJ], "export": {"delimiter": "\n"}, "format": "json"}, "export.delimiter"),
+    ({"style": "Access", "objects": [OBJ], "export": {"title": 1}}, "export.title"),
+    ({"style": "Access", "objects": [OBJ], "export": {"mystery": True}}, "export.mystery"),
+])
+def test_report_body_errors(client, s1_computed, body, field):
+    assert_error(client.post(f"{BASE}/reports", json=body), 422, "SCENARIO_INVALID", field)
+
+
+def test_report_scenario_not_found_and_bad_body(client, s1_computed):
+    assert_error(client.post("/api/scenarios/NOPE/reports", json={"style": "Access", "objects": [OBJ]}), 404, "NOT_FOUND")
+    assert client.post(f"{BASE}/reports", content=b"{", headers={"content-type": "application/json"}).status_code == 422
+    assert client.post(f"{BASE}/reports", json=[1]).status_code == 422
+    assert client.get(f"{BASE}/reports").status_code == 405
+
+
+def test_report_style_tiers_and_kinds(client, s1_computed):
+    assert report(client).json()["kind"] == "report"                                                 # ไม่ระบุ kind: report ก่อน
+    graph = report(client, style_name="Access", kind="graph").json()
+    assert graph["kind"] == "graph" and graph["graph"]["type"] == "interval" and graph["dynamic"] is False
+    assert report(client, style_name="Az El Polar").json()["graph"]["type"] == "polar90"
+    mine = style("Mine")
+    assert put_style(client, "Mine", mine).status_code == 200
+    body = report(client, style_name="mine").json()                                                  # My Style (ชื่อไม่แยกตัวพิมพ์)
+    assert body["style"] == "Mine" and [c["name"] for c in body["sections"][0]["columns"]] == ["Time", "Azimuth", "Elevation"]
+    shadow = style("Mine", content=[{"provider": "AER Data", "group": "Default", "elements": ["Time", "Range"]}])
+    put_doc(client, lambda doc: doc.update(styles=[shadow, style("AER", content=[
+        {"provider": "AER Data", "group": "Default", "elements": ["Time", "Elevation"]}])]))
+    assert [c["name"] for c in report(client, style_name="Mine").json()["sections"][0]["columns"]] == ["Time", "Range"]    # Scenario ก่อน My
+    assert [c["name"] for c in report(client, style_name="AER").json()["sections"][0]["columns"]] == ["Time", "Elevation"]  # และก่อน Installed
+
+
+def test_report_dynamic_flag_follows_the_request(client, s1_computed):
+    assert report(client, style_name="AER").json()["dynamic"] is False                               # style รองรับ แต่คำขอไม่ได้ขอ
+    assert report(client, style_name="AER", dynamic=True).json()["dynamic"] is True
+    strip = report(client, style_name="AER", kind="graph", dynamic=True).json()
+    assert strip["dynamic"] is True and strip["graph"]["type"] == "time_xy"
+    assert report(client, [FAC], "All DOPs", dynamic=True).json()["dynamic"] is True
+
+
+def test_report_uses_scenario_units(client, s1_computed):
+    put_doc(client, lambda doc: doc["units"].update(date_format="LTZG", ltz_offset="+05:30"))
+    unit = time_unit("LTZG", "+05:30")
+    assert unit != "UTCG"
+    assert f"Start Time ({unit})" in report(client, format="txt").text
+    assert report(client, format="csv").text.splitlines()[0] == f"Access,Start Time ({unit}),Stop Time ({unit}),Duration (sec)"
+    assert report(client).json()["sections"][0]["rows"][0][1].endswith("Z")                          # JSON เป็น UTC เสมอ
+
+
+def test_report_with_unreadable_units_is_422(client, s1_computed, data_dir):
+    path = scenario_dir(data_dir) / "scenario.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["units"] = {"date_format": "JULIAN"}
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert_error(report(client, format="txt"), 422, "SCENARIO_INVALID", "units.date_format")
+
+
+def test_report_uses_plan_and_table_caches(client, s1_computed, monkeypatch):
+    """รายงานใช้ PlanCache และ TableCache เหมือน /data: ซ้ำกันกี่ครั้งก็ไม่คำนวณ hash หรืออ่านดิสก์เพิ่ม (open_result_set ช้า 0.42-0.45 วินาที)"""
+    calls = []
+    for module in (studio, plans_module):
+        for name in ("plan_propagate", "plan_analyze"):
+            real = getattr(module, name)
+            monkeypatch.setattr(module, name, lambda *a, _real=real, **kw: (calls.append(1), _real(*a, **kw))[1])
+    assert report(client).status_code == 200
+    warm, loads = len(calls), client.app.state.tables.loads
+    assert warm >= 2 and loads > 0                         # PlanCache คำนวณ hash ครั้งแรก (ขณะ cache ว่าง) หลังจากนี้ไม่เพิ่ม
+    for _ in range(3):
+        assert report(client, format="txt").status_code == 200
+        assert report(client, style_name="AER", dynamic=True).status_code == 200
+    assert len(calls) == warm and client.app.state.tables.loads == loads
+
+
+FACILITIES = ["THBK", "PHUK", "CMAI", "SONG"]
+
+
+def add_facilities(client, data_dir):
+    """เพิ่ม Facility สามแห่งต่อจาก THBK แล้ว analyze ทุกแห่ง (GMAT ปลอมจาก s1_computed): ephem 1 + access 4 bundle > cache 4"""
+    def mutate(doc):
+        thbk = next(o for o in doc["objects"] if o["name"] == "THBK")
+        for i, name in enumerate(FACILITIES[1:], 1):
+            doc["objects"].append({**thbk, "name": name, "position": {**thbk["position"], "lat_deg": 7.9 + 2.5 * i, "lon_deg": 98.4 + i}})
+    put_doc(client, mutate)
+    for name in FACILITIES:
+        studio.run_analyze(scenario_dir(data_dir), name, data_dir)
+
+
+def test_report_pins_bundles_across_four_facilities(client, s1_computed, data_dir):
+    """cache ของ server มี 4 bundle: รายงานที่เรียง object สลับ Facility (THBK-G01, PHUK-G01, ..., THBK-E11, ...) ใช้ ephem 1 + access 4 bundle
+    ถ้าไม่ตรึงจะไล่กันออกแล้วอ่านซ้ำใน request เดียว แต่ละ bundle ต้องอ่านครั้งเดียวต่อ request"""
+    add_facilities(client, data_dir)
+    objects = [f"*/Facility/{fac} */Satellite/{sat}" for sat in ("G01", "E11", "C01") for fac in FACILITIES]
+    expected = report_json(engine_report(data_dir, "AER", objects))["sections"]
+    app = client.app
+    assert app.state.tables.max_bundles == 4
+    app.state.tables = tables = TableCache(4)
+    r = report(client, objects, "AER")
+    assert r.status_code == 200, r.text
+    assert r.json()["sections"] == expected and len(expected) == 12
+    assert tables.loads == 1 + 4                                      # manifest ของ ephem 1 ครั้ง กับตาราง access ของแต่ละ Facility อย่างละครั้ง
+    first = tables.loads
+    assert report(client, objects, "AER", format="csv").status_code == 200       # request ถัดไป: ที่เหลือใน cache ใช้ต่อ ที่หลุดอ่านใหม่ครั้งเดียวต่อ bundle
+    assert tables.loads - first <= 1 + 4
+    app.state.tables = tables = TableCache(4)
+    assert report(client, [f"*/Facility/{fac}" for fac in FACILITIES], "All DOPs").status_code == 200
+    assert tables.loads == 4                                          # Facility ล้วน: ตาราง access 4 ชุด ไม่แตะ ephem
+
+
+def test_pinned_tables_read_each_bundle_once(tmp_path):
+    """PinnedTables ถือ reference ของ request: cache ข้างใต้เล็กแค่ 1 bundle ก็อ่านแต่ละ (ชนิด, bundle) ครั้งเดียว และ cache ข้างใต้ไม่ถูกแตะซ้ำ"""
+    class Counting(TableCache):
+        def __init__(self):
+            super().__init__(1)
+            self.calls = []
+
+        def access(self, path):
+            self.calls.append(("access", path))
+            return object()
+
+        def ephem_manifest(self, path):
+            self.calls.append(("manifest", path))
+            return {"path": path}
+
+    shared = Counting()
+    pinned = PinnedTables(shared)
+    a, b = tmp_path / "a", tmp_path / "b"
+    first = [pinned.access(a), pinned.access(b), pinned.ephem_manifest(a)]
+    assert [pinned.access(a), pinned.access(b), pinned.ephem_manifest(a)] == first
+    assert [pinned.access(a) for _ in range(3)] == [first[0]] * 3
+    assert shared.calls == [("access", a), ("access", b), ("manifest", a)]
+    other = PinnedTables(shared)                                       # request ใหม่ตรึงใหม่ (ผ่าน cache ของ server อีกครั้ง)
+    other.access(a)
+    assert len(shared.calls) == 4
+
+
+def test_report_one_day_under_2s(client, snapshot, fake_gmat, data_dir):
+    """เกณฑ์ข้อ 3 (P13): รายงาน Access ของ THBK กับดาวหนึ่งดวงในหนึ่งวัน แบบ cache ว่างทุกชั้น ภายใน 2 วินาที
+    เวลารวมทุกอย่างบน request: อ่านและแปลง style (Installed ที่อ่านไฟล์ใหม่, My Styles, Scenario Styles) hash ของ plan อ่านตารางจาก bundle
+    และจัดรูปแบบ วัดที่ดีที่สุดจาก 3 รอบที่ล้าง cache ใหม่ทุกรอบ เพื่อไม่ให้เครื่องที่กำลังทำงานอื่นทำให้ล้ม"""
+    r = client.post("/api/scenarios", json={"name": "D1", "template": "thbk-gnss", "start": "2026-11-10T00:00:00Z",
+                                            "stop": "2026-11-11T00:00:00Z", "snapshot": "20261110T0000Z"})
+    assert r.status_code == 201, r.text
+    directory = data_dir / "scenarios" / "D1"
+    studio.run_propagate(directory, data_dir)
+    studio.run_analyze(directory, "THBK", data_dir)
+    app = client.app
+    url = "/api/scenarios/D1/reports"
+    body = {"style": "Access", "objects": ["*/Facility/THBK */Satellite/G01"]}
+    timings = []
+    for _ in range(3):
+        app.state.tables = TableCache(4)
+        app.state.plans = PlanCache(app.state.store, app.state.logger)
+        report_style._installed.cache_clear()
+        began = time.perf_counter()
+        r = client.post(url, json=body)
+        timings.append(time.perf_counter() - began)
+        assert r.status_code == 200, r.text
+        assert r.json()["sections"][0]["rows"], "ต้องมีแถว access อย่างน้อยหนึ่งช่วง"
+    print(f"cold report timings (s): {[round(t, 3) for t in timings]}")
+    assert min(timings) < 2.0, timings
