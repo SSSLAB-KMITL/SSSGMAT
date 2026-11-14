@@ -7,12 +7,14 @@ import io
 import os
 import pkgutil
 import unittest
+from contextlib import redirect_stdout
 from unittest import mock
 
+import uvicorn
 from fastapi.testclient import TestClient
 
 import gpredict_web
-from gpredict_web.__main__ import build_server, parse_args
+from gpredict_web.__main__ import build_server, main, parse_args
 from gpredict_web.config import DATA_ENV, PORT
 from tests.helpers import temp_config
 
@@ -74,6 +76,19 @@ class MainTest(unittest.TestCase):
         _, err = self.build("--host", "0.0.0.0")
         self.assertIn("Host", err)
         self.assertIn("--host", err)
+
+    def test_main_prints_the_address_and_the_log_file(self):
+        """คำเตือนของ server ระหว่างรันไปที่ gpredict.log ไม่ใช่ terminal ตอนเริ่มจึงบอกว่าไฟล์อยู่ไหน (ของเรา)"""
+        servers = []
+        out = io.StringIO()
+        with mock.patch.object(uvicorn.Server, "run", autospec=True, side_effect=servers.append), redirect_stdout(out):
+            main(["--data", str(self.data)])
+        self.addCleanup(servers[0].config.app.state.ephem.close)
+        lines = out.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0], "Gpredict Web: http://127.0.0.1:8740/")
+        self.assertIn(str((self.data / "logs" / "gpredict.log").absolute()), lines[1])
+        self.assertRegex(lines[1], r"[ก-๙]")
 
     def test_quit_sets_should_exit(self):
         server, _ = self.build()

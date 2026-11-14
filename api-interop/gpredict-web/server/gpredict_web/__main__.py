@@ -1,6 +1,7 @@
 """เปิด server: python -m gpredict_web [--host H] [--port P] [--data DIR] (รันจากโฟลเดอร์ server/)
 
 process เดียวเสิร์ฟทั้ง API และ web/dist (หัวข้อ 3.2 ของ spec) POST /api/quit (File → Quit) หยุด server อย่างเรียบร้อย
+ตอนเริ่มพิมพ์ที่อยู่ของหน้าเว็บและที่อยู่ของ gpredict.log (ของเรา) เพราะระหว่างรัน log ของ server ไปที่ไฟล์นั้น ไม่ใช่ terminal
 """
 
 import argparse
@@ -10,8 +11,9 @@ from pathlib import Path
 
 import uvicorn
 
-from .app import LOCAL_HOSTS, create_app, host_allow_list
+from .app import LOCAL_HOSTS, LOG_DIR, create_app, host_allow_list
 from .config import PORT, Config
+from .gplog import LOG_FILE
 
 DEFAULT_HOST = "127.0.0.1"
 WILDCARD_HOSTS = ("0.0.0.0", "::")
@@ -19,6 +21,7 @@ NO_LOGIN_WARNING = ("คำเตือน: Gpredict Web ไม่มีระ�
                     "แก้ module และ QTH และสั่งปิด server ได้ ถ้าไม่ตั้งใจให้ใช้ --host 127.0.0.1")
 WILDCARD_NOTE = ("หมายเหตุ: server รับเฉพาะคำขอที่ Host เป็น 127.0.0.1, localhost หรือค่าของ --host "
                  "เครื่องอื่นที่เปิดด้วย IP ของเครื่องนี้จะถูกปฏิเสธ ถ้าต้องการให้เครื่องอื่นใช้ ให้ตั้ง --host เป็น IP นั้นแทน {host}")
+LOG_FILE_NOTE = "ไฟล์ log: {path} (คำเตือนและข้อผิดพลาดของ server ระหว่างรันเขียนลงไฟล์นี้ ไม่แสดงที่ terminal)"   # (ของเรา)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -52,6 +55,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     host = server.config.host
     shown = f"[{host}]" if ":" in host else host
     print(f"Gpredict Web: http://{shown}:{server.config.port}/", flush=True)
+    log_file = (server.config.app.state.config.data_dir / LOG_DIR / LOG_FILE).absolute()
+    print(LOG_FILE_NOTE.format(path=log_file), flush=True)
     server.run()
 
 
