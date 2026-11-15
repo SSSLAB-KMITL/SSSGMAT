@@ -53,6 +53,9 @@ const fac = (name: string, lat = 13.729779, lon = 100.781151, over: object = {})
   ({ class: "Facility", name, position: { type: "Geodetic", lat_deg: lat, lon_deg: lon, alt_m: 6.4 }, ...over }) as SceneObject;
 const sat = (name: string, norad: number, over: object = {}): SceneObject => ({ class: "Satellite", name, norad, ...over }) as SceneObject;
 const docOf = (objects: SceneObject[], over: Partial<ScenarioDoc> = {}): ScenarioDoc => makeDoc({ objects, ...over });
+/** access ที่ Compute แล้วจาก THBK ถึง G01 และ E05 (กราฟิกตั้งต้นของ scenario) */
+const computedAccess = (over: object = {}): NonNullable<ScenarioDoc["accesses"]>[number] =>
+  ({ from: "*/Facility/THBK", to: ["*/Satellite/G01", "*/Satellite/E05"], computed: true, ...over }) as never;
 const baseCtx = { mode: "3d" as const, prnByNorad, isHidden: () => false, tokens: TOKENS, style: STYLE };
 
 async function scene(withAccess = true): Promise<CzmlDataSource> {
@@ -103,7 +106,7 @@ describe("applyGraphics", () => {
 
   test("a hidden satellite, one with graphics3d.show off and one that is not in the scenario are not shown, nor their access lines", async () => {
     const ds = await scene();
-    const doc = docOf([fac("THBK"), sat("G01", 62339), sat("E05", 40128, { graphics3d: { show: false } })]);
+    const doc = docOf([fac("THBK"), sat("G01", 62339), sat("E05", 40128, { graphics3d: { show: false } })], { accesses: [computedAccess()] });
     applyGraphics(ds, doc, { ...baseCtx, isHidden: (n) => n === 62339 });
     expect(byId(ds, "sat/G01").show).toBe(false);
     expect(byId(ds, "sat/E05").show).toBe(false);
@@ -114,7 +117,7 @@ describe("applyGraphics", () => {
 
   test("access lines use --color-access and keep their show intervals from CZML", async () => {
     const ds = await scene();
-    applyGraphics(ds, docOf([fac("THBK"), sat("G01", 62339), sat("E05", 40128)]), baseCtx);
+    applyGraphics(ds, docOf([fac("THBK"), sat("G01", 62339), sat("E05", 40128)], { accesses: [computedAccess()] }), baseCtx);
     const line = byId(ds, "access/THBK/G01");
     expect(line.show).toBe(true);
     expect(hex(value(line.polyline?.material)?.color as Color | undefined)).toBe(TOKENS.access);
@@ -125,10 +128,61 @@ describe("applyGraphics", () => {
   test("an access with its own graphics (not inherited) may hide the line or colour it", async () => {
     const ds = await scene();
     const objects = [fac("THBK"), sat("G01", 62339), sat("E05", 40128)];
-    applyGraphics(ds, docOf(objects, { accesses: [{ from: "*/Facility/THBK", to: ["*/Satellite/G01"], graphics: { inherit: false, color_mode: "custom", custom_color: "#123456" } }] }), baseCtx);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: false, color_mode: "custom", custom_color: "#123456" } })] }), baseCtx);
+    expect(byId(ds, "access/THBK/G01").show).toBe(true);
     expect(hex(value(byId(ds, "access/THBK/G01").polyline?.material)?.color as Color | undefined)).toBe("#123456");
-    applyGraphics(ds, docOf(objects, { accesses: [{ from: "*/Facility/THBK", to: ["*/Satellite/G01"], graphics: { inherit: false, show: false } }] }), baseCtx);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: false, show: false } })] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: false, animate_line: false } })] }), baseCtx);
+    expect(byId(ds, "access/THBK/G01").show).toBe(false);
+  });
+
+  test("an access that is not computed draws no line; once computed it draws one (only for the satellites it covers)", async () => {
+    const ds = await scene();
+    const objects = [fac("THBK"), sat("G01", 62339), sat("E05", 40128)];
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"], computed: false })] }), baseCtx);
+    expect(byId(ds, "access/THBK/G01").show).toBe(false);
+    applyGraphics(ds, docOf(objects), baseCtx); // ไม่มี access เลย
+    expect(byId(ds, "access/THBK/G01").show).toBe(false);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"] })] }), baseCtx);
+    expect(byId(ds, "access/THBK/G01").show).toBe(true);
+    expect(byId(ds, "access/THBK/E05").show).toBe(false); // ไม่อยู่ใน to
+  });
+
+  test("lines are looked up per (facility, satellite): facility B's line takes B's colour when A and B both cover the satellite", async () => {
+    const ds = await scene();
+    await ds.process([
+      { id: "document", version: "1.0" },
+      { id: "fac/HOME", position: { cartographicDegrees: [100.5, 13.9, 5] } },
+      {
+        id: "access/HOME/G01",
+        polyline: { positions: { references: ["fac/HOME#position", "sat/G01#position"] }, arcType: "NONE", show: [{ interval: `${T0}/2026-11-12T00:00:00Z`, boolean: true }] },
+      },
+    ]);
+    const objects = [fac("THBK"), fac("HOME", 13.9, 100.5), sat("G01", 62339), sat("E05", 40128)];
+    const custom = (color: string) => ({ inherit: false, color_mode: "custom", custom_color: color });
+    applyGraphics(ds, docOf(objects, {
+      accesses: [
+        computedAccess({ to: ["*/Satellite/G01", "*/Satellite/E05"], graphics: custom("#aa0000") }),
+        computedAccess({ from: "*/Facility/HOME", to: ["*/Satellite/G01"], graphics: custom("#0000bb") }),
+      ],
+    }), baseCtx);
+    const color = (id: string) => hex(value(byId(ds, id).polyline?.material)?.color as Color | undefined);
+    expect(byId(ds, "access/HOME/G01").show).toBe(true);
+    expect(color("access/HOME/G01")).toBe("#0000bb");
+    expect(color("access/THBK/G01")).toBe("#aa0000");
+    expect(color("access/THBK/E05")).toBe("#aa0000");
+
+    // Facility เดียวกันสอง access: เส้นของดาวแต่ละดวงใช้ access ที่ครอบคลุมดาวนั้น ไม่ใช่ access แรกของ Facility
+    applyGraphics(ds, docOf(objects, {
+      accesses: [
+        computedAccess({ to: ["*/Satellite/E05"], graphics: custom("#aa0000") }),
+        computedAccess({ to: ["*/Satellite/G01"], graphics: custom("#00cc00") }),
+      ],
+    }), baseCtx);
+    expect(color("access/THBK/E05")).toBe("#aa0000");
+    expect(color("access/THBK/G01")).toBe("#00cc00");
+    expect(byId(ds, "access/HOME/G01").show).toBe(false); // HOME ไม่มี access ที่ Compute แล้ว
   });
 
   describe("2D ground track (Pass page)", () => {

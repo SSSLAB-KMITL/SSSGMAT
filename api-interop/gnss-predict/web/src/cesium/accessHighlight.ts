@@ -1,12 +1,15 @@
 // Static Highlight และ Animate Highlight ของ Access ในหน้าต่าง 2D (access spec §4, STK ref §F "Access graphics")
 // ค่าตั้งอยู่ที่ `accesses[].graphics` (Access tool) ช่วงเวลามาจาก GET /access/intervals ตัวเดียวกับ Timeline View (windows/TimelineView/rows.ts)
 //
-// - วาดเมื่อ access `computed: true` (Clear = เลิกวาด), มี graphics ของตัวเอง (`inherit: false`: inherit true หรือไม่มี graphics = ค่าตั้งต้นของ scenario ไม่วาด),
-//   Show เปิด และเปิดตัวเลือกนั้น (Static Highlight / Animate Highlight) ปิดตัวเลือกหรือเงื่อนไขใดหลุด = entity หายไปในรอบถัดไป (วาดใหม่ทุกครั้ง)
-// - สี: Use Custom Color = custom_color ไม่งั้นสีของดาวในหน้าต่างนี้ (graphicsFor) ดาวที่อยู่ในหลาย access: ใช้ของ access แรกใน doc ที่เปิดตัวเลือกนั้น
-//   ช่วงเวลาของดาวเดียวกันจากหลาย access (ต่าง Facility) รวมเป็นช่วงเดียว ไม่วาดทับกัน
+// - หน้าตามาจาก accessGraphics.ts (resolveAccessGraphics): วาดเมื่อ access `computed: true` (Clear = เลิกวาด), Show เปิด และเปิดตัวเลือกนั้น
+//   (Static Highlight / Animate Highlight; inherit หรือไม่มี graphics = ค่าตั้งต้นของ scenario ที่ไม่มี highlight) ปิดตัวเลือกหรือเงื่อนไขใดหลุด
+//   = entity หายไปในรอบถัดไป (วาดใหม่ทุกครั้ง)
+// - คู่ (Facility, ดาว) ใช้ access ตัวเดียวตาม accessFor: ช่วงเวลาของดาวจาก access อื่นของ Facility เดียวกันที่ไม่ใช่ตัวนั้นไม่ถูกวาด
+// - สี: Use Custom Color = custom_color ไม่งั้นสีของดาวในหน้าต่างนี้ (graphicsFor) ส่วนของ highlight แยกตาม (ดาว, สี): ช่วงเวลาของดาวเดียวกัน
+//   ที่สีเดียวกัน (เช่นหลาย Facility ที่ใช้สีของดาว) รวมเป็นช่วงเดียวไม่วาดทับกัน ต่างสี (Facility ละสี) = entity แยก แต่ละตัววาดช่วงของตัวเองด้วยสีของตัวเอง
 // - ดาวต้อง "แสดงอยู่" ในหน้าต่างนี้: เปิด Show ของหน้า 2D, ไม่ถูกซ่อนตามธง (W9) และ entity ของมันอยู่ในภาพและแสดงอยู่ (sat/<PRN> ใน entities เดียวกับที่รับมา
 //   ผู้เรียกวาดหลัง applyGraphics เสมอ: applyGraphics ซ่อน entity ที่ไม่ใช่ sat/fac/access)
+// - id: ส่วนแรกของดาว (ตามลำดับที่พบใน doc) ไม่มีส่วนต่อท้าย ส่วนที่สองเป็นต้นไปต่อท้ายชื่อดาวด้วย @1, @2, … (hl/static/G01@1, hl/box/G01@1)
 // - Static Highlight (hl/static/<PRN>): polyline หนา 4 พิกเซลเป็น ground track ตามจุดใต้ดาว (ตำแหน่ง Earth-fixed ของดาวที่สุ่มทุก 60 วินาทีตลอดแต่ละช่วง access
 //   รวมขอบ ฉายลงผิวโลกที่ความสูง 0 เหมือน overlay2d) เป็น ConstantProperty ไม่ขึ้นกับเวลาของภาพ ทุกช่วงเป็นเส้นแยก (id ที่สองเป็นต้นไปต่อท้าย /1, /2, …)
 //   ไม่ต่อข้ามช่วงที่ไม่ได้อยู่ใน access
@@ -17,7 +20,8 @@
 //   ช่วง access ทั้งหมดของดาว กรอบจึงโผล่รอบดาวเฉพาะตอนอยู่ใน access ตามเวลาของ clock โดย Cesium เอง
 // - ไม่มี CallbackProperty: หน้าต่าง 2D ข้าม update ของ dataSourceDisplay ตอนอยู่เฉย ๆ (idleUpdates.ts) การเพิ่ม/ลบ entity ส่ง collectionChanged รอบเดียว (suspendEvents)
 // - HighlightIntervals ดึงช่วงเวลาที่ต้องใช้ (เฉพาะ access ที่ต้องวาด) ดึงใหม่เมื่อชุด access, ช่วงเวลาที่ตัดผล หรือผล (hash/สถานะ) ของ Facility ต้นทางเปลี่ยน
-//   (กติกาเดียวกับ useAccessIntervals ของ Timeline) คำตอบของรอบเก่าถูกยกเลิกและทิ้ง
+//   (accessResultsKey ตัวเดียวกับ useAccessIntervals ของ Timeline) คำตอบของรอบเก่าถูกยกเลิกและทิ้ง คำตอบผูกกับ scenario ที่ขอ: สลับ scenario แล้ว
+//   คำตอบของ scenario เดิมไม่ถูกส่งต่อ (แม้กุญแจ access จะเหมือนกัน) จนกว่าคำตอบของ scenario ใหม่มาถึง
 
 import {
   ArcType, BillboardGraphics, Cartesian3, Cartographic, ColorMaterialProperty, ConstantProperty, Entity, JulianDate, Math as CesiumMath, PolylineGraphics,
@@ -28,7 +32,8 @@ import type { components } from "../api/types.gen";
 import type { ResultsInfo } from "../stores/results";
 import type { ScenarioDoc } from "../stores/scenario";
 import { parseIsoUtc } from "../time/parse";
-import { accessKey, fetchAccessResult, type AccessDef, type IntervalsByAccess } from "../windows/TimelineView/rows";
+import { accessKey, accessResultsKey, fetchAccessResult, type AccessDef, type IntervalsByAccess } from "../windows/TimelineView/rows";
+import { accessFor, resolveAccessGraphics } from "./accessGraphics";
 import { cssColor, entityIdFor, fixedPositionAt, graphicsFor, type ApplyCtx } from "./graphics";
 import { lonLatPositions } from "./overlay2d";
 
@@ -54,7 +59,6 @@ const BOX_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(BOX_SVG
 
 const STATIC_PREFIX = "hl/static/";
 const BOX_PREFIX = "hl/box/";
-const HEX = /^#[0-9a-fA-F]{6}$/;
 
 // ---------- เวลาตัวอย่าง ----------
 
@@ -85,15 +89,14 @@ export interface HighlightOptions {
   color: string | null;
 }
 
-/** ตัวเลือก highlight ของ access ที่ต้องวาด ไม่ต้องวาด (ไม่ computed, inherit, ไม่มี graphics, Show ปิด, ปิดทั้งสองตัวเลือก) = null */
+/**
+ * ตัวเลือก highlight ของ access จากหน้าตาที่ใช้จริง (resolveAccessGraphics) ไม่ต้องวาด (ไม่ computed, inherit, ไม่มี graphics, Show ปิด,
+ * ปิดทั้งสองตัวเลือก) = null
+ */
 export function highlightOptions(access: AccessDef): HighlightOptions | null {
-  const g = access.graphics;
-  if (access.computed !== true || g === null || g === undefined || g.inherit !== false || g.show === false) return null;
-  const isStatic = g.static_highlight === true;
-  const animate = g.animate_highlight === true;
-  if (!isStatic && !animate) return null;
-  const custom = g.color_mode === "custom" && typeof g.custom_color === "string" && HEX.test(g.custom_color) ? g.custom_color.toLowerCase() : null;
-  return { static: isStatic, animate, color: custom };
+  const look = resolveAccessGraphics(access);
+  if (look === null || !look.show || (!look.staticHighlight && !look.animateHighlight)) return null;
+  return { static: look.staticHighlight, animate: look.animateHighlight, color: look.custom };
 }
 
 // ---------- ช่วงเวลาจากคำตอบของ server ----------
@@ -124,24 +127,28 @@ function mergeIntervals(list: readonly Interval[]): Interval[] {
 }
 
 interface Part {
-  intervals: Interval[];
-  /** สีที่ผู้ใช้เลือกของ access แรกที่เปิดตัวเลือกนี้ (null = สีของดาว) */
+  /** สีที่ผู้ใช้เลือก (null = สีของดาว) ส่วนหนึ่งต่อหนึ่งสี */
   color: string | null;
+  /** ลำดับของส่วนในดาวนี้ (ตามลำดับที่พบใน doc): 0 = ไม่มีส่วนต่อท้าย id อื่น = @<index> */
+  index: number;
+  static: Interval[];
+  animate: Interval[];
 }
 
 interface SatPlan {
   /** id ของ entity ดาว: sat/<PRN> */
   id: string;
   obj: SatelliteObj;
-  static?: Part;
-  animate?: Part;
+  /** กุญแจ = สี ("" = สีของดาว) */
+  parts: Map<string, Part>;
 }
 
-function addPart(part: Part | undefined, intervals: Interval[], color: string | null): Part {
-  return part === undefined ? { intervals: [...intervals], color } : { intervals: [...part.intervals, ...intervals], color: part.color };
-}
+const FACILITY = "*/Facility/";
 
-/** แผนวาดต่อ entity ดาว จาก access ที่ต้องวาดและคำตอบที่ได้ (access ที่ยังไม่มีคำตอบ หรือคำตอบไม่ ok ไม่มีส่วน) */
+/**
+ * แผนวาดต่อ entity ดาว จาก access ที่ต้องวาดและคำตอบที่ได้ (access ที่ยังไม่มีคำตอบ หรือคำตอบไม่ ok ไม่มีส่วน)
+ * ดาวของคำตอบใช้เฉพาะเมื่อ access นี้คือ accessFor ของคู่ (Facility, ดาว) นั้น
+ */
 function planOf(doc: ScenarioDoc, replies: IntervalsByAccess, prnByNorad: ReadonlyMap<number, string>): Map<string, SatPlan> {
   const satellites = new Map<string, SatelliteObj>();
   for (const obj of doc.objects) if (obj.class === "Satellite" && !satellites.has(obj.name)) satellites.set(obj.name, obj as SatelliteObj);
@@ -149,15 +156,18 @@ function planOf(doc: ScenarioDoc, replies: IntervalsByAccess, prnByNorad: Readon
   for (const access of doc.accesses ?? []) {
     const options = highlightOptions(access);
     const reply = replies[accessKey(access)];
-    if (options === null || reply === undefined || reply.status !== "ok") continue;
+    if (options === null || reply === undefined || reply.status !== "ok" || !access.from.startsWith(FACILITY)) continue;
     for (const [name, list] of Object.entries(reply.bySat)) {
       const obj = satellites.get(name);
       const id = obj === undefined ? undefined : entityIdFor(obj, prnByNorad);
-      if (obj === undefined || id === undefined) continue;
+      if (obj === undefined || id === undefined || accessFor(doc, access.from, name) !== access) continue;
       const intervals = parseIntervals(list);
-      const plan = plans.get(id) ?? { id, obj };
-      if (options.static) plan.static = addPart(plan.static, intervals, options.color);
-      if (options.animate) plan.animate = addPart(plan.animate, intervals, options.color);
+      const plan = plans.get(id) ?? { id, obj, parts: new Map<string, Part>() };
+      const key = options.color ?? "";
+      const part = plan.parts.get(key) ?? { color: options.color, index: plan.parts.size, static: [], animate: [] };
+      if (options.static) part.static.push(...intervals);
+      if (options.animate) part.animate.push(...intervals);
+      plan.parts.set(key, part);
       plans.set(id, plan);
     }
   }
@@ -177,16 +187,19 @@ function groundPoints(sat: Entity, times: readonly number[]): Cartesian3[] {
   return lonLatPositions(lonLat);
 }
 
-/** เส้น Static Highlight ของดาวหนึ่งดวง: หนึ่งเส้นต่อหนึ่งช่วง access (ช่วงที่มีตำแหน่งไม่ถึงสองจุดวาดเป็นเส้นไม่ได้ ข้าม) */
-function staticEntities(prn: string, sat: Entity, part: Part, color: string): Entity[] {
+/** ชื่อดาวใน id ของส่วนหนึ่ง: ส่วนแรก = PRN ส่วนถัดไป = PRN@<index> */
+const partName = (prn: string, part: Part): string => (part.index === 0 ? prn : `${prn}@${part.index}`);
+
+/** เส้น Static Highlight ของดาวหนึ่งดวงหนึ่งสี: หนึ่งเส้นต่อหนึ่งช่วง access (ช่วงที่มีตำแหน่งไม่ถึงสองจุดวาดเป็นเส้นไม่ได้ ข้าม) */
+function staticEntities(name: string, sat: Entity, intervals: readonly Interval[], color: string): Entity[] {
   const material = cssColor(color);
   const out: Entity[] = [];
-  for (const times of highlightTimes(mergeIntervals(part.intervals), STEP_MS)) {
+  for (const times of highlightTimes(mergeIntervals(intervals), STEP_MS)) {
     const points = groundPoints(sat, times);
     if (points.length < 2) continue;
     out.push(
       new Entity({
-        id: out.length === 0 ? `${STATIC_PREFIX}${prn}` : `${STATIC_PREFIX}${prn}/${out.length}`,
+        id: out.length === 0 ? `${STATIC_PREFIX}${name}` : `${STATIC_PREFIX}${name}/${out.length}`,
         polyline: new PolylineGraphics({
           positions: new ConstantProperty(points),
           width: STATIC_HIGHLIGHT_WIDTH,
@@ -199,11 +212,11 @@ function staticEntities(prn: string, sat: Entity, part: Part, color: string): En
   return out;
 }
 
-/** กรอบ Animate Highlight ของดาวหนึ่งดวง: availability = ช่วง access (รวมขอบ) ตำแหน่ง = property ของ entity ดาว */
-function boxEntity(prn: string, sat: Entity, part: Part, color: string): Entity | null {
+/** กรอบ Animate Highlight ของดาวหนึ่งดวงหนึ่งสี: availability = ช่วง access (รวมขอบ) ตำแหน่ง = property ของ entity ดาว */
+function boxEntity(name: string, sat: Entity, intervals: readonly Interval[], color: string): Entity | null {
   if (sat.position === undefined) return null;
   const availability = new TimeIntervalCollection();
-  for (const { start, stop } of mergeIntervals(part.intervals)) {
+  for (const { start, stop } of mergeIntervals(intervals)) {
     if (!Number.isFinite(start) || !Number.isFinite(stop) || stop < start) continue;
     availability.addInterval(
       new TimeInterval({
@@ -216,7 +229,7 @@ function boxEntity(prn: string, sat: Entity, part: Part, color: string): Entity 
   }
   if (availability.length === 0) return null;
   return new Entity({
-    id: `${BOX_PREFIX}${prn}`,
+    id: `${BOX_PREFIX}${name}`,
     availability,
     position: sat.position,
     billboard: new BillboardGraphics({ image: BOX_IMAGE, color: cssColor(color), width: BOX_SIZE, height: BOX_SIZE }),
@@ -233,18 +246,7 @@ const isHighlight = (id: string): boolean => id.startsWith("hl/");
  * ไม่มี doc หรือไม่มี access ที่ต้องวาด = ลบของเดิมอย่างเดียว
  */
 export function applyAccessHighlights(entities: EntityCollection, doc: ScenarioDoc | null, replies: IntervalsByAccess, ctx: ApplyCtx): void {
-  const built: Entity[] = [];
-  for (const plan of doc === null ? [] : planOf(doc, replies, ctx.prnByNorad).values()) {
-    const sat = entities.getById(plan.id);
-    const g = graphicsFor(plan.obj, doc as ScenarioDoc, { hidden: ctx.isHidden(plan.obj.norad), mode: ctx.mode, prnByNorad: ctx.prnByNorad, tokens: ctx.tokens });
-    if (sat === undefined || !g.show || !sat.show) continue;
-    const prn = plan.id.slice("sat/".length);
-    if (plan.static !== undefined) built.push(...staticEntities(prn, sat, plan.static, plan.static.color ?? g.color));
-    if (plan.animate !== undefined) {
-      const box = boxEntity(prn, sat, plan.animate, plan.animate.color ?? g.color);
-      if (box !== null) built.push(box);
-    }
-  }
+  const built = doc === null ? [] : buildHighlights(entities, doc, replies, ctx);
   const old = entities.values.filter((e) => isHighlight(e.id));
   if (old.length === 0 && built.length === 0) return;
   entities.suspendEvents();
@@ -254,6 +256,27 @@ export function applyAccessHighlights(entities: EntityCollection, doc: ScenarioD
   } finally {
     entities.resumeEvents();
   }
+}
+
+/** entity ของ highlight ทั้งหมดของ doc (ยังไม่ใส่ลง entities) */
+function buildHighlights(entities: EntityCollection, doc: ScenarioDoc, replies: IntervalsByAccess, ctx: ApplyCtx): Entity[] {
+  const built: Entity[] = [];
+  for (const plan of planOf(doc, replies, ctx.prnByNorad).values()) {
+    const sat = entities.getById(plan.id);
+    const g = graphicsFor(plan.obj, doc, { hidden: ctx.isHidden(plan.obj.norad), mode: ctx.mode, prnByNorad: ctx.prnByNorad, tokens: ctx.tokens });
+    if (sat === undefined || !g.show || !sat.show) continue;
+    const prn = plan.id.slice("sat/".length);
+    for (const part of plan.parts.values()) {
+      const name = partName(prn, part);
+      const color = part.color ?? g.color;
+      if (part.static.length > 0) built.push(...staticEntities(name, sat, part.static, color));
+      if (part.animate.length > 0) {
+        const box = boxEntity(name, sat, part.animate, color);
+        if (box !== null) built.push(box);
+      }
+    }
+  }
+  return built;
 }
 
 /** จำนวน highlight ที่มีอยู่ตอนนี้: เส้น Static (ทุกท่อน) และกรอบ Animate ที่อยู่ใน access ณ time (window.__gnssStudioTest.overlays2d) */
@@ -270,7 +293,12 @@ export function highlightCounts(entities: EntityCollection, time: JulianDate): {
 // ---------- ดึงช่วงเวลา ----------
 
 const NO_REPLIES: IntervalsByAccess = {};
-const facilityOf = (from: string): string => from.split("/").at(-1) ?? from;
+
+interface Replies {
+  /** scenario ที่คำตอบเป็นของ */
+  scenario: string | null;
+  replies: IntervalsByAccess;
+}
 
 /**
  * ตัวดึงช่วงเวลาของ access ที่ต้องวาด highlight (หน้าต่าง 2D หนึ่งบานต่อหนึ่งตัว) sync เรียกเมื่อ doc หรือผลลัพธ์เปลี่ยน: ดึงเมื่อกุญแจเปลี่ยนเท่านั้น
@@ -281,35 +309,30 @@ export class HighlightIntervals {
   private key: string | null = null;
   private ctl: AbortController | null = null;
   private disposed = false;
-  private current: IntervalsByAccess = NO_REPLIES;
+  /** scenario ล่าสุดที่ sync */
+  private scenario: string | null = null;
+  private current: Replies = { scenario: null, replies: NO_REPLIES };
   private running: Promise<void> = Promise.resolve();
 
   constructor(private readonly onChange: () => void) {}
 
-  /** คำตอบล่าสุดต่อ access (กุญแจ accessKey) */
+  /** คำตอบล่าสุดต่อ access (กุญแจ accessKey) ของ scenario ที่ sync ล่าสุด คำตอบของ scenario อื่น = ไม่มี (เหมือน useAccessIntervals) */
   get replies(): IntervalsByAccess {
-    return this.current;
+    return this.current.scenario === this.scenario ? this.current.replies : NO_REPLIES;
   }
 
   sync(scenario: string | null, doc: ScenarioDoc | null, info: ResultsInfo | null): void {
     if (this.disposed) return;
+    this.scenario = scenario;
     const wanted = scenario === null || doc === null ? [] : (doc.accesses ?? []).filter((a) => highlightOptions(a) !== null);
     if (scenario === null || wanted.length === 0) {
       this.key = null;
       this.ctl?.abort();
       this.ctl = null;
-      this.current = NO_REPLIES;
+      this.current = { scenario, replies: NO_REPLIES };
       return;
     }
-    const key = JSON.stringify([
-      scenario,
-      wanted.map((a) => [a.from, a.to, a.time_period ?? null]),
-      info?.ephem.status ?? null,
-      wanted.map((a) => {
-        const entry = info?.access[facilityOf(a.from)];
-        return [entry?.status ?? null, entry?.hash ?? null];
-      }),
-    ]);
+    const key = JSON.stringify([scenario, accessResultsKey(wanted, info)]);
     if (key === this.key) return;
     this.key = key;
     this.ctl?.abort();
@@ -318,14 +341,15 @@ export class HighlightIntervals {
     this.running = this.load(scenario, wanted, ctl);
   }
 
+  /** ไม่โยนต่อ: ผิดพลาดที่ไม่ใช่การยกเลิก (จากการดึงหรือ onChange) ลง console.error ไม่ปล่อยเป็น unhandled rejection */
   private async load(scenario: string, wanted: readonly AccessDef[], ctl: AbortController): Promise<void> {
     try {
       const entries = await Promise.all(wanted.map(async (a) => [a, await fetchAccessResult(scenario, a, ctl.signal)] as const));
       if (ctl.signal.aborted || this.disposed) return;
-      this.current = Object.fromEntries(entries.map(([a, result]) => [accessKey(a), result]));
+      this.current = { scenario, replies: Object.fromEntries(entries.map(([a, result]) => [accessKey(a), result])) };
       this.onChange();
     } catch (e) {
-      if (!isAbortError(e)) throw e;
+      if (!isAbortError(e)) console.error("access highlight intervals", e);
     }
   }
 

@@ -11,6 +11,7 @@
 // - applyGraphics ตั้งกราฟิกของ entity ใน data source ที่โหลดแล้ว ไม่โหลด CZML ใหม่: แก้ Properties แล้วเห็นทันที
 //   3D: จุด (marker style → ขนาดและขอบ), ป้ายชื่อ (ชื่อ object), เส้นทางเต็มหนึ่งรอบ (lead = trail = ครึ่งคาบที่ประมาณจากรัศมีเฉลี่ยของตัวอย่าง: passes.ts)
 //   ดาว Inertial by Window ไม่มี path ของ Cesium (Graphics3D วาด polyline จาก toInertial แทน) เส้น access ใช้ --color-access ถ้า access ไม่ได้ตั้งสีเอง
+// - เส้น access/<fac>/<PRN> วาดเฉพาะคู่ที่มี access ที่ Compute แล้วครอบคลุม (accessGraphics.ts: accessFor ต่อคู่ + resolveAccessGraphics) และเปิด Show กับ Show Animate Line
 //   ดาวในหน้าต่าง 3D ที่มีโมเดล (ctx.models, satModelGraphics.ts): entity.model + orientation แทนจุด (จุดถูกซ่อน ป้ายและเส้นทางคงเดิม)
 //   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
 //   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
@@ -23,6 +24,7 @@ import {
   PointGraphics, PolylineDashMaterialProperty, ReferenceFrame, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
+import { accessFor, resolveAccessGraphics } from "./accessGraphics";
 import { effectiveColor, objectPath, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
 import { applySatelliteModel, type SatModelSpec } from "./satModelGraphics";
@@ -335,13 +337,13 @@ export function entityLooks(doc: ScenarioDoc, ctx: ApplyCtx): Map<string, Entity
   return out;
 }
 
-/** ค่ากราฟิกของ access จาก Access tool: ไม่มีหรือ inherit = ใช้ค่าตั้งต้น (แสดง, สี --color-access) */
-function accessStyle(doc: ScenarioDoc, facility: string, tokens: ColorTokens): { show: boolean; color: string } {
-  const def = (doc.accesses ?? []).find((a) => a.from === `*/Facility/${facility}` || a.from === facility);
-  const g = def?.graphics;
-  if (g === null || g === undefined || g.inherit !== false) return { show: true, color: tokens.access };
-  const custom = g.color_mode === "custom" && typeof g.custom_color === "string" && g.custom_color !== "" ? g.custom_color : null;
-  return { show: (g.show ?? true) && (g.animate_line ?? true), color: custom ?? tokens.access };
+/**
+ * เส้น access ของคู่ (Facility, ดาว): access ที่ Compute แล้วของคู่นั้น (accessFor) ที่เปิด Show และ Show Animate Line สี = สีที่ผู้ใช้เลือก
+ * ไม่งั้น --color-access ไม่มี access ที่ Compute แล้ว = ไม่วาด (show false)
+ */
+function accessStyle(doc: ScenarioDoc, facility: string, satName: string | undefined, tokens: ColorTokens): { show: boolean; color: string } {
+  const look = satName === undefined ? null : resolveAccessGraphics(accessFor(doc, facility, satName));
+  return { show: look !== null && look.show && look.line, color: look?.custom ?? tokens.access };
 }
 
 /** ground track ของดาวในหน้าต่าง 2D: path ที่ lead/trail ตามหน้า Pass (ไม่มีช่วงวิเคราะห์หรือตัวอย่างตำแหน่ง = ซ่อน) */
@@ -410,7 +412,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         continue;
       }
       const [, facility, prn] = parts;
-      const look = accessStyle(doc, facility, tokens);
+      const look = accessStyle(doc, facility, looks.get(`sat/${prn}`)?.obj.name, tokens);
       entity.show = look.show && shown.has(`fac/${facility}`) && shown.has(`sat/${prn}`);
       if (entity.polyline !== undefined) {
         entity.polyline.material = new ColorMaterialProperty(cssColor(look.color));

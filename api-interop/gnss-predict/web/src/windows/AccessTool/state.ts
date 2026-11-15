@@ -46,8 +46,11 @@ export function accessForClass(doc: ScenarioDoc | null, from: string | null): Ac
 const pathsOf = (doc: ScenarioDoc, cls: "Facility" | "Satellite"): string[] =>
   doc.objects.filter((o) => o.class === cls).map((o) => `*/${cls}/${o.name}`);
 
-/** สมาชิกของแต่ละ Constellation (เฉพาะดาวที่มีอยู่ใน doc ไม่ซ้ำ ตามลำดับใน assigned_objects) เรียงตามลำดับ Constellation ใน doc */
-function constellations(doc: ScenarioDoc): [path: string, members: string[]][] {
+/**
+ * สมาชิกของแต่ละ Constellation (เฉพาะดาวที่มีอยู่ใน doc ไม่ซ้ำ ตามลำดับใน assigned_objects) เรียงตามลำดับ Constellation ใน doc
+ * ตัวขยาย Constellation ตัวเดียวของหน้าเว็บ (cesium/accessGraphics.ts ใช้ด้วย)
+ */
+export function constellations(doc: ScenarioDoc): [path: string, members: string[]][] {
   const satellites = new Set(pathsOf(doc, "Satellite"));
   return doc.objects
     .filter((o) => o.class === "Constellation")

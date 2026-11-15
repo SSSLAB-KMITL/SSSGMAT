@@ -7,7 +7,7 @@ import { msg } from "../../labels/messages.th";
 import { report } from "../../stores/messages";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
-import { accessKey, accessLabel, fetchAccessResult, isTimelineAccess, type IntervalsByAccess } from "./rows";
+import { accessKey, accessLabel, accessResultsKey, fetchAccessResult, isTimelineAccess, type IntervalsByAccess } from "./rows";
 
 const NO_REPLIES: IntervalsByAccess = {};
 
@@ -17,8 +17,6 @@ interface Replies {
   replies: IntervalsByAccess;
 }
 
-const facilityOf = (from: string): string => from.split("/").at(-1) ?? from;
-
 export function useAccessIntervals(): IntervalsByAccess {
   const name = useScenario((s) => s.name);
   const accesses = useScenario((s) => s.doc?.accesses);
@@ -26,16 +24,8 @@ export function useAccessIntervals(): IntervalsByAccess {
   const [state, setState] = useState<Replies>({ scenario: null, replies: NO_REPLIES });
 
   const wanted = useMemo(() => (accesses ?? []).filter(isTimelineAccess), [accesses]);
-  // access ที่ขอ (ตัวตนและช่วงเวลาที่ตัดผล) และสถานะของผล ephem กับสถานะ/hash ของ bundle ของ Facility ต้นทาง (bundle ของ access ผูกกับ ephem ที่ใช้คำนวณ
-  // จึงเปลี่ยนตามเมื่อ ephem เปลี่ยน): ตัวอักษรเท่าเดิม = ไม่ต้องดึงใหม่
-  const wantedKey = JSON.stringify(wanted.map((a) => [a.from, a.to, a.time_period ?? null]));
-  const resultsKey = JSON.stringify([
-    info?.ephem.status ?? null,
-    wanted.map((a) => {
-      const entry = info?.access[facilityOf(a.from)];
-      return [entry?.status ?? null, entry?.hash ?? null];
-    }),
-  ]);
+  // กติกาเดียวกับ highlight ของหน้าต่าง 2D (accessResultsKey): ตัวอักษรเท่าเดิม = ไม่ต้องดึงใหม่
+  const key = accessResultsKey(wanted, info);
 
   useEffect(() => {
     if (name === null || wanted.length === 0) {
@@ -59,7 +49,7 @@ export function useAccessIntervals(): IntervalsByAccess {
       }
     })();
     return () => ctl.abort();
-  }, [name, wantedKey, resultsKey]);
+  }, [name, key]);
 
   return state.scenario === name ? state.replies : NO_REPLIES;
 }

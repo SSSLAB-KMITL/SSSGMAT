@@ -6,7 +6,9 @@
 
 - `orbits/20261110T0000Z`   a copy of the engine's snapshot fixture (tests/fixtures/studio/snapshot)
 - `settings.json`           the daily job switched OFF, written before any server starts on this folder
-- `scenarios/E2E`           thbk-gnss, 2026-11-10T00:00Z .. 06:00Z, with results (propagate + analyze for THBK)
+- `scenarios/E2E`           thbk-gnss, 2026-11-10T00:00Z .. 06:00Z, with results (propagate + analyze for THBK) and
+                            its THBK access marked `computed: true` (as the daily job does), so access lines and
+                            Timeline rows are shown
 - `scenarios/E2E_NORES`     the same scenario without results
 - `scenarios/E2E_EMPTY`     the "empty" template
 
@@ -33,6 +35,7 @@ sys.path[:0] = [str(PKG_ROOT), str(PKG_ROOT / "server")]  # python -I does not l
 
 from gnss_predict import studio                          # noqa: E402
 from gnss_predict.propagate import Ephemeris             # noqa: E402
+from gnss_studio_server.daily import _mark_computed      # noqa: E402
 from gnss_studio_server.store import ScenarioStore       # noqa: E402
 from gnss_studio_server.templates import THBK, new_scenario  # noqa: E402
 
@@ -143,6 +146,10 @@ def build(out: Path) -> None:
     scenario_dir = out / "scenarios" / "E2E"
     studio.run_propagate(scenario_dir, out)
     studio.run_analyze(scenario_dir, "THBK", out)
+    # the web shows only computed accesses (STK semantics): mark them the way the daily job does after its analyze
+    messages = _mark_computed(out, "E2E", "THBK")
+    if messages:
+        raise SystemExit(f"could not mark the E2E access computed: {messages}")
 
 
 def main(argv: list[str]) -> int:

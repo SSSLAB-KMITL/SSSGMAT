@@ -96,6 +96,18 @@ describe("timelineRows", () => {
     expect(rows.map((r) => r.name)).toEqual(["HOME-To-G02"]);
   });
 
+  test("an access that is not computed gives no row even with a reply; once computed it gives its rows", () => {
+    const uncomputed = makeScenario([access({ computed: false }), access({ from: "*/Facility/HOME", computed: undefined })]);
+    expect(uncomputed.accesses!.map(isTimelineAccess)).toEqual([false, false]);
+    const replies = {
+      [accessKey(uncomputed.accesses![0])]: ok({ G01: [] }),
+      [accessKey(uncomputed.accesses![1])]: ok({ G02: [] }),
+    };
+    expect(timelineRows(uncomputed, replies, CTX)).toEqual([]);
+    const computed = makeScenario([access(), access({ from: "*/Facility/HOME" })]);
+    expect(timelineRows(computed, replies, CTX).map((r) => r.name)).toEqual(["THBK-To-G01", "HOME-To-G02"]);
+  });
+
   test("a reply that has not arrived yet gives no rows", () => {
     const doc = makeScenario([access()]);
     expect(timelineRows(doc, {}, CTX)).toEqual([]);

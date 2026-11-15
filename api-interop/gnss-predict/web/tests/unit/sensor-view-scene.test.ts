@@ -220,9 +220,9 @@ describe("Camera display of a Sensor View", () => {
     return out.sort();
   };
 
-  /** doc ของ S1: Sensor1 บน G01, Sensor2 บน G02, G05 ปิด Show ของหน้า 3D */
+  /** doc ของ S1: Sensor1 บน G01, Sensor2 บน G02, G05 ปิด Show ของหน้า 3D, access THBK → GPS ที่ Compute แล้ว (เส้น access ของ G01 วาดได้) */
   function scenarioDoc() {
-    const doc = makeScenarioDoc({}, { G01: ["Sensor1"], G02: ["Sensor2"] });
+    const doc = makeScenarioDoc({ accesses: [{ from: "*/Facility/THBK", to: ["*/Constellation/GPS"], computed: true }] as never }, { G01: ["Sensor1"], G02: ["Sensor2"] });
     for (const o of doc.objects as { name: string; graphics3d?: unknown }[]) if (o.name === "G05") o.graphics3d = { show: false };
     return doc;
   }

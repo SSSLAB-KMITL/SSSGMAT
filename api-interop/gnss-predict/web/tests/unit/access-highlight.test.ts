@@ -220,6 +220,43 @@ describe("static highlight", () => {
     expect(positionsOf(byId(entities, "hl/static/G01"))).toHaveLength(11); // GIVEN[0]..GIVEN[1] ครั้งเดียว
   });
 
+  test("two facilities with different colours on one satellite give one entity each, in each facility's own colour", async () => {
+    const entities = await entitiesOf();
+    const a = access({}, { animate_highlight: true, color_mode: "custom", custom_color: "#aa0000" });
+    const b = access({ from: "*/Facility/OTHER", to: ["*/Satellite/G01"] }, { animate_highlight: true, color_mode: "custom", custom_color: "#0000bb" });
+    const doc = docOf([a, b], [fac("THBK"), fac("OTHER"), con("GPS", ["G01", "E05"]), sat("G01", 62339), sat("E05", 40128)]);
+    const second: [number, number] = [T0S + 2 * HOUR, T0S + 2 * HOUR + 300];
+    const replies = { ...repliesFor(a, { G01: [GIVEN] }), ...repliesFor(b, { G01: [second] }) };
+    applyAccessHighlights(entities, doc, replies, ctx);
+    const ids = hlIds(entities);
+    expect(ids.filter((id) => id.startsWith("hl/static/"))).toHaveLength(2);
+    expect(ids.filter((id) => id.startsWith("hl/box/"))).toHaveLength(2);
+    const lineColor = (e: Entity): string => (e.polyline!.material as ColorMaterialProperty).color!.getValue(at(T0S)).toCssHexString();
+    const boxColor = (e: Entity): string => e.billboard!.color!.getValue(at(T0S)).toCssHexString();
+    const lines = entities.values.filter((e) => e.id.startsWith("hl/static/"));
+    const boxes = entities.values.filter((e) => e.id.startsWith("hl/box/"));
+    // เส้นของ THBK อยู่ที่ช่วงแรก (11 จุด) สีแดง ของ OTHER อยู่ที่ช่วงที่สอง (6 จุด) สีน้ำเงิน: ไม่รวมช่วงข้ามสีกัน
+    expect(lines.map((e) => [positionsOf(e).length, lineColor(e)]).sort()).toEqual([[11, "#aa0000"], [6, "#0000bb"]].sort());
+    const boxOf = (color: string) => boxes.find((e) => boxColor(e) === color)!;
+    expect(boxOf("#aa0000").availability!.contains(at(GIVEN[0] + 10))).toBe(true);
+    expect(boxOf("#aa0000").availability!.contains(at(second[0] + 10))).toBe(false);
+    expect(boxOf("#0000bb").availability!.contains(at(second[0] + 10))).toBe(true);
+    expect(boxOf("#0000bb").availability!.contains(at(GIVEN[0] + 10))).toBe(false);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("of two computed accesses of one facility covering a satellite, the explicit Satellite one decides its highlight", async () => {
+    const entities = await entitiesOf();
+    const viaCon = access({}, { animate_highlight: false, color_mode: "custom", custom_color: "#aa0000" });
+    const viaSat = access({ to: ["*/Satellite/G01"] }, { animate_highlight: false, color_mode: "custom", custom_color: "#0000bb" });
+    const replies = { ...repliesFor(viaCon, { G01: [GIVEN], E05: [GIVEN] }), ...repliesFor(viaSat, { G01: [GIVEN] }) };
+    applyAccessHighlights(entities, docOf([viaSat, viaCon]), replies, ctx);
+    const color = (id: string): string => (byId(entities, id).polyline!.material as ColorMaterialProperty).color!.getValue(at(T0S)).toCssHexString();
+    expect(hlIds(entities)).toEqual(["hl/static/E05", "hl/static/G01"]);
+    expect(color("hl/static/G01")).toBe("#0000bb");
+    expect(color("hl/static/E05")).toBe("#aa0000");
+  });
+
   test("a track that crosses the 180° meridian stays one line through the same samples (Cesium cuts geometry polylines at the meridian in 2D itself)", () => {
     const entities = new EntityCollection();
     const position = new SampledPositionProperty(FIXED);
@@ -472,6 +509,43 @@ describe("HighlightIntervals: fetching the access intervals the highlights need"
     await new Promise((r) => setTimeout(r, 0));
     expect(Object.values(source.replies)[0]).toMatchObject({ status: "ok", bySat: { G01: [] } });
     expect(changes).toHaveBeenCalledTimes(1);
+  });
+
+  test("replies of scenario X are not handed out (nor drawn) after switching to scenario Y with the same access", async () => {
+    const slow = deferred<{ json: unknown }>();
+    const stub = stubFetch({
+      [ROUTE]: { json: INTERVALS },
+      "GET /api/scenarios/S2/access/intervals": () => slow.promise,
+    });
+    const a = access();
+    source.sync("S1", docOf([a]), info("h1"));
+    await source.idle();
+    expect(source.replies[accessKey(a)]).toMatchObject({ status: "ok" });
+
+    source.sync("S2", docOf([a]), info("h1")); // กุญแจ access เดียวกัน คำตอบของ S2 ยังไม่มา
+    expect(stub.count("GET /api/scenarios/S2/access/intervals")).toBe(1);
+    expect(source.replies).toEqual({});
+    const entities = await entitiesOf();
+    applyAccessHighlights(entities, docOf([a]), source.replies, ctx);
+    expect(hlIds(entities)).toEqual([]);
+
+    slow.resolve({ json: { E05: INTERVALS.G01 } });
+    await source.idle();
+    expect(Object.keys((source.replies[accessKey(a)] as { bySat: object }).bySat)).toEqual(["E05"]);
+  });
+
+  test("an error thrown by onChange is logged, not left as an unhandled rejection", async () => {
+    stubFetch({ [ROUTE]: { json: INTERVALS } });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const throwing = new HighlightIntervals(() => {
+      throw new Error("boom");
+    });
+    throwing.sync("S1", docOf([access()]), info("h1"));
+    await expect(throwing.idle()).resolves.toBeUndefined();
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(String(errors.mock.calls[0].at(-1))).toContain("boom");
+    throwing.dispose();
+    errors.mockRestore();
   });
 
   test("409 RESULTS_NOT_CURRENT is a notCurrent reply (no highlight until the results are current again)", async () => {

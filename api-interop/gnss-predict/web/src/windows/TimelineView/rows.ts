@@ -1,6 +1,7 @@
 // แถวของ Timeline View (spec §10): จาก access ที่เปิด Timeline ใน scenario + ช่วงเวลาที่ server ตอบ (GET /access/intervals)
 //
-// - หนึ่งคำขอต่อหนึ่ง access ที่ `timeline` ไม่เป็น false (ค่าตั้งต้นของ server = true): from + to ทุกตัวของมัน
+// - หนึ่งคำขอต่อหนึ่ง access ที่ Compute แล้ว (`computed: true` แบบ STK: Clear แล้วหายจาก Timeline) และ `timeline` ไม่เป็น false
+//   (ค่าตั้งต้นของ server = true): from + to ทุกตัวของมัน
 //   server ตอบ `{ชื่อดาว: [{start, stop, duration_s, max_el_deg}]}` ต่อดาวที่ขยายแล้ว (Constellation ขยายเป็นสมาชิกที่ไม่ถูกซ่อน)
 // - ชื่อแถว `<ชื่อ object ต้นทาง>-To-<ชื่อดาว>` (THBK-To-G01) เรียงตาม access แล้วตามลำดับดาวในคำตอบ
 // - 409 RESULTS_NOT_CURRENT (ผลของ Facility ต้นทางไม่ตรงหรือยังไม่มี) = แถวว่างหนึ่งแถวต่อ access พร้อมหมายเหตุไทย (เส้นทแยงบนจอ)
@@ -12,6 +13,7 @@ import { ApiError, apiGet, errorText, isAbortError } from "../../api/client";
 import type { components } from "../../api/types.gen";
 import { effectiveColor, themeTokens, type ColorCtx } from "../../cesium/colors";
 import { msg } from "../../labels/messages.th";
+import type { ResultsInfo } from "../../stores/results";
 import type { ScenarioDoc } from "../../stores/scenario";
 import { parseIsoUtc } from "../../time/parse";
 
@@ -48,14 +50,30 @@ export type AccessResult =
 /** กุญแจ = accessKey(access) */
 export type IntervalsByAccess = Record<string, AccessResult>;
 
-/** access ที่เป็นแถวใน Timeline: `timeline` ไม่เป็น false (server ตั้งต้น true) */
-export const isTimelineAccess = (a: AccessDef): boolean => a.timeline !== false;
+/** access ที่เป็นแถวใน Timeline: Compute แล้ว (`computed: true`) และ `timeline` ไม่เป็น false (server ตั้งต้น true) */
+export const isTimelineAccess = (a: AccessDef): boolean => a.computed === true && a.timeline !== false;
 
 /** กุญแจของ access หนึ่งตัว: from + to (server ถือเป็นตัวตนของ access) */
 export const accessKey = (a: Pick<AccessDef, "from" | "to">): string => JSON.stringify([a.from, a.to]);
 
 // ชื่อ object ของ path ("*/Facility/THBK" -> THBK)
 const nameOf = (path: string): string => path.split("/").at(-1) ?? path;
+
+/**
+ * กุญแจของการดึงช่วงเวลาของชุด access (Timeline View และ highlight ของหน้าต่าง 2D ใช้ตัวเดียวกัน): access ที่ขอ (from, to, ช่วงที่ตัดผล)
+ * สถานะของผล ephem และสถานะ/hash ของ bundle ของ Facility ต้นทาง (bundle ของ access ผูกกับ ephem ที่ใช้คำนวณจึงเปลี่ยนตามเมื่อ ephem เปลี่ยน)
+ * ตัวอักษรเท่าเดิม = ไม่ต้องดึงใหม่ ค่าที่ไม่กระทบช่วงเวลา (สี, Show) ไม่อยู่ในกุญแจ
+ */
+export function accessResultsKey(wanted: readonly AccessDef[], info: ResultsInfo | null): string {
+  return JSON.stringify([
+    wanted.map((a) => [a.from, a.to, a.time_period ?? null]),
+    info?.ephem.status ?? null,
+    wanted.map((a) => {
+      const entry = info?.access[nameOf(a.from)];
+      return [entry?.status ?? null, entry?.hash ?? null];
+    }),
+  ]);
+}
 
 /** ชื่อของ access ทั้งตัว `THBK-To-GPS` (ปลายทางหลายตัวคั่นด้วย ,) ใช้เป็นชื่อแถวที่ไม่มีช่วงเวลาและในข้อความถึงผู้ใช้ */
 export const accessLabel = (a: Pick<AccessDef, "from" | "to">): string => `${nameOf(a.from)}-To-${a.to.map(nameOf).join(",")}`;
