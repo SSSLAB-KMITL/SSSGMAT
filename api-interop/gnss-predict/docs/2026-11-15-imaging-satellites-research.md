@@ -12,16 +12,16 @@
 
 ค่าความสูงวงโคจรจริง (Actual Mean Altitude) และองค์ประกอบวงโคจรด้านล่างคำนวณโดยตรงจากเรคคอร์ด OMM ล่าสุดในแคช `/Users/phuwish/SSSGMAT/api-interop/gnss-predict/data/orbits/_cache/*20261112T0719Z.json` เทียบกับค่า $R_E = 6371.0088\text{ km}$ (`web/src/cesium/swath.ts:12`) และ $\mu = 398600.4418\text{ km}^3/\text{s}^2$
 
-| # | ชื่อดาวเทียม | NORAD ID | COSPAR ID (`OBJECT_ID`) | ประเภทวงโคจร & ตำแหน่งสำคัญ | ความสูงตามสเปก (Nominal) | ความสูงเฉลี่ยในแคช OMM (min–max) | ความเอียงวงโคจร (`INCLINATION`) | CelesTrak Groups (ตามเอกสาร CelesTrak) |
-|---|---|---|---|---|---|---|---|---|
-| 1 | **Himawari-9** | `41836` | `2016-064A` | GEO (~140.7°E, JMA) | ~35,786 km | 35,785.53 km (35,781.81–35,789.24) | 0.0379° | `weather`, `geo` |
-| 2 | **GOES-18** (`GOES 18`) | `51850` | `2022-021A` | GEO (~137.0°W / GOES-West, NOAA) | ~35,786 km | 35,787.59 km (35,787.20–35,787.98) | 0.0047° | `weather`, `goes`, `geo` |
-| 3 | **GOES-19** (`GOES 19`) | `60133` | `2024-119A` | GEO (~75.2°W / GOES-East, NOAA) | ~35,786 km | 35,786.45 km (35,783.72–35,789.18) | 0.0097° | `weather`, `goes`, `geo` |
-| 4 | **Terra** | `25994` | `1999-068A` | LEO Sun-Synchronous (Descending ~10:30 LT) | 705 km (เดิม) | **689.32 km** (686.84–691.79)* | 97.9268° | `science`, `resource`, `visual` |
-| 5 | **Aqua** | `27424` | `2002-022A` | LEO Sun-Synchronous (Ascending ~13:30 LT) | 705 km (เดิม) | **685.84 km** (685.07–686.61)* | 98.4488° | `science` (ปกติ), `resource`, `visual` |
-| 6 | **Suomi NPP** | `37849` | `2011-061A` | LEO Sun-Synchronous (Ascending ~13:30 LT) | ~824 km | 826.90 km (826.41–827.39) | 98.8113° | `weather`, `noaa`, `resource` |
-| 7 | **NOAA-20** (`NOAA 20 (JPSS-1)`) | `43013` | `2017-073A` | LEO Sun-Synchronous (Ascending ~13:30 LT, 180° จาก SNPP) | ~824–833 km | 826.92 km (826.13–827.71) | 98.7922° | `weather`, `noaa`, `resource` |
-| 8 | **NOAA-21** (`NOAA 21 (JPSS-2)`) | `54234` | `2022-150A` | LEO Sun-Synchronous (Ascending ~13:30 LT, 90° เฟส JPSS) | ~824–833 km | 826.85 km (824.97–828.72) | 98.7202° | `weather`, `noaa`, `resource` |
+| #   | ชื่อดาวเทียม                     | NORAD ID | COSPAR ID (`OBJECT_ID`) | ประเภทวงโคจร & ตำแหน่งสำคัญ                              | ความสูงตามสเปก (Nominal) | ความสูงเฉลี่ยในแคช OMM (min–max)   | ความเอียงวงโคจร (`INCLINATION`) | CelesTrak Groups (ตามเอกสาร CelesTrak) |
+| --- | -------------------------------- | -------- | ----------------------- | -------------------------------------------------------- | ------------------------ | ---------------------------------- | ------------------------------- | -------------------------------------- |
+| 1   | **Himawari-9**                   | `41836`  | `2016-064A`             | GEO (~140.7°E, JMA)                                      | ~35,786 km               | 35,785.53 km (35,781.81–35,789.24) | 0.0379°                         | `weather`, `geo`                       |
+| 2   | **GOES-18** (`GOES 18`)          | `51850`  | `2022-021A`             | GEO (~137.0°W / GOES-West, NOAA)                         | ~35,786 km               | 35,787.59 km (35,787.20–35,787.98) | 0.0047°                         | `weather`, `goes`, `geo`               |
+| 3   | **GOES-19** (`GOES 19`)          | `60133`  | `2024-119A`             | GEO (~75.2°W / GOES-East, NOAA)                          | ~35,786 km               | 35,786.45 km (35,783.72–35,789.18) | 0.0097°                         | `weather`, `goes`, `geo`               |
+| 4   | **Terra**                        | `25994`  | `1999-068A`             | LEO Sun-Synchronous (Descending ~10:30 LT)               | 705 km (เดิม)            | **689.32 km** (686.84–691.79)\*    | 97.9268°                        | `science`, `resource`, `visual`        |
+| 5   | **Aqua**                         | `27424`  | `2002-022A`             | LEO Sun-Synchronous (Ascending ~13:30 LT)                | 705 km (เดิม)            | **685.84 km** (685.07–686.61)\*    | 98.4488°                        | `science` (ปกติ), `resource`, `visual` |
+| 6   | **Suomi NPP**                    | `37849`  | `2011-061A`             | LEO Sun-Synchronous (Ascending ~13:30 LT)                | ~824 km                  | 826.90 km (826.41–827.39)          | 98.8113°                        | `weather`, `noaa`, `resource`          |
+| 7   | **NOAA-20** (`NOAA 20 (JPSS-1)`) | `43013`  | `2017-073A`             | LEO Sun-Synchronous (Ascending ~13:30 LT, 180° จาก SNPP) | ~824–833 km              | 826.92 km (826.13–827.71)          | 98.7922°                        | `weather`, `noaa`, `resource`          |
+| 8   | **NOAA-21** (`NOAA 21 (JPSS-2)`) | `54234`  | `2022-150A`             | LEO Sun-Synchronous (Ascending ~13:30 LT, 90° เฟส JPSS)  | ~824–833 km              | 826.85 km (824.97–828.72)          | 98.7202°                        | `weather`, `noaa`, `resource`          |
 
 > **หมายเหตุสำคัญด้านวงโคจร (`Terra` & `Aqua`):** จากข้อมูล OMM จริงในแคช ปัจจุบันทั้ง **Terra** (689.3 km) และ **Aqua** (685.8 km) อยู่ในช่วงลดระดับ/ปล่อยวงโคจรลอย (orbit-lowering / drifting phase) ต่ำกว่าความสูงดั้งเดิม 705 km แล้ว ส่งผลให้คาบโคจรเร็วขึ้น (`MEAN_MOTION` ~14.61–14.62 rev/day) และความกว้างแถบภาพ (swath width) ที่มุมสแกนเท่าเดิมแคบลงเล็กน้อยเมื่อเทียบกับสเปก 705 km (ดูรายละเอียดในหัวข้อ 2)
 
@@ -30,6 +30,7 @@
 ### 1.2 กลุ่ม CelesTrak ที่แอปโหลดในปัจจุบัน vs สิ่งที่มีจริงใน `_cache`
 
 #### กลไกการดาวน์โหลดในโค้ดปัจจุบัน
+
 1. **`gnss_predict/config.py:42-46`** กำหนดเฉพาะกลุ่ม GNSS 4 กลุ่ม:
    ```python
    GNSS_GROUPS: dict[str, str] = {"G": "gps-ops", "R": "glo-ops", "E": "galileo", "C": "beidou"}
@@ -41,6 +42,7 @@
 3. **`gnss_predict/studio.py:174-264`** (`_system_letters`, `fetch_snapshot`, `_snapshot`, `_files_sha256`) อ่านและดาวน์โหลด **เฉพาะกลุ่มใน `GNSS_GROUPS` (`G/R/E/C`)** เท่านั้น ไม่มีโค้ดชุดใดใน `gnss_predict/` หรือ `server/gnss_studio_server/` ที่สั่งดาวน์โหลด `weather`, `goes`, `resource`, `noaa`, `science` หรือ `visual` ใน workflow ปัจจุบัน
 
 #### ผลตรวจแคช `/Users/phuwish/SSSGMAT/api-interop/gnss-predict/data/orbits/_cache` (Read-Only Inspection)
+
 ตรวจสอบด้วย `python3 -I` ณ เวลาอ้างอิงระบบ **`2026-11-14T20:38:11.248782+00:00` (UTC)**:
 
 - **ไฟล์ทั้งหมดที่มีอยู่ใน `_cache`:** ไม่มีไฟล์ `.txt` เลย ทุกไฟล์เป็น JSON OMM ของ CelesTrak ได้แก่:
@@ -59,16 +61,16 @@
 - **ไฟล์ที่ไม่มีใน `_cache`:** **ไม่มี** `goes_*.json`, `resource_*.json`, `noaa_*.json`
 - **ความครอบคลุมจริงในแคชปัจจุบัน:** แม้จะไม่มี `goes`, `resource`, `noaa` **แต่ดาวเทียมทั้ง 8 ดวงมีอยู่ในแคชปัจจุบันครบ 100% แล้ว** ผ่านกลุ่ม `weather` (6 ดวง) + `science` (Terra) + `visual` (Terra และ Aqua):
 
-| ดาวเทียม | ไฟล์แคชล่าสุดที่พบ & ตำแหน่ง (`index`) | `OBJECT_NAME` ในไฟล์ | `NORAD_CAT_ID` | `OBJECT_ID` | `EPOCH` (UTC) | อายุ TLE ณ `2026-11-14T20:38:11Z` | หมายเหตุ |
-|---|---|---|---|---|---|---|---|
-| Himawari-9 | `weather_20261112T0719Z.json` `[20]` | `HIMAWARI-9` | `41836` | `2016-064A` | `2026-11-09T21:50:26.738016` | **118.80 ชม. (4.95 วัน)** | เกิน `AGE_OK_DAYS=2.0` แต่ยังอยู่ใน 7 วัน |
-| GOES-18 | `weather_20261112T0719Z.json` `[40]` | `GOES 18` | `51850` | `2022-021A` | `2026-11-10T12:10:42.058272` | **104.46 ชม. (4.35 วัน)** | เกิน `AGE_OK_DAYS=2.0` แต่ยังอยู่ใน 7 วัน |
-| GOES-19 | `weather_20261112T0719Z.json` `[69]` | `GOES 19` | `60133` | `2024-119A` | `2026-11-11T20:42:18.141408` | **71.93 ชม. (3.00 วัน)** | |
-| Terra | `science_20261112T0719Z.json` `[5]`, `visual_20261112T0719Z.json` `[102]` | `TERRA` | `25994` | `1999-068A` | `2026-11-11T21:18:07.605792` | **71.33 ชม. (2.97 วัน)** | ระวัง: `cubesat[77]` คือ `ROBUSTA-3A (MEDITERRANEE)` (NORAD `60243`) ไม่ใช่ Terra |
-| Aqua | **`visual_20261112T0719Z.json` `[107]`** (ไม่อยู่ใน `science` หรือ `weather`) | `AQUA` | `27424` | `2002-022A` | `2026-11-11T22:13:04.678176` | **70.42 ชม. (2.93 วัน)** | ในแคชปัจจุบันมีใน `visual` เท่านั้น; ในอนาคตควรดึง `resource` เพิ่มเพราะ `visual` เป็นกลุ่ม 100 Brightest |
-| Suomi NPP | `weather_20261112T0719Z.json` `[8]` | `SUOMI NPP` | `37849` | `2011-061A` | `2026-11-11T22:29:17.211264` | **70.15 ชม. (2.92 วัน)** | |
-| NOAA-20 | `weather_20261112T0719Z.json` `[31]` | `NOAA 20 (JPSS-1)` | `43013` | `2017-073A` | `2026-11-11T21:07:55.549920` | **71.50 ชม. (2.98 วัน)** | |
-| NOAA-21 | `weather_20261112T0719Z.json` `[41]` | `NOAA 21 (JPSS-2)` | `54234` | `2022-150A` | `2026-11-11T20:10:18.639264` | **72.46 ชม. (3.02 วัน)** | |
+| ดาวเทียม   | ไฟล์แคชล่าสุดที่พบ & ตำแหน่ง (`index`)                                        | `OBJECT_NAME` ในไฟล์ | `NORAD_CAT_ID` | `OBJECT_ID` | `EPOCH` (UTC)                | อายุ TLE ณ `2026-11-14T20:38:11Z` | หมายเหตุ                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------- | -------------------- | -------------- | ----------- | ---------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Himawari-9 | `weather_20261112T0719Z.json` `[20]`                                          | `HIMAWARI-9`         | `41836`        | `2016-064A` | `2026-11-09T21:50:26.738016` | **118.80 ชม. (4.95 วัน)**         | เกิน `AGE_OK_DAYS=2.0` แต่ยังอยู่ใน 7 วัน                                                                 |
+| GOES-18    | `weather_20261112T0719Z.json` `[40]`                                          | `GOES 18`            | `51850`        | `2022-021A` | `2026-11-10T12:10:42.058272` | **104.46 ชม. (4.35 วัน)**         | เกิน `AGE_OK_DAYS=2.0` แต่ยังอยู่ใน 7 วัน                                                                 |
+| GOES-19    | `weather_20261112T0719Z.json` `[69]`                                          | `GOES 19`            | `60133`        | `2024-119A` | `2026-11-11T20:42:18.141408` | **71.93 ชม. (3.00 วัน)**          |                                                                                                           |
+| Terra      | `science_20261112T0719Z.json` `[5]`, `visual_20261112T0719Z.json` `[102]`     | `TERRA`              | `25994`        | `1999-068A` | `2026-11-11T21:18:07.605792` | **71.33 ชม. (2.97 วัน)**          | ระวัง: `cubesat[77]` คือ `ROBUSTA-3A (MEDITERRANEE)` (NORAD `60243`) ไม่ใช่ Terra                         |
+| Aqua       | **`visual_20261112T0719Z.json` `[107]`** (ไม่อยู่ใน `science` หรือ `weather`) | `AQUA`               | `27424`        | `2002-022A` | `2026-11-11T22:13:04.678176` | **70.42 ชม. (2.93 วัน)**          | ในแคชปัจจุบันมีใน `visual` เท่านั้น; ในอนาคตควรดึง `resource` เพิ่มเพราะ `visual` เป็นกลุ่ม 100 Brightest |
+| Suomi NPP  | `weather_20261112T0719Z.json` `[8]`                                           | `SUOMI NPP`          | `37849`        | `2011-061A` | `2026-11-11T22:29:17.211264` | **70.15 ชม. (2.92 วัน)**          |                                                                                                           |
+| NOAA-20    | `weather_20261112T0719Z.json` `[31]`                                          | `NOAA 20 (JPSS-1)`   | `43013`        | `2017-073A` | `2026-11-11T21:07:55.549920` | **71.50 ชม. (2.98 วัน)**          |                                                                                                           |
+| NOAA-21    | `weather_20261112T0719Z.json` `[41]`                                          | `NOAA 21 (JPSS-2)`   | `54234`        | `2022-150A` | `2026-11-11T20:10:18.639264` | **72.46 ชม. (3.02 วัน)**          |                                                                                                           |
 
 > **ข้อสังเกตจากการตรวจแคช:** หากเพิ่มกลุ่ม **`weather` + `resource` + `science`** (และ option `goes` / `noaa` / `visual`) จะครอบคลุมทั้ง 8 ดวงอย่างเสถียรกว่าการพึ่ง `visual` เพียงอย่างเดียวสำหรับ Aqua เพราะกลุ่ม `resource` เป็นกลุ่ม Earth Resources ทางการของ CelesTrak สำหรับ EOS (`Terra`, `Aqua`, `Landsat`, ฯลฯ) และ `weather` ครอบคลุม JPSS + GEO หลักทั้งหมด
 
@@ -78,13 +80,13 @@
 
 ### 2.1 ข้อมูลกล้องหลักและกล้องรอง
 
-| ดาวเทียม | กล้องหลัก (Primary Imager) | กลไกการสแกน & ช่องสัญญาณ | ความกว้างภาพ (Swath / Frame) | กล้อง/อุปกรณ์รองที่สำคัญ |
-|---|---|---|---|---|
-| **Himawari-9** | **AHI** (Advanced Himawari Imager) | 2-axis scan mirror, 16 bands (0.47–13.3 µm), 0.5 km (Red B3), 1–2 km (VNIR/IR), Full Disk ทุก 10 นาที | **Full Disk** ($17.76^\circ \times 17.76^\circ$ scan frame ครอบคลุมจานโลกทั้งหมด) | **SEDA** (Space Environment Data Acquisition Monitor) |
-| **GOES-18, GOES-19** | **ABI** (Advanced Baseline Imager) | 2-axis scan mirror, 16 bands (0.47–13.3 µm), 0.5 km (Red B2), 1–2 km (VNIR/IR), Mode 6 Full Disk ทุก 10 นาที | **Full Disk** ($17.76^\circ \times 17.76^\circ$ / East-West & North-South $\pm 8.88^\circ$) | **GLM** (Geostationary Lightning Mapper), **SUVI**, **EXIS**, **SEISS**, **MAG** |
-| **Terra** | **MODIS** (Moderate Resolution Imaging Spectroradiometer) | Cross-track whiskbroom paddle mirror ($\pm 55.0^\circ$), 36 bands (0.4–14.4 µm), 250 m / 500 m / 1 km | **2,330 km** (ณ $h=705\text{ km}$); แถบสแกนตามแนวบิน (along-track) 10 km ที่ nadir | **ASTER** (90–15 m, swath 60 km), **CERES**, **MISR** (360 km), **MOPITT** |
-| **Aqua** | **MODIS** | สเปกเดียวกับ MODIS บน Terra | **2,330 km** (ณ $h=705\text{ km}$); along-track 10 km ที่ nadir | **AIRS** ($\pm 49.5^\circ$, ~1,650 km), **AMSU-A**, **CERES** |
-| **Suomi NPP, NOAA-20, NOAA-21** | **VIIRS** (Visible Infrared Imaging Radiometer Suite) | Cross-track whiskbroom rotating telescope assembly ($\pm 56.28^\circ$), 22 bands (375 m I-bands, 750 m M-bands + Day/Night Band) | **3,040–3,060 km** (ที่ 824–830 km; คำนวณได้ 3,038 km ที่ $h=824$, 3,052 km ที่ $h=826.9$, 3,082 km ที่ $h=833$) | **CrIS**, **ATMS**, **OMPS** (และ **CERES** บน Suomi NPP & NOAA-20) |
+| ดาวเทียม                        | กล้องหลัก (Primary Imager)                                | กลไกการสแกน & ช่องสัญญาณ                                                                                                         | ความกว้างภาพ (Swath / Frame)                                                                                     | กล้อง/อุปกรณ์รองที่สำคัญ                                                         |
+| ------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Himawari-9**                  | **AHI** (Advanced Himawari Imager)                        | 2-axis scan mirror, 16 bands (0.47–13.3 µm), 0.5 km (Red B3), 1–2 km (VNIR/IR), Full Disk ทุก 10 นาที                            | **Full Disk** ($17.76^\circ \times 17.76^\circ$ scan frame ครอบคลุมจานโลกทั้งหมด)                                | **SEDA** (Space Environment Data Acquisition Monitor)                            |
+| **GOES-18, GOES-19**            | **ABI** (Advanced Baseline Imager)                        | 2-axis scan mirror, 16 bands (0.47–13.3 µm), 0.5 km (Red B2), 1–2 km (VNIR/IR), Mode 6 Full Disk ทุก 10 นาที                     | **Full Disk** ($17.76^\circ \times 17.76^\circ$ / East-West & North-South $\pm 8.88^\circ$)                      | **GLM** (Geostationary Lightning Mapper), **SUVI**, **EXIS**, **SEISS**, **MAG** |
+| **Terra**                       | **MODIS** (Moderate Resolution Imaging Spectroradiometer) | Cross-track whiskbroom paddle mirror ($\pm 55.0^\circ$), 36 bands (0.4–14.4 µm), 250 m / 500 m / 1 km                            | **2,330 km** (ณ $h=705\text{ km}$); แถบสแกนตามแนวบิน (along-track) 10 km ที่ nadir                               | **ASTER** (90–15 m, swath 60 km), **CERES**, **MISR** (360 km), **MOPITT**       |
+| **Aqua**                        | **MODIS**                                                 | สเปกเดียวกับ MODIS บน Terra                                                                                                      | **2,330 km** (ณ $h=705\text{ km}$); along-track 10 km ที่ nadir                                                  | **AIRS** ($\pm 49.5^\circ$, ~1,650 km), **AMSU-A**, **CERES**                    |
+| **Suomi NPP, NOAA-20, NOAA-21** | **VIIRS** (Visible Infrared Imaging Radiometer Suite)     | Cross-track whiskbroom rotating telescope assembly ($\pm 56.28^\circ$), 22 bands (375 m I-bands, 750 m M-bands + Day/Night Band) | **3,040–3,060 km** (ที่ 824–830 km; คำนวณได้ 3,038 km ที่ $h=824$, 3,052 km ที่ $h=826.9$, 3,082 km ที่ $h=833$) | **CrIS**, **ATMS**, **OMPS** (และ **CERES** บน Suomi NPP & NOAA-20)              |
 
 ---
 
@@ -102,18 +104,19 @@
    $$\sin\eta = \frac{R_E + h}{R_E}\sin\alpha, \qquad \phi = \eta - \alpha, \qquad W = 2 R_E \phi$$
    โดย $\eta$ คือมุมตกกระทบวัดจากเส้นแนวดิ่งท้องถิ่นที่ขอบ swath (complement ของ elevation angle $\varepsilon = 90^\circ - \eta$) และ $\phi$ คือ Earth central half-angle:
 
-| กล้อง / ดาวเทียม | ความสูงคำนวณ $h$ (km) | มุมขอบฟ้า $\rho$ | มุมสแกน $\alpha$ (Half Cross-Track) | มุมศูนย์กลางโลก $\phi$ | Swath Width $W$ | มุมเงยขั้นต่ำที่ขอบ Swath ($\varepsilon = 90^\circ - \eta$) |
-|---|---|---|---|---|---|---|
-| **AHI / ABI (GEO Full Disk)** | 35,786.0 (Nominal / Cache) | 8.692° | **8.692°** (Limb) / **8.88°** (Scan Frame) | 81.31° (Limb) | 18,084 km (เต็มซีกโลก) | 0.0° (ขอบฟ้า) |
-| **MODIS (Terra/Aqua)** — Nominal | 705.0 | 64.21° | **55.00°** | 10.48° | **2,330.1 km** | 24.52° |
-| **MODIS (Terra)** — Cache OMM | 689.3 | 64.43° | **55.00°** *(หรือ 55.52° เพื่อ W=2330)* | 10.20° | **2,268.4 km** | 24.80° |
-| **MODIS (Aqua)** — Cache OMM | 685.8 | 64.48° | **55.00°** *(หรือ 55.64° เพื่อ W=2330)* | 10.14° | **2,254.8 km** | 24.86° |
-| **VIIRS (Suomi NPP)** — Nominal | 824.0 | 62.31° | **56.28°** | 13.66° | **3,038.0 km** (~3,040 km) | 20.06° |
-| **VIIRS (SNPP/N20/N21)** — Cache OMM | 826.9 | 62.26° | **56.28°** | 13.72° | **3,052.0 km** | 20.00° |
-| **VIIRS (JPSS Nominal)** | 833.0 | 62.17° | **56.28°** | 13.86° | **3,081.8 km** | 19.86° |
+| กล้อง / ดาวเทียม                     | ความสูงคำนวณ $h$ (km)      | มุมขอบฟ้า $\rho$ | มุมสแกน $\alpha$ (Half Cross-Track)        | มุมศูนย์กลางโลก $\phi$ | Swath Width $W$            | มุมเงยขั้นต่ำที่ขอบ Swath ($\varepsilon = 90^\circ - \eta$) |
+| ------------------------------------ | -------------------------- | ---------------- | ------------------------------------------ | ---------------------- | -------------------------- | ----------------------------------------------------------- |
+| **AHI / ABI (GEO Full Disk)**        | 35,786.0 (Nominal / Cache) | 8.692°           | **8.692°** (Limb) / **8.88°** (Scan Frame) | 81.31° (Limb)          | 18,084 km (เต็มซีกโลก)     | 0.0° (ขอบฟ้า)                                               |
+| **MODIS (Terra/Aqua)** — Nominal     | 705.0                      | 64.21°           | **55.00°**                                 | 10.48°                 | **2,330.1 km**             | 24.52°                                                      |
+| **MODIS (Terra)** — Cache OMM        | 689.3                      | 64.43°           | **55.00°** _(หรือ 55.52° เพื่อ W=2330)_    | 10.20°                 | **2,268.4 km**             | 24.80°                                                      |
+| **MODIS (Aqua)** — Cache OMM         | 685.8                      | 64.48°           | **55.00°** _(หรือ 55.64° เพื่อ W=2330)_    | 10.14°                 | **2,254.8 km**             | 24.86°                                                      |
+| **VIIRS (Suomi NPP)** — Nominal      | 824.0                      | 62.31°           | **56.28°**                                 | 13.66°                 | **3,038.0 km** (~3,040 km) | 20.06°                                                      |
+| **VIIRS (SNPP/N20/N21)** — Cache OMM | 826.9                      | 62.26°           | **56.28°**                                 | 13.72°                 | **3,052.0 km**             | 20.00°                                                      |
+| **VIIRS (JPSS Nominal)**             | 833.0                      | 62.17°           | **56.28°**                                 | 13.86°                 | **3,081.8 km**             | 19.86°                                                      |
 
-> **สแกนตามแนวบิน (Along-Track Instantaneous Scan Strip):**  
-> - **MODIS:** 10 แถวตัวตรวจจับ × 1 km = **10 km** ที่ nadir $\Rightarrow$ $\alpha_{\text{along}} = \arctan(5 / 705) = \mathbf{0.406^\circ}$ (มุมเต็ม $0.813^\circ$)  
+> **สแกนตามแนวบิน (Along-Track Instantaneous Scan Strip):**
+>
+> - **MODIS:** 10 แถวตัวตรวจจับ × 1 km = **10 km** ที่ nadir $\Rightarrow$ $\alpha_{\text{along}} = \arctan(5 / 705) = \mathbf{0.406^\circ}$ (มุมเต็ม $0.813^\circ$)
 > - **VIIRS:** 16 แถว M-band × 750 m = **12 km** (I-band 32×375 m) ที่ nadir $\Rightarrow$ $\alpha_{\text{along}} = \arctan(6 / 827) \approx \mathbf{0.416^\circ}$ (มุมเต็ม $\sim 0.83^\circ$)
 
 ---
@@ -122,11 +125,11 @@
 
 อ้างอิงแนวทาง STK (`docs/2026-11-11-gnss-studio-stk-reference.md:100-113`) และเอกสาร Sensor v1 (`docs/2026-11-13-gnss-studio-sensor-design.md`):
 
-| กลุ่มดาวเทียม | แนะนำใน Sensor Engine สมบูรณ์ (STK Pattern) | ค่าพารามิเตอร์แนะนำ (`Half Angles`) | ค่าแนะนำใน Engine v1 ปัจจุบัน (รองรับเฉพาะ `Simple Conic`) | สูตร Camera FOV ของ Sensor View (`min(2α × 1.05, 120°)`) |
-|---|---|---|---|---|
-| **Himawari-9 (`AHI`), GOES-18/19 (`ABI`)** | **`Simple Conic`** (หรือ `Rectangular` $8.88^\circ \times 8.88^\circ$ หากต้องการกรอบสแกน) | `Cone Half Angle` = **`8.7°`** (พอดีขอบโลก $8.692^\circ$) หรือ **`8.9°`** (กรอบสแกนเต็ม $8.88^\circ$) | **`Simple Conic`** **`8.7°`** *(ข้อสังเกต: `defaultConeHalfAngleDeg` ที่ `sensorGeometry.ts:71` ใช้ $\rho + 0.5^\circ = 9.2^\circ$ ซึ่งจะรวมอวกาศรอบโลกเพิ่มขึ้นเล็กน้อย)* | $2 \times 8.7^\circ \times 1.05 \approx \mathbf{18.3^\circ}$ |
-| **Terra & Aqua (`MODIS`)** | **`Rectangular`** (Cross-track × Along-track) | `Horizontal Half Angle` = **`55.0°`** (Cross-track)<br>`Vertical Half Angle` = **`0.41°`** (10 km strip; หรือตั้งเป็น `2°–5°` สำหรับแถบที่มองเห็นชัดในฉาก 3 มิติ) | **`Simple Conic`** **`55.0°`** (เพื่อแสดงขอบเขตมุมสแกนสูงสุดบนพื้นโลกชั่วคราวก่อนมี `Rectangular`) | $2 \times 55.0^\circ \times 1.05 = \mathbf{115.5^\circ}$ (ไม่ชนเพดาน `120°`) |
-| **Suomi NPP, NOAA-20, NOAA-21 (`VIIRS`)** | **`Rectangular`** (Cross-track × Along-track) | `Horizontal Half Angle` = **`56.28°`** (Cross-track)<br>`Vertical Half Angle` = **`0.42°`** (12 km strip; หรือ `2°–5°` เพื่อแสดงผลในฉาก 3 มิติ) | **`Simple Conic`** **`56.28°`** (แสดงขอบเขตสแกนสูงสุดชั่วคราวก่อนมี `Rectangular`) | $2 \times 56.28^\circ \times 1.05 = \mathbf{118.2^\circ}$ (ไม่ชนเพดาน `120°`) |
+| กลุ่มดาวเทียม                              | แนะนำใน Sensor Engine สมบูรณ์ (STK Pattern)                                               | ค่าพารามิเตอร์แนะนำ (`Half Angles`)                                                                                                                               | ค่าแนะนำใน Engine v1 ปัจจุบัน (รองรับเฉพาะ `Simple Conic`)                                                                                                                 | สูตร Camera FOV ของ Sensor View (`min(2α × 1.05, 120°)`)                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Himawari-9 (`AHI`), GOES-18/19 (`ABI`)** | **`Simple Conic`** (หรือ `Rectangular` $8.88^\circ \times 8.88^\circ$ หากต้องการกรอบสแกน) | `Cone Half Angle` = **`8.7°`** (พอดีขอบโลก $8.692^\circ$) หรือ **`8.9°`** (กรอบสแกนเต็ม $8.88^\circ$)                                                             | **`Simple Conic`** **`8.7°`** _(ข้อสังเกต: `defaultConeHalfAngleDeg` ที่ `sensorGeometry.ts:71` ใช้ $\rho + 0.5^\circ = 9.2^\circ$ ซึ่งจะรวมอวกาศรอบโลกเพิ่มขึ้นเล็กน้อย)_ | $2 \times 8.7^\circ \times 1.05 \approx \mathbf{18.3^\circ}$                  |
+| **Terra & Aqua (`MODIS`)**                 | **`Rectangular`** (Cross-track × Along-track)                                             | `Horizontal Half Angle` = **`55.0°`** (Cross-track)<br>`Vertical Half Angle` = **`0.41°`** (10 km strip; หรือตั้งเป็น `2°–5°` สำหรับแถบที่มองเห็นชัดในฉาก 3 มิติ) | **`Simple Conic`** **`55.0°`** (เพื่อแสดงขอบเขตมุมสแกนสูงสุดบนพื้นโลกชั่วคราวก่อนมี `Rectangular`)                                                                         | $2 \times 55.0^\circ \times 1.05 = \mathbf{115.5^\circ}$ (ไม่ชนเพดาน `120°`)  |
+| **Suomi NPP, NOAA-20, NOAA-21 (`VIIRS`)**  | **`Rectangular`** (Cross-track × Along-track)                                             | `Horizontal Half Angle` = **`56.28°`** (Cross-track)<br>`Vertical Half Angle` = **`0.42°`** (12 km strip; หรือ `2°–5°` เพื่อแสดงผลในฉาก 3 มิติ)                   | **`Simple Conic`** **`56.28°`** (แสดงขอบเขตสแกนสูงสุดชั่วคราวก่อนมี `Rectangular`)                                                                                         | $2 \times 56.28^\circ \times 1.05 = \mathbf{118.2^\circ}$ (ไม่ชนเพดาน `120°`) |
 
 > **หมายเหตุสำคัญเรื่องแกน Sensor:** โมดูล `web/src/cesium/sensorGeometry.ts:79-90` (`bodyFrame`) นิยามกรอบตัวดาวด้วย **Nadir alignment with ECI velocity constraint** (`+Z = -r̂`, `+X = perp(v_ECI, Z)`, `+Y = Z × X`) อยู่แล้ว ซึ่งตรงกับท่าทางมาตรฐานของดาวเทียม LEO กล้องถ่ายภาพ (cross-track scan อยู่ในระนาบ Y–Z ของ body frame ตามแนวตั้งฉากกับทิศความเร็ว `+X`) จึงสามารถวาง Sensor `Horizontal` (cross-track รอบแกน X / กว้างไปทาง $\pm Y$) และ `Vertical` (along-track ไปทาง $\pm X$) ได้โดยตรง
 
@@ -140,7 +143,7 @@
 
 1. **`gnss_predict/config.py:42, 67`**
    - บรรทัด `42`: `GNSS_GROUPS = {"G": "gps-ops", "R": "glo-ops", "E": "galileo", "C": "beidou"}` กำหนดกลุ่มแคชและดาวน์โหลดไว้เพียง 4 กลุ่ม GNSS ไม่มี `weather`, `science`, `resource`, `visual`, `goes`, `noaa`
-2. **`gnss_predict/tle_fetch.py:13, 58-65`** *(Legacy GPS CLI)*
+2. **`gnss_predict/tle_fetch.py:13, 58-65`** _(Legacy GPS CLI)_
    - บรรทัด `13`: `_PRN_RE = re.compile(r"\(PRN\s*(\d{1,2})\)", re.IGNORECASE)` และบรรทัด `58-65`: บังคับคัดเฉพาะ `1 <= prn <= 32` เท่านั้น ใช้กับดาวเทียมทั่วไปไม่ได้
 3. **`gnss_predict/igs_meta.py:24, 60-67, 117`**
    - บรรทัด `24`: `_PRN_RE = re.compile(r"^[A-Z]\d{2}$")` และ `identity_at` (`L117`) แมป `NORAD -> PRN` จาก `igs_satellite_metadata.snx` เท่านั้น ซึ่งไม่มี NORAD ของดาวเทียมถ่ายภาพ
@@ -153,7 +156,7 @@
    - `ephemeris_from_sp3` (`L190-206`) ใช้ `predicted.sp3` เป็นแหล่งส่งต่อ ephemeris ไปยัง `run_analyze`
 6. **`gnss_predict/sp3.py:190, 296-298`**
    - `write_sp3` (`L296-298`) **บังคับ `if len(sat) != 3: raise ValueError(...)`** อย่างเคร่งครัด และ `read_sp3_all` (`L190`) ตัด slice `sat = line[1:4]` เป็นคีย์ 3 ตัวอักษร
-7. **`gnss_predict/dop.py:19, 77-99`** *(จุดเสี่ยง Critical)*
+7. **`gnss_predict/dop.py:19, 77-99`** _(จุดเสี่ยง Critical)_
    - บรรทัด `19`: `_SYSTEMS = ("ALL", "G", "R", "E", "C")`
    - `dop_series` (`L77-99`) นำดาวทุกดวงใน `rows` (ซึ่งมาจาก `aer_rows(eph, ...)`) ที่มุมเงย $\ge$ `min_el_deg` และไม่ได้ติด flag ใน `DOP_EXCLUDED_FLAGS` เข้าไปคำนวณ **`system == "ALL"`** ทั้งหมด! หากปล่อยให้ดาวเทียมถ่ายภาพเข้ามาอยู่ใน `eph` โดยไม่กรองใน `dop_series` ค่า `ALL` DOP (`n_visible`, `gdop`, `pdop`, ฯลฯ) จะถูกปนเปื้อนผิดพลาดทันที
 8. **`gnss_predict/analyze.py:37-49, 115`**
@@ -175,26 +178,27 @@
 
 ### 3.2 สรุปรายการจุดที่ต้องแก้ (`file:line` Change Plan)
 
-| ไฟล์ & บรรทัด | พฤติกรรมปัจจุบัน | การแก้ไขที่ต้องการ (โดยไม่กระทบ GNSS DOP / SP3) |
-|---|---|---|
-| `gnss_predict/config.py:42` | มีแค่ `GNSS_GROUPS` (`G/R/E/C`) | เพิ่ม `EO_GROUPS` / `IMAGING_GROUPS` เช่น `{"W": "weather", "S": "science", "R_EO": "resource", "V": "visual"}` (หรือ dict กลุ่มทั่วไปแยกจาก `GNSS_GROUPS`) |
-| `gnss_predict/catalog.py:48-59, 139-204` | ปฏิเสธทุกดวงที่ไม่มี IGS PRN (`NO_PRN`); แสกนเฉพาะ `GNSS_GROUPS` | เพิ่มฟิลด์ `category: Literal["gnss", "eo", "other"]` (และ `group`, `cospar_id`), เพิ่ม `build_imaging_catalog` / option `include_groups`, ใช้รหัสภายในที่เป็น GMAT-safe + SP3-safe (หรือ `sat_id`) แทนการบังคับ PRN |
-| `gnss_predict/studio.py:174-264, 327-351, 548-603` | `_snapshot`/`_files_sha256`/fetch รับเฉพาะ `GREC`; `_plan` ผูก `prn_of` | รวมไฟล์กลุ่ม EO ใน snapshot hash & fetch, map `norad -> internal_id` + `category`, และกรองส่งเฉพาะ `category == "gnss"` เข้า `run_validate` (SP3/BRDC) |
-| `gnss_predict/propagate.py:59-96` & `gnss_predict/sp3.py:296-298` | ใช้ `s.prn` เป็นชื่อ GMAT `Spacecraft` และเขียนผ่าน `write_sp3` (บังคับ 3 chars) | **ทางเลือก A (สะอาดสุด):** เก็บ ephemeris เฉพาะที่ไม่ใช่ GNSS ใน JSON/binary หรือใช้ slot 3 ตัวอักษรเฉพาะทาง เช่น `E01..E99` สำหรับ SP3 ภายในพร้อมตารางแปลงใน `manifest.json`; ตรวจสอบ GMAT identifier sanitization (`[A-Za-z][A-Za-z0-9_]*`) |
-| `gnss_predict/dop.py:77-99` | รวมทุกแถวที่อยู่ใน `eph` เข้าคำนวณ `"ALL"` DOP | **สำคัญที่สุด:** เพิ่ม parameter กรอง `gnss_only` หรือตรวจ `sat_id[0] in ("G","R","E","C")` / `category == "gnss"` ก่อนรวมเข้า `"ALL"` ใน `dop_series` |
-| `gnss_predict/studio_validate.py:129-155, 210` | ตรวจสอบทุกตัวที่อยู่ใน `predicted.sp3` และถือว่าเป็น `"unverified"` | ข้ามดาวที่ไม่ใช่ GNSS ตั้งแต่ต้นฟังก์ชัน `validate_ephemeris` (หรือก่อนส่งจาก `studio.py:570`) |
-| `server/gnss_studio_server/routes/orbits.py`, `jobs.py:47`, `worker.py:33` | `/orbits/catalog` และ `/orbits/fetch` รับเฉพาะ `G/R/E/C` | เปิดพารามิเตอร์กลุ่ม EO (เช่น `weather`, `resource`, `science`) ให้ fetch/catalog ได้ และส่ง metadata กลุ่ม + `category` กลับ UI |
-| `server/gnss_studio_server/schema.py:201-214`, `web/src/cesium/sensorGeometry.ts`, `sensorDraw.ts` | Sensor รองรับเฉพาะ `Simple Conic` | เพิ่ม `Rectangular` (`Vertical Half Angle` × `Horizontal Half Angle`) เพื่อรองรับ swath strip ของ MODIS / VIIRS |
+| ไฟล์ & บรรทัด                                                                                      | พฤติกรรมปัจจุบัน                                                                 | การแก้ไขที่ต้องการ (โดยไม่กระทบ GNSS DOP / SP3)                                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gnss_predict/config.py:42`                                                                        | มีแค่ `GNSS_GROUPS` (`G/R/E/C`)                                                  | เพิ่ม `EO_GROUPS` / `IMAGING_GROUPS` เช่น `{"W": "weather", "S": "science", "R_EO": "resource", "V": "visual"}` (หรือ dict กลุ่มทั่วไปแยกจาก `GNSS_GROUPS`)                                                                                   |
+| `gnss_predict/catalog.py:48-59, 139-204`                                                           | ปฏิเสธทุกดวงที่ไม่มี IGS PRN (`NO_PRN`); แสกนเฉพาะ `GNSS_GROUPS`                 | เพิ่มฟิลด์ `category: Literal["gnss", "eo", "other"]` (และ `group`, `cospar_id`), เพิ่ม `build_imaging_catalog` / option `include_groups`, ใช้รหัสภายในที่เป็น GMAT-safe + SP3-safe (หรือ `sat_id`) แทนการบังคับ PRN                          |
+| `gnss_predict/studio.py:174-264, 327-351, 548-603`                                                 | `_snapshot`/`_files_sha256`/fetch รับเฉพาะ `GREC`; `_plan` ผูก `prn_of`          | รวมไฟล์กลุ่ม EO ใน snapshot hash & fetch, map `norad -> internal_id` + `category`, และกรองส่งเฉพาะ `category == "gnss"` เข้า `run_validate` (SP3/BRDC)                                                                                        |
+| `gnss_predict/propagate.py:59-96` & `gnss_predict/sp3.py:296-298`                                  | ใช้ `s.prn` เป็นชื่อ GMAT `Spacecraft` และเขียนผ่าน `write_sp3` (บังคับ 3 chars) | **ทางเลือก A (สะอาดสุด):** เก็บ ephemeris เฉพาะที่ไม่ใช่ GNSS ใน JSON/binary หรือใช้ slot 3 ตัวอักษรเฉพาะทาง เช่น `E01..E99` สำหรับ SP3 ภายในพร้อมตารางแปลงใน `manifest.json`; ตรวจสอบ GMAT identifier sanitization (`[A-Za-z][A-Za-z0-9_]*`) |
+| `gnss_predict/dop.py:77-99`                                                                        | รวมทุกแถวที่อยู่ใน `eph` เข้าคำนวณ `"ALL"` DOP                                   | **สำคัญที่สุด:** เพิ่ม parameter กรอง `gnss_only` หรือตรวจ `sat_id[0] in ("G","R","E","C")` / `category == "gnss"` ก่อนรวมเข้า `"ALL"` ใน `dop_series`                                                                                        |
+| `gnss_predict/studio_validate.py:129-155, 210`                                                     | ตรวจสอบทุกตัวที่อยู่ใน `predicted.sp3` และถือว่าเป็น `"unverified"`              | ข้ามดาวที่ไม่ใช่ GNSS ตั้งแต่ต้นฟังก์ชัน `validate_ephemeris` (หรือก่อนส่งจาก `studio.py:570`)                                                                                                                                                |
+| `server/gnss_studio_server/routes/orbits.py`, `jobs.py:47`, `worker.py:33`                         | `/orbits/catalog` และ `/orbits/fetch` รับเฉพาะ `G/R/E/C`                         | เปิดพารามิเตอร์กลุ่ม EO (เช่น `weather`, `resource`, `science`) ให้ fetch/catalog ได้ และส่ง metadata กลุ่ม + `category` กลับ UI                                                                                                              |
+| `server/gnss_studio_server/schema.py:201-214`, `web/src/cesium/sensorGeometry.ts`, `sensorDraw.ts` | Sensor รองรับเฉพาะ `Simple Conic`                                                | เพิ่ม `Rectangular` (`Vertical Half Angle` × `Horizontal Half Angle`) เพื่อรองรับ swath strip ของ MODIS / VIIRS                                                                                                                               |
 
 ---
 
 ## 4. การจับคู่กับชั้นภาพ GIBS (`imagery.py`) และโมเดล 3 มิติ (`models/catalog.json`)
 
-### 4.1 สถานะจริงของ `server/gnss_studio_server/imagery.py` ใน Worktree นี้
+### 4.1 สถานะจริงของ `server/gnss_studio_server/imagery.py` ข้าม Branch (`models` vs `imagery`)
 
 > [!IMPORTANT]
-> **ไม่พบไฟล์ `server/gnss_studio_server/imagery.py` ใน `/Users/phuwish/SSSGMAT/.worktrees/gnss-studio-models` (`feature/gnss-studio-models`)!**  
-> จากการตรวจสอบโครงสร้างไดเรกทอรี `server/gnss_studio_server/` และเอกสาร `docs/2026-11-13-gnss-studio-sensor-design.md:8` ยืนยันว่าฟีเจอร์ภาพถ่ายจริงจาก NASA GIBS ถูกวางแผนเป็นงานเสริมแยก ("งานเสริม ข (ภาพถ่ายจริงจาก NASA GIBS)") และยังไม่ได้ถูกสร้างใน worktree นี้ ดังนั้น **ณ สถานะโค้ดปัจจุบัน ดาวเทียมทั้ง 8 ดวงยังไม่มีการจับคู่กับชั้นภาพใน `imagery.py`** — ตารางในหัวข้อ 4.3 ด้านล่างจึงเป็น **สเปกการจับคู่ NASA GIBS WMTS Layer ที่ตรวจสอบแล้ว** สำหรับใช้สร้าง `server/gnss_studio_server/imagery.py` ในขั้นตอนถัดไป
+> - **บน branch `feature/gnss-studio-models` (`/Users/phuwish/SSSGMAT/.worktrees/gnss-studio-models`)** ยังไม่มีไฟล์ `server/gnss_studio_server/imagery.py` เนื่องจาก worktree นี้แยกเฉพาะงานโมเดล 3 มิติและงานวิจัย
+> - **แต่บน branch `feature/gnss-studio-imagery` (`/Users/phuwish/SSSGMAT/.worktrees/gnss-studio-imagery`) มี `server/gnss_studio_server/imagery.py` และ `server/gnss_studio_server/routes/imagery.py` ทำงานจริงแล้ว** — เป็นระบบ proxy/cache (`/api/imagery/layers`, `/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}`) รองรับ NASA GIBS (`epsg3857`) และ Sentinel-2 cloudless (`EOX`) พร้อมตาราง `CATALOG` เบื้องต้น (`BlueMarble_NextGeneration`, `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`, `MODIS_Terra_CorrectedReflectance_TrueColor`, `Himawari_AHI_Band3_Red_Visible_1km`, `Himawari_AHI_Band13_Clean_Infrared`, `GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor`, และ `s2cloudless-2024_3857`)
+> - ตารางในหัวข้อ 4.3 ด้านล่างจึงใช้สำหรับ **วางแผนขยายและตรวจสอบ `CATALOG` ใน `imagery.py`** ให้ครอบคลุมดาวเทียมกล้องทั้ง 8 ดวงครบถ้วน (เช่น `Aqua` และ `NOAA-21` ที่ยังไม่มีใน `CATALOG` ชุดเริ่มต้น)
 
 ---
 
@@ -202,20 +206,22 @@
 
 โมเดล `.glb` ทั้ง 6 ชุดใน `api-interop/gnss-predict/models/catalog.json` มีครบแล้วสำหรับดาวเทียมทั้ง 8 ดวง พร้อมข้อมูล `norad_ids`, `wing_nodes` และ `cell_normal` ดังนี้:
 
-| ดาวเทียม | Model `id` (`catalog.json`) | ไฟล์ `.glb` | `norad_ids` ที่รองรับ | ขนาด Bounding Box (m) `[X, Y, Z]` | Triangles | `wing_nodes` | `cell_normal` | อ้างอิง `NOTES.md` & รายละเอียด |
-|---|---|---|---|---|---|---|---|---|
-| **Terra** | `terra` | `terra/terra.glb` | `[25994]` | `[6.811, 13.027, 5.142]` | 13,397 | `["wing-Y"]` | **`"-Z"`** | `models/terra/NOTES.md` — บัส EOS AM-1 16-sided prism, MODIS/ASTER/CERES/MISR/MOPITT บน nadir deck (`+Z`) |
-| **Aqua** | `aqua` | `aqua/aqua.glb` | `[27424]` | `[8.828, 16.701, 4.772]` | 12,977 | `["wing-Y"]` | **`"+X"`** | `models/aqua/NOTES.md` — บัส TRW AB1200, แผงโซลาร์เดี่ยวด้าน `-Y` 11.4 m, MODIS/AIRS/AMSU/CERES |
-| **Suomi NPP** | `suomi-npp` | `suomi-npp/suomi-npp.glb` | `[37849, 43013]` | `[4.183, 8.959, 2.569]` | 4,024 | `["wing-Y"]` | **`"-X"`** | `models/suomi-npp/NOTES.md` — บัส Ball BCP-2000 ใช้ร่วมกับ NOAA-20 (NORAD `43013`) |
-| **NOAA-20** | `suomi-npp` | `suomi-npp/suomi-npp.glb` | `[37849, 43013]` | `[4.183, 8.959, 2.569]` | 4,024 | `["wing-Y"]` | **`"-X"`** | แชร์โมเดล BCP-2000 กับ Suomi NPP ตาม `norad_ids` |
-| **NOAA-21** | `noaa-21` | `noaa-21/noaa-21.glb` | `[54234]` | `[4.3, 10.71, 3.118]` | 1,982 | `["wing-Y"]` | **`"-X"`** | `models/noaa-21/NOTES.md` — บัส Northrop Grumman LEOStar-3, ปีกเดี่ยว 5-panel, VIIRS/CrIS/ATMS/OMPS-N/L |
-| **GOES-18** | `goes` | `goes/goes.glb` | `[41866, 43226, 51850, 60133]` | `[11.14, 13.444, 12.197]` | 14,799 | `["wing-Y"]` | **`"+Z"`** | `models/goes/NOTES.md` — บัส Lockheed Martin A2100A (GOES-R series 16–19), เสา X-band + Solar Sail |
-| **GOES-19** | `goes` | `goes/goes.glb` | `[41866, 43226, 51850, 60133]` | `[11.14, 13.444, 12.197]` | 14,799 | `["wing-Y"]` | **`"+Z"`** | แชร์โมเดล GOES-R กับ GOES-16/17/18 |
-| **Himawari-9** | `himawari-9` | `himawari-9/himawari-9.glb` | `[41836, 40267]` | `[5.218, 8.037, 5.3]` | 2,496 | `["wing-Y"]` | **`"-X"`** | `models/himawari-9/NOTES.md` — บัส Mitsubishi Electric DS2000 (แชร์กับ Himawari-8 NORAD `40267`) |
+| ดาวเทียม       | Model `id` (`catalog.json`) | ไฟล์ `.glb`                 | `norad_ids` ที่รองรับ          | ขนาด Bounding Box (m) `[X, Y, Z]` | Triangles | `wing_nodes` | `cell_normal` | อ้างอิง `NOTES.md` & รายละเอียด                                                                           |
+| -------------- | --------------------------- | --------------------------- | ------------------------------ | --------------------------------- | --------- | ------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
+| **Terra**      | `terra`                     | `terra/terra.glb`           | `[25994]`                      | `[6.811, 13.027, 5.142]`          | 13,397    | `["wing-Y"]` | **`"-Z"`**    | `models/terra/NOTES.md` — บัส EOS AM-1 16-sided prism, MODIS/ASTER/CERES/MISR/MOPITT บน nadir deck (`+Z`) |
+| **Aqua**       | `aqua`                      | `aqua/aqua.glb`             | `[27424]`                      | `[8.828, 16.701, 4.772]`          | 12,977    | `["wing-Y"]` | **`"+X"`**    | `models/aqua/NOTES.md` — บัส TRW AB1200, แผงโซลาร์เดี่ยวด้าน `-Y` 11.4 m, MODIS/AIRS/AMSU/CERES           |
+| **Suomi NPP**  | `suomi-npp`                 | `suomi-npp/suomi-npp.glb`   | `[37849, 43013]`               | `[4.183, 8.959, 2.569]`           | 4,024     | `["wing-Y"]` | **`"-X"`**    | `models/suomi-npp/NOTES.md` — บัส Ball BCP-2000 ใช้ร่วมกับ NOAA-20 (NORAD `43013`)                        |
+| **NOAA-20**    | `suomi-npp`                 | `suomi-npp/suomi-npp.glb`   | `[37849, 43013]`               | `[4.183, 8.959, 2.569]`           | 4,024     | `["wing-Y"]` | **`"-X"`**    | แชร์โมเดล BCP-2000 กับ Suomi NPP ตาม `norad_ids`                                                          |
+| **NOAA-21**    | `noaa-21`                   | `noaa-21/noaa-21.glb`       | `[54234]`                      | `[4.3, 10.71, 3.118]`             | 1,982     | `["wing-Y"]` | **`"-X"`**    | `models/noaa-21/NOTES.md` — บัส Northrop Grumman LEOStar-3, ปีก 4-panel + canted tip                      |
+| **NOAA-21**    | `noaa-21`                   | `noaa-21/noaa-21.glb`       | `[54234]`                      | `[4.3, 10.71, 3.118]`             | 1,982     | `["wing-Y"]` | **`"-X"`**    | `models/noaa-21/NOTES.md` — บัส Northrop Grumman LEOStar-3, ปีกเดี่ยว 5-panel, VIIRS/CrIS/ATMS/OMPS-N/L   |
+| **GOES-18**    | `goes`                      | `goes/goes.glb`             | `[41866, 43226, 51850, 60133]` | `[11.14, 13.444, 12.197]`         | 14,799    | `["wing-Y"]` | **`"+Z"`**    | `models/goes/NOTES.md` — บัส Lockheed Martin A2100A (GOES-R series 16–19), เสา X-band + Solar Sail        |
+| **GOES-19**    | `goes`                      | `goes/goes.glb`             | `[41866, 43226, 51850, 60133]` | `[11.14, 13.444, 12.197]`         | 14,799    | `["wing-Y"]` | **`"+Z"`**    | แชร์โมเดล GOES-R กับ GOES-16/17/18                                                                        |
+| **Himawari-9** | `himawari-9`                | `himawari-9/himawari-9.glb` | `[41836, 40267]`               | `[5.218, 8.037, 5.3]`             | 2,496     | `["wing-Y"]` | **`"-X"`**    | `models/himawari-9/NOTES.md` — บัส Mitsubishi Electric DS2000 (แชร์กับ Himawari-8 NORAD `40267`)          |
 
 > [!WARNING]
-> **ข้อค้นพบสำคัญจาก `models/catalog.json`:**  
-> 1. โมเดล GNSS ส่วนใหญ่มี 2 ปีก (`wing+Y`, `wing-Y`) และ `cell_normal = "-X"` (ดู `docs/2026-11-14-gnss-attitude-laws.md`) **แต่โมเดลดาวเทียมกล้องทั้ง 6 ชุดมีเพียงปีกเดียวคือ `["wing-Y"]`**  
+> **ข้อค้นพบสำคัญจาก `models/catalog.json`:**
+>
+> 1. โมเดล GNSS ส่วนใหญ่มี 2 ปีก (`wing+Y`, `wing-Y`) และ `cell_normal = "-X"` (ดู `docs/2026-11-14-gnss-attitude-laws.md`) **แต่โมเดลดาวเทียมกล้องทั้ง 6 ชุดมีเพียงปีกเดียวคือ `["wing-Y"]`**
 > 2. **`cell_normal` ของทั้ง 6 โมเดลมีถึง 4 ทิศทางต่างกัน (`-Z`, `+X`, `-X`, `+Z`)** ห้าม hardcode การหมุนแผงโซลาร์ด้วยมุมคงที่ที่อิง `-X` อย่างเดียว
 
 ---
@@ -224,26 +230,28 @@
 
 NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earthdata.nasa.gov/wmts/{epsg4326|epsg3857}/best/{Layer}/default/{Time}/{TileMatrixSet}/{z}/{y}/{x}.{png|jpg}`):
 
-| ดาวเทียม (`NORAD`) | โมเดล 3 มิติ | ชั้นภาพหลักที่แนะนำ (Primary GIBS WMTS Layer) | ชั้นภาพทางเลือก / กลางคืน / IR (Secondary Layers) | ความถี่เวลา (`TIME=`) & หมายเหตุ |
-|---|---|---|---|---|
-| **Terra** (`25994`) | `terra` | `MODIS_Terra_CorrectedReflectance_TrueColor` | `MODIS_Terra_CorrectedReflectance_Bands721`<br>`MODIS_Terra_CorrectedReflectance_Bands367` | **Daily** (`YYYY-MM-DD`), ~10:30 LT descending swath, ช่อง `.jpg` |
-| **Aqua** (`27424`) | `aqua` | `MODIS_Aqua_CorrectedReflectance_TrueColor` | `MODIS_Aqua_CorrectedReflectance_Bands721`<br>`MODIS_Aqua_CorrectedReflectance_Bands367` | **Daily** (`YYYY-MM-DD`), ~13:30 LT ascending swath, ช่อง `.jpg` |
-| **Suomi NPP** (`37849`) | `suomi-npp` | `VIIRS_SNPP_CorrectedReflectance_TrueColor` | `VIIRS_SNPP_DayNightBand_At_Sensor_Radiance` (แสงกลางคืน)<br>`VIIRS_SNPP_Fires_375m_Day` | **Daily** (`YYYY-MM-DD`), Swath 3,040 km เต็มรอยต่อขั้วโลกไม่มีช่องว่างแถบศูนย์สูตร |
-| **NOAA-20** (`43013`) | `suomi-npp` | `VIIRS_NOAA20_CorrectedReflectance_TrueColor` | `VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance`<br>`VIIRS_NOAA20_Thermal_Anomalies_375m_Day` | **Daily** (`YYYY-MM-DD`), เฟสห่างจาก SNPP 50 นาที (180°) เติมช่องว่างเวลา |
-| **NOAA-21** (`54234`) | `noaa-21` | `VIIRS_NOAA21_CorrectedReflectance_TrueColor` | `VIIRS_NOAA21_DayNightBand_At_Sensor_Radiance` | **Daily** (`YYYY-MM-DD`), เฟสคั่นกลาง SNPP & NOAA-20 (90°) |
-| **GOES-19** (`60133`) | `goes` | `GOES-East_ABI_GeoColor` | `GOES-East_ABI_Band2_Red_Visible_1km`<br>`GOES-East_ABI_Band13_Clean_Infrared` (24 ชม.) | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ประจำตำแหน่ง GOES-East (~75.2°W) |
-| **GOES-18** (`51850`) | `goes` | `GOES-West_ABI_GeoColor` | `GOES-West_ABI_Band2_Red_Visible_1km`<br>`GOES-West_ABI_Band13_Clean_Infrared` (24 ชม.) | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ประจำตำแหน่ง GOES-West (~137.0°W) |
-| **Himawari-9** (`41836`) | `himawari-9` | `Himawari_AHI_Band3_Red_Visible_1km` | *(ไม่มี GeoColor ทางการบน GIBS; Band 13 Thermal IR ส่วนใหญ่บริการผ่าน JMA/NOAA แต่ไม่ใช่ชั้นหลักของ GIBS โดยตรง)* | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ครอบคลุมเอเชีย–แปซิฟิก (~140.7°E) — กลางคืนภาพ Band 3 จะมืด |
+| ดาวเทียม (`NORAD`)       | โมเดล 3 มิติ | ชั้นภาพหลักที่แนะนำ (Primary GIBS WMTS Layer) | ชั้นภาพทางเลือก / กลางคืน / IR (Secondary Layers)                                                                 | ความถี่เวลา (`TIME=`) & หมายเหตุ                                                                           |
+| ------------------------ | ------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Terra** (`25994`)      | `terra`      | `MODIS_Terra_CorrectedReflectance_TrueColor`  | `MODIS_Terra_CorrectedReflectance_Bands721`<br>`MODIS_Terra_CorrectedReflectance_Bands367`                        | **Daily** (`YYYY-MM-DD`), ~10:30 LT descending swath, ช่อง `.jpg`                                          |
+| **Aqua** (`27424`)       | `aqua`       | `MODIS_Aqua_CorrectedReflectance_TrueColor`   | `MODIS_Aqua_CorrectedReflectance_Bands721`<br>`MODIS_Aqua_CorrectedReflectance_Bands367`                          | **Daily** (`YYYY-MM-DD`), ~13:30 LT ascending swath, ช่อง `.jpg`                                           |
+| **Suomi NPP** (`37849`)  | `suomi-npp`  | `VIIRS_SNPP_CorrectedReflectance_TrueColor`   | `VIIRS_SNPP_DayNightBand_At_Sensor_Radiance` (แสงกลางคืน)<br>`VIIRS_SNPP_Fires_375m_Day`                          | **Daily** (`YYYY-MM-DD`), Swath 3,040 km เต็มรอยต่อขั้วโลกไม่มีช่องว่างแถบศูนย์สูตร                        |
+| **NOAA-20** (`43013`)    | `suomi-npp`  | `VIIRS_NOAA20_CorrectedReflectance_TrueColor` | `VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance`<br>`VIIRS_NOAA20_Thermal_Anomalies_375m_Day`                       | **Daily** (`YYYY-MM-DD`), เฟสห่างจาก SNPP 50 นาที (180°) เติมช่องว่างเวลา                                  |
+| **NOAA-21** (`54234`)    | `noaa-21`    | `VIIRS_NOAA21_CorrectedReflectance_TrueColor` | `VIIRS_NOAA21_DayNightBand_At_Sensor_Radiance`                                                                    | **Daily** (`YYYY-MM-DD`), เฟสคั่นกลาง SNPP & NOAA-20 (90°)                                                 |
+| **GOES-19** (`60133`)    | `goes`       | `GOES-East_ABI_GeoColor`                      | `GOES-East_ABI_Band2_Red_Visible_1km`<br>`GOES-East_ABI_Band13_Clean_Infrared` (24 ชม.)                           | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ประจำตำแหน่ง GOES-East (~75.2°W)                            |
+| **GOES-18** (`51850`)    | `goes`       | `GOES-West_ABI_GeoColor`                      | `GOES-West_ABI_Band2_Red_Visible_1km`<br>`GOES-West_ABI_Band13_Clean_Infrared` (24 ชม.)                           | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ประจำตำแหน่ง GOES-West (~137.0°W)                           |
+| **Himawari-9** (`41836`) | `himawari-9` | `Himawari_AHI_Band3_Red_Visible_1km`          | _(ไม่มี GeoColor ทางการบน GIBS; Band 13 Thermal IR ส่วนใหญ่บริการผ่าน JMA/NOAA แต่ไม่ใช่ชั้นหลักของ GIBS โดยตรง)_ | **Sub-daily 10-min** (`YYYY-MM-DDTHH:MM:00Z`), ครอบคลุมเอเชีย–แปซิฟิก (~140.7°E) — กลางคืนภาพ Band 3 จะมืด |
 
-> **ข้อสังเกตสำคัญ:**  
-> - สำหรับ **Himawari-9** บน NASA GIBS WMTS ชั้นหลักที่มีให้บริการอย่างแพร่หลายคือ **`Himawari_AHI_Band3_Red_Visible_1km`** (0.64 µm Grayscale Visible) ต่างจาก GOES ที่มี `GeoColor` RGB (กลางวันสีจริง + กลางคืน IR + ไฟเมือง) ดังนั้นใน UI ควรแสดงป้ายบอกชัดว่าเป็น Visible Band 3 (เห็นเฉพาะด้านกลางวัน)  
-> - ขณะนี้ `server/gnss_studio_server/imagery.py` ยังไม่มีอยู่ใน repo → หากผู้ใช้ยังไม่ได้เพิ่มไฟล์นี้ ทุกดวงยังไม่มีชั้นภาพในแอปจนกว่าจะ implement `imagery.py`
+> **ข้อสังเกตสำคัญ:**
+>
+> - สำหรับ **Himawari-9** บน NASA GIBS WMTS ชั้นหลักที่มีให้บริการอย่างแพร่หลายคือ **`Himawari_AHI_Band3_Red_Visible_1km`** (0.64 µm Grayscale Visible) ต่างจาก GOES ที่มี `GeoColor` RGB (กลางวันสีจริง + กลางคืน IR + ไฟเมือง) ดังนั้นใน UI ควรแสดงป้ายบอกชัดว่าเป็น Visible Band 3 (เห็นเฉพาะด้านกลางวัน) และใช้ร่วมกับ `Himawari_AHI_Band13_Clean_Infrared` ที่มีใน `CATALOG` ของ branch `feature/gnss-studio-imagery`
+> - การเชื่อม `CATALOG` กับดาวเทียมทั้ง 8 ดวงขึ้นอยู่กับการผสาน (merge) `server/gnss_studio_server/imagery.py` จาก branch `feature/gnss-studio-imagery` และเพิ่มชั้นภาพที่ยังขาด (ดูผลตรวจเทียบของจริงในหัวข้อถัดไปหลัง merge/ขยาย `CATALOG`)
 
 ---
 
 ## 5. ข้อเสนอการออกแบบ (Design Proposal)
 
 ### 5.1 Object Type & Schema (`objects.py`, `schema.py`, `catalog.py`)
+
 1. **คง Object Type หลักเป็น `"Satellite"`** (ไม่แตก top-level type ใหม่) เพื่อให้ใช้งาน Pipeline เดียวกันได้ทั้งหมด: GMAT SGP4 propagation, CZML trajectory, Access intervals, Facility tracking, Sensor attachment, 2D Swath, และ 3D View
 2. **เพิ่ม `category` (หรือ `orbit_class` / `mission_type`) ใน `CatalogSatellite` และ Optional Metadata บน `SatelliteObj`:**
    - `category: "gnss" | "imaging" | "other"` (ค่า default อนุมานจากกลุ่ม TLE หรือตาราง `norad_ids` ที่มี preset)
@@ -252,6 +260,7 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
      - **`imager_profile`** (เช่น ชื่อกล้อง, default sensor shape/half-angles, และ `gibs_layers`) ผูกติดกับ `norad` ได้โดยอัตโนมัติ
 
 ### 5.2 ขั้นตอนการ `Insert` และการใช้ Cache / CelesTrak Groups
+
 1. **ขยาย Config & Routes (`config.py`, `routes/orbits.py`, `jobs.py`, `worker.py`):**
    - เพิ่มกลุ่ม EO ที่ใช้จริง: `EO_GROUPS = {"weather": "weather", "resource": "resource", "science": "science", "goes": "goes", "noaa": "noaa", "visual": "visual"}` โดยเริ่มจากการอ่านกลุ่มที่มีอยู่แล้วใน `_cache` (`weather`, `science`, `visual`) ก่อน เพื่อให้ทำงานแบบ offline ได้ทันทีบนแคชปัจจุบัน แล้วจึงรองรับปุ่ม Fetch อัปเดตเพิ่ม `resource` (เพื่อดึง Terra/Aqua อย่างเป็นทางการแทนการพึ่ง `visual`) และ `goes`/`noaa`
 2. **การสร้างรหัส ID ภายใน (Internal ID) ที่ปลอดภัยต่อ GMAT และ SP3:**
@@ -265,6 +274,7 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
    - เมื่อผู้ใช้กด Insert ดาวเทียมกลุ่ม Imaging ให้ระบบ **auto-attach Primary Sensor (optional toggle: "เพิ่มกล้องหลักอัตโนมัติ")** ด้วยค่าพารามิเตอร์จากตารางในข้อ 2.3 ทันที
 
 ### 5.3 การแสดงผล 3D / 2D และ CZML (Attitude, Sun-Tracking `cell_normal`, Model Lookup)
+
 1. **Model Lookup by `norad_id`:**
    - ฝั่ง Web โหลด `models/catalog.json` แล้วสร้าง map `norad_ids -> model_entry` (โมเดลทั้ง 6 ชุดในปัจจุบันจับคู่ NORAD ของทั้ง 8 ดวงครบหมดแล้ว ยกเว้นตรวจสอบให้แน่ใจว่า `graphics.ts` ยอมรับ ID รูปแบบ `sat/N{norad}` หรือใช้ `prnByNorad` map ใน manifest ตามเดิม)
 2. **Attitude Law สำหรับ Imaging Satellites (ต่างจาก GNSS Yaw-Steering):**
@@ -283,6 +293,7 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
    - เพื่อแสดงแถบสแกน LEO (`MODIS`/`VIIRS`) บนแผนที่ 2D เป็นเส้นคู่ขนานสองฝั่ง (Left/Right swath corridor width 2,330 km / 3,050 km) ตลอดช่วงเวลาโคจร แทนที่จะวาดเป็นวงกลมใหญ่เกินจริง
 
 ### 5.4 การเรียก `Show Imagery` จาก Object ดาวเทียมโดยตรง
+
 1. **Backend Endpoint (`server/gnss_studio_server/imagery.py` & `routes/imagery.py`):**
    - สร้าง Registry จับคู่ `NORAD -> GIBS Layer Specs` (ตามตาราง 4.3)
    - เปิด proxy / cache endpoint เช่น `GET /api/imagery/gibs/{layer}/{time}/{z}/{y}/{x}` (หรือ URL template ให้ Cesium `WebMapTileServiceImageryProvider` เรียกผ่าน backend เพื่อหลีกเลี่ยง CORS และทำ disk cache ช่วยให้โหลดซ้ำแบบ offline ได้เร็วขึ้น)
@@ -293,6 +304,7 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
      - **`Show Imagery + Fly to Footprint`:** เลื่อนกล้องไปยังจุดใต้ดาว ณ เวลาปัจจุบัน (สำหรับ GEO: หมุนกล้องไปที่ 140.7°E / 137°W / 75.2°W; สำหรับ LEO: ไปยังตำแหน่ง nadir ปัจจุบัน) เพื่อให้เห็นภาพ GIBS ตรงกับตำแหน่งจริงของดาวเทียมและแถบ Sensor ทันที
 
 ### 5.5 การวาด Sensor Swath Cone และ Footprint (3D & 2D)
+
 1. **เพิ่ม `Rectangular` Sensor (`schema.py:201`, `sensorGeometry.ts`, `sensorDraw.ts`):**
    - เพิ่ม field `shape: "Simple Conic" | "Rectangular"` พร้อม `vertical_half_angle_deg` (along-track) และ `horizontal_half_angle_deg` (cross-track)
    - ใน `sensorDraw.ts`: สร้างพีระมิดสี่เหลี่ยม 4 เหลี่ยม (frustum/pyramid wireframe + translucent faces) ตัดกับทรงรี WGS84 (ray-ellipsoid intersection ที่มุมทั้ง 4 และเส้นขอบตามแนวสแกน) เพื่อให้เห็น **แถบสแกนจริง (narrow along-track × wide cross-track)** ของ MODIS (`±55.0° × ±0.41°`) และ VIIRS (`±56.28° × ±0.42°`)
@@ -300,6 +312,7 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
    - สำหรับ LEO ที่มีแถบสแกนบางมากในแต่ละวินาที ควรเพิ่ม option วาด **Past/Future Ground Swath Polygon** (เส้นขอบซ้าย-ขวาที่ระยะมุม $\pm\theta(\alpha)$ ตามแนว ground track $\pm 1$ รอบโคจร) เพื่อให้เทียบตำแหน่งแถบสแกนจากวงโคจรกับแถบภาพของ NASA GIBS TrueColor บนลูกโลกได้ตรงกัน
 
 ### 5.6 ความเสี่ยงและข้อควรระวัง (Risks & Caveats)
+
 1. **การปนเปื้อนค่า DOP และ Verification Report (`dop.py:88`, `studio_validate.py:151`):** หากไม่แยก `category != "gnss"` ออกก่อนเรียก `dop_series` และ `validate_ephemeris` จะทำให้ `ALL` DOP เพี้ยนทันที และเกิดแถว `"unverified"` ขยะในรายงาน Validation
 2. **ข้อจำกัดชื่อ GMAT Spacecraft & SP3 3-Char ID:** ชื่อดาวเทียมในแคชมีทั้งช่องว่างและขีดกลาง (`"GOES 18"`, `"HIMAWARI-9"`, `"NOAA 20 (JPSS-1)"`) ซึ่งผิดไวยากรณ์ของ GMAT Script (`propagate.py:72`) และยาวเกิน 3 ตัวอักษรของ SP3 (`sp3.py:296`) — จำเป็นต้องแยก `display_name` ออกจาก `gmat_id` / `sp3_slot`
 3. **ความต่างระหว่างสถานะแคชจริงกับความสดของ GEO TLE:** ใน `_cache` ปัจจุบัน `Himawari-9` มีอายุ TLE `4.95 วัน` และ `GOES-18` มีอายุ `4.35 วัน` ซึ่งเกินเกณฑ์ `AGE_OK_DAYS = 2.0` ของ GNSS (`catalog.py:187`) หากไม่แยก threshold สำหรับ GEO/Weather อาจทำให้ UI เตือน stale ตลอดเวลาแม้ใช้งานจริงได้
