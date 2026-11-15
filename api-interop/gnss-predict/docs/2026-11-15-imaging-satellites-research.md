@@ -321,3 +321,62 @@ NASA GIBS ให้บริการผ่าน WMTS REST (`https://gibs.earth
    - สำหรับ **Himawari-9** บน GIBS ไม่มีชั้น `GeoColor` RGB เหมือน GOES-East/West ทำให้ประสบการณ์ภาพสีจะต่างจากฝั่งอเมริกา
 5. **ความแตกต่างระหว่าง `Terra`/`Aqua` ดั้งเดิมกับวงโคจรจริงปัจจุบัน:** ในแคช OMM ปัจจุบัน Terra (~689.3 km) และ Aqua (~685.8 km) ลดระดับต่ำกว่า 705 km แล้ว ทำให้หากคำนวณ swath ที่มุมคงที่ $\pm 55.0^\circ$ จากความสูงจริงของ TLE จะได้ swath ~2,255–2,268 km แคบกว่าสเปกอ้างอิง 2,330 km เล็กน้อย (~3%) ซึ่งถือว่าถูกต้องตามฟิสิกส์จริง
 6. **โมเดล 3 มิติที่มี `cell_normal` ต่างกัน 4 แบบ:** ต้องใช้สูตรเวกเตอร์ทั่วไป (`atan2` เทียบ `cell_normal`) และทดสอบภาพ 3D ของทั้ง 6 โมเดล (`terra`, `aqua`, `suomi-npp`, `noaa-21`, `goes`, `himawari-9`) เทียบเวกเตอร์ดวงอาทิตย์จริง เพื่อป้องกันแผงโซลาร์หันด้านหลังเข้าหาดวงอาทิตย์ (`+Z` vs `-Z`, `+X` vs `-X`)
+
+
+---
+
+## 6. ผลตรวจ GIBS จริง (2026-11-15)
+
+ตรวจสอบจากเอกสาร Capabilities ทางการของ NASA GIBS แบบ **GetCapabilities เท่านั้น** (1 คำขอต่อ projection, **ไม่ได้ดึงชิ้นภาพ tile จริง**):
+- **EPSG:3857 (Web Mercator — projection ที่ `imagery.py` ใช้จริง):** `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml` (พบทั้งหมด `1,330` ชั้น)
+- **EPSG:4326 (Geographic):** `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/1.0.0/WMTSCapabilities.xml` (พบทั้งหมด `1,330` ชั้น)
+
+### 6.1 ผลตรวจชั้นภาพหลักและชั้นภาพสำรองจาก §4.3
+
+| ดาวเทียม | ชั้นภาพ (`ows:Identifier`) | บทบาทใน §4.3 | มีใน `epsg3857` / `epsg4326` | `TileMatrixSet` (3857) & Max Zoom | `TileMatrixSet` (4326) & Max Zoom | Format / Tile Extension ใน XML | Dimension `Time` (เริ่ม – ล่าสุด, `default`, ความถี่) | สถานะ |
+|---|---|---|---|---|---|---|---|---|
+| **Terra** | `MODIS_Terra_CorrectedReflectance_TrueColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2000-02-24` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** *(ดูหมายเหตุ `.jpeg`)* |
+| **Terra** | `MODIS_Terra_CorrectedReflectance_Bands721` | สำรอง | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2000-02-24` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** |
+| **Terra** | `MODIS_Terra_CorrectedReflectance_Bands367` | สำรอง | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2000-02-24` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** |
+| **Aqua** | `MODIS_Aqua_CorrectedReflectance_TrueColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2002-07-03` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** *(ดูหมายเหตุ `.jpeg`)* |
+| **Aqua** | `MODIS_Aqua_CorrectedReflectance_Bands721` | สำรอง | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2002-07-03` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** |
+| **Aqua** | `MODIS_Aqua_CorrectedReflectance_Bands367` | สำรอง | **ไม่มี / ไม่มี** | — | — | — | — | **ไม่มีใน GIBS** |
+| **Suomi NPP** | `VIIRS_SNPP_CorrectedReflectance_TrueColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2015-11-24` – `2026-11-02` (`default=2026-11-02`, `P1D`) | **ใช้ได้** *(ล่าสุดหยุดที่ `2026-11-02`)* |
+| **Suomi NPP** | `VIIRS_SNPP_DayNightBand_At_Sensor_Radiance` | สำรอง | มี / มี | `GoogleMapsCompatible_Level8` (max `8`) | `500m` (max `7`) | `image/png` (`.png`) | `2020-11-18` – `2026-11-02` (`default=2026-11-02`, `P1D`) | **ใช้ได้** *(ล่าสุดหยุดที่ `2026-11-02`)* |
+| **Suomi NPP** | `VIIRS_SNPP_Fires_375m_Day` | สำรอง | **ไม่มี / ไม่มี** | — | — | — | — | **ไม่มีใน GIBS** *(ชื่อจริงคือ `VIIRS_SNPP_Thermal_Anomalies_375m_Day` ซึ่งเป็น `.mvt`)* |
+| **NOAA-20** | `VIIRS_NOAA20_CorrectedReflectance_TrueColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2018-01-05` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** *(ดูหมายเหตุ `.jpeg`)* |
+| **NOAA-20** | `VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance` | สำรอง | มี / มี | `GoogleMapsCompatible_Level8` (max `8`) | `500m` (max `7`) | `image/png` (`.png`) | `2024-03-25` – `2026-11-14` (`default=2026-11-14`, `P1D`) | **ใช้ได้** *(หรือใช้ `VIIRS_NOAA20_DayNightBand` Level 7 ถึง `2026-11-15`)* |
+| **NOAA-20** | `VIIRS_NOAA20_Thermal_Anomalies_375m_Day` | สำรอง | มี / มี | `GoogleMapsCompatible_Level8` (max `8`) | `500m` (max `7`) | `application/vnd.mapbox-vector-tile` (`.mvt`) | `2020-01-01` – `2026-11-14` (`default=2026-11-14`, `P1D`) | **เป็น Vector Tile (`.mvt`)** *(ใช้กับ raster proxy ปัจจุบันไม่ได้)* |
+| **NOAA-21** | `VIIRS_NOAA21_CorrectedReflectance_TrueColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level9` (max `9`) | `250m` (max `8`) | `image/jpeg` (`.jpeg`) | `2023-02-10` – `2026-11-15` (`default=2026-11-15`, `P1D`) | **ใช้ได้** *(ดูหมายเหตุ `.jpeg`)* |
+| **NOAA-21** | `VIIRS_NOAA21_DayNightBand_At_Sensor_Radiance` | สำรอง | มี / มี | `GoogleMapsCompatible_Level8` (max `8`) | `500m` (max `7`) | `image/png` (`.png`) | `2026-10-27` – `2026-11-14` (`default=2026-11-14`, `P1D`) | **ใช้ได้** *(หรือใช้ `VIIRS_NOAA21_DayNightBand` Level 7 ตั้งแต่ `2023-02-10` ถึง `2026-11-15`)* |
+| **GOES-19** | `GOES-East_ABI_GeoColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level7` (max `7`) | `1km` (max `6`) | `image/png` (`.png`) | `2026-08-11T02:40:00Z` – `2026-11-15T04:10:00Z` (`PT10M`) | **ใช้ได้** |
+| **GOES-19** | `GOES-East_ABI_Band2_Red_Visible_1km` | สำรอง | มี / มี | `GoogleMapsCompatible_Level7` (max `7`) | `1km` (max `6`) | `image/png` (`.png`) | `2026-08-12T02:30:00Z` – `2026-11-15T04:10:00Z` (`PT10M`) | **ใช้ได้** |
+| **GOES-19** | `GOES-East_ABI_Band13_Clean_Infrared` | สำรอง | มี / มี | `GoogleMapsCompatible_Level6` (max `6`) | `2km` (max `5`) | `image/png` (`.png`) | `2026-09-01T19:30:00Z` – `2026-11-15T04:20:00Z` (`PT10M`) | **ใช้ได้** |
+| **GOES-18** | `GOES-West_ABI_GeoColor` | หลัก | มี / มี | `GoogleMapsCompatible_Level7` (max `7`) | `1km` (max `6`) | `image/png` (`.png`) | `2026-08-11T19:40:00Z` – `2026-11-15T04:10:00Z` (`PT10M`) | **ใช้ได้** |
+| **GOES-18** | `GOES-West_ABI_Band2_Red_Visible_1km` | สำรอง | มี / มี | `GoogleMapsCompatible_Level7` (max `7`) | `1km` (max `6`) | `image/png` (`.png`) | `2026-08-13T19:50:00Z` – `2026-11-15T04:20:00Z` (`PT10M`) | **ใช้ได้** |
+| **GOES-18** | `GOES-West_ABI_Band13_Clean_Infrared` | สำรอง | มี / มี | `GoogleMapsCompatible_Level6` (max `6`) | `2km` (max `5`) | `image/png` (`.png`) | `2026-08-26T18:10:00Z` – `2026-11-15T04:30:00Z` (`PT10M`) | **ใช้ได้** |
+| **Himawari-9** | `Himawari_AHI_Band3_Red_Visible_1km` | หลัก | มี / มี | `GoogleMapsCompatible_Level7` (max `7`) | `1km` (max `6`) | `image/png` (`.png`) | `2026-10-05T02:50:00Z` – `2026-11-15T04:10:00Z` (`PT10M`) | **ใช้ได้** |
+| **Himawari-9** | `Himawari_AHI_Band13_Clean_Infrared` | *(ไม่ระบุใน §4.3 เดิม)* | มี / มี | `GoogleMapsCompatible_Level6` (max `6`) | `2km` (max `5`) | `image/png` (`.png`) | `2026-10-04T14:50:00Z` – `2026-11-15T04:10:00Z` (`PT10M`) | **ใช้ได้จริงบน GIBS** *(มี `Air_Mass` Level 6 `.png` เพิ่มอีก 1 ชั้น)* |
+
+> **ข้อสังเกตสำคัญจากผลตรวจ XML จริง:**
+> 1. **นามสกุลไฟล์ `.jpeg` กับ `.jpg`:** ใน `WMTSCapabilities.xml` ทั้ง `epsg3857` และ `epsg4326` แม่แบบ `<ResourceURL>` ของชั้น `MODIS_*_CorrectedReflectance_*` และ `VIIRS_*_CorrectedReflectance_*` ใช้ **`.jpeg`** (`image/jpeg`) ส่วน `imagery.py` (`GIBS_URL`, `Layer.ext`) ใช้ `"jpg"` — เนื่องจากงานนี้ตรวจเฉพาะ `GetCapabilities` ไม่ได้ทดลองโหลด tile จริง จึงควรตรวจว่า URL `.jpg` กับ GIBS ตอบ 200 หรือปรับ `imagery.py` ให้รองรับ `.jpeg` ตาม Capabilities
+> 2. **ชั้นที่ไม่ตรงกับ §4.3 เดิม:**
+>    - `MODIS_Aqua_CorrectedReflectance_Bands367` และ `VIIRS_SNPP_Fires_375m_Day` **ไม่มีใน GIBS**
+>    - `VIIRS_NOAA20_Thermal_Anomalies_375m_Day` (และ `VIIRS_SNPP_Thermal_Anomalies_375m_Day`) เป็น Vector Tile **`.mvt`** (`application/vnd.mapbox-vector-tile`) ใช้กับ `TileFetcher` ใน `imagery.py` ซึ่งรับเฉพาะ `jpg`/`png` ไม่ได้
+>    - `Himawari_AHI_Band13_Clean_Infrared` **มีอยู่จริงบน GIBS** (`PT10M`, `Level6`, `.png`) รวมถึง `Himawari_AHI_Air_Mass` (ไม่มี `GeoColor` จริงตามที่ระบุไว้)
+>    - `VIIRS_SNPP_*` ใน Capabilities ณ วันที่ 2026-11-15 มีข้อมูลล่าสุดถึงแค่ **`2026-11-02`** (ค้างหลังวันปัจจุบัน 13 วัน)
+
+### 6.2 เทียบกับตาราง `CATALOG` ใน branch `feature/gnss-studio-imagery` (`server/gnss_studio_server/imagery.py`)
+
+ตรวจแบบอ่านอย่างเดียวจาก `/Users/phuwish/SSSGMAT/.worktrees/gnss-studio-imagery/api-interop/gnss-predict/server/gnss_studio_server/imagery.py` (`CATALOG` บรรทัด 126–145):
+
+| ดาวเทียม | สถานะใน `CATALOG` ปัจจุบัน | ชั้นที่มีอยู่แล้วใน `CATALOG` (`imagery.py`) | ค่าที่ต้องเพิ่มใน `CATALOG` (`layer id`, `ext`, `tms`, `max_level`, `period`) |
+|---|---|---|---|
+| **Terra** | **มีชั้นหลักแล้ว** | `MODIS_Terra_CorrectedReflectance_TrueColor` (`jpg`, `GoogleMapsCompatible_Level9`, `9`, `daily`) | ชั้นหลักครบแล้ว *(ตรวจ `.jpg` vs `.jpeg` ตาม Capabilities)*; ชั้นสำรอง optional: `MODIS_Terra_CorrectedReflectance_Bands721` / `Bands367` (`jpeg`, `Level9`, `max_level=9`, `daily`) |
+| **Aqua** | **ยังขาดชั้นหลัก** | — | **ต้องเพิ่ม:** `MODIS_Aqua_CorrectedReflectance_TrueColor`, `ext="jpeg"` *(หรือ `"jpg"` ตาม schema)*, `tms="GoogleMapsCompatible_Level9"`, `max_level=9`, `period="daily"`<br>*(สำรอง optional: `MODIS_Aqua_CorrectedReflectance_Bands721`, `jpeg`, `Level9`, `max_level=9`, `daily`)* |
+| **Suomi NPP** | **มีชั้นหลักแล้ว** | `VIIRS_SNPP_CorrectedReflectance_TrueColor` (`jpg`, `GoogleMapsCompatible_Level9`, `9`, `daily`) | ชั้นหลักครบแล้ว *(ระวังข้อมูล GIBS หยุดที่ `2026-11-02`)*; ชั้นสำรองกลางคืน optional: `VIIRS_SNPP_DayNightBand_At_Sensor_Radiance` (`png`, `GoogleMapsCompatible_Level8`, `max_level=8`, `daily`) |
+| **NOAA-20** | **มีชั้นหลักแล้ว** | `VIIRS_NOAA20_CorrectedReflectance_TrueColor` (`jpg`, `GoogleMapsCompatible_Level9`, `9`, `daily`) | ชั้นหลักครบแล้ว; ชั้นสำรองกลางคืน optional: `VIIRS_NOAA20_DayNightBand_At_Sensor_Radiance` (`png`, `GoogleMapsCompatible_Level8`, `max_level=8`, `daily`) หรือ `VIIRS_NOAA20_DayNightBand` (`png`, `GoogleMapsCompatible_Level7`, `max_level=7`, `daily`) |
+| **NOAA-21** | **ยังขาดชั้นหลัก** | — | **ต้องเพิ่ม:** `VIIRS_NOAA21_CorrectedReflectance_TrueColor`, `ext="jpeg"` *(หรือ `"jpg"` ตาม schema)*, `tms="GoogleMapsCompatible_Level9"`, `max_level=9`, `period="daily"`<br>*(สำรองกลางคืน optional: `VIIRS_NOAA21_DayNightBand_At_Sensor_Radiance` `png`/`Level8`/`8`/`daily` หรือ `VIIRS_NOAA21_DayNightBand` `png`/`Level7`/`7`/`daily`)* |
+| **GOES-19** *(GOES-East)* | **มีชั้นหลักแล้ว** | `GOES-East_ABI_GeoColor` (`png`, `GoogleMapsCompatible_Level7`, `7`, `10min`) | ชั้นหลักครบและค่าตรง XML ทุกช่อง; ชั้นสำรอง 24 ชม. optional: `GOES-East_ABI_Band13_Clean_Infrared` (`png`, `GoogleMapsCompatible_Level6`, `max_level=6`, `10min`) |
+| **GOES-18** *(GOES-West)* | **มีชั้นหลักแล้ว** | `GOES-West_ABI_GeoColor` (`png`, `GoogleMapsCompatible_Level7`, `7`, `10min`) | ชั้นหลักครบและค่าตรง XML ทุกช่อง; ชั้นสำรอง 24 ชม. optional: `GOES-West_ABI_Band13_Clean_Infrared` (`png`, `GoogleMapsCompatible_Level6`, `max_level=6`, `10min`) |
+| **Himawari-9** | **มีทั้งชั้นหลักและ IR แล้ว** | `Himawari_AHI_Band3_Red_Visible_1km` (`png`, `Level7`, `7`, `10min`) และ `Himawari_AHI_Band13_Clean_Infrared` (`png`, `Level6`, `6`, `10min`) | ครบแล้วทั้งกลางวัน (Visible) และกลางคืน (Clean IR) และค่าตรง XML ทุกช่อง |
