@@ -20,6 +20,8 @@ export interface ChartCtx {
   /** ชื่อแกนของกราฟอายุกับความคลาด (ไม่ระบุ = ไม่มีชื่อแกน) */
   xName?: string;
   yName?: string;
+  /** ข้อความตัวเลขใน tooltip ของจุด (อายุเป็นวัน, ระยะคลาดเป็น km) มาจาก labels.ts ผู้เรียกใส่หน่วยเอง ไม่ระบุ = ตัวเลขเปล่า */
+  pointText?(age: number, d3Km: number): string;
 }
 
 /** สีของระบบ ไม่ใช่สี่ระบบ = สีรอง */
@@ -106,7 +108,7 @@ export function ageOption(points: readonly (readonly [number, number, string])[]
     tooltip: {
       trigger: "item", confine: true,
       formatter: (p: { data: [number, number, string]; seriesName?: string }) =>
-        `${escapeHtml(p.data[2])} (${escapeHtml(p.seriesName ?? "")})<br/>${p.data[0].toFixed(2)} d · ${p.data[1].toFixed(3)} km`,
+        `${escapeHtml(p.data[2])} (${escapeHtml(p.seriesName ?? "")})<br/>${escapeHtml(ctx.pointText?.(p.data[0], p.data[1]) ?? `${p.data[0]}, ${p.data[1]}`)}`,
     },
     xAxis: axis(ctx.xName),
     yAxis: axis(ctx.yName),

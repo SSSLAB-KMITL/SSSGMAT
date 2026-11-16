@@ -2,17 +2,24 @@
 //
 // - ตารางรายวัน: ประวัติ (`GET /validation/history`) รวมกับวันที่ยังไม่มีผล (`GET /validation/pending`) เรียงวันใหม่สุดก่อน; ΔEl ค่ากลาง/P99 ต่อระบบ สลับเป็น ΔAz ได้;
 //   Result = Pass / Fail / Pending (พร้อมเวลาที่จะลองครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ ไม่มี = UTCG) / Gave up (rows.ts)
-// - คลิกวันที่ตรวจแล้ว (Pass / Fail) = ตารางรายดวง (`GET /validation/{sc}/{day}`) กรองตามระบบและผลได้ วัน Pending / Gave up ไม่มีผลให้เปิด
-// - กราฟแนวโน้ม P99 ต่อระบบพร้อมเส้นเกณฑ์ (0.2° / 0.5°) และกราฟอายุข้อมูลกับระยะคลาด 3 มิติของทุกวันรวมกัน: ECharts จาก loadECharts (windows/Graph/chart.ts) เท่านั้น
-//   กราฟอายุต้องใช้ผลรายดวงของทุกวัน: ดึงทีละกลุ่มเล็ก ๆ ตอนเปิดหน้าต่าง ที่เก็บผลรายวัน (promise ต่อวัน + created_utc ของบรรทัดประวัติ) ใช้ร่วมกับตารางรายดวง
-//   จึงไม่ดึงวันเดียวกันซ้ำ; วันที่อ่านไม่ได้ข้ามเงียบ ๆ (ตารางรายดวงของวันนั้นแจ้งเองเมื่อคลิก) ตรวจซ้ำแล้ว created_utc เปลี่ยน = ดึงใหม่
+//   คอลัมน์เรียง Day, Scenario, Result, Failing แล้วจึง Truth กับคอลัมน์ระบบ: บนหน้าต่างแคบ (หลายระบบ) ผลตัดสินและเวลาลองครั้งถัดไปยังอยู่ในจอ
+//   ระบบที่ไม่ผ่านมี ✗ กับข้อความซ่อนสำหรับโปรแกรมอ่านจอ (ไม่ใช้สีอย่างเดียว) วัน Gave up มีข้อความสั้นให้เห็นในช่อง Result
+// - ตารางรายวันเป็นหน้าต่างเดียวที่ใช้คีย์บอร์ดได้แบบเดียวกับ Satellite Catalog: role="grid" แถวเป็นจุดหยุดเดียว (roving tabindex) ลูกศรขึ้นลง Home End เลื่อนโฟกัส
+//   Enter / Space หรือคลิกที่ใดก็ได้ในแถวของวันที่ตรวจแล้ว (Pass / Fail) = ตารางรายดวง (`GET /validation/{sc}/{day}`) กรองตามระบบและผลได้
+//   (aria-current ที่แถวของวันที่เปิดอยู่) วัน Pending / Gave up เข้าถึงได้แต่เปิดไม่ได้และไม่ไฮไลต์ตอนชี้; พื้นที่เลื่อนของทั้งสองตารางโฟกัสได้ (region)
+// - กราฟแนวโน้ม P99 ต่อระบบพร้อมเส้นเกณฑ์ (0.2° / 0.5°) และกราฟอายุข้อมูลกับระยะคลาด 3 มิติ: ECharts จาก loadECharts (windows/Graph/chart.ts) เท่านั้น
+//   กราฟอายุต้องใช้ผลรายดวงของวันที่ตรวจแล้วใหม่สุดไม่เกิน AGE_DAYS_LIMIT (180) วัน: ดึงด้วยกลุ่มคำขอที่เลื่อนต่อเนื่อง AGE_POOL (8) คำขอพร้อมกัน
+//   ที่เก็บผลรายวัน (promise ต่อวัน + created_utc ของบรรทัดประวัติ) ใช้ร่วมกับตารางรายดวงจึงไม่ดึงวันเดียวกันซ้ำ; วันที่อ่านไม่ได้ถูกจำไว้ตลอดที่หน้าต่างเปิดอยู่
+//   (ตัวโหลดของกราฟไม่ถามซ้ำ Refresh ล้างความจำนี้ การคลิกวันนั้นเองลองใหม่เสมอ) ตรวจซ้ำแล้ว created_utc เปลี่ยน = ดึงใหม่
+//   ปิดหน้าต่าง = ยกเลิกคำขอที่ค้างและไม่ส่งคำขอใหม่; กราฟอายุวาดใหม่ไม่เกินทุก AGE_FLUSH_MS แล้วอีกครั้งตอนจบ และไม่ล้างจุดเดิมตอนโหลดใหม่จนกว่าจุดใหม่จะมา
+//   ใต้หัวกราฟอายุมีข้อความสรุป (จำนวนดวง จำนวนวัน ค่ากลางของอายุ) และจำนวนวันสูงสุดที่อ่าน
 // - งานตรวจ (job validate) ที่จบลง (สำเร็จ ล้มเหลว หรือถูกยกเลิก) ทำให้โหลดสองรายการใหม่เอง (วัน Pending กลายเป็นผล หรือเวลาลองครั้งถัดไปเปลี่ยน); Refresh โหลดเอง
 // - ไม่ผูกกับ scenario: ใช้ได้โดยไม่เปิด scenario ไม่เรียก POST /validate หรือ /daily/run (หน้านี้อ่านอย่างเดียว)
 // - chunk ของ ECharts โหลดไม่ได้ = ข้อความไทย role="alert" (ตารางยังใช้ได้) Refresh ลองโหลดใหม่ ปิดหน้าต่าง = dispose ทั้งสองกราฟ
 
 import type { EChartsType } from "echarts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, errorText } from "../../api/client";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { apiGet, errorText, isAbortError } from "../../api/client";
 import { useTimeFormatter } from "../../chrome/hooks";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
@@ -25,12 +32,14 @@ import { readGraphTheme } from "../Graph/options";
 import { VALIDATION_KIND } from "./commands";
 import { ageOption, trendOption, type ChartCtx } from "./options";
 import {
-  ageScatter, dailyRows, docSystems, fixed, pairText, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries,
+  AGE_DAYS_LIMIT, ageScatter, ageSummary, dailyRows, docSystems, fixed, pairText, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries,
   type DailyRow, type DayResult, type HistoryRecord, type Metric, type PendingDay, type ValidationDoc,
 } from "./rows";
 
-/** ผลรายวันที่ดึงพร้อมกันในหนึ่งกลุ่ม (กราฟอายุ) */
-const AGE_BATCH = 8;
+/** คำขอผลรายวันที่ค้างพร้อมกันได้ไม่เกินนี้ (กราฟอายุ) */
+const AGE_POOL = 8;
+/** กราฟอายุวาดใหม่ระหว่างโหลดไม่บ่อยกว่านี้ (ms) แล้ววาดอีกครั้งตอนจบ */
+const AGE_FLUSH_MS = 250;
 const DASH = "—";
 
 const SYSTEM_LABELS: Record<string, LabelKey> = {
@@ -71,7 +80,11 @@ interface Ages {
   docs: ValidationDoc[];
   done: number;
   total: number;
+  loading: boolean;
 }
+
+/** กุญแจที่เก็บของผลรายวัน: ตรวจซ้ำแล้ว created_utc เปลี่ยน = กุญแจใหม่ */
+const docKey = (row: DailyRow): string => `${row.key}@${row.created ?? ""}`;
 
 /** กราฟหนึ่งกราฟบน div ที่ส่งมา (null = ยังไม่มี div หรือยังไม่ได้โหลด ECharts) */
 function useChartInstance(lib: ECharts | null, el: HTMLDivElement | null): EChartsType | null {
@@ -136,17 +149,35 @@ export function Validation({ panelId }: PanelProps) {
 
   // ---------- ผลรายวัน (ที่เก็บร่วมของตารางรายดวงกับกราฟอายุ) ----------
   const docs = useRef(new Map<string, Promise<ValidationDoc>>());
-  const loadDoc = useCallback((row: DailyRow): Promise<ValidationDoc> => {
-    const key = `${row.key}@${row.created ?? ""}`;
+  /** วันที่ดึงแล้วล้ม (กุญแจ docKey) ตัวโหลดของกราฟข้ามวันเหล่านี้ตลอดที่หน้าต่างเปิดอยู่; Refresh ล้างทิ้ง; การคลิกวันนั้นเองลองใหม่เสมอ */
+  const failed = useRef(new Set<string>());
+  /** ตัวยกเลิกของหน้าต่างนี้ทั้งหน้า: ปิดหน้าต่าง = ยกเลิกคำขอผลรายวันที่ค้างทั้งหมด (ต้องประกาศก่อน effect อื่นที่เรียก loadDoc) */
+  const mountAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    const cache = docs.current;
+    const bad = failed.current;
+    mountAbort.current = ac;
+    return () => {
+      ac.abort();
+      cache.clear(); // ล้างทันที: StrictMode ผูก effect ใหม่ต่อจากนี้เลย ต้องไม่ได้ promise ที่กำลังถูกยกเลิกกลับไป
+      bad.clear();
+    };
+  }, []);
+  const loadDoc = useCallback((row: DailyRow, retry = false): Promise<ValidationDoc> => {
+    const key = docKey(row);
+    if (retry) failed.current.delete(key);
     let found = docs.current.get(key);
     if (found === undefined) {
-      const p = apiGet<unknown>(`/validation/${encodeURIComponent(row.scenario)}/${row.day}`).then((r) => {
+      const p = apiGet<unknown>(`/validation/${encodeURIComponent(row.scenario)}/${row.day}`, { signal: mountAbort.current?.signal }).then((r) => {
         const doc = parseDay(r.data);
         if (doc === null) throw new Error(msg("validation.dayInvalid"));
         return doc;
       });
-      p.catch(() => {
-        if (docs.current.get(key) === p) docs.current.delete(key); // ล้ม = ไม่จำ (คลิกหรือ Refresh แล้วลองใหม่ได้)
+      p.catch((e: unknown) => {
+        if (docs.current.get(key) !== p) return; // ล้างไปแล้ว (ปิดหน้าต่าง) ไม่ต้องจำอะไร
+        docs.current.delete(key);
+        if (!isAbortError(e)) failed.current.add(key);
       });
       docs.current.set(key, p);
       found = p;
@@ -159,6 +190,8 @@ export function Validation({ panelId }: PanelProps) {
   const [result, setResult] = useState("");
   const selectedRow = useMemo(() => validated.find((r) => r.key === selectedKey) ?? null, [validated, selectedKey]);
   const [detail, setDetail] = useState<Detail | null>(null);
+  /** คลิกวันที่เลือกอยู่แล้วหลังโหลดล้ม = ลองใหม่ (เพิ่มตัวนับนี้) */
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (selectedRow === null) {
       setDetail(null);
@@ -166,7 +199,7 @@ export function Validation({ panelId }: PanelProps) {
     }
     let alive = true;
     setDetail({ key: selectedRow.key, doc: null, error: null });
-    loadDoc(selectedRow).then(
+    loadDoc(selectedRow, true).then(
       (doc) => {
         if (alive) setDetail({ key: selectedRow.key, doc, error: null });
       },
@@ -179,34 +212,97 @@ export function Validation({ panelId }: PanelProps) {
     return () => {
       alive = false;
     };
-  }, [selectedRow, loadDoc]);
+  }, [selectedRow, loadDoc, attempt]);
 
   const select = (row: DailyRow): void => {
-    if (row.key === selectedKey) return;
+    if (row.key === selectedKey) {
+      if (detail?.error != null) setAttempt((n) => n + 1);
+      return;
+    }
     setSelectedKey(row.key);
     setSystem("");
     setResult("");
   };
+  /** คลิกหรือ Enter / Space: เปิดเฉพาะวันที่ตรวจแล้ว (Pending / Gave up ไม่มีผลให้เปิด) */
+  const openRow = (row: DailyRow): void => {
+    if (row.result === "pass" || row.result === "fail") select(row);
+  };
 
-  const [ages, setAges] = useState<Ages>({ docs: [], done: 0, total: 0 });
+  // ---------- คีย์บอร์ดของตารางรายวัน (roving tabindex แบบเดียวกับ Satellite Catalog) ----------
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const tabbableKey =
+    rows.find((r) => r.key === focusedKey)?.key ?? rows.find((r) => r.key === selectedKey)?.key ?? rows[0]?.key ?? null;
+  const focusRow = (index: number): void => {
+    const target = rows[Math.min(rows.length - 1, Math.max(0, index))];
+    if (target !== undefined) rowRefs.current.get(target.key)?.focus();
+  };
+  const onRowKeyDown = (e: KeyboardEvent, index: number): void => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); focusRow(index + 1); break;
+      case "ArrowUp": e.preventDefault(); focusRow(index - 1); break;
+      case "Home": e.preventDefault(); focusRow(0); break;
+      case "End": e.preventDefault(); focusRow(rows.length - 1); break;
+      case "Enter":
+      case " ": e.preventDefault(); openRow(rows[index]); break;
+    }
+  };
+
+  const [ages, setAges] = useState<Ages>({ docs: [], done: 0, total: 0, loading: false });
   useEffect(() => {
     let alive = true;
-    const total = validated.length;
-    setAges({ docs: [], done: 0, total });
-    void (async () => {
-      const got: ValidationDoc[] = [];
-      for (let i = 0; i < total; i += AGE_BATCH) {
-        const batch = await Promise.all(validated.slice(i, i + AGE_BATCH).map((row) => loadDoc(row).catch(() => null)));
+    const list = validated.slice(0, AGE_DAYS_LIMIT); // validated เรียงวันใหม่สุดก่อน
+    const total = list.length;
+    if (total === 0) {
+      setAges({ docs: [], done: 0, total: 0, loading: false });
+      return;
+    }
+    // จุดเดิมคงอยู่จนกว่าการวาดครั้งแรกของรอบนี้ (ไม่กระพริบเป็นกราฟว่างตอนโหลดใหม่)
+    setAges((prev) => ({ ...prev, done: 0, total, loading: true }));
+    const got: ValidationDoc[] = [];
+    let done = 0;
+    let next = 0;
+    let lastFlush = Date.now();
+    const flush = (): void => {
+      lastFlush = Date.now();
+      setAges({ docs: [...got], done, total, loading: done < total });
+    };
+    const finish = (doc: ValidationDoc | null): void => {
+      done++;
+      if (doc !== null) got.push(doc);
+      if (done === total || Date.now() - lastFlush >= AGE_FLUSH_MS) flush();
+    };
+    // กลุ่มคำขอเลื่อนต่อเนื่อง: ตัวทำงาน AGE_POOL ตัวหยิบวันถัดไปทันทีที่ตัวเองเสร็จ ไม่รอทั้งกลุ่ม
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        if (!alive || next >= total) return;
+        const row = list[next++];
+        if (failed.current.has(docKey(row))) {
+          finish(null);
+          continue;
+        }
+        let doc: ValidationDoc | null = null;
+        try {
+          doc = await loadDoc(row);
+        } catch {
+          doc = null; // อ่านไม่ได้: ข้าม (loadDoc จำไว้แล้ว ตารางรายดวงของวันนั้นแจ้งเองเมื่อคลิก)
+        }
         if (!alive) return;
-        for (const doc of batch) if (doc !== null) got.push(doc);
-        setAges({ docs: [...got], done: Math.min(i + AGE_BATCH, total), total });
+        finish(doc);
       }
-    })();
+    };
+    for (let i = 0; i < Math.min(AGE_POOL, total); i++) void worker();
     return () => {
       alive = false;
     };
   }, [validated, loadDoc]);
   const points = useMemo(() => ageScatter(ages.docs), [ages.docs]);
+  const ageSum = useMemo(() => ageSummary(ages.docs), [ages.docs]);
+  const ageSubtitle = [
+    ageSum.points === 0 ? null : t("validation.ageSummary", { points: ageSum.points, days: ageSum.days, age: fixed(ageSum.medianAge, 2) }),
+    validated.length > AGE_DAYS_LIMIT ? t("validation.ageLimited", { n: AGE_DAYS_LIMIT, total: validated.length }) : t("validation.ageLimit", { n: AGE_DAYS_LIMIT }),
+  ].filter((x): x is string => x !== null).join(" · ");
 
   // ---------- ECharts ----------
   const [lib, setLib] = useState<ECharts | null>(null);
@@ -244,7 +340,10 @@ export function Validation({ panelId }: PanelProps) {
   usePanelResize(panelId, () => {
     for (const c of charts.current) c?.resize();
   });
-  const ctx = useMemo<ChartCtx>(() => ({ theme: readGraphTheme(), systemName, xName: t("validation.ageX"), yName: t("validation.ageY") }), []);
+  const ctx = useMemo<ChartCtx>(() => ({
+    theme: readGraphTheme(), systemName, xName: t("validation.ageX"), yName: t("validation.ageY"),
+    pointText: (age, d3Km) => t("validation.agePoint", { age: age.toFixed(2), d3: d3Km.toFixed(3) }),
+  }), []);
   useEffect(() => {
     if (trendChart !== null) trendChart.setOption(trendOption(trend, ctx), { notMerge: true });
   }, [trendChart, trend, ctx]);
@@ -254,13 +353,14 @@ export function Validation({ panelId }: PanelProps) {
 
   const refresh = (): void => {
     if (chunkFailed) setChunkAttempt((a) => a + 1);
+    failed.current.clear(); // วันที่ล้มไว้ถูกถามใหม่ (กราฟอายุ)
     setReload((n) => n + 1);
   };
 
   // ---------- วาด ----------
   const empty = lists !== null && lists.history !== null && lists.history.length === 0 && lists.pending.length === 0;
   const showBody = lists !== null && lists.history !== null && !empty;
-  const agesLoading = ages.done < ages.total;
+  const agesLoading = ages.loading;
 
   const nextAttemptText = (iso: string | null): string => {
     if (iso === null) return msg("validation.noRetry");
@@ -273,6 +373,12 @@ export function Validation({ panelId }: PanelProps) {
     return (
       <td key={letter} className={cell?.pass === false ? "val-num val-bad" : "val-num"}>
         {cell === undefined ? "" : pairText(cell.median, cell.p99, 3)}
+        {cell?.pass === false && (
+          <>
+            <span aria-hidden="true"> ✗</span>
+            <span className="sr-only"> {t("validation.failed")}</span>
+          </>
+        )}
       </td>
     );
   };
@@ -296,44 +402,48 @@ export function Validation({ panelId }: PanelProps) {
         {showBody && (
           <>
             <section className="val-section">
-              <div className="val-scroll val-daily">
-                <table className="val-table" aria-label={t("validation.dailyTable")}>
+              <div className="val-scroll val-daily" role="region" tabIndex={0} aria-label={t("validation.dailyTable")}>
+                <table className="val-table" role="grid" aria-label={t("validation.dailyTable")}>
                   <thead>
                     <tr>
                       <th scope="col">{t("validation.col.day")}</th>
                       <th scope="col">{t("validation.col.scenario")}</th>
+                      <th scope="col">{t("validation.col.result")}</th>
+                      <th scope="col">{t("validation.col.failing")}</th>
                       <th scope="col">{t("validation.col.truth")}</th>
                       {letters.map((l) => (
                         <th key={l} scope="col" className="val-num">{t("validation.col.systemStats", { system: systemName(l), metric: t(METRIC_LABELS[metric]) })}</th>
                       ))}
-                      <th scope="col">{t("validation.col.result")}</th>
-                      <th scope="col">{t("validation.col.failing")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => {
+                    {rows.map((row, index) => {
                       const open = row.result === "pass" || row.result === "fail";
                       return (
                         <tr
                           key={row.key}
-                          className={row.key === selectedKey ? "val-row val-selected" : "val-row"}
+                          ref={(el) => {
+                            if (el === null) rowRefs.current.delete(row.key);
+                            else rowRefs.current.set(row.key, el);
+                          }}
+                          className={`val-row${open ? " val-open" : ""}${row.key === selectedKey ? " val-selected" : ""}`}
+                          aria-current={row.key === selectedKey ? "true" : undefined}
                           title={row.result === "gave_up" ? msg("validation.gaveUp") : undefined}
+                          tabIndex={row.key === tabbableKey ? 0 : -1}
+                          onClick={() => openRow(row)}
+                          onFocus={() => setFocusedKey(row.key)}
+                          onKeyDown={(e) => onRowKeyDown(e, index)}
                         >
-                          <td>
-                            {open ? (
-                              <button type="button" className="val-day" aria-pressed={row.key === selectedKey} onClick={() => select(row)}>{row.day}</button>
-                            ) : (
-                              row.day
-                            )}
-                          </td>
+                          <td>{row.day}</td>
                           <td>{row.scenario}</td>
-                          <td className="val-truth" title={row.truth ?? undefined}>{row.truth ?? ""}</td>
-                          {letters.map((l) => systemCell(row, l))}
                           <td className={`val-result val-${row.result}`}>
                             {t(DAY_RESULT_LABELS[row.result])}
                             {row.result === "pending" && <span className="val-next"> {nextAttemptText(row.nextAttempt)}</span>}
+                            {row.result === "gave_up" && <span className="val-next"> {msg("validation.gaveUpShort")}</span>}
                           </td>
                           <td>{row.failing.join(", ")}</td>
+                          <td className="val-truth" title={row.truth ?? undefined}>{row.truth ?? ""}</td>
+                          {letters.map((l) => systemCell(row, l))}
                         </tr>
                       );
                     })}
@@ -389,8 +499,9 @@ export function Validation({ panelId }: PanelProps) {
                   </section>
                   <section className="val-section">
                     <h3 className="val-h" title={msg("validation.ageChartHint")}>{t("validation.ageTitle")}</h3>
+                    <p className="val-sub">{ageSubtitle}</p>
                     <div className="val-chartbox">
-                      <div ref={setAgeEl} className="val-chart" data-chart="age" role="img" aria-label={t("validation.ageTitle")} />
+                      <div ref={setAgeEl} className="val-chart" data-chart="age" role="img" aria-label={`${t("validation.ageTitle")}. ${ageSubtitle}`} />
                       {agesLoading && <p className="rpt-note graph-note">{msg("validation.loadingAges", { done: ages.done, total: ages.total })}</p>}
                       {!agesLoading && points.length === 0 && <p className="rpt-note graph-note">{msg("validation.noAge")}</p>}
                     </div>
@@ -410,7 +521,7 @@ function SatTable({ doc, system, result }: { doc: ValidationDoc; system: string;
   const sats = useMemo(() => satelliteRows(doc, { system, result }), [doc, system, result]);
   if (Object.keys(doc.satellites).length === 0) return <p className="rpt-note">{msg("validation.noSatellites")}</p>;
   return (
-    <div className="val-scroll val-sats">
+    <div className="val-scroll val-sats" role="region" tabIndex={0} aria-label={t("validation.satTable")}>
       <table className="val-table" aria-label={t("validation.satTable")}>
         <thead>
           <tr>
@@ -426,7 +537,7 @@ function SatTable({ doc, system, result }: { doc: ValidationDoc; system: string;
         </thead>
         <tbody>
           {sats.map((s) => (
-            <tr key={s.prn} className="val-row">
+            <tr key={s.prn}>
               <td>{s.prn}</td>
               <td>{s.truth ?? DASH}</td>
               <td className="val-num">{s.pairs === null ? DASH : s.pairs}</td>

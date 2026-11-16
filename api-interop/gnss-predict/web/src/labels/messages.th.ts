@@ -435,6 +435,7 @@ const MESSAGES = {
   "validation.noSatellites": "ผลตรวจของวันนี้ไม่มีข้อมูลรายดวง",
   // {time} = เวลาที่ตัวตั้งเวลาจะลองตรวจครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี scenario = UTCG)
   "validation.nextAttempt": "ลองครั้งถัดไป {time}",
+  "validation.gaveUpShort": "เลิกตรวจแล้ว ไม่ลองอีก",
   "validation.noRetry": "ยังไม่ได้ตั้งเวลาลอง (งานประจำวันปิดอยู่)",
   "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
   "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",

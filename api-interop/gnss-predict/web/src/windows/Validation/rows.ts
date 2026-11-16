@@ -17,6 +17,9 @@ export type Metric = "el" | "az";
 /** เส้นเกณฑ์ P99 (องศา) ตาม spec §7: เท่ากับ EL_P99_MAX และ AZ_P99_MAX ใน gnss_predict/config.py */
 export const TREND_LIMITS: Readonly<Record<Metric, number>> = Object.freeze({ el: 0.2, az: 0.5 });
 
+/** กราฟอายุอ่านผลรายวันของวันที่ตรวจแล้วใหม่สุดไม่เกินจำนวนนี้ (วันเก่ากว่านั้นยังเปิดดูรายดวงได้เมื่อคลิก) */
+export const AGE_DAYS_LIMIT = 180;
+
 /** ลำดับระบบในตารางและกราฟ: GPS, GLONASS, Galileo, BeiDou แล้วตัวอื่นตามตัวอักษร (ตรงกับ GNSS_GROUPS ของ engine) */
 const SYSTEM_ORDER = "GREC";
 
@@ -232,6 +235,9 @@ export function systemLetters(rows: readonly Pick<DailyRow, "systems">[]): strin
 
 // ---------- ตารางรายดวง ----------
 
+/** เทียบ PRN: ระบบตามลำดับ G R E C แล้วตัวอื่น จากนั้นตามเลขของ PRN (ไม่ใช่ตามตัวอักษร) */
+export const comparePrn = (a: string, b: string): number => compareSystems(a.charAt(0), b.charAt(0)) || (a < b ? -1 : a > b ? 1 : 0);
+
 export interface SatRow {
   prn: string;
   /** อักษรนำของ PRN (G R E C) */
@@ -264,7 +270,7 @@ export interface SatFilter {
 /** ผลรายดวงของวันหนึ่ง เรียงตาม PRN กรองตามระบบและผล */
 export function satelliteRows(doc: ValidationDoc, filter: SatFilter = {}): SatRow[] {
   const out: SatRow[] = [];
-  for (const prn of Object.keys(doc.satellites).sort()) {
+  for (const prn of Object.keys(doc.satellites).sort(comparePrn)) {
     const s = doc.satellites[prn];
     const result = str(s.result);
     if (filter.system && prn.charAt(0) !== filter.system) continue;
@@ -323,13 +329,28 @@ export function trendSeries(history: readonly HistoryRecord[], metric: Metric): 
 export function ageScatter(docs: readonly ValidationDoc[]): [number, number, string][] {
   const points: [number, number, string][] = [];
   for (const doc of docs) {
-    for (const prn of Object.keys(doc.satellites).sort()) {
+    for (const prn of Object.keys(doc.satellites).sort(comparePrn)) {
       const age = num(doc.satellites[prn].age_days);
       const d3 = num(doc.satellites[prn].d3_median_km);
       if (age !== null && d3 !== null) points.push([age, d3, prn]);
     }
   }
   return points;
+}
+
+/** สรุปกราฟอายุเป็นตัวเลข: จำนวนดวงที่มีจุด จำนวนวันที่มีจุดอย่างน้อยหนึ่งจุด และค่ากลางของอายุ (ไม่มีจุดเลย = null) */
+export function ageSummary(docs: readonly ValidationDoc[]): { points: number; days: number; medianAge: number | null } {
+  const ages: number[] = [];
+  let days = 0;
+  for (const doc of docs) {
+    const points = ageScatter([doc]);
+    if (points.length > 0) days++;
+    for (const p of points) ages.push(p[0]);
+  }
+  if (ages.length === 0) return { points: 0, days: 0, medianAge: null };
+  ages.sort((a, b) => a - b);
+  const mid = ages.length >> 1;
+  return { points: ages.length, days, medianAge: ages.length % 2 === 1 ? ages[mid] : (ages[mid - 1] + ages[mid]) / 2 };
 }
 
 // ---------- ข้อความตัวเลข ----------

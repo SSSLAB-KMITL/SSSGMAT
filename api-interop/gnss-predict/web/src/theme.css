@@ -2618,7 +2618,12 @@ body {
   text-overflow: ellipsis;
 }
 
-.val-row:hover {
+/* เฉพาะแถวของวันที่เปิดได้ (Pass / Fail) ไฮไลต์ตอนชี้และเป็นปุ่มกดได้ แถว Pending / Gave up และตารางรายดวงไม่ไฮไลต์ */
+.val-open {
+  cursor: pointer;
+}
+
+.val-open:hover {
   background: var(--hover-bg);
 }
 
@@ -2628,23 +2633,20 @@ body {
   color: var(--selected-text);
 }
 
-.val-day {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.val-day:focus-visible {
+/* จุดหยุดของแถวรายวัน (roving tabindex) และพื้นที่เลื่อนที่โฟกัสด้วยคีย์บอร์ดได้ */
+.val-row:focus-visible,
+.val-scroll:focus-visible {
   outline: 2px solid var(--selected-bg);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
-.val-selected .val-day:focus-visible {
+.val-selected:focus-visible {
   outline-color: var(--selected-text);
+}
+
+.val-sub {
+  margin: 0 0 2px;
+  color: var(--text-muted);
 }
 
 .val-table td.val-fail,

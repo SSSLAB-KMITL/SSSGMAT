@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  ageScatter, dailyRows, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries, TREND_LIMITS,
+  ageScatter, ageSummary, AGE_DAYS_LIMIT, comparePrn, dailyRows, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries, TREND_LIMITS,
   type HistoryRecord, type PendingDay,
 } from "../../src/windows/Validation/rows";
 
@@ -128,9 +128,10 @@ describe("satellite rows", () => {
   const doc = parseDay(DOC_10)!;
 
   test("satellite filter: system and result, PRN order", () => {
-    expect(satelliteRows(doc).map((s) => s.prn)).toEqual(["E05", "G01", "G22", "R03"]);
+    // ลำดับระบบ G R E C เหมือนทั้งหน้า แล้วตาม PRN (ไม่ใช่ตามตัวอักษร: E05 อยู่หลัง R03)
+    expect(satelliteRows(doc).map((s) => s.prn)).toEqual(["G01", "G22", "R03", "E05"]);
     expect(satelliteRows(doc, { system: "G" }).map((s) => s.prn)).toEqual(["G01", "G22"]);
-    expect(satelliteRows(doc, { result: "fail" }).map((s) => s.prn)).toEqual(["E05", "G22"]);
+    expect(satelliteRows(doc, { result: "fail" }).map((s) => s.prn)).toEqual(["G22", "E05"]);
     expect(satelliteRows(doc, { system: "G", result: "fail" }).map((s) => s.prn)).toEqual(["G22"]);
     expect(satelliteRows(doc, { system: "C" })).toEqual([]);
     // ค่าว่าง = ไม่กรอง
@@ -190,11 +191,26 @@ describe("age against error", () => {
       },
     })!;
     const points = ageScatter([parseDay(DOC_10)!, other]);
-    // ตามลำดับเอกสารที่ส่งให้ แล้วตามลำดับ PRN ในเอกสารนั้น: [อายุ (วัน), ค่ากลางระยะ 3D (km), PRN]
+    // ตามลำดับเอกสารที่ส่งให้ แล้วตามลำดับ PRN (G R E C) ในเอกสารนั้น: [อายุ (วัน), ค่ากลางระยะ 3D (km), PRN]
     expect(points).toEqual([
-      [3.25, 0.02, "E05"], [0.5, 0.011, "G01"], [1.5, 0.052, "G22"],
-      [6.5, 0.31, "C06"], [0.25, 0.01, "G01"],
+      [0.5, 0.011, "G01"], [1.5, 0.052, "G22"], [3.25, 0.02, "E05"],
+      [0.25, 0.01, "G01"], [6.5, 0.31, "C06"],
     ]);
+  });
+
+  test("the age summary counts the satellites, the days that gave any, and the median age", () => {
+    const a = parseDay({ day: "2026-11-10", satellites: { G01: { age_days: 1, d3_median_km: 0.1 }, G02: { age_days: 3, d3_median_km: 0.1 }, G03: { age_days: null, d3_median_km: 0.1 } } })!;
+    const b = parseDay({ day: "2026-11-09", satellites: { G01: { age_days: 5, d3_median_km: 0.1 } } })!;
+    const empty = parseDay({ day: "2026-11-08", satellites: { G01: { age_days: null, d3_median_km: null } } })!;
+    expect(ageSummary([a, b, empty])).toEqual({ points: 3, days: 2, medianAge: 3 });
+    // จำนวนคู่: ค่ากลางคือค่าเฉลี่ยของสองตัวกลาง
+    expect(ageSummary([a])).toEqual({ points: 2, days: 1, medianAge: 2 });
+    expect(ageSummary([])).toEqual({ points: 0, days: 0, medianAge: null });
+    expect(AGE_DAYS_LIMIT).toBe(180);
+  });
+
+  test("comparePrn orders by system G R E C, then by number", () => {
+    expect(["E05", "C01", "R03", "G22", "G01", "J01"].sort(comparePrn)).toEqual(["G01", "G22", "R03", "E05", "C01", "J01"]);
   });
 
   test("no docs, no points", () => {

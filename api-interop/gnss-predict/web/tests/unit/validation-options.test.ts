@@ -14,7 +14,7 @@ const REC = (day: string, g: number, e: number): HistoryRecord => ({
 });
 const HISTORY = [REC("2026-11-09", 0.11, 0.12), REC("2026-11-10", 0.31, 0.13)];
 const NAME: Record<string, string> = { G: "GPS", E: "Galileo" };
-const ctx = { theme: DEFAULT_GRAPH_THEME, systemName: (s: string) => NAME[s] ?? s };
+const ctx = { theme: DEFAULT_GRAPH_THEME, systemName: (s: string) => NAME[s] ?? s, pointText: (age: number, d3: number) => `AGE=${age} D3=${d3}` };
 
 const limitLine = (o: AnyObj): AnyObj => (o.series as AnyObj[]).find((s) => s.id === "limit")!.markLine;
 
@@ -80,6 +80,14 @@ describe("age option", () => {
     const html = o.tooltip.formatter({ data: [1, 0.1, "<b>G01</b>"], seriesName: "GPS" }) as string;
     expect(html).toContain("&lt;b&gt;G01&lt;/b&gt;");
     expect(html).not.toContain("<b>");
+  });
+
+  test("the tooltip text for the numbers comes from the caller (labels.ts), not from the option", () => {
+    const o = ageOption([[1.234, 0.1, "G01"]], ctx) as AnyObj;
+    const html = o.tooltip.formatter({ data: [1.234, 0.1, "G01"], seriesName: "GPS" }) as string;
+    expect(html).toContain("G01");
+    expect(html).toContain("AGE=1.234 D3=0.1");
+    expect(html).not.toMatch(/\bkm\b|\bd\b/); // ไม่มีหน่วยเขียนตรงในโค้ด option
   });
 
   test("axes are the age in days and the 3D median in km", () => {
