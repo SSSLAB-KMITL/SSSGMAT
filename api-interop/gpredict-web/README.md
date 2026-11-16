@@ -475,6 +475,33 @@ server กันหน้าเว็บอื่นที่เปิดอย�
 File → Quit ใช้ไม่ได้ในโหมดนี้: server ที่รันด้วย `uvicorn` โดยตรงไม่มีตัวหยุดตัวเอง `POST /api/quit` ตอบ 409 `QUIT_UNAVAILABLE`
 และหน้าเว็บแสดงข้อความนั้นแทนหน้า "ปิดแล้ว" (หยุดด้วย Ctrl+C)
 
+## Docker
+
+image `linux/amd64` ที่มี server, หน้าเว็บที่ build แล้ว, engine `gnss_predict` และ GMAT R2026a Linux ทางการ (tarball จาก SourceForge
+ตรวจ MD5 + SHA-256 ค่าเดียวกับ image ของ GNSS Studio) รันเป็น uid 10001 การนำขึ้น production พร้อม HTTPS และ login
+อยู่ที่ `api-interop/deploy/` บน branch `feature/production-docker` (README ของโฟลเดอร์นั้น)
+
+```bash
+# จากราก repo (context ต้องมี License.txt และ api-interop/gnss-predict)
+docker build --platform linux/amd64 -f api-interop/gpredict-web/Dockerfile -t gpredict-web:dev .
+```
+
+| ใน container | ค่า |
+|---|---|
+| port | 8740 (`GPREDICT_WEB_PORT`) ฟัง `0.0.0.0` |
+| ข้อมูล (`GPREDICT_WEB_DATA`) | `/data` (volume) |
+| cache ของ CelesTrak (`GNSS_STUDIO_DATA`) | `/engine-data/orbits/_cache` — mount volume เดียวกับ GNSS Studio เพื่อนับกติกา 1 ครั้งต่อกลุ่มต่อ 2 ชม. รวมกัน |
+| GMAT | `/opt/sssgmat/application/bin/GmatConsole` (`GMAT_BIN`) |
+
+- server รับ Host/Origin เฉพาะ `127.0.0.1`, `localhost`, `::1` (และ `0.0.0.0`) จึงไม่ publish port ตรง ๆ ให้เครื่องอื่น
+  ให้เข้าผ่าน reverse proxy ที่เขียน Host เป็น `127.0.0.1:8740` และเขียน Origin ของตัวเองเป็น `http://127.0.0.1:8740` (`deploy/Caddyfile`)
+- เปิดครั้งแรกด้วย `/data` ว่างจะดึงกลุ่ม amateur จาก CelesTrak 1 ครั้ง (สร้าง module `Amateur` แบบ Gpredict) ถ้าไม่ต้องการ
+  ให้ย้ายข้อมูลเดิมเข้า volume ก่อน (`deploy/seed-volume.sh`)
+- rigctld/rotctld ไม่อยู่ใน image: ตั้ง Host ใน Preferences → Interfaces เป็น `host.docker.internal` (compose ของ deploy map ไว้แล้ว)
+  หรือ IP ของเครื่องที่ต่อวิทยุ
+- ทดสอบใน image (2026-11-17, Apple M-series ผ่าน emulation, `--network none`): GMAT libs ครบ 23 ไฟล์, `GET /api/qth` 200,
+  pass ถัดไปของ GRBBETA (60237) คำนวณด้วย GMAT ใน container 4.8 วินาที
+
 ## วิธีทดสอบ
 
 มีสามชุด รันแยกกัน ตั้ง `GMAT_BIN` ถ้า build GMAT ไม่ได้อยู่ที่ `application/bin/GmatConsole`
