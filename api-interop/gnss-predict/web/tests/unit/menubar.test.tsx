@@ -11,6 +11,7 @@ import { useLayout } from "../../src/stores/layout";
 import { useSelection } from "../../src/stores/selection";
 import { Workspace } from "../../src/Workspace";
 import { registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
+import { registerReportGraphManagerCommands } from "../../src/windows/ReportGraphManager/commands";
 import { openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
 let disposeCore: () => void;
@@ -200,6 +201,8 @@ describe("disabled items", () => {
     expect(document.activeElement?.textContent).toBe("Access...");
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Report & Graph Manager...");
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Validation...");
     expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
   });
 
@@ -214,14 +217,20 @@ describe("disabled items", () => {
     expect(screen.queryByRole("menu")).not.toBeNull();
   });
 
-  test("Report & Graph Manager... of the class menu carries the same note; Access... (built) has none while unregistered", async () => {
+  test("Access... and Report & Graph Manager... of the class menu (built) carry no note while unregistered, and the registered reason once registered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
     const menu = await openMenu(user, "Scenario");
     for (const name of ["Access...", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
-    await user.hover(item(menu, "Report & Graph Manager..."));
-    expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
     expect(commandTooltip("object.access")).toBeUndefined();
+    expect(commandTooltip("object.reportGraphManager")).toBeUndefined();
+    const dispose = registerReportGraphManagerCommands();
+    try {
+      await user.hover(item(menu, "Report & Graph Manager..."));
+      expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.noScenario"));
+    } finally {
+      dispose();
+    }
   });
 
   test("an item turns enabled as soon as its command is registered", async () => {
@@ -464,10 +473,15 @@ describe("context menu", () => {
 
   test("a disabled item shows its Thai reason", async () => {
     const user = userEvent.setup();
-    render(<Target />);
-    await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("target") });
-    await user.hover(item(await screen.findByRole("menu"), "Report & Graph Manager..."));
-    expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
+    const dispose = registerReportGraphManagerCommands();
+    try {
+      render(<Target />);
+      await user.pointer({ keys: "[MouseRight]", target: screen.getByTestId("target") });
+      await user.hover(item(await screen.findByRole("menu"), "Report & Graph Manager..."));
+      expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.noScenario"));
+    } finally {
+      dispose();
+    }
   });
 });
 

@@ -2,15 +2,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { ENUMS } from "../../src/api/enums.gen";
-import { labels, optionLabel, oursLabels, t, type LabelKey } from "../../src/labels/labels";
+import { labels, optionLabel, oursLabels, STK_HELP_REF, t, type LabelKey } from "../../src/labels/labels";
 import { MSG_KEYS, msg, type MsgKey } from "../../src/labels/messages.th";
 
 const ref = readFileSync(resolve(__dirname, "../../../docs/2026-11-11-gnss-studio-stk-reference.md"), "utf8");
+/** ผลตรวจคำของ help.agi.com (Access, Report & Graph Manager, Style Properties, หน้าต่างรายงาน/กราฟ) หลักฐานของ stkHelp */
+const helpTerms = readFileSync(resolve(__dirname, "../../../docs/2026-11-15-stk-terms-access-reports.md"), "utf8");
 
 // ---- ตรวจกับ STK reference (ข้อ 1-4 ตามบรีฟ) ----
 
 test("every stk label appears verbatim in the STK reference", () => {
-  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !ref.includes(l.text)).map(([k]) => k);
+  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !(l.ref === STK_HELP_REF ? helpTerms : ref).includes(l.text)).map(([k]) => k);
   expect(missing).toEqual([]);
 });
 
@@ -189,13 +191,18 @@ const PROSE_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "access.reports": "Reports: Access..., AER...; Graphs: Access..., AER...",
   "access.graphs": "Reports: Access..., AER...; Graphs: Access..., AER...",
   "access.accessDots": "Reports: Access..., AER...; Graphs: Access..., AER...",
+  // Report & Graph Manager (STK ref §F แถว Report & Graph Manager): ชื่ออยู่ติด ":" หรือ "or" ซึ่งไม่ใช่ตัวคั่น
+  "rgm.installedStyles": "Styles: Installed Styles / My Styles / Scenario Styles",
+  "rgm.generateAs": "Generate As: Report/Graph or Dynamic Display/Strip Chart",
+  "rgm.reportGraph": "Generate As: Report/Graph or Dynamic Display/Strip Chart",
+  "rgm.dynamicDisplay": "Generate As: Report/Graph or Dynamic Display/Strip Chart",
 };
 
 describe("stk labels are real STK terms", () => {
   test("each stk label cites a section whose Item or STK term cell contains it between delimiters, or quotes the reference (PROSE_EVIDENCE)", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
-      if (l.source !== "stk") continue;
+      if (l.source !== "stk" || l.ref === STK_HELP_REF) continue; // stkHelp ตรวจกับผลตรวจคำของ help.agi.com ข้างล่าง
       const m = /^STK ref §([A-H])$/.exec(l.ref ?? "");
       if (!m) { bad.push(`${k}: ref ${JSON.stringify(l.ref)}`); continue; }
       const sec = sections.get(m[1])!;
@@ -248,6 +255,75 @@ describe("stk labels are real STK terms", () => {
     expect(t("field.sscNumber")).toBe("SSC number");
     expect(labels["field.sscNumber"].source).toBe("stk");
     expect(Object.values(labels).some((l) => l.text === "SSC Number")).toBe(false);
+  });
+});
+
+// ---- คำที่ยืนยันบน help.agi.com (docs/2026-11-15-stk-terms-access-reports.md) ----
+
+/**
+ * ข้อความอ้างในเครื่องหมายคำพูดจากคอลัมน์ "ข้อความที่อ้างตรงตัว (quote)" ของทุกแถวตาราง เฉพาะส่วนก่อน **ไม่พบ** ของเซลล์
+ * (แถวที่ขึ้นต้นด้วย **ไม่พบ** จึงไม่ให้หลักฐานเลย และ "Type" ในแถว Graph Type ที่อยู่หลัง **ไม่พบ** ไม่นับ)
+ */
+function helpQuotes(doc: string): string[] {
+  const out: string[] = [];
+  for (const line of doc.split("\n")) {
+    if (!line.startsWith("|")) continue;
+    const cell = line.split("|")[2]?.trim() ?? "";
+    const found = cell.split("**ไม่พบ**")[0];
+    for (const m of found.matchAll(/"([^"]+)"/g)) out.push(m[1]);
+  }
+  return out;
+}
+const HELP_QUOTES = helpQuotes(helpTerms);
+
+/**
+ * stkHelp ที่ไม่ตรงกับข้อความอ้างทั้งก้อน: อ้างส่วนหนึ่งของข้อความอ้างตรงตัว (ยาวไม่เกิน 60 ตัวอักษร และมีข้อความของ label อยู่ในนั้น)
+ */
+const HELP_EVIDENCE: Partial<Record<LabelKey, string>> = {
+  "report.export": "Select Export > To Excel or CSV Format",
+  "report.toExcelOrCsvFormat": "Select Export > To Excel or CSV Format",
+  "graph.export": "choosing the Export option",
+  "rgm.propertiesItem": "and select Properties",
+};
+
+describe("stk labels verified on help.agi.com", () => {
+  test("the quote column parses and skips not-found rows", () => {
+    expect(HELP_QUOTES).toContain("New...");
+    expect(HELP_QUOTES).toContain("Time XY");
+    expect(HELP_QUOTES).not.toContain("Type");                       // อยู่หลัง **ไม่พบ** ในแถว Graph Type
+    expect(HELP_QUOTES).not.toContain("Generate as .txt file...");   // แถวไม่พบ
+  });
+
+  test("each stkHelp label equals a quoted help text, or quotes a part of one (HELP_EVIDENCE)", () => {
+    const bad: string[] = [];
+    for (const [k, l] of Object.entries(labels)) {
+      if (l.ref !== STK_HELP_REF) continue;
+      if (l.source !== "stk") { bad.push(`${k}: ${STK_HELP_REF} on an ours label`); continue; }
+      const whole = HELP_QUOTES.includes(l.text);
+      const quote = HELP_EVIDENCE[k as LabelKey];
+      if (whole) { if (quote !== undefined) bad.push(`${k}: HELP_EVIDENCE not needed`); continue; }
+      if (quote === undefined) bad.push(`${k}: "${l.text}" is not a quoted help text`);
+      else if (!HELP_QUOTES.some((q) => q.includes(quote))) bad.push(`${k}: ${JSON.stringify(quote)} is not part of a quoted help text`);
+      else if (!quote.includes(l.text)) bad.push(`${k}: ${JSON.stringify(quote)} does not contain "${l.text}"`);
+      else if (quote.length > 60) bad.push(`${k}: quote longer than 60 characters`);
+    }
+    for (const k of Object.keys(HELP_EVIDENCE)) if (labels[k as LabelKey]?.ref !== STK_HELP_REF) bad.push(`${k}: HELP_EVIDENCE entry for a label that is not stkHelp`);
+    expect(bad).toEqual([]);
+  });
+
+  // Ruling (T13): ฟีเจอร์ที่ spec สั่งแต่ help.agi.com ไม่พบ คงไว้ แต่ป้ายเป็น ours
+  test("features the help does not show stay, labelled ours", () => {
+    for (const [k, text] of [["rgm.constellation", "Constellation"], ["rgm.generateTxt", "Generate as .txt file..."], ["rgm.generateCsv", "Generate as .csv file..."],
+        ["rgm.copyToMyStyles", "Copy to My Styles"], ["rgm.delete", "Delete"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "ours" });
+    }
+  });
+
+  test("the report export menu and the graph Export use the verified help words", () => {
+    expect(t("report.export")).toBe("Export");
+    expect(t("report.toExcelOrCsvFormat")).toBe("To Excel or CSV Format");
+    expect(t("graph.export")).toBe("Export");
+    expect(Object.values(labels).some((l) => l.text === "To CSV Format..." || l.text === "Export Dialog...")).toBe(false);
   });
 });
 
@@ -423,10 +499,20 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
                                                                               "Auto Add to Timeline", "Animation Graphics", "Show", "Static Highlight",
                                                                               "Animate Highlight", "Show Animate Line", "Use Object Colors", "Use Custom Color",
                                                                               "Color", "Inherit Settings from Scenario", "Select All"]],
-  ["§6.1 report window", ["report."], ["Refresh", "Export", "To CSV Format...", "Setup...", "Set Animation Time", "Global Statistics",
+  ["§5 Report & Graph Manager", ["rgm.", "ob.", "access.", "field.", "window.", "dialog."], ["Report & Graph Manager", "Object Type", "All Types", "Access",
+                                                                     "Facility", "Satellite", "Constellation", "Installed Styles", "My Styles",
+                                                                     "Scenario Styles", "Show Reports", "Show Graphs", "Generate As", "Report/Graph",
+                                                                     "Dynamic Display/Strip Chart", "Generate...", "New...", "Properties...", "Close",
+                                                                     "Generate as .txt file...", "Generate as .csv file...", "Properties",
+                                                                     "Copy to My Styles", "Delete", "Use Object Time Period", "Specify Time Properties",
+                                                                     "Start", "Stop", "Step", "Use default time points", "Use step size"]],
+  ["§5.1 style editor", ["rgm.", "field.", "dialog."], ["Content", "Time", "Summary", "Graph", "Data Providers", "Report Contents", "Graph Contents",
+                                                         "Add", "Remove", "Up", "Down", "Min", "Max", "Mean", "Total", "Std Deviation", "Summary Only",
+                                                         "Type", "Time XY", "Interval", "Polar", "Y Axis (Y1)", "Y2 Axis (Y2)", "My Styles", "Scenario Styles", "OK"]],
+  ["§6.1 report window", ["report."], ["Refresh", "Export", "To Excel or CSV Format", "Setup...", "Set Animation Time", "Global Statistics",
                                        "Field Delimiter", "Enclose Header Fields in Quotes", "Write Report Title", "Headers"]],
   ["§6.2 graph window", ["graph.", "report."], ["Save", "Copy to Clipboard", "Zoom Out", "Refresh", "Toggle Animation Timeline", "Crosshair Cursor",
-                                              "Show Animation Time Line", "Set Animation Time", "Export Dialog..."]],
+                                              "Show Animation Time Line", "Set Animation Time", "Export"]],
   ["§11 Message Viewer", ["mv."], ["All Messages", "Errors", "Infos", "Warnings", "Time", "Level", "Code", "Object", "Message", "Details", "Clear this Tab", "Clear all Tabs"]],
   ["§11 About / Help table", ["help."], ["Engine Version", "GMAT Version", "Text", "Source", "STK ref"]],
   ["§12 status bar", ["status."], ["Active Object", "Lat/Lon", "Animation Time", "Time Step", "Stop", "Usable Satellites", "PDOP", "Max Data Age",
@@ -444,7 +530,7 @@ describe("every name in spec §4-§13 has a key", () => {
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|rgm|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 

@@ -2393,3 +2393,132 @@ body {
   align-items: center;
   gap: 4px 8px;
 }
+
+/* ---------- Report & Graph Manager และหน้าต่างแก้ style (spec §5, §5.1) ---------- */
+.rgm {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.rgm-top,
+.rgm-bottom,
+.rgm-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rgm-bottom {
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.rgm-main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 200px;
+}
+
+.rgm-objects,
+.rgm-styles {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rgm-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  padding: 2px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  user-select: none;
+}
+
+.rgm-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 6px;
+  cursor: default;
+}
+
+.rgm-style,
+.rgm-leaf {
+  padding-left: 18px;
+}
+
+.rgm-group,
+.rgm-group + [role="group"] .rgm-leaf {
+  padding-left: 30px;
+}
+
+.rgm-selected {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.rgm-disabled {
+  color: var(--text-muted);
+}
+
+.rgm-tier {
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+.rgm-kind {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.rgm-filters,
+.rgm-buttons,
+.rgm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rgm-as {
+  display: flex;
+  gap: 10px;
+}
+
+.rgm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rgm-tabpanel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rgm-step {
+  width: 7em;
+}
+
+.rgm-time-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+
+.rgm-time .dlg-buttons {
+  padding: 8px 10px;
+}

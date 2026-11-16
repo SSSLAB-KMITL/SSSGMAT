@@ -9,6 +9,7 @@ import { useLayout } from "../../src/stores/layout";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { registerAccessCommands } from "../../src/windows/AccessTool/commands";
+import { registerReportGraphManagerCommands } from "../../src/windows/ReportGraphManager/commands";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
 let disposeCore: () => void;
@@ -79,11 +80,22 @@ describe("Default toolbar", () => {
     }
   });
 
-  test("Report & Graph Manager still says it belongs to sub-project 4", async () => {
+  test("Report & Graph Manager says why it is disabled (no scenario)", async () => {
     const user = userEvent.setup();
-    render(<Toolbars />);
-    await user.hover(btn(defaults(), "toolbar.reportGraphManager"));
-    expect((await screen.findByRole("tooltip")).textContent).toContain(msg("tooltip.subtask4"));
+    const dispose = registerReportGraphManagerCommands();
+    try {
+      useScenario.setState(useScenario.getInitialState(), true);
+      render(<Toolbars />);
+      const rgm = btn(defaults(), "toolbar.reportGraphManager");
+      expect(rgm.getAttribute("aria-disabled")).toBe("true");
+      await user.hover(rgm);
+      const tip = await screen.findByRole("tooltip");
+      expect(tip.textContent).toContain(t("toolbar.reportGraphManager"));
+      expect(tip.textContent).toContain(msg("tooltip.noScenario"));
+      expect(tip.textContent).not.toContain(msg("tooltip.subtask4"));
+    } finally {
+      dispose();
+    }
   });
 
   test("hiding the toolbar in View → Toolbars removes it", () => {

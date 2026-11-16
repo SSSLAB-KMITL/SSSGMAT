@@ -13,7 +13,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView", "globeManager", "report", "graph", "accessTool",
+  "stkReference", "sensorView", "globeManager", "report", "graph", "accessTool", "reportGraphManager", "styleEditor",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -191,6 +191,14 @@ const BASE: Record<PanelKind, Base> = {
   // Access tool (spec §4): หน้าต่างลอยบานเดียว params {from: path ของ Access For | null} เปิดซ้ำด้วย from ใหม่ = เปลี่ยน Access For ของบานเดิม
   // ไม่บันทึกใน workbook (เครื่องมือชั่วคราวแบบ Properties Browser) ปิดพร้อม scenario
   accessTool: { label: "toolbar.access", type: "floating", size: { width: 640, height: 560 }, persist: false, scenarioBound: true },
+  // Report & Graph Manager (spec §5): หน้าต่างลอยบานเดียว params {objectType?, objects?} เปิดซ้ำ = เลือกตาม params ใหม่ ไม่บันทึกใน workbook ปิดพร้อม scenario
+  reportGraphManager: { label: "window.reportGraphManager", type: "floating", size: { width: 760, height: 540 }, persist: false, scenarioBound: true },
+  // หน้าต่างแก้ style (spec §5.1): หนึ่งบานต่อชื่อ style (style ใหม่ = "new") ชื่อ "<style> Style Properties"
+  styleEditor: {
+    label: "window.styleEditor", type: "floating", size: { width: 720, height: 520 }, persist: false, scenarioBound: true,
+    title: (params) => (typeof params?.style?.name === "string" ? t("window.styleEditorFor", { name: params.style.name }) : t("window.styleEditor")),
+    instanceKey: (params) => (typeof params?.style?.name === "string" ? params.style.name : "new"),
+  },
 };
 
 // ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")

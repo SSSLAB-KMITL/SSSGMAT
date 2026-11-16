@@ -1606,7 +1606,7 @@ describe("commands", () => {
     disposeCommands = registerObjectBrowserCommands();
   });
 
-  // object.access is the Access tool's (windows/AccessTool/commands.ts), object.zoomTo the 3D window's; object.reportGraphManager is not built yet
+  // object.access is the Access tool's (windows/AccessTool/commands.ts), object.zoomTo the 3D window's, object.reportGraphManager the Report & Graph Manager's (windows/ReportGraphManager/commands.ts)
   test("does not register object.zoomTo, object.access or object.reportGraphManager", () => {
     loadObjects();
     renderOb();

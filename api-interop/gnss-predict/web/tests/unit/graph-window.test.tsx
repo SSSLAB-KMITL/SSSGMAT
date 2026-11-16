@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import type { ReportJson } from "../../src/data/reports";
-import { labels, t } from "../../src/labels/labels";
+import { labels, STK_HELP_REF, t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { getPanelDef } from "../../src/layout/panels";
 import { useJobs } from "../../src/stores/jobs";
@@ -269,11 +269,11 @@ describe("graph window", () => {
     expect(chart.convertFromPixel).toHaveBeenCalledWith({ gridIndex: 0 }, [40, 30]);
     expect(useTime.getState().current.getTime()).toBe(CLICK_TIME);
 
-    // Export Dialog... = ข้อมูลกราฟเป็นไฟล์ CSV
+    // Export = ข้อมูลกราฟเป็นไฟล์ CSV
     const clicks: HTMLAnchorElement[] = [];
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicks.push(this); });
     fireEvent.contextMenu(surface, { clientX: 40, clientY: 30 });
-    await user.click(await screen.findByRole("menuitem", { name: t("graph.exportDialog") }));
+    await user.click(await screen.findByRole("menuitem", { name: t("graph.export") }));
     await waitFor(() => expect(clicks).toHaveLength(1));
     const csv = f.calls.filter((c) => `${c.method} ${c.path}` === REPORTS).at(-1)!;
     expect(csv.body).toEqual({ ...PARAMS, format: "csv" });
@@ -286,7 +286,7 @@ describe("graph window", () => {
     const { container } = mount({ ...PARAMS, style: "Az El Polar" });
     await ready();
     fireEvent.contextMenu(container.querySelector(".graph-chart")!, { clientX: 40, clientY: 30 });
-    await screen.findByRole("menuitem", { name: t("graph.exportDialog") });
+    await screen.findByRole("menuitem", { name: t("graph.export") });
     expect(screen.queryByRole("menuitem", { name: t("report.setAnimationTime") })).toBeNull();
     // polar ไม่มีการซูมตามแกนเวลา: Zoom Out ใช้ไม่ได้
     await user.keyboard("{Escape}");
@@ -461,7 +461,8 @@ test("labels", () => {
   expect(labels["window.graph"]).toEqual({ text: "Graph", source: "ours" });
   expect(labels["graph.toggleAnimationTimeline"]).toEqual({ text: "Toggle Animation Timeline", source: "stk", ref: "STK ref §F" });
   expect(labels["graph.showAnimationTimeLine"]).toEqual({ text: "Show Animation Time Line", source: "stk", ref: "STK ref §F" });
-  for (const k of ["graph.save", "graph.copyToClipboard", "graph.zoomOut", "graph.crosshairCursor", "graph.exportDialog"] as const)
+  for (const k of ["graph.save", "graph.copyToClipboard", "graph.zoomOut", "graph.crosshairCursor"] as const)
     expect(labels[k].source, k).toBe("ours");
-  expect(t("graph.exportDialog")).toBe("Export Dialog...");
+  // help.agi.com: เมนูคลิกขวาของกราฟชื่อ Export (เปิด Export Dialog) ผลตรวจคำ 2026-11-15
+  expect(labels["graph.export"]).toEqual({ text: "Export", source: "stk", ref: STK_HELP_REF });
 });

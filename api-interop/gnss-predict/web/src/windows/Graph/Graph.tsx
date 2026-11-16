@@ -9,7 +9,7 @@
 // - Strip Chart = style ที่เปิด Dynamic Display (params.dynamic) ชนิด time_xy: แกนเวลาแสดง STRIP_CHART_DURATION_S วินาทีล่าสุดที่จบที่เวลาปัจจุบัน
 // - แถบเครื่องมือ: Save (PNG), Copy to Clipboard (PNG), Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor
 //   สองปุ่มสลับจำไว้ใน windowProps ของหน้าต่าง (อยู่ใน workbook)
-// - คลิกขวา: Show Animation Time Line, Set Animation Time (เวลาที่ตำแหน่งคลิกบนแกนเวลา: เฉพาะ time_xy/interval ในพื้นที่กราฟ), Export Dialog...
+// - คลิกขวา: Show Animation Time Line, Set Animation Time (เวลาที่ตำแหน่งคลิกบนแกนเวลา: เฉพาะ time_xy/interval ในพื้นที่กราฟ), Export (ชื่อเมนูตาม help.agi.com)
 //   (ข้อมูลของกราฟทั้งช่วงเป็นไฟล์ CSV จาก server)
 // - panel เปลี่ยนขนาด = chart.resize() ปิดหน้าต่าง = dispose
 
@@ -323,7 +323,7 @@ export function Graph({ params, panelId }: PanelProps) {
                 </ContextMenu.Item>
               )}
               <ContextMenu.Item className="menu-item" disabled={report === null} onSelect={() => void exportCsv()}>
-                <span className="menu-label">{t("graph.exportDialog")}</span>
+                <span className="menu-label">{t("graph.export")}</span>
               </ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Portal>

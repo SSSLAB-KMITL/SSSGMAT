@@ -1,4 +1,4 @@
-// หน้าต่างรายงาน (src/windows/Report): ตารางแบบ virtual, เวลาตาม DateFormat, Refresh/F5, Export ▸ To CSV Format... กับ Setup...,
+// หน้าต่างรายงาน (src/windows/Report): ตารางแบบ virtual, เวลาตาม DateFormat, Refresh/F5, Export ▸ To Excel or CSV Format กับ Setup...,
 // Set Animation Time จากช่องเวลา, Dynamic Display, แถบเตือนผลลัพธ์ไม่ตรง (409) กับ Refresh ที่สั่งคำนวณใหม่, style ผิด (422) และป้ายชื่อ
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { confirm } from "../../src/chrome/Dialogs";
 import type { ReportJson } from "../../src/data/reports";
-import { labels, t } from "../../src/labels/labels";
+import { labels, STK_HELP_REF, t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { getPanelDef } from "../../src/layout/panels";
 import { useJobs } from "../../src/stores/jobs";
@@ -16,7 +16,7 @@ import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
 import { useTime } from "../../src/stores/time";
 import { formatTime } from "../../src/time/format";
-import { openReport, recomputePlan, Report, registerReportPanel, type ReportParams } from "../../src/windows/Report/Report";
+import { openReport, primeReport, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
 import { columnWidths, dynamicRows, flattenRows, prepareDynamic } from "../../src/windows/Report/table";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 import { stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
@@ -144,6 +144,38 @@ describe("report table", () => {
     expect(rows.slice(gs + 1)).toEqual([["Min Duration", "3600.000"], ["Total Duration", "14400.250"], ["Number of Accesses", "3"]]);
   });
 
+  test("uses the report the Report & Graph Manager just made once; the next window asks the server", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(0);
+    expect(rowTexts(container).length).toBeGreaterThan(0);
+    // ใช้ได้ครั้งเดียว: บานใหม่ของคำขอเดียวกันสร้างเอง
+    cleanup();
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+  });
+
+  test("a primed report of another request or an old one is not used", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf({ ...PARAMS, objects: [G01] }), accessReport());
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+    cleanup();
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(T0);
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    now.mockReturnValue(T0 + PRIMED_TTL_MS + 1);
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(2);
+  });
+
   test("scrolls 200000 rows virtually", async () => {
     scenario();
     const rows = Array.from({ length: 200_000 }, (_, i) => [iso(T0 + i * 1000), 10, 20, 1000] as (string | number)[]);
@@ -225,7 +257,7 @@ describe("toolbar", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     await user.click(screen.getByRole("menuitem", { name: t("report.export") }));
-    await user.click(await screen.findByRole("menuitem", { name: t("report.toCsvFormat") }));
+    await user.click(await screen.findByRole("menuitem", { name: t("report.toExcelOrCsvFormat") }));
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
     const csv = f.calls.filter((c) => `${c.method} ${c.path}` === REPORTS).at(-1)!.body as Record<string, unknown>;
     expect(csv.format).toBe("csv");
@@ -394,13 +426,14 @@ describe("panel", () => {
 });
 
 test("labels", () => {
-  expect(t("report.toCsvFormat")).toBe("To CSV Format...");
-  expect(labels["report.toCsvFormat"].source).toBe("ours");
+  // help.agi.com: "Select Export > To Excel or CSV Format" (ผลตรวจคำ 2026-11-15)
+  expect(labels["report.export"]).toEqual({ text: "Export", source: "stk", ref: STK_HELP_REF });
+  expect(labels["report.toExcelOrCsvFormat"]).toEqual({ text: "To Excel or CSV Format", source: "stk", ref: STK_HELP_REF });
   expect(t("report.setAnimationTime")).toBe("Set Animation Time");
   expect(labels["report.setAnimationTime"]).toEqual({ text: "Set Animation Time", source: "stk", ref: "STK ref §F" });
   expect(labels["report.refresh"]).toEqual({ text: "Refresh", source: "stk", ref: "STK ref §F" });
   expect(labels["report.globalStatistics"]).toEqual({ text: "Global Statistics", source: "stk", ref: "STK ref §F" });
-  for (const k of ["report.export", "report.setup", "report.noData", "report.fieldDelimiter", "report.encloseHeaderFields", "report.writeReportTitle", "report.headers", "window.report"] as const)
+  for (const k of ["report.setup", "report.noData", "report.fieldDelimiter", "report.encloseHeaderFields", "report.writeReportTitle", "report.headers", "window.report"] as const)
     expect(labels[k].source, k).toBe("ours");
 });
 

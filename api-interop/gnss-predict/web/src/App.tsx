@@ -34,6 +34,9 @@ import { registerObjectBrowserPanel } from "./windows/ObjectBrowser/ObjectBrowse
 import { registerObjectBrowserCommands } from "./windows/ObjectBrowser/objectCommands";
 import { registerPropertiesBrowserPanel } from "./windows/PropertiesBrowser/PropertiesBrowser";
 import { registerReportPanel } from "./windows/Report/Report";
+import { registerReportGraphManagerCommands } from "./windows/ReportGraphManager/commands";
+import { registerReportGraphManagerPanel } from "./windows/ReportGraphManager/ReportGraphManager";
+import { registerStyleEditorPanel } from "./windows/ReportGraphManager/StyleEditor";
 import { registerSatelliteCatalogPanel } from "./windows/SatelliteCatalog/SatelliteCatalog";
 import { registerSensorViewCommands } from "./windows/SensorView/commands";
 import { registerSensorViewPanel } from "./windows/SensorView/SensorView";
@@ -52,6 +55,7 @@ export function App() {
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
   // หน้าต่างรายงานและหน้าต่างกราฟ (เปิดด้วย openReport ของ windows/Report/Report.tsx: style ชนิด graph ไปหน้าต่างกราฟ),
   // Access tool (คำสั่ง analysis.access / object.access ระดับแอป: เปิดหน้าต่างนี้),
+  // Report & Graph Manager และหน้าต่างแก้ style (คำสั่ง analysis.reportGraphManager / object.reportGraphManager ระดับแอป),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -65,6 +69,7 @@ export function App() {
     const unregisterGraphics2DCommands = registerGraphics2DCommands();
     const unregisterSensorViewCommands = registerSensorViewCommands();
     const unregisterAccessCommands = registerAccessCommands();
+    const unregisterReportGraphManagerCommands = registerReportGraphManagerCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerTimelineViewPanel();
@@ -84,6 +89,8 @@ export function App() {
     registerReportPanel();
     registerGraphPanel();
     registerAccessToolPanel();
+    registerReportGraphManagerPanel();
+    registerStyleEditorPanel();
     const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
@@ -94,6 +101,7 @@ export function App() {
       stopFlow();
       stopShortcuts();
       stopSensorViewTracking();
+      unregisterReportGraphManagerCommands();
       unregisterAccessCommands();
       unregisterSensorViewCommands();
       unregisterGraphics2DCommands();

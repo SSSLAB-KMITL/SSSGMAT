@@ -372,6 +372,47 @@ const MESSAGES = {
   // {tier} = My Styles / Scenario Styles / Installed Styles, {field} = ช่องแรกที่ผิด เช่น content[0].elements
   "styles.malformed": "style \"{name}\" ใน {tier} มีโครงไม่ถูกต้องที่ช่อง {field} จึงไม่แสดงในรายการ แก้หรือลบ style นี้",
   "styles.malformedUnnamed": "style รายการที่ {n} ใน {tier} ไม่มีชื่อหรือไม่ใช่ object จึงไม่แสดงในรายการ แก้หรือลบ style นี้",
+
+  // Report & Graph Manager (spec §5, §8): {facility} = ชื่อ Facility (หลายแห่งคั่นด้วย ", "), {message} = ข้อความของ server
+  "rgm.noObjects": "scenario นี้ยังไม่มี object ชนิดนี้",
+  "rgm.forObject": "Report & Graph Manager... ของเมนูนี้ใช้กับ Facility, Satellite หรือ Constellation เลือก object ชนิดนั้นก่อน",
+  "rgm.periodsDiffer": "access ที่เลือกมี Time Period ที่เก็บไว้ไม่เท่ากัน รวมเป็นรายงานเดียวด้วย Use Object Time Period ไม่ได้ ให้เลือกเฉพาะ access ที่มีช่วงเดียวกัน หรือใช้ Specify Time Properties",
+  "rgm.noAccessObjects": "ยังไม่มี access ใน scenario นี้ เปิด Access tool (Analysis → Access...) แล้ว Compute ก่อน",
+  "rgm.noStyles": "ไม่มี style ของ object ชนิดนี้",
+  "rgm.loadFailed": "อ่านรายการ style จาก server ไม่สำเร็จ: {message}",
+  // {field} = ช่องแรกที่ผิด เช่น kind, content
+  "rgm.unusable": "ใช้ไม่ได้: ไฟล์ของ style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้ไฟล์ใน data/styles หรือ Delete แล้วสร้างใหม่",
+  "rgm.selectObjects": "เลือก object ทางซ้ายก่อน (กด Ctrl หรือ Shift ค้างเพื่อเลือกหลายตัว)",
+  // {type} = ชนิด object ของ style
+  "rgm.objectsMismatch": "style นี้ใช้กับ object ชนิด {type} เลือกเฉพาะ object ชนิดนั้น",
+  "rgm.notDynamic": "style นี้สร้างเป็น Dynamic Display/Strip Chart ไม่ได้ เลือก Generate As: Report/Graph",
+  "rgm.lockedDelete": "Installed Styles ลบไม่ได้ (ล็อกไว้) ใช้ Copy to My Styles แล้วแก้สำเนาแทน",
+  "rgm.computeFirst": "ยังไม่มีผลลัพธ์ที่ตรงกับ scenario ปัจจุบันของ {facility} จะ Compute ก่อนแล้วสร้างใหม่เมื่อเสร็จไหม",
+  "rgm.propagateFirst": "ยังไม่มีผลการคำนวณวงโคจรที่ตรงกับ scenario ปัจจุบัน จะคำนวณก่อนแล้วสร้างใหม่เมื่อเสร็จไหม",
+  "rgm.generateFailed": "สร้างรายงานหรือกราฟไม่สำเร็จ: {message}",
+  "rgm.computeFailed": "สั่ง Compute ก่อนสร้างรายงานไม่สำเร็จ: {message}",
+  "rgm.computeJobFailed": "Compute ไม่สำเร็จ จึงยังสร้างรายงานไม่ได้ ดูสาเหตุในข้อความของงานใน Message Viewer",
+  "rgm.saveFailed": "บันทึก style ไม่สำเร็จ: {message}",
+  "rgm.deleteFailed": "ลบ style ไม่สำเร็จ: {message}",
+  // {name} = ชื่อ style, {tier} = Installed Styles / My Styles / Scenario Styles
+  "rgm.deleteConfirm": "ลบ style \"{name}\" ออกจาก {tier} ไหม ย้อนกลับไม่ได้",
+  "rgm.copied": "คัดลอก style ไปที่ My Styles ชื่อ \"{name}\" แล้ว",
+  "rgm.timeInvalid": "ใส่เวลาแบบ {example} ตาม DateFormat ของ scenario และ Stop ต้องอยู่หลัง Start",
+  "rgm.stepInvalid": "Step ต้องเป็นจำนวนเต็มวินาทีที่มากกว่า 0",
+
+  // หน้าต่างแก้ style (spec §5.1)
+  "styleEditor.noColumns": "ยังไม่มีคอลัมน์ เลือก element จาก Data Providers แล้วกด Add",
+  // {providers} = ชื่อ provider ที่ยังไม่มี Time
+  "styleEditor.joinNeedsTime": "style ที่มีหลาย Data Provider ต้องมี Time ทุกตัว (ใช้รวมแถวตามเวลา) เพิ่ม Time ของ {providers}",
+  "styleEditor.noAxis": "กราฟ Time XY ต้องมี element บนแกน Y1 หรือ Y2 อย่างน้อยหนึ่งตัว",
+  "styleEditor.nameInvalid": "ชื่อต้องขึ้นต้นด้วยตัวอักษรหรือตัวเลข ตามด้วยตัวอักษร ตัวเลข ช่องว่าง _ หรือ - ยาวไม่เกิน 48 ตัว",
+  // {name} = ชื่อที่ใส่, {tier} = ชั้นของ style ที่ใช้ชื่อนี้อยู่
+  "styleEditor.nameTaken": "มี style ชื่อ \"{name}\" ใน {tier} อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่) ตั้งชื่ออื่น",
+  "styleEditor.installedCopy": "Installed Styles แก้ไม่ได้ (ล็อกไว้) OK จะบันทึกเป็นสำเนาใน My Styles หรือ Scenario Styles ตามที่เลือก",
+  "styleEditor.noProviders": "ไม่มี Data Provider ของ object ชนิดนี้ หรืออ่านจาก server ไม่สำเร็จ",
+  "styleEditor.noScenario": "เปิด scenario ก่อนจึงจะบันทึกลง Scenario Styles ได้",
+  "styleEditor.saved": "บันทึก style \"{name}\" ลง {tier} แล้ว",
+  "styleEditor.dynamicUnsupported": "style นี้สร้างเป็น Dynamic Display/Strip Chart ไม่ได้ (ต้องใช้ Data Provider ที่ใช้กับ Dynamic Displays ไม่มี Summary Only และกราฟเป็น Time XY)",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;

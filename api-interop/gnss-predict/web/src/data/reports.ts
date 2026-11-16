@@ -277,8 +277,15 @@ export function parseStyle(v: unknown): Parsed<StyleDef> {
 
 const TIER_NAMES: Record<keyof StyleTiers, string> = { installed: "Installed Styles", my: "My Styles", scenario: "Scenario Styles" };
 
-/** style ที่โครงถูกต้องของชั้นหนึ่ง ที่เหลือทิ้งพร้อมคำเตือนหนึ่งข้อความต่อ style */
-function stylesOf(list: unknown, tier: keyof StyleTiers): StyleDef[] {
+/** style ที่โครงไม่ครบ: ชื่อ (ไม่มีชื่อ = null) และช่องแรกที่ผิด (Report & Graph Manager แสดงเป็นรายการที่ใช้ไม่ได้) */
+export interface UnusableStyle {
+  tier: keyof StyleTiers;
+  name: string | null;
+  field: string;
+}
+
+/** style ที่โครงถูกต้องของชั้นหนึ่ง ที่เหลือไปที่ unusable (warn = ส่งคำเตือนหนึ่งข้อความต่อ style เข้า Message Viewer ด้วย) */
+function stylesOf(list: unknown, tier: keyof StyleTiers, unusable: UnusableStyle[], warn: boolean): StyleDef[] {
   const out: StyleDef[] = [];
   for (const [i, entry] of (Array.isArray(list) ? list : []).entries()) {
     const parsed = parseStyle(entry);
@@ -287,6 +294,8 @@ function stylesOf(list: unknown, tier: keyof StyleTiers): StyleDef[] {
       continue;
     }
     const name = isDoc(entry) && typeof entry.name === "string" && entry.name !== "" ? entry.name : null;
+    unusable.push({ tier, name, field: parsed.field });
+    if (!warn) continue;
     const text = name === null
       ? msg("styles.malformedUnnamed", { n: i + 1, tier: TIER_NAMES[tier] })
       : msg("styles.malformed", { name, tier: TIER_NAMES[tier], field: parsed.field });
@@ -295,14 +304,32 @@ function stylesOf(list: unknown, tier: keyof StyleTiers): StyleDef[] {
   return out;
 }
 
-/** objectType / sc เป็น null = ไม่กรองชนิด / ไม่เอา Scenario Styles */
-export async function fetchStyles(objectType: string | null, sc: string | null, opts: ApiOptions = {}): Promise<StyleTiers> {
+async function getStyles(objectType: string | null, sc: string | null, opts: ApiOptions, warn: boolean): Promise<{ tiers: StyleTiers; unusable: UnusableStyle[] }> {
   const q = new URLSearchParams();
   if (objectType !== null) q.set("object_type", objectType);
   if (sc !== null) q.set("scenario", sc);
   const query = q.toString();
   const { data } = await apiGet<Partial<Record<keyof StyleTiers, unknown>>>(`/styles${query === "" ? "" : `?${query}`}`, opts);
-  return { installed: stylesOf(data?.installed, "installed"), my: stylesOf(data?.my, "my"), scenario: stylesOf(data?.scenario, "scenario") };
+  const unusable: UnusableStyle[] = [];
+  const tiers = {
+    installed: stylesOf(data?.installed, "installed", unusable, warn),
+    my: stylesOf(data?.my, "my", unusable, warn),
+    scenario: stylesOf(data?.scenario, "scenario", unusable, warn),
+  };
+  return { tiers, unusable };
+}
+
+/** objectType / sc เป็น null = ไม่กรองชนิด / ไม่เอา Scenario Styles */
+export async function fetchStyles(objectType: string | null, sc: string | null, opts: ApiOptions = {}): Promise<StyleTiers> {
+  return (await getStyles(objectType, sc, opts, true)).tiers;
+}
+
+/**
+ * แบบ fetchStyles แต่ style ที่โครงไม่ครบไม่ทิ้งเงียบ: คืนเป็น unusable (ชื่อและช่องที่ผิด) และไม่ส่งคำเตือนเข้า Message Viewer
+ * (Report & Graph Manager แสดงในต้นไม้เป็นรายการที่ใช้ไม่ได้พร้อมเหตุผล อ่านใหม่ทุกครั้งที่เปลี่ยน จึงไม่เตือนซ้ำ)
+ */
+export function fetchStyleList(objectType: string | null, sc: string | null, opts: ApiOptions = {}): Promise<{ tiers: StyleTiers; unusable: UnusableStyle[] }> {
+  return getStyles(objectType, sc, opts, false);
 }
 
 const stylePath = (name: string): string => `/styles/${encodeURIComponent(name)}`;

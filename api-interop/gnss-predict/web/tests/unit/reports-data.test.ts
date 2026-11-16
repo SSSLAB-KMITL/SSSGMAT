@@ -16,6 +16,7 @@ import {
   downloadReport,
   fetchProviders,
   fetchReport,
+  fetchStyleList,
   fetchStyles,
   reportTitle,
   saveMyStyle,
@@ -276,6 +277,19 @@ describe("styles and providers", () => {
     expect(warnings.every((m) => /[\u0E00-\u0E7F]/.test(m.text))).toBe(true);
     expect(warnings.filter((m) => m.text.includes("My Styles"))).toHaveLength(2);
     expect(warnings.filter((m) => m.text.includes("Scenario Styles"))).toHaveLength(3);
+  });
+
+  test("fetchStyleList keeps incomplete styles as unusable with the first bad field, without Message Viewer warnings", async () => {
+    // ไฟล์ใน data/styles ที่มีแต่ชื่อ (ไม่มี kind / content) server ส่งมาตามตัว: Report & Graph Manager แสดงเป็นรายการที่ใช้ไม่ได้
+    stubFetch({ "GET /api/styles": { json: { installed: [ACCESS_STYLE], my: [{ name: "Half" }, { kind: "report" }], scenario: [{ ...ACCESS_STYLE, name: "Mine", content: [] }] } } });
+    const { tiers, unusable } = await fetchStyleList(null, "S1");
+    expect(tiers).toEqual({ installed: [ACCESS_STYLE], my: [], scenario: [] });
+    expect(unusable).toEqual([
+      { tier: "my", name: "Half", field: "kind" },
+      { tier: "my", name: null, field: "name" },
+      { tier: "scenario", name: "Mine", field: "content" },
+    ]);
+    expect(useMessages.getState().items).toEqual([]);
   });
 
   test.each([

@@ -115,13 +115,11 @@ describe("command registry", () => {
 
   test("the tooltip is the registered one, and the pending ones are Thai and only while unregistered", () => {
     expect(commandTooltip("file.save")).toBeUndefined();
-    for (const id of ["analysis.reportGraphManager", "analysis.validation", "object.reportGraphManager"] as const) {
-      expect(commandTooltip(id), id).toBe(msg("tooltip.subtask4"));
-    }
-    // Access tool (sub-project 4 Task 11) is built: no "not yet" note, even before windows/AccessTool/commands.ts registers it
-    for (const id of ["analysis.access", "object.access"] as const) expect(commandTooltip(id), id).toBeUndefined();
-    registerCommand("analysis.reportGraphManager", { label: "menu.analysis.reportGraphManager", run: vi.fn() });
-    expect(commandTooltip("analysis.reportGraphManager")).toBeUndefined(); // registered: no more "not yet" note
+    expect(commandTooltip("analysis.validation")).toBe(msg("tooltip.subtask4"));
+    // Access tool (Task 11) and Report & Graph Manager (Task 13) are built: no "not yet" note, even before their commands.ts registers them
+    for (const id of ["analysis.access", "object.access", "analysis.reportGraphManager", "object.reportGraphManager"] as const) expect(commandTooltip(id), id).toBeUndefined();
+    registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn() });
+    expect(commandTooltip("analysis.validation")).toBeUndefined(); // registered: no more "not yet" note
     registerCommand("file.save", { label: "menu.file.save", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผล" });
     expect(commandTooltip("file.save")).toBe("เหตุผล");
   });

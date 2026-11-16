@@ -17,14 +17,15 @@
 // - ค่าในฟอร์ม (กราฟิก สี ช่วงเวลา) เริ่มจาก access ที่เก็บไว้เมื่อรายการที่ติ๊กตรงกับ access หนึ่งตัว (storedSettings) และเริ่มใหม่ทุกครั้งที่
 //   รายการที่ติ๊กเปลี่ยน รายการใหม่ที่ไม่มี access = ค่าตั้งต้น (ถ้าก่อนหน้านั้นฟอร์มมาจาก access ที่เก็บไว้) ไม่งั้นคงค่าที่ผู้ใช้ตั้งไว้
 // - Start/Stop ที่ผู้ใช้ยังไม่แก้แสดงตาม DateFormat และช่วงวิเคราะห์ (หรือช่วงที่เก็บไว้) ปัจจุบันเสมอ
-// - Reports / Graphs: Access..., AER... เปิดหน้าต่างรายงาน/กราฟของคู่ P1 ที่ติ๊ก (openReport) Report & Graph Manager... เรียกคำสั่งเดียวกับเมนู
+// - Reports / Graphs: Access..., AER... เปิดหน้าต่างรายงาน/กราฟของคู่ P1 ที่ติ๊ก (openReport)
+//   Report & Graph Manager... เปิด Manager ที่ Object Type = Access และเลือกคู่ที่ติ๊กไว้ (ใช้ได้ตามสถานะของคำสั่ง analysis.reportGraphManager)
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { postAccess } from "../../api/access";
 import { ApiError, errorText } from "../../api/client";
 import { useCommands, useTimeFormatter } from "../../chrome/hooks";
-import { commandTooltip, isEnabled, runCommand } from "../../commands";
+import { commandTooltip, isEnabled } from "../../commands";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
@@ -35,6 +36,7 @@ import { useScenario, type ScenarioDoc } from "../../stores/scenario";
 import { parseIsoUtc, parseTime } from "../../time/parse";
 import { SelectObjectDialog } from "../InsertObjects/SelectObjectDialog";
 import { openReport } from "../Report/Report";
+import { openReportGraphManager } from "../ReportGraphManager/commands";
 import { ACCESS_TOOL_KIND, openAccessTool } from "./commands";
 import {
   accessForClass, allSelections, associatedTree, computedSatellites, DEFAULT_GRAPHICS, leavesOf, pairOf, reportObjects, selections, storedSettings,
@@ -320,7 +322,7 @@ export function AccessTool({ params }: PanelProps) {
             className="btn"
             disabled={!rgmEnabled}
             title={commandTooltip("analysis.reportGraphManager")}
-            onClick={() => runCommand("analysis.reportGraphManager")}
+            onClick={() => openReportGraphManager({ objectType: "Access", objects })}
           >
             {t("menu.analysis.reportGraphManager")}
           </button>

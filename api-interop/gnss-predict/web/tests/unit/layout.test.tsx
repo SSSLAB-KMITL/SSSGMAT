@@ -85,7 +85,7 @@ afterEach(() => {
 describe("registry", () => {
   const FLOATING: PanelKind[] = [
     "propertiesBrowser", "insertObjects", "satelliteCatalog", "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d",
-    "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about", "stkReference", "globeManager", "accessTool",
+    "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about", "stkReference", "globeManager", "accessTool", "reportGraphManager", "styleEditor",
   ];
 
   test("every panel kind has a placeholder with the spec §4.1 window type", () => {
@@ -103,7 +103,7 @@ describe("registry", () => {
 
   test("the windows that depend on the open scenario are the ones closed with it (scenarioBound)", () => {
     const bound = PANEL_KINDS.filter((kind) => getPanelDef(kind)?.scenarioBound === true).sort();
-    expect(bound).toEqual(["accessTool", "graph", "insertObjects", "propertiesBrowser", "report", "satelliteCatalog", "sensorView", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
+    expect(bound).toEqual(["accessTool", "graph", "insertObjects", "propertiesBrowser", "report", "reportGraphManager", "satelliteCatalog", "sensorView", "styleEditor", "viewFromTo", "windowProperties2d", "windowProperties3d"]);
     for (const kind of PANEL_KINDS) expect(typeof getPanelDef(kind)?.scenarioBound, kind).toBe("boolean");
   });
 

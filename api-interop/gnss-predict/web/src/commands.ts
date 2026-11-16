@@ -4,7 +4,8 @@
 // - คำสั่งที่ยังไม่ลงทะเบียน = ปิดใช้ (isEnabled false, runCommand ไม่ทำอะไร) งานที่ทำหน้าต่างนั้นลงทะเบียนเอง:
 //   งาน 6: view.* window.* anim.* (chrome/coreCommands.ts), งาน 7: file.* help.*, งาน 8: edit.* object.properties/rename/delete ob.*,
 //   งาน 10: insert.* utilities.*, งาน 11: g3d.* object.zoomTo, งาน 12: g2d.*, งานย่อยที่ 4: analysis.* object.access object.reportGraphManager
-//   (analysis.access และ object.access: windows/AccessTool/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
+//   (analysis.access และ object.access: windows/AccessTool/commands.ts; analysis.reportGraphManager และ object.reportGraphManager:
+//   windows/ReportGraphManager/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
 // - ทะเบียนเป็น observable: registerCommand / invalidateCommands แจ้งผู้ฟัง (subscribeCommands) เพื่อให้เมนูและแถบเครื่องมือวาดสถานะ enabled ใหม่
 //   คำสั่งที่ enabled() ขึ้นกับ store ต้องเรียก invalidateCommands() เองเมื่อค่านั้นเปลี่ยน (เช่น ฟัง store แล้วเรียก) เพราะทะเบียนไม่รู้ว่าอ่านอะไร
 // - ไฟล์นี้ไม่รู้จัก React และ store ใด ๆ
@@ -129,9 +130,7 @@ export interface CommandDef {
 
 /** คำสั่งที่ยังไม่ลงทะเบียนแต่มีเหตุผลที่ผู้ใช้ควรรู้ (W4: รอ งานย่อยที่ 4) หายไปเองเมื่อมีผู้ลงทะเบียนคำสั่งนั้น */
 const PENDING_TOOLTIPS: Partial<Record<CommandId, () => string>> = {
-  "analysis.reportGraphManager": () => msg("tooltip.subtask4"),
   "analysis.validation": () => msg("tooltip.subtask4"),
-  "object.reportGraphManager": () => msg("tooltip.subtask4"),
 };
 
 const registry = new Map<CommandId, CommandDef>();

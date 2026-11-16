@@ -5,7 +5,7 @@
 // - Dynamic Display (params.dynamic): โหลดทั้งช่วงครั้งเดียว แล้วแสดงแถวของเวลา animation ปัจจุบัน (valueAt ของ data/dynamic.ts
 //   วิธีประมาณค่าต่อคอลัมน์จาก GET /dataproviders) รีเฟรชไม่เกิน ~10 ครั้งต่อวินาที ไม่เรียก server ทุกเฟรม
 //   ช่องว่างระหว่างแถวที่ยาวเกิน max(step ของคำขอ, step ของ scenario) × 1.5 = นอกข้อมูล (No Data)
-// - แถบเครื่องมือ: Refresh (F5 เมื่อโฟกัสอยู่ในหน้าต่างนี้), Export ▸ To CSV Format... / Setup... (Export Setup เก็บใน windowProps ของหน้าต่าง)
+// - แถบเครื่องมือ: Refresh (F5 เมื่อโฟกัสอยู่ในหน้าต่างนี้), Export ▸ To Excel or CSV Format (ชื่อตาม help.agi.com ไฟล์เป็น CSV) / Setup... (Export Setup เก็บใน windowProps ของหน้าต่าง)
 // - คลิกขวาที่ช่องเวลา: Set Animation Time (ตั้งเวลา animation เป็นเวลาของช่องนั้น)
 // - ข้อผิดพลาด (spec §8):
 //     409 RESULTS_NOT_CURRENT = แถบเตือนเดียวกับหน้าต่าง 3D/2D (ResultsBanner) และ Refresh (หรือ Apply บนแถบ) สั่งคำนวณใหม่:
@@ -69,6 +69,26 @@ export function parseReportParams(x: unknown): ReportParams | null {
 }
 
 export const requestOf = (p: ReportParams): ReportRequest => ({ style: p.style, kind: p.kind, objects: p.objects, time: p.time, dynamic: p.dynamic });
+
+/** อายุของรายงานที่ Report & Graph Manager สร้างไว้ให้หน้าต่างที่เพิ่งเปิด (เกินนี้หน้าต่างสร้างใหม่เอง) */
+export const PRIMED_TTL_MS = 30_000;
+let primed: { sc: string; key: string; report: ReportJson; at: number } | null = null;
+
+/**
+ * Report & Graph Manager สร้างรายงานก่อนเปิดหน้าต่าง (เพื่อแสดง 409/422 ในกล่องของตัวเอง) แล้วฝากผลไว้ที่นี่
+ * หน้าต่างที่เปิดด้วยคำขอเดียวกันใช้ผลนี้ครั้งเดียวแทนการ POST ซ้ำ (Refresh / F5 สร้างใหม่ตามปกติ)
+ */
+export function primeReport(sc: string, req: ReportRequest, report: ReportJson): void {
+  primed = { sc, key: JSON.stringify(req), report, at: Date.now() };
+}
+
+/** ผลที่ฝากไว้ของคำขอนี้ (ใช้ได้ครั้งเดียว) ไม่มีหรือเก่าเกิน PRIMED_TTL_MS = null */
+function takePrimed(sc: string, req: ReportRequest): ReportJson | null {
+  const hit = primed;
+  if (hit === null || hit.sc !== sc || hit.key !== JSON.stringify(req)) return null;
+  primed = null;
+  return Date.now() - hit.at <= PRIMED_TTL_MS ? hit.report : null;
+}
 
 const FACILITY = "*/Facility/";
 const SATELLITE = "*/Satellite/";
@@ -168,8 +188,8 @@ export function staleStatus(objects: readonly string[], info: ResultsInfo | null
   return stale || notCurrent ? "stale" : null;
 }
 
-/** รอ job ทั้งหมดจบ: true = สำเร็จทุกตัว, false = ตัวใดล้มเหลว/ถูกยกเลิก หรือ signal ยกเลิก */
-function waitForJobs(ids: readonly string[], signal: AbortSignal): Promise<boolean> {
+/** รอ job ทั้งหมดจบ: true = สำเร็จทุกตัว, false = ตัวใดล้มเหลว/ถูกยกเลิก หรือ signal ยกเลิก (Report & Graph Manager ใช้ด้วย) */
+export function waitForJobs(ids: readonly string[], signal: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     const check = (): boolean => {
       if (signal.aborted) return finish(false);
@@ -285,7 +305,7 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
     setPhase("loading");
     void (async () => {
       try {
-        const report = await fetchReport(sc, requestOf(cur), ctrl.signal);
+        const report = takePrimed(sc, requestOf(cur)) ?? (await fetchReport(sc, requestOf(cur), ctrl.signal));
         const extra = await prep(report, sc, ctrl.signal, object);
         if (ctrl.signal.aborted) return;
         setLoaded({ report, extra });
@@ -441,7 +461,7 @@ export function Report({ params, panelId }: PanelProps) {
             <Menubar.Portal>
               <Menubar.Content className="menu-content" align="start" sideOffset={0} loop>
                 <Menubar.Item className="menu-item" disabled={loaded === null} title={msg("report.export")} onSelect={() => void exportCsv()}>
-                  <span className="menu-label">{t("report.toCsvFormat")}</span>
+                  <span className="menu-label">{t("report.toExcelOrCsvFormat")}</span>
                 </Menubar.Item>
                 <Menubar.Item className="menu-item" onSelect={() => setSetupOpen(true)}>
                   <span className="menu-label">{t("report.setup")}</span>

@@ -6,12 +6,15 @@
 //          ใน docs/2026-11-11-gnss-studio-stk-reference.md (คั่นด้วย , / ; ( ) = * + หรือเครื่องหมายคำพูด ไม่นับคอลัมน์ Verdict/Page
 //          ไม่นับเศษของชื่อที่ยาวกว่า) และ reference ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู)
 //          ชื่อที่ reference เขียนกลางประโยคมีข้อความอ้างตรงตัวใน test (PROSE_EVIDENCE)
+//   stkHelp = ข้อความนี้ยืนยันตรงตัวบน help.agi.com ใน docs/2026-11-15-stk-terms-access-reports.md (ข้อความอ้างในเครื่องหมายคำพูดของแถวที่ไม่ใช่ "ไม่พบ")
+//          ใช้กับคำของ Report & Graph Manager / Style Properties / หน้าต่างรายงานและกราฟที่ reference §F ไม่มี (test ตรวจกับไฟล์นั้น HELP_EVIDENCE)
 //   ours = ที่เหลือทั้งหมด แม้ฟังดูเหมือน STK (เช่น "Save", "Basic - Description") เพราะ reference ไม่ได้ยืนยัน
 //          UI "Help → STK UI Reference" แสดงทั้งสองกลุ่ม และ About ติดป้าย "Added by GNSS Studio" ที่รายการ ours
-// test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference ห้ามแก้ reference ให้ test ผ่าน
+// test (tests/unit/labels.test.ts) ตรวจทุกรายการ stk กับไฟล์ reference (หรือไฟล์ผลตรวจคำของ help.agi.com สำหรับ stkHelp) ห้ามแก้ไฟล์เหล่านั้นให้ test ผ่าน
 //
 // การตั้งชื่อคีย์: `<กลุ่ม>.<ที่ใช้>.<ชื่อ>` แบบ camelCase กลุ่มที่ใช้: menu anim toolbar window page field option ob
-// timeline report (หน้าต่างรายงาน) graph (หน้าต่างกราฟ) access (Access tool) mv status dialog help sensorView (ตัวเลือกบนหน้าต่าง Sensor View)
+// timeline report (หน้าต่างรายงาน) graph (หน้าต่างกราฟ) access (Access tool) rgm (Report & Graph Manager และหน้าต่างแก้ style) mv status dialog help
+// sensorView (ตัวเลือกบนหน้าต่าง Sensor View)
 // คีย์เดียวใช้ได้หลายที่เมื่อเป็นสิ่งเดียวกัน เช่น
 //   - เมนูย่อย View → Toolbars ใช้ toolbar.* เป็นชื่อแถบ
 //   - เมนูคลิกขวาของ Object Browser ใช้ menu.object.* ชุดเดียวกับเมนูที่ตั้งชื่อตามชนิด object
@@ -28,6 +31,9 @@ type Section = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H";
 
 const stk = (text: string, section: Section): Label => ({ text, source: "stk", ref: `STK ref §${section}` });
 const ours = (text: string): Label => ({ text, source: "ours" });
+/** ยืนยันบน help.agi.com (docs/2026-11-15-stk-terms-access-reports.md) */
+const stkHelp = (text: string): Label => ({ text, source: "stk", ref: STK_HELP_REF });
+export const STK_HELP_REF = "STK help (2026-11-15)";
 
 const LABELS = {
   // ---------- เมนูบนสุด (spec §5.1, STK ref §A) ----------
@@ -174,6 +180,10 @@ const LABELS = {
   "window.report": ours("Report"),
   // ชื่อชนิดหน้าต่างกราฟ (ชื่อบนแท็บมาจาก reportTitle แบบเดียวกับรายงาน) reference ไม่มีคำนี้เดี่ยว ๆ
   "window.graph": ours("Graph"),
+  // Report & Graph Manager (spec §5) และหน้าต่างแก้ style (spec §5.1: STK เรียกหน้าต่างนี้ว่า Properties ของ style)
+  "window.reportGraphManager": stk("Report & Graph Manager", "F"),
+  "window.styleEditor": ours("Style Properties"),
+  "window.styleEditorFor": ours("{name} Style Properties"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),
@@ -187,6 +197,8 @@ const LABELS = {
   "dialog.reload": ours("Reload"),
   "dialog.retry": ours("Retry"),
   "dialog.confirm": ours("Confirm"),
+  "dialog.yes": ours("Yes"),
+  "dialog.no": ours("No"),
   "dialog.add": ours("Add..."),
   "dialog.remove": ours("Remove"),
   "dialog.assign": ours("Assign"),
@@ -520,6 +532,8 @@ const LABELS = {
   "ob.class.constellation": stk("Constellation", "B"),
   "ob.class.group": ours("Group"),
   "ob.show": ours("Show"),
+  // ต่อท้ายชื่อ provider / style ที่ spec ติด "(เพิ่มเอง)" (ข้อมูลจาก engine มี ours: true) เช่น IPP Data (GNSS Studio)
+  "ob.oursMark": ours(" (GNSS Studio)"),
   "ob.findWhat": ours("Find what"),
   "ob.findNext": ours("Find Next"),
   "ob.findPrevious": ours("Find Previous"),
@@ -553,9 +567,10 @@ const LABELS = {
   "report.refresh": stk("Refresh", "F"),
   "report.setAnimationTime": stk("Set Animation Time", "F"),
   "report.globalStatistics": stk("Global Statistics", "F"),
-  // reference ไม่มีเมนู Export ของหน้าต่างรายงานและกล่อง Export Setup (spec §3.5 ใช้ชื่อตาม STK แต่ reference ไม่ยืนยัน) จึงเป็น ours
-  "report.export": ours("Export"),
-  "report.toCsvFormat": ours("To CSV Format..."),
+  // ไม่พบปุ่ม Setup... และกล่อง Export Setup บน help.agi.com (spec §3.5 ใช้ชื่อเหล่านี้เอง) จึงเป็น ours
+  // help.agi.com: "right-click in the body of the report. Select Export > To Excel or CSV Format" (ผลตรวจคำ 2026-11-15) ไฟล์ที่ได้เป็น CSV
+  "report.export": stkHelp("Export"),
+  "report.toExcelOrCsvFormat": stkHelp("To Excel or CSV Format"),
   "report.setup": ours("Setup..."),
   "report.exportSetup": ours("Export Setup"),
   "report.fieldDelimiter": ours("Field Delimiter"),
@@ -575,7 +590,8 @@ const LABELS = {
   "graph.copyToClipboard": ours("Copy to Clipboard"),
   "graph.zoomOut": ours("Zoom Out"),
   "graph.crosshairCursor": ours("Crosshair Cursor"),
-  "graph.exportDialog": ours("Export Dialog..."),
+  // help.agi.com: "display the Export Dialog by choosing the Export option from a graph's pop-up menu" เมนูชื่อ Export
+  "graph.export": stkHelp("Export"),
 
   // ---------- Access tool (spec §4, STK ref §F) ----------
   // ชื่อหน้าต่างใช้ toolbar.access; ช่อง Show ของกราฟิกใช้ ob.show, Color ใช้ field.color, Start/Stop ใช้ field.analysisStart/Stop
@@ -607,6 +623,75 @@ const LABELS = {
   "access.animationGraphics": ours("Animation Graphics"),
   "access.inheritSettings": ours("Inherit Settings from Scenario"),
   "access.selectAll": ours("Select All"),
+
+  // ---------- Report & Graph Manager (spec §5, STK ref §F, help.agi.com) ----------
+  // ชื่อชนิด object ใน Object Type: Facility / Satellite ใช้ ob.class.*, Access เป็น ours แบบ toolbar.access
+  // คำที่ help.agi.com ไม่พบ (Constellation ในรายการ Object Type, คลิกขวา Generate as .txt/.csv, Copy to My Styles, Delete) เป็นฟีเจอร์ตาม spec แต่เป็น ours
+  "rgm.objectType": stk("Object Type", "F"),
+  "rgm.allTypes": stk("All Types", "F"),
+  "rgm.typeAccess": ours("Access"),
+  "rgm.constellation": ours("Constellation"),
+  "rgm.objects": ours("Objects"),
+  "rgm.styles": ours("Styles"),
+  "rgm.installedStyles": stk("Installed Styles", "F"),
+  "rgm.myStyles": stk("My Styles", "F"),
+  "rgm.scenarioStyles": stk("Scenario Styles", "F"),
+  "rgm.showReports": stk("Show Reports", "F"),
+  "rgm.showGraphs": stk("Show Graphs", "F"),
+  "rgm.generateAs": stk("Generate As", "F"),
+  "rgm.reportGraph": stk("Report/Graph", "F"),
+  "rgm.dynamicDisplay": stk("Dynamic Display/Strip Chart", "F"),
+  "rgm.generate": stk("Generate...", "F"),
+  "rgm.new": stkHelp("New..."),
+  "rgm.properties": stkHelp("Properties..."),
+  "rgm.close": stkHelp("Close"),
+  "rgm.propertiesItem": stkHelp("Properties"),
+  "rgm.generateTxt": ours("Generate as .txt file..."),
+  "rgm.generateCsv": ours("Generate as .csv file..."),
+  "rgm.copyToMyStyles": ours("Copy to My Styles"),
+  "rgm.delete": ours("Delete"),
+  // ป้ายชนิดของ style ในต้นไม้ (Installed มี Access / AER ทั้งรายงานและกราฟชื่อเดียวกัน) และตัวเลือกชนิดของ style ใหม่
+  "rgm.kindReport": ours("Report"),
+  "rgm.kindGraph": ours("Graph"),
+  "rgm.styleType": ours("Style Type"),
+  // กล่องเวลาก่อน Generate (Use Object Time Period ใช้ access.useObjectTimePeriod, Start/Stop ใช้ field.analysisStart/Stop)
+  "rgm.timeProperties": stkHelp("Time Properties"),
+  "rgm.specifyTimeProperties": stkHelp("Specify Time Properties"),
+  "rgm.step": ours("Step"),
+  "rgm.useDefaultTimePoints": stkHelp("Use default time points"),
+  "rgm.useStepSize": stkHelp("Use step size"),
+  "rgm.seconds": ours("sec"),
+  // หน้าต่างแก้ style: แท็บ Content / Time / Summary / Graph, Data Providers → Report Contents / Graph Contents
+  "rgm.content": stkHelp("Content"),
+  "rgm.time": stkHelp("Time"),
+  "rgm.summary": stkHelp("Summary"),
+  "rgm.graph": stkHelp("Graph"),
+  "rgm.dataProviders": stkHelp("Data Providers"),
+  "rgm.reportContents": stkHelp("Report Contents"),
+  "rgm.graphContents": stkHelp("Graph Contents"),
+  "rgm.add": ours("Add"),
+  "rgm.remove": ours("Remove"),
+  "rgm.up": ours("Up"),
+  "rgm.down": ours("Down"),
+  "rgm.saveTo": ours("Save To"),
+  // Summary: help.agi.com ไม่พบ checkbox ชื่อเหล่านี้ในหน้าต่าง Style Properties จึงเป็น ours
+  "rgm.statMin": ours("Min"),
+  "rgm.statMax": ours("Max"),
+  "rgm.statMean": ours("Mean"),
+  "rgm.statTotal": ours("Total"),
+  "rgm.statStdDeviation": ours("Std Deviation"),
+  "rgm.summaryOnly": ours("Summary Only"),
+  "rgm.numberOfAccesses": ours("Number of Accesses"),
+  "rgm.statElement": ours("Element"),
+  // Graph: ชนิดกราฟและแกนยืนยันบน help.agi.com แต่ไม่พบชื่อช่อง "Type"
+  "rgm.graphType": ours("Type"),
+  "rgm.timeXY": stkHelp("Time XY"),
+  "rgm.interval": stkHelp("Interval"),
+  "rgm.polar": stkHelp("Polar"),
+  "rgm.yAxis1": stkHelp("Y Axis (Y1)"),
+  "rgm.yAxis2": stkHelp("Y2 Axis (Y2)"),
+  "rgm.axisNone": ours("Not Plotted"),
+  "rgm.stack": ours("Stack by System"),
 
   // ---------- Message Viewer (spec §11, STK ref §A) ----------
   "mv.tab.all": stk("All Messages", "A"),

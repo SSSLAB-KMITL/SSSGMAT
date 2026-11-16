@@ -186,6 +186,8 @@ interface ConfirmRequest {
   id: number;
   text: string;
   okLabel: string | undefined;
+  /** ชื่อปุ่มปฏิเสธ (คำถามแบบ Yes / No) ไม่ระบุ = Cancel */
+  cancelLabel: string | undefined;
   resolve(answer: boolean): void;
 }
 
@@ -204,10 +206,10 @@ function answerAll(answer: boolean): void {
  * ถามยืนยันด้วยกล่องเดียวร่วมกัน: ตอบ OK = true, Cancel / Esc = false
  * ไม่มี <Dialogs/> ให้ถาม (ยังไม่ mount) = false เสมอ เพื่อไม่ทำสิ่งที่ผู้ใช้ไม่ได้ยืนยัน
  */
-export function confirm(text: string, opts: { okLabel?: string } = {}): Promise<boolean> {
+export function confirm(text: string, opts: { okLabel?: string; cancelLabel?: string } = {}): Promise<boolean> {
   if (hosts === 0) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
-    useConfirmQueue.setState((s) => ({ queue: [...s.queue, { id: nextRequestId++, text, okLabel: opts.okLabel, resolve }] }));
+    useConfirmQueue.setState((s) => ({ queue: [...s.queue, { id: nextRequestId++, text, okLabel: opts.okLabel, cancelLabel: opts.cancelLabel, resolve }] }));
   });
 }
 
@@ -257,7 +259,7 @@ function ConfirmHost() {
                 {request.okLabel ?? t("dialog.ok")}
               </button>
               <button type="button" className="btn" ref={cancel} onClick={() => answer(false)}>
-                {t("dialog.cancel")}
+                {request.cancelLabel ?? t("dialog.cancel")}
               </button>
             </div>
           </Dialog.Content>
