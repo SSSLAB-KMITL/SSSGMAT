@@ -29,7 +29,7 @@ from .config import TLE_OLD_DAYS
 from .ephem import EphemManager, SatEphem, SatSpec, Window, needs_next, tle_key, usable, window_for
 from .errors import ApiError
 from .module import ModuleConfig
-from .observe import TWILIGHT_SUN_EL_DEG, TleElements, is_decayed, observe, parse_tle, qth_geo
+from .observe import is_geo, TWILIGHT_SUN_EL_DEG, TleElements, is_decayed, observe, parse_tle, qth_geo
 from .passes import Pass, find_passes, next_events
 from .prefs import Prefs
 from .satdb import SatDb, SatRecord, gmat_name
@@ -387,7 +387,7 @@ class ModuleRuntime:
                                         f"ไม่ใช่วงโคจรรอบโลก ({exc})", str(norad)))
                 continue
             s.rate = obs["range_rate_kms"]
-            next_aos, next_los, always = next_events(self._passes_for(orbit, e, w), e, self._q, t)
+            next_aos, next_los, always = next_events(self._passes_for(orbit, e, w), e, self._q, t, can_be_permanent=is_geo(orbit.elements))
             sats.append({"norad": norad, "name": s.record.name, **obs,
                          "next_aos": iso_ms(next_aos), "next_los": iso_ms(next_los), "always": always})
         return sats

@@ -78,6 +78,7 @@ from .locations import locations_json
 from .maps import STOCK_MAPS, check_upload_size, list_maps, map_entry, resolve as resolve_map, save_upload
 from .pass_service import PassService, gmat_failed, parse_sky_t
 from .prefs import Prefs
+from .quality import QualityService
 from .runtime import Hub, ModuleClosedError, ModuleRuntime, iso_ms, sky_owner
 from .satdb import SatDb, SatRecord, UpdateResult
 from .satinfo import orbit_info
@@ -694,6 +695,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             await controllers.shutdown()     # disengage (S, q) และเก็บ Cycle ก่อนอย่างอื่น
         finally:
             try:
+                await stop_quality()
                 await stop_tle_age()         # ก่อนหยุด tick และปิด module: update ที่ค้างอยู่ reload module ทุกตัวตอนจบ
             finally:
                 try:
@@ -711,6 +713,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
                 if start_background:
                     app.state.startup_messages = await asyncio.to_thread(startup)
                     app.state.tle_age_task = asyncio.create_task(tle_age_loop(), name="tle-age")
+                    app.state.quality_task = asyncio.create_task(quality_loop(), name="orbit-quality")
                 try:
                     yield
                 finally:
@@ -734,6 +737,7 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     app.state.ticks = ticks
     app.state.controllers = controllers
     app.state.events = events
+    app.state.quality_task = None
     app.state.tle_age_task = None            # task ตรวจอายุ TLE (เฉพาะ start_background)
     app.state.tle_lock = tle_lock
     app.state.trsp_lock = trsp_lock
@@ -934,7 +938,10 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
     def update_tle() -> dict:
         """Edit → Update TLE data from network ตาม TLE sources และ proxy ของ Preferences (tlesources.update_from_sources)"""
         with tle_lock:
-            return tle_result(update_from_sources(satdb, cfg, prefs, now(), tle_opener_factory))
+            quality.remember()
+            result = tle_result(update_from_sources(satdb, cfg, prefs, now(), tle_opener_factory))
+            quality.remember()
+            return result
 
     # ตรวจอายุ TLE ทุก tle_check_interval_s วินาที (ref-D §5.1): Notify me ส่ง tle_old ทาง /ws/app (เก็บไว้ถ้ายังไม่มี browser)
     # Perform automatic update in the background เรียก update_tle เดิม (ถือ tle_lock, ผลแล้ว reload module ทุกตัว, ติดกติกา 2 ชม. ต่อ source)
@@ -967,13 +974,52 @@ def create_app(cfg: Config, start_background: bool = True, opener=urlopen, now: 
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
+    quality = QualityService(cfg, store, satdb, update_tle, now, opener, events.publish)
+    app.state.quality = quality
+
+    async def quality_loop():
+        while True:
+            await asyncio.sleep(60)
+            if quality.due():
+                try:
+                    quality.start()
+                except ApiError:
+                    pass  # A manual request may have won the race.
+
+    async def stop_quality():
+        task = app.state.quality_task
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        await asyncio.to_thread(quality.close)
+
+    @app.get("/api/quality")
+    def quality_status():
+        return quality.status()
+
+    @app.put("/api/quality/settings")
+    def quality_settings(body: dict = Body(...)):
+        return quality.configure(body)
+
+    @app.post("/api/quality/run", status_code=202)
+    def quality_run(body: dict = Body(default={})):
+        if set(body) - {"action", "module"}:
+            raise ApiError("QUALITY_INVALID", 422, "คำขอตรวจวงโคจรมีช่องที่ไม่รู้จัก")
+        module = body.get("module")
+        if module is not None and not isinstance(module, str):
+            raise ApiError("QUALITY_INVALID", 422, "module ต้องเป็นชื่อ module")
+        return quality.start(body.get("action", "cycle"), module)
+
     @app.post("/api/tle/update")
     async def tle_update():
         return await asyncio.to_thread(update_tle)
 
     def update_tle_local(files: list[tuple[str, str]]) -> dict:
         with tle_lock:
-            return tle_result(update_from_files(satdb, prefs, files, now()))
+            quality.remember()
+            result = tle_result(update_from_files(satdb, prefs, files, now()))
+            quality.remember()
+            return result
 
     @app.post("/api/tle/local")
     async def tle_local(request: Request):

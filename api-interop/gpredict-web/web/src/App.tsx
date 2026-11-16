@@ -1,3 +1,4 @@
+import { OrbitQuality } from "./components/OrbitQuality";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { closeModule, errorText, getModules, putTabs, putWindow, resetClock, retryModule } from "./api";
 import { connectAppEvents, keepIfSame, withConfigReads, withControllerSync } from "./appEvents";
@@ -291,6 +292,8 @@ function Main() {
     });
   }, [current]);
 
+  const [qualityOpen, setQualityOpen] = useState(false);
+
   const closeTleOld = useCallback(() => setTleOld(null), []);
 
   // ---------------------------------------------------------------- module windows (spec §8)
@@ -469,7 +472,7 @@ function Main() {
 
   return (
     <div className="app" ref={root}>
-      <MenuBar onAction={barAction} />
+      <div className="quality-toolbar"><MenuBar onAction={barAction} /><button className="button flat" onClick={() => setQualityOpen(true)}>คุณภาพวงโคจร / ตรวจเทียบ</button></div>
       <Tabs tabs={tabs} active={current} onSelect={setChosen} onReorder={reorder} />
       <RestoreBar modules={restoreList(windows, ownWindows)} onOpen={restore} />
       <NoticeStrip notices={visibleNotices(notices, dismissed)} onDismiss={dismiss} onRetry={(m) => void retry(m)} />
@@ -539,6 +542,7 @@ function Main() {
         onDeleted={deleted}
         onTleUpdated={tleUpdated}
       />
+      {qualityOpen && <OrbitQuality module={current} satellites={config?.satellites ?? []} onClose={() => setQualityOpen(false)} />}
       <PassWindows windows={passWindows} onOpen={openPassWindow} onClose={closePassWindow} />
       <SatInfoWindows windows={satInfos} onClose={closeSatInfoWindow} />
       <ControllerWindows refs={ctl.controllers} onClosed={ctl.close} onGone={ctl.gone} />

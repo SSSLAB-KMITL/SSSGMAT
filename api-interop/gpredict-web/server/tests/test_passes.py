@@ -162,12 +162,16 @@ class AlwaysTest(unittest.TestCase):
         self.assertIsNone(passes[0].los)
         self.assertAlmostEqual(passes[0].max_el, 90.0, places=6)
         t = WINDOW_START + timedelta(hours=8)
-        self.assertEqual(next_events(passes, above, Q, t), (None, None, "in"))
+        self.assertEqual(next_events(passes, above, Q, t, can_be_permanent=True), (None, None, "in"))
 
         below = fixed_ephem((-R_ORBIT_KM, 0.0, 0.0))
         passes = find_passes(below, Q)
         self.assertEqual(passes, [])
-        self.assertEqual(next_events(passes, below, Q, t), (None, None, "out"))
+        self.assertEqual(next_events(passes, below, Q, t, can_be_permanent=True), (None, None, "out"))
+
+    def test_empty_finite_window_does_not_mean_always_out(self):
+        below = fixed_ephem((-R_ORBIT_KM, 0., 0.))
+        self.assertEqual(next_events([], below, Q, WINDOW_START+timedelta(hours=8)), (None, None, None))
 
     def test_always_is_none_when_time_is_outside_usable_range(self):
         above = fixed_ephem((R_ORBIT_KM, 0.0, 0.0))
