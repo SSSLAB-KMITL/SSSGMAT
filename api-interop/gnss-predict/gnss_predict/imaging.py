@@ -7,6 +7,7 @@
 - ไม่พบใน snapshot หรือแปลงเป็น TLE ไม่ได้: unmapped เหตุผล TLE_UNAVAILABLE
 - ไฟล์กลุ่มที่อ่านไม่ได้: ข้ามกลุ่มนั้น + Message IMAGING_GROUP_UNREADABLE (ไม่ raise)
 - snapshot ที่ไม่มีไฟล์กลุ่ม imaging เลย: catalog ว่าง (ไม่มี unmapped ไม่มีข้อความ)
+- scenario_catalog: catalog ของ GNSS (build_catalog เดิม) ตามด้วยดาวถ่ายภาพเมื่อ with_imaging เท่านั้น
 """
 
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from .catalog import Catalog, CatalogSatellite, _flagged_message, _unmapped
+from .catalog import Catalog, CatalogSatellite, _flagged_message, _unmapped, build_catalog
 from .config import AGE_OK_DAYS, AGE_SHOWN_MAX_DAYS
 from .errors import Message
 from .omm import OmmRecord, read_omm, to_tle_lines
@@ -149,3 +150,17 @@ def build_imaging_catalog(snapshot_dir: Path, ref: tuple[datetime, datetime]) ->
             flagged.append(_flagged_message(s, ok, max_))
 
     return Catalog(satellites, unmapped, messages + flagged)
+
+
+def scenario_catalog(snapshot_dir: Path, period: tuple[datetime, datetime], systems: set[str],
+                     with_imaging: bool) -> Catalog:
+    """catalog รวมของฉาก: ผลของ build_catalog เดิมทุกตัว แล้วต่อท้ายด้วยดาวถ่ายภาพ (X01…X08) unmapped และข้อความของมัน
+
+    with_imaging เป็น False: คืนผลของ build_catalog ตรง ๆ ไม่อ่านไฟล์กลุ่ม imaging เลย (ฉาก GNSS ล้วนได้ผลเดิมทุกไบต์)
+    """
+    gnss = build_catalog(snapshot_dir, period, systems)
+    if not with_imaging:
+        return gnss
+    imaging = build_imaging_catalog(snapshot_dir, period)
+    return Catalog(gnss.satellites + imaging.satellites, gnss.unmapped + imaging.unmapped,
+                   gnss.messages + imaging.messages)
