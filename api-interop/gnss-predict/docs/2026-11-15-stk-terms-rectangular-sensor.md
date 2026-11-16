@@ -113,3 +113,4 @@
 11. `https://help.agi.com/stkdevkit/Content/DocX/STKObjects~IAgSnRectangularPattern~VerticalHalfAngle.html` — *`VerticalHalfAngle` Property*
 12. `https://help.agi.com/stkdevkit/Content/DocX/STKObjects~IAgSnRectangularPattern~HorizontalHalfAngle.html` — *`HorizontalHalfAngle` Property*
 13. `https://help.agi.com/stkdevkit/Content/DocX/STKObjects~IAgSnCommonTasks~SetPointingFixedAzEl.html` — *`SetPointingFixedAzEl` Method*
+
