@@ -21,6 +21,11 @@ services:
       GNSS_STUDIO_PORT: "${GNSS_STUDIO_PORT:-8000}"
     volumes:
       - gnss_data:/data
+    # server และ GMAT รันเป็น uid 10001 ไม่ต้องใช้ capability ใดเลย และไม่มีอะไรต้องยกสิทธิ์ (ทดสอบแล้ว: server เปิดได้และ job propagate ผ่าน)
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     restart: unless-stopped
 
 volumes:

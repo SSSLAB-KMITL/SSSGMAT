@@ -5,6 +5,7 @@
 !gnss_predict/
 !templates/
 !server/requirements.txt
+!server/constraints.txt
 !server/gnss_studio_server/
 !web/
 !models/

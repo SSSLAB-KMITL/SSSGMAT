@@ -1,0 +1,2 @@
+# สคริปต์ shell ต้องเป็น LF เสมอ: ไฟล์ที่ checkout เป็น CRLF (Windows) ทำให้ /bin/sh ใน image รัน entrypoint ไม่ได้
+*.sh text eol=lf

@@ -19,10 +19,24 @@ fi
 
 SETTINGS="$DATA_DIR/settings.json"
 if [ ! -e "$SETTINGS" ] && [ ! -L "$SETTINGS" ]; then
+  # เขียนไฟล์ชั่วคราวให้ครบก่อน แล้ว hard link เป็นชื่อจริง: ln ไม่ทับไฟล์ที่มีอยู่ (no-clobber) และชื่อจริงปรากฏพร้อมเนื้อหาครบในครั้งเดียว
+  # ไฟล์ชั่วคราวถูกลบเสมอ ทั้งตอนสำเร็จ ตอนล้ม และเมื่อมีอีก process เขียน settings.json ตัดหน้าไปก่อน
   tmp="$DATA_DIR/.settings.json.first-run.$$"
+  trap 'rm -f "$tmp"' EXIT
+  trap 'rm -f "$tmp"; exit 1' HUP INT TERM
   cp "$FIRST_RUN_SETTINGS" "$tmp"
-  mv "$tmp" "$SETTINGS"
-  echo "entrypoint: เปิดครั้งแรก เขียน $SETTINGS (งานประจำวันปิด ภาพออนไลน์ปิดทุกแหล่ง)"
+  # ระบบไฟล์ที่ไม่รองรับ hard link (บาง bind mount): ใช้ mv -n (no-clobber, rename ในโฟลเดอร์เดียวกัน) แล้วดูว่าไฟล์ชั่วคราวถูกย้ายไปจริง
+  if ln "$tmp" "$SETTINGS" 2>/dev/null \
+     || { [ ! -e "$SETTINGS" ] && [ ! -L "$SETTINGS" ] && mv -n "$tmp" "$SETTINGS" 2>/dev/null; [ ! -e "$tmp" ]; }; then
+    echo "entrypoint: เปิดครั้งแรก เขียน $SETTINGS (งานประจำวันปิด ภาพออนไลน์ปิดทุกแหล่ง)"
+  elif [ -e "$SETTINGS" ] || [ -L "$SETTINGS" ]; then
+    echo "entrypoint: มี $SETTINGS อยู่แล้ว ไม่เขียนทับ"
+  else
+    echo "entrypoint: เขียน $SETTINGS ไม่ได้" >&2
+    exit 1
+  fi
+  rm -f "$tmp"
+  trap - EXIT HUP INT TERM
 fi
 
 if [ "$#" -gt 0 ]; then

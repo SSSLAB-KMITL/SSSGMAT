@@ -71,35 +71,35 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv curl ca-certificates tini libgomp1 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY server/requirements.txt /tmp/requirements.txt
+# constraints.txt ตรึงทุก dependency ทางอ้อม (pydantic, starlette ฯลฯ) ตามเวอร์ชันใน server/.venv ที่ทดสอบแล้ว
+COPY server/requirements.txt server/constraints.txt /tmp/pyreq/
 RUN python3 -m venv /opt/venv \
- && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
- && rm /tmp/requirements.txt
+ && /opt/venv/bin/pip install --no-cache-dir -r /tmp/pyreq/requirements.txt -c /tmp/pyreq/constraints.txt \
+ && rm -rf /tmp/pyreq
 
 COPY --from=gmat /opt/sssgmat/application /opt/sssgmat/application
 
 ARG APP=/opt/sssgmat/api-interop/gnss-predict
 COPY gnss_predict ${APP}/gnss_predict
 COPY templates ${APP}/templates
-COPY server/requirements.txt ${APP}/server/requirements.txt
+COPY server/requirements.txt server/constraints.txt ${APP}/server/
 COPY server/gnss_studio_server ${APP}/server/gnss_studio_server
 COPY --from=web /src/gnss-predict/web/dist ${APP}/web/dist
 COPY docker/entrypoint.sh /usr/local/bin/gnss-studio-entrypoint
+COPY docker/gmat-check-libs.sh /usr/local/bin/gmat-check-libs.sh
 COPY docker/settings.first-run.json ${APP}/docker/settings.first-run.json
 
 # ผู้ใช้ไม่ใช่ root: เขียนได้เฉพาะ /data และ output/ ของ GMAT (OUTPUT_PATH ใน startup file)
-# ตรวจตอน build ว่า GmatConsole และ plugin ทุกตัวหาไลบรารีครบ และ GmatConsole เปิดได้จริงแบบไม่มี DISPLAY
-# (plugin ไม่มี RPATH ไปหา libGmatBase/libGmatUtil เพราะ GmatConsole โหลดไว้ก่อนแล้วตอน dlopen จึงตรวจด้วย LD_LIBRARY_PATH ของ bin/ และ plugins/)
+# ตรวจตอน build ว่า GmatConsole และ plugin ทุกตัวหาไลบรารีครบ (อย่างน้อย 23 ไฟล์ = จำนวนใน R2026a หลังตัด) และ GmatConsole เปิดได้จริงแบบไม่มี DISPLAY
+# chown output/ หลังรัน --version เพราะ GMAT ที่รันเป็น root ตอน build อาจเขียนไฟล์ลง output/ ไว้
 RUN groupadd --gid 10001 gnss \
  && useradd --uid 10001 --gid gnss --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin gnss \
  && mkdir -p /data /opt/sssgmat/application/output \
- && chown gnss:gnss /data /opt/sssgmat/application/output \
- && chmod 0755 /usr/local/bin/gnss-studio-entrypoint \
- && missing="$(for f in /opt/sssgmat/application/bin/GmatConsole-* /opt/sssgmat/application/bin/*.so* \
-                         /opt/sssgmat/application/plugins/*.so.* /opt/sssgmat/application/plugins/*/*.so.*; do \
-                 LD_LIBRARY_PATH=/opt/sssgmat/application/bin:/opt/sssgmat/application/plugins ldd "$f" | grep 'not found' | sed "s@^@$f: @"; done)" \
- && if [ -n "$missing" ]; then echo "$missing"; exit 1; fi \
- && cd /opt/sssgmat/application/bin && ./GmatConsole --version | grep -q 'Build Date' \
+ && chmod 0755 /usr/local/bin/gnss-studio-entrypoint /usr/local/bin/gmat-check-libs.sh \
+ && /usr/local/bin/gmat-check-libs.sh /opt/sssgmat/application 23 \
+ && (cd /opt/sssgmat/application/bin && ./GmatConsole --version | grep -q 'Build Date') \
+ && chown gnss:gnss /data \
+ && chown -R gnss:gnss /opt/sssgmat/application/output \
  && python -c "import fastapi, uvicorn, gnss_predict.studio, gnss_studio_server.app"
 
 USER gnss

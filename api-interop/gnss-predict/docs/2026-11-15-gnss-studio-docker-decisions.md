@@ -22,6 +22,18 @@
 | 11 | stage GMAT อยู่ใน runtime (emulated) | stage `gmat` และ `web` รันบน `$BUILDPLATFORM` | ดาวน์โหลด ตรวจ checksum แตกไฟล์ และ build หน้าเว็บไม่ขึ้นกับ CPU จึงไม่ต้องผ่าน Rosetta/QEMU; เฉพาะ runtime เป็น `linux/amd64` (hardcode ใน `FROM` เพราะ GMAT มีแต่ x86_64) |
 | 12 | ไม่มีการตรวจตอน build | `ldd` ทุก binary/plugin (ด้วย `LD_LIBRARY_PATH` ของ `bin/` และ `plugins/` เพราะ plugin ไม่มี RPATH ไปหา `libGmatBase`) + `GmatConsole --version` + import server | image ที่ GMAT เปิดไม่ได้ต้อง build ไม่ผ่าน ไม่ใช่ไปพังตอน job แรก |
 | 13 | ไม่มี healthcheck | `HEALTHCHECK` เรียก `/api/health` ใน container | compose/`docker ps` แสดงสถานะได้ |
+| 14 | `node:22-slim` | `node:24.22.3-bookworm-slim` pin ด้วย digest | Node 24 เป็นสาย LTS ปัจจุบัน; `package-lock.json` มีแพ็กเกจที่ต้องการ `node >=22.17.0` และ `^22.14.0 \|\| >=24.0.0` (vite 8 ต้อง `^20.19 \|\| >=22.12`) ส่วน 22 รุ่นใดรุ่นหนึ่งไม่ได้ให้อะไรเพิ่ม; ระบุรุ่นเต็มคู่ digest เพื่อให้ build ซ้ำได้ (stage นี้สร้างแค่ไฟล์ static ไม่อยู่ใน image สุดท้าย) |
+| 15 | `pip install -r requirements.txt` | `pip install -r requirements.txt -c constraints.txt` | `server/constraints.txt` ตรึง closure ของ fastapi + uvicorn 14 แพ็กเกจตาม `pip freeze` ของ `server/.venv` ที่ทดสอบแล้ว (รวม `opentelemetry-api` ที่ fastapi 0.162.4 ต้องใช้) ไม่รวมเครื่องมือทดสอบ ทุกรุ่นมี wheel สำหรับ CPython 3.12 manylinux x86_64 จึงไม่ต้องเปลี่ยนรุ่น |
+| 16 | - | compose: `cap_drop: [ALL]`, `security_opt: ["no-new-privileges:true"]` | server และ GMAT ไม่ต้องใช้ capability (ตรวจแล้ว `CapEff: 0`, `NoNewPrivs: 1`, `/api/health` 200, job propagate สำเร็จ) |
+| 17 | `[ -e ] && printf > settings.json` | เขียนไฟล์ชั่วคราวแล้ว `ln` เป็นชื่อจริง (fallback `mv -n`) ลบไฟล์ชั่วคราวด้วย trap | ไม่ทับไฟล์ที่ process อื่นเขียนตัดหน้า และไม่มีช่วงที่ `settings.json` มีเนื้อหาไม่ครบ |
+| 18 | `ldd` วนตาม glob | `docker/gmat-check-libs.sh <root> 23` | glob ที่ไม่ตรงไฟล์ใด (เช่นโครง tarball เปลี่ยน) หรือจำนวนไฟล์ที่ตรวจน้อยกว่า 23 ทำให้ build ล้ม ไม่ผ่านแบบเงียบ ๆ (ทดสอบแล้วทั้งสองกรณี) |
+
+## Ruling (fix round 1)
+
+- **chown ใน README 10.2 ใช้ `exec --privileged -u 0` ไม่ใช่ `exec -u 0`**: เมื่อ compose ตัด capability ทั้งหมด root ใน `docker compose exec -u 0`
+  ไม่มี `CAP_DAC_OVERRIDE` และ `CAP_CHOWN` ทดสอบแล้ว `mkdir -p /data/orbits` ได้ `Permission denied` และ `chown` ได้ `Operation not permitted`
+  จึงให้ `mkdir` ทำในฐานะผู้ใช้ gnss (เจ้าของ `/data`) และ chown ด้วย `--privileged` ซึ่งมีผลกับคำสั่ง exec นั้นเท่านั้น (process ของ server ยังเป็น `CapEff: 0`)
+  พร้อมทางเลือกที่ไม่ใช้ root เลย (ส่ง tar ให้ gnss แตกเอง ได้ไฟล์ของ 10001 ทันที) เลือกคง `cap_drop: [ALL]` ไว้เพราะงานปกติ (server, propagate) ไม่ต้องใช้ capability
 
 ## สิ่งที่คงไว้ตามเอกสารวิจัย
 
@@ -39,9 +51,17 @@
 - propagate snapshot fixture 6 ดวง 24 ชม. step 30 วินาที: macOS 2.4 วินาที, container CLI 9.1 วินาที, container API job 5.7 วินาที
 - parity: hash เดียวกัน (`8ce4ea1ede0d`), `|Δpos|` สูงสุด 0.001 m ทั้ง 17286 ตำแหน่ง (ความละเอียดของ SP3)
 
+## ผลตรวจรอบแก้ที่ 1 (2026-11-17, build จาก `git archive` ของ HEAD `50e14dd` + ไฟล์ Docker ที่แก้)
+
+- build ผ่าน 1:47 นาที image 296 MB (CONTENT SIZE), pip ติดตั้งตรง `constraints.txt` ทั้ง 14 แพ็กเกจ, `gmat-check-libs: ตรวจ 23 ไฟล์ ไลบรารีครบ`
+- container ด้วย `--cap-drop ALL --security-opt no-new-privileges:true` บน volume ว่าง: health 200 ใน 2 วินาที, `settings.json` ตรงกับ
+  `docker/settings.first-run.json` ไบต์ต่อไบต์ ไม่มีไฟล์ชั่วคราวค้าง, `CapEff: 0000000000000000`, `NoNewPrivs: 1`
+- job propagate ผ่าน API สำเร็จ 3.3 วินาที ได้ `predicted.sp3` เหมือนผลรอบก่อนไบต์ต่อไบต์ `|Δpos|` เทียบ macOS สูงสุด 0.001 m
+- `docker compose up` (port 18767) health 200 และ `CapEff: 0` / `NoNewPrivs: 1` ตามไฟล์ compose
+
 ## ข้อจำกัดและงานต่อ
 
 - image `linux/amd64` เท่านั้น บน Apple silicon ช้ากว่า native ราว 2–4 เท่าในงาน propagate ที่วัด; ถ้าต้องการ arm64 native ดูทางเลือก ข ในเอกสารวิจัย
-- dependency ทางอ้อมของ `fastapi`/`uvicorn` (เช่น pydantic, starlette) ไม่ได้ pin เหมือนกับการติดตั้งบนเครื่อง (`server/requirements.txt` pin แค่สองตัว)
-- build ใช้ไฟล์ใน working tree (รวมการแก้ที่ยังไม่ commit ใน `web/`) ไม่ใช่ commit ใด commit หนึ่ง ถ้าต้องการ image ที่ทำซ้ำได้ให้ build จาก checkout ที่สะอาด
+- build ใช้ไฟล์ใน build context ตามที่อยู่บนดิสก์ (รวมการแก้ที่ยังไม่ commit) ถ้าต้องการ image ที่ทำซ้ำได้ให้ build จาก `git archive` ของ commit นั้น
+  (`git archive HEAD api-interop/gnss-predict | tar -x -C <โฟลเดอร์ว่าง>` แล้ว build ในนั้น) ซึ่งเป็นวิธีที่ใช้ตรวจรอบแก้ที่ 1
 - ถ้าเปิดงานประจำวันใน container แล้ว `daily` ใช้เวลาของ container (UTC) เหมือน server บนเครื่อง
