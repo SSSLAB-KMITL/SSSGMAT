@@ -141,8 +141,17 @@ def _make_set(name_line: str | None, line1: str, line2: str) -> TleSet | None:
         name, status = _generated_two_line_name(line1), UNKNOWN_STATUS
     else:
         name, status = _parse_name(name_line)
-    m = _LEADING_INT_RE.match(line1[2:7])             # g_ascii_strtod: อ่านเลขนำหน้า ไม่มีเลข = 0
-    return TleSet(int(m[1]) if m else 0, name, status, (line1, line2), epoch)
+    field = line1[2:7]
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    if field[0] in alphabet and field[1:].isdigit():
+        norad = (alphabet.index(field[0]) + 10) * 10000 + int(field[1:])
+    elif field.strip().isascii() and field.strip().isdigit():
+        norad = int(field)
+    else:
+        return None
+    if norad <= 0:
+        return None
+    return TleSet(norad, name, status, (line1, line2), epoch)
 
 
 def parse_tle_text(text: str) -> list[TleSet]:

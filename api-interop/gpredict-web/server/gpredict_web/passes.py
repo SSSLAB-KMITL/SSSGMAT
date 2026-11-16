@@ -190,12 +190,12 @@ def find_passes(eph: SatEphem, q: QthGeo) -> list[Pass]:
     return passes
 
 
-def next_events(passes: Sequence[Pass], eph: SatEphem, q: QthGeo, t: datetime
+def next_events(passes: Sequence[Pass], eph: SatEphem, q: QthGeo, t: datetime, can_be_permanent: bool = False
                 ) -> tuple[datetime | None, datetime | None, str | None]:
     """(next_aos, next_los, always) ที่เวลา t
 
     next_aos: AOS แรกที่เกิน t; next_los: LOS ของ pass ที่ t อยู่ข้างใน ไม่งั้นของ pass ถัดไป (None ถ้าไม่รู้หรือไม่มี)
-    always: ไม่มี pass ไหนรู้ AOS หรือ LOS เลย -> "in" เมื่อ El(t) > 0, "out" เมื่อ El(t) <= 0 (ไม่รู้ El(t) -> None); นอกนั้น None
+    always: can_be_permanent เป็นจริง (ผู้เรียกตรวจว่าเป็น GEO) และไม่มี pass ไหนรู้ AOS หรือ LOS เลย -> "in" เมื่อ El(t) > 0, "out" เมื่อ El(t) <= 0 (ไม่รู้ El(t) -> None); นอกนั้น None
     """
     upcoming = min((p for p in passes if p.aos is not None and p.aos > t), key=lambda p: p.aos, default=None)
     current = pass_containing(passes, t)
@@ -205,7 +205,7 @@ def next_events(passes: Sequence[Pass], eph: SatEphem, q: QthGeo, t: datetime
     else:
         next_los = None if upcoming is None else upcoming.los
     always = None
-    if not any(p.aos is not None or p.los is not None for p in passes):
+    if can_be_permanent and not any(p.aos is not None or p.los is not None for p in passes):
         elevation = elevation_at(eph, q, t)
         if elevation is not None:
             always = "in" if elevation > 0.0 else "out"
