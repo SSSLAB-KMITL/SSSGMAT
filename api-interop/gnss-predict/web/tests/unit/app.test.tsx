@@ -110,7 +110,7 @@ test("App puts the menu bar, both toolbars and the status bar around the windows
   expect(footer.querySelector('[data-field="activeObject"]')).not.toBeNull();
 });
 
-test("App registers the view, window, animation, file, help, Access and Report & Graph Manager commands, and the others stay disabled", async () => {
+test("App registers the view, window, animation, file, help, Access, Report & Graph Manager and Validation commands", async () => {
   render(<App />);
   await waitFor(() => expect(useLayout.getState().api).not.toBeNull());
   await waitFor(() => expect(isEnabled("view.new3d")).toBe(true));
@@ -124,8 +124,10 @@ test("App registers the view, window, animation, file, help, Access and Report &
     expect(isEnabled(id), id).toBe(false);
     expect(commandTooltip(id), id).toBe(msg("tooltip.noScenario"));
   }
-  expect(isRegistered("analysis.validation")).toBe(false);
-  expect(isEnabled("analysis.validation")).toBe(false);
+  // Validation reads the history of the whole machine, so it needs the workspace and no scenario, and has no reason to give
+  expect(isRegistered("analysis.validation")).toBe(true);
+  expect(isEnabled("analysis.validation")).toBe(true);
+  expect(commandTooltip("analysis.validation")).toBeUndefined();
   // และเมนูตามทัน: รายการ View ที่ลงทะเบียนแล้วไม่ aria-disabled
   expect(screen.getByRole("menubar")).toBeDefined();
 });
@@ -169,6 +171,27 @@ test("Object → Properties opens the real Properties Browser as a floating wind
   expect((await screen.findByLabelText(t("field.sscNumber")) as HTMLInputElement).value).toBe("40101");
   act(() => screen.getByRole("button", { name: t("dialog.cancel") }).click());
   await waitFor(() => expect(useLayout.getState().listWindows().some((w) => w.title === "G01 Properties")).toBe(false));
+});
+
+test("Analysis → Validation... opens the real Validation page as one integrated window with no scenario open, and only reads", async () => {
+  const f = stubFetch({
+    "GET /api/imagery/layers": IMAGERY_OFF, // App reads the imagery switch once at start
+    "GET /api/health": { status: 500, json: { code: "X", text: "x" } },
+    "GET /api/scenarios": { json: SCENARIOS },
+    "GET /api/validation/history": { json: [] },
+    "GET /api/validation/pending": { json: [] },
+  });
+  render(<App />);
+  await waitFor(() => expect(isEnabled("analysis.validation")).toBe(true));
+  expect(useScenario.getState().name).toBeNull();
+  const open = () => useLayout.getState().listWindows().filter((w) => w.title === t("window.validation"));
+  act(() => runCommand("analysis.validation"));
+  expect(await screen.findByText(msg("validation.empty"))).toBeDefined();
+  expect(open().map((w) => w.type)).toEqual(["integrated"]);
+  act(() => runCommand("analysis.validation")); // one window: the second call brings the first one up
+  expect(open()).toHaveLength(1);
+  expect(f.count("GET /api/validation/history")).toBe(1);
+  expect(f.calls.every((c) => c.method === "GET")).toBe(true); // opening the page validates and downloads nothing
 });
 
 test("Utilities opens the real Fetch Orbit Data and Daily Forecast Settings windows with no scenario open, and Insert needs a scenario", async () => {

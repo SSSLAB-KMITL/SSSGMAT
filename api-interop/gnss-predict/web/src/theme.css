@@ -2522,3 +2522,159 @@ body {
 .rgm-time .dlg-buttons {
   padding: 8px 10px;
 }
+
+/* ---------- หน้า Validation (src/windows/Validation, spec §7) ---------- */
+/* ใช้แถบเครื่องมือและกรอบของหน้าต่างรายงาน (.rpt) เนื้อหาเลื่อนทั้งหน้า: ตารางรายวัน ตารางรายดวง และสองกราฟ (ECharts เต็ม .val-chartbox) */
+.val-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: auto;
+}
+
+.val-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.val-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.val-h {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.val-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.val-scroll {
+  overflow: auto;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.val-daily {
+  max-height: 220px;
+}
+
+.val-sats {
+  max-height: 260px;
+}
+
+.val-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.val-table th,
+.val-table td {
+  padding: 2px 8px;
+  text-align: left;
+}
+
+.val-table th {
+  position: sticky;
+  top: 0;
+  background: var(--titlebar-bg);
+  box-shadow: inset 0 -1px 0 var(--border);
+  font-weight: 600;
+}
+
+.val-table td.val-num,
+.val-table th.val-num {
+  text-align: right;
+}
+
+/* ชื่อไฟล์ SP3 ยาว: ตัดด้วย ... (ชื่อเต็มอยู่ใน title) ไม่ให้ดันคอลัมน์ผลออกนอกจอ */
+.val-table td.val-truth {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.val-row:hover {
+  background: var(--hover-bg);
+}
+
+.val-selected,
+.val-selected:hover {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.val-day {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.val-day:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: 1px;
+}
+
+.val-selected .val-day:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+.val-table td.val-fail,
+.val-table td.val-bad {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.val-table td.val-pending,
+.val-table td.val-gave_up,
+.val-table td.val-insufficient_data,
+.val-table td.val-unverified {
+  color: var(--warning);
+}
+
+.val-selected td.val-fail,
+.val-selected td.val-bad,
+.val-selected td.val-pending,
+.val-selected td.val-gave_up {
+  color: inherit;
+}
+
+.val-next {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.val-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 8px;
+}
+
+.val-chartbox {
+  position: relative;
+  height: 260px;
+  background: var(--graph-bg);
+}
+
+.val-chart {
+  position: absolute;
+  inset: 0;
+}

@@ -5,13 +5,12 @@
 //   งาน 6: view.* window.* anim.* (chrome/coreCommands.ts), งาน 7: file.* help.*, งาน 8: edit.* object.properties/rename/delete ob.*,
 //   งาน 10: insert.* utilities.*, งาน 11: g3d.* object.zoomTo, งาน 12: g2d.*, งานย่อยที่ 4: analysis.* object.access object.reportGraphManager
 //   (analysis.access และ object.access: windows/AccessTool/commands.ts; analysis.reportGraphManager และ object.reportGraphManager:
-//   windows/ReportGraphManager/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
+//   windows/ReportGraphManager/commands.ts; analysis.validation: windows/Validation/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
 // - ทะเบียนเป็น observable: registerCommand / invalidateCommands แจ้งผู้ฟัง (subscribeCommands) เพื่อให้เมนูและแถบเครื่องมือวาดสถานะ enabled ใหม่
 //   คำสั่งที่ enabled() ขึ้นกับ store ต้องเรียก invalidateCommands() เองเมื่อค่านั้นเปลี่ยน (เช่น ฟัง store แล้วเรียก) เพราะทะเบียนไม่รู้ว่าอ่านอะไร
 // - ไฟล์นี้ไม่รู้จัก React และ store ใด ๆ
 
 import { t, type LabelKey } from "./labels/labels";
-import { msg } from "./labels/messages.th";
 import type { ToolbarName } from "./layout/workbook";
 
 /** ชื่อตั้งต้นของแต่ละคำสั่ง (คีย์ใน labels.ts) บางคำสั่งมีชื่อต่างกันตามที่ใช้ เช่น Access... ของเมนู Analysis กับเมนูตามชนิด object */
@@ -128,11 +127,6 @@ export interface CommandDef {
   text?(): string;
 }
 
-/** คำสั่งที่ยังไม่ลงทะเบียนแต่มีเหตุผลที่ผู้ใช้ควรรู้ (W4: รอ งานย่อยที่ 4) หายไปเองเมื่อมีผู้ลงทะเบียนคำสั่งนั้น */
-const PENDING_TOOLTIPS: Partial<Record<CommandId, () => string>> = {
-  "analysis.validation": () => msg("tooltip.subtask4"),
-};
-
 const registry = new Map<CommandId, CommandDef>();
 const listeners = new Set<() => void>();
 let version = 0;
@@ -210,7 +204,7 @@ export function runCommand(id: CommandId): void {
 /** ข้อความอธิบายของคำสั่ง (เหตุผลที่ปิดใช้หรือข้อสังเกต) ไม่มี = undefined */
 export function commandTooltip(id: CommandId): string | undefined {
   const def = registry.get(id);
-  if (def === undefined) return PENDING_TOOLTIPS[id]?.();
+  if (def === undefined) return undefined;
   try {
     return def.tooltip?.();
   } catch {

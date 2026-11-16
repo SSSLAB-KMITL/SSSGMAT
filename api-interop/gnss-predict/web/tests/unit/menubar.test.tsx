@@ -184,17 +184,23 @@ describe("disabled items", () => {
     for (const i of items) expect(i.getAttribute("aria-disabled")).toBe("true");
   });
 
-  test("hovering a disabled Analysis item shows the Thai note that it belongs to sub-project 4", async () => {
+  test("hovering a disabled Analysis item shows the reason its command gives, and nothing when no command is registered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    const menu = await openMenu(user, "Analysis");
+    let menu = await openMenu(user, "Analysis");
     await user.hover(item(menu, "Validation..."));
-    const tip = await screen.findByRole("tooltip");
-    expect(tip.textContent).toBe(msg("tooltip.subtask4"));
+    expect(screen.queryByRole("tooltip")).toBeNull(); // ไม่มีคำสั่งลงทะเบียน = ปิดใช้เฉยๆ ไม่มีข้อความ "อยู่ในงานย่อยที่ 4" อีกแล้ว
+    await user.keyboard("{Escape}");
+    // คำสั่งปลอมที่ลงทะเบียนเองใน test (ไม่ใช่ของแอป) บอกเหตุผลของมันเอง
+    act(() => registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผลสมมติ" }));
+    menu = await openMenu(user, "Analysis");
+    await user.hover(item(menu, "Validation..."));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("เหตุผลสมมติ");
   });
 
   test("a disabled item can be reached with the keyboard, and then shows its reason", async () => {
     const user = userEvent.setup();
+    registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผลสมมติ" });
     render(<MenuBar />);
     await openMenu(user, "Analysis");
     await user.keyboard("{ArrowDown}"); // first item (a disabled item is still reachable)
@@ -203,7 +209,7 @@ describe("disabled items", () => {
     expect(document.activeElement?.textContent).toBe("Report & Graph Manager...");
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Validation...");
-    expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("เหตุผลสมมติ");
   });
 
   test("choosing a disabled item does nothing and keeps the menu open", async () => {

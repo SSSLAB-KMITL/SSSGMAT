@@ -184,7 +184,7 @@ function lineData(section: ReportSection, col: number, breaks: readonly number[]
   return out;
 }
 
-const escapeHtml = (s: string): string =>
+export const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** ป้ายแกนเวลา: วันที่บรรทัดแรก เวลา (ไม่มีมิลลิวินาที) กับ UTCG/LTZG บรรทัดที่สอง ตาม DateFormat ของ scenario */

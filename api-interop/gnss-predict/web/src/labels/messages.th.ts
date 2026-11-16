@@ -57,8 +57,7 @@ const MESSAGES = {
   "viewFromTo.notFound": "หา object ที่เลือกในหน้าต่าง 3D ไม่เจอ (ยังไม่มีผลลัพธ์ของดาวดวงนั้น หรือ object ถูกซ่อนอยู่)",
   "viewFromTo.noObjects": "scenario นี้ยังไม่มี Facility หรือ Satellite ให้เลือก",
 
-  // คำสั่งที่รอ งานย่อยที่ 4 (W4)
-  "tooltip.subtask4": "อยู่ในงานย่อยที่ 4",
+  // เหตุผลที่คำสั่งใช้ไม่ได้
   "tooltip.noScenario": "ยังไม่ได้เปิด scenario",
 
   // แถบเครื่องมือ Animation: ปุ่ม Start/Reverse ที่กดแล้วไม่ขยับเพราะ Animation Cycle เป็น Stop at Time และเวลาอยู่ที่ปลายช่วงแล้ว (W1)
@@ -419,6 +418,30 @@ const MESSAGES = {
   "styleEditor.noScenario": "เปิด scenario ก่อนจึงจะบันทึกลง Scenario Styles ได้",
   "styleEditor.saved": "บันทึก style \"{name}\" ลง {tier} แล้ว",
   "styleEditor.dynamicUnsupported": "style นี้สร้างเป็น Dynamic Display/Strip Chart ไม่ได้ (ต้องใช้ Data Provider ที่ใช้กับ Dynamic Displays ไม่มี Summary Only และกราฟเป็น Time XY)",
+
+  // หน้า Validation (spec §7)
+  "validation.empty": "ยังไม่มีประวัติการตรวจสอบ ข้อมูลจะปรากฏหลังงานประจำวันรัน แล้ว SP3 จริงของวันนั้นออกและ server ตรวจเทียบเสร็จ (เปิดงานประจำวันได้ที่ Utilities → Daily Forecast Settings...)",
+  "validation.loading": "กำลังโหลดประวัติการตรวจสอบ...",
+  "validation.loadFailed": "โหลดประวัติการตรวจสอบไม่สำเร็จ: {message}",
+  "validation.pendingFailed": "โหลดรายการวันที่รอตรวจไม่สำเร็จ: {message} (แสดงเฉพาะวันที่ตรวจแล้ว)",
+  "validation.noResults": "ยังไม่มีวันที่ตรวจเสร็จ จึงยังไม่มีผลรายดวงและกราฟ (วันที่รอ SP3 แสดงเป็น Pending ในตารางด้านบน)",
+  "validation.selectDay": "คลิกวันที่ตรวจแล้ว (Pass หรือ Fail) ในตารางด้านบนเพื่อดูผลรายดวง",
+  "validation.dayLoading": "กำลังโหลดผลรายดวงของ {scenario} วันที่ {day}...",
+  "validation.dayFailed": "โหลดผลตรวจของ {scenario} วันที่ {day} ไม่สำเร็จ: {message}",
+  "validation.dayInvalid": "ไฟล์ผลตรวจอยู่ในรูปที่อ่านไม่ได้",
+  "validation.noMatch": "ไม่มีดาวที่ตรงกับตัวกรอง",
+  "validation.noSatellites": "ผลตรวจของวันนี้ไม่มีข้อมูลรายดวง",
+  // {time} = เวลาที่ตัวตั้งเวลาจะลองตรวจครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี scenario = UTCG)
+  "validation.nextAttempt": "ลองครั้งถัดไป {time}",
+  "validation.noRetry": "ยังไม่ได้ตั้งเวลาลอง (งานประจำวันปิดอยู่)",
+  "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
+  "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",
+  "validation.noAge": "ยังไม่มีดาวที่มีทั้งอายุข้อมูลและระยะคลาด 3 มิติ",
+  "validation.loadingAges": "กำลังโหลดผลรายดวงของแต่ละวันเพื่อวาดกราฟ {done}/{total}",
+  "validation.refreshHint": "โหลดประวัติและรายการวันที่รอตรวจใหม่จาก server",
+  "validation.ageHint": "อายุข้อมูลวงโคจรของดาวดวงนั้น (วัน)",
+  "validation.trendHint": "P99 ของความต่าง Az/El ระหว่างพยากรณ์กับค่าจริง ต่อระบบ เส้นประคือเกณฑ์",
+  "validation.ageChartHint": "ค่ากลางระยะคลาด 3 มิติของแต่ละดวงในทุกวันที่ตรวจแล้ว เทียบกับอายุข้อมูลวงโคจร ใช้ประกอบการปรับเกณฑ์อายุ 7 วัน",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;

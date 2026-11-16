@@ -523,6 +523,8 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§11 About / Help table", ["help."], ["Engine Version", "GMAT Version", "Text", "Source", "STK ref"]],
   ["§12 status bar", ["status."], ["Active Object", "Lat/Lon", "Animation Time", "Time Step", "Stop", "Usable Satellites", "PDOP", "Max Data Age",
                                     "Flagged Satellites", "Daily Forecast", "Server Disconnected"]],
+  ["§7 Validation page", ["validation.", "window."], ["Validation", "Day", "Scenario", "Truth", "PRN", "Pairs", "Age", "Result", "Pass", "Fail", "Pending", "Gave up",
+                                                      "ΔEl", "ΔAz", "ΔEl med/P99", "ΔAz med/P99", "3D med/max (km)"]],
 ];
 
 describe("every name in spec §4-§13 has a key", () => {
@@ -533,10 +535,20 @@ describe("every name in spec §4-§13 has a key", () => {
     });
 });
 
+// หน้า Validation (spec §7) เพิ่มเอง: ไม่มีใน STK (reference และ help ไม่มี Pending, Gave up, Truth ฯลฯ) ทุกคำเป็น ours ไม่อ้าง reference
+test("every label of the Validation page is ours", () => {
+  const mine = Object.entries(labels).filter(([k]) => k.startsWith("validation.") || k === "window.validation");
+  expect(mine.length).toBeGreaterThan(30);
+  expect(mine.filter(([, l]) => l.source !== "ours").map(([k]) => k)).toEqual([]);
+  expect(labels["window.validation"]).toEqual({ text: "Validation", source: "ours" });
+  expect(labels["validation.result.pending"].text).toBe("Pending");
+  expect(labels["validation.result.gaveUp"].text).toBe("Gave up");
+});
+
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|rgm|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|rgm|mv|status|dialog|help|sensorView|validation)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 
@@ -629,7 +641,10 @@ describe("Thai messages", () => {
     expect(msg("banner.missing")).toBe("ยังไม่มีผลลัพธ์ — กด Apply เพื่อคำนวณ");
   });
 
-  test("the subtask 4 tooltip", () => expect(msg("tooltip.subtask4")).toBe("อยู่ในงานย่อยที่ 4"));
+  test("the sub-project 4 placeholder tooltip is gone: every command it covered is built", () => {
+    expect(MSG_KEYS.filter((k) => k.startsWith("tooltip.") && k !== "tooltip.noScenario")).toEqual([]);
+    expect(MSG_KEYS.filter((k) => msg(k).includes("งานย่อยที่ 4"))).toEqual([]);
+  });
 
   test("each engine flag has its own explanation, with the thresholds from the engine", () => {
     const texts = ["stale", "too_old", "no_broadcast", "unhealthy", "prn_changed", "name_mismatch"].map((f) => msg(`flag.${f}` as MsgKey));

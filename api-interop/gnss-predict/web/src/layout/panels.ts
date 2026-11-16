@@ -13,7 +13,7 @@ import { parentOf } from "../stores/scenario";
 export const PANEL_KINDS = [
   "objectBrowser", "graphics3d", "graphics2d", "timelineView", "messageViewer", "propertiesBrowser", "insertObjects", "satelliteCatalog",
   "newScenarioWizard", "welcome", "viewFromTo", "windowProperties3d", "windowProperties2d", "fetchOrbitData", "dailyForecastSettings", "about",
-  "stkReference", "sensorView", "globeManager", "report", "graph", "accessTool", "reportGraphManager", "styleEditor",
+  "stkReference", "sensorView", "globeManager", "report", "graph", "accessTool", "reportGraphManager", "styleEditor", "validation",
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -202,6 +202,9 @@ const BASE: Record<PanelKind, Base> = {
       ? JSON.stringify([params?.tier ?? null, params.style.name, params.style.kind ?? null])
       : JSON.stringify(["new", params?.kind ?? null, params?.objectType ?? null])),
   },
+  // หน้า Validation (spec §7): หน้าต่าง Integrated เป็นแท็บกลาง บานเดียว อ่านประวัติของทั้งเครื่อง (history.jsonl) ไม่ผูกกับ scenario จึงไม่ปิดพร้อม scenario
+  // และไม่บันทึกใน workbook (เปิดใหม่จากเมนู Analysis ได้ทุกเมื่อ)
+  validation: { label: "window.validation", type: "integrated", size: { width: 760, height: 520 }, persist: false, scenarioBound: false },
 };
 
 // ชื่อ object ของหน้าต่างที่เปิดเพื่อ object หนึ่ง: params.name ถ้าระบุ ไม่งั้นส่วนท้ายของ params.path (path ของ G01 -> "G01")

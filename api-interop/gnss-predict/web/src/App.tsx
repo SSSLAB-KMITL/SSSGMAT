@@ -42,6 +42,8 @@ import { registerSensorViewCommands } from "./windows/SensorView/commands";
 import { registerSensorViewPanel } from "./windows/SensorView/SensorView";
 import { startSensorViewTracking } from "./windows/SensorView/track";
 import { registerTimelineViewPanel } from "./windows/TimelineView/TimelineView";
+import { registerValidationCommands } from "./windows/Validation/commands";
+import { registerValidationPanel } from "./windows/Validation/Validation";
 import { registerViewFromToPanel } from "./windows/ViewFromTo/ViewFromTo";
 import { Workspace } from "./Workspace";
 
@@ -56,6 +58,7 @@ export function App() {
   // หน้าต่างรายงานและหน้าต่างกราฟ (เปิดด้วย openReport ของ windows/Report/Report.tsx: style ชนิด graph ไปหน้าต่างกราฟ),
   // Access tool (คำสั่ง analysis.access / object.access ระดับแอป: เปิดหน้าต่างนี้),
   // Report & Graph Manager และหน้าต่างแก้ style (คำสั่ง analysis.reportGraphManager / object.reportGraphManager ระดับแอป),
+  // หน้า Validation (คำสั่ง analysis.validation ระดับแอป: เปิดหน้าต่างนี้ได้โดยไม่ต้องมี scenario),
   // คีย์ลัด และการเริ่มหน้าเว็บ (?sc= หรือ Welcome): เริ่มครั้งเดียวตอน mount หยุดตอน unmount
   // `?test` ใน URL = ติดตั้ง window.__gnssStudioTest (W19) ครั้งเดียว
   useEffect(() => {
@@ -70,6 +73,7 @@ export function App() {
     const unregisterSensorViewCommands = registerSensorViewCommands();
     const unregisterAccessCommands = registerAccessCommands();
     const unregisterReportGraphManagerCommands = registerReportGraphManagerCommands();
+    const unregisterValidationCommands = registerValidationCommands();
     registerFilePanels();
     registerObjectBrowserPanel();
     registerTimelineViewPanel();
@@ -91,6 +95,7 @@ export function App() {
     registerAccessToolPanel();
     registerReportGraphManagerPanel();
     registerStyleEditorPanel();
+    registerValidationPanel();
     const stopSensorViewTracking = startSensorViewTracking();
     if (testModeRequested()) installTestHooks();
     const stopShortcuts = installShortcuts();
@@ -101,6 +106,7 @@ export function App() {
       stopFlow();
       stopShortcuts();
       stopSensorViewTracking();
+      unregisterValidationCommands();
       unregisterReportGraphManagerCommands();
       unregisterAccessCommands();
       unregisterSensorViewCommands();
