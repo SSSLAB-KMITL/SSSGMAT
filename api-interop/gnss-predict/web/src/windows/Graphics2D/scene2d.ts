@@ -37,7 +37,8 @@ import { applyAccessHighlights, highlightCounts, HighlightIntervals } from "../.
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
 import {
-  applyGraphics, cssColor, entityIdForName, entityLooks, fixedPositionAt, pathForEntityId, sceneStyle, sensorStatesAt, type ApplyCtx, type EntityLook,
+  applyGraphics, cssColor, entityIdForName, entityLooks, fixedPositionAt, pathForEntityId, sceneStyle, sensorStatesAt, shownAccessLines, type ApplyCtx,
+  type EntityLook,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../../cesium/ipp";
@@ -552,9 +553,11 @@ class Scene2D implements Scene2DHandle {
     let groundTracks = 0;
     for (const e of this.ds?.entities.values ?? []) if (e.show && e.path?.show?.getValue(time) === true) groundTracks++;
     // highlightTracks = เส้น Static Highlight ทุกท่อน, highlightBoxes = กรอบ Animate Highlight ที่อยู่ใน access ณ เวลาของภาพ
+    // accessLines = เส้น access ที่เปิดอยู่ (access ที่ไม่ได้ Compute = 0)
     const hl = this.ds === null ? { tracks: 0, boxes: 0 } : highlightCounts(this.ds.entities, time);
     return {
       groundTracks, ...this.overlays.counts(), highlightTracks: hl.tracks, highlightBoxes: hl.boxes,
+      accessLines: this.ds === null ? 0 : shownAccessLines(this.ds.entities),
       shading: this.viewer.scene.globe.enableLighting ? 1 : 0, redraws: this.redraws, fillBuilds: this.fillBuilds,
     };
   }

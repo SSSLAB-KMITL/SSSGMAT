@@ -71,7 +71,7 @@ import {
 } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
-  sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
+  sensorStateAt, sensorStatesAt, shownAccessLines, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
@@ -1165,6 +1165,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   }
 
   /** เส้นวงโคจรที่วาดอยู่: entity ที่แสดงอยู่และ path แสดง ณ เวลาปัจจุบัน + เส้น Inertial by Window ที่แสดงอยู่ */
+  accessLineCount(): number {
+    return this.destroyed || this.ds === null ? 0 : shownAccessLines(this.ds.entities);
+  }
+
   pathCount(): number {
     if (this.destroyed) return 0;
     const time = this.viewer.clock.currentTime;

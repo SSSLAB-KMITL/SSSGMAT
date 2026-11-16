@@ -6,7 +6,7 @@ import {
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, pathForEntityId, sceneStyleFrom, sensorStatesAt, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { applyGraphics, pathForEntityId, sceneStyleFrom, sensorStatesAt, shownAccessLines, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import { orbitPeriodS } from "../../src/cesium/passes";
 import { bodyFrame, type Vec3 } from "../../src/cesium/sensorGeometry";
 import type { ScenarioDoc } from "../../src/stores/scenario";
@@ -142,11 +142,13 @@ describe("applyGraphics", () => {
     const objects = [fac("THBK"), sat("G01", 62339), sat("E05", 40128)];
     applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"], computed: false })] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
+    expect(shownAccessLines(ds.entities)).toBe(0); // test hook accessLines
     applyGraphics(ds, docOf(objects), baseCtx); // ไม่มี access เลย
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
     applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"] })] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(true);
     expect(byId(ds, "access/THBK/E05").show).toBe(false); // ไม่อยู่ใน to
+    expect(shownAccessLines(ds.entities)).toBe(1);
   });
 
   test("lines are looked up per (facility, satellite): facility B's line takes B's colour when A and B both cover the satellite", async () => {

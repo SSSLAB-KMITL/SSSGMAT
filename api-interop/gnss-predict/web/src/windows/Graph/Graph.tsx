@@ -31,6 +31,7 @@ import { useTime } from "../../stores/time";
 import { ResultsBanner } from "../graphics/GraphicsFrame";
 import { parseReportParams, requestOf, useReportLoader, type LoaderMessages, type PrepareReport } from "../Report/Report";
 import { loadECharts, type ECharts } from "./chart";
+import { drawnState } from "./drawnState";
 import {
   colorKeyOf, graphCrosshairOption, graphOption, graphState, graphTimeOption, objectColorOf, readGraphTheme, registerGraphState, STRIP_CHART_DURATION_S,
   type GraphCtx,
@@ -181,7 +182,9 @@ export function Graph({ params, panelId }: PanelProps) {
 
   useEffect(() => registerGraphState(panelId, () => {
     const { report: r, ctx: c } = latest.current;
-    return r === null || !drawn.current ? null : graphState(r, c);
+    if (r === null || !drawn.current) return null;
+    const state = graphState(r, c);
+    return state === null ? null : { ...state, drawn: chartRef.current === null ? null : drawnState(chartRef.current) };
   }), [panelId]);
 
   // ---------- คำสั่ง ----------

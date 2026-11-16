@@ -432,6 +432,13 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
   return looks;
 }
 
+/** จำนวนเส้น access (access/<fac>/<PRN>) ที่ applyGraphics เปิดไว้ (test hook accessLines: access ที่ไม่ได้ Compute ต้องเป็น 0) */
+export function shownAccessLines(entities: EntityCollection): number {
+  let n = 0;
+  for (const e of entities.values) if (e.id.startsWith("access/") && e.show) n++;
+  return n;
+}
+
 // ---------- Sensor (sensor spec §5.3) ----------
 
 /** สิ่งที่ต้องรู้เพื่อบอกว่าดาวแม่แสดงอยู่ในหน้าต่างไหน (ส่วนหนึ่งของ ApplyCtx) */

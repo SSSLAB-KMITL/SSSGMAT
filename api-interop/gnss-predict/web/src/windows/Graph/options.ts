@@ -23,6 +23,7 @@ import { valueAt, type Interp } from "../../data/dynamic";
 import { decimalsOf, type GraphType, type ReportJson, type ReportSection } from "../../data/reports";
 import type { ScenarioDoc } from "../../stores/scenario";
 import { formatTime, type DateFormat } from "../../time/format";
+import type { DrawnState } from "./drawnState";
 
 /** Strip Chart Duration ตั้งต้น (spec §6.2) */
 export const STRIP_CHART_DURATION_S = 3600;
@@ -109,6 +110,8 @@ export interface GraphState {
   timeLine: number | null;
   /** polar90: [El, Az] ของจุดปัจจุบันตัวแรก */
   currentPoint: [number, number] | null;
+  /** สิ่งที่ ECharts วาดอยู่จริง (drawnState.ts) ใส่โดยหน้าต่างกราฟ ไม่มี instance = null */
+  drawn?: DrawnState | null;
 }
 
 type Option = Record<string, unknown>;
