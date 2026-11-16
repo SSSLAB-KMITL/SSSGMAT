@@ -412,3 +412,29 @@
   - engine: `python3 -m unittest discover -s tests -v`.
   - Expected: all green.
 - [ ] Commit `test(gnss-studio): e2e, README and decisions for imaging satellites` -- `web/tests/e2e/fixture/build_fixture.py web/tests/e2e/imaging.spec.ts README.md docs/2026-11-14-gnss-studio-imagery-decisions.md`.
+
+---
+
+## Plan amendments after the independent review (2026-11-17)
+
+Source: `docs/2026-11-17-imaging-plan-review.md` (models branch, cc54756). These rulings override the tasks above where they conflict.
+
+- **Ruling (v), R-01, Task 5/6:** a Rectangular `SensorDefinition` carries no `cone_half_angle`. A model validator drops it, or sets it to None, for `type == "Rectangular"`, and the web form never sends it for Rectangular. Tests:
+  - the server round-trips a Rectangular sensor with no `cone_half_angle` in the saved JSON;
+  - the Properties payload for Rectangular has only `vertical_half_angle`/`horizontal_half_angle`.
+- **Ruling (w), R-02, Task 1:** `build_imaging_catalog` returns an empty catalog (no satellites, no unmapped entries, no messages) when the snapshot has no imaging group file at all. GNSS-only snapshots then gain no `TLE_UNAVAILABLE` rows. Test: `test_no_imaging_files_gives_empty_catalog`.
+- **Ruling (x), R-03, Task 7:** Show Imagery must leave the satellite's GIBS layer visible.
+  - If an opaque layer (EOX, OSM, or the exclusive ion) is shown above it, Show Imagery hides those layers (layer show off in the Globe Manager state, not the source switch).
+  - It posts one Thai info message naming them.
+  - Test: OSM shown, then Show Imagery for X04 → OSM hidden, the MODIS Terra layer is the top shown layer, and one message is posted.
+- **Ruling (y), R-04, Task 2:** `fetch_snapshot` copies a cached imaging group file only when the file is at most 14 days old (the GEO hide threshold). An older file is left out and a Thai message says so. Test: a 20-day-old `weather_*.json` is not copied.
+- **Ruling (z), R-05, Task 7 (amends spec §5.4 and Ruling n):**
+  - With a child sensor, Show Imagery opens the Sensor View for that sensor.
+  - Without one, it enables the GIBS layer and flies the 3D camera over the sub-satellite point. It must never create an object.
+  - Test: a satellite with no sensors sends no `POST /objects`.
+- **Ruling (aa), R-07, Task 2/3:** system checks use `prn[:1]`, never `prn[0]`, in `dop.py` and `studio_validate.py`.
+- **Ruling (ab), review gap (2), Task 7:**
+  - The Fetch Orbit Data dialog gains an "Imaging satellites" checkbox (ours label, default off). When ticked, it sends `systems` with `X`, so the user can refresh the weather, science and visual groups under the existing rate limits.
+  - Its Thai hint names the three CelesTrak groups.
+  - Test: ticked sends `GRECX`; unticked sends the old value unchanged.
+- **R-06** (line drift of 1–5 lines) needs no ruling. Implementers re-locate by symbol name.
