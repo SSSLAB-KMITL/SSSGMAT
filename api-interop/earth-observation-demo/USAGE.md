@@ -116,6 +116,27 @@ API documentation: `http://127.0.0.1:8018/docs` ผลลัพธ์ทั้�
 
 โน้ตบุ๊กสำหรับรันซ้ำอยู่ใน `notebooks/` สองไฟล์ ใช้ source directory เดียวกันและตั้ง `EO_DEMO_ROOT` ให้ชี้มาที่โปรเจกต์ เมื่อต้องการรันใน Colab ให้วาง source บน Drive และติดตั้ง requirements ใน runtime ก่อน ส่วน IPython มีมากับ Colab แล้ว
 
+## Docker
+
+image `linux/amd64` (Python 3.12) มี server, หน้าเว็บที่ build แล้ว และ worker ทั้งสองชุด: `/app/.venv` ตาม
+`requirements-lock.txt` และ `/app/.venv-detection` ตาม `requirements-detection.lock` (torch/torchvision แบบ CPU จาก index ของ PyTorch)
+พร้อม ffmpeg รันเป็น uid 10001 การนำขึ้น production พร้อม HTTPS และ login อยู่ที่ [../deploy/README.md](../deploy/README.md)
+
+```bash
+docker build --platform linux/amd64 -t eo-studio:dev .
+docker run --rm -v eo_data:/data eo-studio:dev /app/.venv/bin/python bootstrap.py --per-site 4 --workers 2   # คำสั่งอื่นแทน server
+```
+
+- ข้อมูลทั้งหมดอยู่ที่ `EO_DATA=/data` (volume) ไม่อยู่ใน image ย้ายข้อมูลเดิมด้วย `deploy/seed-volume.sh eo_data <โฟลเดอร์ data>`
+  `data/raw-csi/` (~11 GB) เป็น cache ข้ามได้ (เปิดภาพ CSI ครั้งแรกจะดาวน์โหลดใหม่)
+- server ฟัง `0.0.0.0:8018` ใน container และรับคำสั่งแก้ข้อมูลเฉพาะ Origin `http://127.0.0.1:8018` จึงต้องเปิดผ่าน reverse proxy
+  ที่เขียน Origin ของตัวเองเป็นค่านี้ (`deploy/Caddyfile`) port ใน container ต้องเป็น 8018
+- โมเดล YOLO อยู่ใน `/data/models` (ย้ายจาก data เดิม หรือรัน `bootstrap_detector.py` ด้วย `/app/.venv-detection/bin/python`)
+- `requirements-lock.txt` เพิ่ม `jplephem`, `sgp4`, `skyfield` ที่ `requirements.txt` ต้องใช้แต่ lock เดิมขาด (รุ่นเดียวกับใน `.venv`)
+- ผลทดสอบใน image (2026-11-17, `--network none`): `pytest` ผ่าน 39 จาก 40 ข้อ ข้อที่ล้มคือ
+  `test_spawn_failure_closes_pipe_descriptors` เฉพาะตอนรัน amd64 ผ่าน emulation บน Apple silicon: `posix_spawn` ของไฟล์ที่ไม่มีอยู่
+  ไม่แจ้ง `FileNotFoundError` (ได้ exit 127 แทน) ตรวจกับ `python:3.12-slim` แบบ native linux/arm64 แล้วแจ้งถูกต้อง
+
 ## แหล่งที่มา
 
 ข้อมูลภาพ/metadata: [Umbra Open Data](https://umbra.space/open-data/), CC BY 4.0; URLs และผลตรวจอยู่ใน `research/` ส่วน workspace อิงโครงของ `.worktrees/gnss-studio-imagery/api-interop/gnss-predict/web/` และใช้ไลบรารี React/dockview/Cesium รุ่นเดียวกัน โมดูล EO ใช้ entry point และ data root ของตัวเอง

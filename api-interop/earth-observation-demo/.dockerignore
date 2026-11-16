@@ -1,0 +1,14 @@
+# build context ของ Dockerfile นี้: เฉพาะซอร์ส ไม่เอาข้อมูล venv หรือผล build ในเครื่อง
+.venv/
+.venv-detection/
+data/
+web/node_modules/
+web/dist/
+web/test-results/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+notebooks/
+*.md
+!research/*.md
