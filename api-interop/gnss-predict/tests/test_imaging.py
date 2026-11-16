@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from gnss_predict.catalog import Catalog, CatalogSatellite, build_catalog
+from gnss_predict.errors import OrbitUnavailableError
 from gnss_predict.imaging import (GEO_AGE_OK_DAYS, GEO_AGE_SHOWN_MAX_DAYS, GEO_MEAN_MOTION_MAX, IMAGING_GROUPS,
                                   IMAGING_LETTER, IMAGING_NORADS, IMAGING_SATELLITES, build_imaging_catalog,
                                   imaging_group_files, preset_by_norad)
@@ -107,6 +108,19 @@ class TestImagingCatalog(TempSnapshot):
         self.assertEqual(sat(c, "X04").omm_epoch, MID - timedelta(days=0.5))
         self.assertAlmostEqual(sat(c, "X04").age_days, 0.5)
 
+    def test_newest_epoch_wins_when_in_earlier_file(self):
+        # สลับ EPOCH ของ Terra: record ใหม่กว่าอยู่ใน science.json ซึ่งอ่านก่อน visual.json
+        science, visual = self.snap / "science.json", self.snap / "visual.json"
+        sci, vis = json.loads(science.read_text()), json.loads(visual.read_text())
+        s_rec = next(r for r in sci if r["NORAD_CAT_ID"] == 25994)
+        v_rec = next(r for r in vis if r["NORAD_CAT_ID"] == 25994)
+        s_rec["EPOCH"], v_rec["EPOCH"] = v_rec["EPOCH"], s_rec["EPOCH"]
+        science.write_text(json.dumps(sci))
+        visual.write_text(json.dumps(vis))
+        c = build_imaging_catalog(self.snap, PERIOD)
+        self.assertEqual(sat(c, "X04").omm_epoch, MID - timedelta(days=0.5))
+        self.assertEqual(sat(c, "X04").tle_lines[1].split()[-1][:11], "14.57320000")   # MEAN_MOTION ของ science
+
     def test_age_flags_geo_and_leo(self):
         c = build_imaging_catalog(self.snap, PERIOD)
         self.assertEqual(sat(c, "X01").flags, frozenset())
@@ -138,6 +152,7 @@ class TestImagingCatalog(TempSnapshot):
         gnss_flags = {"no_broadcast", "unhealthy", "prn_changed", "name_mismatch"}
         for s in c.satellites:
             self.assertEqual(s.flags & gnss_flags, frozenset(), s.prn)
+            self.assertLessEqual(s.flags, {"stale", "too_old"}, s.prn)
         self.assertEqual(codes(c, "BRDC_UNAVAILABLE"), [])
 
     def test_unreadable_group_is_skipped(self):
@@ -146,9 +161,37 @@ class TestImagingCatalog(TempSnapshot):
         (warn,) = codes(c, "IMAGING_GROUP_UNREADABLE")
         self.assertEqual(warn.level, "warning")
         self.assertIn("weather", warn.text)
-        prns = [s.prn for s in c.satellites]
-        self.assertIn("X04", prns)
-        self.assertIn("X05", prns)
+        self.assertEqual([s.prn for s in c.satellites], ["X04", "X05"])
+        weather_only = [41836, 51850, 60133, 37849, 43013, 54234]          # X01–X03, X06–X08
+        self.assertEqual(c.unmapped, [{"norad": n, "celestrak_name": "", "object_id": "",
+                                       "reason": "TLE_UNAVAILABLE"} for n in weather_only])
+
+    def test_infinite_norad_is_unreadable_group(self):
+        # NORAD_CAT_ID เป็น Infinity: int(inf) ให้ OverflowError ต้องกลายเป็นกลุ่มที่อ่านไม่ได้ ไม่หลุดออกมา
+        (self.snap / "weather.json").write_text('[{"NORAD_CAT_ID": Infinity, "EPOCH": "2026-11-09T00:00:00"}]')
+        c = build_imaging_catalog(self.snap, PERIOD)
+        self.assertEqual(len(codes(c, "IMAGING_GROUP_UNREADABLE")), 1)
+        self.assertEqual([s.prn for s in c.satellites], ["X04", "X05"])
+
+    def test_age_boundaries(self):
+        # (MEAN_MOTION, อายุเป็นวัน, ธงที่คาด) เกณฑ์ใช้ ">" จึงอายุเท่ากับเกณฑ์พอดียังไม่ตั้งธงนั้น
+        cases = [
+            (1.0027, 7.0, frozenset()),              # GEO ครบ 7 วันพอดี: ยังไม่ stale
+            (1.0027, 14.0, frozenset({"stale"})),    # GEO ครบ 14 วันพอดี: stale ยังไม่ too_old
+            (14.2, 2.0, frozenset()),                # LEO ครบ 2 วันพอดี: ยังไม่ stale
+            (14.2, 7.0, frozenset({"stale"})),       # LEO ครบ 7 วันพอดี: stale ยังไม่ too_old
+            (1.1, 5.0, frozenset({"stale"})),        # 1.1 พอดีไม่ใช่ GEO: ใช้เกณฑ์ LEO
+            (1.1, 8.0, frozenset({"too_old"})),
+        ]
+        template = next(r for r in json.loads((IMG / "weather.json").read_text()) if r["NORAD_CAT_ID"] == 41836)
+        for mean_motion, age, expected in cases:
+            with self.subTest(mean_motion=mean_motion, age=age):
+                rec = dict(template, MEAN_MOTION=mean_motion,
+                           EPOCH=(MID - timedelta(days=age)).replace(tzinfo=None).isoformat(timespec="microseconds"))
+                (self.snap / "weather.json").write_text(json.dumps([rec]))
+                x01 = sat(build_imaging_catalog(self.snap, PERIOD), "X01")
+                self.assertEqual(x01.age_days, age)
+                self.assertEqual(x01.flags, expected)
 
     def test_group_files(self):
         self.assertEqual(imaging_group_files(self.gnss_only), [])
@@ -159,11 +202,21 @@ class TestImagingCatalog(TempSnapshot):
         self.assertEqual((c.satellites, c.unmapped, c.messages), ([], [], []))
 
 
-class TestGnssFlaggedTextUnchanged(unittest.TestCase):
+class TestGnssPath(unittest.TestCase):
     def test_gnss_stale_text_uses_gnss_thresholds(self):
         c = build_catalog(SNAP, (T(2026, 11, 10), T(2026, 11, 11)), set("GREC"))
         (msg,) = [m for m in c.messages if m.code == "SAT_FLAGGED" and m.object == "C40"]
         self.assertIn("เก่ากว่า 2 วัน", msg.text)
+
+    def test_gnss_infinite_norad_is_orbit_unavailable(self):
+        # ทาง GNSS: OverflowError จาก NORAD_CAT_ID = Infinity ต้องเป็น OrbitUnavailableError ของกลุ่มนั้น
+        with tempfile.TemporaryDirectory() as tmp:
+            snap = Path(tmp) / "snapshot"
+            shutil.copytree(SNAP, snap)
+            (snap / "galileo.json").write_text('[{"NORAD_CAT_ID": Infinity, "EPOCH": "2026-11-09T00:00:00"}]')
+            with self.assertRaises(OrbitUnavailableError) as cm:
+                build_catalog(snap, (T(2026, 11, 10), T(2026, 11, 11)), set("GREC"))
+            self.assertIn("galileo", str(cm.exception))
 
 
 if __name__ == "__main__":

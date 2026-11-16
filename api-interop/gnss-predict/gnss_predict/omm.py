@@ -57,7 +57,7 @@ def _parse_records(text: str) -> list[OmmRecord]:
             raise ValueError(f"รายการที่ {i} ไม่ใช่ OMM (ต้องมี NORAD_CAT_ID และ EPOCH)")
         try:
             norad, epoch = int(item["NORAD_CAT_ID"]), _parse_epoch(str(item["EPOCH"]))
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:   # OverflowError: NORAD_CAT_ID เป็น Infinity
             raise ValueError(f"รายการที่ {i} มี NORAD_CAT_ID หรือ EPOCH ที่อ่านไม่ได้: {exc}") from exc
         records.append(OmmRecord(norad, str(item.get("OBJECT_NAME", "")), str(item.get("OBJECT_ID", "")), epoch, item))
     return records
