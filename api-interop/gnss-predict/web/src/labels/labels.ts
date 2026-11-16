@@ -585,11 +585,11 @@ const LABELS = {
   // §F: "Toggle Animation Timeline button; right-click Show Animation Time Line, Set Animation Time" (Refresh และ Set Animation Time ใช้ report.*)
   "graph.toggleAnimationTimeline": stk("Toggle Animation Timeline", "F"),
   "graph.showAnimationTimeLine": stk("Show Animation Time Line", "F"),
-  // ปุ่มอื่นของแถบเครื่องมือและเมนูคลิกขวาของกราฟ reference ไม่ยืนยัน จึงเป็น ours
-  "graph.save": ours("Save"),
-  "graph.copyToClipboard": ours("Copy to Clipboard"),
-  "graph.zoomOut": ours("Zoom Out"),
-  "graph.crosshairCursor": ours("Crosshair Cursor"),
+  // ปุ่มแถบเครื่องมือของกราฟ: ยืนยันบน help.agi.com (WorkingWithGraphs.htm, ผลตรวจคำ 2026-11-15)
+  "graph.save": stkHelp("Save"),
+  "graph.copyToClipboard": stkHelp("Copy to Clipboard"),
+  "graph.zoomOut": stkHelp("Zoom Out"),
+  "graph.crosshairCursor": stkHelp("Crosshair Cursor"),
   // help.agi.com: "display the Export Dialog by choosing the Export option from a graph's pop-up menu" เมนูชื่อ Export
   "graph.export": stkHelp("Export"),
 
@@ -625,11 +625,12 @@ const LABELS = {
   "access.selectAll": ours("Select All"),
 
   // ---------- Report & Graph Manager (spec §5, STK ref §F, help.agi.com) ----------
-  // ชื่อชนิด object ใน Object Type: Facility / Satellite ใช้ ob.class.*, Access เป็น ours แบบ toolbar.access
-  // คำที่ help.agi.com ไม่พบ (Constellation ในรายการ Object Type, คลิกขวา Generate as .txt/.csv, Copy to My Styles, Delete) เป็นฟีเจอร์ตาม spec แต่เป็น ours
+  // ชื่อชนิด object ใน Object Type: Facility / Satellite ใช้ ob.class.*, Access ยืนยันในรายการ Object Types ของ help.agi.com
+  // คำที่ help.agi.com ไม่พบ (All Types, Constellation ในรายการ Object Type, คลิกขวา Generate as .txt/.csv, Copy to My Styles, Delete)
+  // เป็นฟีเจอร์ตาม spec แต่เป็น ours
   "rgm.objectType": stk("Object Type", "F"),
-  "rgm.allTypes": stk("All Types", "F"),
-  "rgm.typeAccess": ours("Access"),
+  "rgm.allTypes": ours("All Types"),
+  "rgm.typeAccess": stkHelp("Access"),
   "rgm.constellation": ours("Constellation"),
   "rgm.objects": ours("Objects"),
   "rgm.styles": ours("Styles"),
@@ -670,7 +671,8 @@ const LABELS = {
   "rgm.reportContents": stkHelp("Report Contents"),
   "rgm.graphContents": stkHelp("Graph Contents"),
   "rgm.add": ours("Add"),
-  "rgm.remove": ours("Remove"),
+  // help.agi.com ยืนยัน "Remove" ของ Report/Graph Contents เท่านั้น (Add / Up / Down ไม่พบ)
+  "rgm.remove": stkHelp("Remove"),
   "rgm.up": ours("Up"),
   "rgm.down": ours("Down"),
   "rgm.saveTo": ours("Save To"),

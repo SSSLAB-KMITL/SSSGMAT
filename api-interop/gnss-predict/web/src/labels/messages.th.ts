@@ -381,7 +381,13 @@ const MESSAGES = {
   "rgm.noStyles": "ไม่มี style ของ object ชนิดนี้",
   "rgm.loadFailed": "อ่านรายการ style จาก server ไม่สำเร็จ: {message}",
   // {field} = ช่องแรกที่ผิด เช่น kind, content
-  "rgm.unusable": "ใช้ไม่ได้: ไฟล์ของ style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้ไฟล์ใน data/styles หรือ Delete แล้วสร้างใหม่",
+  // {where} = rgm.whereMy / rgm.whereScenario / rgm.whereInstalled
+  "rgm.unusable": "ใช้ไม่ได้: style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้{where} หรือ Delete แล้วสร้างใหม่",
+  "rgm.unusableUnnamed": "ใช้ไม่ได้: รายการนี้ไม่มีชื่อ (ช่องแรกที่ผิดคือ {field}) จึงลบจากที่นี่ไม่ได้ แก้{where}เอง",
+  "rgm.whereMy": "ไฟล์ใน data/styles",
+  "rgm.whereScenario": "รายการ styles ใน scenario.json",
+  "rgm.whereInstalled": "ไฟล์ installed.json ของ engine",
+  "rgm.nothingToCompute": "ผลลัพธ์ยังไม่ตรงกับ scenario แต่ไม่มีอะไรที่คำนวณให้ได้ (เช่น scenario ยังไม่มีดาว) แก้ scenario ก่อนแล้วสร้างใหม่",
   "rgm.selectObjects": "เลือก object ทางซ้ายก่อน (กด Ctrl หรือ Shift ค้างเพื่อเลือกหลายตัว)",
   // {type} = ชนิด object ของ style
   "rgm.objectsMismatch": "style นี้ใช้กับ object ชนิด {type} เลือกเฉพาะ object ชนิดนั้น",

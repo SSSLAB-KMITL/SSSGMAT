@@ -3,6 +3,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { confirm } from "../../src/chrome/Dialogs";
@@ -14,6 +15,7 @@ import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
+import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { formatTime } from "../../src/time/format";
 import { openReport, primeReport, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
@@ -119,6 +121,11 @@ afterEach(() => {
   delete window.__gnssStudioTest;
 });
 
+/** ฝากผลไว้โดยไม่มีหน้าต่างใดรับ (จำลองผลที่ฝากไว้ก่อนเปิดหน้าต่าง แล้วหน้าต่างไม่ได้เปิด) ใช้ etag ปัจจุบันของ store */
+function primeReportUnheard() {
+  primeReport("S1", requestOf(PARAMS), accessReport(), { deliver: false });
+}
+
 function mount(params: ReportParams = PARAMS, panelId = "report") {
   return render(<Report panelId={panelId} params={params} />);
 }
@@ -174,6 +181,57 @@ describe("report table", () => {
     mount();
     await screen.findByText("THBK-To-G01");
     expect(f.count(REPORTS)).toBe(2);
+  });
+
+  // ---------- fix round 1: primeReport ----------
+
+  test("in StrictMode the primed report is still used once: no POST at all", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    render(<StrictMode><Report panelId="report" params={PARAMS} /></StrictMode>);
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(0);
+  });
+
+  test("Generate on an already-open window updates it with the new result", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+    const fresh = accessReport();
+    fresh.sections[0].rows = [[9, iso(T0 + 20 * HOUR), iso(T0 + 21 * HOUR), 1234.5]];
+    act(() => primeReport("S1", requestOf(PARAMS), fresh));
+    await waitFor(() => expect(rowTexts(container)).toContainEqual(["9", formatTime(new Date(T0 + 20 * HOUR), "UTCG", "+07:00"), formatTime(new Date(T0 + 21 * HOUR), "UTCG", "+07:00"), "1234.500"]));
+    expect(f.count(REPORTS)).toBe(1);
+    // ส่งให้หน้าต่างแล้ว ไม่ค้างในช่องฝาก: Refresh ถาม server
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(2));
+  });
+
+  test("Refresh and recompute after the first load never take a primed result", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(0);
+    // ช่องฝากของคำขอเดียวกันที่ไม่มีหน้าต่างรับ (เช่นจาก scenario ก่อนแก้) ไม่ถูกหยิบตอน Refresh
+    act(() => useScenario.setState({ etag: '"e9"' }));
+    primeReportUnheard();
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+  });
+
+  test("a result primed before a scenario edit is not served after it", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    act(() => useScenario.setState({ etag: '"e2"' }));
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
   });
 
   test("scrolls 200000 rows virtually", async () => {

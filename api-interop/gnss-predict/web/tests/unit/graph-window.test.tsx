@@ -461,8 +461,9 @@ test("labels", () => {
   expect(labels["window.graph"]).toEqual({ text: "Graph", source: "ours" });
   expect(labels["graph.toggleAnimationTimeline"]).toEqual({ text: "Toggle Animation Timeline", source: "stk", ref: "STK ref §F" });
   expect(labels["graph.showAnimationTimeLine"]).toEqual({ text: "Show Animation Time Line", source: "stk", ref: "STK ref §F" });
-  for (const k of ["graph.save", "graph.copyToClipboard", "graph.zoomOut", "graph.crosshairCursor"] as const)
-    expect(labels[k].source, k).toBe("ours");
+  // ปุ่มแถบเครื่องมือยืนยันบน help.agi.com (WorkingWithGraphs.htm) ผลตรวจคำ 2026-11-15
+  for (const [k, text] of [["graph.save", "Save"], ["graph.copyToClipboard", "Copy to Clipboard"], ["graph.zoomOut", "Zoom Out"], ["graph.crosshairCursor", "Crosshair Cursor"]] as const)
+    expect(labels[k], k).toEqual({ text, source: "stk", ref: STK_HELP_REF });
   // help.agi.com: เมนูคลิกขวาของกราฟชื่อ Export (เปิด Export Dialog) ผลตรวจคำ 2026-11-15
   expect(labels["graph.export"]).toEqual({ text: "Export", source: "stk", ref: STK_HELP_REF });
 });

@@ -96,6 +96,16 @@ export function newForm(kind: StyleKind, objectType: StyleObjectType, name = "")
   };
 }
 
+/** ชื่อสำเนาที่ไม่ซ้ำกับชื่อใด (ไม่สนตัวพิมพ์): "AER Copy", "AER Copy 2", ... ยาวไม่เกิน 48 ตัว (P5) */
+export function copyName(name: string, taken: Iterable<string>): string {
+  const used = new Set([...taken].map((n) => n.toLowerCase()));
+  for (let i = 1; ; i++) {
+    const suffix = i === 1 ? " Copy" : ` Copy ${i}`;
+    const candidate = `${name.slice(0, 48 - suffix.length).trimEnd()}${suffix}`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 /** คอลัมน์ทั้งหมดตามลำดับในรายงาน */
 export function columnsOf(form: StyleForm): FormColumn[] {
   return form.content.flatMap((c, entry) => c.elements.map((element) => ({ entry, provider: c.provider, group: c.group, element })));

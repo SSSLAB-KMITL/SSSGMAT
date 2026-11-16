@@ -193,11 +193,14 @@ const BASE: Record<PanelKind, Base> = {
   accessTool: { label: "toolbar.access", type: "floating", size: { width: 640, height: 560 }, persist: false, scenarioBound: true },
   // Report & Graph Manager (spec §5): หน้าต่างลอยบานเดียว params {objectType?, objects?} เปิดซ้ำ = เลือกตาม params ใหม่ ไม่บันทึกใน workbook ปิดพร้อม scenario
   reportGraphManager: { label: "window.reportGraphManager", type: "floating", size: { width: 760, height: 540 }, persist: false, scenarioBound: true },
-  // หน้าต่างแก้ style (spec §5.1): หนึ่งบานต่อชื่อ style (style ใหม่ = "new") ชื่อ "<style> Style Properties"
+  // หน้าต่างแก้ style (spec §5.1): หนึ่งบานต่อ (ชั้น, ชื่อ, ชนิด) ของ style (Installed AER รายงานกับกราฟเป็นสองบาน)
+  // style ใหม่ = ("new", ชนิด, Object Type) ชื่อ "<style> Style Properties"
   styleEditor: {
     label: "window.styleEditor", type: "floating", size: { width: 720, height: 520 }, persist: false, scenarioBound: true,
     title: (params) => (typeof params?.style?.name === "string" ? t("window.styleEditorFor", { name: params.style.name }) : t("window.styleEditor")),
-    instanceKey: (params) => (typeof params?.style?.name === "string" ? params.style.name : "new"),
+    instanceKey: (params) => (typeof params?.style?.name === "string"
+      ? JSON.stringify([params?.tier ?? null, params.style.name, params.style.kind ?? null])
+      : JSON.stringify(["new", params?.kind ?? null, params?.objectType ?? null])),
   },
 };
 

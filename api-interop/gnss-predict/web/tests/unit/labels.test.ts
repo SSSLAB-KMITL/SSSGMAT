@@ -245,7 +245,8 @@ describe("stk labels are real STK terms", () => {
                         "Save", "Save As...", "Open...", "Exit", "Full Screen", "Expand All", "Collapse All", "Zoom Out",
                         "Set Animation Time to Interval Start Time", "Set Animation Time to Interval Stop Time",
                         "Access", "Group", "Windows"]) {
-      const hits = Object.entries(labels).filter(([, l]) => l.text === text);
+      // ป้ายที่ยืนยันบน help.agi.com (stkHelp) ตรวจแยกข้างบน ไม่ใช่การอ้าง reference นี้
+      const hits = Object.entries(labels).filter(([, l]) => l.text === text && l.ref !== STK_HELP_REF);
       expect(hits.length, `a label with text "${text}" must exist`).toBeGreaterThan(0);
       for (const [k, l] of hits) expect([k, l.source]).toEqual([k, "ours"]);
     }
@@ -284,6 +285,11 @@ const HELP_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "report.toExcelOrCsvFormat": "Select Export > To Excel or CSV Format",
   "graph.export": "choosing the Export option",
   "rgm.propertiesItem": "and select Properties",
+  "rgm.typeAccess": "Access, AdvCAT",
+  "graph.save": "Save: Allows you to save the graph",
+  "graph.copyToClipboard": "Copy to Clipboard: Creates a copy of the graph",
+  "graph.zoomOut": "Zoom Out: Zooms out of the graph by one step",
+  "graph.crosshairCursor": "Crosshair Cursor: Displays crosshairs across",
 };
 
 describe("stk labels verified on help.agi.com", () => {
@@ -313,7 +319,7 @@ describe("stk labels verified on help.agi.com", () => {
 
   // Ruling (T13): ฟีเจอร์ที่ spec สั่งแต่ help.agi.com ไม่พบ คงไว้ แต่ป้ายเป็น ours
   test("features the help does not show stay, labelled ours", () => {
-    for (const [k, text] of [["rgm.constellation", "Constellation"], ["rgm.generateTxt", "Generate as .txt file..."], ["rgm.generateCsv", "Generate as .csv file..."],
+    for (const [k, text] of [["rgm.allTypes", "All Types"], ["rgm.constellation", "Constellation"], ["rgm.generateTxt", "Generate as .txt file..."], ["rgm.generateCsv", "Generate as .csv file..."],
         ["rgm.copyToMyStyles", "Copy to My Styles"], ["rgm.delete", "Delete"]] as const) {
       expect(labels[k], k).toEqual({ text, source: "ours" });
     }
