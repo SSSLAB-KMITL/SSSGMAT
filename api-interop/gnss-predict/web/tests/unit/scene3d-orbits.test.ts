@@ -175,6 +175,18 @@ describe("Show Orbits in a 3D window", () => {
   });
 });
 
+test("cameraPosition reads the 3D window's camera in ECEF metres (test hook for the right-drag zoom e2e)", () => {
+  const viewer = fakeViewer();
+  vi.mocked(createViewer).mockReturnValueOnce(viewer as never);
+  const scene = mountScene3D("graphics3d", document.createElement("div"));
+  const p = viewer.camera.positionWC;
+  expect(scene.cameraPosition!()).toEqual([p.x, p.y, p.z]);
+  scene.destroy();
+  expect(scene.cameraPosition!()).toBeNull();
+  vi.mocked(createViewer).mockReset();
+  resetScenes();
+});
+
 describe("a realistic globe (task 13c)", () => {
   afterEach(() => {
     resetScenes();

@@ -19,6 +19,7 @@ import { DEFAULT_PROPS_2D, props2d } from "../../src/windows/Graphics2D/props2d"
 import { activeScene2D, notifyScenes2D, registerScene2D, resetScenes2D, type Scene2DHandle } from "../../src/windows/Graphics2D/registry2d";
 import { mountScene2D } from "../../src/windows/Graphics2D/scene2d";
 import { WindowProperties2D } from "../../src/windows/Graphics2D/WindowProperties2D";
+import { NATIVE_MENU_GUARD_MS } from "../../src/windows/graphics/sceneMenu";
 import type { MouseMode } from "../../src/windows/graphics/sceneRegistry";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
 import { stubFetch } from "./helpers/fake-fetch";
@@ -306,19 +307,68 @@ describe("Show Ground Tracks (task 13c)", () => {
   });
 });
 
-describe("the window's right-click menu on Windows (contextmenu arrives after the button is released)", () => {
-  test("the browser's menu that follows outside the picture is kept away once; later ones are left alone", async () => {
+describe("the window's right-click menu: platform order and the guard against the browser's menu", () => {
+  async function mount2D() {
     withWebGL();
     const scene = fakeScene("graphics2d");
     vi.mocked(mountScene2D).mockReturnValue(scene);
-    render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    const view = render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
     await waitFor(() => expect(activeScene2D()).toBe(scene));
-    const view = screen.getByTestId("g2d-view");
-    fireEvent.pointerDown(view, { button: 2, clientX: 40, clientY: 30 });
-    fireEvent.pointerUp(view, { button: 2, clientX: 40, clientY: 30 });
+    return { ...view, el: screen.getByTestId("g2d-view") };
+  }
+  const item = () => screen.queryByRole("menuitemcheckbox", { name: "Show Ground Tracks" });
+  const nativeMenuShown = (target: Element = document.documentElement) => fireEvent.contextMenu(target, { clientX: 40, clientY: 30 });
+  afterEach(() => vi.useRealTimers());
+
+  test("macOS order (button down, contextmenu, button up) on empty space opens Show Ground Tracks; the contextmenu itself is stopped", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(fireEvent.contextMenu(el, { clientX: 40, clientY: 30 })).toBe(false); // preventDefault: ไม่มีเมนูของ browser
+    expect(item()).toBeNull(); // ยังไม่รู้ว่าจะลากหรือไม่
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("Windows order (button down, button up, contextmenu): a late contextmenu, inside or outside the picture, neither shows the browser's menu nor empties ours", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
     await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" });
-    expect(fireEvent.contextMenu(document.documentElement, { clientX: 40, clientY: 30 })).toBe(false); // เมนูของเราเปิดอยู่: ไม่มีเมนูของ browser ซ้อน
-    expect(fireEvent.contextMenu(document.documentElement, { clientX: 40, clientY: 30 })).toBe(true); // ครั้งเดียว
+    expect(nativeMenuShown(el)).toBe(false);
+    expect(nativeMenuShown()).toBe(false);
+    expect(item()).not.toBeNull(); // เมนูของหน้าต่างยังเปิดอยู่
+  });
+
+  test("the guard lasts 500 ms after the window menu opens, then the browser's menu outside the picture is left alone", async () => {
+    const { el } = await mount2D();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(nativeMenuShown()).toBe(false);
+    vi.advanceTimersByTime(NATIVE_MENU_GUARD_MS - 1);
+    expect(nativeMenuShown()).toBe(false); // ทุกตัวภายในช่วง ไม่ใช่แค่ตัวแรก
+    vi.advanceTimersByTime(1);
+    expect(nativeMenuShown()).toBe(true);
+  });
+
+  test("the guard does not swallow our own contextmenu: a second right-click within 500 ms opens the menu again", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.keyDown(await screen.findByRole("menu"), { key: "Escape" });
+    await waitFor(() => expect(item()).toBeNull());
+    fireEvent.pointerDown(el, { button: 2, clientX: 50, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 50, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("a window closed while the guard is on stops guarding", async () => {
+    const { el, unmount } = await mount2D();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    unmount();
+    expect(nativeMenuShown()).toBe(true);
   });
 });
 

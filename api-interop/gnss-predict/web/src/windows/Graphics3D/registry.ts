@@ -68,6 +68,8 @@ export interface Scene3DHandle {
   breakRenderLoopOnce?(): void;
   /** จำนวนเส้นวงโคจรที่วาดอยู่ (path ของ Cesium + เส้น Inertial by Window, window.__gnssStudioTest.pathCount) ภาพปลอมของ test ไม่ต้องมี */
   pathCount?(): number;
+  /** ตำแหน่งกล้อง (ECEF เมตร, window.__gnssStudioTest.cameraPosition) ภาพปลอมของ test ไม่ต้องมี */
+  cameraPosition?(): [number, number, number] | null;
   /** จำนวนเส้น access ที่เปิดอยู่ (window.__gnssStudioTest.accessLines("3d")) ภาพปลอมของ test ไม่ต้องมี */
   accessLineCount?(): number;
   /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null */

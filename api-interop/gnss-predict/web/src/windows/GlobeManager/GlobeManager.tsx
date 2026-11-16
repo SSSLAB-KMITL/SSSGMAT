@@ -6,7 +6,8 @@
 // - ตารางชั้นภาพของแต่ละกลุ่ม: แถว Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) แล้ว GIBS ตามลำดับที่ server ส่ง, EOX (ชั้นของ catalog source eox), OpenStreetMap (OSM_LAYER คงที่)
 //   Show และ % Translucency ของแต่ละชั้นอยู่ใน workbook (useLayout.globe: ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View) ที่นี่ไม่เก็บค่าเอง
 //   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 + Sentinel-2 cloudless แสดง) มาจาก DEFAULT_GLOBE: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
-//   OpenStreetMap เริ่มแบบซ่อนทุกครั้งที่เปิด scenario (task 13c: workbook.ts globeAtOpen) ติ๊กเองได้ กลุ่มของมันบอกด้วยข้อความไทย (globe.osmStartsHidden)
+//   OpenStreetMap เริ่มแบบซ่อนทุกครั้งที่เปิด scenario (task 13c: workbook.ts globeAtOpen) ติ๊กเองได้ หรือเปิดสวิตช์ OSM (บันทึกสำเร็จ) = ติ๊ก Show ให้
+//   กลุ่มของมันบอกด้วยข้อความไทย (globe.osmStartsHidden)
 // - % Translucency ส่งเข้า setGlobeLayer เฉพาะจำนวนเต็ม 0-100 (store ไม่ตรวจเอง): พิมพ์แล้วบันทึกเมื่อออกจากช่องหรือกด Enter, ค่าไม่ถูกต้องคืนค่าเดิม, Escape ยกเลิก
 // - แถวของกลุ่มใช้ได้เมื่อสวิตช์ของแหล่งนั้นเปิด (ปิด = แถวปิดใช้พร้อมคำอธิบายของกลุ่ม) อ่านสวิตช์และรายการจาก server ไม่ได้ (loaded = false) =
 //   ทุกสวิตช์ปิดใช้พร้อมข้อความไทยหนึ่งข้อความ เหลือแต่ Natural Earth II
@@ -378,6 +379,9 @@ export function GlobeManager(_props: Partial<PanelProps>) {
       if (on && def.id === "ion" && useImagery.getState().sources.ion && (useLayout.getState().globe.ion?.assetId ?? null) === null) {
         useLayout.getState().setGlobeIon(ION_PRESETS[0].id);
       }
+      // เปิด OSM แล้ว (บันทึกสำเร็จ): ติ๊ก Show ของแถวให้ด้วย (แถวเริ่มแบบซ่อนทุกครั้งที่เปิด scenario: เปิดสวิตช์แล้วต้องเห็นแผนที่ทันที)
+      // % Translucency คงเดิม ยกเลิกหรือบันทึกไม่สำเร็จ = ไม่แตะ
+      if (on && def.id === "osm" && useImagery.getState().sources.osm) useLayout.getState().setGlobeLayer("osm", { show: true });
     });
 
   const rows = (source: ImagerySourceId): ImageryLayerInfo[] => {

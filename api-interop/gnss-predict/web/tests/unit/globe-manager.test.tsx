@@ -469,9 +469,48 @@ describe("the four source groups", () => {
     mount();
     expect(show(OSM_TITLE).checked).toBe(false);
     expect(show(OSM_TITLE).disabled).toBe(false); // ติ๊กเองได้ในการใช้งานครั้งนี้
-    expect(msg("globe.osmStartsHidden")).toBe("แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด");
+    expect(msg("globe.osmStartsHidden")).toBe("แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด — เปิดสวิตช์หรือติ๊ก Show เพื่อดู");
     expect(groupOf("osm").getByText(msg("globe.osmStartsHidden"))).toBeDefined();
     for (const other of OTHERS("osm")) expect(groupOf(other.id).queryByText(msg("globe.osmStartsHidden")), other.id).toBeNull();
+  });
+
+  describe("turning OpenStreetMap on shows its row (fix round 1 of task 13c, like ion picking a preset)", () => {
+    const osmShown = () => useLayout.getState().globe.layers.osm?.show ?? false;
+    const failingPut = { [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } };
+
+    test("Confirm ticks the row once the server has the switch on; % Translucency is kept", async () => {
+      server();
+      useLayout.setState({ globe: { ...DEFAULT_GLOBE, layers: { ...DEFAULT_GLOBE.layers, osm: { show: false, translucency: 30 } } } });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
+      await waitFor(() => expect(useImagery.getState().sources.osm).toBe(true));
+      await waitFor(() => expect(osmShown()).toBe(true));
+      expect(useLayout.getState().globe.layers.osm).toEqual({ show: true, translucency: 30 });
+      expect(show(OSM_TITLE).checked).toBe(true);
+    });
+
+    test("Cancel leaves the row hidden and sends nothing", async () => {
+      const f = server();
+      useLayout.setState({ globe: DEFAULT_GLOBE });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(osmShown()).toBe(false);
+      expect(puts(f)).toHaveLength(0);
+    });
+
+    test("a failed save leaves the row hidden", async () => {
+      server(failingPut);
+      useLayout.setState({ globe: DEFAULT_GLOBE });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
+      await waitFor(() => expect(useMessages.getState().items.filter((m) => m.level === "warning")).toHaveLength(1));
+      expect(useImagery.getState().sources.osm).toBe(false);
+      expect(osmShown()).toBe(false);
+    });
   });
 
   test("a switch that is on loses its off hint", () => {

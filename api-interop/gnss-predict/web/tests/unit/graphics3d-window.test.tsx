@@ -453,6 +453,16 @@ describe("Show Orbits (task 13c)", () => {
     expect(button().getAttribute("aria-pressed")).toBe("false");
   });
 
+  test("macOS order (button down, contextmenu, button up) on empty space opens Show Orbits; the contextmenu itself is stopped", async () => {
+    await mountWindow();
+    const view = screen.getByTestId("g3d-view");
+    fireEvent.pointerDown(view, { button: 2, clientX: 40, clientY: 30 });
+    expect(fireEvent.contextMenu(view, { clientX: 40, clientY: 30 })).toBe(false);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.pointerUp(view, { button: 2, clientX: 40, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Orbits" })).toBeDefined();
+  });
+
   test("a right-drag (Cesium's zoom) opens no menu; a right-click on a satellite keeps its own menu", async () => {
     const pathAt = vi.fn((_x: number, _y: number): string | null => null);
     await mountWindow(pathAt);

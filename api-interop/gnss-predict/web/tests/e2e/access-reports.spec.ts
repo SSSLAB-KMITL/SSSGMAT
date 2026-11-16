@@ -196,7 +196,7 @@ test("export csv has unit headers", async ({ page }) => {
   expect(text.split(/\r?\n/)[0]).toBe("Access,Start Time (UTCG),Stop Time (UTCG),Duration (sec)");
 });
 
-test("a report window and its Export Setup survive File → Save and reopening the scenario", async ({ page, request }) => {
+test("a report window and its Export Setup survive File → Save and reopening the scenario", async ({ page }) => {
   const sc = "E2E_SAVE";
   await openScenario(page, sc);
   const tool = await openAccessTool(page);
@@ -211,8 +211,12 @@ test("a report window and its Export Setup survive File → Save and reopening t
   await setup.getByRole("button", { name: "OK", exact: true }).click();
   await expect(setup).toHaveCount(0);
 
+  // GET /workbook ตอบ 200 (body null) แม้ยังไม่มี workbook: รอคำตอบของ PUT ที่ File → Save ส่งจริง ไม่งั้นการเปิดใหม่แข่งกับการบันทึก
+  const workbookSaved = page.waitForResponse(
+    (r) => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/scenarios/${encodeURIComponent(sc)}/workbook`,
+  );
   await menu(page, "File", /^Save(?! As)/);
-  await expect.poll(async () => (await request.get(`/api/scenarios/${sc}/workbook`)).status()).toBe(200);
+  expect((await workbookSaved).ok()).toBe(true);
 
   await openScenario(page, sc);
   await expect(tabOf(page, `${G01_TITLE}: Access`)).toBeVisible();

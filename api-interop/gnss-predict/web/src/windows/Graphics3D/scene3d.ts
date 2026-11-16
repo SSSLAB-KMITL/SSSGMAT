@@ -1164,11 +1164,17 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     return this.frames;
   }
 
-  /** เส้นวงโคจรที่วาดอยู่: entity ที่แสดงอยู่และ path แสดง ณ เวลาปัจจุบัน + เส้น Inertial by Window ที่แสดงอยู่ */
+  /** ตำแหน่งกล้อง (ECEF เมตร) ปิดหน้าต่างแล้ว = null */
+  cameraPosition(): [number, number, number] | null {
+    return this.destroyed ? null : tuple(this.viewer.camera.positionWC);
+  }
+
+  /** เส้น access ที่แสดงอยู่ในภาพ */
   accessLineCount(): number {
     return this.destroyed || this.ds === null ? 0 : shownAccessLines(this.ds.entities);
   }
 
+  /** เส้นวงโคจรที่วาดอยู่: entity ที่แสดงอยู่และ path แสดง ณ เวลาปัจจุบัน + เส้น Inertial by Window ที่แสดงอยู่ */
   pathCount(): number {
     if (this.destroyed) return 0;
     const time = this.viewer.clock.currentTime;

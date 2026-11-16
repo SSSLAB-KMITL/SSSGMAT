@@ -408,6 +408,15 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.pathCount()).toBe(31);
   });
 
+  test("cameraPosition: where the first 3D window's camera is (ECEF metres); no window (or a window that cannot tell) = null", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.cameraPosition()).toBeNull();
+    registerScene(fakeScene("graphics3d-2", { cameraPosition: () => [9, 9, 9] }));
+    registerScene(fakeScene("graphics3d", { cameraPosition: () => [1, 2, 3] }));
+    expect(hooks.cameraPosition()).toEqual([1, 2, 3]);
+  });
+
   test("flyToSatellite asks the first 3D window to look at a satellite from rangeM away; no window = false", () => {
     installTestHooks();
     const hooks = window.__gnssStudioTest!;

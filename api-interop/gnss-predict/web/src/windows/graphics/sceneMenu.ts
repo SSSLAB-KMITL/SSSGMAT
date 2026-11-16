@@ -6,14 +6,15 @@
 //   เลื่อนไม่เกิน 4 px (pick.ts isClick) ปุ่มขวาที่ลากคือการซูมของ Cesium จึงไม่เปิดเมนู ตัดสินตอนปล่อยปุ่ม ไม่ใช่ตอน contextmenu เพราะ macOS และ Linux
 //   ส่ง contextmenu ตั้งแต่กดปุ่ม (ยังไม่รู้ว่าจะลาก) เปิดโดยส่ง contextmenu ของเราเองไปที่ element ของภาพ (Radix เปิดเมนูที่จุดนั้น)
 //   contextmenu ของ browser ที่ไม่ชี้ object ถูกกันเสมอ (ไม่มีเมนูของ browser บนภาพ) Windows ส่ง contextmenu หลังปล่อยปุ่ม (หลังเมนูของเราเปิดแล้ว
-//   และชี้ไปนอกภาพเพราะเมนูกันเมาส์ทั้งหน้า): กันเมนูของ browser ที่มานอกภาพภายใน 500 ms หลังเปิดเมนูของหน้าต่างหนึ่งครั้ง
+//   ชี้ไปนอกภาพเพราะเมนูกันเมาส์ทั้งหน้า หรือยังชี้ในภาพ): ทุก contextmenu ของ browser ภายใน 500 ms หลังเปิดเมนูของหน้าต่าง ไม่ว่าชี้ที่ไหน
+//   ถูกกันและหยุดที่ window (ไม่ขึ้นเมนูของ browser และไม่ถึงตัวฟังของภาพ ซึ่งจะเปลี่ยนรายการจนเมนูที่เปิดอยู่ว่าง) ยกเว้น contextmenu ของเราเอง
 // - คลิกขวาที่ว่างไม่เปลี่ยนการเลือก
 
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { MenuEntry } from "../../chrome/menus";
 import { isClick, selectScenePath, type Point } from "../Graphics3D/pick";
 
-/** หลังเปิดเมนูของหน้าต่าง เมนูของ browser ที่ตามมานอกภาพภายในเวลานี้ (ms) ถูกกัน (Windows ส่ง contextmenu หลังปล่อยปุ่ม) */
+/** หลังเปิดเมนูของหน้าต่าง contextmenu ของ browser ที่ตามมาภายในเวลานี้ (ms) ถูกกัน (Windows ส่ง contextmenu หลังปล่อยปุ่ม) */
 export const NATIVE_MENU_GUARD_MS = 500;
 
 export interface SceneMenuOptions {
@@ -41,8 +42,11 @@ const localPoint = (e: { clientX: number; clientY: number; currentTarget: HTMLEl
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 };
 
+/** contextmenu ที่เราส่งเองเพื่อเปิดเมนูของหน้าต่าง (ตัวกันไม่แตะ) */
+const ours = new WeakSet<Event>();
+
 /**
- * กันเมนูของ browser ที่มานอก el ครั้งเดียวภายใน NATIVE_MENU_GUARD_MS (ข้างใน el ตัวฟังของภาพจัดการเอง)
+ * กันทุก contextmenu ของ browser ภายใน NATIVE_MENU_GUARD_MS ไม่ว่าชี้ที่ไหน: preventDefault และหยุดที่ window (capture) ไม่ถึงตัวฟังของภาพ
  * หน้าต่างถูกปิดไปแล้ว (el ไม่อยู่ในหน้า) = เลิกกัน
  */
 function guardNativeMenu(el: HTMLElement): void {
@@ -51,9 +55,9 @@ function guardNativeMenu(el: HTMLElement): void {
       off();
       return;
     }
-    if (ev.target instanceof Node && el.contains(ev.target)) return;
+    if (ours.has(ev)) return;
     ev.preventDefault();
-    off();
+    ev.stopPropagation();
   };
   const timer = setTimeout(() => off(), NATIVE_MENU_GUARD_MS);
   function off(): void {
@@ -104,7 +108,9 @@ export function useSceneMenu(opts: SceneMenuOptions): SceneMenu {
     const el = e.currentTarget;
     opening.current = true;
     try {
-      el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 }));
+      const open = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY, button: 2 });
+      ours.add(open);
+      el.dispatchEvent(open);
     } finally {
       opening.current = false;
     }

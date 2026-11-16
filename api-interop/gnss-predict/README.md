@@ -1036,8 +1036,8 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
     ชั้นทึบ = % Translucency 0 และเป็นภาพทึบที่มีทุกชิ้นทุกเวลา: ภาพคงที่แบบ jpg (Blue Marble, Sentinel-2 cloudless) หรือ OpenStreetMap (png แต่ทึบ)
     ชั้นที่ผูกเวลาไม่นับว่าทึบแม้เป็น jpg: VIIRS/MODIS รายวันไม่มีภาพของเวลาในอนาคต (ชิ้น 404 โปร่งใส Blue Marble ข้างใต้ต้องยังเห็น)
     และ Himawari (png) กับ GOES เห็นแค่จานโลกของดาวค้างฟ้า
-    เช่น ค่าตั้งต้น Blue Marble + VIIRS + Sentinel-2 ที่ 0% ทั้งหมด (OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario: task 13c) = โหลดแค่ Sentinel-2 ซึ่งเป็นชั้นทึบบนสุด
-    ; ติ๊ก Show ของ OpenStreetMap = โหลดแค่ OpenStreetMap ; ตั้ง OpenStreetMap 30% = โหลด Sentinel-2 ด้วย ; ปิดสวิตช์ Sentinel-2 (OpenStreetMap ซ่อน) = โหลด Blue Marble กับ VIIRS ตามเดิม
+    เช่น ค่าตั้งต้น Blue Marble + VIIRS + Sentinel-2 ที่ 0% ทั้งหมด (OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario) = โหลดแค่ Sentinel-2 ซึ่งเป็นชั้นทึบบนสุด
+    ; ติ๊ก Show ของ OpenStreetMap หรือเปิดสวิตช์ OpenStreetMap (ซึ่งติ๊ก Show ให้ด้วย) = โหลดแค่ OpenStreetMap ; ตั้ง OpenStreetMap 30% = โหลด Sentinel-2 ด้วย ; ปิดสวิตช์ Sentinel-2 (OpenStreetMap ซ่อน) = โหลด Blue Marble กับ VIIRS ตามเดิม
     ปิดสวิตช์หรือ Show ของชั้นบน หรือเพิ่ม % Translucency แล้วชั้นข้างใต้กลับมาเอง Natural Earth II (ออฟไลน์) ยังเป็นภาพฐานเสมอ
     ชั้นทึบที่ชิ้นภาพพลาดเกินเกณฑ์ (ได้ผลอย่างน้อย 8 ชิ้น พลาดอย่างน้อย 75% เกณฑ์เดียวกับ HUD และ ion) เลิกนับเป็นชั้นทึบใน viewer นั้น: ชั้นข้างใต้ถูกสร้างให้เห็น
     (OpenStreetMap ถูกบล็อกหรือเน็ตหลุด, Sentinel-2 หยุดหรือไม่ว่าง) ล้มซ้อนกันได้ทีละชั้น จนเอาชั้นนั้นออกแล้วใส่กลับ (ปิดแล้วเปิดสวิตช์หรือ Show) จึงนับเป็นชั้นทึบได้อีก
@@ -1132,8 +1132,10 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 ลำดับวาด (ชั้นที่อยู่ล่างทับชั้นบน): Natural Earth II → GIBS ตามตาราง → Sentinel-2 cloudless → OpenStreetMap → เส้น Lat/Lon อยู่บนสุดเสมอ (ยกเว้นเมื่อ ion แสดง: ion ชั้นเดียว)
 เมื่อสวิตช์ของแหล่งใดปิด แถวของแหล่งนั้นปิดใช้ (เทา) พร้อมคำอธิบาย ค่าตั้งต้นเมื่อเปิดสวิตช์ครั้งแรก: **Blue Marble** กับ **VIIRS NOAA-20 True Color** แสดง ชั้นอื่นของ GIBS ซ่อน
 ส่วนแถว Sentinel-2 cloudless ของ workbook ใหม่ตั้งเป็นแสดงไว้แล้ว (สวิตช์ของแหล่งยังปิดอยู่จึงยังไม่มีภาพ) workbook เก่าที่ไม่มีค่านี้ซ่อนไว้
-**OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario** (task 13c: แผนที่ถนนทึบสีอ่อนทับภาพถ่ายจนโลกตอนเปิดโปรแกรมดูขาวซีด) ไม่ว่า workbook เก็บ Show ไว้อย่างไร (% Translucency คงเดิม):
-ติ๊ก Show เองได้ในการใช้งานครั้งนั้นและ File → Save เก็บได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก (ไม่แตะสวิตช์แหล่ง OSM ใน `settings.json`)
+**OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario** (แผนที่ถนนทึบสีอ่อนทับภาพถ่ายจนโลกตอนเปิดโปรแกรมดูขาวซีด) ไม่ว่า workbook เก็บ Show ไว้อย่างไร (% Translucency คงเดิม):
+ติ๊ก Show เองได้ในการใช้งานครั้งนั้น หรือเปิดสวิตช์ OpenStreetMap ใน Globe Manager (ยืนยันแล้วบันทึกสำเร็จ) ซึ่งติ๊ก Show ของแถวให้ด้วย จึงเห็นแผนที่ทันที
+และ File → Save เก็บได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก (การเปิด scenario ไม่แตะสวิตช์แหล่ง OSM ใน `settings.json`)
+กลุ่ม OpenStreetMap ใน Globe Manager บอกว่า "แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด — เปิดสวิตช์หรือติ๊ก Show เพื่อดู"
 ค่า Show และ Translucency เก็บใน workbook ของ scenario (File → Save) และใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View
 เมื่อเปิดแสง (Enable Lighting) ด้านกลางคืนของชั้นภาพออนไลน์ทุกชั้นจางตาม Ambient Level ของหน้าต่างเท่ากับภาพฐาน (Sensor View เปิดแสงเสมอและใช้ค่าตั้งต้น)
 
@@ -1276,14 +1278,14 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 | ตัวเลือก | ค่าตั้งต้น | หมายเหตุ |
 |---|---|---|
-| **Show Orbits** | เปิด | ปิด = ไม่วาดเส้นวงโคจรของดาวทุกดวงในหน้าต่างนี้ (รวมเส้น Inertial by Window) โดยไม่แตะค่าของ object (task 13c) |
+| **Show Orbits** | เปิด | ปิด = ไม่วาดเส้นวงโคจรของดาวทุกดวงในหน้าต่างนี้ (รวมเส้น Inertial by Window) โดยไม่แตะค่าของ object |
 | **Satellite Models** | เปิด | ปิด = ดาวกลับเป็นจุดทันที (ไม่ fetch ไฟล์ใหม่เมื่อเปิดอีกครั้ง) |
 | **Model Pixel Size** | 48 | จำนวนเต็ม 16–256 พิกเซล (ขนาดต่ำสุดบนจอ ไม่จำกัดการขยาย จึงได้ขนาดนี้ที่ทุกระยะ: test คำนวณด้วยสูตรของ Cesium ที่ 50,000 และ 80,000 km) |
 | **Model Detail Threshold** | 30000 | จำนวนเต็ม 1,000–200,000 km: ดาวที่ห่างกล้องน้อยกว่านี้เป็นโมเดล ไกลกว่าเป็นจุด ตัดสินใหม่ทุกรอบ 250 ms ขณะเวลาเดิน และเมื่อกล้องขยับเกิน 5% |
 
 **Show Orbits** (หน้าต่าง 3D) และ **Show Ground Tracks** (หน้าต่าง 2D, ค่าตั้งต้นเปิด: ปิด = ไม่วาด ground track ของดาวทุกดวงในหน้าต่างนั้น) เป็นตัวเลือกต่อหน้าต่างที่เก็บใน workbook
 เปิดปิดได้สามทาง: เมนูคลิกขวาของหน้าต่าง (คลิกขวาที่ไม่ชี้ object โดยไม่ลาก เพราะลากด้วยปุ่มขวาคือซูม), ปุ่มบนแถบ **3D Window Defaults** / **2D Window Defaults**
-และช่องติ๊กใน 3D / 2D Graphics Window Properties หน้า **Details** (ป้ายของเราเอง ไม่มีใน STK reference) test hook `pathCount()` นับเส้นวงโคจรที่หน้าต่าง 3D ตัวแรกวาดอยู่
+และช่องติ๊กใน 3D / 2D Graphics Window Properties หน้า **Details** (ป้ายของเราเอง ไม่มีใน STK reference) test hook `pathCount()` นับเส้นวงโคจรที่หน้าต่าง 3D ตัวแรกวาดอยู่ และ `cameraPosition()` บอกตำแหน่งกล้องของหน้าต่างนั้น (ECEF เมตร)
 
 ป้ายสามตัวของโมเดลไม่มีใน STK reference (ไม่มีคำว่า detail threshold) จึงเป็นป้ายของเราเอง โหลดโมเดลล้มเหลว (ไม่มีไฟล์ ไฟล์เสีย หรือ catalog อ่านไม่ได้) = ดาวนั้นกลับเป็นจุด มีข้อความไทยใน Message Viewer ครั้งเดียวต่อโมเดล (ต่อหน้าเว็บสำหรับ catalog) การคลิก ป้ายชื่อ สี Sensor และ Access ไม่เสีย
 ไฟล์ glb แต่ละตัวถูกดึงครั้งเดียวต่อหน้าเว็บ ตรวจทั้งไฟล์ก่อนใช้ (`glbProblem`: ความยาวในหัว, JSON chunk อ่านได้, `asset.version` = "2.0", `extensionsRequired` มีแต่ที่ Cesium รองรับ, chunk พอดีไฟล์)
@@ -1377,7 +1379,7 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - หน้าต่างรายงาน/กราฟหนึ่งบานต่อคำขอ (style, object, เวลา, Dynamic) เปิดซ้ำ = เรียกบานเดิม; รายงานหนึ่งครั้งใช้ Facility ได้ไม่เกิน 4 แห่ง (ตารางของแต่ละแห่งราว 135 MB อยู่ในหน่วยความจำระหว่างสร้าง)
 - Strip Chart Duration คงที่ 3600 วินาที (ไม่มีช่องให้แก้) และแกน y ของ Strip Chart ไม่ปรับตามชั่วโมงที่เห็น; Export ของกราฟดาวน์โหลด CSV ด้วย Export Setup ตั้งต้นทันที (ไม่มีกล่อง)
 - CLI `report` ใช้ Scenario Styles กับ Installed Styles เท่านั้น (ไม่อ่าน My Styles) และไม่ใช้ช่วงเวลาที่เก็บไว้ใน access
-- คำบางคำที่ STK มีแต่ไม่พบในเอกสาร STK ที่ตรวจได้ (Constellation ใน Object Types, คลิกขวา Copy to My Styles / Delete / Generate as .txt/.csv) ยังมีตาม spec แต่ใช้ป้ายของเรา
+- คำบางคำที่ STK มีแต่ไม่พบในเอกสาร STK ที่ตรวจได้ (Constellation ใน Object Types, คลิกขวา Copy to My Styles / Delete / Generate as .txt/.csv, Setup... ของเมนู Export และกล่อง Export Setup) ยังมีตาม spec แต่ใช้ป้ายของเรา
 
 ## 10. Docker (GNSS Studio ใน container)
 
