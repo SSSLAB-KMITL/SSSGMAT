@@ -497,11 +497,16 @@ describe("commands and panels", () => {
     act(() => useSelection.getState().select(GPS));
     runCommand("object.reportGraphManager");
     expect(opened.at(-1)).toEqual({ kind: RGM_KIND, params: { objectType: "Constellation", objects: [GPS] } });
-    // QA-02: เมนูของ Scenario (ราก "*") = Object Type All Types ไม่เลือก object ใด
+    // ราก "*" ไม่ใช่ object ของคำสั่งนี้ (เมนู Scenario ใช้ scenario.reportGraphManager)
     act(() => useSelection.getState().select("*"));
-    expect(isEnabled("object.reportGraphManager")).toBe(true);
-    runCommand("object.reportGraphManager");
-    expect(opened.at(-1)).toEqual({ kind: RGM_KIND, params: { objectType: "All", objects: [] } });
+    expect(isEnabled("object.reportGraphManager")).toBe(false);
+    // scenario.reportGraphManager (เมนูของ Scenario): Object Type All Types ไม่เลือก object ใด ไม่ขึ้นกับการเลือก
+    for (const path of ["*", G01, null]) {
+      act(() => useSelection.getState().select(path));
+      expect(isEnabled("scenario.reportGraphManager")).toBe(true);
+      runCommand("scenario.reportGraphManager");
+      expect(opened.at(-1)).toEqual({ kind: RGM_KIND, params: { objectType: "All", objects: [] } });
+    }
     off();
     expect(isRegistered("analysis.reportGraphManager")).toBe(false);
   });

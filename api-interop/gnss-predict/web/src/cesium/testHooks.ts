@@ -20,6 +20,9 @@
 //   Dynamic Display = แถวของเวลาปัจจุบัน ไม่มีหน้าต่างนั้นหรือยังไม่มีตาราง = []
 // และ graphState(panelId): สิ่งที่หน้าต่างกราฟนั้นวาดอยู่ { type, series (ชื่อเส้น/object), timeLine (เวลาของเส้นเวลา animation ไม่มี = null),
 //   currentPoint ([El, Az] ของจุดปัจจุบันในกราฟ polar) } ไม่มีหน้าต่างหรือยังไม่ได้วาด = null
+// และ entityScreenPosition2d(ชื่อ object): แบบ entityScreenPosition ในหน้าต่าง 2D ตัวแรก (follow-up 13b-2: คลิกเลือกดาวใน 2D)
+// และ breakRenderLoop("3d" | "2d"): เฟรมถัดไปของหน้าต่างนั้นโยนข้อผิดพลาดนอก Scene.render ให้ render loop ของ Cesium หยุดเงียบ ๆ หนึ่งครั้ง
+//   (ตรวจการเริ่มวาดใหม่ของ cesium/viewer.ts watchRenderFailure) ไม่มีหน้าต่าง = false
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useLayout } from "../stores/layout";
@@ -50,6 +53,8 @@ export interface GnssStudioTestHooks {
   workbookRestoredAt(): number | null;
   reportRows(panelId: string): string[][];
   graphState(panelId: string): GraphState | null;
+  entityScreenPosition2d(name: string): [number, number] | null;
+  breakRenderLoop(view: "3d" | "2d"): boolean;
 }
 
 declare global {
@@ -89,5 +94,12 @@ export function installTestHooks(): void {
     workbookRestoredAt: () => useLayout.getState().restoredAt,
     reportRows: (panelId) => reportRowsOf(panelId),
     graphState: (panelId) => graphStateOf(panelId),
+    entityScreenPosition2d: (name) => firstScene2D()?.entityScreenPosition?.(name) ?? null,
+    breakRenderLoop: (view) => {
+      const scene = view === "3d" ? firstScene() : firstScene2D();
+      if (scene?.breakRenderLoopOnce === undefined) return false;
+      scene.breakRenderLoopOnce();
+      return true;
+    },
   };
 }

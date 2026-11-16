@@ -28,21 +28,23 @@
 //   (คลิกเฉย ๆ ซูมเข้าสองเท่า แล้วกลับเป็นลากเลื่อนแผนที่), Zoom Out = ภาพกว้างขึ้นสองเท่า
 
 import {
-  Cartesian2, Cartesian3, JulianDate, Math as CesiumMath, Rectangle, ReferenceFrame, ScreenSpaceEventHandler, ScreenSpaceEventType,
-  type Color, type ImageryLayer, type Viewer,
+  Cartesian2, Cartesian3, JulianDate, Math as CesiumMath, Rectangle, ReferenceFrame, SceneTransforms, ScreenSpaceEventHandler, ScreenSpaceEventType,
+  type Color, type Entity, type ImageryLayer, type Viewer,
 } from "cesium";
 import { errorText } from "../../api/client";
 import { applyAccessHighlights, highlightCounts, HighlightIntervals } from "../../cesium/accessHighlight";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
-import { applyGraphics, cssColor, entityLooks, sceneStyle, sensorStatesAt, type ApplyCtx, type EntityLook } from "../../cesium/graphics";
+import {
+  applyGraphics, cssColor, entityIdForName, entityLooks, fixedPositionAt, pathForEntityId, sceneStyle, sensorStatesAt, type ApplyCtx, type EntityLook,
+} from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../../cesium/ipp";
 import {
   fillMoved, fillStates, ippItems, Overlays2D, sensorFillStates, sensorItems, sensorKey, swathInputs, swathItems, terminatorItem, type FillState,
 } from "../../cesium/overlay2d";
 import { watchResize } from "../../cesium/resizeWatch";
-import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
+import { createViewer, destroyViewer, latLonGrid, removeViewerPicking, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import type { AerRow } from "../../data/files";
 import { msg } from "../../labels/messages.th";
@@ -55,6 +57,7 @@ import { useTime } from "../../stores/time";
 import type { MouseMode } from "../graphics/sceneRegistry";
 import { currentSceneUrls, CzmlScene } from "../graphics/sceneSource";
 import { Throttle } from "../graphics/throttle";
+import { markersNear, selectOnClick } from "../Graphics3D/pick";
 import { boxRectangle, ZoomBox } from "../graphics/zoomBox";
 import { CursorTracker } from "./cursor";
 import { props2d, type Projection2D, type Props2D } from "./props2d";
@@ -80,16 +83,19 @@ function ippIndexOf(rows: AerRow[]): IppIndex {
 
 /**
  * สร้าง viewer 2D ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน)
- * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
+ * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาด render loop หยุด หรือ WebGL context หาย: cesium/viewer.ts watchRenderFailure)
+ *   recovering = true: เริ่มวาดใหม่แล้ว ภาพยังแสดง; false = เลิก ผู้เรียกแสดงข้อความไทยแทนภาพ
  */
 export function mountScene2D(
   panelId: string,
   el: HTMLElement,
   opts: { projection: Projection2D; view: ViewRect | null },
-  onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
+  onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void,
 ): Scene2DHandle {
   const viewer = createViewer(el, "2d", { projection: opts.projection === "mercator" ? "mercator" : "geographic" });
   try {
+    // คลิกซ้ายของ Viewer (pickImageryLayerFeatures) โยน DeveloperError ใน 2D ทุกครั้ง: ถอดออก หน้าต่างนี้เลือก object เอง (pick.ts)
+    removeViewerPicking(viewer);
     return new Scene2D(panelId, el, viewer, opts.view, onRenderStopped);
   } catch (e) {
     destroyViewer(viewer);
@@ -121,6 +127,8 @@ class Scene2D implements Scene2DHandle {
   private readonly highlights = new HighlightIntervals(() => this.highlightsArrived());
   private readonly offs: (() => void)[] = [];
   private readonly handler: ScreenSpaceEventHandler;
+  /** ตำแหน่งที่กดปุ่มซ้ายในโหมด Grab (null = ไม่ได้กด) ปล่อยใกล้ที่เดิม = คลิกเลือก object */
+  private pressAt: Cartesian2 | null = null;
   private readonly zoom: ZoomBox;
   private readonly cursor: CursorTracker;
 
@@ -129,7 +137,7 @@ class Scene2D implements Scene2DHandle {
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
     view: ViewRect | null,
-    onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
+    onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void,
   ) {
     const scene = viewer.scene;
     const idle = skipIdleDisplayUpdates(viewer);
@@ -155,6 +163,7 @@ class Scene2D implements Scene2DHandle {
     this.handler = new ScreenSpaceEventHandler(scene.canvas);
     this.handler.setInputAction((e: ScreenSpaceEventHandler.PositionedEvent) => {
       if (this.mode === "zoomIn") this.zoom.start(e.position);
+      else this.pressAt = Cartesian2.clone(e.position);
     }, ScreenSpaceEventType.LEFT_DOWN);
     this.handler.setInputAction((e: ScreenSpaceEventHandler.MotionEvent) => {
       this.zoom.move(e.endPosition);
@@ -209,7 +218,7 @@ class Scene2D implements Scene2DHandle {
     // ขนาดจริงของ element เปลี่ยน = resize + วาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว) เลิกฟังใน destroy() ก่อน destroyViewer
     this.offs.push(watchResize(el, viewer));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene2D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
-    this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
+    this.offs.push(watchRenderFailure(viewer, (reason, error, recovering) => onRenderStopped?.(reason, error, recovering)));
   }
 
   /** วาดภาพที่เปลี่ยนตามเวลาใหม่ทันที (หนึ่งครั้งต่อเหตุการณ์) */
@@ -449,13 +458,50 @@ class Scene2D implements Scene2DHandle {
 
   private dragEnd(at: Cartesian2): void {
     const box = this.zoom.end(at);
-    if (box === null) return;
+    if (box === null) {
+      this.clicked(at);
+      return;
+    }
     const camera = this.viewer.camera;
     const rect = boxRectangle(camera, this.viewer.scene.globe.ellipsoid, box.a, box.b);
     if (rect !== null) camera.flyTo({ destination: rect, duration: 0.8 });
     else camera.zoomIn(this.frustumWidth() / 2); // คลิก: กว้างลงครึ่งหนึ่ง
     this.viewer.scene.requestRender();
     this.setMouseMode("grab");
+  }
+
+  /** ปล่อยปุ่มซ้ายโดยไม่ได้ลากกรอบ Zoom In: ถ้าเป็นคลิก (เมาส์เลื่อนไม่เกิน 4 px) เลือกดาวหรือ Facility ใต้เมาส์ (pick.ts แบบหน้าต่าง 3D) */
+  private clicked(at: Cartesian2): void {
+    const down = this.pressAt;
+    this.pressAt = null;
+    if (down !== null && this.mode === "grab") selectOnClick(down, at, (x, y) => this.pathAt(x, y));
+  }
+
+  /** path ของดาวหรือ Facility ที่จุดอยู่ใกล้ (x, y) ที่สุดในรัศมี PICK_RADIUS_PX ไม่มี = null */
+  pathAt(x: number, y: number): string | null {
+    const doc = useScenario.getState().doc;
+    const entities = this.ds?.entities.values;
+    if (this.destroyed || doc === null || entities === undefined) return null;
+    const prnByNorad = useResults.getState().prnByNorad;
+    const markers = entities
+      .filter((entity) => entity.id.startsWith("sat/") || entity.id.startsWith("fac/"))
+      .map((entity) => ({ id: entity.id, at: this.windowPosition(entity) }));
+    for (const id of markersNear(markers, { x, y })) {
+      const path = pathForEntityId(id, doc, prnByNorad);
+      if (path !== null) return path;
+    }
+    return null;
+  }
+
+  /** ตำแหน่ง (พิกเซลใน canvas) ของ entity บนแผนที่ตอนนี้ ไม่แสดง ไม่มีตำแหน่ง หรือนอกภาพ = null */
+  private windowPosition(entity: Entity): Cartesian2 | null {
+    if (!entity.isShowing) return null;
+    const fixed = fixedPositionAt(entity, this.viewer.clock.currentTime);
+    if (fixed === null) return null;
+    const scene = this.viewer.scene;
+    const at = SceneTransforms.worldToWindowCoordinates(scene, new Cartesian3(fixed.x, fixed.y, fixed.z));
+    const { clientWidth: width, clientHeight: height } = scene.canvas;
+    return at === undefined || at.x < 0 || at.y < 0 || at.x > width || at.y > height ? null : at;
   }
 
   zoomOut(): void {
@@ -469,6 +515,28 @@ class Scene2D implements Scene2DHandle {
   resize(): void {
     if (this.destroyed) return;
     this.viewer.resize();
+    this.viewer.scene.requestRender();
+  }
+
+  /** ตำแหน่ง [x, y] (พิกเซลของ canvas) ของ object ในแผนที่ ไม่แสดงหรือนอกภาพ = null (window.__gnssStudioTest.entityScreenPosition2d) */
+  entityScreenPosition(name: string): [number, number] | null {
+    const id = entityIdForName(name, useScenario.getState().doc, useResults.getState().prnByNorad);
+    const entity = id === undefined ? undefined : this.ds?.entities.getById(id);
+    const at = entity === undefined || this.destroyed ? null : this.windowPosition(entity);
+    return at === null ? null : [at.x, at.y];
+  }
+
+  /**
+   * test (window.__gnssStudioTest.breakRenderLoop): เฟรมถัดไปโยนข้อผิดพลาดใน clock.tick ซึ่ง render loop ของ Cesium เรียกนอก Scene.render
+   * Cesium จับแล้วหยุด loop เงียบ ๆ (useDefaultRenderLoop = false ไม่ยิง renderError) แบบที่สงสัยว่าเกิดใน QA-01 โยนครั้งเดียวแล้วคืน tick เดิม
+   */
+  breakRenderLoopOnce(): void {
+    if (this.destroyed) return;
+    const clock = this.viewer.clock as { tick(): JulianDate };
+    clock.tick = () => {
+      delete (clock as { tick?: unknown }).tick; // กลับไปใช้ tick ของ prototype
+      throw new Error("test: render loop broken on purpose");
+    };
     this.viewer.scene.requestRender();
   }
 

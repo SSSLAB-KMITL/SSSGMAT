@@ -62,6 +62,9 @@ export const COMMAND_LABELS = {
   "object.zoomTo": "menu.object.zoomTo",
   "object.rename": "menu.object.rename",
   "object.delete": "menu.object.delete",
+  // เมนูของ Scenario: ทำกับ scenario ที่เปิดอยู่ ไม่ขึ้นกับการเลือก (objectCommands.ts, ReportGraphManager/commands.ts)
+  "scenario.properties": "menu.object.properties",
+  "scenario.reportGraphManager": "menu.object.reportGraphManager",
 
   "utilities.fetchOrbitData": "menu.utilities.fetchOrbitData",
   "utilities.dailyForecastSettings": "menu.utilities.dailyForecastSettings",

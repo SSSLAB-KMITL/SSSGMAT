@@ -75,7 +75,7 @@ import { watchResize } from "../../cesium/resizeWatch";
 import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
 import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
-import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
+import { createViewer, destroyViewer, latLonGrid, removeViewerPicking, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
@@ -208,9 +208,10 @@ export function fromToResult(from: Entity | undefined, to: Entity | undefined): 
 
 /**
  * สร้าง viewer ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน)
- * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
+ * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาด render loop หยุด หรือ WebGL context หาย: cesium/viewer.ts watchRenderFailure)
+ *   recovering = true: เริ่มวาดใหม่แล้ว ภาพยังแสดง; false = เลิก ผู้เรียกแสดงข้อความไทยแทนภาพ
  */
-export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): Scene3DHandle {
+export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void): Scene3DHandle {
   return mount(panelId, el, onRenderStopped, { notify: notifyScenes, pick: true }, releaseContextMenu);
 }
 
@@ -218,7 +219,7 @@ export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?:
  * viewer ของหน้าต่าง Sensor View (sensor spec §5.4): scene เดียวกับหน้าต่าง 3D แสงกลางวัน/กลางคืนเปิดเสมอ ไม่อ่าน windowProps
  * แจ้งทะเบียนของ Sensor View (P3) กล้องตาม sensor เมื่อหน้าต่างเรียก viewFromSensor ไม่มี WebGL = โยน
  */
-export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): SensorViewHandle {
+export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void): SensorViewHandle {
   return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS }, removeViewerPicking);
 }
 
@@ -226,7 +227,7 @@ export function mountSensorView(panelId: string, el: HTMLElement, onRenderStoppe
 function mount(
   panelId: string,
   el: HTMLElement,
-  onRenderStopped: ((reason: RenderFailure, error?: unknown) => void) | undefined,
+  onRenderStopped: ((reason: RenderFailure, error?: unknown, recovering?: boolean) => void) | undefined,
   opts: SceneOptions,
   prepare?: (viewer: Viewer) => void,
 ): Scene3D {
@@ -250,14 +251,10 @@ export function releaseContextMenu(viewer: { readonly scene: { readonly canvas: 
 }
 
 /**
- * Sensor View: ถอดคลิกซ้าย (เลือก entity) และดับเบิลคลิก (pickAndTrackObject: ตั้ง trackedEntity หรือ zoomTo บินไปหา entity) ที่ Viewer ของ Cesium
- * ใส่ไว้ใน handler ของมันเอง screenSpaceCameraController.enableInputs = false ไม่ได้ปิดสองอย่างนี้ ดับเบิลคลิกจึงพากล้องหลุดจาก sensor
- * ใช้กับ viewer ของ Sensor View เท่านั้น (หน้าต่าง 3D ยังดับเบิลคลิกตาม object ได้ตามเดิม)
+ * Sensor View: ถอดคลิกซ้ายและดับเบิลคลิกของ Viewer (cesium/viewer.ts removeViewerPicking) ดับเบิลคลิกพากล้องหลุดจาก sensor
+ * หน้าต่าง 3D หลักยังดับเบิลคลิกตาม object ได้ตามเดิม (หน้าต่าง 2D ก็ถอด: scene2d.ts)
  */
-export function removeViewerPicking(viewer: { readonly screenSpaceEventHandler: ScreenSpaceEventHandler }): void {
-  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_CLICK);
-  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-}
+export { removeViewerPicking };
 
 /**
  * วางกล้องของ Sensor View ที่ pose (Earth-fixed): เลิกตาม entity ยกเลิกการบินที่ค้าง และคืน transform เป็น identity ก่อนเสมอ
@@ -327,7 +324,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
     private readonly opts: SceneOptions,
-    onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
+    onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void,
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
@@ -394,7 +391,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     // ขนาดจริงของ element เปลี่ยน = resize, fov ของ Sensor View ตามสัดส่วนใหม่ แล้ววาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว)
     this.offs.push(watchResize(el, viewer, () => this.updateSensorCamera()));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene3D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
-    this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
+    this.offs.push(watchRenderFailure(viewer, (reason, error, recovering) => onRenderStopped?.(reason, error, recovering)));
   }
 
   // ---------- data source ----------
@@ -1160,6 +1157,21 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   frameCount(): number {
     return this.frames;
   }
+
+  /**
+   * test (window.__gnssStudioTest.breakRenderLoop): เฟรมถัดไปโยนข้อผิดพลาดใน clock.tick ซึ่ง render loop ของ Cesium เรียกนอก Scene.render
+   * Cesium จับแล้วหยุด loop เงียบ ๆ (useDefaultRenderLoop = false ไม่ยิง renderError) แบบที่สงสัยว่าเกิดใน QA-01 โยนครั้งเดียวแล้วคืน tick เดิม
+   */
+  breakRenderLoopOnce(): void {
+    if (this.destroyed) return;
+    const clock = this.viewer.clock as { tick(): JulianDate };
+    clock.tick = () => {
+      delete (clock as { tick?: unknown }).tick; // กลับไปใช้ tick ของ prototype
+      throw new Error("test: render loop broken on purpose");
+    };
+    this.viewer.scene.requestRender();
+  }
+
 
   sensorFootprintPoints(name: string): number | null {
     const ring = this.sensorEntities.get(`sensor/${name}/ring`);

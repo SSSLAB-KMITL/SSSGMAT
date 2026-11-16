@@ -64,6 +64,8 @@ export interface Scene3DHandle {
   entityColor(name: string): string | null;
   labelShown(name: string): boolean | null;
   frameCount(): number;
+  /** ทำให้ render loop หยุดหนึ่งครั้ง (window.__gnssStudioTest) ภาพปลอมของ test ไม่ต้องมี */
+  breakRenderLoopOnce?(): void;
   /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null */
   sensorFootprintPoints(name: string): number | null;
   /** จำนวนดาวที่แสดงเป็นโมเดล 3 มิติอยู่ (entity ดาวที่แสดงและมีโมเดลที่ไม่ได้ซ่อน) */

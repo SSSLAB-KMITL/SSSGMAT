@@ -11,6 +11,7 @@ import { useLayout } from "../../src/stores/layout";
 import { useSelection } from "../../src/stores/selection";
 import { Workspace } from "../../src/Workspace";
 import { registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
+import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/objectCommands";
 import { registerReportGraphManagerCommands } from "../../src/windows/ReportGraphManager/commands";
 import { openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
@@ -88,6 +89,34 @@ describe("menu contents", () => {
     expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
   });
 
+  // follow-up 13b-2: Properties และ Report & Graph Manager... ของเมนู Scenario ทำกับ scenario ที่เปิดอยู่ ไม่ขึ้นกับการเลือกใน Object Browser
+  test("Properties and Report & Graph Manager... of the Scenario menu act on the open scenario, enabled whenever one is open, whatever is selected", async () => {
+    const user = userEvent.setup();
+    const openPanel = vi.fn(() => "x");
+    useLayout.setState({ openPanel, api: {} } as never);
+    const disposers = [registerObjectBrowserCommands(), registerReportGraphManagerCommands()];
+    try {
+      render(<MenuBar />);
+      // ไม่มี scenario: ปิดใช้
+      let menu = await openMenu(user, "Scenario");
+      for (const name of ["Properties", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
+      await user.keyboard("{Escape}");
+      const doc = openScenario();
+      for (const path of [null, "*", "*/Group/GPS"]) {
+        act(() => useSelection.getState().select(path));
+        menu = await openMenu(user, "Scenario");
+        for (const name of ["Properties", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), `${name} ${path}`).toBeNull();
+        await user.click(item(menu, "Properties"));
+        expect(openPanel).toHaveBeenLastCalledWith("propertiesBrowser", { path: "*", name: doc.name });
+        menu = await openMenu(user, "Scenario");
+        await user.click(item(menu, "Report & Graph Manager..."));
+        expect(openPanel).toHaveBeenLastCalledWith("reportGraphManager", { objectType: "All", objects: [] });
+      }
+    } finally {
+      for (const off of disposers) off();
+    }
+  });
+
   test("the Facility and Constellation menus keep their items", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
@@ -140,7 +169,7 @@ describe("menu contents", () => {
     expect(commands("Facility")).not.toContain("object.sensorView");
     // QA-02: Scenario (ราก) มีเมนูของตัวเอง: ไม่มี Access..., Zoom To, Rename, Delete; Insert... / Close Scenario เป็นคำสั่งเดิมในชื่อของเมนู Scenario ของ STK
     expect(objectMenuFor("Scenario")).toBe(SCENARIO_MENU);
-    expect(commands("Scenario")).toEqual(["object.properties", "object.reportGraphManager", "insert.new", "file.save", "file.saveAs", "file.close"]);
+    expect(commands("Scenario")).toEqual(["scenario.properties", "scenario.reportGraphManager", "insert.new", "file.save", "file.saveAs", "file.close"]);
     expect(SCENARIO_MENU.flatMap((e) => ("command" in e && e.label !== undefined ? [[e.command, e.label]] : []))).toEqual([
       ["insert.new", "menu.scenario.insert"], ["file.close", "menu.scenario.closeScenario"],
     ]);

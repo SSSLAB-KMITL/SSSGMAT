@@ -90,9 +90,10 @@ export const SENSOR_MENU: readonly MenuEntry[] = [
  * เมนูของ Scenario (โหนดรากของ Object Browser, QA-02): ตามเมนูคลิกขวาของ Scenario ของ STK (docs/2026-11-17-stk-terms-context-menus.md §1.1)
  * เฉพาะที่แอปทำได้ ตามลำดับ Properties, Report & Graph Manager... (All Types), Insert..., Save, Save As..., Close Scenario
  * ไม่มี Set as Default Scenario (ไม่รองรับ) และไม่มี Access..., Zoom To, Rename, Delete ของ object
+ * Properties และ Report & Graph Manager... เป็นคำสั่ง scenario.* ที่ทำกับ scenario ที่เปิดอยู่ ใช้ได้เมื่อเปิด scenario ไม่ขึ้นกับการเลือก
  */
 export const SCENARIO_MENU: readonly MenuEntry[] = [
-  cmd("object.properties"), cmd("object.reportGraphManager"),
+  cmd("scenario.properties"), cmd("scenario.reportGraphManager"),
   SEPARATOR,
   { command: "insert.new", label: "menu.scenario.insert" },
   SEPARATOR,

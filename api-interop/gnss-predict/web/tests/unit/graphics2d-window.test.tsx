@@ -132,6 +132,26 @@ describe("Graphics2D", () => {
     expect(logged?.text).toBe(msg("scene.renderStoppedLog", { window: "2D", message: "WebGL context lost" }));
   });
 
+  // follow-up 13b-2: render loop ที่หยุดแล้วเริ่มใหม่ได้ = ภาพยังอยู่ ข้อความไทยหนึ่งข้อ; ตายอีก (เลิก) = ข้อความแทนภาพ แต่ไม่แจ้งซ้ำ
+  test("a picture that stopped and was restarted keeps the map and logs one Thai message; giving up later shows the message without a second log", async () => {
+    withWebGL();
+    vi.mocked(mountScene2D).mockReturnValue(fakeScene("graphics2d"));
+    render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene2D()).toBeDefined());
+    const stopped = vi.mocked(mountScene2D).mock.calls[0][3] as (reason: string, error?: unknown, recovering?: boolean) => void;
+    const before = useMessages.getState().items.length;
+    act(() => stopped("loopStopped", undefined, true));
+    expect(screen.queryByRole("alert")).toBeNull(); // ภาพยังแสดง
+    const logged = useMessages.getState().items.slice(before);
+    expect(logged.map((m) => [m.code, m.text])).toEqual([["SCENE_RENDER", msg("scene.renderRestartedLog", { window: "2D", message: "render loop stopped" })]]);
+    expect(msg("scene.renderRestartedLog", { window: "2D", message: "x" })).toMatch(/[฀-๿]/);
+    // ครั้งที่สอง (เริ่มใหม่ได้อีก) และเลิก: ไม่มีข้อความเพิ่ม เลิกแล้วข้อความแทนภาพ
+    act(() => stopped("renderError", new Error("again"), true));
+    act(() => stopped("loopStopped", undefined, false));
+    expect((await screen.findByRole("alert")).textContent).toBe(msg("scene.renderStopped"));
+    expect(useMessages.getState().items.length).toBe(before + 1);
+  });
+
   test("a map that cannot start (WebGL blocked) gets the same message", async () => {
     withWebGL();
     vi.mocked(mountScene2D).mockImplementation(() => {
