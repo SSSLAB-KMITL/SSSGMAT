@@ -17,18 +17,24 @@ export interface Props2D {
   showOutline: boolean;
   /** Lighting → Shading (พื้นที่กลางคืน) */
   shading: boolean;
+  /**
+   * Details → Show Ground Tracks (ของเราเอง, task 13c): ปิด = หน้าต่างนี้ไม่วาด ground track ของดาวดวงใดเลย ไม่แตะค่า Pass ของ object
+   * เปิด = ตามหน้า 2D Graphics - Pass ของแต่ละ object ตามเดิม
+   */
+  showGroundTracks: boolean;
 }
 
-/** ค่าตั้งต้น: แผนที่ Equidistant Cylindrical มีเส้น Lat/Lon แบบแผนที่ 2D ของ STK แสงและ IPP ปิด */
+/** ค่าตั้งต้น: แผนที่ Equidistant Cylindrical มีเส้น Lat/Lon แบบแผนที่ 2D ของ STK แสงและ IPP ปิด ground track แสดง */
 export const DEFAULT_PROPS_2D: Readonly<Props2D> = {
   projection: "equidistantCylindrical",
   latLonLines: true,
   showIpp: false,
   showOutline: false,
   shading: false,
+  showGroundTracks: true,
 };
 
-const BOOLS = ["latLonLines", "showIpp", "showOutline", "shading"] as const;
+const BOOLS = ["latLonLines", "showIpp", "showOutline", "shading", "showGroundTracks"] as const;
 
 export const isProjection = (x: unknown): x is Projection2D => typeof x === "string" && (PROJECTIONS as readonly string[]).includes(x);
 

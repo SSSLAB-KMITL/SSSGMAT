@@ -153,6 +153,7 @@ describe("command ids", () => {
       "anim.normal", "anim.realtime", "anim.xrealtime",
       "g3d.homeView", "g3d.viewFromTo", "g3d.properties", "g3d.grabGlobe", "g3d.zoomIn",
       "g2d.properties", "g2d.zoomIn", "g2d.zoomOut",
+      "g3d.showOrbits", "g2d.showGroundTracks", // task 13c: ตัวเลือกของหน้าต่างที่ซ่อนเส้นวงโคจรทุกดวง (เพิ่มเอง)
       "ob.newGroup", "ob.expandAll", "ob.collapseAll", "ob.colorSelectors", "ob.onOffToggles", "ob.showFlagged",
     ];
     expect([...ids].sort()).toEqual([...expected].sort());

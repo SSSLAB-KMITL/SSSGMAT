@@ -174,13 +174,13 @@ describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", (
     expect(validateWorkbook({ ...valid(), globe: { layers, ion: { assetId: 3830184 } } })?.globe?.ion).toEqual({ assetId: 3830184 });
   });
 
-  test("DEFAULT_GLOBE shows Blue Marble, VIIRS NOAA-20, Sentinel-2 cloudless and OpenStreetMap opaque (each only once its source is on) and no Cesium ion asset", () => {
+  test("DEFAULT_GLOBE shows Blue Marble, VIIRS NOAA-20 and Sentinel-2 cloudless opaque (each only once its source is on), OpenStreetMap hidden (task 13c), and no Cesium ion asset", () => {
     expect(DEFAULT_GLOBE).toEqual({
       layers: {
         [BM]: { show: true, translucency: 0 },
         [VIIRS]: { show: true, translucency: 0 },
         "s2cloudless-2024_3857": { show: true, translucency: 0 },
-        osm: { show: true, translucency: 0 },
+        osm: { show: false, translucency: 0 },
       },
       ion: { assetId: null },
     });

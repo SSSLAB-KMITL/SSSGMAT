@@ -1,8 +1,11 @@
 // คำสั่งของแถบ 2D Window Defaults (W3, spec §5.2): Properties, Zoom In, Zoom Out ลงทะเบียนระดับแอปครั้งเดียว ทำงานกับหน้าต่าง 2D ที่ active
 // ใช้ได้เมื่อมีหน้าต่าง 2D เปิดอยู่ enabled() อ่านทะเบียนหน้าต่างและ panel ที่ active: ฟังทั้งสองแล้ว invalidateCommands ให้ปุ่มวาดใหม่
+// Show Ground Tracks (task 13c): รายการติ๊กถูกที่สลับ props.showGroundTracks ของหน้าต่าง 2D ที่ active (ค่าอื่นของหน้าต่างคงเดิม) ปุ่มบนแถบ,
+// เมนูคลิกขวาของหน้าต่าง และช่องใน 2D Graphics Window Properties เขียนตัวเลือกเดียวกันนี้ checked() อ่าน windowProps: ฟังด้วย
 
 import { COMMAND_LABELS, invalidateCommands, registerCommand, type CommandDef, type CommandId } from "../../commands";
 import { useLayout } from "../../stores/layout";
+import { props2d } from "./props2d";
 import { activeScene2D, subscribeScenes2D } from "./registry2d";
 
 export function registerGraphics2DCommands(): () => void {
@@ -21,11 +24,25 @@ export function registerGraphics2DCommands(): () => void {
   });
   add("g2d.zoomIn", { run: () => activeScene2D()?.setMouseMode("zoomIn"), enabled: hasScene });
   add("g2d.zoomOut", { run: () => activeScene2D()?.zoomOut(), enabled: hasScene });
+  add("g2d.showGroundTracks", {
+    run: () => {
+      const scene = activeScene2D();
+      if (scene === undefined) return;
+      const stored = useLayout.getState().windowProps[scene.panelId] ?? {};
+      useLayout.getState().setWindowProps(scene.panelId, { ...stored, showGroundTracks: !props2d(stored).showGroundTracks });
+    },
+    enabled: hasScene,
+    checked: () => {
+      const scene = activeScene2D();
+      return scene !== undefined && props2d(useLayout.getState().windowProps[scene.panelId]).showGroundTracks;
+    },
+  });
 
   const unsubscribe = [
     subscribeScenes2D(invalidateCommands),
     useLayout.subscribe((s, prev) => {
-      if (s.api !== prev.api || s.revision !== prev.revision) invalidateCommands(); // revision: panel ที่ active อาจเปลี่ยน
+      // revision: panel ที่ active อาจเปลี่ยน; windowProps: Show Ground Tracks ที่ติ๊กอยู่
+      if (s.api !== prev.api || s.revision !== prev.revision || s.windowProps !== prev.windowProps) invalidateCommands();
     }),
   ];
 

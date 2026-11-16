@@ -1,6 +1,6 @@
 // 3D Graphics Window Properties (spec §9.2, STK ref §E): ค่าตั้งของหน้าต่าง 3D บานที่ params.target ชี้ (เปิดจากปุ่ม Properties ของแถบ 3D Window Defaults)
 // - หน้า Lighting (Enable Lighting, Ambient Level, Sun Level, Night Lights Level), Details (Lat/Lon Lines, Label Declutter, Satellite Models,
-//   Model Pixel Size: จำนวนเต็ม 16–256 พิกเซล, Model Detail Threshold: จำนวนเต็ม 1,000–200,000 km), Annotation (Show Time)
+//   Model Pixel Size: จำนวนเต็ม 16–256 พิกเซล, Model Detail Threshold: จำนวนเต็ม 1,000–200,000 km, Show Orbits: task 13c), Annotation (Show Time)
 // - Apply เขียน useLayout.windowProps[target] (ไปกับ workbook เมื่อ Save) หน้าต่าง 3D อ่านค่าแล้วปรับภาพทันที ไม่โหลดอะไรใหม่
 //   OK = Apply แล้วปิด, Cancel = ปิดโดยไม่เปลี่ยน ระดับแสงเป็นเปอร์เซ็นต์ 0–100 ตรวจด้วยกติกาตัวเลขเดียวของแอป (parseDecimal)
 //   แท็บ ปุ่ม และกรณีหน้าต่างเป้าหมายถูกปิด อยู่ในกรอบร่วม graphics/WindowPropertiesShell.tsx (ใช้กับหน้าต่าง 2D ด้วย)
@@ -25,7 +25,7 @@ const PAGES: { id: PageId; title: LabelKey }[] = [
   { id: "annotation", title: "page.window3d.annotation" },
 ];
 
-type BoolKey = "enableLighting" | "latLonLines" | "labelDeclutter" | "showTime" | "satelliteModels";
+type BoolKey = "enableLighting" | "latLonLines" | "labelDeclutter" | "showTime" | "satelliteModels" | "showOrbits";
 type TextKey = LevelKey | "modelPixelSize" | "modelDetailThreshold";
 /** ค่าในฟอร์ม: ระดับและขนาดเป็นข้อความตามที่พิมพ์ ตรวจตอน Apply */
 type Draft = Record<BoolKey, boolean> & Record<TextKey, string>;
@@ -36,6 +36,7 @@ const draftOf = (p: Props3D): Draft => ({
   labelDeclutter: p.labelDeclutter,
   showTime: p.showTime,
   satelliteModels: p.satelliteModels,
+  showOrbits: p.showOrbits,
   modelPixelSize: String(p.modelPixelSize),
   modelDetailThreshold: String(p.modelDetailThreshold),
   ambientLevel: String(p.ambientLevel),
@@ -88,6 +89,7 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
       satelliteModels: draft.satelliteModels,
       modelPixelSize: px.value,
       modelDetailThreshold: km.value,
+      showOrbits: draft.showOrbits,
     };
     useLayout.getState().setWindowProps(target, { ...value });
     return true;
@@ -143,6 +145,7 @@ export function WindowProperties3D({ params, panelId }: PanelProps) {
         <>
           {check("latLonLines", "field.latLonLines")}
           {check("labelDeclutter", "field.labelDeclutter")}
+          {check("showOrbits", "field.showOrbits")}
           {check("satelliteModels", "field.satelliteModels")}
           {text("modelPixelSize", "field.modelPixelSize", t("field.unit.px"), "numeric")}
           {text("modelDetailThreshold", "field.modelDetailThreshold", t("field.unit.km"), "numeric")}

@@ -463,6 +463,17 @@ describe("the four source groups", () => {
     for (const other of OTHERS(id)) expect(groupOf(other.id).queryByText(msg(key)), `${other.id}`).toBeNull();
   });
 
+  test("OpenStreetMap starts hidden (task 13c): its row is unticked with the switch on, and its group says so in Thai", () => {
+    useImagery.setState({ sources: { ...SOURCES_OFF, osm: true } });
+    useLayout.setState({ globe: DEFAULT_GLOBE });
+    mount();
+    expect(show(OSM_TITLE).checked).toBe(false);
+    expect(show(OSM_TITLE).disabled).toBe(false); // ติ๊กเองได้ในการใช้งานครั้งนี้
+    expect(msg("globe.osmStartsHidden")).toBe("แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด");
+    expect(groupOf("osm").getByText(msg("globe.osmStartsHidden"))).toBeDefined();
+    for (const other of OTHERS("osm")) expect(groupOf(other.id).queryByText(msg("globe.osmStartsHidden")), other.id).toBeNull();
+  });
+
   test("a switch that is on loses its off hint", () => {
     useImagery.setState({ sources: { gibs: true, eox: true, osm: true, ion: true } });
     mount();

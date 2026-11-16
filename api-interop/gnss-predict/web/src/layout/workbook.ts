@@ -44,19 +44,30 @@ export interface GlobeSettings {
 export const isIonAssetId = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 
 /**
- * ค่าตั้งต้นเมื่อ workbook ไม่มี globe (spec imagery §5.1, spec ภาพละเอียด §4): Blue Marble + VIIRS NOAA-20 True Color,
- * Sentinel-2 cloudless และ OpenStreetMap แสดง (แต่ละชั้นมีผลเมื่อเปิดสวิตช์ของแหล่งนั้นแล้วเท่านั้น: เปิดสวิตช์แล้วเห็นภาพทันที) ชั้นอื่นซ่อน
- * ไม่เลือก asset ของ Cesium ion
+ * ค่าตั้งต้นเมื่อ workbook ไม่มี globe (spec imagery §5.1, spec ภาพละเอียด §4): Blue Marble + VIIRS NOAA-20 True Color และ
+ * Sentinel-2 cloudless แสดง (แต่ละชั้นมีผลเมื่อเปิดสวิตช์ของแหล่งนั้นแล้วเท่านั้น: เปิดสวิตช์แล้วเห็นภาพทันที) ชั้นอื่นซ่อน
+ * OpenStreetMap ซ่อน (task 13c: แผนที่ถนนทึบสีอ่อนทับภาพถ่าย โลกตอนเปิดโปรแกรมจึงขาวซีด ดู globeAtOpen) ไม่เลือก asset ของ Cesium ion
  */
 export const DEFAULT_GLOBE: Readonly<GlobeSettings> = Object.freeze({
   layers: Object.freeze({
     BlueMarble_NextGeneration: Object.freeze({ show: true, translucency: 0 }),
     VIIRS_NOAA20_CorrectedReflectance_TrueColor: Object.freeze({ show: true, translucency: 0 }),
     "s2cloudless-2024_3857": Object.freeze({ show: true, translucency: 0 }),
-    osm: Object.freeze({ show: true, translucency: 0 }),
+    osm: Object.freeze({ show: false, translucency: 0 }),
   }),
   ion: Object.freeze({ assetId: null }),
 });
+
+/**
+ * globe ที่ใช้ตอนเปิด scenario (task 13c): OpenStreetMap ซ่อนเสมอไม่ว่า workbook จะเก็บอะไรไว้ (% Translucency คงเดิม) ชั้นอื่นและ asset ของ ion ตามที่เก็บไว้
+ * ผู้ใช้ติ๊กแสดงเองได้ในการใช้งานครั้งนั้นและ Save เก็บได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก ไม่แตะสวิตช์แหล่ง OSM ใน settings.json
+ * ไม่มีแถว osm = ซ่อนอยู่แล้ว (คืนตัวเดิม) ไม่แก้ตัวที่รับมา
+ */
+export function globeAtOpen(globe: GlobeSettings): GlobeSettings {
+  const osm = globe.layers.osm;
+  if (osm === undefined || !osm.show) return globe;
+  return { ...globe, layers: { ...globe.layers, osm: { ...osm, show: false } } };
+}
 
 export interface WorkbookPanel {
   kind: string;

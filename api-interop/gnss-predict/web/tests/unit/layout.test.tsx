@@ -997,6 +997,42 @@ describe("restoreFor (spec §4.2)", () => {
     expect(w.text).toBe(msg("workbook.loadFailed", { name: "E2E", message: "server พัง" }));
   });
 
+  test("OpenStreetMap starts hidden on every open (task 13c): photographic layers keep their saved state and the settings are never written", async () => {
+    await mount();
+    const saved = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
+    saved.globe = {
+      layers: {
+        osm: { show: true, translucency: 25 },
+        BlueMarble_NextGeneration: { show: true, translucency: 10 },
+        "s2cloudless-2024_3857": { show: false, translucency: 0 },
+        "GOES-East_ABI_GeoColor": { show: true, translucency: 40 },
+      },
+      ion: { assetId: 3830182 },
+    };
+    let reply: { json?: unknown; text?: string } = { json: saved };
+    const f = stubFetch({ [url]: () => reply });
+    await st().restoreFor("E2E");
+    expect(st().globe).toEqual({
+      layers: {
+        osm: { show: false, translucency: 25 },
+        BlueMarble_NextGeneration: { show: true, translucency: 10 },
+        "s2cloudless-2024_3857": { show: false, translucency: 0 },
+        "GOES-East_ABI_GeoColor": { show: true, translucency: 40 },
+      },
+      ion: { assetId: 3830182 },
+    });
+    // ผู้ใช้ติ๊ก OSM เองระหว่างใช้งานได้ และ Save เก็บค่านั้นได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก
+    st().setGlobeLayer("osm", { show: true });
+    expect(st().toWorkbook().globe?.layers.osm).toEqual({ show: true, translucency: 25 });
+    await st().restoreFor("E2E");
+    expect(st().globe.layers.osm).toEqual({ show: false, translucency: 25 });
+    // เปิด scenario ที่ไม่มี workbook (layout ตั้งต้น) ก็เริ่มแบบซ่อน
+    reply = { text: "null" };
+    await st().restoreFor("E2E");
+    expect(st().globe.layers.osm?.show ?? false).toBe(false);
+    expect(f.calls.map((c) => `${c.method} ${c.path}`)).toEqual([url, url, url]); // ไม่มี /api/settings เลย
+  });
+
   test("encodes the scenario name", async () => {
     await mount();
     const fetch = stubFetch({ "GET /api/scenarios/A%20B%2FC/workbook": { text: "null" } });

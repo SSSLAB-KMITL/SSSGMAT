@@ -9,6 +9,7 @@
 // - dataSourceDisplay ข้ามการ update ตอนอยู่เฉย ๆ (cesium/idleUpdates.ts) เหมือนหน้าต่าง 3D: path ของดาวราว 130 ดวงไม่ถูกคำนวณใหม่ทุกเฟรมตอนไม่มีอะไรเปลี่ยน
 //   หน้าต่างนี้ไม่ใช้ CallbackProperty, path ที่ relativeTo INERTIAL หรือ visualizer เพิ่มเอง ค่าทุกตัวของ entity ขึ้นกับเวลาหรือถูกตั้งผ่าน property
 //   (ส่ง event) ส่วนภาพที่เปลี่ยนตามเวลาเป็น primitive ของ scene โดยตรง (cesium/overlay2d.ts) ไม่อยู่ใน DataSourceDisplay จึงไม่ถูกข้าม
+// - Details → Show Ground Tracks (task 13c): ปิด = applyGraphics ไม่วาด ground track ของดาวดวงใด (showOrbits ของ ApplyCtx) ค่า Pass ของ object ไม่ถูกแตะ
 // - Lighting → Shading = globe.enableLighting (spec §17 W2: ตรวจแล้วว่าแสงของ globe ใน SCENE2D ของ Cesium 1.147 ทำให้ด้านกลางคืนมืดลง
 //   ตามเวลาของ clock ทุกเฟรม ไม่ต้องวาดพื้นที่เอง)
 // - ภาพที่เปลี่ยนตามเวลา วาดใหม่ (drawOverlays) เมื่อเวลา animation เปลี่ยน ไม่เกิน 10 ครั้งต่อวินาที (ครั้งสุดท้ายตามมาเสมอ) และหนึ่งครั้งต่อหนึ่งเหตุการณ์
@@ -207,6 +208,7 @@ class Scene2D implements Scene2DHandle {
         this.props = props2d(s.windowProps[panelId]);
         this.applyProps();
         if (before.showIpp !== this.props.showIpp) this.refreshIpp();
+        if (before.showGroundTracks !== this.props.showGroundTracks) this.restyle();
         this.redraw();
       }),
     );
@@ -249,6 +251,7 @@ class Scene2D implements Scene2DHandle {
       prnByNorad: useResults.getState().prnByNorad,
       isHidden: (norad) => satelliteInfo(norad)?.hidden ?? false,
       analysis: { start: JulianDate.fromDate(periodStart), stop: JulianDate.fromDate(periodStop) },
+      showOrbits: this.props.showGroundTracks,
     };
   }
 

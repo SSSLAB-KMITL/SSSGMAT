@@ -95,10 +95,12 @@ export const COMMAND_LABELS = {
   "g3d.properties": "toolbar.properties",
   "g3d.grabGlobe": "toolbar.grabGlobe",
   "g3d.zoomIn": "toolbar.zoomIn",
+  "g3d.showOrbits": "field.showOrbits",
 
   "g2d.properties": "toolbar.properties",
   "g2d.zoomIn": "toolbar.zoomIn",
   "g2d.zoomOut": "toolbar.zoomOut",
+  "g2d.showGroundTracks": "field.showGroundTracks",
 
   "ob.newGroup": "ob.newGroup",
   "ob.expandAll": "ob.expandAll",

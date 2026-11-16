@@ -16,6 +16,7 @@
 //   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
 //   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
 //   และคง `show` ตามช่วงเวลาใน CZML ไว้ (ซ่อนทั้งเส้นด้วย entity.show เมื่อดาวหรือ Facility ปลายทางถูกซ่อน)
+// - ctx.showOrbits = false (Show Orbits / Show Ground Tracks ของหน้าต่าง, task 13c): ไม่มี path ของดาวดวงใด (3D และ 2D) ค่าของ object ไม่ถูกแตะ
 // - Sensor (sensor spec §5.3): ไม่มี entity ใน CZML sensorStatesAt หา sensor ที่วาด (sensorDraw.ts drawableSensors) และสถานะของมันจากตำแหน่ง Earth-fixed
 //   ของ entity ดาวแม่ ณ t และ t ± 1 s (P9) ดาวแม่ "แสดงอยู่" = object ดาวแสดงตามธงของตัวเองในหน้าต่างชนิดนั้น (graphicsFor) และ entity ของมันอยู่ในภาพและแสดงอยู่
 
@@ -227,6 +228,11 @@ export interface ApplyCtx {
   analysis?: { start: JulianDate; stop: JulianDate };
   /** โมเดล 3 มิติของดาว (หน้าต่าง 3D ที่เปิด Satellite Models) ไม่ระบุ = ดาวเป็นจุดทุกดวง */
   models?: SatelliteModels;
+  /**
+   * ตัวเลือกของหน้าต่าง Show Orbits (3D) / Show Ground Tracks (2D) (task 13c): false = ไม่มีเส้นวงโคจร/ground track ของดาวดวงใดในหน้าต่างนี้
+   * (ค่าของ object ไม่ถูกแตะ จุด ป้าย โมเดล เส้น access คงเดิม) ไม่ระบุ = true: เส้นตามค่าของแต่ละ object
+   */
+  showOrbits?: boolean;
 }
 
 /** โมเดลของดาวในหน้าต่าง 3D (models integration spec §4) */
@@ -364,6 +370,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
   const style = ctx.style ?? sceneStyle();
   const looks = doc === null ? new Map<string, EntityLook>() : entityLooks(doc, { ...ctx, tokens });
   const entities = ds.entities;
+  const orbits = ctx.showOrbits ?? true;
   const shown = new Set<string>();
   entities.suspendEvents();
   try {
@@ -391,7 +398,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         const period = entityPeriod(entity);
         const inertial = graphics3dOf(obj).orbit_system === INERTIAL_BY_WINDOW;
         entity.path =
-          period === null || inertial
+          period === null || inertial || !orbits
             ? new PathGraphics({ show: false })
             : new PathGraphics({
                 show: true,
@@ -402,7 +409,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
                 material: lineMaterial(color, g.lineStyle),
               });
       }
-      if (obj.class === "Satellite" && ctx.mode === "2d") entity.path = groundTrack(entity, obj, g, color, ctx.analysis);
+      if (obj.class === "Satellite" && ctx.mode === "2d") entity.path = orbits ? groundTrack(entity, obj, g, color, ctx.analysis) : new PathGraphics({ show: false });
     }
     for (const entity of entities.values) {
       const parts = entity.id.split("/");

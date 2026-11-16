@@ -4,15 +4,20 @@
 // - แถบ 2D Window Defaults (Properties, Zoom In, Zoom Out) อยู่บนหน้าต่าง 2D (STK ref §A: "Graphics windows carry 2D Window Defaults")
 //   แสดง/ซ่อนจาก View → Toolbars ปุ่มเรียกคำสั่ง g2d.* ผ่านทะเบียน คำสั่งทำกับหน้าต่าง 2D ที่ active (แตะหน้าต่างนี้ = active)
 // - Projection เปลี่ยน = สร้าง viewer ใหม่ (Cesium ตั้ง map projection ได้ตอนสร้างเท่านั้น) โดยจำพื้นที่ที่เห็นอยู่ไว้ให้ตัวใหม่
+// - Show Ground Tracks (task 13c): ปุ่มบนแถบ 2D Window Defaults กดค้างตาม props.showGroundTracks ของหน้าต่างนี้ และเมนูคลิกขวาของหน้าต่าง
+//   (คลิกขวาโดยไม่ลาก: graphics/sceneMenu.ts ลากปุ่มขวา = ซูมของ Cesium) ทั้งสองเรียกคำสั่ง g2d.showGroundTracks (commands2d.ts)
 
-import { SlidersHorizontal, ZoomIn, ZoomOut } from "lucide-react";
+import { SlidersHorizontal, Waves, ZoomIn, ZoomOut } from "lucide-react";
 import { useRef, useSyncExternalStore } from "react";
+import { CommandContextMenu } from "../../chrome/ContextMenu";
+import { SCENE_WINDOW_2D_MENU } from "../../chrome/menus";
 import { TipProvider } from "../../chrome/Tip";
 import { ToolButton } from "../../chrome/ToolButton";
 import { t } from "../../labels/labels";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
 import { useLayout } from "../../stores/layout";
 import { ResultsBanner, SceneFailedBanner, SceneMessage, useSceneMount, useShiftWheelSteps } from "../graphics/GraphicsFrame";
+import { useSceneMenu } from "../graphics/sceneMenu";
 import { props2d } from "./props2d";
 import { getScene2D, markActive2D, registerScene2D, registry2d, scenes2DVersion, subscribeScenes2D, type ViewRect } from "./registry2d";
 
@@ -21,6 +26,7 @@ function WindowToolbar({ panelId }: { panelId: string }) {
   const show = useLayout((s) => s.toolbars.defaults2d);
   useSyncExternalStore(subscribeScenes2D, scenes2DVersion);
   const mode = getScene2D(panelId)?.mouseMode() ?? "grab";
+  const showGroundTracks = useLayout((s) => props2d(s.windowProps[panelId]).showGroundTracks);
   if (!show) return null;
   return (
     <TipProvider>
@@ -29,6 +35,7 @@ function WindowToolbar({ panelId }: { panelId: string }) {
           <ToolButton command="g2d.properties" label="toolbar.properties" icon={SlidersHorizontal} />
           <ToolButton command="g2d.zoomIn" label="toolbar.zoomIn" icon={ZoomIn} pressed={mode === "zoomIn"} />
           <ToolButton command="g2d.zoomOut" label="toolbar.zoomOut" icon={ZoomOut} />
+          <ToolButton command="g2d.showGroundTracks" label="field.showGroundTracks" icon={Waves} pressed={showGroundTracks} />
         </div>
       </div>
     </TipProvider>
@@ -53,6 +60,7 @@ export function Graphics2D({ panelId }: PanelProps) {
     },
   });
   useShiftWheelSteps(host);
+  const menu = useSceneMenu({ windowMenu: SCENE_WINDOW_2D_MENU });
 
   return (
     <div className="gfx" onPointerDownCapture={() => markActive2D(panelId)} onFocusCapture={() => markActive2D(panelId)}>
@@ -60,7 +68,9 @@ export function Graphics2D({ panelId }: PanelProps) {
       <ResultsBanner />
       <SceneFailedBanner registry={registry2d} panelId={panelId} window="2D" />
       <div className="gfx-stage">
-        <div className="gfx-view" ref={host} data-testid="g2d-view" />
+        <CommandContextMenu entries={menu.entries}>
+          <div className="gfx-view" ref={host} data-testid="g2d-view" {...menu.handlers} />
+        </CommandContextMenu>
         <SceneMessage view={view} window="2D" />
       </div>
     </div>

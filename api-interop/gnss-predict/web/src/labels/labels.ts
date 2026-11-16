@@ -385,12 +385,15 @@ const LABELS = {
   "field.satelliteModels": ours("Satellite Models"),
   "field.modelPixelSize": ours("Model Pixel Size"),
   "field.modelDetailThreshold": ours("Model Detail Threshold"), // STK reference ไม่มีคำว่า detail threshold
+  // ตัวเลือกของหน้าต่างที่ซ่อนเส้นวงโคจรทุกดวง (task 13c: ไม่มีใน STK reference และผลตรวจคำของ help.agi.com) ใช้เป็นชื่อช่อง ปุ่ม และรายการเมนูคลิกขวา
+  "field.showOrbits": ours("Show Orbits"),
   // 2D Graphics Window Properties
   "field.projection": stk("Projection", "E"),
   "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),
   "field.showOutline": stk("Show Outline", "E"),
   "field.shading": stk("Shading", "E"),
   "field.showIpp": ours("Show IPP"),
+  "field.showGroundTracks": ours("Show Ground Tracks"),
   // New Scenario Wizard, Fetch Orbit Data, Daily Forecast Settings
   "field.location": ours("Location"),
   "field.template": ours("Template"),

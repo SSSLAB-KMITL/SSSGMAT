@@ -2,12 +2,16 @@
 // และ Zoom To ของเมนู object / คลิกขวา ลงทะเบียนระดับแอปครั้งเดียว ทำงานกับหน้าต่าง 3D ที่ active (registry.activeScene)
 // - ใช้ได้เมื่อมีหน้าต่าง 3D เปิดอยู่; View From/To ต้องมี scenario (เลือก object ของ scenario); Zoom To ต้องเลือก Facility, Satellite หรือ Sensor อยู่
 //   (Sensor ซูมไปที่ดาวแม่ของมัน)
+// - Show Orbits (task 13c): รายการติ๊กถูกที่สลับ props.showOrbits ของหน้าต่าง 3D ที่ active (useLayout.windowProps ค่าอื่นของหน้าต่างคงเดิม)
+//   ปุ่มบนแถบ 3D Window Defaults, เมนูคลิกขวาของหน้าต่าง และช่องใน 3D Graphics Window Properties เขียนตัวเลือกเดียวกันนี้
 // - enabled() อ่านทะเบียนหน้าต่าง, selection, scenario และ panel ที่ active: ฟังทั้งหมดแล้ว invalidateCommands ให้เมนูและปุ่มวาดใหม่
+//   (checked() ของ Show Orbits อ่าน windowProps: ฟังด้วย)
 
 import { COMMAND_LABELS, invalidateCommands, registerCommand, type CommandDef, type CommandId } from "../../commands";
 import { useLayout } from "../../stores/layout";
 import { parentOf, useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
+import { props3d } from "./props";
 import { activeScene, subscribeScenes } from "./registry";
 
 /** path ของ Facility, Satellite หรือ Sensor ("*\/Satellite/G01") */
@@ -35,6 +39,19 @@ export function registerGraphics3DCommands(): () => void {
   add("g3d.properties", { run: () => openFor("windowProperties3d"), enabled: hasScene });
   add("g3d.grabGlobe", { run: () => activeScene()?.setMouseMode("grab"), enabled: hasScene });
   add("g3d.zoomIn", { run: () => activeScene()?.setMouseMode("zoomIn"), enabled: hasScene });
+  add("g3d.showOrbits", {
+    run: () => {
+      const scene = activeScene();
+      if (scene === undefined) return;
+      const stored = useLayout.getState().windowProps[scene.panelId] ?? {};
+      useLayout.getState().setWindowProps(scene.panelId, { ...stored, showOrbits: !props3d(stored).showOrbits });
+    },
+    enabled: hasScene,
+    checked: () => {
+      const scene = activeScene();
+      return scene !== undefined && props3d(useLayout.getState().windowProps[scene.panelId]).showOrbits;
+    },
+  });
   add("object.zoomTo", {
     run: () => {
       const target = zoomTarget(useSelection.getState().activePath);
@@ -53,7 +70,8 @@ export function registerGraphics3DCommands(): () => void {
       if ((s.name === null) !== (prev.name === null) || s.doc !== prev.doc) invalidateCommands();
     }),
     useLayout.subscribe((s, prev) => {
-      if (s.api !== prev.api || s.revision !== prev.revision) invalidateCommands(); // revision: panel ที่ active อาจเปลี่ยน
+      // revision: panel ที่ active อาจเปลี่ยน; windowProps: Show Orbits ที่ติ๊กอยู่
+      if (s.api !== prev.api || s.revision !== prev.revision || s.windowProps !== prev.windowProps) invalidateCommands();
     }),
   ];
 

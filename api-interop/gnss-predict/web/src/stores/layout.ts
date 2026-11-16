@@ -6,6 +6,7 @@
 // - workbook (W6): toWorkbook / fromWorkbook / applyDefault / restoreFor(name) (เรียกหลัง useScenario.load สำเร็จ) / saveWorkbook (File → Save)
 //   workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist): หน้าต่างลอยและชั่วคราวไม่ถูกบันทึกพร้อม windowProps ของมัน และถูกข้ามตอนจัดกลับ
 //   globe (ชั้นภาพและ asset ของ Cesium ion ของ Globe Manager) ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View: workbook ที่ไม่มีช่องนี้และ layout ตั้งต้น = DEFAULT_GLOBE
+//   เปิด scenario (fromWorkbook) = OpenStreetMap ซ่อนเสมอ (globeAtOpen, task 13c) ไม่แตะ settings.json
 //   restoreFor ที่ค้างอยู่ถูกทิ้งเมื่อ scenario ปิดหรือเปลี่ยนระหว่างรอ workbook (ไม่งั้นคำตอบเก่าแทนที่ทุกหน้าต่าง รวม Welcome ที่เพิ่งเปิด)
 // - หน้าต่างที่มี Cesium ต้องแจ้ง viewer.resize() เมื่อ panel เปลี่ยนขนาด: ใช้ onPanelResize(id, cb) หรือ hook usePanelResize(panelId, cb)
 
@@ -21,7 +22,7 @@ import {
 } from "../layout/panels";
 import { cascadeIntegrated, centrePanel, moveToType, revealPanel, tileIntegrated, windowTypeOf, type MoveHints } from "../layout/placement";
 import {
-  DEFAULT_GLOBE, DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, isIonAssetId, validateWorkbook, withoutPanels, workbookBytes,
+  DEFAULT_GLOBE, DEFAULT_TOOLBARS, WORKBOOK_MAX_BYTES, globeAtOpen, isIonAssetId, validateWorkbook, withoutPanels, workbookBytes,
   type GlobeLayerSetting, type GlobeSettings, type ToolbarName, type Toolbars, type Workbook, type WindowProps,
 } from "../layout/workbook";
 import { report } from "./messages";
@@ -392,7 +393,7 @@ export const useLayout = create<LayoutState>()((set, get) => {
         toolbars: w.toolbars,
         timelineHidden: w.timelineHidden,
         windowProps: Object.fromEntries(Object.entries(w.windowProps).filter(([id]) => !droppedIds.has(id))),
-        globe: w.globe ?? DEFAULT_GLOBE,
+        globe: globeAtOpen(w.globe ?? DEFAULT_GLOBE),
       });
       bump();
     },

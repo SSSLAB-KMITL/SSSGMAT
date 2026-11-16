@@ -5,7 +5,8 @@
 //   การบันทึกทุกอย่างของหน้าต่างนี้ (สวิตช์ และ token) เป็น GET-แก้-PUT ทั้งเอกสาร จึงทำทีละอย่าง: ระหว่างถามและระหว่างบันทึกกดอะไรซ้ำไม่ได้ทั้งหน้าต่าง
 // - ตารางชั้นภาพของแต่ละกลุ่ม: แถว Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) แล้ว GIBS ตามลำดับที่ server ส่ง, EOX (ชั้นของ catalog source eox), OpenStreetMap (OSM_LAYER คงที่)
 //   Show และ % Translucency ของแต่ละชั้นอยู่ใน workbook (useLayout.globe: ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View) ที่นี่ไม่เก็บค่าเอง
-//   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 + Sentinel-2 cloudless + OpenStreetMap แสดง) มาจาก DEFAULT_GLOBE: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
+//   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 + Sentinel-2 cloudless แสดง) มาจาก DEFAULT_GLOBE: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
+//   OpenStreetMap เริ่มแบบซ่อนทุกครั้งที่เปิด scenario (task 13c: workbook.ts globeAtOpen) ติ๊กเองได้ กลุ่มของมันบอกด้วยข้อความไทย (globe.osmStartsHidden)
 // - % Translucency ส่งเข้า setGlobeLayer เฉพาะจำนวนเต็ม 0-100 (store ไม่ตรวจเอง): พิมพ์แล้วบันทึกเมื่อออกจากช่องหรือกด Enter, ค่าไม่ถูกต้องคืนค่าเดิม, Escape ยกเลิก
 // - แถวของกลุ่มใช้ได้เมื่อสวิตช์ของแหล่งนั้นเปิด (ปิด = แถวปิดใช้พร้อมคำอธิบายของกลุ่ม) อ่านสวิตช์และรายการจาก server ไม่ได้ (loaded = false) =
 //   ทุกสวิตช์ปิดใช้พร้อมข้อความไทยหนึ่งข้อความ เหลือแต่ Natural Earth II
@@ -405,11 +406,14 @@ export function GlobeManager(_props: Partial<PanelProps>) {
                 <IonSettings on={sources.ion} busy={busy} exclusive={exclusive} status={ion} />
               ) : (
                 sourceRows.length > 0 && (
-                  <LayerTable>
-                    {sourceRows.map((info) => (
-                      <LayerRow key={info.id} info={info} disabled={!sources[def.id]} hiddenByIon={hiddenByIon} />
-                    ))}
-                  </LayerTable>
+                  <>
+                    <LayerTable>
+                      {sourceRows.map((info) => (
+                        <LayerRow key={info.id} info={info} disabled={!sources[def.id]} hiddenByIon={hiddenByIon} />
+                      ))}
+                    </LayerTable>
+                    {def.id === "osm" && <p className="globe-hint">{msg("globe.osmStartsHidden")}</p>}
+                  </>
                 )
               )}
             </SourceGroup>

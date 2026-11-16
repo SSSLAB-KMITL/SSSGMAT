@@ -118,6 +118,13 @@ export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.propertie
 /** เมนูคลิกขวาบน Facility ในหน้าต่าง 3D */
 export const SCENE_FACILITY_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.zoomTo")];
 
+/**
+ * เมนูคลิกขวาของหน้าต่าง 3D และ 2D เอง (คลิกขวาที่ไม่ชี้ object โดยไม่ลาก, task 13c: windows/graphics/sceneMenu.ts)
+ * รายการติ๊กถูกที่ซ่อนเส้นวงโคจร / ground track ทุกดวงของหน้าต่างนั้น (ตัวเลือกเดียวกับปุ่มบนแถบ Window Defaults และช่องใน Window Properties)
+ */
+export const SCENE_WINDOW_3D_MENU: readonly MenuEntry[] = [cmd("g3d.showOrbits")];
+export const SCENE_WINDOW_2D_MENU: readonly MenuEntry[] = [cmd("g2d.showGroundTracks")];
+
 const NO_MENU: readonly MenuEntry[] = [];
 
 /** เมนูคลิกขวาบน object ที่ path ในหน้าต่าง 3D: ดาวและ Facility มีเมนู อย่างอื่น (ไม่ได้ชี้ object) = ไม่มีเมนู (อาร์เรย์ว่างตัวเดียวกันเสมอ) */

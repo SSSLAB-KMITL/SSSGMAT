@@ -186,6 +186,7 @@ const MESSAGES = {
   "globe.offHintIon": "สวิตช์ Cesium ion ปิดอยู่ จึงยังไม่ใช้ภาพจาก Cesium ion (เปิดสวิตช์ด้านบน เลือก asset และใส่ token แล้วภาพ Cesium ion จะแสดงแทนชั้นภาพอื่นทั้งหมด)",
   "globe.unavailable": "อ่านสวิตช์และรายการชั้นภาพออนไลน์จาก server ไม่ได้ จึงใช้ภาพออนไลน์ทุกแหล่งไม่ได้ในตอนนี้ แสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม (ลองโหลดหน้าใหม่เมื่อ server พร้อม)",
   "globe.hiddenByIon": "ถูกซ่อนเพราะเปิด Cesium ion อยู่",
+  "globe.osmStartsHidden": "แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด",
   // Cesium ion: token (ไม่แสดงค่าบนจอ บอกแค่ว่ามีหรือไม่) และ asset
   "globe.ionTokenSet": "มี Cesium ion token แล้ว (ไม่แสดงค่าบนจอ) พิมพ์ token ใหม่แล้วกด Apply เพื่อเปลี่ยน",
   "globe.ionTokenUnset": "ยังไม่ได้ใส่ Cesium ion token ใส่ token ของบัญชี ion.cesium.com ในช่องด้านบนแล้วกด Apply",

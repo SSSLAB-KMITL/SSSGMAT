@@ -15,6 +15,7 @@ import { useTime } from "../../src/stores/time";
 import { registerGraphics3DCommands } from "../../src/windows/Graphics3D/commands3d";
 import { Graphics3D } from "../../src/windows/Graphics3D/Graphics3D";
 import { activeScene, notifyScenes, resetScenes, type MouseMode, type Scene3DHandle } from "../../src/windows/Graphics3D/registry";
+import { props3d } from "../../src/windows/Graphics3D/props";
 import { mountScene3D } from "../../src/windows/Graphics3D/scene3d";
 import { WindowProperties3D } from "../../src/windows/Graphics3D/WindowProperties3D";
 import { ViewFromTo } from "../../src/windows/ViewFromTo/ViewFromTo";
@@ -299,7 +300,7 @@ describe("Graphics3D", () => {
       });
       const names = (bar: string) => within(screen.getByRole("toolbar", { name: bar })).getAllByRole("button").map((b) => b.getAttribute("aria-label"));
       expect(names(t("toolbar.graphics3d"))).toEqual(["Home View", "View From/To"]);
-      expect(names(t("toolbar.window3dDefaults"))).toEqual(["Properties", "Grab Globe", "Zoom In"]);
+      expect(names(t("toolbar.window3dDefaults"))).toEqual(["Properties", "Grab Globe", "Zoom In", "Show Orbits"]);
       const bar = screen.getByRole("toolbar", { name: t("toolbar.window3dDefaults") });
       expect(within(bar).getByRole("button", { name: "Grab Globe" }).getAttribute("aria-pressed")).toBe("true");
       fireEvent.click(within(bar).getByRole("button", { name: "Zoom In" }));
@@ -397,6 +398,78 @@ describe("right-click menu on a satellite or a facility", () => {
   });
 });
 
+describe("Show Orbits (task 13c)", () => {
+  const fakeApi = (open: string[]) => ({ getPanel: (id: string) => (open.includes(id) ? { id } : undefined) });
+  const shown = () => props3d(useLayout.getState().windowProps.graphics3d).showOrbits;
+  /** คลิกขวาโดยไม่ลาก (กดและปล่อยปุ่มขวาที่จุดเดียวกัน) */
+  const rightClick = (el: Element, x: number, y: number, upX = x, upY = y): void => {
+    fireEvent.pointerDown(el, { button: 2, clientX: x, clientY: y });
+    fireEvent.pointerUp(el, { button: 2, clientX: upX, clientY: upY });
+  };
+
+  async function mountWindow(pathAt: (x: number, y: number) => string | null = () => null): Promise<Fake> {
+    withWebGL();
+    loadObjects();
+    const scene = fakeScene("graphics3d", { pathAt });
+    vi.mocked(mountScene3D).mockReturnValue(scene);
+    useLayout.setState({ windowProps: { graphics3d: { showTime: false } } });
+    render(<Graphics3D panelId="graphics3d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene()).toBe(scene));
+    return scene;
+  }
+
+  test("the 3D Window Defaults button, the window's right-click menu and the Properties checkbox toggle the same window option", async () => {
+    const user = userEvent.setup();
+    await mountWindow();
+    expect(shown()).toBe(true);
+
+    // 1. ปุ่มบนแถบ 3D Window Defaults (ปุ่มแบบกดค้าง)
+    act(() => useLayout.getState().setToolbar("defaults3d", true));
+    const button = () => within(screen.getByRole("toolbar", { name: t("toolbar.window3dDefaults") })).getByRole("button", { name: "Show Orbits" });
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button());
+    expect(shown()).toBe(false);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(useLayout.getState().windowProps.graphics3d).toMatchObject({ showTime: false }); // ค่าอื่นของหน้าต่างคงเดิม
+
+    // 2. เมนูคลิกขวาของหน้าต่าง (คลิกขวาที่ว่างโดยไม่ลาก)
+    rightClick(screen.getByTestId("g3d-view"), 40, 30);
+    const item = await screen.findByRole("menuitemcheckbox", { name: "Show Orbits" });
+    expect(item.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(item);
+    expect(shown()).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+
+    // 3. ช่องใน 3D Graphics Window Properties → Details
+    useLayout.setState({ api: fakeApi(["graphics3d"]) as never });
+    render(<WindowProperties3D panelId="windowProperties3d" params={{ target: "graphics3d" }} />);
+    await user.click(screen.getByRole("tab", { name: "Details" }));
+    const box = screen.getByRole("checkbox", { name: "Show Orbits" }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    await user.click(box);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(shown()).toBe(false);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("a right-drag (Cesium's zoom) opens no menu; a right-click on a satellite keeps its own menu", async () => {
+    const pathAt = vi.fn((_x: number, _y: number): string | null => null);
+    await mountWindow(pathAt);
+    const view = screen.getByTestId("g3d-view");
+    rightClick(view, 10, 10, 60, 60);
+    expect(screen.queryByRole("menu")).toBeNull();
+    pathAt.mockReturnValue(satPath("G01"));
+    // ลำดับของ macOS: กดปุ่ม → contextmenu (เมนูของดาวเปิด) → ปล่อยปุ่ม
+    fireEvent.pointerDown(view, { button: 2, clientX: 10, clientY: 10 });
+    fireEvent.contextMenu(view, { clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(view, { button: 2, clientX: 10, clientY: 10 });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitemcheckbox")).toBeNull(); // เมนูของดาว ไม่ใช่ของหน้าต่าง
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Sensor View", "Zoom To"]);
+  });
+});
+
 describe("3D Graphics Window Properties", () => {
   const fakeApi = (open: string[]) => ({ getPanel: (id: string) => (open.includes(id) ? { id } : undefined) });
 
@@ -416,7 +489,7 @@ describe("3D Graphics Window Properties", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(useLayout.getState().windowProps.graphics3d).toEqual({
       enableLighting: true, ambientLevel: 20, sunLevel: 100, nightLightsLevel: 50, latLonLines: true, labelDeclutter: false, showTime: true,
-      satelliteModels: true, modelPixelSize: 48, modelDetailThreshold: 30_000,
+      satelliteModels: true, modelPixelSize: 48, modelDetailThreshold: 30_000, showOrbits: true,
     });
     expect(closePanel).not.toHaveBeenCalled();
     await user.click(screen.getByRole("tab", { name: "Annotation" }));

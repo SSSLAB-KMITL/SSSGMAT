@@ -50,6 +50,10 @@
 //   (applyModelDetail: model.show = false ไม่มี draw call) กล้องขยับเกิน 5% (camera.changed, percentageChanged = 0.05) ขอรอบ throttle ด้วย
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
+// - ลูกโลกที่ดูเหมือนจริง (task 13c): globe.showGroundAtmosphere = false ทั้งหน้าต่าง 3D และ Sensor View (หมอกบรรยากาศบนพื้นโลกของ Cesium
+//   ทำให้ภาพโลกซีดเป็นสีขาว) ขอบฟ้าบรรยากาศ (scene.skyAtmosphere) และแสงคงเดิม
+// - Show Orbits (3D Graphics Window Properties → Details, ปุ่มบนแถบ 3D Window Defaults, เมนูคลิกขวาของหน้าต่าง: task 13c): ปิด = applyGraphics
+//   ไม่วาด path ของดาวดวงใด และไม่วาดเส้น Inertial by Window (inertialTargets ว่าง) ค่าของ object ไม่ถูกแตะ test hook pathCount นับเส้นที่วาดอยู่
 
 import {
   ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, EllipsoidalOccluder, JulianDate,
@@ -329,6 +333,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
     scene.globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE;
+    scene.globe.showGroundAtmosphere = false; // หมอกบรรยากาศบนพื้นโลกทำให้ภาพโลกซีด (task 13c) ขอบฟ้าบรรยากาศ (skyAtmosphere) ยังอยู่
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
     this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: opts.notify });
@@ -378,6 +383,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
         if (
           before.labelDeclutter !== this.props.labelDeclutter || before.satelliteModels !== this.props.satelliteModels
           || before.modelPixelSize !== this.props.modelPixelSize || before.modelDetailThreshold !== this.props.modelDetailThreshold
+          || before.showOrbits !== this.props.showOrbits
         ) this.restyle();
       }),
     );
@@ -444,7 +450,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (ds === null || this.destroyed) return;
     const { doc } = useScenario.getState();
     ensureFacilities(ds.entities, doc);
-    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter, models: this.modelCtx() });
+    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter, models: this.modelCtx(), showOrbits: this.props.showOrbits });
     this.hideCameraSatellite();
     this.updateInertial(true);
     this.updateSensors(true);
@@ -551,12 +557,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   // ---------- Inertial by Window ----------
 
-  /** ดาวที่ตั้ง Inertial by Window และแสดงอยู่ → entity + object ของมัน */
+  /** ดาวที่ตั้ง Inertial by Window และแสดงอยู่ → entity + object ของมัน (Show Orbits ของหน้าต่างปิด = ไม่มี) */
   private inertialTargets(): Map<string, { entity: Entity; obj: SceneObject }> {
     const out = new Map<string, { entity: Entity; obj: SceneObject }>();
     const ds = this.ds;
     const doc = useScenario.getState().doc;
-    if (ds === null || doc === null) return out;
+    if (ds === null || doc === null || !this.props.showOrbits) return out;
     const prnByNorad = useResults.getState().prnByNorad;
     for (const obj of doc.objects) {
       if (obj.class !== "Satellite") continue;
@@ -1156,6 +1162,16 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   frameCount(): number {
     return this.frames;
+  }
+
+  /** เส้นวงโคจรที่วาดอยู่: entity ที่แสดงอยู่และ path แสดง ณ เวลาปัจจุบัน + เส้น Inertial by Window ที่แสดงอยู่ */
+  pathCount(): number {
+    if (this.destroyed) return 0;
+    const time = this.viewer.clock.currentTime;
+    let n = 0;
+    for (const e of this.ds?.entities.values ?? []) if (e.isShowing && e.path?.show?.getValue(time) === true) n++;
+    for (const e of this.inertialPaths.values()) if (e.isShowing) n++;
+    return n;
   }
 
   /**
