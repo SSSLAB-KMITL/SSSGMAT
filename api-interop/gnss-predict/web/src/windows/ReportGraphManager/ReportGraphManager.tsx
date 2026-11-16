@@ -54,9 +54,9 @@ const entryName = (e: Entry): string => e.style?.name ?? e.unusable?.name ?? "";
 /** กุญแจของรายการ: style = (ชั้น, ชื่อ, ชนิด); รายการที่ใช้ไม่ได้ = ลำดับใน unusable (ชื่ออาจว่างหรือซ้ำ) */
 const entryKey = (e: Entry): string => (e.style === undefined ? JSON.stringify(["unusable", e.tier, e.index]) : JSON.stringify([e.tier, e.style.name, e.style.kind]));
 const WHERE: Record<Tier, "rgm.whereMy" | "rgm.whereScenario" | "rgm.whereInstalled"> = { installed: "rgm.whereInstalled", my: "rgm.whereMy", scenario: "rgm.whereScenario" };
-/** เหตุผลภาษาไทยของรายการที่ใช้ไม่ได้: มีชื่อ = แก้หรือ Delete; ไม่มีชื่อ = ลบจากที่นี่ไม่ได้ */
+/** เหตุผลภาษาไทยของรายการที่ใช้ไม่ได้: Installed (ล็อก) = แก้ไฟล์เท่านั้น; ไม่มีชื่อ = ลบจากที่นี่ไม่ได้; ที่เหลือ = แก้หรือ Delete */
 const unusableText = (tier: Tier, u: UnusableStyle): string =>
-  msg(u.name === null ? "rgm.unusableUnnamed" : "rgm.unusable", { field: u.field, where: msg(WHERE[tier]) });
+  msg(tier === "installed" ? "rgm.unusableLocked" : u.name === null ? "rgm.unusableUnnamed" : "rgm.unusable", { field: u.field, where: msg(WHERE[tier]) });
 
 /** ปุ่มเปิดเมนูคลิกขวาจากคีย์บอร์ด: ปุ่ม Context Menu หรือ Shift+F10 */
 export const isMenuKey = (e: ReactKeyboardEvent): boolean => e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
@@ -314,10 +314,12 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
     setDialogError(null);
     try {
       const signal = life.current?.signal;
+      const etag = useScenario.getState().etag;
       const report = await fetchReport(sc, req, signal);
       // หน้าต่างปิด หรือสลับ scenario ระหว่างรอ: ไม่ฝากผลและไม่เปิดหน้าต่าง
       if (signal?.aborted === true || useScenario.getState().name !== sc) return;
-      primeReport(sc, req, report);
+      // scenario ถูกแก้ระหว่างรอ: ผลนี้อาจไม่ตรงแล้ว ไม่ฝาก หน้าต่างสร้างรายงานเอง (หรือแสดงแถบผลลัพธ์ไม่ตรง)
+      if (useScenario.getState().etag === etag) primeReport(sc, req, report);
       openReport({ style: req.style, kind: job.style.kind, objects: job.objects, time, dynamic: job.dynamic });
       setDialog(null);
     } catch (e) {

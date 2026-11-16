@@ -21,7 +21,7 @@ import { formatTime } from "../../src/time/format";
 import { openReport, primeReport, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
 import { columnWidths, dynamicRows, flattenRows, prepareDynamic } from "../../src/windows/Report/table";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
-import { stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
+import { deferred, stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
 
 // กล่องยืนยันของแอป: test ตอบเองแทนการคลิกใน <Dialogs/>
 vi.mock("../../src/chrome/Dialogs", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/chrome/Dialogs")>()), confirm: vi.fn() }));
@@ -210,7 +210,7 @@ describe("report table", () => {
     await waitFor(() => expect(f.count(REPORTS)).toBe(2));
   });
 
-  test("Refresh and recompute after the first load never take a primed result", async () => {
+  test("Refresh after the first load never takes a primed result", async () => {
     scenario();
     const f = stubFetch({ [REPORTS]: { json: accessReport() } });
     primeReport("S1", requestOf(PARAMS), accessReport());
@@ -222,6 +222,40 @@ describe("report table", () => {
     primeReportUnheard();
     await user.click(screen.getByRole("button", { name: t("report.refresh") }));
     await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+  });
+
+  test("a recompute after the first load does not take a primed result either", async () => {
+    scenario();
+    let reports = 0;
+    const f = stubFetch({
+      [REPORTS]: () => (++reports === 1 ? { status: 409, json: { code: "RESULTS_NOT_CURRENT", text: "x", field: null, detail: null } } : { json: accessReport() }),
+      [COMPUTE]: { status: 202, json: { job: "j-p", etag: "e2" }, headers: { ETag: '"e2"' } },
+    });
+    mount({ ...PARAMS, objects: [G01] });
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    // ระหว่างคำนวณมีผลของคำขอเดียวกันค้างในช่องฝาก (ไม่มีหน้าต่างรับ): การสร้างใหม่หลังคำนวณต้อง POST เอง
+    primeReport("S1", requestOf({ ...PARAMS, objects: [G01] }), accessReport(), { deliver: false });
+    act(() => useJobs.getState().onJobEvent({ id: "j-p", kind: "analyze", scenario: "S1", state: "succeeded", progress: null }));
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(2);
+  });
+
+  test("an interrupted Dynamic Display load does not reuse the primed result", async () => {
+    scenario();
+    const dyn: ReportParams = { ...PARAMS, style: "AER", objects: [G01], dynamic: true };
+    const providers = deferred<{ json: unknown }>();
+    const f = stubFetch({ [REPORTS]: { json: aerReport([[iso(T0), 10, 20, 1000]]) }, [PROVIDERS]: () => providers.promise });
+    primeReport("S1", requestOf(dyn), aerReport([[iso(T0), 10, 20, 1000]]));
+    mount(dyn);
+    await waitFor(() => expect(f.count(PROVIDERS)).toBe(1)); // prep รอวิธีประมาณค่าอยู่
+    expect(f.count(REPORTS)).toBe(0);
+    // Refresh ระหว่าง prep: การโหลดครั้งแรกถูกยกเลิก ผลที่ฝากไว้ต้องไม่ถูกใช้ซ้ำ
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+    providers.resolve({ json: AER_PROVIDERS });
+    await screen.findByText("THBK-To-G01");
   });
 
   test("a result primed before a scenario edit is not served after it", async () => {

@@ -116,6 +116,9 @@ export function StyleEditor({ params, panelId }: PanelProps) {
   const leafRefs = useRef(new Map<string, HTMLElement>());
   const columnRefs = useRef(new Map<string, HTMLElement>());
   const focusColumn = useRef<string | null>(null);
+  /** Report/Graph Contents ว่างหลัง Delete: โฟกัสที่ตัวรายการ */
+  const focusList = useRef(false);
+  const columnList = useRef<HTMLDivElement>(null);
   const [pick, setPick] = useState<{ provider: string; group: string | null; element: string } | null>(null);
   const [column, setColumn] = useState<number | null>(null);
   const [startEdit, setStartEdit] = useState<string | null>(null);
@@ -154,10 +157,14 @@ export function StyleEditor({ params, panelId }: PanelProps) {
     return () => ctrl.abort();
   }, [sc, doc, revision]);
 
+  // โฟกัสที่ขอไว้ตอนย้าย/ลบคอลัมน์ ใช้ครั้งเดียวในการวาดถัดไป (ขอเฉพาะเมื่อฟอร์มเปลี่ยนจริง จึงไม่ค้างไปแย่งโฟกัสภายหลัง)
   useEffect(() => {
-    if (focusColumn.current === null) return;
-    columnRefs.current.get(focusColumn.current)?.focus();
+    const key = focusColumn.current;
+    const list = focusList.current;
     focusColumn.current = null;
+    focusList.current = false;
+    if (key !== null) columnRefs.current.get(key)?.focus();
+    else if (list) columnList.current?.focus();
   });
 
   const columns = columnsOf(form);
@@ -282,20 +289,33 @@ export function StyleEditor({ params, panelId }: PanelProps) {
     }
   };
 
-  /** ย้ายคอลัมน์ i ขึ้น/ลงในกลุ่มเดียวกัน (ปุ่ม Up / Down และ Alt+ลูกศร) โฟกัสตามคอลัมน์ที่ย้าย */
-  const moveSelected = (i: number, dir: -1 | 1): void => {
+  /** ย้ายคอลัมน์ i ขึ้น/ลงในกลุ่มเดียวกัน (ปุ่ม Up / Down และ Alt+ลูกศร) true = ย้ายแล้ว (ขอบรายการ/ขอบกลุ่ม = ไม่ย้าย) */
+  const moveSelected = (i: number, dir: -1 | 1): boolean => {
     const next = moveColumn(form, i, dir);
-    if (next === form) return;
+    if (next === form) return false;
     setForm(next);
     setColumn(i + dir);
+    return true;
+  };
+
+  /** Remove / Delete คอลัมน์ i: เลือกตัวข้างเคียง (ตัวถัดไป หรือตัวก่อนหน้าถ้าเป็นตัวท้าย) focus = ย้ายโฟกัสไปตามนั้น (ว่าง = ตัวรายการ) */
+  const removeAt = (i: number, focus: boolean): void => {
+    const next = removeColumn(form, i);
+    const cols = columnsOf(next);
+    const at = cols.length === 0 ? null : Math.min(i, cols.length - 1);
+    setForm(next);
+    setColumn(at);
+    if (!focus) return;
+    if (at === null) focusList.current = true;
+    else focusColumn.current = `${cols[at].entry}:${cols[at].element}`;
   };
 
   /** Report/Graph Contents: ลูกศร / Home / End เลือกและย้ายโฟกัส, Alt+ลูกศรขึ้น/ลง = Up / Down, Delete = Remove */
   const onColumnKeyDown = (e: ReactKeyboardEvent, i: number): void => {
     if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
-      focusColumn.current = columnKey(i);
-      moveSelected(i, e.key === "ArrowUp" ? -1 : 1);
+      // โฟกัสตามคอลัมน์ที่ย้าย (กุญแจเดิม) เฉพาะเมื่อย้ายได้จริง
+      if (moveSelected(i, e.key === "ArrowUp" ? -1 : 1)) focusColumn.current = columnKey(i);
       return;
     }
     const to = moveIndex(e.key, i, columns.length);
@@ -308,8 +328,7 @@ export function StyleEditor({ params, panelId }: PanelProps) {
       setColumn(i);
     } else if (e.key === "Delete") {
       e.preventDefault();
-      setForm((f) => removeColumn(f, i));
-      setColumn(null);
+      removeAt(i, true);
     }
   };
 
@@ -408,13 +427,13 @@ export function StyleEditor({ params, panelId }: PanelProps) {
             </fieldset>
             <div className="access-buttons">
               <button type="button" className="btn" disabled={pick === null} onClick={() => pick !== null && setForm((f) => addColumn(f, pick, providers ?? []))}>{t("rgm.add")}</button>
-              <button type="button" className="btn" disabled={column === null} onClick={() => { if (column !== null) { setForm((f) => removeColumn(f, column)); setColumn(null); } }}>{t("rgm.remove")}</button>
+              <button type="button" className="btn" disabled={column === null} onClick={() => column !== null && removeAt(column, false)}>{t("rgm.remove")}</button>
               <button type="button" className="btn" disabled={column === null || column === 0} onClick={() => column !== null && moveSelected(column, -1)}>{t("rgm.up")}</button>
               <button type="button" className="btn" disabled={column === null || column >= columns.length - 1} onClick={() => column !== null && moveSelected(column, 1)}>{t("rgm.down")}</button>
             </div>
             <fieldset className="props-group rgm-objects">
               <legend id={`${ids}-cols`}>{contentsLabel}</legend>
-              <div className="rgm-list" role="listbox" aria-labelledby={`${ids}-cols`}>
+              <div ref={columnList} className="rgm-list" role="listbox" tabIndex={-1} aria-labelledby={`${ids}-cols`}>
                 {columns.map((c, i) => (
                   <div
                     key={`${c.entry}:${c.element}`}

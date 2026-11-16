@@ -20,17 +20,17 @@ import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { formatTime } from "../../src/time/format";
 import { AccessTool } from "../../src/windows/AccessTool/AccessTool";
-import { openReport } from "../../src/windows/Report/Report";
+import { openReport, primeReport } from "../../src/windows/Report/Report";
 import { registerReportGraphManagerCommands, RGM_KIND, STYLE_EDITOR_KIND, useStyleRevision } from "../../src/windows/ReportGraphManager/commands";
 import { ReportGraphManager, registerReportGraphManagerPanel } from "../../src/windows/ReportGraphManager/ReportGraphManager";
 import { registerStyleEditorPanel, StyleEditor } from "../../src/windows/ReportGraphManager/StyleEditor";
 import { makeDoc, openScenario, resetAll, type ScenarioDoc } from "./helpers/chrome";
 import { deferred, stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
 
-vi.mock("../../src/windows/Report/Report", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/windows/Report/Report")>()),
-  openReport: vi.fn(),
-}));
+vi.mock("../../src/windows/Report/Report", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/windows/Report/Report")>();
+  return { ...actual, openReport: vi.fn(), primeReport: vi.fn(actual.primeReport) };
+});
 vi.mock("../../src/data/reports", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/data/reports")>()),
   downloadReport: vi.fn(async () => undefined),
@@ -91,6 +91,7 @@ let opened: { kind: string; params: Record<string, unknown> }[];
 beforeEach(() => {
   resetAll();
   vi.mocked(openReport).mockReset();
+  vi.mocked(primeReport).mockClear();
   vi.mocked(downloadReport).mockReset();
   vi.mocked(downloadReport).mockResolvedValue(undefined);
   opened = [];
@@ -593,7 +594,9 @@ describe("fix round 1: keyboard", () => {
     const f = server({ [`GET ${BASE}/dataproviders`]: AER_PROVIDERS, "PUT /api/styles/Az%20El%20Mine": { json: {} } });
     editor({ style: MY, tier: "my" });
     const contents = screen.getByRole("listbox", { name: t("rgm.reportContents") });
-    within(contents).getAllByRole("option")[0].focus();
+    await screen.findByRole("treeitem", { name: "Time" });
+    await tabTo(isContentOption); // เริ่มจาก Tab ไม่ใช่ .focus()
+    expect(document.activeElement?.textContent).toBe("Time");
     await user.keyboard("{End}");
     expect(document.activeElement?.textContent).toBe("Range");
     await user.keyboard("{Alt>}{ArrowUp}{/Alt}");
@@ -762,5 +765,118 @@ describe("fix round 1: manager paths", () => {
     await act(async () => { await Promise.resolve(); });
     await new Promise((r) => setTimeout(r, 20));
     expect(openReport).not.toHaveBeenCalled();
+  });
+});
+
+// ---------- fix round 2 ----------
+
+/** กด Tab จนโฟกัสถึง element ที่ตรงเงื่อนไข (ไม่เกิน 30 ครั้ง) */
+async function tabTo(match: (el: Element) => boolean) {
+  for (let i = 0; i < 30; i++) {
+    await user.tab();
+    if (document.activeElement !== null && match(document.activeElement)) return document.activeElement as HTMLElement;
+  }
+  throw new Error("tab target not reached");
+}
+
+const contentTexts = () => within(screen.getByRole("listbox", { name: t("rgm.reportContents") })).getAllByRole("option").map((o) => o.textContent);
+const isContentOption = (el: Element) => el.getAttribute("role") === "option" && el.closest("[role=listbox]")?.getAttribute("aria-labelledby") !== null
+  && screen.getByRole("listbox", { name: t("rgm.reportContents") }).contains(el);
+
+describe("fix round 2: column focus", () => {
+  test("Alt+Down on the last column does nothing, and typing in Name afterwards keeps the focus there", async () => {
+    openScenario(doc());
+    server({ [`GET ${BASE}/dataproviders`]: AER_PROVIDERS });
+    editor({ style: MY, tier: "my" });
+    await screen.findByRole("treeitem", { name: "Time" });
+    await tabTo(isContentOption); // เริ่มจาก Tab
+    expect(document.activeElement?.textContent).toBe("Time");
+    await user.keyboard("{End}{Alt>}{ArrowDown}{/Alt}");
+    expect(contentTexts()).toEqual(["Time", "Azimuth", "Elevation", "Range"]);
+    const name = screen.getByRole("textbox", { name: t("field.name") }) as HTMLInputElement;
+    await user.click(name);
+    await user.type(name, "xy");
+    expect(document.activeElement).toBe(name);
+    expect(name.value).toBe("Az El Minexy");
+  });
+
+  test("Alt+Up on the first column does nothing, and ArrowDown then moves on", async () => {
+    openScenario(doc());
+    server({ [`GET ${BASE}/dataproviders`]: AER_PROVIDERS });
+    editor({ style: MY, tier: "my" });
+    await screen.findByRole("treeitem", { name: "Time" });
+    await tabTo(isContentOption);
+    await user.keyboard("{Home}{Alt>}{ArrowUp}{/Alt}{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Azimuth");
+    // Alt+Down ย้ายคอลัมน์ลง โฟกัสตามคอลัมน์
+    await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(contentTexts()).toEqual(["Time", "Elevation", "Azimuth", "Range"]);
+    expect(document.activeElement?.textContent).toBe("Azimuth");
+  });
+
+  test("Delete moves the focus to the neighbouring column, and to the list when it is empty", async () => {
+    openScenario(doc());
+    server({ [`GET ${BASE}/dataproviders`]: AER_PROVIDERS });
+    editor({ style: MY, tier: "my" });
+    await screen.findByRole("treeitem", { name: "Time" });
+    await tabTo(isContentOption);
+    await user.keyboard("{ArrowDown}{Delete}");
+    expect(contentTexts()).toEqual(["Time", "Elevation", "Range"]);
+    expect(document.activeElement?.textContent).toBe("Elevation");
+    await user.keyboard("{End}{Delete}");
+    expect(document.activeElement?.textContent).toBe("Elevation"); // ตัวท้าย: ไปตัวก่อนหน้า
+    await user.keyboard("{Delete}{Delete}");
+    expect(within(screen.getByRole("listbox", { name: t("rgm.reportContents") })).queryAllByRole("option")).toHaveLength(0);
+    expect(document.activeElement).toBe(screen.getByRole("listbox", { name: t("rgm.reportContents") }));
+  });
+});
+
+describe("fix round 2: tree and Generate", () => {
+  test("Space on the styles tree selects the focused style (reached with Tab)", async () => {
+    openScenario(doc());
+    server();
+    mount({ objectType: "Access" });
+    await ready();
+    const first = await tabTo((el) => el.getAttribute("role") === "treeitem");
+    expect(first.getAttribute("aria-selected")).toBe("false");
+    await user.keyboard(" ");
+    expect(first.getAttribute("aria-selected")).toBe("true");
+    expect(button("rgm.properties").disabled).toBe(false);
+  });
+
+  test("an edit made during the Generate POST: the result is not primed, the window makes its own", async () => {
+    openScenario(doc());
+    const reply = deferred<{ json: unknown }>();
+    server({ [REPORTS]: () => reply.promise });
+    mount({ objectType: "Access" });
+    await ready();
+    await pick("THBK-To-G01");
+    await user.click(styleItem("Access", "report"));
+    await user.click(button("rgm.generate"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    act(() => useScenario.setState({ etag: '"e5"' })); // แก้ scenario ระหว่างรอ
+    reply.resolve({ json: reportJson });
+    await waitFor(() => expect(openReport).toHaveBeenCalledTimes(1));
+    expect(primeReport).not.toHaveBeenCalled();
+  });
+
+  test("without an edit the result is primed for the window", async () => {
+    openScenario(doc());
+    server({ [REPORTS]: { json: reportJson } });
+    mount({ objectType: "Access" });
+    await ready();
+    await pick("THBK-To-G01");
+    await user.click(styleItem("Access", "report"));
+    await user.click(button("rgm.generate"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(openReport).toHaveBeenCalledTimes(1));
+    expect(primeReport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fix round 2: unusable wording", () => {
+  test("an unusable Installed style is not told to use Delete", () => {
+    expect(msg("rgm.unusableLocked", { field: "kind", where: msg("rgm.whereInstalled") })).not.toContain("Delete");
+    expect(msg("rgm.unusable", { field: "kind", where: msg("rgm.whereMy") })).toContain("Delete");
   });
 });

@@ -2468,6 +2468,16 @@ body {
   color: var(--selected-text);
 }
 
+.rgm-item:focus-visible,
+.rgm-list:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.rgm-selected:focus-visible {
+  outline-color: var(--selected-text);
+}
+
 .rgm-disabled {
   color: var(--text-muted);
 }

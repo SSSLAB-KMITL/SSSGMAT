@@ -282,15 +282,20 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
   // ผลที่ Manager ฝากไว้: หยิบเฉพาะการโหลดครั้งแรกของหน้าต่าง (และเมื่อ Manager ส่งผลใหม่ให้บานนี้) เก็บใน ref จนใช้สำเร็จ
   // effect ที่ถูกยกเลิกแล้วรันซ้ำ (StrictMode) ใช้ตัวเดิมได้ Refresh / คำนวณใหม่ไม่หยิบจากช่องฝาก
   const firstLoad = useRef(true);
-  const pending = useRef<{ sc: string; key: string; report: ReportJson } | null>(null);
+  /** rev = revision ที่ผลนี้มีไว้ให้ (โหลดครั้งแรก = 0, ส่งจาก Manager = revision ใหม่) การโหลดของ revision อื่น (Refresh / คำนวณใหม่) ไม่ใช้ */
+  const pending = useRef<{ sc: string; key: string; report: ReportJson; rev: number } | null>(null);
+  const revisionRef = useRef(0);
+  revisionRef.current = revision;
   useEffect(() => {
     const listener = (primedFor: string): void => {
       const { p: cur, sc: name } = latest.current;
       if (cur === null || name === null || primedFor !== primeKey(name, requestOf(cur))) return;
       const report = takePrimed(name, requestOf(cur));
       if (report === null) return;
-      pending.current = { sc: name, key: JSON.stringify(requestOf(cur)), report };
-      setRevision((r) => r + 1);
+      const rev = revisionRef.current + 1;
+      revisionRef.current = rev;
+      pending.current = { sc: name, key: JSON.stringify(requestOf(cur)), report, rev };
+      setRevision(rev);
     };
     primeListeners.add(listener);
     return () => void primeListeners.delete(listener);
@@ -330,10 +335,12 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
     if (firstLoad.current) {
       firstLoad.current = false;
       const report = takePrimed(sc, requestOf(cur));
-      if (report !== null) pending.current = { sc, key: JSON.stringify(requestOf(cur)), report };
+      if (report !== null) pending.current = { sc, key: JSON.stringify(requestOf(cur)), report, rev: revision };
     }
+    // ใช้ได้เฉพาะการโหลดของ revision ที่ฝากไว้ (effect ที่ถูกยกเลิกแล้วรันซ้ำใน revision เดียวกัน = StrictMode ใช้ต่อได้)
+    // การโหลดที่ถูกยกเลิกเพราะ Refresh / คำนวณใหม่ (revision ใหม่) ไม่ใช้ และทิ้งไป
     const held = pending.current;
-    const given = held !== null && held.sc === sc && held.key === JSON.stringify(requestOf(cur)) ? held : null;
+    const given = held !== null && held.sc === sc && held.key === JSON.stringify(requestOf(cur)) && held.rev === revision ? held : null;
     if (given === null) pending.current = null;
     setPhase("loading");
     void (async () => {
@@ -347,6 +354,7 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
         setPhase("ready");
       } catch (e) {
         if (isAbortError(e) || ctrl.signal.aborted) return;
+        if (given !== null && pending.current === given) pending.current = null; // ล้มเหลว: ไม่ใช้ผลที่ฝากซ้ำ
         setLoaded(null);
         if (e instanceof ApiError && e.code === "RESULTS_NOT_CURRENT") {
           setPhase("notCurrent");

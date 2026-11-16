@@ -382,6 +382,8 @@ const MESSAGES = {
   // {field} = ช่องแรกที่ผิด เช่น kind, content
   // {where} = rgm.whereMy / rgm.whereScenario / rgm.whereInstalled
   "rgm.unusable": "ใช้ไม่ได้: style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้{where} หรือ Delete แล้วสร้างใหม่",
+  // Installed Styles ล็อก (ลบไม่ได้): ไม่บอกให้ Delete
+  "rgm.unusableLocked": "ใช้ไม่ได้: style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} (Installed Styles ล็อกไว้ ลบไม่ได้) แก้{where}",
   "rgm.unusableUnnamed": "ใช้ไม่ได้: รายการนี้ไม่มีชื่อ (ช่องแรกที่ผิดคือ {field}) จึงลบจากที่นี่ไม่ได้ แก้{where}เอง",
   "rgm.whereMy": "ไฟล์ใน data/styles",
   "rgm.whereScenario": "รายการ styles ใน scenario.json",
