@@ -152,6 +152,8 @@ python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC]
 python3 -m gnss_predict.studio propagate --scenario DIR [--data DIR]
 python3 -m gnss_predict.studio analyze   --scenario DIR --facility NAME [--data DIR]
 python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 FILE] [--facility NAME] [--data DIR]
+python3 -m gnss_predict.studio report    --scenario DIR --style NAME --object PATH [--object PATH ...] [--kind report|graph]
+                                         [--format txt|csv] [--start T --stop T] [--step S] [--data DIR]
 ```
 
 | คำสั่ง | ทำอะไร | ผลลัพธ์ |
@@ -159,6 +161,7 @@ python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 
 | `fetch` | ดึง OMM (JSON) ของ CelesTrak กลุ่ม `gps-ops`, `glo-ops`, `galileo`, `beidou`, IGS satellite metadata และไฟล์ broadcast รายวันของเมื่อวาน (UTC) จาก CDDIS | snapshot ใหม่ `<data>/orbits/<YYYYMMDDTHHMMZ>/` |
 | `propagate` | สร้างรายชื่อดาวจาก snapshot ที่ระบุใน `orbit_snapshot` ของ scenario แล้ว propagate ดาวที่แสดงด้วย GMAT | `<scenario>/ephem/<hash>/` |
 | `analyze` | AER, IPP/MF, ช่วง access, Global Statistics และ DOP ของ Facility ที่ระบุ (ถ้ายังไม่มีผล propagate จะ propagate ก่อน) | `<scenario>/access/<facility>/<hash>/` |
+| `report` | รายงานของ style (Scenario Styles แล้ว Installed Styles ไม่สนตัวพิมพ์) กับ object ที่ระบุ จากผลที่มีอยู่แล้ว (ไม่คำนวณใหม่ ไม่ต่อเน็ต) object แบบ Access เป็นคู่ path `"*/Facility/THBK */Satellite/G01"` (หัวข้อ 9.12) | เนื้อไฟล์ `.txt` หรือ `.csv` ทาง stdout (เปลี่ยนทางเองด้วย `> THBK-To-G01_Access.txt`) |
 | `validate` | เทียบ `predicted.sp3` ของวันที่ระบุกับ MGEX SP3 จริง ดาวที่ไม่มีใน SP3 ใช้ broadcast ของวันนั้น (G, E, C) | `validation_<วัน>.json` และ `.md` ใน `ephem/<hash>/` และหนึ่งบรรทัดใน `<data>/validation/history.jsonl` |
 
 - `--data` ตั้งต้นเป็นค่าของตัวแปร `GNSS_STUDIO_DATA` ถ้ามี ไม่งั้นเป็น `data/` ในโฟลเดอร์นี้
@@ -500,10 +503,11 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | Access | `GET /scenarios/{sc}/access`, `POST .../access/compute`, `.../clear`, `.../remove`, `GET .../access/intervals?from=&to=` | §6.6 |
 | Job | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel` | §6.8, §7 |
 | งานประจำวัน | `POST /daily/run` (ดึงจากเน็ต) `{for_date?}` สั่งพยากรณ์ของวันนั้นเอง | §6.8, §9.3 |
-| ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/{sc}/{day}` | §6.8 |
+| ตรวจความแม่นยำ | `POST /scenarios/{sc}/validate` (ดึงจากเน็ต), `GET /validation/history`, `GET /validation/pending` (ของเรา: วันที่ยังรอผลหรือเลิกตรวจแล้ว), `GET /validation/{sc}/{day}` | §6.8, access spec §7 |
+| รายงานและกราฟ | `GET /scenarios/{sc}/dataproviders?class=&name=`, `GET /scenarios/{sc}/data?object=&provider=&group=&elements=&start=&stop=&step=`, `GET /styles?object_type=&scenario=`, `POST/PUT/DELETE /styles/{name}` (My Styles), `POST /scenarios/{sc}/reports` (`format` json, txt หรือ csv) | §6.7, access spec §3 |
 | ภาพออนไลน์ | `GET /imagery/layers`, `GET /imagery/tiles/{layer}/{time}/{z}/{y}/{x}` (ดึงจาก NASA GIBS หรือ EOX เมื่อเปิดสวิตช์ของแหล่งนั้นเท่านั้น ดู 8.8; OpenStreetMap และ Cesium ion browser ดึงเอง ไม่ผ่าน server) | ภาพออนไลน์ §4, ภาพละเอียด §3 |
 
-ยังไม่มีในรุ่นนี้: data provider, style และรายงาน (server §6.7) ซึ่งอยู่ในแผนของงานย่อยที่ 4 พร้อมโมดูล data provider ของ engine
+data provider, style และรายงาน (server §6.7) มาในงานย่อยที่ 4: route เรียก engine (`gnss_predict/dataproviders.py`, `report_style.py`, `report_format.py`) ดูหัวข้อ 9.12
 
 ### 8.5 ตรวจเกณฑ์ข้อ 5 ของ spec (งานประจำวัน 3 วันติด)
 
@@ -775,6 +779,9 @@ test: `server/tests/test_imagery.py` ใช้ opener ปลอมและก�
   (อ้างว่า "imagery spec §n", หัวข้อ 8.8, 9.9 และ 9.10)
 - Spec งานเสริม ข1.5 (ภาพละเอียด: Sentinel-2 cloudless, OpenStreetMap, Cesium ion และซูม Sensor View ถึง ×8192): [docs/2026-11-14-gnss-studio-hires-imagery-design.md](docs/2026-11-14-gnss-studio-hires-imagery-design.md)
   (อ้างว่า "ภาพละเอียด spec §n", หัวข้อ 8.8, 9.9 และ 9.10) การตัดสินใจระหว่างลงมือของ ข และ ข1.5: [docs/2026-11-14-gnss-studio-imagery-decisions.md](docs/2026-11-14-gnss-studio-imagery-decisions.md)
+- Spec งานย่อยที่ 4 (Access, Report & Graph Manager, Validation): [docs/2026-11-11-gnss-studio-access-reports-design.md](docs/2026-11-11-gnss-studio-access-reports-design.md)
+  (อ้างว่า "access spec §n", หัวข้อ 9.12) แผน [docs/2026-11-15-gnss-studio-access-reports-plan.md](docs/2026-11-15-gnss-studio-access-reports-plan.md)
+  และการตัดสินใจระหว่างลงมือ: [docs/2026-11-15-gnss-studio-access-reports-decisions.md](docs/2026-11-15-gnss-studio-access-reports-decisions.md)
 
 ### 9.1 ติดตั้ง
 
@@ -854,7 +861,12 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 
 - ข้อมูลของ e2e สร้างใหม่ทุกครั้งที่ `web/test-results/e2e-data` โดย `tests/e2e/fixture/build_fixture.py` (รันด้วย `server/.venv/bin/python -I`):
   คัดลอก snapshot fixture ของ engine (`tests/fixtures/studio/snapshot`), เขียน `settings.json` ที่ปิดงานประจำวัน **ก่อน** server เริ่ม,
-  สร้าง scenario `E2E` (thbk-gnss ช่วง 2026-11-10 00:00–06:00 UTC **มีผลลัพธ์**), `E2E_NORES` (ชุดเดียวกัน ไม่มีผล) และ `E2E_EMPTY` (ว่าง)
+  สร้าง scenario `E2E` (thbk-gnss ช่วง 2026-11-10 00:00–06:00 UTC **มีผลลัพธ์** และ access ของ THBK ตั้ง `computed: true` แบบที่งานประจำวันทำ),
+  `E2E_NORES` (ชุดเดียวกัน ไม่มีผล access ของแม่แบบเป็น `computed: false`), `E2E_EMPTY` (ว่าง),
+  `E2E_ACCESS` และ `E2E_SAVE` (แบบ `E2E` มีผลของ THBK แต่ `accesses: []`: spec Compute/Clear/Remove เองแล้วคืนเอกสารเดิม; `E2E_SAVE` สำหรับ test ที่ File → Save),
+  `E2E_DATELINE` (12 ชั่วโมง เพิ่ม Facility DATELINE ที่ 29.3 N, 179.5 E มีผลของ DATELINE: ดาว C09 ข้ามเส้น 180° ระหว่าง access ราว 11:21Z),
+  scenario รายวัน `daily_20261111` (วันรอผลตรวจ) กับ `daily_20261112` (เลิกตรวจแล้ว ตาม `daily/state.json`) และผลตรวจที่เขียนจาก JSON ในสคริปต์
+  (`validation/history.jsonl` สองวันของ `E2E`: 2026-11-09 Pass, 2026-11-10 Fail G22 และ `validation/E2E/validation_2026-11-10.json`) ไม่รันการตรวจจริงและไม่ดาวน์โหลด
   ผลลัพธ์ของ `E2E` มาจาก `run_propagate` และ `run_analyze("THBK")` ของ engine จริง โดยแทน `propagate`, `find_gmat_console` และ `gmat_version`
   ด้วยวงโคจรวงกลมปลอม (รัศมี G 26 560 km, R 25 508 km, E 29 600 km, BeiDou MEO/IGSO 27 906 km, GEO 42 164 km ที่ลองจิจูดคงที่; ตำแหน่ง Earth-fixed
   คือวงกลมเฉื่อยหมุนด้วย ωe = 7.2921151467e-5 rad/s) จึงไม่ต้องใช้ GMAT และไฟล์มีรูปแบบเหมือนของจริงทุกประการ สคริปต์ปิดการเชื่อมต่อเครือข่ายขณะสร้าง
@@ -863,7 +875,12 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 - spec: `layout` (การจัดวางตั้งต้นตามหัวข้อ 4.2; ปิด Timeline View แล้ว Ctrl+S แล้ว reload ได้ layout เดิม), `animation` (Start, Pause, Step Forward ได้ 60 วินาทีพอดี, Reset),
   `position` (ตำแหน่ง G01 ใน 3D ต่างจาก `predicted.sp3` ไม่เกิน 1 ม. หลายเวลา; ที่วัดได้ราว 0.5 มม.), `properties` (สีของดาว, Show Labels), `timeline`
   (Set Animation Time to Here ตรงตำแหน่งที่คลิก), `insert` (Satellite จาก Catalog สองดวง + Constellation), `messages` (ข้อความของ job ขึ้น Message Viewer, Clear this Tab ลบเฉพาะแท็บ),
-  `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `sensor` (Sensor View จากเมนู Satellite, ดับเบิลคลิกใน Sensor View, เปลี่ยน Cone Half Angle,
+  `conflict` (Apply ที่ ETag เก่าขึ้นกล่อง Reload/Cancel), `nores` (scenario ไม่มีผลลัพธ์ไม่ล่ม), `graphics2d` (คลิกซ้ายบนแผนที่ 2D ไม่มี error และเลือกดาวได้, render loop ที่หยุดเริ่มใหม่),
+  `access-reports` (หัวข้อ 9.12: Compute THBK → GPS ได้แถว Timeline เท่าจำนวนดาว GPS ที่ server ตอบ, Clear แล้วแถวและเส้น access หาย, access ที่ไม่ได้ Compute ไม่มีแถว,
+  รายงาน Access ของ G01 ตรงกับ `intervals.json` และขึ้นภายใน 2 วินาที, Export ได้ CSV ที่หัวคอลัมน์มีหน่วย, หน้าต่างรายงานกับ Export Setup อยู่รอด File → Save แล้วเปิดใหม่,
+  Dynamic Display ของ AER เปลี่ยนเมื่อ Step Forward, กราฟ Az El Polar มีจุดเวลาปัจจุบันเฉพาะใน access, เส้นเวลาของกราฟ AER ตามปุ่มและนาฬิกา (นับจากที่ ECharts วาดจริง)
+  และจุดขาดของ Azimuth ที่ข้ามทิศเหนืออยู่รอด LTTB, Static/Animate Highlight ตาม Compute, Clear, Remove และการสลับ scenario, Static Highlight ที่ข้ามเส้น 180° วาดที่ขอบแผนที่ทั้งสองข้างไม่พาดกลางแผนที่),
+  `validation` (หน้า Validation แสดงวันจาก fixture รวม Pending และ Gave up, เปิดวันด้วยคลิกและด้วยคีย์บอร์ด ไม่มีคำขอ `/validate` หรือ `/daily/run`), `sensor` (Sensor View จากเมนู Satellite, ดับเบิลคลิกใน Sensor View, เปลี่ยน Cone Half Angle,
   คลิกซ้ายและขวาที่ดาวในหน้าต่าง 3D, ลบดาวแล้วหน้าต่างปิด, scenario ที่ไม่มีผลลัพธ์; หัวข้อ 9.9), `imagery` (Sensor View เปิดเป็นโหมด Camera ไม่มี entity แสดง,
   Zoom In สี่ครั้ง (ทีละ ×√2) ได้มุมกว้างด้านสั้น 1/4 ของ ×1 คลาดไม่เกิน 1% และกล้องยังอยู่ที่ดาว, Zoom In 26 ครั้งถึง ×8192 (มุมกว้างด้านสั้น 1/8192 ของ ×1, ทิศกล้องคลาดไม่เกิน 0.01°, HUD แสดงความกว้างพื้นที่),
   ช่อง Width "1.5 km" ได้พื้นที่กว้าง 1.5 km คลาดไม่เกิน 3%,
@@ -937,8 +954,8 @@ browser ที่ไม่มี WebGL (หรือปิดการเร่�
 
 - **Visible Sides** ของ 2D Graphics - Pass เก็บและแก้ได้ แต่ v1 วาดเส้นทางแบบ `Both` เสมอ (หน้าแสดงหมายเหตุไทย)
 - หน้าต่าง 2D แสดงแผนที่ในกรอบ **ECF** เท่านั้น (Display Coordinate Frame เลือก ECI ไม่ได้)
-- เมนู **Analysis** (Access..., Report & Graph Manager..., Validation...) และปุ่มบนแถบเครื่องมือที่เกี่ยวข้องปิดใช้ รอ **งานย่อยที่ 4**
-  (Access tool, Report & Graph Manager และหน้า Validation) แถว Timeline แสดงช่วงเวลาของ access ที่ scenario เปิด Timeline ไว้ (แม่แบบ thbk-gnss มีให้แล้ว)
+- เมนู **Analysis** (Access..., Report & Graph Manager..., Validation...) ใช้ได้แล้วตั้งแต่งานย่อยที่ 4 (หัวข้อ 9.12) แถว Timeline แสดงเฉพาะ access ที่ Compute แล้ว
+  (access ของแม่แบบ thbk-gnss เริ่มเป็น `computed: false`: scenario ใหม่ไม่มีแถวและเส้น access จนกว่าจะกด Compute ใน Access tool; scenario รายวันถูกตั้ง computed ให้เอง)
 - ภาพแสงไฟเมืองตอนกลางคืน (Night Lights Level) ต้องใช้ภาพจาก Cesium ion จึงไม่มีในรุ่นออฟไลน์นี้ (เก็บค่าไว้แต่ไม่มีผลต่อภาพ)
 - Cut, Copy และ Paste ใน Object Browser ใช้ได้เฉพาะดาว ไม่รองรับการเปลี่ยนชื่อหรือลบกลุ่ม ไม่ใช่โปรแกรมหลายผู้ใช้ ไม่มีธีมมืด และไม่รองรับมือถือ
 
@@ -1019,8 +1036,8 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
     ชั้นทึบ = % Translucency 0 และเป็นภาพทึบที่มีทุกชิ้นทุกเวลา: ภาพคงที่แบบ jpg (Blue Marble, Sentinel-2 cloudless) หรือ OpenStreetMap (png แต่ทึบ)
     ชั้นที่ผูกเวลาไม่นับว่าทึบแม้เป็น jpg: VIIRS/MODIS รายวันไม่มีภาพของเวลาในอนาคต (ชิ้น 404 โปร่งใส Blue Marble ข้างใต้ต้องยังเห็น)
     และ Himawari (png) กับ GOES เห็นแค่จานโลกของดาวค้างฟ้า
-    เช่น ค่าตั้งต้น Blue Marble + VIIRS + Sentinel-2 + OpenStreetMap ที่ 0% ทั้งหมด = โหลดแค่ OpenStreetMap ; ตั้ง OpenStreetMap 30% = โหลด Sentinel-2 ด้วย
-    ; ปิดสวิตช์ OpenStreetMap และ Sentinel-2 = โหลด Blue Marble กับ VIIRS ตามเดิม
+    เช่น ค่าตั้งต้น Blue Marble + VIIRS + Sentinel-2 ที่ 0% ทั้งหมด (OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario: task 13c) = โหลดแค่ Sentinel-2 ซึ่งเป็นชั้นทึบบนสุด
+    ; ติ๊ก Show ของ OpenStreetMap = โหลดแค่ OpenStreetMap ; ตั้ง OpenStreetMap 30% = โหลด Sentinel-2 ด้วย ; ปิดสวิตช์ Sentinel-2 (OpenStreetMap ซ่อน) = โหลด Blue Marble กับ VIIRS ตามเดิม
     ปิดสวิตช์หรือ Show ของชั้นบน หรือเพิ่ม % Translucency แล้วชั้นข้างใต้กลับมาเอง Natural Earth II (ออฟไลน์) ยังเป็นภาพฐานเสมอ
     ชั้นทึบที่ชิ้นภาพพลาดเกินเกณฑ์ (ได้ผลอย่างน้อย 8 ชิ้น พลาดอย่างน้อย 75% เกณฑ์เดียวกับ HUD และ ion) เลิกนับเป็นชั้นทึบใน viewer นั้น: ชั้นข้างใต้ถูกสร้างให้เห็น
     (OpenStreetMap ถูกบล็อกหรือเน็ตหลุด, Sentinel-2 หยุดหรือไม่ว่าง) ล้มซ้อนกันได้ทีละชั้น จนเอาชั้นนั้นออกแล้วใส่กลับ (ปิดแล้วเปิดสวิตช์หรือ Show) จึงนับเป็นชั้นทึบได้อีก
@@ -1035,7 +1052,7 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 
 - Sensor ติดได้กับ Satellite เท่านั้น (ไม่ติดกับ Facility)
 - Sensor Type มีแต่ **Simple Conic** และ Pointing มีแต่ **Fixed** แบบ **Az-El** ในกรอบตัวดาว (ไม่มี Complex Conic, Rectangular, Targeted, Spinning ฯลฯ และไม่มีช่อง Location, Sensor AzEl Mask, Projection, Pulse)
-- ไม่มี Access และ constraint ของ sensor (งานย่อยที่ 4 ต่อยอดได้)
+- ไม่มี Access และ constraint ของ sensor (Access ของงานย่อยที่ 4 เป็นของ Facility กับดาวเท่านั้น)
 - ไม่มีท่าทางจริงของดาว GNSS (yaw steering) ซึ่งจะมากับโมเดล 3 มิติ
 - Copy / Paste ของ sensor ปิดใช้พร้อมคำอธิบาย คัดลอกดาวแล้ว sensor ไม่ถูกคัดลอกตาม
 - Insert From Satellite Catalog ใช้กับ Sensor ไม่ได้
@@ -1114,7 +1131,9 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 แต่ละชั้นมีช่อง **Show** และ **% Translucency** (จำนวนเต็ม 0-100) กลุ่ม Cesium ion ไม่มีตาราง (มีช่อง token และตัวเลือก asset)
 ลำดับวาด (ชั้นที่อยู่ล่างทับชั้นบน): Natural Earth II → GIBS ตามตาราง → Sentinel-2 cloudless → OpenStreetMap → เส้น Lat/Lon อยู่บนสุดเสมอ (ยกเว้นเมื่อ ion แสดง: ion ชั้นเดียว)
 เมื่อสวิตช์ของแหล่งใดปิด แถวของแหล่งนั้นปิดใช้ (เทา) พร้อมคำอธิบาย ค่าตั้งต้นเมื่อเปิดสวิตช์ครั้งแรก: **Blue Marble** กับ **VIIRS NOAA-20 True Color** แสดง ชั้นอื่นของ GIBS ซ่อน
-ส่วนแถว Sentinel-2 cloudless และ OpenStreetMap ของ workbook ใหม่ตั้งเป็นแสดงไว้แล้ว (สวิตช์ของแหล่งยังปิดอยู่จึงยังไม่มีภาพ) workbook เก่าที่ไม่มีค่านี้ซ่อนไว้
+ส่วนแถว Sentinel-2 cloudless ของ workbook ใหม่ตั้งเป็นแสดงไว้แล้ว (สวิตช์ของแหล่งยังปิดอยู่จึงยังไม่มีภาพ) workbook เก่าที่ไม่มีค่านี้ซ่อนไว้
+**OpenStreetMap ซ่อนทุกครั้งที่เปิด scenario** (task 13c: แผนที่ถนนทึบสีอ่อนทับภาพถ่ายจนโลกตอนเปิดโปรแกรมดูขาวซีด) ไม่ว่า workbook เก็บ Show ไว้อย่างไร (% Translucency คงเดิม):
+ติ๊ก Show เองได้ในการใช้งานครั้งนั้นและ File → Save เก็บได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก (ไม่แตะสวิตช์แหล่ง OSM ใน `settings.json`)
 ค่า Show และ Translucency เก็บใน workbook ของ scenario (File → Save) และใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View
 เมื่อเปิดแสง (Enable Lighting) ด้านกลางคืนของชั้นภาพออนไลน์ทุกชั้นจางตาม Ambient Level ของหน้าต่างเท่ากับภาพฐาน (Sensor View เปิดแสงเสมอและใช้ค่าตั้งต้น)
 
@@ -1257,11 +1276,16 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 | ตัวเลือก | ค่าตั้งต้น | หมายเหตุ |
 |---|---|---|
+| **Show Orbits** | เปิด | ปิด = ไม่วาดเส้นวงโคจรของดาวทุกดวงในหน้าต่างนี้ (รวมเส้น Inertial by Window) โดยไม่แตะค่าของ object (task 13c) |
 | **Satellite Models** | เปิด | ปิด = ดาวกลับเป็นจุดทันที (ไม่ fetch ไฟล์ใหม่เมื่อเปิดอีกครั้ง) |
 | **Model Pixel Size** | 48 | จำนวนเต็ม 16–256 พิกเซล (ขนาดต่ำสุดบนจอ ไม่จำกัดการขยาย จึงได้ขนาดนี้ที่ทุกระยะ: test คำนวณด้วยสูตรของ Cesium ที่ 50,000 และ 80,000 km) |
 | **Model Detail Threshold** | 30000 | จำนวนเต็ม 1,000–200,000 km: ดาวที่ห่างกล้องน้อยกว่านี้เป็นโมเดล ไกลกว่าเป็นจุด ตัดสินใหม่ทุกรอบ 250 ms ขณะเวลาเดิน และเมื่อกล้องขยับเกิน 5% |
 
-ป้ายสามตัวนี้ไม่มีใน STK reference (ไม่มีคำว่า detail threshold) จึงเป็นป้ายของเราเอง โหลดโมเดลล้มเหลว (ไม่มีไฟล์ ไฟล์เสีย หรือ catalog อ่านไม่ได้) = ดาวนั้นกลับเป็นจุด มีข้อความไทยใน Message Viewer ครั้งเดียวต่อโมเดล (ต่อหน้าเว็บสำหรับ catalog) การคลิก ป้ายชื่อ สี Sensor และ Access ไม่เสีย
+**Show Orbits** (หน้าต่าง 3D) และ **Show Ground Tracks** (หน้าต่าง 2D, ค่าตั้งต้นเปิด: ปิด = ไม่วาด ground track ของดาวทุกดวงในหน้าต่างนั้น) เป็นตัวเลือกต่อหน้าต่างที่เก็บใน workbook
+เปิดปิดได้สามทาง: เมนูคลิกขวาของหน้าต่าง (คลิกขวาที่ไม่ชี้ object โดยไม่ลาก เพราะลากด้วยปุ่มขวาคือซูม), ปุ่มบนแถบ **3D Window Defaults** / **2D Window Defaults**
+และช่องติ๊กใน 3D / 2D Graphics Window Properties หน้า **Details** (ป้ายของเราเอง ไม่มีใน STK reference) test hook `pathCount()` นับเส้นวงโคจรที่หน้าต่าง 3D ตัวแรกวาดอยู่
+
+ป้ายสามตัวของโมเดลไม่มีใน STK reference (ไม่มีคำว่า detail threshold) จึงเป็นป้ายของเราเอง โหลดโมเดลล้มเหลว (ไม่มีไฟล์ ไฟล์เสีย หรือ catalog อ่านไม่ได้) = ดาวนั้นกลับเป็นจุด มีข้อความไทยใน Message Viewer ครั้งเดียวต่อโมเดล (ต่อหน้าเว็บสำหรับ catalog) การคลิก ป้ายชื่อ สี Sensor และ Access ไม่เสีย
 ไฟล์ glb แต่ละตัวถูกดึงครั้งเดียวต่อหน้าเว็บ ตรวจทั้งไฟล์ก่อนใช้ (`glbProblem`: ความยาวในหัว, JSON chunk อ่านได้, `asset.version` = "2.0", `extensionsRequired` มีแต่ที่ Cesium รองรับ, chunk พอดีไฟล์)
 แล้วให้ Cesium โหลดจาก `blob:` ของ origin เดียวกัน ถ้า Cesium ยังโหลดไม่สำเร็จภายหลัง (`errorEvent` ของ primitive โมเดล) ดาวของโมเดลนั้นกลับเป็นจุดทุกหน้าต่าง พร้อมข้อความไทยครั้งเดียวต่อโมเดล
 ใช้หน่วยความจำราว 1 MB ต่อโมเดลที่ใช้จริงตลอดอายุหน้า
@@ -1279,6 +1303,81 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 **ทดสอบ**: unit test (`tests/unit/sat-model-*.test.ts`, `attitude.test.ts`, `attitude-laws.test.ts` (ทุกกฎที่ β = ±0.5°, ±2°, 5°, 15°: ความต่อเนื่อง อัตราหมุน nominal นอกช่วง กรอบตั้งฉาก ไม่ขึ้นกับประวัติ), `models-packaging.test.ts`) และ e2e `web/tests/e2e/models.spec.ts` (`npm run e2e`): ที่ Model Detail Threshold 200,000 km ดาวที่แสดงทุกดวงเป็นโมเดล ที่ 1,000 km ทุกดวงเป็นจุด
 และดาวที่กล้องเข้าไปใกล้ (test hook `flyToSatellite`) เป็นโมเดล ปิด Satellite Models แล้วเหลือ 0 และจุดกลับมา `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์ ไม่มี request ออกนอกเครื่อง +Z ชี้ลงโลกคลาด < 0.5°
+
+### 9.12 Access, Report & Graph Manager และ Validation (งานย่อยที่ 4)
+
+ทำงานบนผลที่ engine คำนวณไว้แล้ว (`aer.csv`, `intervals.json`, `dop.csv`, `predicted.sp3`) ไม่ต่อเน็ต: รายงานทุกชนิดสร้างจาก Data Provider ของ engine
+(`gnss_predict/dataproviders.py`) ตัวเดียวกันทั้งหน้าเว็บ server และ CLI `report` (หัวข้อ 7.1) ป้ายบนจอเป็นคำของ STK ตาม STK ref §F และ
+[docs/2026-11-15-stk-terms-access-reports.md](docs/2026-11-15-stk-terms-access-reports.md) (`stk()` / `stkHelp()` ใน `labels.ts`) คำที่ไม่มีใน STK เป็นป้ายของเรา (`ours()`)
+
+**Access tool** (Analysis → Access..., ปุ่ม Access บนแถบเครื่องมือ หรือคลิกขวาที่ Facility / Satellite → Access...) หน้าต่างลอยบานเดียว
+
+- **Access For**: Facility หรือดาว (ปุ่ม Select Object... เปลี่ยนได้) **Associated Objects**: Constellation ติ๊กทั้งกลุ่มหรือรายดวง ชื่อตัวหนา = access ที่ Compute แล้วและผลของ Facility ตรงกับ scenario
+- **Compute / Clear / Clear All / Remove / Remove All**: Compute บันทึก access เป็น `computed: true` (ผลของ Facility ตรงอยู่แล้ว = ทันที ไม่งั้นส่ง job `analyze` ซึ่งใช้ผล propagate เดิม ไม่ต้องใช้ GMAT ถ้าผลของดาวยังตรง)
+  Clear ตั้ง `computed: false` (ผลบนดิสก์ยังอยู่) Remove ลบ access ออกจาก scenario; Clear/Remove ที่ไม่มีรายการตรง = ข้อความ info
+- **Time Period**: Use Object Time Period หรือ Specify Time Period (Start/Stop ตาม DateFormat ของ scenario; ช่วงนี้ตัดผลที่แสดง ไม่คำนวณใหม่)
+- **Auto Add to Timeline** (ติ๊กไว้ตั้งต้น) และ **Add Timeline**; **Animation Graphics**: Show, Static Highlight, Animate Highlight, Show Animate Line, Use Object Colors / Use Custom Color
+  และ Inherit Settings from Scenario (แก้ช่องกราฟิกใด = เลิกติ๊ก Inherit เอง เพราะค่าที่ inherit ไม่ใช้ค่าในฟอร์ม)
+- **Reports / Graphs**: Access..., AER... ของคู่ที่ติ๊ก และ Report & Graph Manager... (Object Type = Access)
+- **แสดงเฉพาะ access ที่ Compute แล้ว** (แบบ STK): แถว Timeline, เส้น access ในหน้าต่าง 3D/2D และ highlight มาจาก access ที่ `computed: true` เท่านั้น
+  access ของแม่แบบ thbk-gnss เริ่มเป็น `computed: false` scenario ใหม่จึงไม่มีแถวและเส้นจนกว่าจะ Compute (งานประจำวันตั้ง computed ให้ scenario ที่มันสร้าง)
+  กราฟิกหาแยกต่อคู่ (Facility, ดาว): Facility สองแห่งที่ครอบดาวเดียวกันมีสีของตัวเอง
+- **Static Highlight** (หน้าต่าง 2D): เส้นหนา 4 พิกเซลตามจุดใต้ดาวทุก 60 วินาทีตลอดแต่ละช่วง access ฉายลงผิวโลก (ความสูง 0) เส้นที่ข้ามเส้น 180° Cesium ตัดให้ที่ขอบแผนที่
+  **Animate Highlight**: กรอบสี่เหลี่ยมรอบดาวเฉพาะเวลาที่อยู่ใน access (availability ของ Cesium ไม่ใช้ CallbackProperty) สลับ scenario แล้วไม่มี highlight ค้างจาก scenario เดิม
+
+**Report & Graph Manager** (Analysis → Report & Graph Manager..., ปุ่มบนแถบเครื่องมือ, คลิกขวาที่ object หรือที่ราก Scenario)
+
+- **Object Type** (All Types, Access, Facility, Satellite, Constellation) และรายชื่อ object (เลือกหลายตัวด้วย Ctrl/Shift; Access แสดงเป็น `THBK-To-G01`)
+- **Styles** สามชั้น: **Installed Styles** (ล็อก แก้ไม่ได้ 14 รายการ: report Access, AccessSummary, AER, Gaps, IPP Data (GNSS Studio), LLA Position, All DOPs, N Asset Coverage;
+  graph Access, AER, Elevation Angle, Az El Polar, All DOPs, N Asset Coverage), **My Styles** (ไฟล์ `data/styles/<ชื่อ>.json` ใช้ได้ทุก scenario) และ **Scenario Styles** (`styles` ใน `scenario.json`)
+  ชื่อ style ห้ามซ้ำกันทั้งสามชั้นแบบไม่สนตัวพิมพ์ (ยกเว้น Installed คู่ report/graph ชื่อเดียวกัน) ตามกฎ `^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$`
+  ไฟล์ My Style ที่แก้มือแล้วเสียถูกข้ามพร้อม log (อยู่ในต้นไม้เป็นรายการที่ใช้ไม่ได้พร้อมเหตุผลภาษาไทย ลบได้)
+- Show Reports / Show Graphs, **Generate As**: Report/Graph หรือ Dynamic Display/Strip Chart (style ที่ไม่รองรับเป็นสีเทา)
+- **Generate...** เปิดกล่อง Time Properties (ค่าตั้งต้นจาก style) แล้วสร้างรายงาน ผลไม่ตรงกับ scenario = ถามว่าจะ Compute ก่อนไหม
+- คลิกขวาที่ style: Generate as .txt file..., Generate as .csv file..., Properties, Copy to My Styles, Delete; **New...** / **Properties...** เปิดหน้าต่างแก้ style
+  (Content: provider, group, element; Summary: สถิติ; Graph: Time XY / Interval / Polar, Y1 / Y2) style ที่อ้าง element ที่ไม่มี = 422 `STYLE_INVALID` ขึ้น Message Viewer
+- รายการและต้นไม้ใช้คีย์บอร์ดได้ (ลูกศร Home End Enter)
+
+**หน้าต่างรายงาน** ชื่อแบบ `THBK-To-G01: Access` (หลาย object = `Multiple Objects: <style>`) เป็นแท็บกลาง ย้ายเป็น Dockable/Floating ได้ เก็บใน workbook และสร้างใหม่ตอนเปิด scenario
+
+- แถบเครื่องมือ: **Refresh** (F5) และ **Export** ▸ **To Excel or CSV Format** (ดาวน์โหลด `.csv`) / Setup... (Export Setup ของหน้าต่างนั้น: Field Delimiter, Enclose Header Fields in Quotes,
+  Write Report Title, Headers; ค่าตั้งต้น `,` ไม่ใส่คำพูด ไม่เขียนชื่อรายงาน มีหัวคอลัมน์; เก็บใน workbook) คลิกขวาที่ช่องเวลา: Set Animation Time
+- ตารางแบบ virtual (หลายแสนแถวเลื่อนได้) ทศนิยม: มุม ระยะ Duration DOP 3 ตำแหน่ง, IPP Lat/Lon 4, MF 5, rate 6, จำนวนเต็มไม่มีทศนิยม ไม่มีค่า = `N/A` ไม่มีแถวเลย = `No Data`
+  ท้ายรายงานหลาย object มีบล็อก **Global Statistics**; หัวคอลัมน์ `Access` ของ element `Access Number`
+- **Dynamic Display**: โหลดทั้งช่วงครั้งเดียว แสดงแถวของเวลา animation ปัจจุบัน ค่าต่อเนื่องประมาณเชิงเส้น (Azimuth ข้ามทิศเหนือได้ ~0° ไม่ใช่ ~180°) ค่าแบบนับใช้จุดก่อนหน้า ไม่ถาม server ทุกเฟรม
+- ผลไม่ตรงกับ scenario (แก้ scenario หลัง Compute) = แถบเตือนเดียวกับหน้าต่าง 3D/2D และ Refresh (หรือ Apply บนแถบ) คำนวณใหม่แล้วสร้างรายงานใหม่
+- รายงาน Access ของ THBK กับดาวหนึ่งดวงในหนึ่งวันขึ้นภายใน 2 วินาที (ตรวจทั้ง engine, server และ e2e)
+
+**หน้าต่างกราฟ** ECharts 6.1.0 ที่โหลดแยก chunk ตอนเปิดกราฟครั้งแรกเท่านั้น (ไม่อยู่ใน bundle หลัก) ชนิด Time XY, Interval (แถบช่วง access) และ Polar (Az El Polar: Azimuth เป็นมุม 0° ด้านบนตามเข็มนาฬิกา, Elevation เป็นรัศมี 90° ตรงกลาง ขอบนอก 0°)
+
+- แถบเครื่องมือ: Save (PNG), Copy to Clipboard, Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor; คลิกขวา: Show Animation Time Line, Set Animation Time, Export (CSV ของข้อมูลทั้งช่วง)
+- เส้นเวลา animation ตามนาฬิกาไม่เกินทุก 250 ms (ไม่เรียก server) กราฟ Polar มีจุดของเวลาปัจจุบันเฉพาะเมื่ออยู่ใน access
+- เส้นต่อเนื่องใช้ `sampling: "lttb"` (กราฟหลายหมื่นจุดลื่น) ส่วน series แบบซ้อน (stack) และจำนวนเต็ม (step) ไม่ลดจุด เพื่อให้ค่าที่นับได้ตรง
+  เส้นขาดที่ช่องว่างระหว่างแถวเกิน 1.5 เท่าของ step และที่มุมวน (Azimuth, Lon, IPP Lon ข้าม 0/360 หรือ ±180) จุดขาดอยู่รอดการลดจุดของ LTTB (ตรวจกับ ECharts จริงทั้ง unit และ e2e)
+- **Strip Chart** (style ที่เปิด Dynamic Display ชนิด Time XY): แกนเวลาแสดง 3600 วินาทีล่าสุดที่จบที่เวลาปัจจุบัน
+
+**ไฟล์ .txt / .csv** (หน้าเว็บ, R&G Manager และ CLI ใช้ตัวจัดรูปแบบเดียวกัน `report_format.py`)
+
+- `.txt`: บรรทัดแรกชื่อ scenario กับเวลาสร้าง (UTCG) ชื่อรายงานแบบ `THBK-To-G01:  Access` (สองช่องว่าง) หัวคอลัมน์มีหน่วย (`Start Time (UTCG)`) ขีดเส้นใต้ ตัวเลขชิดขวา คอลัมน์คั่น 4 ช่องว่าง และบล็อก Global Statistics ท้ายไฟล์
+- `.csv`: ตัวคั่นตาม Export Setup หัวคอลัมน์มีหน่วย (`Access,Start Time (UTCG),Stop Time (UTCG),Duration (sec)`) ไม่มีบล็อกสถิติ เวลาตาม DateFormat ของ scenario
+
+**หน้า Validation** (Analysis → Validation..., ไม่ต้องเปิด scenario; ของเรา ไม่มีใน STK) อ่านอย่างเดียว: ไม่สั่งตรวจและไม่สั่งงานประจำวัน
+
+- ตารางรายวันจาก `GET /validation/history` รวมกับวันที่ยังไม่มีผล (`GET /validation/pending`) วันใหม่สุดก่อน: Result = Pass / Fail / **Pending** (พร้อมเวลาที่จะลองครั้งถัดไป
+  งานประจำวันปิด = บอกว่ายังไม่ได้ตั้งเวลา) / **Gave up**; คอลัมน์ Failing และ ΔEl (สลับเป็น ΔAz ได้) ค่ากลาง/P99 ต่อระบบ ระบบที่ไม่ผ่านมี ✗
+- คลิกหรือ Enter ที่วันที่ตรวจแล้ว = ตารางรายดวงของวันนั้น (กรองตามระบบและผล) ตารางรายวันใช้คีย์บอร์ดได้ (ลูกศร Home End Enter Space)
+- กราฟแนวโน้ม P99 ต่อระบบพร้อมเส้นเกณฑ์ (|ΔEl| 0.2°, |ΔAz| 0.5°) และกราฟอายุข้อมูลกับความคลาด 3 มิติ (ประกอบเกณฑ์อายุ 7 วัน)
+
+**test hook ของ e2e** (`window.__gnssStudioTest` เมื่อ URL มี `?test`): `reportRows(panelId)` เซลล์ทุกแถวของหน้าต่างรายงาน, `graphState(panelId)` ชนิดกราฟ เส้น เส้นเวลา จุดปัจจุบันของ polar
+และ `drawn` (สิ่งที่ ECharts วาดจริง: จุดก่อน/หลัง LTTB, จุดขาด, จำนวนเส้นเวลาของ markLine), `accessLines("3d" | "2d")` จำนวนเส้น access ที่เปิดอยู่
+และ `overlays2d().highlightTracks` / `highlightBoxes` (panelId ของหน้าต่างรายงาน/กราฟบานแรกคือ `report` / `graph`)
+
+**ข้อจำกัดของ v1** (รายละเอียดและข้อค้างอยู่ในเอกสารการตัดสินใจ)
+
+- หน้าต่างรายงาน/กราฟหนึ่งบานต่อคำขอ (style, object, เวลา, Dynamic) เปิดซ้ำ = เรียกบานเดิม; รายงานหนึ่งครั้งใช้ Facility ได้ไม่เกิน 4 แห่ง (ตารางของแต่ละแห่งราว 135 MB อยู่ในหน่วยความจำระหว่างสร้าง)
+- Strip Chart Duration คงที่ 3600 วินาที (ไม่มีช่องให้แก้) และแกน y ของ Strip Chart ไม่ปรับตามชั่วโมงที่เห็น; Export ของกราฟดาวน์โหลด CSV ด้วย Export Setup ตั้งต้นทันที (ไม่มีกล่อง)
+- CLI `report` ใช้ Scenario Styles กับ Installed Styles เท่านั้น (ไม่อ่าน My Styles) และไม่ใช้ช่วงเวลาที่เก็บไว้ใน access
+- คำบางคำที่ STK มีแต่ไม่พบในเอกสาร STK ที่ตรวจได้ (Constellation ใน Object Types, คลิกขวา Copy to My Styles / Delete / Generate as .txt/.csv) ยังมีตาม spec แต่ใช้ป้ายของเรา
 
 ## 10. Docker (GNSS Studio ใน container)
 
