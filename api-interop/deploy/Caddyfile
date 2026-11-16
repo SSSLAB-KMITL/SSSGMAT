@@ -36,11 +36,19 @@
 
 # args: <port ของแอป> <ชื่อ service ใน compose>
 (app) {
+	# Origin อื่นทุกค่า (รวม http://localhost:..., http://127.0.0.1:... ของหน้าเว็บที่รันบนเครื่องผู้ใช้) เปลี่ยนเป็น "null"
+	# แอปรับ Origin แบบ loopback ของตัวเอง ถ้าส่งผ่านตามเดิม หน้าเว็บบนเครื่องผู้ใช้จะสั่งงานด้วยรหัส basic auth ที่ browser จำไว้ได้
+	# ตัวกันของทั้งสามแอปปฏิเสธ "null" (403 / WebSocket 403)
 	@own_origin expression `{http.request.header.Origin} == "https://" + {http.request.hostport}`
+	@foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://" + {http.request.hostport}`
+	# ลำดับสำคัญ: request_header ทำตามลำดับในไฟล์และ matcher ของบรรทัดหลังเห็นค่าที่บรรทัดก่อนเขียนแล้ว
+	request_header @foreign_origin Origin null
 	request_header @own_origin Origin http://127.0.0.1:{args[0]}
 
 	reverse_proxy {args[1]}:{args[0]} {
 		header_up Host 127.0.0.1:{args[0]}
+		# redirect ของแอป (trailing slash, โฟลเดอร์ static) สร้าง Location จาก Host ที่ถูกเขียนเป็น 127.0.0.1 แก้กลับเป็นโดเมนของ proxy
+		header_down Location ^https?://127\.0\.0\.1:{args[0]} https://{http.request.hostport}
 	}
 }
 

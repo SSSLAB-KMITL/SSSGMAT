@@ -41,9 +41,12 @@ scp sss-apps-images.tar.gz server:
 ssh server 'gunzip -c sss-apps-images.tar.gz | docker load'
 ```
 
-หรือ clone repo บนเครื่อง production แล้วรัน `./build.sh` ที่นั่น (ต้องมี branch ทั้งสอง)
+หรือ clone repo บนเครื่อง production แล้วรัน `./build.sh` ที่นั่น (ต้อง push branch `feature/production-docker` และ
+`feature/gpredict-web-docker` ขึ้น remote ก่อน: build.sh ใช้ `origin/<branch>` เองถ้ายังไม่ได้ checkout หรือกำหนด `GNSS_REF`, `GPREDICT_REF`, `EO_REF`)
 
 ## 3. ตั้งค่าและเปิด
+
+**ถ้าจะย้ายข้อมูลเดิมขึ้น ให้ทำหัวข้อ 4 ก่อน `docker compose up` ครั้งแรก** (เปิดก่อนแล้ว volume จะมีไฟล์ตั้งต้นและ `seed-volume.sh` จะไม่คัดลอกทับ)
 
 ```bash
 cd api-interop/deploy            # บนเครื่อง production ต้องมี compose.yaml, Caddyfile, .env, seed-volume.sh
@@ -73,7 +76,7 @@ rsync -a --info=progress2 api-interop/earth-observation-demo/data/   server:/srv
 #   EO: data/raw-csi (~11 GB) เป็น cache ภาพ CSI ที่สร้างใหม่ได้ ข้ามได้ด้วย --exclude raw-csi/ (เปิดภาพ CSI ครั้งแรกจะดาวน์โหลดใหม่ 1–2.5 GB)
 
 # บนเครื่อง production
-docker compose down
+# ทำก่อน `docker compose up` ครั้งแรก (volume ยังว่าง)
 ./seed-volume.sh celestrak_cache /srv/import/gnss-predict-data/orbits/_cache
 ./seed-volume.sh gnss_data       /srv/import/gnss-predict-data ./orbits/_cache
 ./seed-volume.sh gpredict_data   /srv/import/gpredict-web-data
@@ -81,7 +84,9 @@ docker compose down
 docker compose up -d
 ```
 
-`seed-volume.sh` ไม่ทับ volume ที่มีข้อมูลแล้ว (ตั้ง `FORCE=1` ถ้าต้องการ) และให้ไฟล์ทั้งหมดเป็นของ uid 10001
+`seed-volume.sh` ไม่ทับ volume ที่มีข้อมูลแล้ว และให้ไฟล์ทั้งหมดเป็นของ uid 10001 ถ้าเผลอ `up` ไปก่อน ให้ `docker compose down` แล้วใช้
+`FORCE=1` กับ `gnss_data`, `gpredict_data`, `eo_data` ได้ แต่ **อย่า FORCE `celestrak_cache`** หลังเครื่อง production เคยดึง CelesTrak แล้ว:
+`celestrak_state.json` ของเครื่องพัฒนาจะทับประวัติคำขอของเครื่องนี้ (กติกา 1 ครั้งต่อกลุ่มต่อ 2 ชั่วโมงนับจาก IP นี้)
 `settings.json` ของ GNSS Studio ที่ย้ายขึ้นมาใช้ค่าเดิมของเครื่องพัฒนา รวม `cesium_ion_token` ถ้ามี — ตรวจก่อนย้าย
 
 ## 5. ความปลอดภัยที่ตั้งไว้
@@ -89,7 +94,9 @@ docker compose up -d
 - เฉพาะ `caddy` ที่ publish port แอปทั้งสามไม่มี port บนเครื่อง เข้าได้ทาง proxy เท่านั้น
 - basic auth ทุกคำขอ (รวม API, SSE, WebSocket) รหัสผ่านเก็บเป็น bcrypt hash ใน `.env`
 - แอปทั้งสามกันคำขอข้ามเว็บไซต์ด้วย Host/Origin ของตัวเอง (`127.0.0.1:<port>`) proxy เขียน Host และเขียน Origin
-  เฉพาะเมื่อ Origin เป็นหน้าเว็บของ proxy เอง เว็บไซต์อื่นที่ส่งคำสั่งมา (แม้ browser แนบรหัส basic auth) ยังได้ 403
+  เฉพาะเมื่อ Origin เป็นหน้าเว็บของ proxy เอง Origin อื่นทุกค่าถูกเขียนเป็น `null` ก่อนถึงแอป (รวม `http://localhost:…` ของหน้าเว็บที่รันบนเครื่องผู้ใช้
+  ซึ่งแอปเชื่อเป็นของตัวเอง) เว็บไซต์อื่นที่ส่งคำสั่งมา (แม้ browser แนบรหัส basic auth) จึงได้ 403 ทั้ง HTTP และ WebSocket
+- Location ของ redirect จากแอป (`http://127.0.0.1:<port>/…`) ถูกเขียนกลับเป็นโดเมนของ proxy
 - `POST /api/quit` ของ Gpredict Web ถูกปิดที่ proxy (403)
 - ทุก container: `cap_drop: ALL`, `no-new-privileges` แอปรันเป็น uid 10001 (caddy ได้เพิ่มเฉพาะ `NET_BIND_SERVICE`)
 - HSTS, `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`
@@ -119,12 +126,15 @@ GNSS_STUDIO_IMAGE=gnss-studio:<commit> docker compose up -d gnss-studio   # roll
 # สำรองข้อมูล (หยุดแอปก่อนเพื่อให้ไฟล์ไม่เปลี่ยนระหว่างคัดลอก)
 docker compose stop gnss-studio gpredict-web eo-studio
 for v in gnss_data gpredict_data eo_data celestrak_cache caddy_data; do
-  docker run --rm -v sss-apps_$v:/v:ro -v "$PWD":/backup --entrypoint tar eo-studio:prod -C /v -czf /backup/$v.tgz .
+  # --user 0:0: caddy_data เป็นของ root (key 0600) และโฟลเดอร์ปลายทางอาจไม่ใช่ของ uid 10001
+  docker run --rm --network none --user 0:0 -v sss-apps_$v:/v:ro -v "$PWD":/backup --entrypoint tar eo-studio:prod \
+    -C /v -czf /backup/$v.tgz . || echo "สำรอง $v ไม่สำเร็จ" >&2
 done
 docker compose start gnss-studio gpredict-web eo-studio
 ```
 
 `caddy_data` เก็บใบรับรองและ key ของ Let's Encrypt สำรองไว้ด้วยเพื่อไม่ต้องขอใหม่ (Let's Encrypt จำกัดจำนวนครั้ง)
+ไฟล์ `.tgz` มี private key และ `settings.json` (อาจมี Cesium ion token) เก็บในที่ปลอดภัย (`.gitignore` กันไม่ให้ commit แล้ว)
 
 ## 8. ทดสอบบนเครื่องตัวเองก่อนขึ้นจริง
 
@@ -166,9 +176,11 @@ volume ทดสอบ seed ด้วย `seed-volume.sh` จากสำเน�
 | หน้าแรกและ API (`/api/health`, `/api/qth`, `/api/eo/catalog`) ผ่าน proxy | 200 |
 | คำสั่งแก้ข้อมูลที่ Origin เป็นหน้าเว็บของ proxy เอง | ผ่านตัวกันของแอป (ได้ 404/422 ตามเนื้อหา ไม่ใช่ 403) ทั้งสามแอป ทั้งจาก curl และจาก `fetch` ในหน้าเว็บจริง (Chromium) |
 | Origin ของเว็บอื่น และ Origin ของอีกแอปใน stack เดียวกัน | 403 (`FORBIDDEN_ORIGIN` / `Origin is not this local app`) |
+| Origin แบบ loopback (`http://127.0.0.1:8000`, `http://localhost:8000`, `http://localhost:5173`, `http://127.0.0.1:5178`, `http://127.0.0.1:8018`) | 403 ทั้งสามแอป (proxy เขียนเป็น `null`) |
+| redirect ของแอป (`/api/qth/` ของ Gpredict Web) | `Location: https://gpredict.localhost:8443/api/qth` ไม่ใช่ 127.0.0.1 |
 | `POST /api/quit` ของ Gpredict Web | 403 ที่ proxy |
 | SSE `/api/events` ของ GNSS Studio | ได้ `event: ping` ทันที (ไม่ถูก buffer) |
-| WebSocket `/ws/app` ของ Gpredict Web | 101 เมื่อ Origin เป็นของ proxy, 403 เมื่อ Origin อื่น |
+| WebSocket `/ws/app` ของ Gpredict Web | 101 เมื่อ Origin เป็นของ proxy, 403 เมื่อ Origin อื่นหรือ `http://localhost:8740` |
 | บีบอัด | ไฟล์ static ได้ `zstd`, `/api/*` ไม่บีบอัด |
 | header | HSTS, nosniff, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin` |
 | หน้าเว็บใน Chromium (headless) | GNSS Studio แสดง Welcome พร้อม scenario ที่ย้ายขึ้น, Gpredict Web แสดง module `tt` พร้อมดาวสด, EO แสดง 146 acquisitions |
@@ -177,5 +189,9 @@ volume ทดสอบ seed ด้วย `seed-volume.sh` จากสำเน�
 | YOLO ใน EO | ตรวจจับ `vegas-wv3` (detail) แบบไม่ใช้ cache ด้วย torch CPU 13.1 วินาที พบ 2 วัตถุ |
 | pytest ของ EO ใน image | 39/40 ข้อที่ล้มเกิดเฉพาะ emulation (ดู `earth-observation-demo/USAGE.md` หัวข้อ Docker) |
 | `docker compose down` แล้ว `up -d` | ข้อมูลอยู่ครบ ผลทดสอบข้างบนซ้ำได้เหมือนเดิม |
+
+ข้อจำกัดที่ทราบ (โค้ด engine เดิม ไม่ได้แก้ในรอบนี้): `celestrak_state.json` ใน cache ร่วมเขียนแบบอ่าน-แก้-เขียนโดยไม่มี lock ข้าม process
+(`gnss_predict/omm.py`) ถ้า GNSS Studio และ Gpredict Web ดึง CelesTrak กลุ่มเดียวกันในเสี้ยววินาทีเดียวกัน ประวัติคำขอหนึ่งอาจหาย
+ทำให้ขอซ้ำภายใน 2 ชั่วโมงได้ โอกาสต่ำ (งานประจำวันของ GNSS Studio ปิดไว้ตั้งต้น Gpredict Web ดึงเมื่อผู้ใช้สั่ง) แก้ถาวรด้วย `flock` ใน engine
 
 ยังไม่ได้ทดสอบ: การขอใบรับรองจริงจาก Let's Encrypt (ต้องมีโดเมนจริง) และการรันบนเครื่อง x86_64 จริง (ความเร็ว GMAT/YOLO บนเครื่องจริงควรเร็วกว่าตัวเลขข้างบนที่ผ่าน emulation)
