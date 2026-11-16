@@ -14,6 +14,8 @@
   ชื่อผิดกฎ P5 หรือ name ไม่ตรง path: 422 `STYLE_INVALID` ที่ `name` เนื้อหาผิด (`check_style`): 422 `STYLE_INVALID` ที่ช่องนั้น เช่น `content[0].elements[0]`
   ชื่อซ้ำกับ Installed Styles (ไม่แยกตัวพิมพ์) หรือกับ My Style ที่มีอยู่: 409 `NAME_EXISTS` ที่ `name` (ชื่อซ้ำกับ Scenario Style เป็นเรื่องของหน้าเว็บ ที่รู้ scenario)
   path เป็น `{name:path}` เพื่อให้ `a/b` ถึง route แล้วตอบ 422 (ไม่ใช่ 404) และชื่อถูกตรวจก่อนสร้าง path ทุกครั้ง
+  ขนาด: body ไม่เกิน 256 KB (อ่านทีละก้อนและตัดก่อน parse ไม่เชื่อ Content-Length อย่างเดียว) และไฟล์ที่เขียนออกมาไม่เกิน 256 KB เกิน: 422 `STYLE_INVALID` ที่ `body`
+  `content` เกิน 16 รายการ (`check_style`): 422 ที่ `content` ไฟล์บนดิสก์ที่ใหญ่เกิน 256 KB ถูกข้ามพร้อมเตือนใน log เหมือนไฟล์เสีย (แทนที่ได้ด้วย PUT)
 
 - `POST /scenarios/{sc}/reports` `{style, kind?, objects[], time?, format, dynamic, export?}`: รายงานหรือกราฟของ style กับ object ที่เลือก
   `format` `json` (`report_json` ของ engine) หรือไฟล์ `txt` / `csv` (`text/plain` / `text/csv` charset utf-8 พร้อม `Content-Disposition: attachment`
@@ -27,6 +29,7 @@
     `start`/`stop` ใน mode นี้ไม่ใช้ (เหมือน `time_period` ของ access)
     `mode: specify` ต้องมี start และ stop (422 `time.start` / `time.stop`) และ start < stop (422 `time.start`) step ไม่ใช่จำนวนเท่าหรือ ≤ 0: 422 `time.step`
     หลาย object ที่ช่วงที่เก็บต่างกันตัดเป็นรายงานเดียวไม่ได้ (Global Statistics รวมแถวทุก object): 422 ที่ `objects`
+  - object ซ้ำ (ชนิดและชื่อเดียวกันไม่แยกตัวพิมพ์ รวมถึง path คู่ที่สลับลำดับ) ถูกตัดให้เหลือตัวที่เจอก่อน ไม่งั้นส่วนของ object เดียวกันขึ้นสองครั้งและ Global Statistics นับแถวซ้ำ
   - object เลือกจาก Facility ได้ไม่เกิน 4 แห่งต่อ request (ชื่อไม่แยกตัวพิมพ์ ดาวไม่นับ): เกิน 422 ที่ `objects` (ตารางตรึงพร้อมกัน แห่งละราว 135 MB)
   - ผลลัพธ์ไม่ตรงกับ scenario หรือยังไม่มี: 409 `RESULTS_NOT_CURRENT` (ตรวจหลังตรวจคำขอทุกข้อ)
   - ตารางของ request เดียวถูกตรึง (`PinnedTables`): cache ของ server มี 4 bundle แต่รายงานหลาย Facility ใช้ ephem 1 + access N bundle
@@ -45,8 +48,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
 from gnss_predict.dataproviders import (PROVIDERS, ProviderInfo, ResultSet, TableCache, list_providers, object_period,
@@ -54,7 +58,7 @@ from gnss_predict.dataproviders import (PROVIDERS, ProviderInfo, ResultSet, Tabl
 from gnss_predict.errors import ScenarioError, StyleError
 from gnss_predict.report_format import (ExportSetup, format_csv, format_txt, report_filename, report_json,
                                         time_format_of)
-from gnss_predict.report_style import build_report, check_style, installed_styles, resolve_style
+from gnss_predict.report_style import MAX_STEP_S, build_report, check_style, installed_styles, resolve_style
 from gnss_predict.scenario import EngineScenario, load_scenario
 
 from .. import access
@@ -64,7 +68,7 @@ from ..objects import path_of
 from ..plans import PlanCache
 from ..schema import UtcZ, parse_utc_z
 from ..store import SCENARIO_FILE, ScenarioStore
-from ..styles import MyStyles, check_name
+from ..styles import MAX_STYLE_BYTES, MyStyles, check_name
 from . import get_logger, get_my_styles, get_plans, get_store, get_tables
 from .results import ACCESS_DIR, EPHEM_DIR, access_entries, ephem_entry
 
@@ -265,6 +269,42 @@ def get_styles(object_type: str | None = None, scenario: str | None = None, stor
     return {"installed": keep(installed_styles()), "my": keep(my.list()), "scenario": keep(scenario_styles)}
 
 
+class _BodyCappedRoute(APIRoute):
+    """route ที่อ่านตัวหนังสือของคำขอทีละก้อนและตัดเมื่อเกิน `MAX_STYLE_BYTES` (422 STYLE_INVALID ที่ `body`) ก่อนที่ FastAPI จะ parse JSON
+
+    ตรวจ Content-Length ก่อน (ไม่อ่านเลยถ้าประกาศว่าเกิน) แต่ไม่เชื่อมันอย่างเดียว: ไม่มี Content-Length (chunked) หรือประกาศน้อยกว่าที่ส่งจริงก็นับไบต์ที่อ่านจริง
+    อ่านเสร็จแล้วส่งตัวหนังสือที่ได้ให้ handler เดิมผ่าน `Request` ใหม่ (ไม่แตะ attribute ภายในของ Starlette) ต้องทำนอกตัว handler ของ FastAPI เพราะ
+    exception ที่ไม่ใช่ HTTPException ระหว่างอ่าน body ถูกแปลงเป็น 400 ทั้งหมด"""
+
+    def get_route_handler(self) -> Callable:
+        handler = super().get_route_handler()
+
+        async def capped(request: Request) -> Response:
+            declared = request.headers.get("content-length", "")
+            if declared.isascii() and declared.isdigit() and int(declared) > MAX_STYLE_BYTES:
+                raise _body_too_big()
+            chunks, size = [], 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_STYLE_BYTES:
+                    raise _body_too_big()
+                chunks.append(chunk)
+            body = b"".join(chunks)
+
+            async def receive() -> dict:
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            return await handler(Request(request.scope, receive))
+        return capped
+
+
+def _body_too_big() -> StyleError:
+    return StyleError(f"ข้อมูล style ที่ส่งมาใหญ่เกิน {MAX_STYLE_BYTES // 1024} KB", "body")
+
+
+style_writes = APIRouter(route_class=_BodyCappedRoute)         # POST/PUT /styles: ตัดขนาดตัวหนังสือก่อน parse (ต่อเข้า router ที่ท้ายหัวข้อ)
+
+
 def _checked_style(name: str, body: dict) -> dict:
     """style ที่จะบันทึกเป็น My Style ชื่อ `name`: ชื่อถูกกฎ ตรงกับ body เนื้อหาผ่าน check_style และไม่ซ้ำ Installed (ไม่แยกตัวพิมพ์)"""
     check_name(name)
@@ -287,14 +327,17 @@ def _save(my: MyStyles, name: str, body: dict, exclusive: bool) -> dict:
     return style
 
 
-@router.post("/styles/{name:path}", status_code=201, response_model=dict[str, Any])
+@style_writes.post("/styles/{name:path}", status_code=201, response_model=dict[str, Any])
 def create_style(name: str, body: dict[str, Any], my: MyStyles = Depends(get_my_styles)) -> dict:
     return _save(my, name, body, True)
 
 
-@router.put("/styles/{name:path}", response_model=dict[str, Any])
+@style_writes.put("/styles/{name:path}", response_model=dict[str, Any])
 def put_style(name: str, body: dict[str, Any], my: MyStyles = Depends(get_my_styles)) -> dict:
     return _save(my, name, body, False)
+
+
+router.include_router(style_writes)
 
 
 @router.delete("/styles/{name:path}", status_code=204)
@@ -309,7 +352,6 @@ def delete_style(name: str, my: MyStyles = Depends(get_my_styles)) -> Response:
 # ---------- /reports ----------
 
 MAX_REPORT_FACILITIES = 4           # Facility ต่อ request: ตรึงตารางของทุกแห่งพร้อมกัน (PinnedTables) แห่งละราว 135 MB
-MAX_STEP_S = 999_999_999            # เท่ากับ /data (9 หลัก) เกินนี้ timedelta ล้น: ต้องตอบ 422 ไม่ใช่ 500
 REPORT_MEDIA = {"txt": "text/plain; charset=utf-8", "csv": "text/csv; charset=utf-8"}
 
 
@@ -369,6 +411,19 @@ class ReportOut(BaseModel):
     dynamic: bool
 
 
+def _unique_objects(objects: list[str]) -> list[str]:
+    """object ที่ไม่ซ้ำตามลำดับที่เจอก่อน: ซ้ำ = ชนิดและชื่อเดียวกันไม่แยกตัวพิมพ์ (เหมือน engine) รวมถึง path คู่ที่สลับลำดับ Facility/ดาว
+    ถ้าไม่ตัดออก ส่วนของ object เดียวกันขึ้นสองครั้งและแถวถูกนับซ้ำใน Global Statistics path ที่อ่านไม่ได้: ScenarioError (422 ที่ `object`)"""
+    seen, unique = set(), []
+    for obj in objects:
+        kind, name, satellite = parse_object(obj)
+        key = kind, name.casefold(), None if satellite is None else satellite.casefold()
+        if key not in seen:
+            seen.add(key)
+            unique.append(obj)
+    return unique
+
+
 def _check_facility_count(objects: list[str]) -> None:
     """รายงานหนึ่งครั้งใช้ผล access ได้ไม่เกิน MAX_REPORT_FACILITIES Facility (ชื่อไม่แยกตัวพิมพ์ ดาวไม่นับ) เกิน = 422 ที่ `objects`"""
     parsed = [parse_object(obj) for obj in objects]
@@ -425,11 +480,11 @@ def _stored_period(doc: dict, obj: str, from_path: str, sat_path: str) -> dict |
         to = entry.get("to") if isinstance(entry, dict) and entry.get("from") == from_path else None
         if not isinstance(to, list):
             continue
-        exact = set(to) == {sat_path}
         try:
+            exact = set(to) == {sat_path}
             if not exact and sat_name not in access.expand_targets(doc, to, set()):
                 continue
-        except ApiError:                                     # `to` ที่ชี้ไป object ที่ไม่มี (ไฟล์ที่แก้มือ)
+        except (ApiError, TypeError):                        # `to` ที่ชี้ไป object ที่ไม่มี หรือมีสมาชิกที่ไม่ใช่สตริง เช่น dict (ไฟล์ที่แก้มือ)
             raise ApiError(422, INVALID, f"access ของ {from_path} ใน scenario.json มีปลายทางที่ใช้ไม่ได้ ({obj})", "accesses") from None
         rank = (not entry.get("computed"), not exact, index)
         if best is None or rank < best[0]:
@@ -478,12 +533,13 @@ def create_report(sc: str, body: ReportBody, store: ScenarioStore = Depends(get_
         raise StyleError(f"style {style['name']} ใช้กับ Dynamic Display/Strip Chart ไม่ได้", "dynamic")
     export = ExportSetup(**body.export.model_dump()) if body.export is not None else None
     specify, start, stop, step = _report_time(body.time, style)
-    _check_facility_count(body.objects)
+    objects = _unique_objects(body.objects)
+    _check_facility_count(objects)
     date_format, ltz_offset = time_format_of(doc) if body.format != "json" else ("UTCG", "+07:00")
     rs = server_result_set(store, plans, PinnedTables(tables), sc)
     if not specify:
-        start, stop = _stored_window(doc, body.objects)
-    built = build_report(rs, style, body.objects, start, stop, step, datetime.now(timezone.utc))
+        start, stop = _stored_window(doc, objects)
+    built = build_report(rs, style, objects, start, stop, step, datetime.now(timezone.utc))
     built = replace(built, dynamic=body.dynamic)
     if body.format == "json":
         return JSONResponse(report_json(built))

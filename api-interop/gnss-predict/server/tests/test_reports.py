@@ -129,6 +129,8 @@ def test_dataproviders_by_class(client, s1):
     assert [p["name"] for p in r.json()] == ["Access Data", "AER Data", "IPP Data"]
     by_name = {p["name"]: p for p in r.json()}
     assert by_name["IPP Data"]["ours"] is True and by_name["AER Data"]["ours"] is False
+    interp = {e["name"]: e["interp"] for e in by_name["IPP Data"]["elements"]}
+    assert interp["IPP Lon"] == "angle" and interp["IPP Lat"] == "linear"           # Dynamic Display ประมาณ Lon ข้าม ±180 ตามทางสั้น
 
     assert providers(client, "Constellation").json() == []
     assert providers(client, "Constellation", "GPS").json() == []
@@ -461,6 +463,94 @@ def test_my_style_body_errors(client, data_dir):
     assert style_files(data_dir) == []
 
 
+def test_my_style_step_over_the_report_cap_is_refused(client, data_dir):
+    """style ที่ step เกิน 999,999,999 วินาทีสร้างรายงานไม่ได้ (เหมือนคำขอ time.step) จึงบันทึกไม่ได้ ไม่ใช่รอไปล้มตอน Generate"""
+    ok = style("Mine", time={"mode": "object_period", "step_s": 999_999_999})
+    assert put_style(client, "Mine", ok).status_code == 200
+    too_big = style("Mine", time={"mode": "object_period", "step_s": 1_000_000_000})
+    assert_error(put_style(client, "Mine", too_big), 422, "STYLE_INVALID", "time.step_s")
+    assert_error(post_style(client, "Other", style("Other", time=too_big["time"])), 422, "STYLE_INVALID", "time.step_s")
+    assert json.loads((data_dir / "styles" / "Mine.json").read_text(encoding="utf-8")) == ok
+    assert style_files(data_dir) == ["Mine.json"]
+
+
+KB = 1024
+
+
+def padded_style(name, total):
+    """style ที่ผ่าน check_style และมีขนาด JSON แบบกะทัดรัดราว total ไบต์ (รายการสถิติซ้ำ ๆ ใน summary.per_object ซึ่ง check_style ไม่จำกัดจำนวน)"""
+    stat = "Min Azimuth"
+    count = max(1, total // (len(stat) + 3))                     # "Min Azimuth", = len + 3 ไบต์
+    return style(name, summary={"per_object": [stat] * count, "global_statistics": [], "summary_only": False})
+
+
+def test_my_style_content_is_capped_at_16_entries(client, data_dir):
+    entry = {"provider": "AER Data", "group": "Default", "elements": ["Time", "Azimuth"]}
+    assert put_style(client, "Sixteen", style("Sixteen", content=[entry] * 16)).status_code == 200
+    j = assert_error(put_style(client, "Seventeen", style("Seventeen", content=[entry] * 17)), 422, "STYLE_INVALID", "content")
+    assert "16" in j["text"]
+    assert_error(post_style(client, "Seventeen", style("Seventeen", content=[entry] * 17)), 422, "STYLE_INVALID", "content")
+    assert style_files(data_dir) == ["Sixteen.json"]
+
+
+def test_my_style_body_is_capped_at_256_kb(client, data_dir):
+    small = padded_style("Small", 100 * KB)
+    assert put_style(client, "Small", small).status_code == 200
+    big = padded_style("Big", 300 * KB)
+    assert len(json.dumps(big)) > 256 * KB
+    j = assert_error(put_style(client, "Big", big), 422, "STYLE_INVALID", "body")
+    assert "256" in j["text"]
+    assert_error(post_style(client, "Big", big), 422, "STYLE_INVALID", "body")
+    assert style_files(data_dir) == ["Small.json"]
+
+
+def test_my_style_body_cap_applies_before_parsing_and_without_content_length(client, data_dir):
+    """ตัดที่ไบต์ที่อ่านจริงก่อน parse JSON: ตัวหนังสือที่ไม่ใช่ JSON เลย (parse แล้วได้ 422 ช่องอื่น) ก็ต้องถูกตัดเป็น `body` และ chunked ที่ไม่มี
+    Content-Length ก็ตัดเช่นกัน"""
+    garbage = b"x" * (300 * KB)
+    json_header = {"content-type": "application/json"}
+    r = client.put("/api/styles/Big", content=garbage[:100], headers=json_header)                 # ฐาน: เล็กและไม่ใช่ JSON = parse ผิดตามปกติ
+    assert r.status_code == 422 and r.json()["code"] == "SCENARIO_INVALID" and r.json()["field"] is None
+    chunks = (garbage[i:i + 16 * KB] for i in range(0, len(garbage), 16 * KB))
+    sent = client.build_request("PUT", "/api/styles/Big", content=chunks, headers=json_header)
+    assert "content-length" not in sent.headers and sent.headers["transfer-encoding"] == "chunked"
+    assert_error(client.send(sent), 422, "STYLE_INVALID", "body")
+    assert_error(client.put("/api/styles/Big", content=garbage, headers=json_header), 422, "STYLE_INVALID", "body")
+    assert_error(client.post("/api/styles/Big", content=garbage, headers=json_header), 422, "STYLE_INVALID", "body")
+    assert style_files(data_dir) == []
+
+
+def test_my_style_that_grows_past_the_cap_when_written_is_refused(client, data_dir):
+    """ไฟล์ที่เขียนใช้ indent จึงใหญ่กว่า body: ต้องไม่บันทึกไฟล์ที่ MyStyles.list อ่านกลับไม่ได้ (เกิน 256 KB ตอนเขียน = 422 body)"""
+    edge = padded_style("Edge", 235 * KB)
+    compact = len(json.dumps(edge, separators=(",", ":")).encode())
+    assert compact < 256 * KB < len((json.dumps(edge, ensure_ascii=False, indent=2) + "\n").encode())
+    assert_error(client.put("/api/styles/Edge", content=json.dumps(edge, separators=(",", ":")),
+                            headers={"content-type": "application/json"}), 422, "STYLE_INVALID", "body")
+    assert style_files(data_dir) == []
+
+
+def test_oversized_style_file_on_disk_is_unusable_not_a_500(client, data_dir):
+    folder = data_dir / "styles"
+    folder.mkdir()
+    (folder / "Huge.json").write_text(json.dumps(padded_style("Huge", 300 * KB)), encoding="utf-8")        # ไฟล์ที่แก้มือ ใหญ่เกิน
+    edge = json.dumps(padded_style("Edge", 255 * KB), separators=(",", ":"))                              # ใกล้เพดานแต่ไม่เกิน: ใช้ได้
+    assert 250 * KB < len(edge.encode()) <= 256 * KB
+    (folder / "Edge.json").write_text(edge, encoding="utf-8")
+    (folder / "Deep.json").write_text("[" * 100_000, encoding="utf-8")                                    # ไม่เกิน 256 KB แต่ซ้อนลึกจน json ล้ม
+    good = style("Good")
+    (folder / "Good.json").write_text(json.dumps(good), encoding="utf-8")
+    r = client.get("/api/styles")
+    assert r.status_code == 200, r.text
+    assert [s["name"] for s in r.json()["my"]] == ["Edge", "Good"]
+    log = server_log(data_dir)
+    assert "Deep.json" in log
+    reason = next(line for line in log.splitlines() if "Huge.json" in line)
+    assert "256 KB" in reason and THAI.search(reason), reason
+    assert put_style(client, "Huge", style("Huge")).status_code == 200                        # แทนที่ไฟล์เสียด้วย PUT ได้
+    assert [s["name"] for s in client.get("/api/styles").json()["my"]] == ["Edge", "Good", "Huge"]
+
+
 def test_my_style_failed_replace_keeps_the_old_file(client, data_dir):
     good = style("Mine")
     assert put_style(client, "Mine", good).status_code == 200
@@ -621,6 +711,24 @@ def test_report_txt_csv_files(client, s1_computed, data_dir):
 
     assert report(client, format="csv", export={"delimiter": ";"}).text.splitlines()[0].startswith("Access;Start Time")   # ช่องที่ไม่ส่ง = ค่าตั้งต้น
     assert report(client, format="json", export=quoted).headers["content-type"].startswith("application/json")      # export ใช้กับ csv เท่านั้น
+
+
+def test_report_duplicate_objects_are_counted_once(client, s1_computed):
+    """object ซ้ำ (สะกดต่างแค่ตัวพิมพ์ หรือสลับลำดับ Facility/ดาวใน path) ไม่ทำให้แถวและ Global Statistics นับซ้ำ"""
+    single = report(client).json()
+    lowered = "*/Facility/thbk */Satellite/g01"
+    swapped = "*/Satellite/G01 */Facility/THBK"
+    for objects in ([OBJ, OBJ], [OBJ, lowered], [OBJ, lowered, swapped, OBJ]):
+        body = report(client, objects).json()
+        assert [s["title"] for s in body["sections"]] == ["THBK-To-G01"], objects
+        assert body["sections"][0]["object"] == objects[0]                                  # เก็บตัวที่เจอก่อน
+        assert body["sections"][0]["rows"] == single["sections"][0]["rows"] and body["global_statistics"] == single["global_statistics"] == []
+    two = report(client, [OBJ, E11]).json()
+    again = report(client, [OBJ, E11, OBJ, "*/Facility/thbk */Satellite/e11", E11]).json()                         # ลำดับที่เจอก่อนคงเดิม
+    assert [s["title"] for s in again["sections"]] == ["THBK-To-G01", "THBK-To-E11"]
+    assert again["sections"] == two["sections"] and again["global_statistics"] == two["global_statistics"] != []
+    assert report(client, [OBJ, OBJ], format="txt").headers["content-disposition"] == 'attachment; filename="THBK-To-G01_Access.txt"'
+    assert_error(report(client, [OBJ, OBJ, "THBK-To-G01"]), 422, "SCENARIO_INVALID", "object")      # ซ้ำแล้วยังตรวจ path ทุกตัว
 
 
 def test_report_file_names(client, s1_computed):
@@ -893,6 +1001,16 @@ def test_report_with_unreadable_units_is_422(client, s1_computed, data_dir):
     doc["units"] = {"date_format": "JULIAN"}
     path.write_text(json.dumps(doc), encoding="utf-8")
     assert_error(report(client, format="txt"), 422, "SCENARIO_INVALID", "units.date_format")
+
+
+@pytest.mark.parametrize("bad_to", [[{"x": 1}], [["*/Satellite/G01"]], [1], [None], [SAT, {"x": 1}], [[]]])
+def test_report_with_a_non_string_access_target_is_422(client, s1_computed, data_dir, bad_to):
+    """scenario.json ที่แก้มือให้ `to` ของ access มีสมาชิกที่ไม่ใช่สตริง (dict/list/ตัวเลข) ต้องตอบ 422 ที่ `accesses` ไม่ใช่ 500 (TypeError ของ set())"""
+    path = scenario_dir(data_dir) / "scenario.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["accesses"] = [{"from": FAC, "to": bad_to, "computed": True, "time_period": {"mode": "object"}}]
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert_error(report(client), 422, "SCENARIO_INVALID", "accesses")
 
 
 def test_report_uses_plan_and_table_caches(client, s1_computed, monkeypatch):

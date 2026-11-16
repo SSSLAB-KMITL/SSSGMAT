@@ -107,6 +107,8 @@ class TestProviderCatalog(unittest.TestCase):
         interp = {(p.name, e.name): e.interp for p in PROVIDERS.values() for e in p.elements}
         self.assertEqual(interp[("AER Data", "Azimuth")], "angle")
         self.assertEqual(interp[("LLA State", "Lon")], "angle")
+        self.assertEqual(interp[("IPP Data", "IPP Lon")], "angle")        # ค่าอยู่ใน [-180, 180]: ประมาณเชิงเส้นข้าม ±180 จะผ่าน 0 (ผิด)
+        self.assertEqual(interp[("IPP Data", "IPP Lat")], "linear")
         self.assertEqual(interp[("AER Data", "Elevation")], "linear")
         self.assertEqual(interp[("Dilution of Precision", "N Visible")], "previous")
         self.assertEqual({e.interp for e in PROVIDERS["N Asset Coverage"].elements}, {"previous"})

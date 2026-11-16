@@ -165,6 +165,7 @@ python3 -m gnss_predict.studio report    --scenario DIR --style NAME --object PA
 | `validate` | เทียบ `predicted.sp3` ของวันที่ระบุกับ MGEX SP3 จริง ดาวที่ไม่มีใน SP3 ใช้ broadcast ของวันนั้น (G, E, C) | `validation_<วัน>.json` และ `.md` ใน `ephem/<hash>/` และหนึ่งบรรทัดใน `<data>/validation/history.jsonl` |
 
 - `--data` ตั้งต้นเป็นค่าของตัวแปร `GNSS_STUDIO_DATA` ถ้ามี ไม่งั้นเป็น `data/` ในโฟลเดอร์นี้
+- `report` ต่างจากรายงานของ server/หน้าเว็บ: CLI ไม่อ่าน `time` ของ style, ช่วงเวลาที่เก็บไว้ของ access (Use Object Time Period) และ My Styles ช่วงเวลาและ step มาจาก `--start/--stop/--step` เท่านั้น
 - `<hash>` คือ 12 ตัวแรกของ SHA-256 ของข้อมูลตั้งต้น (ไฟล์ใน snapshot, ช่วงเวลา, `step_s`, รายชื่อดาว, ตัวกรอง, รุ่น engine)
   รันซ้ำด้วยข้อมูลเดิมได้โฟลเดอร์เดิมทันทีโดยไม่รัน GMAT ทุกโฟลเดอร์ผลลัพธ์เขียนลงโฟลเดอร์ชั่วคราวก่อนแล้ว rename ทั้งชุด
 - กติกา CelesTrak: ส่ง request ได้ไม่เกิน 1 ครั้งต่อกลุ่มต่อ 2 ชม. (เวลาที่ส่งล่าสุดอยู่ใน `<data>/orbits/_cache/celestrak_state.json`)
@@ -1334,6 +1335,7 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
   graph Access, AER, Elevation Angle, Az El Polar, All DOPs, N Asset Coverage), **My Styles** (ไฟล์ `data/styles/<ชื่อ>.json` ใช้ได้ทุก scenario) และ **Scenario Styles** (`styles` ใน `scenario.json`)
   ชื่อ style ห้ามซ้ำกันทั้งสามชั้นแบบไม่สนตัวพิมพ์ (ยกเว้น Installed คู่ report/graph ชื่อเดียวกัน) ตามกฎ `^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$`
   ไฟล์ My Style ที่แก้มือแล้วเสียถูกข้ามพร้อม log (อยู่ในต้นไม้เป็นรายการที่ใช้ไม่ได้พร้อมเหตุผลภาษาไทย ลบได้)
+  My Style ใหญ่ได้ไม่เกิน 256 KB (body ที่ส่งและไฟล์ที่เขียน) และ content ไม่เกิน 16 รายการ เกิน = 422 ที่ `body` / `content` ไฟล์บนดิสก์ที่ใหญ่เกิน 256 KB ถูกข้ามพร้อม log เหมือนไฟล์เสีย
 - Show Reports / Show Graphs, **Generate As**: Report/Graph หรือ Dynamic Display/Strip Chart (style ที่ไม่รองรับเป็นสีเทา)
 - **Generate...** เปิดกล่อง Time Properties (ค่าตั้งต้นจาก style) แล้วสร้างรายงาน ผลไม่ตรงกับ scenario = ถามว่าจะ Compute ก่อนไหม
 - คลิกขวาที่ style: Generate as .txt file..., Generate as .csv file..., Properties, Copy to My Styles, Delete; **New...** / **Properties...** เปิดหน้าต่างแก้ style
@@ -1378,7 +1380,7 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 
 - หน้าต่างรายงาน/กราฟหนึ่งบานต่อคำขอ (style, object, เวลา, Dynamic) เปิดซ้ำ = เรียกบานเดิม; รายงานหนึ่งครั้งใช้ Facility ได้ไม่เกิน 4 แห่ง (ตารางของแต่ละแห่งราว 135 MB อยู่ในหน่วยความจำระหว่างสร้าง)
 - Strip Chart Duration คงที่ 3600 วินาที (ไม่มีช่องให้แก้) และแกน y ของ Strip Chart ไม่ปรับตามชั่วโมงที่เห็น; Export ของกราฟดาวน์โหลด CSV ด้วย Export Setup ตั้งต้นทันที (ไม่มีกล่อง)
-- CLI `report` ใช้ Scenario Styles กับ Installed Styles เท่านั้น (ไม่อ่าน My Styles) และไม่ใช้ช่วงเวลาที่เก็บไว้ใน access
+- CLI `report` ใช้ Scenario Styles กับ Installed Styles เท่านั้น (ไม่อ่าน My Styles) และไม่ใช้ `time` ของ style หรือช่วงเวลาที่เก็บไว้ใน access (หัวข้อ 7.1)
 - คำบางคำที่ STK มีแต่ไม่พบในเอกสาร STK ที่ตรวจได้ (Constellation ใน Object Types, คลิกขวา Copy to My Styles / Delete / Generate as .txt/.csv, Setup... ของเมนู Export และกล่อง Export Setup) ยังมีตาม spec แต่ใช้ป้ายของเรา
 
 ## 10. Docker (GNSS Studio ใน container)

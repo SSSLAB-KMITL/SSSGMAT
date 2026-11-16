@@ -102,7 +102,7 @@ PROVIDERS: dict[str, ProviderInfo] = {p.name: p for p in [
         _time("previous"), *(_el(name, kind="int", interp="previous") for name in _COVERAGE),
     ], _REPORTS_DYNAMIC, False),
     ProviderInfo("IPP Data", None, "Access", [
-        _time(), _el("IPP Lat", "deg"), _el("IPP Lon", "deg"), _el("MF"), _el("Elevation", "deg"),
+        _time(), _el("IPP Lat", "deg"), _el("IPP Lon", "deg", interp="angle"), _el("MF"), _el("Elevation", "deg"),
     ], _REPORTS_DYNAMIC, True),
 ]}
 

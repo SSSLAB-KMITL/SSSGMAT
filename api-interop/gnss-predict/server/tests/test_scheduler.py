@@ -929,6 +929,29 @@ def test_pending_follows_the_real_ticks(at, sched, data_dir, validate, snapshot)
     assert state_file(data_dir).read_bytes() == state_before
 
 
+def test_pending_past_the_give_up_deadline_has_no_next_attempt(at, sched, data_dir, validate, jobs, snapshot):
+    """เลยเส้นตายและมี job ที่ไม่สำเร็จ: tick ถัดไปจะเลิก (`_validation`) ไม่ลองอีก จึงไม่มีเวลาลองครั้งถัดไป (ไม่ใช่ `now`)"""
+    make_daily(data_dir, "2026-11-12")
+    at("2026-11-13T06:00Z")                                        # ลองแล้ว TRUTH_UNAVAILABLE (failed)
+    assert len(at("2026-11-26T20:00Z")) == 1                       # ก่อนเส้นตาย: ยังลองต่อ
+    shown = lambda now: [(i["state"], i["next_attempt_utc"]) for i in sched.pending(T(now))]
+    assert shown("2026-11-26T21:00Z") == [("pending", "2026-11-26T23:00:00Z")]       # ลองครั้งก่อน 20:00 + 3 ชม.
+    assert shown("2026-11-27T00:00Z") == [("pending", "2026-11-27T00:00:00Z")]       # ตรงเส้นตายพอดี: ยังไม่เลย (now > deadline เท่านั้น)
+    for now in ("2026-11-27T00:00:01Z", "2026-11-27T04:00Z", "2026-12-05T12:00Z"):
+        assert shown(now) == [("pending", None)], now                                 # เลยเส้นตาย + มี job ที่ไม่สำเร็จ: tick ถัดไปเลิก
+    calls, jobs_before = len(validate.calls), len(jobs.list())
+    assert at("2026-11-27T03:00Z") == []                           # tick จริงเลิกตามที่ pending บอก
+    assert [(i["state"], i["next_attempt_utc"]) for i in sched.pending(T("2026-11-27T03:30Z"))] == [("gave_up", None)]
+    assert len(validate.calls) == calls and len(jobs.list()) == jobs_before
+
+
+def test_pending_past_the_deadline_without_a_failed_job_still_tries(sched, data_dir, snapshot):
+    """เลยเส้นตายแต่ยังไม่เคยมี job ที่ไม่สำเร็จ: `_validation` สั่งตรวจต่อ (เลิกเฉพาะเมื่อมีครั้งที่ไม่สำเร็จ)"""
+    make_daily(data_dir, "2026-11-12")
+    (item,) = sched.pending(T("2026-12-05T12:00Z"))
+    assert (item["state"], item["next_attempt_utc"]) == ("pending", "2026-12-05T12:00:00Z")
+
+
 def test_pending_with_no_daily_scenarios_is_empty(sched, data_dir):
     assert sched.pending(T("2026-11-12T04:00Z")) == []
 

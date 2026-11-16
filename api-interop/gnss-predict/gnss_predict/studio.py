@@ -25,6 +25,8 @@
   พิมพ์ตัวรายงาน (.txt หรือ .csv) ลง stdout ไม่พิมพ์ path: style หาจาก Scenario Styles (`styles` ใน scenario.json)
   แล้ว Installed Styles, DateFormat จาก `units` ของ scenario.json, `--object` ซ้ำได้ (Access = คู่ path ในข้อเดียว)
   start/stop เป็นเวลา ISO ที่ระบุเขตเวลา ไม่ส่ง = ช่วงวิเคราะห์ของ scenario ไม่ส่ง --step = ทุกจุดของ scenario
+  ต่างจากรายงานของ server/หน้าเว็บ: CLI ไม่อ่าน `time` ของ style, ช่วงเวลาที่เก็บไว้ของ access (Use Object Time Period) และ My Styles
+  ช่วงเวลาและ step มาจาก --start/--stop/--step เท่านั้น
 """
 
 import argparse
