@@ -456,16 +456,18 @@ test("a Static Highlight across the antimeridian is drawn at both map edges, not
     expect(perDeg).toBeGreaterThan(0);
 
     const canvas = page.getByTestId("g2d-view").locator("canvas").first();
-    // ภาพนิ่ง: สองภาพติดกันเหมือนกัน
+    // ภาพนิ่ง: สองภาพติดกัน (ห่างกันตามรอบของ expect.poll) เหมือนกัน
     const settled = async (): Promise<Buffer> => {
-      let last = await canvas.screenshot();
-      for (let i = 0; i < 20; i++) {
-        await page.waitForTimeout(300);
-        const next = await canvas.screenshot();
-        if (next.equals(last)) return next;
-        last = next;
-      }
-      return last;
+      let last: Buffer | null = null;
+      await expect
+        .poll(async () => {
+          const next = await canvas.screenshot();
+          const same = last !== null && next.equals(last);
+          last = next;
+          return same;
+        }, { message: "2D picture settled", intervals: [300], timeout: 10_000 })
+        .toBe(true);
+      return last!;
     };
     const withTrack = await settled();
     // Clear ผ่าน API (Access tool ปิดแล้ว) หน้าเว็บรับ doc ใหม่ทาง event ของ scenario

@@ -120,7 +120,8 @@ async function zoomOut3D(page: Page): Promise<void> {
 
 /**
  * ตำแหน่ง [x, y] (พิกเซลของ canvas ซึ่ง locator.click ใช้เป็น position) ของดาวในหน้าต่าง 3D ตัวแรก หลังภาพนิ่ง
- * (ขนาดของ canvas และตำแหน่งไม่เปลี่ยนระหว่างสองรอบที่ถามติดกัน) ไม่แสดงอยู่ในภาพ = รอจนหมดเวลา
+ * (ขนาดของ canvas และตำแหน่งไม่เปลี่ยนระหว่างสองรอบที่ถามติดกัน) และ scene ที่อ่านเป็นของหน้าต่างที่ workbook สร้าง
+ * (sceneLoadedAt ≥ workbookRestoredAt แบบ waitForScene: ตำแหน่งจากหน้าต่างที่กำลังถูกแทนคลิกพลาด) ไม่แสดงอยู่ในภาพ = รอจนหมดเวลา
  */
 async function settledPoint(page: Page, name: string): Promise<{ x: number; y: number }> {
   const canvas = threeDCanvas(page);
@@ -130,9 +131,14 @@ async function settledPoint(page: Page, name: string): Promise<{ x: number; y: n
     .poll(
       async () => {
         const box = await canvas.boundingBox();
-        const at = await page.evaluate((n) => window.__gnssStudioTest!.entityScreenPosition(n), name);
+        const { at, current } = await page.evaluate((n) => {
+          const hooks = window.__gnssStudioTest!;
+          const restored = hooks.workbookRestoredAt();
+          const loaded = hooks.sceneLoadedAt();
+          return { at: hooks.entityScreenPosition(n), current: restored !== null && loaded !== null && loaded >= restored };
+        }, name);
         const key = JSON.stringify([box, at]);
-        const settled = at !== null && box !== null && key === previous;
+        const settled = current && at !== null && box !== null && key === previous;
         previous = key;
         point = settled ? { x: at[0], y: at[1] } : null;
         return settled;
@@ -251,7 +257,18 @@ test.describe("Sensor and Sensor View", () => {
     await properties.getByRole("button", { name: "Apply", exact: true }).click();
 
     // fov ด้านสั้น = 2 × 5° × 1.05 = 10.5° (คำนวณจากขนาดภาพ: fovDeg ของ Cesium คือด้านยาว)
-    await expect.poll(() => shortSideFovDeg(page, "Sensor1")).toBeCloseTo(10.5, 2);
+    // อ่านเมื่อขนาดภาพและ fov นิ่งแล้ว (สองครั้งติดกันได้ค่าเดียวกัน): ระหว่างที่หน้าต่างยังจัดขนาด ขนาดกับกล้องมาจากคนละเฟรมได้
+    let previous: string | null = null;
+    await expect
+      .poll(async () => {
+        const size = await sensorViewSize(page);
+        const fov = await shortSideFovDeg(page, "Sensor1");
+        const now = JSON.stringify([size, fov]);
+        const stable = now === previous;
+        previous = now;
+        return stable && fov !== null ? fov : Number.NaN;
+      }, { intervals: [100, 200, 400] })
+      .toBeCloseTo(10.5, 2);
     // รอยบนพื้นโลกยังวาดทั้งในหน้าต่าง 3D และ 2D
     await expect.poll(() => page.evaluate(() => window.__gnssStudioTest!.sensorFootprint("Sensor1", "3d"))).toBeGreaterThan(0);
     await expect.poll(() => page.evaluate(() => window.__gnssStudioTest!.sensorFootprint("Sensor1", "2d"))).toBeGreaterThan(0);

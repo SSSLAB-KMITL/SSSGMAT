@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Dialogs } from "../../src/chrome/Dialogs";
 import { commandTooltip, isEnabled, isRegistered, runCommand } from "../../src/commands";
-import { labels, t } from "../../src/labels/labels";
+import { labels, STK_HELP_REF, t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
 import { getPanelDef } from "../../src/layout/panels";
 import { useJobs } from "../../src/stores/jobs";
@@ -584,6 +584,33 @@ describe("associated objects", () => {
     expect(box("G02").checked).toBe(false);
   });
 
+  test("keyboard: the list is one Tab stop (roving tabindex), arrows / Home / End move, Space ticks", async () => {
+    openScenario(doc());
+    mount();
+    const names = ["GPS", "G01", "G02", "E11"];
+    expect(names.map((n) => box(n).tabIndex)).toEqual([0, -1, -1, -1]);
+    box("GPS").focus();
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(box("G01"));
+    expect(names.map((n) => box(n).tabIndex)).toEqual([-1, 0, -1, -1]);
+    await user.keyboard(" ");
+    expect(box("G01").checked).toBe(true);
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(box("E11"));
+    await user.keyboard("{ArrowDown}"); // ท้ายสุดแล้ว: อยู่ที่เดิม
+    expect(document.activeElement).toBe(box("E11"));
+    await user.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(box("G02"));
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(box("GPS"));
+    // Tab ออกจากรายการในครั้งเดียว และ Shift+Tab กลับมาที่ตัวที่โฟกัสล่าสุด
+    await user.keyboard("{ArrowDown}");
+    await user.tab();
+    expect(names.map(box)).not.toContain(document.activeElement);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(box("G01"));
+  });
+
   test("access for shows the object and changing it clears the ticks", async () => {
     openScenario(doc());
     const { rerender } = mount();
@@ -667,7 +694,7 @@ describe("panel and commands", () => {
   });
 
   test("labels of the Access tool", () => {
-    for (const [k, text] of [["access.accessFor", "Access For"], ["access.selectObject", "Select Object..."], ["access.associatedObjects", "Associated Objects"],
+    for (const [k, text] of [["access.selectObject", "Select Object..."], ["access.associatedObjects", "Associated Objects"],
         ["access.compute", "Compute"], ["access.clear", "Clear"], ["access.clearAll", "Clear All"], ["access.remove", "Remove"], ["access.removeAll", "Remove All"],
         ["access.useObjectTimePeriod", "Use Object Time Period"], ["access.specifyTimePeriod", "Specify Time Period"], ["access.aerDots", "AER..."],
         ["access.addTimeline", "Add Timeline"], ["access.autoAddToTimeline", "Auto Add to Timeline"], ["access.staticHighlight", "Static Highlight"],
@@ -675,9 +702,23 @@ describe("panel and commands", () => {
         ["access.useCustomColor", "Use Custom Color"], ["access.reports", "Reports"], ["access.graphs", "Graphs"], ["access.accessDots", "Access..."]] as const) {
       expect(labels[k], k).toEqual({ text, source: "stk", ref: "STK ref §F" });
     }
-    for (const [k, text] of [["access.inheritSettings", "Inherit Settings from Scenario"], ["access.selectAll", "Select All"], ["access.timePeriod", "Time Period"],
+    // Ruling (final review): คำที่อ้างตรงตัวในผลตรวจ help.agi.com (2026-11-15) เป็น stkHelp; ช่อง Access For ใช้คำของ help ("Access for:")
+    for (const [k, text] of [["access.accessFor", "Access for:"], ["access.inheritSettings", "Inherit Settings from Scenario"],
         ["access.animationGraphics", "Animation Graphics"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "stk", ref: STK_HELP_REF });
+    }
+    // หัวรายการของ Select Object... ไม่มี ":" (ours ตามกติกาของงานนี้)
+    for (const [k, text] of [["access.accessForList", "Access For"], ["access.selectAll", "Select All"], ["access.timePeriod", "Time Period"]] as const) {
       expect(labels[k], k).toEqual({ text, source: "ours" });
     }
+  });
+
+  test("the Select Object... list of the Access tool is captioned Access For, without a colon", async () => {
+    openScenario(doc());
+    mount();
+    expect(screen.getByText(t("access.accessFor")).textContent).toBe("Access for:");
+    await user.click(button("access.selectObject"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("listbox", { name: "Access For" })).toBeTruthy();
   });
 });

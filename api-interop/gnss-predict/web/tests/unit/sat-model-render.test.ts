@@ -743,6 +743,17 @@ function stubDeferredGlbs() {
   return { release };
 }
 
+/** setTimeout จริง (จับไว้ก่อน test ใดใช้นาฬิกาปลอม) */
+const realSetTimeout = globalThis.setTimeout;
+/** รอด้วยเวลาจริงจนเงื่อนไขเป็นจริง (ไม่เลื่อนนาฬิกาปลอม ต่างจาก vi.waitFor) ไม่เกิน 5 วินาที */
+async function untilReal(ok: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (!ok()) {
+    if (Date.now() > deadline) throw new Error("untilReal: condition not met within 5 s");
+    await new Promise((r) => realSetTimeout(r, 5));
+  }
+}
+
 /** ให้คำขอที่ค้างเสร็จและชุดของ SatModelSource (MODEL_BATCH_MS) ปิด */
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -857,21 +868,33 @@ describe("SatModelSource: catalog and glb loading", () => {
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
     const sats = [{ block: "GPS-IIF", norad: 1 }, { block: "GPS-IIR-M", norad: 2 }, { block: "GAL-2", norad: 3 }, { block: "GLO-M+", norad: 4 }, { block: "BDS-3M-CAST", norad: 5 }];
     for (const s of sats) expect(src.specFor(s)).toBeNull();
-    // ห้าไฟล์มาถึงห่างกัน 15 ms (อยู่ในหน้าต่างเดียว MODEL_BATCH_MS)
-    for (const path of ["gps-iif", "gps-iir", "galileo-foc", "glonass-m", "bds3-meo-cast"].map((id) => `/models/${entryOf(id).glb}`)) {
-      release(path);
-      await new Promise((r) => setTimeout(r, 15));
+    // นาฬิกาของชุด (setTimeout) เป็นนาฬิกาปลอม: เวลาของชุดเดินเฉพาะเมื่อ test เลื่อน ไม่ขึ้นกับความช้าของเครื่อง
+    // การอ่าน glb (fetch/Response) ยังใช้เวลาจริง: รอจนโหลดเสร็จด้วย untilReal ที่ไม่เลื่อนนาฬิกาปลอม
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // ห้าไฟล์มาถึงห่างกัน 15 ms (อยู่ในหน้าต่างเดียว MODEL_BATCH_MS)
+      for (const path of ["gps-iif", "gps-iir", "galileo-foc", "glonass-m", "bds3-meo-cast"].map((id) => `/models/${entryOf(id).glb}`)) {
+        release(path);
+        await vi.advanceTimersByTimeAsync(15);
+      }
+      await untilReal(() => sats.every((s) => src.specFor(s) !== null));
+      expect(changed).toHaveBeenCalledTimes(1); // ชุดยังเปิดอยู่: เวลาปลอมเดินไปไม่เกิน 75 ms
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS);
+      expect(changed).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS * 2);
+      expect(changed).toHaveBeenCalledTimes(2);
+      // ไฟล์ที่ขอทีหลัง: อีกชุดหนึ่ง
+      expect(src.specFor({ block: null, norad: 41836 })).toBeNull();
+      release(`/models/${entryOf("himawari-9").glb}`);
+      await untilReal(() => src.specFor({ block: null, norad: 41836 }) !== null);
+      expect(changed).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS);
+      expect(changed).toHaveBeenCalledTimes(3);
+      expect(src.specFor({ block: null, norad: 41836 })?.id).toBe("himawari-9");
+    } finally {
+      src.dispose();
+      vi.useRealTimers();
     }
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
-    await new Promise((r) => setTimeout(r, MODEL_BATCH_MS * 2));
-    expect(changed).toHaveBeenCalledTimes(2);
-    for (const s of sats) expect(src.specFor(s)).not.toBeNull();
-    // ไฟล์ที่ขอทีหลัง: อีกชุดหนึ่ง
-    expect(src.specFor({ block: null, norad: 41836 })).toBeNull();
-    release(`/models/${entryOf("himawari-9").glb}`);
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(3));
-    expect(src.specFor({ block: null, norad: 41836 })?.id).toBe("himawari-9");
-    src.dispose();
   });
 
   test("a glb that fails (404 or the app's HTML page) leaves that model as points with one Thai message per model id", async () => {

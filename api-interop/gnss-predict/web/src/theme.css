@@ -43,6 +43,9 @@
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", Thonburi, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --font-size: 12px;
+  /* ความสูงของหัวตารางแบบ sticky ในพื้นที่เลื่อน (Validation, Satellite Catalog): ใช้เป็น scroll-padding-top ของพื้นที่เลื่อนด้วย
+     แถวที่ได้โฟกัสจากคีย์บอร์ดจึงไม่ถูกหัวตารางบัง */
+  --sticky-head-h: 22px;
 
   /* ชั้นซ้อน: ฉากหลังกล่องโต้ตอบ เงาของหน้าต่างลอยและกล่องโต้ตอบ แถบบอกที่วางตอนลากหน้าต่าง สีตอนชี้ปุ่ม */
   --overlay: rgba(0, 0, 0, 0.35);
@@ -1439,6 +1442,7 @@ body {
   flex: 1 1 auto;
   min-height: 120px;
   overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
   border: 1px solid var(--border);
 }
 
@@ -1451,6 +1455,8 @@ body {
 .catalog-table th {
   position: sticky;
   top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
   padding: 2px 6px;
   background: var(--titlebar-bg);
   border-bottom: 1px solid var(--border);
@@ -2581,6 +2587,7 @@ body {
 
 .val-scroll {
   overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
   border: 1px solid var(--border);
   background: var(--panel);
 }
@@ -2609,6 +2616,8 @@ body {
 .val-table th {
   position: sticky;
   top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
   background: var(--titlebar-bg);
   box-shadow: inset 0 -1px 0 var(--border);
   font-weight: 600;

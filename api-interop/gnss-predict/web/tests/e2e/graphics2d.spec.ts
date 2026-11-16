@@ -91,7 +91,12 @@ test("a render loop that stops is restarted once: the 2D and 3D pictures draw ag
     // ไม่ใช่ข้อความ "หยุดทำงาน" แทนภาพ
     await expect(page.getByRole("alert").filter({ hasText: msg("scene.renderStopped") })).toHaveCount(0);
   }
-  // ไม่มีข้อความเพิ่มภายหลัง (ตรวจรอบถัดไปไม่เจอว่าหยุดอีก)
-  await page.waitForTimeout(2_500);
-  await expect(sceneRenderRows(page)).toHaveCount(2);
+  // ไม่มีข้อความเพิ่มภายหลัง (ตัวตรวจทุก 1 วินาทีผ่านไปอย่างน้อยสองรอบตามนาฬิกาของหน้า แล้วไม่เจอว่าหยุดอีก)
+  const mark = await page.evaluate(() => performance.now());
+  await expect
+    .poll(async () => {
+      const elapsed = await page.evaluate((m) => performance.now() - m, mark);
+      return elapsed >= 2_500 ? sceneRenderRows(page).count() : null;
+    }, { message: "SCENE_RENDER rows 2.5 s after both restarts", intervals: [250] })
+    .toBe(2);
 });

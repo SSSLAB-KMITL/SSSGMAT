@@ -605,7 +605,9 @@ const LABELS = {
   // ---------- Access tool (spec §4, STK ref §F) ----------
   // ชื่อหน้าต่างใช้ toolbar.access; ช่อง Show ของกราฟิกใช้ ob.show, Color ใช้ field.color, Start/Stop ใช้ field.analysisStart/Stop
   // ปุ่ม Report & Graph Manager... ใช้ menu.analysis.reportGraphManager (คำสั่งเดียวกัน)
-  "access.accessFor": stk("Access For", "F"),
+  // ช่องของ Access tool ใช้คำของ help.agi.com ตรงตัว (ตัว f เล็กและมี ":") หัวรายการของ Select Object... ไม่มี ":" (ours)
+  "access.accessFor": stkHelp("Access for:"),
+  "access.accessForList": ours("Access For"),
   "access.selectObject": stk("Select Object...", "F"),
   "access.associatedObjects": stk("Associated Objects", "F"),
   "access.compute": stk("Compute", "F"),
@@ -627,10 +629,10 @@ const LABELS = {
   "access.showAnimateLine": stk("Show Animate Line", "F"),
   "access.useObjectColors": stk("Use Object Colors", "F"),
   "access.useCustomColor": stk("Use Custom Color", "F"),
-  // reference ไม่มีชื่อกลุ่มและตัวเลือกเหล่านี้ (spec §4 ใช้คำเหล่านี้เอง) จึงเป็น ours
+  // reference ไม่มีชื่อกลุ่มและตัวเลือกเหล่านี้: สองตัวที่ผลตรวจ help.agi.com (2026-11-15) อ้างตรงตัวเป็น stkHelp ที่เหลือเป็น ours
+  "access.animationGraphics": stkHelp("Animation Graphics"),
+  "access.inheritSettings": stkHelp("Inherit Settings from Scenario"),
   "access.timePeriod": ours("Time Period"),
-  "access.animationGraphics": ours("Animation Graphics"),
-  "access.inheritSettings": ours("Inherit Settings from Scenario"),
   "access.selectAll": ours("Select All"),
 
   // ---------- Report & Graph Manager (spec §5, STK ref §F, help.agi.com) ----------

@@ -35,7 +35,7 @@ function makeScenario(accesses: object[]): ScenarioDoc {
 }
 const access = (over: object = {}) => ({
   from: "*/Facility/THBK", to: ["*/Constellation/GPS"], timeline: true, computed: true,
-  graphics: { color_mode: "object", custom_color: null }, time_period: { mode: "object" }, ...over,
+  graphics: { inherit: false, color_mode: "object", custom_color: null }, time_period: { mode: "object" }, ...over,
 });
 const ok = (bySat: Record<string, object[]>): AccessResult => ({ status: "ok", bySat: bySat as never });
 
@@ -67,14 +67,28 @@ describe("timelineRows", () => {
 
   test("a custom colour is used for every row of the access; without a valid one the access colour is used", () => {
     const doc = makeScenario([
-      access({ graphics: { color_mode: "custom", custom_color: "#AA00FF" } }),
-      access({ to: ["*/Satellite/G03"], graphics: { color_mode: "custom", custom_color: null } }),
+      access({ graphics: { inherit: false, color_mode: "custom", custom_color: "#AA00FF" } }),
+      access({ to: ["*/Satellite/G03"], graphics: { inherit: false, color_mode: "custom", custom_color: null } }),
     ]);
     const rows = timelineRows(doc, {
       [accessKey(doc.accesses![0])]: ok({ G01: [], G02: [] }),
       [accessKey(doc.accesses![1])]: ok({ G03: [] }),
     }, CTX);
     expect(rows.map((r) => r.color)).toEqual(["#aa00ff", "#aa00ff", TOKENS.access]);
+  });
+
+  test("Inherit Settings from Scenario: the scenario defaults win over the access's own colour settings (same colour as the line)", () => {
+    const doc = makeScenario([
+      access({ graphics: { inherit: true, color_mode: "custom", custom_color: "#AA00FF" } }),
+      access({ from: "*/Facility/HOME", graphics: { inherit: true, color_mode: "object", custom_color: null } }),
+      access({ from: "*/Facility/FAR", graphics: { color_mode: "custom", custom_color: "#AA00FF" } }), // ไม่มี inherit = ค่าตั้งต้น true
+    ]);
+    const rows = timelineRows(doc, {
+      [accessKey(doc.accesses![0])]: ok({ G01: [] }),
+      [accessKey(doc.accesses![1])]: ok({ G01: [] }),
+      [accessKey(doc.accesses![2])]: ok({ G01: [] }),
+    }, CTX);
+    expect(rows.map((r) => r.color)).toEqual([TOKENS.access, TOKENS.access, TOKENS.access]);
   });
 
   test("an access without graphics uses the access colour, and so does a satellite that is not in the scenario", () => {

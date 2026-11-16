@@ -25,7 +25,7 @@ import {
   PointGraphics, PolylineDashMaterialProperty, ReferenceFrame, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
-import { accessFor, resolveAccessGraphics } from "./accessGraphics";
+import { accessColor, accessFor, resolveAccessGraphics } from "./accessGraphics";
 import { effectiveColor, objectPath, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
 import { applySatelliteModel, type SatModelSpec } from "./satModelGraphics";
@@ -344,12 +344,12 @@ export function entityLooks(doc: ScenarioDoc, ctx: ApplyCtx): Map<string, Entity
 }
 
 /**
- * เส้น access ของคู่ (Facility, ดาว): access ที่ Compute แล้วของคู่นั้น (accessFor) ที่เปิด Show และ Show Animate Line สี = สีที่ผู้ใช้เลือก
- * ไม่งั้น --color-access ไม่มี access ที่ Compute แล้ว = ไม่วาด (show false)
+ * เส้น access ของคู่ (Facility, ดาว): access ที่ Compute แล้วของคู่นั้น (accessFor) ที่เปิด Show และ Show Animate Line
+ * สีตาม accessColor (ตัวเดียวกับแถว Timeline) satColor = สีที่ใช้จริงของดาว ไม่มี access ที่ Compute แล้ว = ไม่วาด (show false)
  */
-function accessStyle(doc: ScenarioDoc, facility: string, satName: string | undefined, tokens: ColorTokens): { show: boolean; color: string } {
-  const look = satName === undefined ? null : resolveAccessGraphics(accessFor(doc, facility, satName));
-  return { show: look !== null && look.show && look.line, color: look?.custom ?? tokens.access };
+function accessStyle(doc: ScenarioDoc, facility: string, sat: { name: string; color: string } | undefined, tokens: ColorTokens): { show: boolean; color: string } {
+  const look = sat === undefined ? null : resolveAccessGraphics(accessFor(doc, facility, sat.name));
+  return { show: look !== null && look.show && look.line, color: look === null ? tokens.access : accessColor(look, sat?.color, tokens) };
 }
 
 /** ground track ของดาวในหน้าต่าง 2D: path ที่ lead/trail ตามหน้า Pass (ไม่มีช่วงวิเคราะห์หรือตัวอย่างตำแหน่ง = ซ่อน) */
@@ -419,7 +419,8 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         continue;
       }
       const [, facility, prn] = parts;
-      const look = accessStyle(doc, facility, looks.get(`sat/${prn}`)?.obj.name, tokens);
+      const satLook = looks.get(`sat/${prn}`);
+      const look = accessStyle(doc, facility, satLook === undefined ? undefined : { name: satLook.obj.name, color: satLook.g.color }, tokens);
       entity.show = look.show && shown.has(`fac/${facility}`) && shown.has(`sat/${prn}`);
       if (entity.polyline !== undefined) {
         entity.polyline.material = new ColorMaterialProperty(cssColor(look.color));

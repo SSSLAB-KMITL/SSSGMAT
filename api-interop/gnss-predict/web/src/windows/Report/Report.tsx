@@ -79,16 +79,27 @@ const primeListeners = new Set<(key: string) => void>();
 
 const primeKey = (sc: string, req: ReportRequest): string => JSON.stringify([sc, useScenario.getState().etag, req]);
 
+/** เก็บผลลงช่องฝาก (ไม่แจ้งหน้าต่างที่เปิดอยู่) คืนกุญแจ */
+function storePrimed(sc: string, req: ReportRequest, report: ReportJson): string {
+  const key = primeKey(sc, req);
+  primed = { key, report, at: Date.now() };
+  return key;
+}
+
 /**
  * Report & Graph Manager สร้างรายงานก่อนเปิดหน้าต่าง (เพื่อแสดง 409/422 ในกล่องของตัวเอง) แล้วฝากผลไว้ที่นี่
  * - หน้าต่างใหม่ของคำขอเดียวกันใช้ผลนี้ในการโหลดครั้งแรกเท่านั้นแทนการ POST ซ้ำ (Refresh / F5 / คำนวณใหม่ สร้างใหม่ตามปกติ)
- * - หน้าต่างของคำขอเดียวกันที่เปิดอยู่แล้วรับผลนี้ไปแสดงทันที (deliver: false = ไม่ส่งให้หน้าต่างที่เปิดอยู่ ใช้ใน test)
+ * - หน้าต่างของคำขอเดียวกันที่เปิดอยู่แล้วรับผลนี้ไปแสดงทันที
  * - ผลที่ฝากก่อน doc เปลี่ยน (ETag ต่าง) หรือเก่ากว่า PRIMED_TTL_MS ไม่ถูกใช้
  */
-export function primeReport(sc: string, req: ReportRequest, report: ReportJson, opts: { deliver?: boolean } = {}): void {
-  const key = primeKey(sc, req);
-  primed = { key, report, at: Date.now() };
-  if (opts.deliver !== false) for (const listener of [...primeListeners]) listener(key);
+export function primeReport(sc: string, req: ReportRequest, report: ReportJson): void {
+  const key = storePrimed(sc, req, report);
+  for (const listener of [...primeListeners]) listener(key);
+}
+
+/** ใช้ใน test เท่านั้น: ฝากผลโดยไม่ส่งให้หน้าต่างที่เปิดอยู่ (จำลองผลที่ฝากไว้แล้วหน้าต่างไม่ได้รับ) */
+export function primeReportUnheardForTest(sc: string, req: ReportRequest, report: ReportJson): void {
+  storePrimed(sc, req, report);
 }
 
 /** ผลที่ฝากไว้ของคำขอนี้ (ใช้ได้ครั้งเดียว) ไม่มี ไม่ตรง (scenario / ETag / คำขอ) หรือเก่าเกิน PRIMED_TTL_MS = null */
@@ -270,7 +281,12 @@ export interface ReportLoader<T> {
  */
 export function useReportLoader<T>(p: ReportParams | null, panelId: string, prepare: PrepareReport<T>, messages: LoaderMessages): ReportLoader<T> {
   const key = p === null ? "" : JSON.stringify(requestOf(p));
-  const sc = useScenario((s) => s.name);
+  // scenario ที่หน้าต่างนี้เปิดให้ (ชื่อแรกที่ไม่ใช่ null): เปิด scenario อื่นทับ = sc เป็น null (ไม่สร้าง Refresh คำนวณใหม่ หรือ Export กับ scenario ใหม่)
+  // scenarioFiles ปิดหน้าต่างที่ผูกกับ scenario ตอนชื่อเปลี่ยนอยู่แล้ว ตัวนี้กันช่วงก่อนปิดและกรณีที่ไม่มีใครปิด
+  const current = useScenario((s) => s.name);
+  const boundSc = useRef<string | null>(null);
+  if (boundSc.current === null && current !== null) boundSc.current = current;
+  const sc = current !== null && current === boundSc.current ? current : null;
   const resultsInfo = useResults((s) => s.info);
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<string | null>(null);

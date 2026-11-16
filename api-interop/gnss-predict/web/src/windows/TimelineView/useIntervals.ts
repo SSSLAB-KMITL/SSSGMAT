@@ -45,7 +45,9 @@ export function useAccessIntervals(): IntervalsByAccess {
         }
         setState({ scenario: name, replies: Object.fromEntries(entries.map(([a, result]) => [accessKey(a), result])) });
       } catch (e) {
-        if (!isAbortError(e)) throw e;
+        // ยกเลิก = รอบใหม่แทนแล้ว; อย่างอื่นเป็นบั๊กของเราเอง (fetchAccessResult แปลงข้อผิดพลาดของ server เป็นแถวแล้ว) บันทึกไว้
+        // ไม่โยนต่อ: async ที่ไม่มีใครรอ = unhandled rejection แถวเดิมคงอยู่
+        if (!isAbortError(e)) console.error("useAccessIntervals", e);
       }
     })();
     return () => ctl.abort();

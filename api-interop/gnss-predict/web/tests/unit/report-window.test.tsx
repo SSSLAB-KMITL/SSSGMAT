@@ -18,7 +18,7 @@ import { useResults, type ResultsInfo } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { formatTime } from "../../src/time/format";
-import { openReport, primeReport, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
+import { openReport, primeReport, primeReportUnheardForTest, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
 import { columnWidths, dynamicRows, flattenRows, prepareDynamic } from "../../src/windows/Report/table";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
 import { deferred, stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
@@ -123,7 +123,7 @@ afterEach(() => {
 
 /** ฝากผลไว้โดยไม่มีหน้าต่างใดรับ (จำลองผลที่ฝากไว้ก่อนเปิดหน้าต่าง แล้วหน้าต่างไม่ได้เปิด) ใช้ etag ปัจจุบันของ store */
 function primeReportUnheard() {
-  primeReport("S1", requestOf(PARAMS), accessReport(), { deliver: false });
+  primeReportUnheardForTest("S1", requestOf(PARAMS), accessReport());
 }
 
 function mount(params: ReportParams = PARAMS, panelId = "report") {
@@ -236,7 +236,7 @@ describe("report table", () => {
     await user.click(screen.getByRole("button", { name: t("report.refresh") }));
     await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
     // ระหว่างคำนวณมีผลของคำขอเดียวกันค้างในช่องฝาก (ไม่มีหน้าต่างรับ): การสร้างใหม่หลังคำนวณต้อง POST เอง
-    primeReport("S1", requestOf({ ...PARAMS, objects: [G01] }), accessReport(), { deliver: false });
+    primeReportUnheardForTest("S1", requestOf({ ...PARAMS, objects: [G01] }), accessReport());
     act(() => useJobs.getState().onJobEvent({ id: "j-p", kind: "analyze", scenario: "S1", state: "succeeded", progress: null }));
     await screen.findByText("THBK-To-G01");
     expect(f.count(REPORTS)).toBe(2);
@@ -305,6 +305,23 @@ describe("report table", () => {
     expect(g02.map((r) => r.kind)).toEqual(["title", "summary"]);
     expect(g02[1].cells).toEqual(["Total Duration", t("report.notAvailable")]);
     expect(flat.filter((r) => r.section === -1).map((r) => r.kind)).toEqual(["title", "global", "global", "global"]);
+  });
+});
+
+describe("another scenario opened over this one (open-to-open)", () => {
+  test("the window does not POST against the new scenario and says nothing; Refresh and F5 do not either", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() }, "POST /api/scenarios/S2/reports": { status: 409, json: { code: "RESULTS_NOT_CURRENT", message: "x" } } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+    act(() => void openScenario(makeDoc({ name: "S2" })));
+    await new Promise((r) => setTimeout(r, 20));
+    fireEvent.keyDown(container.querySelector(".rpt")!, { key: "F5" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.count("POST /api/scenarios/S2/reports")).toBe(0);
+    expect(f.count(REPORTS)).toBe(1);
+    expect(useMessages.getState().items).toEqual([]);
   });
 });
 
@@ -505,8 +522,22 @@ describe("panel", () => {
     expect(def.scenarioBound).toBe(true);
     expect(def.title({ ...PARAMS, objects: [G01] })).toBe("THBK-To-G01: Access");
     expect(def.title(PARAMS)).toBe("Multiple Objects: Access");
-    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["Access", "report", [G01, E11], { mode: "object" }, false]));
+    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["Access", "report", [G01, E11], { mode: "object", step_s: null }, false]));
     expect(def.instanceKey!({ ...PARAMS, dynamic: true })).not.toBe(def.instanceKey!(PARAMS));
+  });
+
+  test("the window key normalises time: the Access tool's {mode} and the Manager's {mode, step_s: null} open the same window", () => {
+    for (const kind of ["report", "graph"] as const) {
+      const def = getPanelDef(kind)!;
+      const key = (time: unknown) => def.instanceKey!({ ...PARAMS, kind, time });
+      expect(key({ mode: "object" }), kind).toBe(key({ mode: "object", step_s: null }));
+      expect(key({ step_s: null, mode: "object" }), kind).toBe(key({ mode: "object" }));
+      const a = { mode: "specify", start: "2026-11-12T00:00:00Z", stop: "2026-11-13T00:00:00Z", step_s: 60 };
+      const b = { step_s: 60, stop: "2026-11-13T00:00:00Z", start: "2026-11-12T00:00:00Z", mode: "specify" };
+      expect(key(a), kind).toBe(key(b));
+      expect(key(a), kind).not.toBe(key({ ...a, step_s: 120 }));
+      expect(key({ mode: "object" }), kind).not.toBe(key({ mode: "object", step_s: 60 }));
+    }
   });
 
   test("openReport opens the report window with the params", () => {

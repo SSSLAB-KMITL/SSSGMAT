@@ -9,9 +9,9 @@ test("Start moves the clock, Step Forward adds one time step and Reset returns t
   const time = currentTimeField(page);
   await expect(time).toHaveValue(START_TEXT);
 
-  // Start: เวลาเปลี่ยนภายใน 2 วินาที
+  // Start: เวลาเปลี่ยน (เกณฑ์ 2 วินาทีอยู่ที่ perf.spec ที่นี่ใช้ timeout ตั้งต้น: เครื่องที่หนักไม่ทำให้ test พฤติกรรมนี้ล้ม)
   await toolButton(page, "Start").click();
-  await expect(time).not.toHaveValue(START_TEXT, { timeout: 2000 });
+  await expect(time).not.toHaveValue(START_TEXT);
 
   // Pause: เวลานิ่ง (ค่าที่ throttle ไว้ตามทันแล้วไม่เปลี่ยนอีก)
   await toolButton(page, "Pause").click();

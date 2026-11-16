@@ -137,6 +137,17 @@ describe("applyGraphics", () => {
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
   });
 
+  test("own graphics with Use Object Colors draw the line in the satellite's colour; inherited graphics keep --color-access", async () => {
+    const ds = await scene();
+    const objects = [fac("THBK"), sat("G01", 62339, { graphics2d: { inherit: false, color: "#3366cc" } }), sat("E05", 40128)];
+    const color = (id: string) => hex(value(byId(ds, id).polyline?.material)?.color as Color | undefined);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: false, color_mode: "object" } })] }), baseCtx);
+    expect(color("access/THBK/G01")).toBe("#3366cc");
+    expect(color("access/THBK/E05")).toBe(TOKENS.galileo);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: true, color_mode: "object" } })] }), baseCtx);
+    expect(color("access/THBK/G01")).toBe(TOKENS.access);
+  });
+
   test("an access that is not computed draws no line; once computed it draws one (only for the satellites it covers)", async () => {
     const ds = await scene();
     const objects = [fac("THBK"), sat("G01", 62339), sat("E05", 40128)];

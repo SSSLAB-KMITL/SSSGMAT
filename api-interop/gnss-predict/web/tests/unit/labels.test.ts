@@ -310,6 +310,7 @@ const HELP_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "graph.copyToClipboard": "Copy to Clipboard: Creates a copy of the graph",
   "graph.zoomOut": "Zoom Out: Zooms out of the graph by one step",
   "graph.crosshairCursor": "Crosshair Cursor: Displays crosshairs across",
+  "access.accessFor": "the right of the Access for: field",
 };
 
 describe("stk labels verified on help.agi.com", () => {

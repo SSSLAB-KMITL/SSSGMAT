@@ -329,6 +329,32 @@ describe("the window's right-click menu: platform order and the guard against th
     expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
   });
 
+  test("macOS Ctrl+click (left button with Ctrl) on empty space counts as a right-click and opens Show Ground Tracks", async ({ onTestFinished }) => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    onTestFinished(() => platform.mockRestore());
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    expect(fireEvent.contextMenu(el, { clientX: 40, clientY: 30, ctrlKey: true })).toBe(false); // macOS ส่ง contextmenu ตอนกด
+    expect(item()).toBeNull();
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("Ctrl+click elsewhere than macOS, a plain left click, and a Ctrl+drag on macOS open nothing", async ({ onTestFinished }) => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    onTestFinished(() => platform.mockRestore());
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerDown(el, { button: 0, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, clientX: 40, clientY: 30 });
+    platform.mockReturnValue("MacIntel");
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 80, clientY: 30 }); // ลาก = หมุนกล้อง
+    await new Promise((r) => setTimeout(r, 20));
+    expect(item()).toBeNull();
+  });
+
   test("Windows order (button down, button up, contextmenu): a late contextmenu, inside or outside the picture, neither shows the browser's menu nor empties ours", async () => {
     const { el } = await mount2D();
     fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });

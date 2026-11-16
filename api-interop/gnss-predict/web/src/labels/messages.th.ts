@@ -296,6 +296,7 @@ const MESSAGES = {
   "graph.zoomOutHint": "ยกเลิกการซูม แสดงทั้งช่วง (หมุนล้อเมาส์บนกราฟเพื่อซูม)",
   "graph.timelineHint": "แสดง/ซ่อนเส้นเวลา animation (กราฟ polar: จุดตำแหน่งปัจจุบัน)",
   "graph.crosshairHint": "แสดงเส้นกากบาทตามเมาส์พร้อมค่าบนแกน",
+  "graph.exportHint": "ส่งออกข้อมูลของกราฟทั้งช่วงเป็นไฟล์ CSV",
 
   // Message Viewer (spec §11)
   "mv.empty": "ไม่มีข้อความในแท็บนี้",
@@ -438,7 +439,7 @@ const MESSAGES = {
   // {time} = เวลาที่ตัวตั้งเวลาจะลองตรวจครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี scenario = UTCG)
   "validation.nextAttempt": "ลองครั้งถัดไป {time}",
   "validation.gaveUpShort": "เลิกตรวจแล้ว ไม่ลองอีก",
-  "validation.noRetry": "ยังไม่ได้ตั้งเวลาลอง (งานประจำวันปิดอยู่)",
+  "validation.noRetry": "ไม่มีรอบลองถัดไป",
   "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
   "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",
   "validation.noAge": "ยังไม่มีดาวที่มีทั้งอายุข้อมูลและระยะคลาด 3 มิติ",

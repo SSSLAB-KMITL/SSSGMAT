@@ -9,6 +9,7 @@
 // - Generate...: กล่อง Time Properties (ค่าตั้งต้นจาก style.time) แล้ว POST /reports แบบ JSON ก่อนเปิดหน้าต่าง (ฝากผลให้หน้าต่างด้วย primeReport)
 //   ส่ง time เสมอ: {mode: "object" | "specify", start?, stop?, step_s}
 //   409 RESULTS_NOT_CURRENT = ถาม Yes / No ว่าจะ Compute ก่อนไหม (recomputePlan เดียวกับหน้าต่างรายงาน) Yes = รอ job เสร็จแล้วสร้างใหม่
+//   Facility ที่ยังไม่มี access = คำถาม report.needsAccess ของหน้าต่างรายงาน (ต้องสร้าง access ใหม่)
 //   422 time.* = ช่องนั้นกรอบแดงพร้อมข้อความของ server, 422 objects (Time Period ของ access ไม่เท่ากัน) = ข้อความไทยในกล่อง,
 //   422 STYLE_INVALID = Message Viewer
 // - คลิกขวาที่ style: Generate as .txt file... / .csv file... (downloadReport ด้วยเวลาของ style), Properties, Copy to My Styles, Delete
@@ -170,6 +171,13 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
     if (Array.isArray(params?.objects)) setSelected(params.objects.filter((o: unknown): o is string => typeof o === "string"));
   }, [paramsKey]);
 
+  /** Generate ที่กล่องเวลากำลังรออยู่: Cancel / Esc ของกล่องยกเลิกเฉพาะตัวนี้ (life ยังเป็นตัวยกเลิกเมื่อหน้าต่างปิด) */
+  const generating = useRef<AbortController | null>(null);
+  const cancelDialog = (): void => {
+    generating.current?.abort();
+    generating.current = null;
+    setDialog(null);
+  };
   /** ยกเลิกการรอ job เมื่อหน้าต่างปิด */
   const life = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -286,7 +294,12 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
       return false;
     }
     const facilities = [...new Set(computes.map((c) => nameOf(c.from)))];
-    const text = facilities.length > 0 ? msg("rgm.computeFirst", { facility: facilities.join(", ") }) : msg("rgm.propagateFirst");
+    // Facility ที่ยังไม่มี access: การสร้าง access ใหม่แก้ scenario จึงถามด้วยคำถามเดียวกับหน้าต่างรายงาน (report.needsAccess)
+    const needs = [...new Set(plan.needsAccess.map((c) => nameOf(c.from)))];
+    const text =
+      needs.length > 0
+        ? msg("report.needsAccess", { facility: needs.join(", ") })
+        : facilities.length > 0 ? msg("rgm.computeFirst", { facility: facilities.join(", ") }) : msg("rgm.propagateFirst");
     if (!(await confirm(text, { okLabel: t("dialog.yes"), cancelLabel: t("dialog.no") }))) return false;
     try {
       const jobs = computes.length === 0 ? [] : (await postAccess(sc, "compute", computes)).jobs;
@@ -308,22 +321,28 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
 
   /** POST /reports แบบ JSON แล้วเปิดหน้าต่าง; 409 = ถามว่าจะ Compute ก่อน (สร้างใหม่ครั้งเดียวเมื่อเสร็จ) ข้อผิดพลาดอื่นแสดงในกล่องเวลา */
   const generate = async (job: Job, time: ReportTime, retried = false): Promise<void> => {
-    if (sc === null) return;
+    const lifeSignal = life.current?.signal;
+    if (sc === null || lifeSignal === undefined || lifeSignal.aborted) return;
     const req = requestOf(job, time);
+    // ตัวยกเลิกของ Generate นี้: Cancel / Esc ของกล่องเวลา (cancelDialog) หรือหน้าต่างปิด (life)
+    const ctrl = new AbortController();
+    const onClose = (): void => ctrl.abort();
+    lifeSignal.addEventListener("abort", onClose, { once: true });
+    generating.current = ctrl;
+    const signal = ctrl.signal;
     setBusy(true);
     setDialogError(null);
     try {
-      const signal = life.current?.signal;
       const etag = useScenario.getState().etag;
       const report = await fetchReport(sc, req, signal);
-      // หน้าต่างปิด หรือสลับ scenario ระหว่างรอ: ไม่ฝากผลและไม่เปิดหน้าต่าง
-      if (signal?.aborted === true || useScenario.getState().name !== sc) return;
+      // ยกเลิก หน้าต่างปิด หรือสลับ scenario ระหว่างรอ: ไม่ฝากผลและไม่เปิดหน้าต่าง
+      if (signal.aborted || useScenario.getState().name !== sc) return;
       // scenario ถูกแก้ระหว่างรอ: ผลนี้อาจไม่ตรงแล้ว ไม่ฝาก หน้าต่างสร้างรายงานเอง (หรือแสดงแถบผลลัพธ์ไม่ตรง)
       if (useScenario.getState().etag === etag) primeReport(sc, req, report);
       openReport({ style: req.style, kind: job.style.kind, objects: job.objects, time, dynamic: job.dynamic });
       setDialog(null);
     } catch (e) {
-      if (isAbortError(e) || life.current?.signal.aborted === true) return;
+      if (isAbortError(e) || signal.aborted) return;
       if (e instanceof ApiError && e.code === "RESULTS_NOT_CURRENT" && !retried) {
         setDialog(null);
         if (await computeFirst(job.objects)) await generate(job, time, true);
@@ -338,6 +357,8 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
         setDialogError({ field: null, text });
       }
     } finally {
+      lifeSignal.removeEventListener("abort", onClose);
+      if (generating.current === ctrl) generating.current = null;
       setBusy(false);
     }
   };
@@ -608,7 +629,7 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
           busy={busy}
           error={dialogError}
           onEdit={(field) => setDialogError((err) => (err !== null && (err.field === field || err.field === null) ? null : err))}
-          onCancel={() => setDialog(null)}
+          onCancel={cancelDialog}
           onOk={(time) => void generate(dialog, time)}
         />
       )}

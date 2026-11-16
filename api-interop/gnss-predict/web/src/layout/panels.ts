@@ -134,6 +134,21 @@ interface Base {
 }
 
 /**
+ * time ของรายงานในกุญแจหน้าต่าง: ไม่มี step_s = null (Use default time points) และเรียงชื่อช่อง
+ * Access tool ส่ง {mode: "object"} ส่วน Report & Graph Manager ส่ง {mode: "object", step_s: null}: รายงานเดียวกันจึงเป็นบานเดียวกัน
+ */
+function reportTimeKey(time: unknown): unknown {
+  if (typeof time !== "object" || time === null || Array.isArray(time)) return time ?? null;
+  const fields: Record<string, unknown> = { ...(time as Record<string, unknown>) };
+  fields.step_s = fields.step_s ?? null;
+  return Object.fromEntries(Object.keys(fields).sort().map((k) => [k, fields[k]]));
+}
+
+/** กุญแจของหน้าต่างรายงาน/กราฟ: (style, ชนิด, object, เวลา, Dynamic Display) */
+const reportKey = (params: any): string =>
+  JSON.stringify([params?.style, params?.kind, params?.objects, reportTimeKey(params?.time), params?.dynamic]);
+
+/**
  * ชนิดตั้งต้นตาม spec §4.1: Object Browser / Timeline View / Message Viewer = Dockable, 3D/2D และ Sensor View = Integrated, ที่เหลือ = Floating
  * persist: เฉพาะห้าหน้าต่างของพื้นที่ทำงานและ Sensor View บันทึกลง workbook; หน้าต่างลอยและชั่วคราวไม่บันทึก
  * scenarioBound: หน้าต่างที่อ้าง object หรือผลของ scenario ที่เปิดอยู่ ปิดพร้อม scenario; หน้าต่างอื่น (Welcome, About, Fetch Orbit Data ฯลฯ) ไม่ปิด
@@ -180,13 +195,13 @@ const BASE: Record<PanelKind, Base> = {
   report: {
     label: "window.report", type: "integrated", size: { width: 720, height: 420 }, persist: true, scenarioBound: true,
     title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.report")),
-    instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
+    instanceKey: reportKey,
   },
   // หน้าต่างกราฟ (spec §6.2, P11): เหมือนหน้าต่างรายงานทุกอย่าง (ชื่อ กุญแจ หนึ่งบานต่อกุญแจ บันทึกใน workbook ปิดพร้อม scenario) ต่างแค่ชื่อชนิด
   graph: {
     label: "window.graph", type: "integrated", size: { width: 720, height: 420 }, persist: true, scenarioBound: true,
     title: (params) => reportTitle(Array.isArray(params?.objects) ? params.objects : [], typeof params?.style === "string" ? params.style : t("window.graph")),
-    instanceKey: (params) => JSON.stringify([params?.style, params?.kind, params?.objects, params?.time, params?.dynamic]),
+    instanceKey: reportKey,
   },
   // Access tool (spec §4): หน้าต่างลอยบานเดียว params {from: path ของ Access For | null} เปิดซ้ำด้วย from ใหม่ = เปลี่ยน Access For ของบานเดิม
   // ไม่บันทึกใน workbook (เครื่องมือชั่วคราวแบบ Properties Browser) ปิดพร้อม scenario

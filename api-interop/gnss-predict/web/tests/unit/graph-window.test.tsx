@@ -2,7 +2,7 @@
 // ตรวจแถบเครื่องมือ (Save, Copy to Clipboard, Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor), เมนูคลิกขวา, Strip Chart ที่ตามนาฬิกา,
 // chunk ของ ECharts โหลดไม่ได้, แถบเตือนผลลัพธ์ไม่ตรง (409) และ panel/ป้ายชื่อ
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
@@ -280,6 +280,31 @@ describe("graph window", () => {
     expect(clicks[0].download).toBe("THBK-To-G01_AER.csv");
   });
 
+  test("keyboard: Export is on the toolbar, and the chart is a focusable image named after the window", async () => {
+    scenario();
+    const f = stubFetch({
+      [REPORTS]: (call) => ((call.body as AnyObj).format === "csv"
+        ? { text: "Time,Azimuth\n", headers: { "Content-Disposition": 'attachment; filename="THBK-To-G01_AER.csv"' } }
+        : { json: aerGraph() }),
+    });
+    mount();
+    await ready();
+    const chartImg = screen.getByRole("img", { name: getPanelDef("graph")!.title(PARAMS) });
+    expect(chartImg.tabIndex).toBe(0);
+    expect(chartImg.getAttribute("aria-label")).toBe("THBK-To-G01: AER");
+    chartImg.focus();
+    expect(document.activeElement).toBe(chartImg);
+
+    const clicks: HTMLAnchorElement[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicks.push(this); });
+    const toolbar = screen.getByRole("toolbar", { name: t("window.graph") });
+    const exportButton = within(toolbar).getByRole("button", { name: t("graph.export") });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(clicks).toHaveLength(1));
+    expect(f.calls.filter((c) => `${c.method} ${c.path}` === REPORTS).at(-1)!.body).toEqual({ ...PARAMS, format: "csv" });
+  });
+
   test("set animation time is not offered outside the plot or on a polar graph", async () => {
     scenario();
     stubFetch({ [REPORTS]: { json: polarGraph() } });
@@ -446,7 +471,7 @@ describe("panel", () => {
     expect(def.scenarioBound).toBe(true);
     expect(def.singleton).toBe(true);
     expect(def.title(PARAMS)).toBe("THBK-To-G01: AER");
-    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["AER", "graph", [G01], { mode: "object" }, false]));
+    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["AER", "graph", [G01], { mode: "object", step_s: null }, false]));
   });
 
   test("openReport routes graph styles to the graph window", () => {

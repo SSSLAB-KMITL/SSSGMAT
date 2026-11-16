@@ -242,6 +242,9 @@ describe("daily table", () => {
     mount();
     const table = await daily();
     expect(cells(rowOf(table, "daily_20261111"))[2]).toContain(msg("validation.noRetry"));
+    // null มีสองเหตุ (งานประจำวันปิด หรือเลยกำหนดเลิกลองหลังตรวจล้ม: server e1cac5a) ข้อความจึงไม่อ้างเหตุใดเหตุหนึ่ง
+    expect(msg("validation.noRetry")).toBe("ไม่มีรอบลองถัดไป");
+    expect(msg("validation.noRetry")).not.toContain("งานประจำวัน");
   });
 
   test("pending and gave-up days cannot be opened by click or key, fetch nothing and are not highlighted as clickable", async () => {

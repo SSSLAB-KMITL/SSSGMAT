@@ -108,6 +108,7 @@ export function StyleEditor({ params, panelId }: PanelProps) {
   });
   const [saveTier, setSaveTier] = useState<SaveTier>(p.tier === "scenario" ? "scenario" : "my");
   const [tab, setTab] = useState<Tab>("content");
+  const tabRefs = useRef(new Map<Tab, HTMLButtonElement>());
   const [providers, setProviders] = useState<ProviderInfo[] | null>(null);
   const [list, setList] = useState<StyleList | null>(null);
   /** ผู้ใช้แก้ชื่อเองแล้ว: ไม่ตั้งชื่อสำเนาใหม่ตามรายการ */
@@ -334,6 +335,17 @@ export function StyleEditor({ params, panelId }: PanelProps) {
 
   const tabs: [Tab, LabelKey][] = [["content", "rgm.content"], ["time", "rgm.time"], ["summary", "rgm.summary"], ...(form.kind === "graph" ? [["graph", "rgm.graph"] as [Tab, LabelKey]] : [])];
   const contentsLabel = form.kind === "graph" ? t("rgm.graphContents") : t("rgm.reportContents");
+  /** แท็บแบบ WAI-ARIA (roving focus): ArrowLeft / ArrowRight วนรอบ, Home / End = ตัวแรก / ตัวท้าย ย้ายโฟกัสแล้วเลือกแท็บนั้นเลย */
+  const onTabKeyDown = (e: ReactKeyboardEvent): void => {
+    const i = tabs.findIndex(([id]) => id === tab);
+    const n = tabs.length;
+    const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : null;
+    if (to === null || i < 0) return;
+    e.preventDefault();
+    const id = tabs[to][0];
+    setTab(id);
+    tabRefs.current.get(id)?.focus();
+  };
   const hasAccessData = form.content.some((c) => c.provider === ACCESS_DATA);
 
   return (
@@ -371,9 +383,21 @@ export function StyleEditor({ params, panelId }: PanelProps) {
       {takenBy !== null && <p className="form-error">{msg("styleEditor.nameTaken", { name: form.name, tier: t(TIER_LABELS[takenBy]) })}</p>}
       {locked && <p className="props-note">{msg("styleEditor.installedCopy")}</p>}
 
-      <div role="tablist" className="rgm-tabs">
+      <div role="tablist" className="rgm-tabs" onKeyDown={onTabKeyDown}>
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "btn rgm-tab rgm-selected" : "btn rgm-tab"} onClick={() => setTab(id)}>
+          <button
+            key={id}
+            ref={(el) => {
+              if (el !== null) tabRefs.current.set(id, el);
+              else tabRefs.current.delete(id);
+            }}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
+            className={tab === id ? "btn rgm-tab rgm-selected" : "btn rgm-tab"}
+            onClick={() => setTab(id)}
+          >
             {t(label)}
           </button>
         ))}

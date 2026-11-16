@@ -9,6 +9,7 @@
 //   ชี้ไปนอกภาพเพราะเมนูกันเมาส์ทั้งหน้า หรือยังชี้ในภาพ): ทุก contextmenu ของ browser ภายใน 500 ms หลังเปิดเมนูของหน้าต่าง ไม่ว่าชี้ที่ไหน
 //   ถูกกันและหยุดที่ window (ไม่ขึ้นเมนูของ browser และไม่ถึงตัวฟังของภาพ ซึ่งจะเปลี่ยนรายการจนเมนูที่เปิดอยู่ว่าง) ยกเว้น contextmenu ของเราเอง
 // - คลิกขวาที่ว่างไม่เปลี่ยนการเลือก
+// - macOS: Ctrl+คลิกปุ่มซ้ายนับเป็นคลิกขวา (เริ่มที่ pointerdown ปุ่ม 0 + Ctrl จบที่ pointerup ปุ่มเดียวกัน) ระบบอื่น Ctrl+คลิกเป็นคลิกธรรมดา
 
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { MenuEntry } from "../../chrome/menus";
@@ -36,6 +37,15 @@ export interface SceneMenu {
     onPointerUpCapture(e: ReactPointerEvent<HTMLElement>): void;
   };
 }
+
+/** เครื่อง macOS (Ctrl+คลิก = คลิกขวา) */
+export function isMacPlatform(): boolean {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /mac/i.test(nav.userAgentData?.platform ?? nav.platform ?? "");
+}
+
+/** ปุ่มที่เริ่มคลิกขวา: ปุ่มขวา หรือบน macOS ปุ่มซ้ายพร้อม Ctrl */
+const isSecondaryDown = (e: { button: number; ctrlKey: boolean }): boolean => e.button === 2 || (e.button === 0 && e.ctrlKey && isMacPlatform());
 
 const localPoint = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }): Point => {
   const rect = e.currentTarget.getBoundingClientRect();
@@ -69,8 +79,8 @@ function guardNativeMenu(el: HTMLElement): void {
 
 export function useSceneMenu(opts: SceneMenuOptions): SceneMenu {
   const [entries, setEntries] = useState<readonly MenuEntry[]>([]);
-  /** จุดที่กดปุ่มขวาค้างอยู่ (พิกัดของหน้าจอ) */
-  const down = useRef<Point | null>(null);
+  /** จุดที่กดปุ่มขวา (หรือ Ctrl+ปุ่มซ้ายบน macOS) ค้างอยู่ (พิกัดของหน้าจอ) และปุ่มที่กด */
+  const down = useRef<(Point & { button: number }) | null>(null);
   /** กำลังส่ง contextmenu ของเราเอง (เปิดเมนูของหน้าต่าง) */
   const opening = useRef(false);
   const latest = useRef(opts);
@@ -95,14 +105,14 @@ export function useSceneMenu(opts: SceneMenuOptions): SceneMenu {
   };
 
   const onPointerDownCapture = (e: ReactPointerEvent<HTMLElement>): void => {
-    if (e.button === 2) down.current = { x: e.clientX, y: e.clientY };
+    if (isSecondaryDown(e)) down.current = { x: e.clientX, y: e.clientY, button: e.button };
   };
 
   const onPointerUpCapture = (e: ReactPointerEvent<HTMLElement>): void => {
-    if (e.button !== 2) return;
     const start = down.current;
+    if (start === null || e.button !== start.button) return;
     down.current = null;
-    if (start === null || !isClick(start, { x: e.clientX, y: e.clientY })) return; // ลากปุ่มขวา = ซูม
+    if (!isClick(start, { x: e.clientX, y: e.clientY })) return; // ลากปุ่มขวา = ซูม (Ctrl+ลากปุ่มซ้าย = หมุนกล้อง)
     const at = localPoint(e);
     if ((latest.current.objectAt?.(at.x, at.y) ?? null) !== null) return; // บน object: เมนูของ object (contextmenu ของ browser)
     const el = e.currentTarget;

@@ -2,6 +2,7 @@
 // ไฟล์นี้ไม่ import cesium (Globe Manager ใช้ใน bundle หลัก) ; imageryLayers.ts ยัง re-export ionStatus / onIonStatusChange ให้ผู้เรียกเดิม
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as layers from "../../src/cesium/imageryLayers";
 import { getIonFailure, ionStatus, notifyIonListeners, onIonStatusChange, setIonFailure } from "../../src/cesium/ionState";
 import { DEFAULT_GLOBE } from "../../src/layout/workbook";
 import { useImagery } from "../../src/stores/imagery";
@@ -112,8 +113,8 @@ describe("onIonStatusChange", () => {
   });
 });
 
-test("imageryLayers.ts re-exports the same functions", async () => {
-  const layers = await import("../../src/cesium/imageryLayers");
+// import แบบ static (โหลด Cesium ตอนเก็บ test ไม่ใช่ในเวลาของ test: dynamic import เคยเกิน 5 วินาทีเมื่อเครื่องหนัก)
+test("imageryLayers.ts re-exports the same functions", () => {
   expect(layers.ionStatus).toBe(ionStatus);
   expect(layers.onIonStatusChange).toBe(onIonStatusChange);
 });

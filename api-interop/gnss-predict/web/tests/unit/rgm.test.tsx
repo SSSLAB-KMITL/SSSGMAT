@@ -584,6 +584,31 @@ describe("fix round 1: keyboard", () => {
     expect(vi.mocked(openReport).mock.calls[0][0]).toMatchObject({ style: "AER", kind: "report", objects: [THBK_G01] });
   });
 
+  test("style editor tabs: one Tab stop, ArrowLeft / ArrowRight (wrapping), Home / End move the focus and select the tab", async () => {
+    openScenario(doc());
+    server({ [`GET ${BASE}/dataproviders`]: AER_PROVIDERS });
+    editor({ style: installed("AER", "graph"), tier: "installed" });
+    const tabs = () => within(screen.getByRole("tablist")).getAllByRole("tab");
+    const names = [t("rgm.content"), t("rgm.time"), t("rgm.summary"), t("rgm.graph")];
+    expect(tabs().map((x) => x.textContent)).toEqual(names);
+    expect(tabs().map((x) => x.tabIndex)).toEqual([0, -1, -1, -1]);
+    tabs()[0].focus();
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(tabs()[1]);
+    expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
+    expect(tabs().map((x) => x.tabIndex)).toEqual([-1, 0, -1, -1]);
+    await user.keyboard("{End}");
+    expect(document.activeElement).toBe(tabs()[3]);
+    await user.keyboard("{ArrowRight}"); // วนกลับตัวแรก
+    expect(document.activeElement).toBe(tabs()[0]);
+    await user.keyboard("{ArrowLeft}"); // วนไปตัวท้าย
+    expect(document.activeElement).toBe(tabs()[3]);
+    expect(tabs()[3].getAttribute("aria-selected")).toBe("true");
+    await user.keyboard("{Home}");
+    expect(document.activeElement).toBe(tabs()[0]);
+    expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
+  });
+
   test("Shift+F10 and the context-menu key open the style menu", async () => {
     openScenario(doc());
     server();
@@ -758,6 +783,56 @@ describe("fix round 1: manager paths", () => {
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
     await waitFor(() => expect(useMessages.getState().items.map((m) => m.text)).toContain(msg("rgm.nothingToCompute")));
     expect(openReport).not.toHaveBeenCalled();
+  });
+
+  test("409 for a Facility without an access asks the Report window's needsAccess question before creating one", async () => {
+    openScenario(doc());
+    const f = server({
+      [REPORTS]: { status: 409, json: { code: "RESULTS_NOT_CURRENT", text: "x", field: null, detail: null } },
+      [COMPUTE]: { status: 202, json: { job: "j-9", etag: "e2" }, headers: { ETag: '"e2"' } },
+    });
+    mount({ objectType: "Facility" });
+    await ready();
+    await pick("KMIT");
+    await user.click(styleItem("All DOPs", "report"));
+    // No = ไม่สร้าง access
+    await user.click(button("rgm.generate"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    const ask = await screen.findByText(msg("report.needsAccess", { facility: "KMIT" }));
+    expect(screen.queryByText(msg("rgm.computeFirst", { facility: "KMIT" }))).toBeNull();
+    await user.click(within(ask.closest("[role=dialog]") as HTMLElement).getByRole("button", { name: t("dialog.no") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(f.count(COMPUTE)).toBe(0);
+    // Yes = access ใหม่ไปทุก Constellation แบบไม่เพิ่มแถว Timeline
+    await user.click(button("rgm.generate"));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+    const again = await screen.findByText(msg("report.needsAccess", { facility: "KMIT" }));
+    await user.click(within(again.closest("[role=dialog]") as HTMLElement).getByRole("button", { name: t("dialog.yes") }));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    expect(lastBody(f.calls, COMPUTE)).toEqual({ from: "*/Facility/KMIT", to: [GPS], timeline: false });
+  });
+
+  test.each(["Cancel", "Escape"] as const)("%s in the Time Properties dialog while Generate is waiting aborts it: nothing opens, nothing is said", async (how) => {
+    openScenario(doc());
+    const f = server({ [REPORTS]: () => new Promise<never>(() => undefined) }); // ตอบเมื่อถูกยกเลิกเท่านั้น
+    mount({ objectType: "Access" });
+    await ready();
+    await pick("THBK-To-G01");
+    await user.click(styleItem("Access", "report"));
+    await user.click(button("rgm.generate"));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: t("dialog.ok") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+    const signal = (vi.mocked(fetch).mock.calls.at(-1)?.[1] as RequestInit | undefined)?.signal;
+    expect(signal?.aborted).toBe(false);
+    if (how === "Cancel") await user.click(within(dialog).getByRole("button", { name: t("dialog.cancel") }));
+    else await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(signal?.aborted).toBe(true);
+    await waitFor(() => expect(button("rgm.generate").disabled).toBe(false)); // ไม่ค้าง busy
+    expect(openReport).not.toHaveBeenCalled();
+    expect(primeReport).not.toHaveBeenCalled();
+    expect(useMessages.getState().items).toEqual([]);
   });
 
   test("a scenario switch while Generate is waiting opens nothing", async () => {

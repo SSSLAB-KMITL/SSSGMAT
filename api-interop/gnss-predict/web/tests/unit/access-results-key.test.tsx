@@ -13,7 +13,7 @@ import { stubFetch } from "./helpers/fake-fetch";
 
 vi.mock("../../src/windows/TimelineView/rows", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/windows/TimelineView/rows")>();
-  return { ...actual, accessResultsKey: vi.fn(actual.accessResultsKey) };
+  return { ...actual, accessResultsKey: vi.fn(actual.accessResultsKey), fetchAccessResult: vi.fn(actual.fetchAccessResult) };
 });
 
 const ROUTE = "GET /api/scenarios/S1/access/intervals";
@@ -55,5 +55,33 @@ describe("accessResultsKey is the one key rule of both callers", () => {
     renderHook(() => useAccessIntervals());
     await waitFor(() => expect(stub.count(ROUTE)).toBe(1));
     expect(rows.accessResultsKey).toHaveBeenCalledWith([access], info);
+  });
+});
+
+describe("useAccessIntervals failures", () => {
+  beforeEach(() => resetAll());
+  afterEach(() => {
+    vi.mocked(rows.fetchAccessResult).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  test("an unexpected (non-abort) failure goes to console.error and is not rethrown as an unhandled rejection", async () => {
+    const boom = new Error("boom");
+    vi.mocked(rows.fetchAccessResult).mockRejectedValue(boom);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      openScenario(doc);
+      useResults.setState({ info });
+      const { result } = renderHook(() => useAccessIntervals());
+      await waitFor(() => expect(logged).toHaveBeenCalledWith(expect.anything(), boom));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).toEqual([]);
+      expect(result.current).toEqual({});
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
