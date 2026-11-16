@@ -1,0 +1,213 @@
+{
+  "research_date_bangkok": "2026-11-15",
+  "provider": "Umbra",
+  "bucket": "umbra-open-data-catalog",
+  "region": "us-west-2",
+  "method": "Anonymous ListObjectsV2 fully paginated for 3 named prefixes; GET every STAC sidecar; resolve public files by product suffix in the same directory; selected HEAD checks in companion file",
+  "total_stac_scenes": 146,
+  "limitations": [
+    "Counts cover named prefixes and directories with STAC sidecars only.",
+    "No HEAD/GET check of every raster/signal file; object listing indicates publication, sample HEAD checks indicate access at inspection.",
+    "No raster pixels, SICD trajectory or CPHD signal validated.",
+    "STAC internal asset hrefs preserved at source URL, public URLs resolved using listing.",
+    "Raw view azimuth is not yet interpreted as target-to-sensor azimuth.",
+    "Footprint polygons are from STAC, not approved analysis AOIs."
+  ],
+  "sites": {
+    "suvarnabhumi": {
+      "scope": "STAC sidecars found in named site prefix; public assets matched within each sidecar directory; no global search or raster validation",
+      "prefix": "sar-data/tasks/Suvarnabhumi International Airport, Thailand/",
+      "listing_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/?list-type=2&prefix=sar-data%2Ftasks%2FSuvarnabhumi+International+Airport%2C+Thailand%2F",
+      "listed_objects_all_years": 945,
+      "scene_directories_all_years": 192,
+      "stac_scenes": 49,
+      "unique_collects": 49,
+      "unique_utc_days": 49,
+      "first_center_utc": "2024-11-15T03:34:35.600000Z",
+      "last_center_utc": "2025-11-16T04:33:19.700000Z",
+      "public_assets_in_stac_scene_directories": {
+        "gec": 49,
+        "sicd": 49,
+        "cphd": 6,
+        "csi": 6
+      },
+      "product_size_bytes": {
+        "gec": {
+          "min": 1033815590,
+          "max": 1177375693,
+          "sum": 54368327053
+        },
+        "sicd": {
+          "min": 11448762094,
+          "max": 17663786771,
+          "sum": 681768226244
+        },
+        "cphd": {
+          "min": 49227530784,
+          "max": 63647749888,
+          "sum": 336640102128
+        },
+        "csi": {
+          "min": 2346110657,
+          "max": 2511925383,
+          "sum": 14589306817
+        }
+      },
+      "platforms": {
+        "Umbra-08": 12,
+        "Umbra-07": 12,
+        "Umbra-09": 7,
+        "Umbra-10": 7,
+        "Umbra-05": 11
+      },
+      "polarizations": {
+        "VV": 46,
+        "HH": 3
+      },
+      "incidence_deg_min_max": [
+        30.72045504337016,
+        44.40604809823655
+      ],
+      "collect_duration_s_min_max": [
+        9.0,
+        18.599999
+      ],
+      "bbox_union_wgs84": [
+        100.71733759419091,
+        13.658724279489329,
+        100.78270219247194,
+        13.7226357491053
+      ]
+    },
+    "rotterdam": {
+      "scope": "STAC sidecars found in named site prefix; public assets matched within each sidecar directory; no global search or raster validation",
+      "prefix": "sar-data/tasks/Port of Rotterdam, Netherlands/",
+      "listing_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/?list-type=2&prefix=sar-data%2Ftasks%2FPort+of+Rotterdam%2C+Netherlands%2F",
+      "listed_objects_all_years": 227,
+      "scene_directories_all_years": 55,
+      "stac_scenes": 55,
+      "unique_collects": 55,
+      "unique_utc_days": 49,
+      "first_center_utc": "2024-12-21T11:07:20.200000Z",
+      "last_center_utc": "2025-11-19T21:05:15.400000Z",
+      "public_assets_in_stac_scene_directories": {
+        "gec": 55,
+        "sicd": 55,
+        "cphd": 2,
+        "csi": 2
+      },
+      "product_size_bytes": {
+        "gec": {
+          "min": 431972322,
+          "max": 526309865,
+          "sum": 26343572037
+        },
+        "sicd": {
+          "min": 5960940738,
+          "max": 9342844110,
+          "sum": 406186205641
+        },
+        "cphd": {
+          "min": 24640427456,
+          "max": 29069355456,
+          "sum": 53709782912
+        },
+        "csi": {
+          "min": 1022354437,
+          "max": 1079475124,
+          "sum": 2101829561
+        }
+      },
+      "platforms": {
+        "Umbra-08": 14,
+        "Umbra-10": 14,
+        "Umbra-05": 16,
+        "Umbra-09": 7,
+        "Umbra-07": 4
+      },
+      "polarizations": {
+        "VV": 47,
+        "HH": 8
+      },
+      "incidence_deg_min_max": [
+        22.365328336270252,
+        44.543093541214034
+      ],
+      "collect_duration_s_min_max": [
+        5.600002,
+        13.0
+      ],
+      "bbox_union_wgs84": [
+        4.235308174860849,
+        51.85313501329395,
+        4.33801035151802,
+        51.91669000038631
+      ]
+    },
+    "singapore": {
+      "scope": "STAC sidecars found in named site prefix; public assets matched within each sidecar directory; no global search or raster validation",
+      "prefix": "sar-data/tasks/Port of Singapore, Singapore/",
+      "listing_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/?list-type=2&prefix=sar-data%2Ftasks%2FPort+of+Singapore%2C+Singapore%2F",
+      "listed_objects_all_years": 179,
+      "scene_directories_all_years": 42,
+      "stac_scenes": 42,
+      "unique_collects": 42,
+      "unique_utc_days": 42,
+      "first_center_utc": "2024-11-28T03:20:15.100000Z",
+      "last_center_utc": "2025-11-18T02:32:34.500000Z",
+      "public_assets_in_stac_scene_directories": {
+        "gec": 42,
+        "sicd": 42,
+        "cphd": 3,
+        "csi": 3
+      },
+      "product_size_bytes": {
+        "gec": {
+          "min": 432841762,
+          "max": 507953110,
+          "sum": 20081050296
+        },
+        "sicd": {
+          "min": 5780896441,
+          "max": 10538067722,
+          "sum": 314632480514
+        },
+        "cphd": {
+          "min": 27183982272,
+          "max": 28352351296,
+          "sum": 83291006400
+        },
+        "csi": {
+          "min": 1017907285,
+          "max": 1066693471,
+          "sum": 3116345233
+        }
+      },
+      "platforms": {
+        "Umbra-08": 16,
+        "Umbra-07": 6,
+        "Umbra-05": 10,
+        "Umbra-10": 7,
+        "Umbra-09": 3
+      },
+      "polarizations": {
+        "HH": 8,
+        "VV": 34
+      },
+      "incidence_deg_min_max": [
+        21.44510590844807,
+        44.70339387847971
+      ],
+      "collect_duration_s_min_max": [
+        5.800001,
+        15.8
+      ],
+      "bbox_union_wgs84": [
+        103.80631758836456,
+        1.2320570120110792,
+        103.86985780296604,
+        1.296009680194943
+      ]
+    }
+  }
+}

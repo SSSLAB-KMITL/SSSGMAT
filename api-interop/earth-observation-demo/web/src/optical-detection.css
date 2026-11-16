@@ -1,0 +1,272 @@
+.optical-detection-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px 26px;
+  padding: 24px 26px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.detection-intro h2 {
+  font-size: 23px;
+  color: var(--ink);
+  margin: 4px 0 6px;
+}
+.detection-intro p {
+  color: var(--ink-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+.detection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.detection-actions .primary {
+  min-height: 48px;
+  padding: 12px 20px;
+  gap: 9px;
+}
+.detection-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+.detection-method {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+.optical-detection-controls > .detection-method,
+.detection-progress,
+.detection-filters,
+.optical-detection-controls > .sample-error {
+  grid-column: 1 / -1;
+}
+.detection-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--accent-dark);
+  font-size: 13px;
+}
+.detection-progress progress {
+  flex: 1;
+  max-width: 380px;
+  height: 10px;
+  accent-color: var(--accent);
+}
+.detection-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.detection-filters > label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.detection-filters input {
+  width: 160px;
+}
+.detection-class-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detection-class-chips button {
+  font-size: 12px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 24px;
+}
+.detection-class-chips button[aria-pressed="true"] {
+  color: var(--accent-dark);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.detection-class-chips b {
+  padding: 0 5px;
+  min-width: 20px;
+  background: #e9eff2;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+.highres-image-stage {
+  position: relative;
+}
+.detection-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+.detection-overlay text {
+  font-family: Tahoma, Arial, sans-serif;
+  font-weight: 700;
+}
+.detection-results {
+  margin: 24px 0;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+.detection-results-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+.detection-results-heading h2 {
+  font-size: 23px;
+  color: var(--ink);
+  margin: 4px 0 0;
+}
+.detection-results-heading h2 > span {
+  color: var(--accent-dark);
+  font-size: 16px;
+  padding: 5px 10px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+  margin-left: 10px;
+}
+.detection-results-heading > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.detection-object-list {
+  display: grid;
+  gap: 8px;
+  max-height: 460px;
+  overflow: auto;
+  padding: 3px;
+  margin: -3px -3px 18px;
+}
+.detection-object-list button {
+  display: grid;
+  grid-template-columns: 44px minmax(100px, 1fr) 100px minmax(210px, 1.2fr);
+  text-align: left;
+  gap: 16px;
+  padding: 14px 18px;
+  border-color: var(--line);
+  justify-content: initial;
+}
+.detection-object-list button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.detection-object-number {
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+.detection-object-list strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+.detection-object-list small {
+  display: block;
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 3px;
+}
+.detection-location {
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.detection-score {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+.detection-empty {
+  color: var(--ink-secondary);
+  padding: 18px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  font-size: 14px;
+}
+.detection-results details {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.detection-results summary {
+  cursor: pointer;
+  padding: 8px 0;
+  min-height: 40px;
+}
+@media (max-width: 850px) {
+  .optical-detection-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .detection-actions {
+    justify-content: flex-start;
+  }
+  .detection-object-list button {
+    grid-template-columns: 35px minmax(0, 1fr) 80px;
+  }
+  .detection-location {
+    grid-column: 2 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .optical-detection-controls,
+  .detection-results {
+    padding: 18px;
+  }
+  .detection-intro h2,
+  .detection-results-heading h2 {
+    font-size: 20px;
+  }
+  .detection-actions {
+    gap: 14px;
+  }
+  .detection-actions .primary {
+    width: 100%;
+  }
+  .detection-filters input {
+    width: 100%;
+  }
+  .detection-class-chips button {
+    min-height: 44px;
+  }
+  .detection-progress {
+    flex-wrap: wrap;
+  }
+  .detection-progress progress {
+    flex-basis: 100%;
+  }
+  .detection-object-list button {
+    gap: 12px;
+    padding: 12px;
+    grid-template-columns: 28px minmax(0, 1fr) 70px;
+  }
+}

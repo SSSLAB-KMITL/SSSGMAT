@@ -1,0 +1,11 @@
+{
+  "name": "YOLO11s-OBB",
+  "weights": "yolo11s-obb.pt",
+  "sha256": "43fa63102922e0701501241b307420d24fc55e080816888b18bf8c6f96b1a45a",
+  "download_url": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s-obb.pt",
+  "source_url": "https://docs.ultralytics.com/models/yolo11/",
+  "license": "AGPL-3.0",
+  "license_url": "https://www.ultralytics.com/license",
+  "training_dataset": "DOTAv1.0",
+  "dataset_source": "https://captain-whu.github.io/DOTA/dataset.html"
+}

@@ -1,0 +1,60 @@
+{
+  "research_date_bangkok": "2026-11-15",
+  "method": "HTTP HEAD only; one GEC, SICD and CPHD per site; no signal/raster download",
+  "checks": [
+    {
+      "site": "suvarnabhumi",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9229917a-97d9-4a98-a136-317fe53d336b/2025-01-23-04-18-12_UMBRA-10/2025-01-23-04-18-12_UMBRA-10_CPHD.cphd",
+      "status": 200,
+      "content_length": 59376689968
+    },
+    {
+      "site": "suvarnabhumi",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0964578a-65bc-4c63-8966-1b748457e01f/2025-10-03-15-50-53_UMBRA-09/2025-10-03-15-50-53_UMBRA-09_GEC.tif",
+      "status": 200,
+      "content_length": 1107180092
+    },
+    {
+      "site": "suvarnabhumi",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0964578a-65bc-4c63-8966-1b748457e01f/2025-10-03-15-50-53_UMBRA-09/2025-10-03-15-50-53_UMBRA-09_SICD.nitf",
+      "status": 200,
+      "content_length": 16637532498
+    },
+    {
+      "site": "rotterdam",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/24fd85f0-d7ad-48db-8aa9-0b58f0b7b07d/2025-01-29-10-39-09_UMBRA-10/2025-01-29-10-39-09_UMBRA-10_CPHD.cphd",
+      "status": 200,
+      "content_length": 29069355456
+    },
+    {
+      "site": "rotterdam",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/00864c2c-0b0f-49ef-b283-997735b27878/2025-07-29-11-17-12_UMBRA-08/2025-07-29-11-17-12_UMBRA-08_GEC.tif",
+      "status": 200,
+      "content_length": 457736792
+    },
+    {
+      "site": "rotterdam",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/00864c2c-0b0f-49ef-b283-997735b27878/2025-07-29-11-17-12_UMBRA-08/2025-07-29-11-17-12_UMBRA-08_SICD.nitf",
+      "status": 200,
+      "content_length": 6503505098
+    },
+    {
+      "site": "singapore",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/260e22d3-e4ea-411a-b5fe-f210df04bdff/2025-01-29-03-39-59_UMBRA-08/2025-01-29-03-39-59_UMBRA-08_CPHD.cphd",
+      "status": 200,
+      "content_length": 27754672832
+    },
+    {
+      "site": "singapore",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/004da100-a5fa-4050-9fce-080bdb0b53ac/2025-10-17-15-45-35_UMBRA-09/2025-10-17-15-45-35_UMBRA-09_GEC.tif",
+      "status": 200,
+      "content_length": 487145699
+    },
+    {
+      "site": "singapore",
+      "url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/004da100-a5fa-4050-9fce-080bdb0b53ac/2025-10-17-15-45-35_UMBRA-09/2025-10-17-15-45-35_UMBRA-09_SICD.nitf",
+      "status": 200,
+      "content_length": 6071947487
+    }
+  ]
+}

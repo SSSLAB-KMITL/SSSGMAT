@@ -1,0 +1,84 @@
+{
+  "verified_on": "2026-11-15",
+  "samples": {
+    "vegas-wv3": {
+      "satellite_position_available": false,
+      "satellite_position": null,
+      "position_epoch": "image_acquisition",
+      "source_platform": "WorldView-3",
+      "acquired_utc": "2015-10-22T18:36:56Z",
+      "ground_point": {
+        "lat": 36.2529,
+        "lon": -115.2964
+      },
+      "status": "view_angles_only",
+      "source": "Maxar ISD XML / IMD IMAGE",
+      "source_url": "https://spacenet-dataset.s3.amazonaws.com/AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001.XML",
+      "catalog_id": "10400100137F4900",
+      "view_azimuth_deg": 150.6,
+      "elevation_deg": 71.3,
+      "off_nadir_deg": 16.8,
+      "first_line_utc": "2015-10-22T18:36:56.065062Z",
+      "scope": "Provider mean source-image angles; not an orbit or a satellite coordinate.",
+      "note": "XML ชุดนี้มี IMD/TIL/RPB และมุมถ่ายเฉลี่ย แต่ไม่มี EPH ที่บอกพิกัดดาวเทียม"
+    },
+    "rotterdam-wv2": {
+      "satellite_position_available": false,
+      "satellite_position": null,
+      "position_epoch": "image_acquisition",
+      "source_platform": "WorldView-2",
+      "acquired_utc": "2019-08-31",
+      "ground_point": {
+        "lat": 51.906,
+        "lon": 4.379
+      },
+      "status": "unavailable",
+      "source": "SpaceNet 6 public optical product",
+      "source_url": "https://spacenet.ai/rotterdam/",
+      "scope": "Only ground-image georeferencing and the acquisition date are available in the checked public optical release.",
+      "note": "ชุด optical ที่ตรวจมีพิกัดภาพบนพื้นดินและวันถ่าย แต่ไม่พบ ephemeris ของ WorldView-2"
+    },
+    "bangkok-wv03": {
+      "satellite_position_available": false,
+      "satellite_position": null,
+      "position_epoch": "image_acquisition",
+      "source_platform": "WorldView-3",
+      "acquired_utc": "2025-02-14T04:02:16Z",
+      "ground_point": {
+        "lat": 13.804,
+        "lon": 100.535
+      },
+      "status": "view_angles_only",
+      "source": "Maxar ARD STAC view extension",
+      "source_url": "https://maxar-opendata.s3.amazonaws.com/events/Earthquake-Myanmar-March-2025/ard/47/122022102221/2025-02-14/10400100A4C67F00.json",
+      "catalog_id": "10400100A4C67F00",
+      "view_azimuth_deg": 244.0,
+      "off_nadir_deg": 27.3,
+      "incidence_deg": 59.8,
+      "scope": "Raw provider STAC viewing angles at the source scene centre; no satellite elevation or coordinate is inferred from them.",
+      "note": "metadata สาธารณะนี้มีมุมถ่าย แต่ไม่มีพิกัด XYZ/ephemeris สำหรับระบุตำแหน่งดาวเทียมขณะถ่าย",
+      "angle_note": "ค่า incidence แสดงตาม STAC ต้นทาง ไม่ใช้คำนวณความสูงหรือตำแหน่งดาวเทียม"
+    },
+    "mandalay-ge01": {
+      "satellite_position_available": false,
+      "satellite_position": null,
+      "position_epoch": "image_acquisition",
+      "source_platform": "GeoEye-1",
+      "acquired_utc": "2025-03-26T04:22:44Z",
+      "ground_point": {
+        "lat": 21.706561431312693,
+        "lon": 95.97258558147105
+      },
+      "status": "view_angles_only",
+      "source": "Maxar ARD STAC view extension",
+      "source_url": "https://maxar-opendata.s3.amazonaws.com/events/Earthquake-Myanmar-March-2025/ard/46/122000133323/2025-03-26/10500100415E6E00.json",
+      "catalog_id": "10500100415E6E00",
+      "view_azimuth_deg": 261.3,
+      "off_nadir_deg": 21.0,
+      "incidence_deg": 66.7,
+      "scope": "Raw provider STAC viewing angles at the source scene centre; no satellite elevation or coordinate is inferred from them.",
+      "note": "metadata สาธารณะนี้มีมุมถ่าย แต่ไม่มีพิกัด XYZ/ephemeris สำหรับระบุตำแหน่งดาวเทียมขณะถ่าย",
+      "angle_note": "ค่า incidence แสดงตาม STAC ต้นทาง ไม่ใช้คำนวณความสูงหรือตำแหน่งดาวเทียม"
+    }
+  }
+}

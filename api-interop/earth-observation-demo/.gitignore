@@ -1,0 +1,10 @@
+!*.md
+.venv/
+.venv-detection/
+data/
+web/node_modules/
+web/dist/
+web/test-results/
+__pycache__/
+.pytest_cache/
+*.pyc

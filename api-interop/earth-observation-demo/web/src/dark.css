@@ -1,0 +1,556 @@
+:root {
+  --page: #090b0e;
+  --surface: #12161c;
+  --surface-soft: #191f27;
+  --ink: #edf2f7;
+  --ink-secondary: #a6b2c2;
+  --line: #2a333e;
+  --accent: #70d5c3;
+  --accent-dark: #a0ebdc;
+  --accent-soft: #16352f;
+  --shadow: 0 8px 28px #0003;
+  color-scheme: dark;
+  background: var(--page);
+  color: var(--ink);
+}
+body,
+main,
+.sitebar {
+  background: var(--page);
+}
+button,
+input,
+select {
+  color: var(--ink);
+  background: var(--surface-soft);
+  border-color: #3b4857;
+}
+button:not(:disabled):hover {
+  color: var(--ink);
+  background: #252f3a;
+  border-color: #6d859c;
+}
+a {
+  color: var(--accent-dark);
+}
+a:hover {
+  color: #d4fff6;
+}
+:where(button, a, input, select, summary, [tabindex]):focus-visible {
+  outline-color: #90e7d7;
+}
+.primary,
+button.primary:not(:disabled):hover {
+  color: #08251e;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.primary:hover {
+  filter: brightness(1.1);
+}
+.masthead {
+  background: #050607;
+  border-color: var(--line);
+  gap: 24px;
+}
+.brand-logo {
+  width: 48px;
+  height: 47px;
+  object-fit: contain;
+  flex: none;
+}
+.brand-lockup {
+  gap: 12px;
+  max-width: 100%;
+}
+.brand {
+  color: var(--ink);
+  font-size: 23px;
+}
+.brand span,
+.brand-sub {
+  color: var(--ink-secondary);
+}
+.brand-sub {
+  letter-spacing: 0.5px;
+  font-size: 11px;
+}
+.institution-logo {
+  display: block;
+  width: min(48vw, 260px);
+  height: auto;
+  object-fit: contain;
+  flex-shrink: 1;
+}
+.header-actions {
+  gap: 8px;
+}
+.export-top,
+.workspace-tools > summary {
+  color: #c2cedc;
+  background: #10141a;
+  border-color: #34404f;
+}
+.workspace-tools > .menubar {
+  color: var(--ink);
+  background: #171c24;
+  border-color: var(--line);
+}
+.menubar details > div,
+.menubar details button,
+.menubar details a {
+  color: var(--ink);
+  background: #171c24;
+  border-color: #3b4857;
+}
+.menubar details button:hover,
+.menubar details a:hover {
+  background: #26323c;
+}
+.workspace-nav {
+  background: #0d1014;
+  border-color: var(--line);
+}
+.workspace-nav-item {
+  background: #161b22;
+  color: #b4c2d1;
+}
+.workspace-nav-item.active {
+  color: #ccfff2;
+  background: #19362f;
+  border-color: #4c9d8e;
+}
+.nav-icon {
+  background: #242e3a;
+  color: #c7d5e5;
+}
+.workspace-nav-item.active .nav-icon {
+  background: #255347;
+  color: #b9ffeb;
+}
+.workspace-nav-item.highres-nav {
+  background: #78d6c3;
+  color: #08271f;
+  border-color: #78d6c3;
+}
+.workspace-nav-item.highres-nav.active {
+  background: #92e1d1;
+  color: #08271f;
+  border-color: #92e1d1;
+  box-shadow: inset 0 -3px 0 #d3fff3;
+}
+.workspace-nav-item.highres-nav small,
+.workspace-nav-item.highres-nav .nav-icon {
+  color: #123a30;
+}
+.workspace-nav-item.highres-nav .nav-icon {
+  background: #0c37251a;
+}
+.site-tab,
+.site-tab.active {
+  background: var(--surface);
+  color: var(--ink);
+}
+.site-tab.active {
+  border-color: #7bd8c6;
+  box-shadow: 0 0 0 1px #7bd8c6;
+}
+.site-tab b {
+  background: #26303b;
+  color: #c6d3e1;
+}
+.site-tab small,
+.sitebar-label,
+.archive-badge,
+.archive-badge > span:last-child {
+  color: var(--ink-secondary);
+}
+.toolbar {
+  background: #10141a;
+  border-color: var(--line);
+}
+.toolbar button {
+  color: #c1d0df;
+}
+.toolbar button.pressed {
+  background: #1b3b32;
+  border-color: #3b7466;
+  color: #b9ffea;
+}
+.toolbar i {
+  background: var(--line);
+}
+.workspace-section,
+.workspace-section > h2,
+.properties,
+.catalog,
+.metrics,
+.jobs {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.workspace-section > h2 {
+  background: #151b23;
+}
+.acquisition-controls,
+.color-controls,
+.image-tools,
+.viewing-controls {
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+.image-panel {
+  background: #10151c;
+}
+.view-tabs,
+.roi-controls,
+.highres-controls {
+  background: #141a22;
+  border-color: var(--line);
+}
+.view-tabs button {
+  color: #b6c5d6;
+}
+.view-tabs button.active {
+  color: #b5fce9;
+  background: #1c3b32;
+}
+.color-explanation {
+  background: #111b20;
+  color: #a9c3cf;
+  border-color: var(--line);
+}
+.color-explanation.color-source {
+  background: #1d2530;
+  color: #bfcedf;
+}
+.image-footnote {
+  color: #adbed0;
+  background: #141a22;
+}
+.roi-controls input,
+.roi-controls select,
+.catalog-filters input,
+.catalog-filters select,
+.mobile-site-picker select {
+  background: #1b2430;
+  color: var(--ink);
+  border-color: #425368;
+}
+.viewing-readout {
+  color: #c0d0df;
+  background: #141b24;
+  border-color: #344c5e;
+}
+.viewing-readout > span:first-child {
+  color: #e1edf8;
+}
+.viewing-readout .inside {
+  color: #83dfb7;
+}
+.viewing-readout .outside {
+  color: #efc172;
+}
+.viewing-diagram {
+  background: #172630;
+}
+.viewing-diagram text {
+  fill: #c4d6e6;
+}
+.viewing-diagram line {
+  stroke: #70d5c3;
+}
+.property-title {
+  color: var(--ink);
+}
+.tag {
+  color: #c2d6e4;
+  background: #24333e;
+}
+.tag.good {
+  color: #a3edc4;
+  background: #17392c;
+}
+.tag.amber {
+  color: #f0d291;
+  background: #3c311a;
+}
+.sources,
+.catalog-note,
+.tree-caption,
+.scene-row {
+  border-color: var(--line);
+}
+.scene-row {
+  color: #d6e2ee;
+}
+.scene-row.selected {
+  background: #15362f;
+  border-left-color: var(--accent);
+}
+.scene-icon.ready {
+  color: #81d7b4;
+}
+.quality-note,
+.summary-note {
+  color: #e8d1a0;
+  background: #30291b;
+  border-color: #594c2e;
+}
+.stat strong {
+  color: var(--ink);
+}
+.skyplot text {
+  fill: #b8cee1;
+}
+.job.completed strong {
+  color: #8ae0b5;
+}
+.job.failed p {
+  color: #ffafa4;
+}
+.job,
+.job-head {
+  border-color: var(--line);
+}
+.timeline {
+  background: #151b23;
+}
+.timeline-axis {
+  background: #41546a;
+}
+.timeline-track > span {
+  color: #b4c6d9;
+}
+.timeline-point::before {
+  background: #7894ad;
+}
+.timeline-point.current::before {
+  background: #9cebd6;
+  box-shadow: 0 0 0 3px #1f493d;
+}
+.highres-card {
+  background: var(--surface);
+  border-color: #344151;
+}
+.highres-card:not(:disabled):hover {
+  background: #1a222c;
+  border-color: #6ebba9;
+}
+.highres-card.selected {
+  border-color: #8be0cd;
+  box-shadow: 0 0 0 2px #8be0cd;
+}
+.highres-card.selected::after {
+  color: #0b2e23;
+  background: #8be0cd;
+  border-color: #e2fff5;
+}
+.highres-card strong {
+  color: #e4edf6;
+}
+.highres-card span b {
+  background: #213b36;
+  color: #b7ffed;
+}
+.sample-count {
+  background: #183c31;
+  color: #b3f8dc;
+  border-color: #406f5f;
+}
+.highres-context {
+  background: #16242a;
+  border-color: #334c56;
+}
+.highres-context strong {
+  color: #dfedf6;
+}
+.highres-context p {
+  color: #b3c6d2;
+}
+.highres-view-buttons {
+  background: #0c1219;
+}
+.highres-view-buttons button {
+  color: #b9cadb;
+}
+.highres-view-buttons button.pressed {
+  background: #233e36;
+  color: #beffe9;
+}
+.highres-controls a {
+  color: #b9eedd;
+  border-color: #42534f;
+}
+.highres-image-caption {
+  background: #131c25;
+  color: #adc1d2;
+  border-color: var(--line);
+}
+.sample-orbit,
+.sample-satellite-info,
+.highres-source,
+.highres-more {
+  background: #121922;
+  border-color: #34404f;
+  color: #b4c7d8;
+}
+.sample-satellite-info h2,
+.sample-satellite-info dd {
+  color: #e3eef8;
+}
+.sample-satellite-info strong {
+  color: #e7cb8c;
+}
+.sample-satellite-info a {
+  color: #a5e9d4;
+}
+.sample-orbit-time input {
+  background: #1c2935;
+  color: #f0f5fa;
+  border-color: #496072;
+}
+.sample-orbit-basis {
+  background: #332d1d;
+  color: #ebd49a;
+}
+.crosssite {
+  background: #10161d;
+}
+.crosssite article {
+  background: #19212c;
+  border-color: #3b495c;
+}
+.crosssite article > small {
+  color: #b7c9dc;
+}
+.summary-table {
+  border-color: #39485a;
+}
+.summary-table table {
+  background: #141e29;
+}
+.summary-table th {
+  background: #203042;
+  color: #cbdaea;
+}
+.summary-table th,
+.summary-table td {
+  border-color: #344456;
+}
+.summary-table tbody tr:hover {
+  background: #223745;
+}
+.table-scene-button {
+  color: #b2f6df;
+}
+.optical-detection-controls,
+.detection-results {
+  background: #121a23;
+  border-color: #344152;
+}
+.detection-actions .primary {
+  color: #08251e;
+}
+.detection-class-chips button {
+  background: #202d3a;
+  color: #c8d9e9;
+  border-color: #43586b;
+}
+.detection-class-chips button[aria-pressed="true"] {
+  background: #234c3d;
+  color: #bdffe3;
+  border-color: #7dd5b2;
+}
+.detection-class-chips b {
+  background: #344c4b;
+  color: #edfffa;
+}
+.detection-object-list button {
+  background: #182531;
+  color: #dce8f4;
+  border-color: #364c60;
+}
+.detection-object-list button[aria-pressed="true"] {
+  background: #1b4034;
+  border-color: #85d6b7;
+}
+.detection-results-heading h2 > span {
+  background: #204d3c;
+  color: #bdffe0;
+}
+.detection-results-heading > a {
+  color: #b2f3df;
+  border-color: #435b58;
+}
+.detection-empty {
+  background: #1c2835;
+  color: #c5d6e5;
+}
+.sample-error,
+.error-banner {
+  background: #39271f;
+  border-color: #76523a;
+  color: #ffd6b9;
+}
+.sample-skeletons > div {
+  background: #263440;
+}
+.empty h2 {
+  color: #edf4fa;
+}
+.empty p {
+  color: #b6cada;
+}
+footer {
+  background: #070a0e;
+  color: #aabccd;
+  border-color: #2d3a49;
+}
+.dockview-theme-eo {
+  --dv-background-color: #090d12;
+  --dv-group-view-background-color: #141b24;
+  --dv-tabs-and-actions-container-background-color: #1c2835;
+  --dv-activegroup-visiblepanel-tab-background-color: #243b42;
+  --dv-activegroup-visiblepanel-tab-color: #e3f7ef;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #1a2634;
+  --dv-inactivegroup-visiblepanel-tab-color: #b8cbde;
+  --dv-separator-border: #3d5367;
+  --dv-sash-color: #1b2b38;
+}
+@media (max-width: 1200px) {
+  .brand {
+    font-size: 20px;
+  }
+}
+@media (max-width: 850px) {
+  .masthead {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  .brand-logo {
+    width: 40px;
+    height: 39px;
+  }
+  .brand {
+    font-size: 19px;
+  }
+  .brand-sub {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  .institution-logo {
+    width: min(calc(100vw - 84px), 220px);
+  }
+  .masthead {
+    gap: 16px;
+  }
+  .workspace-nav-item {
+    min-height: 72px;
+  }
+  .nav-copy strong {
+    font-size: 14px;
+  }
+}

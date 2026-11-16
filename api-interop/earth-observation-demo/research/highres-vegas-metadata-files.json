@@ -1,0 +1,266 @@
+[
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/15OCT22183656-M2AS-055649178030_01_P001-BROWSE.JPG",
+    "size": 277585
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/15OCT22183656-M2AS-055649178030_01_P001.XML",
+    "size": 29615
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/15OCT22183656-P2AS-055649178030_01_P001-BROWSE.JPG",
+    "size": 274006
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/15OCT22183656-P2AS-055649178030_01_P001.XML",
+    "size": 24972
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/AOI_2_Vegas_MUL.vrt",
+    "size": 55904
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/AOI_2_Vegas_PAN.vrt",
+    "size": 7516
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/AOI_2_Vegas_RGB-PanSharpen.vrt",
+    "size": 68133
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001-BROWSE.JPG",
+    "size": 271338
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001.IMD",
+    "size": 5930
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001.RPB",
+    "size": 1868
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001.TIL",
+    "size": 34698
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001.XML",
+    "size": 63669
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/15OCT22183656-S2AS-056155973080_01_P001_README.TXT",
+    "size": 962
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/056155973080_01_P001_PSH/INTERNAL.TXT",
+    "size": 281
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_ORDER_SHAPE.dbf",
+    "size": 1750
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_ORDER_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_ORDER_SHAPE.shp",
+    "size": 364
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_ORDER_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_PRODUCT_SHAPE.dbf",
+    "size": 892
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_PRODUCT_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_PRODUCT_SHAPE.shp",
+    "size": 236
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_PRODUCT_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_STRIP_SHAPE.dbf",
+    "size": 1178
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_STRIP_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_STRIP_SHAPE.shp",
+    "size": 364
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_STRIP_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_TILE_SHAPE.dbf",
+    "size": 52028
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_TILE_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_TILE_SHAPE.shp",
+    "size": 7036
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/056155973080_01_TILE_SHAPE.shx",
+    "size": 508
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/15OCT22183656-S2AS-056155973080_01_P001_PIXEL_SHAPE.dbf",
+    "size": 606
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/15OCT22183656-S2AS-056155973080_01_P001_PIXEL_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/15OCT22183656-S2AS-056155973080_01_P001_PIXEL_SHAPE.shp",
+    "size": 236
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-MS_metadata/GIS_FILES/15OCT22183656-S2AS-056155973080_01_P001_PIXEL_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001-BROWSE.JPG",
+    "size": 272807
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001.IMD",
+    "size": 3972
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001.RPB",
+    "size": 1864
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001.TIL",
+    "size": 34694
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001.XML",
+    "size": 60383
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/15OCT22183656-S2AS-056155973040_01_P001_README.TXT",
+    "size": 962
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/056155973040_01_P001_PSH/INTERNAL.TXT",
+    "size": 281
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_ORDER_SHAPE.dbf",
+    "size": 1750
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_ORDER_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_ORDER_SHAPE.shp",
+    "size": 364
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_ORDER_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_PRODUCT_SHAPE.dbf",
+    "size": 892
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_PRODUCT_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_PRODUCT_SHAPE.shp",
+    "size": 236
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_PRODUCT_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_STRIP_SHAPE.dbf",
+    "size": 1178
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_STRIP_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_STRIP_SHAPE.shp",
+    "size": 364
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_STRIP_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_TILE_SHAPE.dbf",
+    "size": 52028
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_TILE_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_TILE_SHAPE.shp",
+    "size": 7036
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/056155973040_01_TILE_SHAPE.shx",
+    "size": 508
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/15OCT22183656-S2AS-056155973040_01_P001_PIXEL_SHAPE.dbf",
+    "size": 606
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/15OCT22183656-S2AS-056155973040_01_P001_PIXEL_SHAPE.prj",
+    "size": 145
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/15OCT22183656-S2AS-056155973040_01_P001_PIXEL_SHAPE.shp",
+    "size": 236
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/GIS_FILES/15OCT22183656-S2AS-056155973040_01_P001_PIXEL_SHAPE.shx",
+    "size": 108
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/RGB-PanSharpen_VegasTindex.dbf",
+    "size": 981816
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/RGB-PanSharpen_VegasTindex.shp",
+    "size": 523700
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/PS-RGB_metadata/RGB-PanSharpen_VegasTindex.shx",
+    "size": 30900
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/Thumbs.db",
+    "size": 25600
+  },
+  {
+    "key": "AOIs/AOI_2_Vegas/metadata/Vegas_PAN.vrt",
+    "size": 7516
+  }
+]

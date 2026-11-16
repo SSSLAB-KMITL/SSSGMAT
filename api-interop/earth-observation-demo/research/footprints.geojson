@@ -1,0 +1,5699 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77600153418052,
+              13.71006241633367
+            ],
+            [
+              100.73018711191254,
+              13.71608434273853
+            ],
+            [
+              100.72403309571975,
+              13.671292033012842
+            ],
+            [
+              100.76983900577085,
+              13.665271224312043
+            ],
+            [
+              100.77600153418052,
+              13.71006241633367
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "f4fad495-82ca-452a-9141-18b538fd5fdc",
+        "platform": "Umbra-08",
+        "center_utc": "2024-11-15T03:34:35.600000Z",
+        "incidence_deg": 37.44475020655696,
+        "view_azimuth_deg_raw": 97.65638675095668,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9546c873-2084-458b-a431-406786270e0a/2024-11-15-03-34-29_UMBRA-08/2024-11-15-03-34-29_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7392878651913,
+              13.660493601862973
+            ],
+            [
+              100.78088758070203,
+              13.680186923890735
+            ],
+            [
+              100.76074753991087,
+              13.720866164480029
+            ],
+            [
+              100.71914235089376,
+              13.701169522403413
+            ],
+            [
+              100.7392878651913,
+              13.660493601862973
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "71636cc6-3993-439f-bd28-2b176bdc0c52",
+        "platform": "Umbra-07",
+        "center_utc": "2024-11-18T15:38:06.500000Z",
+        "incidence_deg": 31.19175915953548,
+        "view_azimuth_deg_raw": 244.16499302580192,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9b0c4843-bde3-4d6b-af6c-7b490ba64211/2024-11-18-15-37-59_UMBRA-07/2024-11-18-15-37-59_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.73744301038961,
+              13.661182280229152
+            ],
+            [
+              100.78018299416166,
+              13.678382895478643
+            ],
+            [
+              100.7625929074575,
+              13.720177272703678
+            ],
+            [
+              100.71984665532086,
+              13.702973678130194
+            ],
+            [
+              100.73744301038961,
+              13.661182280229152
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "d0dc4eba-71c1-4829-a77f-2a0eae569774",
+        "platform": "Umbra-08",
+        "center_utc": "2025-01-10T15:49:58.200000Z",
+        "incidence_deg": 43.42813384260414,
+        "view_azimuth_deg_raw": 247.6277563868669,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/a61dccb0-e981-4af3-8d72-cd5a5c64126f/2025-01-10-15-49-51_UMBRA-08/2025-01-10-15-49-51_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71947918809191,
+              13.679291688942575
+            ],
+            [
+              100.76166035177066,
+              13.660818943173494
+            ],
+            [
+              100.78055765637217,
+              13.702063663484342
+            ],
+            [
+              100.73837061655892,
+              13.720539567073764
+            ],
+            [
+              100.71947918809191,
+              13.679291688942575
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "bd490a96-1c08-43e5-9b8d-a22f47934eda",
+        "platform": "Umbra-09",
+        "center_utc": "2025-01-13T04:17:59.600000Z",
+        "incidence_deg": 36.14158959219362,
+        "view_azimuth_deg_raw": 294.12773060163926,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9c7a3c1c-f0d1-4139-b47e-c56a81a04c0f/2025-01-13-04-17-52_UMBRA-09/2025-01-13-04-17-52_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71966314324195,
+              13.678830879478571
+            ],
+            [
+              100.76213161993772,
+              13.660998757547384
+            ],
+            [
+              100.7803737902364,
+              13.702524546120532
+            ],
+            [
+              100.73789923638948,
+              13.720359737131611
+            ],
+            [
+              100.71966314324195,
+              13.678830879478571
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "1c3ca28a-6ae4-40ec-ab37-f916a3fd6be3",
+        "platform": "Umbra-10",
+        "center_utc": "2025-01-23T04:18:19.500000Z",
+        "incidence_deg": 36.05791156972877,
+        "view_azimuth_deg_raw": 293.2408091515684,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9229917a-97d9-4a98-a136-317fe53d336b/2025-01-23-04-18-12_UMBRA-10/2025-01-23-04-18-12_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.72870552205917,
+              13.666451065753199
+            ],
+            [
+              100.77479330576138,
+              13.669839205744815
+            ],
+            [
+              100.77133217089465,
+              13.714906984605165
+            ],
+            [
+              100.72523566087668,
+              13.71151821176684
+            ],
+            [
+              100.72870552205917,
+              13.666451065753199
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "da8f7829-4e63-4cb5-9ea8-e31d3fd972e7",
+        "platform": "Umbra-07",
+        "center_utc": "2025-01-30T15:37:44.700000Z",
+        "incidence_deg": 44.35685838467034,
+        "view_azimuth_deg_raw": 265.70023157402125,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/e56c7747-6014-4974-bf61-3db011d53a63/2025-01-30-15-37-37_UMBRA-07/2025-01-30-15-37-37_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.73797889229476,
+              13.66096930244945
+            ],
+            [
+              100.7804008870093,
+              13.678906915682083
+            ],
+            [
+              100.76205688014308,
+              13.720390316061652
+            ],
+            [
+              100.71962884089025,
+              13.702449618973972
+            ],
+            [
+              100.73797889229476,
+              13.66096930244945
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "0b61feb1-f28f-4fb8-987b-e7fa9237406e",
+        "platform": "Umbra-05",
+        "center_utc": "2025-02-03T14:37:50.199999Z",
+        "incidence_deg": 42.49933292131894,
+        "view_azimuth_deg_raw": 246.61355300009816,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0f2b9b01-def7-4788-a032-653b712a14a5/2025-02-03-14-37-43_UMBRA-05/2025-02-03-14-37-43_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.74301907607038,
+              13.659463715667684
+            ],
+            [
+              100.78194137845024,
+              13.683835635938879
+            ],
+            [
+              100.75701520488413,
+              13.721896377158485
+            ],
+            [
+              100.71808921083608,
+              13.697520612624336
+            ],
+            [
+              100.74301907607038,
+              13.659463715667684
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "681594ca-0d8f-458a-b55e-21fd63fd9346",
+        "platform": "Umbra-07",
+        "center_utc": "2025-02-07T15:31:53.300000Z",
+        "incidence_deg": 38.06357644709766,
+        "view_azimuth_deg_raw": 237.3634611907106,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/a0d5547f-fa4d-48d5-82ff-602cc6e3e141/2025-02-07-15-31-45_UMBRA-07/2025-02-07-15-31-45_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.72802109177933,
+              13.667043118475481
+            ],
+            [
+              100.77418771923023,
+              13.669169995691666
+            ],
+            [
+              100.77201667401306,
+              13.7143147774246
+            ],
+            [
+              100.72584126012485,
+              13.71218750226435
+            ],
+            [
+              100.72802109177933,
+              13.667043118475481
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "248e029e-496e-4d4c-a1d9-17581136a70b",
+        "platform": "Umbra-07",
+        "center_utc": "2025-02-11T15:29:27.900000Z",
+        "incidence_deg": 30.72045504337016,
+        "view_azimuth_deg_raw": 267.3023912289631,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/be7d7da2-8b2d-4f8b-8cfa-ebb8f9899b98/2025-02-11-15-29-21_UMBRA-07/2025-02-11-15-29-21_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77136618028368,
+              13.714875702284365
+            ],
+            [
+              100.72526476979877,
+              13.711551257539458
+            ],
+            [
+              100.72866884824487,
+              13.666479315561205
+            ],
+            [
+              100.77476152868303,
+              13.669803139405706
+            ],
+            [
+              100.77136618028368,
+              13.714875702284365
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "f97f18e0-3513-4984-bedb-372262154901",
+        "platform": "Umbra-08",
+        "center_utc": "2025-02-21T15:24:31.500000Z",
+        "incidence_deg": 32.59348654817127,
+        "view_azimuth_deg_raw": 85.7820023990732,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/c1e68a5b-dfe0-42a7-bd96-7da28807c343/2025-02-21-15-24-25_UMBRA-08/2025-02-21-15-24-25_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.73600346187251,
+              13.661809221613932
+            ],
+            [
+              100.77954160354363,
+              13.676975222996449
+            ],
+            [
+              100.76403283054309,
+              13.719550140459726
+            ],
+            [
+              100.72048785133171,
+              13.70438146309436
+            ],
+            [
+              100.73600346187251,
+              13.661809221613932
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "63b6a3ff-fbe9-444d-8243-5b5ddd36a509",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-20T15:51:38.100000Z",
+        "incidence_deg": 44.35120455331774,
+        "view_azimuth_deg_raw": 250.39096031814154,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/c05d3908-c986-499c-ab07-cc17cdb594e2/2025-03-20-15-51-31_UMBRA-08/2025-03-20-15-51-31_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71986952132264,
+              13.678337471682196
+            ],
+            [
+              100.76263622828634,
+              13.661200493308952
+            ],
+            [
+              100.78016750430986,
+              13.703018034217012
+            ],
+            [
+              100.737394510096,
+              13.720157982748987
+            ],
+            [
+              100.71986952132264,
+              13.678337471682196
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "b37e10d9-9c42-4477-bf83-dc2264bfef5f",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-27T04:05:54.900000Z",
+        "incidence_deg": 43.95569289385585,
+        "view_azimuth_deg_raw": 292.2850216061569,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9ec51e95-6737-4481-9d66-75df39b91370/2025-03-27-04-05-48_UMBRA-08/2025-03-27-04-05-48_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77917375721424,
+              13.70511770408282
+            ],
+            [
+              100.73524430381832,
+              13.719186983819963
+            ],
+            [
+              100.72085997592784,
+              13.676236361169025
+            ],
+            [
+              100.76478231405136,
+              13.662169585371057
+            ],
+            [
+              100.77917375721424,
+              13.70511770408282
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "b61eb44b-d0b7-49d2-a5f5-b4be7ed8febd",
+        "platform": "Umbra-08",
+        "center_utc": "2025-04-01T15:23:14.300000Z",
+        "incidence_deg": 42.282351993048636,
+        "view_azimuth_deg_raw": 108.13616158679025,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/42cb1dcc-871a-43e3-8c09-6a222a90cf1a/2025-04-01-15-23-06_UMBRA-08/2025-04-01-15-23-06_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.76868444055144,
+              13.716910168766024
+            ],
+            [
+              100.72318439677163,
+              13.708928888934011
+            ],
+            [
+              100.73135052813396,
+              13.664445147093994
+            ],
+            [
+              100.77684229675681,
+              13.672424955715078
+            ],
+            [
+              100.76868444055144,
+              13.716910168766024
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "f9a85d17-97ad-47bc-9dfe-c0e77490f3a7",
+        "platform": "Umbra-05",
+        "center_utc": "2025-04-16T02:25:37.400000Z",
+        "incidence_deg": 43.211950825937414,
+        "view_azimuth_deg_raw": 79.82929288614379,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/3d349d1d-09de-4758-84c6-6e82b37be7a6/2025-04-16-02-25-30_UMBRA-05/2025-04-16-02-25-30_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77562316570909,
+              13.710537989518283
+            ],
+            [
+              100.72970074155711,
+              13.715714300670388
+            ],
+            [
+              100.72441152874859,
+              13.670816507450875
+            ],
+            [
+              100.77032535886757,
+              13.665641159315724
+            ],
+            [
+              100.77562316570909,
+              13.710537989518283
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "8ba1f165-7cd8-4594-8590-8568fcfcb753",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-01T14:12:07.199999Z",
+        "incidence_deg": 43.25563851011857,
+        "view_azimuth_deg_raw": 96.57611420681422,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/ba207a63-ac0b-426f-9ac7-2369512e0f12/2025-05-01-14-12-00_UMBRA-05/2025-05-01-14-12-00_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7339553256492,
+              13.662847859579552
+            ],
+            [
+              100.77847907740086,
+              13.674972470920025
+            ],
+            [
+              100.76608145348133,
+              13.718511193474864
+            ],
+            [
+              100.7215501467989,
+              13.706384394344983
+            ],
+            [
+              100.7339553256492,
+              13.662847859579552
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "42d01728-9801-48a5-9015-3c3ff1068dcd",
+        "platform": "Umbra-08",
+        "center_utc": "2025-05-08T15:47:59.100000Z",
+        "incidence_deg": 31.061700017770526,
+        "view_azimuth_deg_raw": 254.43689980419182,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/759faece-793b-4b3f-ac2e-107897eef3be/2025-05-08-15-47-53_UMBRA-08/2025-05-08-15-47-53_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77014308429574,
+              13.715857909151115
+            ],
+            [
+              100.72426038219584,
+              13.710355224359239
+            ],
+            [
+              100.72989193761002,
+              13.66549724828874
+            ],
+            [
+              100.77576607579067,
+              13.670998910228397
+            ],
+            [
+              100.77014308429574,
+              13.715857909151115
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "5c4ffa19-8f17-46f0-8cc6-957f9fa4cd6b",
+        "platform": "Umbra-10",
+        "center_utc": "2025-05-13T03:54:09.100000Z",
+        "incidence_deg": 40.43355629860004,
+        "view_azimuth_deg_raw": 83.00724376009747,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/63c8a263-105a-436d-81ba-41c0e1ce15f6/2025-05-13-03-54-01_UMBRA-10/2025-05-13-03-54-01_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77210748771374,
+              13.714230950978719
+            ],
+            [
+              100.72592409703822,
+              13.712276176233692
+            ],
+            [
+              100.72792752572117,
+              13.667123979579026
+            ],
+            [
+              100.77410212387566,
+              13.669078388585223
+            ],
+            [
+              100.77210748771374,
+              13.714230950978719
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "cdf72ddc-bc9d-457d-bf00-c95687d03379",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-15T02:26:54.900000Z",
+        "incidence_deg": 43.77003717300483,
+        "view_azimuth_deg_raw": 87.52128287344446,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/6c4d6b9c-9bf8-4f27-b06e-1c15413df382/2025-05-15-02-26-48_UMBRA-05/2025-05-15-02-26-48_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71843745924897,
+              13.682443739553717
+            ],
+            [
+              100.75843680508514,
+              13.659800732871966
+            ],
+            [
+              100.7815987093295,
+              13.698911159560975
+            ],
+            [
+              100.74159496929995,
+              13.721557836665312
+            ],
+            [
+              100.71843745924897,
+              13.682443739553717
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "66ef3e4b-34e2-4c5a-bf9a-45d06ac91f8d",
+        "platform": "Umbra-07",
+        "center_utc": "2025-05-23T03:37:09.600000Z",
+        "incidence_deg": 43.42785076389977,
+        "view_azimuth_deg_raw": 300.06957016370677,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0bc0b853-2b5c-449a-a033-3ba9baba7603/2025-05-23-03-37-01_UMBRA-07/2025-05-23-03-37-01_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71847387401876,
+              13.682311415565946
+            ],
+            [
+              100.75857212906601,
+              13.659836322803182
+            ],
+            [
+              100.78156232502364,
+              13.699043500922643
+            ],
+            [
+              100.74145961030537,
+              13.721522245901243
+            ],
+            [
+              100.71847387401876,
+              13.682311415565946
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "cc7ddc6b-5ef1-4d4a-875d-28c05a4b07a7",
+        "platform": "Umbra-07",
+        "center_utc": "2025-05-25T03:36:58.500000Z",
+        "incidence_deg": 43.48250276149226,
+        "view_azimuth_deg_raw": 299.8238829784879,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/4b97bca3-7810-4d5c-85b1-4af2981e638c/2025-05-25-03-36-50_UMBRA-07/2025-05-25-03-36-50_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.76471092670366,
+              13.719223766691314
+            ],
+            [
+              100.72081881160577,
+              13.70504354477046
+            ],
+            [
+              100.73532369682593,
+              13.66213192975002
+            ],
+            [
+              100.77920872373083,
+              13.676309630130573
+            ],
+            [
+              100.76471092670366,
+              13.719223766691314
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "fe5703b0-f6a0-43c3-9de1-573731c8c9ba",
+        "platform": "Umbra-08",
+        "center_utc": "2025-06-06T03:43:05.700000Z",
+        "incidence_deg": 38.42620707910147,
+        "view_azimuth_deg_raw": 71.71578738482002,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/a6d5abcd-44cd-4f5d-9c36-437c126e83ca/2025-06-06-03-42-58_UMBRA-08/2025-06-06-03-42-58_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78050255451309,
+              13.702198471527776
+            ],
+            [
+              100.73823009605375,
+              13.72048681801954
+            ],
+            [
+              100.71953050578136,
+              13.679155462090959
+            ],
+            [
+              100.76179702852698,
+              13.66087024768912
+            ],
+            [
+              100.78050255451309,
+              13.702198471527776
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "aa1f05a6-7e67-4748-a73d-277dce4d94da",
+        "platform": "Umbra-09",
+        "center_utc": "2025-06-13T15:42:33.300000Z",
+        "incidence_deg": 41.18006291624895,
+        "view_azimuth_deg_raw": 113.8674747371783,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/864161d8-f3bc-4468-9eef-b6a1f1ac24ae/2025-06-13-15-42-23_UMBRA-09/2025-06-13-15-42-23_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.76304055847274,
+              13.71998881077719
+            ],
+            [
+              100.72003665413284,
+              13.70341029998915
+            ],
+            [
+              100.73699385075727,
+              13.661367021270255
+            ],
+            [
+              100.77999130427946,
+              13.677942643686807
+            ],
+            [
+              100.76304055847274,
+              13.71998881077719
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "2e2c8dda-5378-47c2-891a-63b93488eccc",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-16T02:35:21.199999Z",
+        "incidence_deg": 32.666136403786396,
+        "view_azimuth_deg_raw": 68.48206033512965,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/c661ecbe-7f11-4698-bc4f-818a1e32af41/2025-06-16-02-35-14_UMBRA-05/2025-06-16-02-35-14_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71904010553217,
+              13.680488166065972
+            ],
+            [
+              100.7604367269464,
+              13.660389756939459
+            ],
+            [
+              100.78099649539354,
+              13.70086700459101
+            ],
+            [
+              100.73959453978996,
+              13.720968785511454
+            ],
+            [
+              100.71904010553217,
+              13.680488166065972
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "df3327be-d114-444f-bea6-7626d1719a49",
+        "platform": "Umbra-09",
+        "center_utc": "2025-06-24T04:28:42.100000Z",
+        "incidence_deg": 43.74160723894666,
+        "view_azimuth_deg_raw": 296.4070142385884,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/1e2d19f5-a57d-40fb-bbfa-58c35cdd68f9/2025-06-24-04-28-34_UMBRA-09/2025-06-24-04-28-34_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7775102921776,
+              13.707958339944325
+            ],
+            [
+              100.7323390052096,
+              13.717559949445537
+            ],
+            [
+              100.72252400180939,
+              13.67339592119582
+            ],
+            [
+              100.76768725977702,
+              13.663796068800988
+            ],
+            [
+              100.7775102921776,
+              13.707958339944325
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "f503b6bd-2771-4b85-a89a-0ad77609b184",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-29T14:17:33.400000Z",
+        "incidence_deg": 42.77011934901754,
+        "view_azimuth_deg_raw": 102.26483056649727,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/32479029-af7e-473d-aa70-d3d4983662e3/2025-06-29-14-17-26_UMBRA-05/2025-06-29-14-17-26_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7753303438174,
+              13.710893713277947
+            ],
+            [
+              100.7293369443945,
+              13.715427925724406
+            ],
+            [
+              100.72470439587836,
+              13.670460820537732
+            ],
+            [
+              100.77068914739654,
+              13.66592745295341
+            ],
+            [
+              100.7753303438174,
+              13.710893713277947
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "7e4139ce-d8bc-4b77-bfb9-11732a2f53ba",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-04T02:30:55.500000Z",
+        "incidence_deg": 44.40604809823655,
+        "view_azimuth_deg_raw": 95.75742072823853,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/6a7a3541-453e-4860-a503-8f9f0900e383/2025-07-04-02-30-49_UMBRA-05/2025-07-04-02-30-49_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7775997978893,
+              13.707821415653857
+            ],
+            [
+              100.73247904370244,
+              13.717647491353478
+            ],
+            [
+              100.72243447166386,
+              13.673532834510073
+            ],
+            [
+              100.76754723452862,
+              13.663708554983575
+            ],
+            [
+              100.7775997978893,
+              13.707821415653857
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "16de2e50-f2ef-4763-a4d4-5c570f92738a",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-09T14:18:38.299998Z",
+        "incidence_deg": 42.67261208411916,
+        "view_azimuth_deg_raw": 102.55618237206875,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9bf8a9dd-f94e-4c2e-a4be-0f6b1ca928d8/2025-07-09-14-18-31_UMBRA-05/2025-07-09-14-18-31_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.72573775869057,
+              13.669290537952994
+            ],
+            [
+              100.77189269256695,
+              13.666933569688396
+            ],
+            [
+              100.77430786423116,
+              13.712066494032035
+            ],
+            [
+              100.72814415283793,
+              13.714423903180485
+            ],
+            [
+              100.72573775869057,
+              13.669290537952994
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "0c5f4474-847b-44ca-8210-c4d54128dc98",
+        "platform": "Umbra-08",
+        "center_utc": "2025-07-14T04:07:35.700000Z",
+        "incidence_deg": 33.12566266397896,
+        "view_azimuth_deg_raw": 272.9896952911154,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/e62a4919-f43c-4e4c-a234-d4af84cf66ce/2025-07-14-04-07-30_UMBRA-08/2025-07-14-04-07-30_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.75035841999537,
+              13.658724279489329
+            ],
+            [
+              100.78270219247194,
+              13.691008988765349
+            ],
+            [
+              100.74968118380616,
+              13.7226357491053
+            ],
+            [
+              100.71733759419091,
+              13.690346808422515
+            ],
+            [
+              100.75035841999537,
+              13.658724279489329
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "e9bcb20c-3867-452d-a72f-4ecd9662e7ea",
+        "platform": "Umbra-10",
+        "center_utc": "2025-07-21T16:11:16Z",
+        "incidence_deg": 41.472188656193154,
+        "view_azimuth_deg_raw": 224.4063853685841,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/85dc649f-72f0-4eab-b4dc-1de708d85698/2025-07-21-16-11-06_UMBRA-10/2025-07-21-16-11-06_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77479276577779,
+              13.711524964314576
+            ],
+            [
+              100.72869507660447,
+              13.71489826364886
+            ],
+            [
+              100.72524976605534,
+              13.66982933347147
+            ],
+            [
+              100.7713387280121,
+              13.666456664110344
+            ],
+            [
+              100.77479276577779,
+              13.711524964314576
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "9a8aedbf-80ce-463d-b71d-5b42ba0802b4",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-26T14:19:32.799998Z",
+        "incidence_deg": 43.57294071954848,
+        "view_azimuth_deg_raw": 94.28009929104243,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/c222c428-828a-448c-aaa6-61589fe472ee/2025-07-26-14-19-26_UMBRA-05/2025-07-26-14-19-26_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71785484175831,
+              13.685014107137713
+            ],
+            [
+              100.75581188897678,
+              13.659227439323395
+            ],
+            [
+              100.78218842417994,
+              13.696340179255833
+            ],
+            [
+              100.74422829859789,
+              13.722130813581336
+            ],
+            [
+              100.71785484175831,
+              13.685014107137713
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "06ce7af5-741a-4b76-b886-52090232a778",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-30T03:00:27Z",
+        "incidence_deg": 42.735524464056766,
+        "view_azimuth_deg_raw": 304.7929686775699,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/7dbb11b9-b367-467c-9109-8db54495a77b/2025-07-30-03-00-20_UMBRA-05/2025-07-30-03-00-20_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78032600953001,
+              13.70264480996803
+            ],
+            [
+              100.73777727841967,
+              13.720310183732277
+            ],
+            [
+              100.71971487744509,
+              13.678708835194598
+            ],
+            [
+              100.76225747931767,
+              13.661046506594296
+            ],
+            [
+              100.78032600953001,
+              13.70264480996803
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "15c688ca-cc2e-47e4-9f11-a387ce020edf",
+        "platform": "Umbra-10",
+        "center_utc": "2025-08-15T15:46:18Z",
+        "incidence_deg": 41.48442558243294,
+        "view_azimuth_deg_raw": 113.00673598492564,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0e3d021e-bda3-4a36-9e02-ebcdabc6342c/2025-08-15-15-46-18_UMBRA-10/2025-08-15-15-46-18_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71977578546328,
+              13.678567740449559
+            ],
+            [
+              100.76240443593554,
+              13.661104941067153
+            ],
+            [
+              100.78026891618835,
+              13.702787423684375
+            ],
+            [
+              100.7376340759047,
+              13.720253239922434
+            ],
+            [
+              100.71977578546328,
+              13.678567740449559
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "0ce0d872-abdc-445f-b9bc-e3f4a10421cf",
+        "platform": "Umbra-07",
+        "center_utc": "2025-08-25T03:26:43.100000Z",
+        "incidence_deg": 43.965855647574514,
+        "view_azimuth_deg_raw": 292.7321810976989,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/d071a46e-5ca2-44fe-96c9-750cfb91c1ee/2025-08-25-03-26-43_UMBRA-07/2025-08-25-03-26-43_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77784158216095,
+              13.707449623976817
+            ],
+            [
+              100.7328629966837,
+              13.71788004585217
+            ],
+            [
+              100.72220033827313,
+              13.673904293164611
+            ],
+            [
+              100.76717103820316,
+              13.663475771929514
+            ],
+            [
+              100.77784158216095,
+              13.707449623976817
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "feb63cce-b9f6-4441-b71e-d1a5341c64fd",
+        "platform": "Umbra-05",
+        "center_utc": "2025-09-02T14:25:32.100000Z",
+        "incidence_deg": 42.387313694951764,
+        "view_azimuth_deg_raw": 103.34227872997745,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/951f5692-8e1f-4a60-8988-5bf5dcb076aa/2025-09-02-14-25-32_UMBRA-05/2025-09-02-14-25-32_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.73923150160421,
+              13.66051398516148
+            ],
+            [
+              100.78087042968794,
+              13.680127881301946
+            ],
+            [
+              100.76081163939276,
+              13.720845470747008
+            ],
+            [
+              100.71916721082242,
+              13.701228264829895
+            ],
+            [
+              100.73923150160421,
+              13.66051398516148
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "9596a911-de71-48db-ae6d-6bfd00cee6a3",
+        "platform": "Umbra-08",
+        "center_utc": "2025-09-08T04:10:47.300000Z",
+        "incidence_deg": 32.72646746422687,
+        "view_azimuth_deg_raw": 244.27681680832404,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/ae971071-e068-4272-a02b-9e7d422beed9/2025-09-08-04-10-47_UMBRA-08/2025-09-08-04-10-47_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.73345125784385,
+              13.663133867570252
+            ],
+            [
+              100.77819020394845,
+              13.674475653173294
+            ],
+            [
+              100.76659335106118,
+              13.718224797902524
+            ],
+            [
+              100.7218466912533,
+              13.706880955869654
+            ],
+            [
+              100.73345125784385,
+              13.663133867570252
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "1d54ba99-911b-490a-a930-baa785993208",
+        "platform": "Umbra-07",
+        "center_utc": "2025-09-18T15:09:30.900000Z",
+        "incidence_deg": 43.703295334373664,
+        "view_azimuth_deg_raw": 255.46467478186582,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/7dafaa25-a0ec-4d8f-b1b1-f7d2c9a99907/2025-09-18-15-09-30_UMBRA-07/2025-09-18-15-09-30_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.76986228587066,
+              13.716072818388916
+            ],
+            [
+              100.72404432786627,
+              13.710076716882286
+            ],
+            [
+              100.7301804479537,
+              13.665282066668874
+            ],
+            [
+              100.77598989106303,
+              13.671277055178003
+            ],
+            [
+              100.76986228587066,
+              13.716072818388916
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "f23553a3-ddc7-4de4-8054-0292e2985bce",
+        "platform": "Umbra-09",
+        "center_utc": "2025-09-19T15:44:37.600000Z",
+        "incidence_deg": 44.406006527227234,
+        "view_azimuth_deg_raw": 82.37664212246213,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/dd9d26f9-3c78-4ae2-bfe2-e672210d428d/2025-09-19-15-44-37_UMBRA-09/2025-09-19-15-44-37_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7677371500192,
+              13.717533228713618
+            ],
+            [
+              100.72255101322848,
+              13.707998672583415
+            ],
+            [
+              100.73230547921297,
+              13.663821881284557
+            ],
+            [
+              100.77748357592033,
+              13.673354692005049
+            ],
+            [
+              100.7677371500192,
+              13.717533228713618
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "06a55a19-686e-4b4d-a276-7bb5ab40f888",
+        "platform": "Umbra-07",
+        "center_utc": "2025-09-26T02:52:28.200000Z",
+        "incidence_deg": 36.14932087403696,
+        "view_azimuth_deg_raw": 77.8221384936826,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/1fff6ad4-04f5-4102-abba-ceefaf80e630/2025-09-26-02-52-28_UMBRA-07/2025-09-26-02-52-28_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78053556128825,
+              13.702124273419809
+            ],
+            [
+              100.73830969101107,
+              13.720515180155877
+            ],
+            [
+              100.71950519957106,
+              13.679229353764462
+            ],
+            [
+              100.76172516664104,
+              13.660841593212973
+            ],
+            [
+              100.78053556128825,
+              13.702124273419809
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "9ce7ba30-67ac-479b-a5d1-6a5a6c098a50",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-03T15:50:53Z",
+        "incidence_deg": 39.14395713470361,
+        "view_azimuth_deg_raw": 114.00972766209294,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/0964578a-65bc-4c63-8966-1b748457e01f/2025-10-03-15-50-53_UMBRA-09/2025-10-03-15-50-53_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78049870937382,
+              13.702217781334674
+            ],
+            [
+              100.73821404949666,
+              13.720479128958667
+            ],
+            [
+              100.71954207430421,
+              13.679135848913718
+            ],
+            [
+              100.76182078994448,
+              13.660877629658126
+            ],
+            [
+              100.78049870937382,
+              13.702217781334674
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "958c54bd-a195-4c02-ad9e-977526f63dbe",
+        "platform": "Umbra-07",
+        "center_utc": "2025-10-10T14:35:08.200000Z",
+        "incidence_deg": 41.891181817170384,
+        "view_azimuth_deg_raw": 113.83005839399162,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/79620a31-c32d-4b47-9d1e-eb498e3ebd26/2025-10-10-14-35-08_UMBRA-07/2025-10-10-14-35-08_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.77654375455376,
+              13.709352099858284
+            ],
+            [
+              100.73091726646325,
+              13.716610712825378
+            ],
+            [
+              100.72349848938381,
+              13.672001977849314
+            ],
+            [
+              100.76911660716387,
+              13.664744706598078
+            ],
+            [
+              100.77654375455376,
+              13.709352099858284
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "809d9740-0843-4427-90b4-8307f31361fb",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-17T15:48:25.500000Z",
+        "incidence_deg": 43.01147173636343,
+        "view_azimuth_deg_raw": 99.24131279636238,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/2f59fd9d-eee3-41a8-a795-e52273d525a6/2025-10-17-15-48-25_UMBRA-09/2025-10-17-15-48-25_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.72271461619671,
+              13.673118657334074
+            ],
+            [
+              100.76797735955329,
+              13.663977896318963
+            ],
+            [
+              100.77733085858226,
+              13.708237517434021
+            ],
+            [
+              100.73206001186571,
+              13.717379955213453
+            ],
+            [
+              100.72271461619671,
+              13.673118657334074
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "e9555485-4732-4231-9a63-c5b807fdb281",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-23T04:35:52.200000Z",
+        "incidence_deg": 41.159426755746786,
+        "view_azimuth_deg_raw": 281.66983139594817,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/594df775-95a6-4b40-ab45-8dcfe3411bb4/2025-10-23-04-35-52_UMBRA-09/2025-10-23-04-35-52_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78066504984709,
+              13.701788541952352
+            ],
+            [
+              100.73865308373638,
+              13.720641856591792
+            ],
+            [
+              100.71937562851491,
+              13.679565074827668
+            ],
+            [
+              100.76138184022231,
+              13.66071496914579
+            ],
+            [
+              100.78066504984709,
+              13.701788541952352
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "6117bb81-6941-4c30-80a2-37f8bb7fdecc",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-24T15:45:56.500000Z",
+        "incidence_deg": 36.66943689929418,
+        "view_azimuth_deg_raw": 114.65305275525456,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/1cb9df36-43ae-4353-9176-bca682c2ce43/2025-10-24-15-45-56_UMBRA-08/2025-10-24-15-45-56_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.7810802027328,
+              13.70062523261212
+            ],
+            [
+              100.73984294833609,
+              13.721048010282766
+            ],
+            [
+              100.71896018336761,
+              13.680728355343616
+            ],
+            [
+              100.76019221597346,
+              13.660308989686454
+            ],
+            [
+              100.7810802027328,
+              13.70062523261212
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "4122fdf5-3c65-450e-903f-0ac3d908f878",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-26T03:58:51.500000Z",
+        "incidence_deg": 39.03200873915023,
+        "view_azimuth_deg_raw": 116.86224788877676,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/55afb6e9-1c9f-4a0d-9e2f-8dd93211df3b/2025-10-26-03-58-51_UMBRA-08/2025-10-26-03-58-51_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78057279615018,
+              13.702028895013537
+            ],
+            [
+              100.73840724579284,
+              13.720551606155912
+            ],
+            [
+              100.71946794136207,
+              13.679324729119976
+            ],
+            [
+              100.76162763055065,
+              13.660805182185427
+            ],
+            [
+              100.78057279615018,
+              13.702028895013537
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "5657f3f6-2803-4035-8eea-e12a636d5433",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-29T15:52:32Z",
+        "incidence_deg": 40.241059714925605,
+        "view_azimuth_deg_raw": 114.19276861862686,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/110b22e7-329f-4f7c-81cd-8751370f294b/2025-10-29-15-52-32_UMBRA-10/2025-10-29-15-52-32_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71976152353729,
+              13.678601841694308
+            ],
+            [
+              100.76236956057943,
+              13.661090999953137
+            ],
+            [
+              100.78028317174441,
+              13.702753316890007
+            ],
+            [
+              100.737668959413,
+              13.720267182323203
+            ],
+            [
+              100.71976152353729,
+              13.678601841694308
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "341a0c75-300c-496f-8179-789a5bedee76",
+        "platform": "Umbra-07",
+        "center_utc": "2025-10-31T03:18:43Z",
+        "incidence_deg": 43.934977488712796,
+        "view_azimuth_deg_raw": 292.7982372914691,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9d7ec93d-58e0-482d-aa86-5448087ddcc3/2025-10-31-03-18-43_UMBRA-07/2025-10-31-03-18-43_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.75100547582804,
+              13.658737101099879
+            ],
+            [
+              100.78268914429424,
+              13.691641766147466
+            ],
+            [
+              100.74903391289253,
+              13.722622923297516
+            ],
+            [
+              100.71735077655666,
+              13.689714033634715
+            ],
+            [
+              100.75100547582804,
+              13.658737101099879
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "8178fd63-8f34-4a24-b64c-6fde51ae5a62",
+        "platform": "Umbra-10",
+        "center_utc": "2025-11-07T16:16:12.400000Z",
+        "incidence_deg": 35.49034539400909,
+        "view_azimuth_deg_raw": 223.2716440781648,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/fdc434de-ea0d-45cb-89e3-14d7c3fcc9ae/2025-11-07-16-16-12_UMBRA-10/2025-11-07-16-16-12_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.78268394888943,
+              13.691769028213086
+            ],
+            [
+              100.74890169444554,
+              13.722617761314073
+            ],
+            [
+              100.71735402745018,
+              13.689584708034927
+            ],
+            [
+              100.75113567901276,
+              13.658740197363185
+            ],
+            [
+              100.78268394888943,
+              13.691769028213086
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "da29ea5f-d312-49fb-8733-5a0b46196f39",
+        "platform": "Umbra-07",
+        "center_utc": "2025-11-11T02:50:41.300000Z",
+        "incidence_deg": 32.31612190445014,
+        "view_azimuth_deg_raw": 133.04150997063516,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/b68450b3-b98e-46eb-a976-061b18c63f14/2025-11-11-02-50-41_UMBRA-07/2025-11-11-02-50-41_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              100.71803563328334,
+              13.684108219752432
+            ],
+            [
+              100.75673830199017,
+              13.659404107109443
+            ],
+            [
+              100.78200785756339,
+              13.69724616918351
+            ],
+            [
+              100.74330163809176,
+              13.721954156491647
+            ],
+            [
+              100.71803563328334,
+              13.684108219752432
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "suvarnabhumi",
+        "stac_id": "e264a486-7f98-4d55-8cea-229c0665649f",
+        "platform": "Umbra-10",
+        "center_utc": "2025-11-16T04:33:19.700000Z",
+        "incidence_deg": 34.476479487412675,
+        "view_azimuth_deg_raw": 303.13808022647964,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/18fdf34a-2743-4eb3-9208-8085c627017b/2025-11-16-04-33-19_UMBRA-10/2025-11-16-04-33-19_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.237198577666001,
+              51.876388817421265
+            ],
+            [
+              4.300414608204729,
+              51.854297906595725
+            ],
+            [
+              4.336146662631357,
+              51.89341979554981
+            ],
+            [
+              4.272893237928951,
+              51.91552974890157
+            ],
+            [
+              4.237198577666001,
+              51.876388817421265
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "2d8eef22-6818-4277-b131-addffbb83d9c",
+        "platform": "Umbra-08",
+        "center_utc": "2024-12-21T11:07:20.200000Z",
+        "incidence_deg": 39.72365031809312,
+        "view_azimuth_deg_raw": 299.4566585637223,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/f1269ee5-c759-4ffe-bfd8-776d0e854e92/2024-12-21-11-07-15_UMBRA-08/2024-12-21-11-07-15_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.321292424203599,
+              51.908381691876485
+            ],
+            [
+              4.248709331628221,
+              51.90632775728664
+            ],
+            [
+              4.252062821923413,
+              51.86143465822551
+            ],
+            [
+              4.324573794350061,
+              51.863486563452
+            ],
+            [
+              4.321292424203599,
+              51.908381691876485
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "b7ced736-7644-4f53-85ca-628b2668c6da",
+        "platform": "Umbra-10",
+        "center_utc": "2025-01-29T10:39:14.700000Z",
+        "incidence_deg": 38.280642814857906,
+        "view_azimuth_deg_raw": 87.3818020841822,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/24fd85f0-d7ad-48db-8aa9-0b58f0b7b07d/2025-01-29-10-39-09_UMBRA-10/2025-01-29-10-39-09_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.320480027215169,
+              51.908830966353015
+            ],
+            [
+              4.24798379231037,
+              51.90582480053525
+            ],
+            [
+              4.252875117379702,
+              51.86098581310557
+            ],
+            [
+              4.325299577351095,
+              51.863989012267865
+            ],
+            [
+              4.320480027215169,
+              51.908830966353015
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "2f31da82-3110-40f4-9a77-e7713529e57b",
+        "platform": "Umbra-05",
+        "center_utc": "2025-02-02T09:12:59.199999Z",
+        "incidence_deg": 39.02422853037348,
+        "view_azimuth_deg_raw": 86.16644192341629,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/d6fc7487-dd66-4b3f-a7e0-a662d3dac0ba/2025-02-02-09-12-54_UMBRA-05/2025-02-02-09-12-54_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.316078401211057,
+              51.91096340930257
+            ],
+            [
+              4.24454074020735,
+              51.90310015069113
+            ],
+            [
+              4.257275237189441,
+              51.858855529103316
+            ],
+            [
+              4.328744905747851,
+              51.866711130207506
+            ],
+            [
+              4.316078401211057,
+              51.91096340930257
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "f4049777-b7f6-45cb-a70e-3ac5002d515e",
+        "platform": "Umbra-09",
+        "center_utc": "2025-02-07T10:48:29.600000Z",
+        "incidence_deg": 26.905505929441105,
+        "view_azimuth_deg_raw": 79.92814382544269,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/996573fc-2011-4a5a-96fe-9eaa95764acb/2025-02-07-10-48-24_UMBRA-09/2025-02-07-10-48-24_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.323155345135854,
+              51.90727478944888
+            ],
+            [
+              4.250497057757713,
+              51.90748119642093
+            ],
+            [
+              4.2501998875927764,
+              51.862540540698866
+            ],
+            [
+              4.322785755628241,
+              51.86233433787475
+            ],
+            [
+              4.323155345135854,
+              51.90727478944888
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "27a11f88-9d30-42c8-82dd-ca1d552a3b00",
+        "platform": "Umbra-10",
+        "center_utc": "2025-02-11T10:48:44.200000Z",
+        "incidence_deg": 25.52032011683397,
+        "view_azimuth_deg_raw": 90.26302234539659,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/b3ecb80e-df3c-455c-b955-c59e1ce0230b/2025-02-11-10-48-39_UMBRA-10/2025-02-11-10-48-39_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.3248042042583785,
+              51.906195128313065
+            ],
+            [
+              4.252241004363234,
+              51.90850222633591
+            ],
+            [
+              4.248550695043059,
+              51.863619258893394
+            ],
+            [
+              4.32104185388931,
+              51.86131443974397
+            ],
+            [
+              4.3248042042583785,
+              51.906195128313065
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "a474df22-48c0-43b4-b0bc-88e7ade87696",
+        "platform": "Umbra-10",
+        "center_utc": "2025-02-16T10:50:49.200000Z",
+        "incidence_deg": 22.365328336270252,
+        "view_azimuth_deg_raw": 92.94118239775176,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/25be9435-748f-44ec-9000-97a9b7e5fe37/2025-02-16-10-50-44_UMBRA-10/2025-02-16-10-50-44_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.246927103544011,
+              51.864792299132205
+            ],
+            [
+              4.319152008213947,
+              51.86031011723294
+            ],
+            [
+              4.326434079300911,
+              51.905024642367124
+            ],
+            [
+              4.254138194423058,
+              51.90951123968371
+            ],
+            [
+              4.246927103544011,
+              51.864792299132205
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "dff8326e-dace-414f-a25d-3487921187a8",
+        "platform": "Umbra-05",
+        "center_utc": "2025-02-20T20:42:46.100000Z",
+        "incidence_deg": 42.99218849898585,
+        "view_azimuth_deg_raw": 275.72672182321014,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/16b87954-9733-4c43-a871-9f45f9fa3e55/2025-02-20-20-42-41_UMBRA-05/2025-02-20-20-42-41_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.319665778735728,
+              51.909262531077566
+            ],
+            [
+              4.247286894523832,
+              51.90532072249305
+            ],
+            [
+              4.253689204216253,
+              51.86055466917117
+            ],
+            [
+              4.325996779250207,
+              51.8644925940392
+            ],
+            [
+              4.319665778735728,
+              51.909262531077566
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "b3d22236-a8ce-41e4-baf9-3f8b3fcf1935",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-03T21:15:52.600000Z",
+        "incidence_deg": 28.65745132612424,
+        "view_azimuth_deg_raw": 84.97056941927525,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/8c4f5d9d-dd0e-468c-88cd-7f925af5aa02/2025-03-03-21-15-48_UMBRA-08/2025-03-03-21-15-48_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.305453863816856,
+              51.91448796653549
+            ],
+            [
+              4.238853586312978,
+              51.89652568351504
+            ],
+            [
+              4.26789135988254,
+              51.85533497854921
+            ],
+            [
+              4.334442332758129,
+              51.8732809743123
+            ],
+            [
+              4.305453863816856,
+              51.91448796653549
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "607477f7-3ddb-4e25-8b15-6ae0d7d8aba2",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-07T10:35:32.800000Z",
+        "incidence_deg": 26.328633029677547,
+        "view_azimuth_deg_raw": 66.45280531205387,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/d703aa5e-2a59-4e69-b703-eaf1e87833e0/2025-03-07-10-35-27_UMBRA-08/2025-03-07-10-35-27_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.32241045685359,
+              51.907730826163125
+            ],
+            [
+              4.249760497210556,
+              51.90701997667985
+            ],
+            [
+              4.25094482447531,
+              51.862084917672604
+            ],
+            [
+              4.323522397926226,
+              51.86279506416416
+            ],
+            [
+              4.32241045685359,
+              51.907730826163125
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "84e664cd-8d21-4bcc-8bc0-d46cb49ebaea",
+        "platform": "Umbra-10",
+        "center_utc": "2025-03-20T10:38:54.800000Z",
+        "incidence_deg": 41.1416029914574,
+        "view_azimuth_deg_raw": 89.09414254234422,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/8b7472d7-4b7d-48a1-b3f4-d4bec289406d/2025-03-20-10-38-49_UMBRA-10/2025-03-20-10-38-49_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.319326900233581,
+              51.90943685157296
+            ],
+            [
+              4.2470054111060564,
+              51.90511093956571
+            ],
+            [
+              4.254027998603232,
+              51.86038052096633
+            ],
+            [
+              4.326278406075482,
+              51.86470217418751
+            ],
+            [
+              4.319326900233581,
+              51.90943685157296
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "1c50494f-523f-4529-9a5c-8c78cf62e734",
+        "platform": "Umbra-09",
+        "center_utc": "2025-03-23T21:26:48.400000Z",
+        "incidence_deg": 31.922355148515365,
+        "view_azimuth_deg_raw": 84.47902783603685,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/968cc0f1-f168-4dcd-a3bf-a203af1fe023/2025-03-23-21-26-43_UMBRA-09/2025-03-23-21-26-43_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.246488394670684,
+              51.865128725600066
+            ],
+            [
+              4.318608218192298,
+              51.86003881749827
+            ],
+            [
+              4.326872617752086,
+              51.904687890768116
+            ],
+            [
+              4.254682231618651,
+              51.90978280565135
+            ],
+            [
+              4.246488394670684,
+              51.865128725600066
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "e8d1c57e-2f9d-4958-b897-af8772691e70",
+        "platform": "Umbra-05",
+        "center_utc": "2025-03-28T20:42:33.900000Z",
+        "incidence_deg": 42.44950652429058,
+        "view_azimuth_deg_raw": 276.5063391159827,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/11d60607-25c8-4663-97dd-5820d057d150/2025-03-28-20-42-29_UMBRA-05/2025-03-28-20-42-29_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.235751637966808,
+              51.88077259219549
+            ],
+            [
+              4.293334054185717,
+              51.853405774400166
+            ],
+            [
+              4.337584365927195,
+              51.88903441622053
+            ],
+            [
+              4.279983280746592,
+              51.91642271841543
+            ],
+            [
+              4.235751637966808,
+              51.88077259219549
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "cff5d022-06ad-4b48-893a-3801bae10aea",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-01T09:59:49.400000Z",
+        "incidence_deg": 43.741309231196546,
+        "view_azimuth_deg_raw": 307.5308442654865,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/80e5fa44-90a0-4bc8-adae-1ff43de3b570/2025-05-01-09-59-44_UMBRA-05/2025-05-01-09-59-44_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.312024803930182,
+              51.91254675540648
+            ],
+            [
+              4.241985152513091,
+              51.90059145606032
+            ],
+            [
+              4.261326283720793,
+              51.85727391536736
+            ],
+            [
+              4.331303753295871,
+              51.86921781556041
+            ],
+            [
+              4.312024803930182,
+              51.91254675540648
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "dba36c55-39f6-40d6-a130-4d47325f40f2",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-05T09:23:17Z",
+        "incidence_deg": 31.31005614964738,
+        "view_azimuth_deg_raw": 74.57985755538695,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/31d6861e-ad3f-48df-b5e5-a3eb0dc77c44/2025-05-05-09-23-12_UMBRA-05/2025-05-05-09-23-12_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.333845727514221,
+              51.89746049531644
+            ],
+            [
+              4.266355635326261,
+              51.91410427262209
+            ],
+            [
+              4.239498646817283,
+              51.8723481488214
+            ],
+            [
+              4.306936164817176,
+              51.855719664464594
+            ],
+            [
+              4.333845727514221,
+              51.89746049531644
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "207d70e6-0522-4cf6-9026-311e4053d29c",
+        "platform": "Umbra-08",
+        "center_utc": "2025-05-10T21:15:41.600000Z",
+        "incidence_deg": 40.843697794451394,
+        "view_azimuth_deg_raw": 111.72652430342521,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/4e58eb32-2c9b-4831-9a48-a25780148a7e/2025-05-10-21-15-35_UMBRA-08/2025-05-10-21-15-35_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.235428024089198,
+              51.88278372764742
+            ],
+            [
+              4.29008604627668,
+              51.853206951242875
+            ],
+            [
+              4.337903493149153,
+              51.88702282796684
+            ],
+            [
+              4.283235831552184,
+              51.91662164241519
+            ],
+            [
+              4.235428024089198,
+              51.88278372764742
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "abd5c342-674e-4734-b8b8-d7903a0c7028",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-18T09:57:33.299998Z",
+        "incidence_deg": 40.12017108836895,
+        "view_azimuth_deg_raw": 311.17561917593537,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/1cae8bde-9db2-41fb-974b-f5bc63a0175f/2025-05-18-09-57-28_UMBRA-05/2025-05-18-09-57-28_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.239215038569172,
+              51.87277092728351
+            ],
+            [
+              4.306259036955328,
+              51.8555430183895
+            ],
+            [
+              4.334136887277398,
+              51.89703964777632
+            ],
+            [
+              4.267041771358849,
+              51.914283308267805
+            ],
+            [
+              4.239215038569172,
+              51.87277092728351
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "0763c385-1935-45d8-a1fe-3db042454af9",
+        "platform": "Umbra-10",
+        "center_utc": "2025-05-20T22:10:02Z",
+        "incidence_deg": 39.961677269888874,
+        "view_azimuth_deg_raw": 292.55188576028735,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/ee10ed54-eeb0-4be6-906b-095fb641c132/2025-05-20-22-09-56_UMBRA-10/2025-05-20-22-09-56_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.242282220132789,
+              51.868936771638644
+            ],
+            [
+              4.312453975130404,
+              51.857438315481154
+            ],
+            [
+              4.3310753445464,
+              51.900876512521876
+            ],
+            [
+              4.260840658133981,
+              51.91238597323265
+            ],
+            [
+              4.242282220132789,
+              51.868936771638644
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "99e80f46-ec7b-417e-9db7-8fdd8783cbe3",
+        "platform": "Umbra-08",
+        "center_utc": "2025-05-25T21:44:51.500000Z",
+        "incidence_deg": 23.594482692856644,
+        "view_azimuth_deg_raw": 284.83159648466045,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/7ff0cd97-0bf4-4db8-a2e8-9cdbe57f75e5/2025-05-25-21-44-47_UMBRA-08/2025-05-25-21-44-47_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.236290537521876,
+              51.89110141067256
+            ],
+            [
+              4.276654321631713,
+              51.85374576380432
+            ],
+            [
+              4.337022229482701,
+              51.87870516418347
+            ],
+            [
+              4.2966861538855134,
+              51.91608135513613
+            ],
+            [
+              4.236290537521876,
+              51.89110141067256
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "b4e551bf-a2ff-4b7c-9905-5a5d05ce9d4b",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-06T09:55:37.400000Z",
+        "incidence_deg": 40.311581773616545,
+        "view_azimuth_deg_raw": 326.24728372047406,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/7e9934f6-026b-4362-a81f-3340bd680d07/2025-06-06-09-55-31_UMBRA-05/2025-06-06-09-55-31_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.335669965212929,
+              51.89440976111614
+            ],
+            [
+              4.271287242341811,
+              51.915235824959574
+            ],
+            [
+              4.237668634462509,
+              51.87539766816892
+            ],
+            [
+              4.302010012737816,
+              51.85458986071058
+            ],
+            [
+              4.335669965212929,
+              51.89440976111614
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "d4c732e3-7ac8-45dd-8a7e-450aeaf83d4e",
+        "platform": "Umbra-07",
+        "center_utc": "2025-06-10T09:54:26.300000Z",
+        "incidence_deg": 35.588910281038125,
+        "view_azimuth_deg_raw": 117.59414820844046,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/164d94b0-45b1-47eb-b3e7-80995ee31b93/2025-06-10-09-54-21_UMBRA-07/2025-06-10-09-54-21_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.264222168743842,
+              51.85633418876001
+            ],
+            [
+              4.332830626022236,
+              51.871011260130274
+            ],
+            [
+              4.309130490003081,
+              51.91349256745167
+            ],
+            [
+              4.240465073607872,
+              51.89880176298429
+            ],
+            [
+              4.264222168743842,
+              51.85633418876001
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "00748bc9-48aa-489e-850e-28981aefb87b",
+        "platform": "Umbra-10",
+        "center_utc": "2025-06-15T22:07:50.200000Z",
+        "incidence_deg": 30.930020609523943,
+        "view_azimuth_deg_raw": 250.9291046112775,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/a94f0f9a-4359-4333-bd7b-13d518809be1/2025-06-15-22-07-45_UMBRA-10/2025-06-15-22-07-45_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.3192137498599985,
+              51.909494382660505
+            ],
+            [
+              4.246912514566276,
+              51.905040894671636
+            ],
+            [
+              4.254141118752331,
+              51.8603230470332
+            ],
+            [
+              4.32637135263706,
+              51.86477215186507
+            ],
+            [
+              4.3192137498599985,
+              51.909494382660505
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "4581a963-39c7-4d8e-8a60-bd8d5360741a",
+        "platform": "Umbra-09",
+        "center_utc": "2025-06-22T10:49:54.500002Z",
+        "incidence_deg": 34.51348648188755,
+        "view_azimuth_deg_raw": 84.31567883272534,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/1804e15d-f7da-40d7-8397-505b3c2cfd42/2025-06-22-10-49-49_UMBRA-09/2025-06-22-10-49-49_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.320169769683,
+              51.90899756380783
+            ],
+            [
+              4.247714763024148,
+              51.90563272604799
+            ],
+            [
+              4.253185320196541,
+              51.860819377118325
+            ],
+            [
+              4.325568715639258,
+              51.864180896149534
+            ],
+            [
+              4.320169769683,
+              51.90899756380783
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "650781db-fbdb-4367-8db8-7ce391ea3ad9",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-25T20:02:09.100000Z",
+        "incidence_deg": 44.3172398216239,
+        "view_azimuth_deg_raw": 85.70823931072292,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/572fbcd9-8a53-48c6-85d2-882df1d17b6b/2025-06-25-20-02-04_UMBRA-05/2025-06-25-20-02-04_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.337998947109595,
+              51.88561284124753
+            ],
+            [
+              4.285511156043518,
+              51.91668440021876
+            ],
+            [
+              4.235320392742603,
+              51.884193378995896
+            ],
+            [
+              4.287804949654947,
+              51.853144033726295
+            ],
+            [
+              4.337998947109595,
+              51.88561284124753
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "5f370b42-bc18-421a-948b-444d5656e4d0",
+        "platform": "Umbra-07",
+        "center_utc": "2025-07-04T09:58:59.500000Z",
+        "incidence_deg": 27.152467333076466,
+        "view_azimuth_deg_raw": 133.72025316501717,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/c3f076b8-19f5-464b-bef9-e635b574c6e1/2025-07-04-09-58-54_UMBRA-07/2025-07-04-09-58-54_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.2426357373005095,
+              51.86856658972966
+            ],
+            [
+              4.313052160523015,
+              51.857656829636035
+            ],
+            [
+              4.330722269932801,
+              51.901246990298255
+            ],
+            [
+              4.260241968366103,
+              51.912167228012635
+            ],
+            [
+              4.2426357373005095,
+              51.86856658972966
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "ab3a7e5a-297e-4947-9553-7d10aa08d836",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-09T20:42:58.600000Z",
+        "incidence_deg": 35.250775793860385,
+        "view_azimuth_deg_raw": 284.05621225485004,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/ed2be26f-3e30-48d8-84d6-c7c5d082e581/2025-07-09-20-42-54_UMBRA-05/2025-07-09-20-42-54_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.235897588072153,
+              51.88013595790811
+            ],
+            [
+              4.294359635053001,
+              51.85349377929687
+            ],
+            [
+              4.337440161191658,
+              51.88966775517393
+            ],
+            [
+              4.278956636905936,
+              51.91633116939552
+            ],
+            [
+              4.235897588072153,
+              51.88013595790811
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "a6bccaa4-2617-4185-a214-e82d705ebfaa",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-14T10:04:56Z",
+        "incidence_deg": 43.91678148886918,
+        "view_azimuth_deg_raw": 306.3745603860293,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/e363b19a-8ebf-4b1b-b224-1979f73ed6ea/2025-07-14-10-04-51_UMBRA-05/2025-07-14-10-04-51_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.314220179975534,
+              51.91172833300616
+            ],
+            [
+              4.243303381571929,
+              51.90194822992958
+            ],
+            [
+              4.259132763311964,
+              51.85808795516889
+            ],
+            [
+              4.329983992385232,
+              51.8678586165473
+            ],
+            [
+              4.314220179975534,
+              51.91172833300616
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "66529464-113e-42d8-a390-4be49d57e96d",
+        "platform": "Umbra-08",
+        "center_utc": "2025-07-19T21:13:41Z",
+        "incidence_deg": 44.543093541214034,
+        "view_azimuth_deg_raw": 77.43684015844683,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/0a98f181-1106-4070-a64f-cf09dda72084/2025-07-19-21-13-36_UMBRA-08/2025-07-19-21-13-36_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.2652877260219855,
+              51.856021252524584
+            ],
+            [
+              4.33333450620228,
+              51.87166898115711
+            ],
+            [
+              4.308064136947668,
+              51.9138024497144
+            ],
+            [
+              4.239962510463139,
+              51.89814019985212
+            ],
+            [
+              4.2652877260219855,
+              51.856021252524584
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "92c41b3b-85c4-45ce-a6a9-c3718e01147b",
+        "platform": "Umbra-10",
+        "center_utc": "2025-07-26T11:32:30.400000Z",
+        "incidence_deg": 40.81918057110965,
+        "view_azimuth_deg_raw": 249.6138733360569,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/48398ba1-2ebf-4061-bb42-6f8102c80673/2025-07-26-11-32-24_UMBRA-10/2025-07-26-11-32-24_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.23694337853417,
+              51.87697563218334
+            ],
+            [
+              4.299464106735595,
+              51.85413857968237
+            ],
+            [
+              4.336401035029372,
+              51.89282924086846
+            ],
+            [
+              4.273845318501339,
+              51.915685762152435
+            ],
+            [
+              4.23694337853417,
+              51.87697563218334
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "ed11b545-7e68-4b1e-ae7d-b9c44e9267fa",
+        "platform": "Umbra-08",
+        "center_utc": "2025-07-29T11:17:17Z",
+        "incidence_deg": 42.16118512671954,
+        "view_azimuth_deg_raw": 300.55548182925384,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/00864c2c-0b0f-49ef-b283-997735b27878/2025-07-29-11-17-12_UMBRA-08/2025-07-29-11-17-12_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.33801035151802,
+              51.88509917445236
+            ],
+            [
+              4.286339200391761,
+              51.91669000038631
+            ],
+            [
+              4.235308174860849,
+              51.88470360506859
+            ],
+            [
+              4.286978424499344,
+              51.85313501329395
+            ],
+            [
+              4.33801035151802,
+              51.88509917445236
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "20fe5832-4f99-497d-b259-5a7516ddf824",
+        "platform": "Umbra-10",
+        "center_utc": "2025-08-03T10:54:39.700000Z",
+        "incidence_deg": 36.28807724235176,
+        "view_azimuth_deg_raw": 134.64339449988464,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/11fdf762-c0e3-4bd9-a14c-feeb92909024/2025-08-03-10-54-34_UMBRA-10/2025-08-03-10-54-34_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.31693847879652,
+              51.91058175197456
+            ],
+            [
+              4.245154250029698,
+              51.90363065075351
+            ],
+            [
+              4.256415922357871,
+              51.85923331186636
+            ],
+            [
+              4.3281311905200255,
+              51.8661776205848
+            ],
+            [
+              4.31693847879652,
+              51.91058175197456
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "cd4972f4-0d47-4d39-a854-6873e3b8ccf1",
+        "platform": "Umbra-09",
+        "center_utc": "2025-08-21T10:59:38.600000Z",
+        "incidence_deg": 25.98455158108011,
+        "view_azimuth_deg_raw": 81.10663460735108,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/837868f3-2345-4a3e-877d-43bd909b7a2a/2025-08-21-10-59-38_UMBRA-09/2025-08-21-10-59-38_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.282811351164964,
+              51.9165998609593
+            ],
+            [
+              4.2354564060649205,
+              51.88251920001775
+            ],
+            [
+              4.2905061431733955,
+              51.85322227352702
+            ],
+            [
+              4.337871909810906,
+              51.887280948219406
+            ],
+            [
+              4.282811351164964,
+              51.9165998609593
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "e4d28e1c-1639-4364-b928-5731ba884221",
+        "platform": "Umbra-07",
+        "center_utc": "2025-08-28T20:30:39.900000Z",
+        "incidence_deg": 36.214492880845505,
+        "view_azimuth_deg_raw": 40.70326770665721,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/353509c1-ea62-4060-9bb1-9a1f2a500076/2025-08-28-20-30-39_UMBRA-07/2025-08-28-20-30-39_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.33532240423114,
+              51.89507034489141
+            ],
+            [
+              4.270216694431431,
+              51.91501831936777
+            ],
+            [
+              4.238017862664298,
+              51.874733838045046
+            ],
+            [
+              4.303079662176322,
+              51.854803546203186
+            ],
+            [
+              4.33532240423114,
+              51.89507034489141
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "886d18e1-75fa-4229-a0e7-1d72186dc9db",
+        "platform": "Umbra-08",
+        "center_utc": "2025-08-28T21:27:38.700000Z",
+        "incidence_deg": 37.90847261265366,
+        "view_azimuth_deg_raw": 116.33848268250804,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/cca6c4bd-a906-4ffb-ad12-994685f3f342/2025-08-28-21-27-38_UMBRA-08/2025-08-28-21-27-38_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.33338781381402,
+              51.89809924319116
+            ],
+            [
+              4.265320547160035,
+              51.91381850267492
+            ],
+            [
+              4.2399580264978765,
+              51.871706232737495
+            ],
+            [
+              4.307970575044535,
+              51.85600154000094
+            ],
+            [
+              4.33338781381402,
+              51.89809924319116
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "e8f2df92-35e2-4b71-8994-097af2b1eaad",
+        "platform": "Umbra-09",
+        "center_utc": "2025-09-10T21:34:22.500000Z",
+        "incidence_deg": 41.95015296442623,
+        "view_azimuth_deg_raw": 110.4636547620684,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/833b39a1-0836-48c8-b5b6-cb5394127a13/2025-09-10-21-34-22_UMBRA-09/2025-09-10-21-34-22_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.26056931247325,
+              51.857546610364146
+            ],
+            [
+              4.33086602462363,
+              51.868748520883834
+            ],
+            [
+              4.312787247688154,
+              51.91227506764878
+            ],
+            [
+              4.242427120912776,
+              51.901062417256746
+            ],
+            [
+              4.26056931247325,
+              51.857546610364146
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "56b30b31-8884-4bcc-b53a-c831c917312c",
+        "platform": "Umbra-10",
+        "center_utc": "2025-09-18T22:22:11.600000Z",
+        "incidence_deg": 41.87354607755169,
+        "view_azimuth_deg_raw": 255.55932468280727,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/f288922b-7a14-4c18-a9f7-c64c870dc52d/2025-09-18-22-22-11_UMBRA-10/2025-09-18-22-22-11_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.289568855060146,
+              51.85318681443146
+            ],
+            [
+              4.337932786985345,
+              51.88670345247649
+            ],
+            [
+              4.283749361795616,
+              51.91664092191418
+            ],
+            [
+              4.23539362397161,
+              51.8831021907703
+            ],
+            [
+              4.289568855060146,
+              51.85318681443146
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "a423b660-7d54-4e6c-a890-f992249bff8f",
+        "platform": "Umbra-05",
+        "center_utc": "2025-09-24T20:46:18Z",
+        "incidence_deg": 28.64328646963213,
+        "view_azimuth_deg_raw": 221.75173050734753,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/9969b9c1-2296-43ca-b211-ad067d61b056/2025-09-24-20-46-18_UMBRA-05/2025-09-24-20-46-18_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.235427338076673,
+              51.882789939607406
+            ],
+            [
+              4.290073384731337,
+              51.853204683913646
+            ],
+            [
+              4.337904515129966,
+              51.88701313928648
+            ],
+            [
+              4.283248865063275,
+              51.91662043450299
+            ],
+            [
+              4.235427338076673,
+              51.882789939607406
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "6863895e-cd0e-4e4e-9ce7-34f068591e78",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-05T10:12:30.900000Z",
+        "incidence_deg": 43.55131298095876,
+        "view_azimuth_deg_raw": 311.1899853506938,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/79d74411-1851-4739-a171-6bfa2555eba2/2025-10-05-10-12-30_UMBRA-05/2025-10-05-10-12-30_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.3125218845380315,
+              51.9123681659612
+            ],
+            [
+              4.242270730111713,
+              51.900897219490766
+            ],
+            [
+              4.2608299200319975,
+              51.857448830562724
+            ],
+            [
+              4.331018079642943,
+              51.86890880673819
+            ],
+            [
+              4.3125218845380315,
+              51.9123681659612
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "4528f2a9-d363-48a3-877c-8adb5f72d7eb",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-08T10:59:49.700000Z",
+        "incidence_deg": 32.21966182969528,
+        "view_azimuth_deg_raw": 75.21916853190832,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/84dba8fe-5036-4464-866a-fe57ce1fdec4/2025-10-08-10-59-49_UMBRA-10/2025-10-08-10-59-49_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.330432185314524,
+              51.901536163642476
+            ],
+            [
+              4.259765866969462,
+              51.911986587143566
+            ],
+            [
+              4.242918853623663,
+              51.868271268408584
+            ],
+            [
+              4.31352057426151,
+              51.85783089816676
+            ],
+            [
+              4.330432185314524,
+              51.901536163642476
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "e0057bd4-f3ac-4839-a31f-443fab9e351e",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-15T21:29:25.500000Z",
+        "incidence_deg": 43.21168467091231,
+        "view_azimuth_deg_raw": 103.4398537516172,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/f6ee2ff9-1aff-4e2c-9e6f-c23edc0133b3/2025-10-15-21-29-25_UMBRA-08/2025-10-15-21-29-25_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.319381537278439,
+              51.90940730262156
+            ],
+            [
+              4.247050497323887,
+              51.905142915989195
+            ],
+            [
+              4.253973729614219,
+              51.860406567055776
+            ],
+            [
+              4.3262336500577545,
+              51.864666754919526
+            ],
+            [
+              4.319381537278439,
+              51.90940730262156
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "4c72cc33-4b86-4938-af37-8a309803445d",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-15T21:29:42.400000Z",
+        "incidence_deg": 39.21550870701586,
+        "view_azimuth_deg_raw": 84.55778895021655,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/44fad5f7-346f-4ba2-a122-ceb9d4eedca7/2025-10-15-21-29-42_UMBRA-08/2025-10-15-21-29-42_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.297744223679573,
+              51.915940799884794
+            ],
+            [
+              4.236509745801309,
+              51.891754565165485
+            ],
+            [
+              4.275592628420821,
+              51.85388048264504
+            ],
+            [
+              4.336796600992267,
+              51.87804655027835
+            ],
+            [
+              4.297744223679573,
+              51.915940799884794
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "f09de454-56bf-4337-972f-07c3393749ee",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-15T21:30:04.400000Z",
+        "incidence_deg": 39.477386179749885,
+        "view_azimuth_deg_raw": 57.455622091906854,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/44fad5f7-346f-4ba2-a122-ceb9d4eedca7/2025-10-15-21-30-04_UMBRA-08/2025-10-15-21-30-04_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.285901094226807,
+              51.85313928185375
+            ],
+            [
+              4.338007230222639,
+              51.88443201153014
+            ],
+            [
+              4.287422613614837,
+              51.91668852516541
+            ],
+            [
+              4.235314332041109,
+              51.88537356936698
+            ],
+            [
+              4.285901094226807,
+              51.85313928185375
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "be545b1c-d9c0-4d4a-9335-b6c6b39c7fe6",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-17T22:20:06.900000Z",
+        "incidence_deg": 42.92686760465523,
+        "view_azimuth_deg_raw": 225.8488434295168,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/3f954b7c-0e11-4e47-bab0-331b82fe306c/2025-10-17-22-20-06_UMBRA-09/2025-10-17-22-20-06_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.245782392980413,
+              51.865688920944315
+            ],
+            [
+              4.317700135431653,
+              51.85960039697851
+            ],
+            [
+              4.327578634427111,
+              51.90412368820437
+            ],
+            [
+              4.255591130718939,
+              51.91021818444339
+            ],
+            [
+              4.245782392980413,
+              51.865688920944315
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "dff90870-d1ff-4b68-9e34-c5ac283ca9ae",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-18T20:54:36.800001Z",
+        "incidence_deg": 33.69691514194969,
+        "view_azimuth_deg_raw": 277.79010468513684,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/46785abd-042b-4ae5-a1ef-3fd3e1bdf58a/2025-10-18-20-54-36_UMBRA-05/2025-10-18-20-54-36_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.332732724957407,
+              51.89895453209447
+            ],
+            [
+              4.263938136636651,
+              51.913412381072185
+            ],
+            [
+              4.240614536504508,
+              51.87085138204329
+            ],
+            [
+              4.309351679174175,
+              51.85640707376898
+            ],
+            [
+              4.332732724957407,
+              51.89895453209447
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "3421baf2-e129-49d4-bccb-b87167516b04",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-20T20:28:05.699999Z",
+        "incidence_deg": 37.42585737584818,
+        "view_azimuth_deg_raw": 108.7570773496542,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/e629d26c-6265-4654-9425-082f1a2b2ebb/2025-10-20-20-28-05_UMBRA-05/2025-10-20-20-28-05_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.318341635505805,
+              51.9099251351833
+            ],
+            [
+              4.246214369007942,
+              51.904499187287634
+            ],
+            [
+              4.255013319137499,
+              51.85988925354345
+            ],
+            [
+              4.327070272566032,
+              51.86530987400401
+            ],
+            [
+              4.318341635505805,
+              51.9099251351833
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "3753e133-1488-481e-aad6-4922dab3cd3e",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-21T11:02:05.400000Z",
+        "incidence_deg": 29.00239886146631,
+        "view_azimuth_deg_raw": 83.06890959838387,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/203b52d4-ed54-4693-b849-bdba505855e3/2025-10-21-11-02-05_UMBRA-10/2025-10-21-11-02-05_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.317532378283931,
+              51.91030953001736
+            ],
+            [
+              4.245593742789826,
+              51.903998259357934
+            ],
+            [
+              4.255822274904252,
+              51.859505251632385
+            ],
+            [
+              4.327691341823051,
+              51.86581034178168
+            ],
+            [
+              4.317532378283931,
+              51.91030953001736
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "8547675d-1a04-48af-9c3e-8026146efd63",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-22T10:54:33.800024Z",
+        "incidence_deg": 39.868251127324164,
+        "view_azimuth_deg_raw": 81.9309928223488,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/67e223f8-d1bc-422e-b5a5-b19f432ea0d8/2025-10-22-10-54-33_UMBRA-10/2025-10-22-10-54-33_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.3305440354395595,
+              51.90142283816316
+            ],
+            [
+              4.259949001457642,
+              51.91205589523946
+            ],
+            [
+              4.242806855761581,
+              51.868384521102676
+            ],
+            [
+              4.313337567925023,
+              51.85776168268013
+            ],
+            [
+              4.3305440354395595,
+              51.90142283816316
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "273f3d7e-4d7b-450e-83b2-8d842f6d1912",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-23T21:35:22.900000Z",
+        "incidence_deg": 42.925874218656894,
+        "view_azimuth_deg_raw": 103.67926298776091,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/80e4d618-3aa1-47d6-af54-580358b84dc1/2025-10-23-21-35-22_UMBRA-10/2025-10-23-21-35-22_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.313676575909596,
+              51.911939231856415
+            ],
+            [
+              4.242962986312121,
+              51.90161180562702
+            ],
+            [
+              4.2596760206657684,
+              51.857877287812805
+            ],
+            [
+              4.330324829450551,
+              51.86819477247185
+            ],
+            [
+              4.313676575909596,
+              51.911939231856415
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "864014f9-e047-4800-9786-b193b8b3e4be",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-23T21:36:31.300000Z",
+        "incidence_deg": 36.95353411266753,
+        "view_azimuth_deg_raw": 76.72124728470874,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/9f6fb829-c5d4-40c0-a074-288b4b8a01bd/2025-10-23-21-36-31_UMBRA-09/2025-10-23-21-36-31_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.260576253147999,
+              51.857544075351484
+            ],
+            [
+              4.330870126184598,
+              51.86875281643733
+            ],
+            [
+              4.312780300911735,
+              51.91227760594036
+            ],
+            [
+              4.242423024238432,
+              51.901058118868214
+            ],
+            [
+              4.260576253147999,
+              51.857544075351484
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "d0068130-8d69-4569-ad59-a049047207e5",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-24T22:07:00.200000Z",
+        "incidence_deg": 36.88729599507854,
+        "view_azimuth_deg_raw": 255.5503280146724,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/d69f612e-5f29-43ac-ad70-81db8263cb67/2025-10-24-22-07-00_UMBRA-08/2025-10-24-22-07-00_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.333690149570133,
+              51.897680842286235
+            ],
+            [
+              4.26599683651183,
+              51.91400595813949
+            ],
+            [
+              4.239654968695771,
+              51.87212443099926
+            ],
+            [
+              4.3072949547708825,
+              51.855814360376286
+            ],
+            [
+              4.333690149570133,
+              51.897680842286235
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "2e439c00-3577-47a9-a4b2-57091fef7633",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-26T20:27:40.299998Z",
+        "incidence_deg": 43.100697271083156,
+        "view_azimuth_deg_raw": 111.29002094796925,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/c4e1f45e-e364-47fc-9458-1a126aa92230/2025-10-26-20-27-40_UMBRA-05/2025-10-26-20-27-40_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.316946208609129,
+              51.91057826126658
+            ],
+            [
+              4.245159885522611,
+              51.90363543523823
+            ],
+            [
+              4.256408195987902,
+              51.8592367989352
+            ],
+            [
+              4.328125550232155,
+              51.866172840349755
+            ],
+            [
+              4.316946208609129,
+              51.91057826126658
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "f2615a93-e5b7-4b27-8f36-c52e312f3bc0",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-26T20:28:02.900000Z",
+        "incidence_deg": 36.28387533164524,
+        "view_azimuth_deg_raw": 81.11730786753674,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/0fdf3f4d-a084-4832-ab1b-85164dc06cc3/2025-10-26-20-28-02_UMBRA-05/2025-10-26-20-28-02_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.236305948167259,
+              51.87869970059935
+            ],
+            [
+              4.29667937019434,
+              51.853745418073125
+            ],
+            [
+              4.337034890267061,
+              51.8911044850948
+            ],
+            [
+              4.276633741403714,
+              51.91607930937255
+            ],
+            [
+              4.236305948167259,
+              51.87869970059935
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "a09b81cf-4a8c-4f7b-b485-659957ca4861",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-28T11:25:32.500000Z",
+        "incidence_deg": 41.47988546496472,
+        "view_azimuth_deg_raw": 303.7448647233217,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/b21aba93-d73f-4dae-a7da-f73613df1565/2025-10-28-11-25-32_UMBRA-08/2025-10-28-11-25-32_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.235529664503703,
+              51.88199720464651
+            ],
+            [
+              4.2913536397914545,
+              51.85326744640413
+            ],
+            [
+              4.337803969582932,
+              51.88780603117733
+            ],
+            [
+              4.281966811371031,
+              51.91655765381347
+            ],
+            [
+              4.235529664503703,
+              51.88199720464651
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "4d4125e4-22f6-454c-aac7-9670afbed7a5",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-30T11:18:10.500000Z",
+        "incidence_deg": 28.84123629311309,
+        "view_azimuth_deg_raw": 309.75603525099,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/3db1f65e-ec37-4dcb-bade-68b45df9fcab/2025-10-30-11-18-10_UMBRA-08/2025-10-30-11-18-10_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.291952040481955,
+              51.853305036322
+            ],
+            [
+              4.337743164941436,
+              51.888179405200134
+            ],
+            [
+              4.281362637384503,
+              51.91652252467865
+            ],
+            [
+              4.235586367667737,
+              51.8816263926889
+            ],
+            [
+              4.291952040481955,
+              51.853305036322
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "f56c7fa3-a07d-4abb-aae8-50024f736d85",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-30T22:16:34.200000Z",
+        "incidence_deg": 38.42021976894148,
+        "view_azimuth_deg_raw": 219.08195588829136,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/441d7e69-0903-4370-94d9-e1dba85699d2/2025-10-30-22-16-34_UMBRA-10/2025-10-30-22-16-34_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              4.258601111273487,
+              51.85830316742384
+            ],
+            [
+              4.329642043571422,
+              51.867530458438964
+            ],
+            [
+              4.3147570690272765,
+              51.91151754468818
+            ],
+            [
+              4.243649826372014,
+              51.90228131313068
+            ],
+            [
+              4.258601111273487,
+              51.85830316742384
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "rotterdam",
+        "stac_id": "170bb639-915a-4475-b061-04cfb2cc4fd2",
+        "platform": "Umbra-07",
+        "center_utc": "2025-11-19T21:05:15.400000Z",
+        "incidence_deg": 40.705649810002114,
+        "view_azimuth_deg_raw": 258.1459475666872,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/594deb7e-0d4e-4953-a482-6dfb841ccd64/2025-11-19-21-05-15_UMBRA-07/2025-11-19-21-05-15_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86985780296604,
+              1.2641836229232475
+            ],
+            [
+              103.8379381939786,
+              1.296009680194943
+            ],
+            [
+              103.80631758836456,
+              1.2638826860617085
+            ],
+            [
+              103.83823719003652,
+              1.2320570120110792
+            ],
+            [
+              103.86985780296604,
+              1.2641836229232475
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "20edbb8c-fac7-4b8e-9aa9-659b61efeae2",
+        "platform": "Umbra-08",
+        "center_utc": "2024-11-28T03:20:15.100000Z",
+        "incidence_deg": 33.98878526004155,
+        "view_azimuth_deg_raw": 134.73038992442807,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/a46eacc4-e110-4be5-871b-633590755261/2024-11-28-03-20-10_UMBRA-08/2024-11-28-03-20-10_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.82727990473161,
+              1.2339658016562443
+            ],
+            [
+              103.86796435230693,
+              1.253154555324211
+            ],
+            [
+              103.84889945705284,
+              1.2941034901662325
+            ],
+            [
+              103.80821451212805,
+              1.2749144419936904
+            ],
+            [
+              103.82727990473161,
+              1.2339658016562443
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "925509b6-6c07-4519-81ec-1cd5c51b7813",
+        "platform": "Umbra-08",
+        "center_utc": "2025-01-24T15:39:01.900000Z",
+        "incidence_deg": 31.953805025980877,
+        "view_azimuth_deg_raw": 244.8918692554067,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/e2c1de24-046f-4760-a939-73276a6aee71/2025-01-24-15-38-57_UMBRA-08/2025-01-24-15-38-57_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80849910522983,
+              1.25239529469023
+            ],
+            [
+              103.84965358867574,
+              1.2342503480042695
+            ],
+            [
+              103.86768191462414,
+              1.2756720964959838
+            ],
+            [
+              103.82652690420751,
+              1.293817324884821
+            ],
+            [
+              103.80849910522983,
+              1.25239529469023
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "bc99adec-b581-4041-9b6b-0727bb794708",
+        "platform": "Umbra-08",
+        "center_utc": "2025-01-29T03:40:03.900000Z",
+        "incidence_deg": 30.699427491148583,
+        "view_azimuth_deg_raw": 293.656087290603,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/260e22d3-e4ea-411a-b5fe-f210df04bdff/2025-01-29-03-39-59_UMBRA-08/2025-01-29-03-39-59_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.82233853799292,
+              1.2362645645161796
+            ],
+            [
+              103.86568046400744,
+              1.2481807769401712
+            ],
+            [
+              103.85384134212524,
+              1.2918044763344196
+            ],
+            [
+              103.81049874680802,
+              1.2798880690768994
+            ],
+            [
+              103.82233853799292,
+              1.2362645645161796
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "d90e2949-b264-4685-849f-acfb28eba95b",
+        "platform": "Umbra-07",
+        "center_utc": "2025-02-04T15:30:56.700000Z",
+        "incidence_deg": 44.70339387847971,
+        "view_azimuth_deg_raw": 254.72170147039625,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/f99fdc9a-8259-422d-9fd4-41ad5c344452/2025-02-04-15-30-51_UMBRA-07/2025-02-04-15-30-51_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.81467090928632,
+              1.2424263919418834
+            ],
+            [
+              103.85955836185448,
+              1.2404627991814496
+            ],
+            [
+              103.86150969422953,
+              1.285641995721917
+            ],
+            [
+              103.81662146735249,
+              1.2876056217332483
+            ],
+            [
+              103.81467090928632,
+              1.2424263919418834
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "a38c6a26-8e0e-4a51-a883-6be906f7012e",
+        "platform": "Umbra-07",
+        "center_utc": "2025-02-07T15:29:10.700000Z",
+        "incidence_deg": 42.27685758282526,
+        "view_azimuth_deg_raw": 272.4886613635708,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/4ccc1298-fc63-4ff0-ae43-04385d9f37ff/2025-02-07-15-29-05_UMBRA-07/2025-02-07-15-29-05_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.82717661160987,
+              1.2340036227526248
+            ],
+            [
+              103.86792677656318,
+              1.2530505849004434
+            ],
+            [
+              103.84900276127303,
+              1.294065664908606
+            ],
+            [
+              103.80825209484914,
+              1.2750184099601871
+            ],
+            [
+              103.82717661160987,
+              1.2340036227526248
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "4be2cd7f-ef6e-4fe3-bbb4-218f79227d13",
+        "platform": "Umbra-07",
+        "center_utc": "2025-02-11T15:25:45.600000Z",
+        "incidence_deg": 37.35190447341883,
+        "view_azimuth_deg_raw": 245.09010564945643,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/0fa0922c-b1a2-4e31-9f04-cc4dbc18323d/2025-02-11-15-25-40_UMBRA-07/2025-02-11-15-25-40_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86730711192573,
+              1.2765876828116844
+            ],
+            [
+              103.82561359399676,
+              1.2934416074577924
+            ],
+            [
+              103.80886877959888,
+              1.2514775999327965
+            ],
+            [
+              103.85056173620275,
+              1.234623940364958
+            ],
+            [
+              103.86730711192573,
+              1.2765876828116844
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "110225f2-8f0d-4b4a-8466-310f80c4a0ee",
+        "platform": "Umbra-08",
+        "center_utc": "2025-02-21T15:20:57.800000Z",
+        "incidence_deg": 30.864826925508574,
+        "view_azimuth_deg_raw": 111.88168702698447,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/312fced4-d705-40bc-9a67-b423a1aa23a4/2025-02-21-15-20-52_UMBRA-08/2025-02-21-15-20-52_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.8678711249364,
+              1.275164419355022
+            ],
+            [
+              103.82702772286372,
+              1.2940093887516468
+            ],
+            [
+              103.80830469022384,
+              1.2529009752837528
+            ],
+            [
+              103.84914758499922,
+              1.2340562962374484
+            ],
+            [
+              103.8678711249364,
+              1.275164419355022
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "222e6146-b379-4b6f-a0a0-46eeb3b720fa",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-21T15:23:15.900000Z",
+        "incidence_deg": 27.042164019709773,
+        "view_azimuth_deg_raw": 114.62763517004501,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/28229690-72e7-4048-bf48-a00d6e196a26/2025-03-21-15-23-10_UMBRA-08/2025-03-21-15-23-10_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86026736276585,
+              1.286927479869459
+            ],
+            [
+              103.81534035479095,
+              1.2863552753921752
+            ],
+            [
+              103.8159092525514,
+              1.2411370355710465
+            ],
+            [
+              103.86083548353538,
+              1.2417092303501485
+            ],
+            [
+              103.86026736276585,
+              1.286927479869459
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "99ab7bc2-89f0-4065-a13b-d1b098881764",
+        "platform": "Umbra-05",
+        "center_utc": "2025-03-25T14:03:21.199999Z",
+        "incidence_deg": 44.44541120434285,
+        "view_azimuth_deg_raw": 89.27500787293788,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/79de47b6-e42d-4af4-9c4d-83fbd3c97399/2025-03-25-14-03-16_UMBRA-05/2025-03-25-14-03-16_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85804866201619,
+              1.288910038658701
+            ],
+            [
+              103.81337061525592,
+              1.2841219746009462
+            ],
+            [
+              103.81812813884106,
+              1.2391543388158015
+            ],
+            [
+              103.86280542578776,
+              1.2439423221757657
+            ],
+            [
+              103.85804866201619,
+              1.288910038658701
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "ca49f4f3-057e-4293-81db-5e176d6c7163",
+        "platform": "Umbra-08",
+        "center_utc": "2025-03-29T03:17:10.400000Z",
+        "incidence_deg": 43.98895320443713,
+        "view_azimuth_deg_raw": 83.9222166452555,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/bbe009f2-3a85-4b6a-8a4b-2b46e3357de8/2025-03-29-03-17-05_UMBRA-08/2025-03-29-03-17-05_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80896244770452,
+              1.2512660354584029
+            ],
+            [
+              103.85077558843479,
+              1.234716752300166
+            ],
+            [
+              103.86721855265027,
+              1.2768014648650607
+            ],
+            [
+              103.82540484286757,
+              1.2933510090655091
+            ],
+            [
+              103.80896244770452,
+              1.2512660354584029
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "3468eff7-9cae-41d9-a216-c1dee348bf6f",
+        "platform": "Umbra-08",
+        "center_utc": "2025-05-02T03:43:51.800000Z",
+        "incidence_deg": 34.195840310327924,
+        "view_azimuth_deg_raw": 291.4667009236445,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/4d4fa923-c535-40d3-9e7c-7e476e4c1e04/2025-05-02-03-43-47_UMBRA-08/2025-05-02-03-43-47_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.83714397509084,
+              1.2320722161786803
+            ],
+            [
+              103.8698455102736,
+              1.2630832629024018
+            ],
+            [
+              103.83903429804775,
+              1.295997285355538
+            ],
+            [
+              103.80633271664011,
+              1.2649858560725866
+            ],
+            [
+              103.83714397509084,
+              1.2320722161786803
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "35f2203f-7d2c-4ceb-8a7a-3ce10534857f",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-06T14:32:10.900001Z",
+        "incidence_deg": 42.91518991481987,
+        "view_azimuth_deg_raw": 226.70478334156044,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/cb04da9e-5da7-4dbc-a14d-ea5585b8e43f/2025-05-06-14-32-05_UMBRA-05/2025-05-06-14-32-05_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.81184685149944,
+              1.24601142014731
+            ],
+            [
+              103.8559964087695,
+              1.237620167615998
+            ],
+            [
+              103.86433397381441,
+              1.2820566005829273
+            ],
+            [
+              103.82018369282882,
+              1.2904479928712862
+            ],
+            [
+              103.81184685149944,
+              1.24601142014731
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "1113e59c-798a-4acb-a185-de8d2c8cb66f",
+        "platform": "Umbra-10",
+        "center_utc": "2025-05-13T03:57:31.800000Z",
+        "incidence_deg": 21.44510590844807,
+        "view_azimuth_deg_raw": 280.6937224226942,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/04000751-a59b-411d-905d-320d6cea9f0e/2025-05-13-03-57-27_UMBRA-10/2025-05-13-03-57-27_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80720390413832,
+              1.2565434983471524
+            ],
+            [
+              103.84553204263257,
+              1.2329465590248185
+            ],
+            [
+              103.86897714254266,
+              1.2715235001422867
+            ],
+            [
+              103.83064865006784,
+              1.2951207806501044
+            ],
+            [
+              103.80720390413832,
+              1.2565434983471524
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "9e41c4e2-e24e-4945-b224-7ced5e6b2f23",
+        "platform": "Umbra-05",
+        "center_utc": "2025-05-15T02:29:55.699999Z",
+        "incidence_deg": 27.308404164696988,
+        "view_azimuth_deg_raw": 301.4535744583514,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/27e37604-655e-4f05-812a-5c23917abc62/2025-05-15-02-29-51_UMBRA-05/2025-05-15-02-29-51_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85815295921033,
+              1.2888249002314909
+            ],
+            [
+              103.81345520259579,
+              1.2842269575825842
+            ],
+            [
+              103.8180238331995,
+              1.239239483107231
+            ],
+            [
+              103.86272082864404,
+              1.2438373482284344
+            ],
+            [
+              103.85815295921033,
+              1.2888249002314909
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "11b33efd-f00c-4a2c-80bb-33315c73d7c3",
+        "platform": "Umbra-10",
+        "center_utc": "2025-05-20T03:33:51Z",
+        "incidence_deg": 44.03524451592902,
+        "view_azimuth_deg_raw": 84.1644049358212,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/7dec5bc9-9fc1-46f6-bd44-b3b38b4f01b5/2025-05-20-03-33-45_UMBRA-10/2025-05-20-03-33-45_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86984357043386,
+              1.2630648452127282
+            ],
+            [
+              103.8390498194752,
+              1.295995417098568
+            ],
+            [
+              103.80633179495698,
+              1.2650015620045643
+            ],
+            [
+              103.83712559296791,
+              1.2320713726538899
+            ],
+            [
+              103.86984357043386,
+              1.2630648452127282
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "14795289-efe1-4e52-9077-fa86b640574d",
+        "platform": "Umbra-08",
+        "center_utc": "2025-05-25T03:29:42.700000Z",
+        "incidence_deg": 22.88185233930298,
+        "view_azimuth_deg_raw": 136.73536848233815,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/1ade82f8-d541-4211-87e8-038498630dad/2025-05-25-03-29-38_UMBRA-08/2025-05-25-03-29-38_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80645866982351,
+              1.2670177042123028
+            ],
+            [
+              103.83512508028399,
+              1.232196130230182
+            ],
+            [
+              103.86972219283138,
+              1.261048360130409
+            ],
+            [
+              103.8410559268319,
+              1.2958703106727858
+            ],
+            [
+              103.80645866982351,
+              1.2670177042123028
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "1157073c-59a0-4d52-9b36-99ed1b363ad4",
+        "platform": "Umbra-08",
+        "center_utc": "2025-06-06T03:45:53.500000Z",
+        "incidence_deg": 42.395539278823684,
+        "view_azimuth_deg_raw": 320.3557268562759,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/b106b5fc-395d-4f3c-b8bd-3398b6fb10cd/2025-06-06-03-45-47_UMBRA-08/2025-06-06-03-45-47_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80634286713266,
+              1.2652461519003293
+            ],
+            [
+              103.83688526678928,
+              1.2320796280781712
+            ],
+            [
+              103.86983804842296,
+              1.2628200646599057
+            ],
+            [
+              103.8392957076943,
+              1.2959869706170355
+            ],
+            [
+              103.80634286713266,
+              1.2652461519003293
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "c9854718-8bd0-4dd2-a971-762146a413a2",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-11T02:30:40.500000Z",
+        "incidence_deg": 27.29340836690148,
+        "view_azimuth_deg_raw": 317.17405138309516,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/3de6f9cf-353d-40c6-ae79-9223056f0cce/2025-06-11-02-30-35_UMBRA-05/2025-06-11-02-30-35_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85995977153438,
+              1.2872253025849922
+            ],
+            [
+              103.81504445613533,
+              1.2860456585551958
+            ],
+            [
+              103.81621687029163,
+              1.2408391919419925
+            ],
+            [
+              103.86113140950866,
+              1.2420188159840853
+            ],
+            [
+              103.85995977153438,
+              1.2872253025849922
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "7ebd8554-837b-45d2-bf5e-ee552cdda663",
+        "platform": "Umbra-08",
+        "center_utc": "2025-06-16T03:21:35.200000Z",
+        "incidence_deg": 44.31030400861228,
+        "view_azimuth_deg_raw": 88.50524265415595,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/ccc28831-b2e3-47fc-bdf7-cdc3ff7eb67d/2025-06-16-03-21-30_UMBRA-08/2025-06-16-03-21-30_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86441369669909,
+              1.2819334353099272
+            ],
+            [
+              103.82030220251596,
+              1.2905289778776825
+            ],
+            [
+              103.81176252787085,
+              1.2461314407254958
+            ],
+            [
+              103.85587330097395,
+              1.237536041187951
+            ],
+            [
+              103.86441369669909,
+              1.2819334353099272
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "f6f338fb-3aa3-4935-bb9d-c9a75e13506a",
+        "platform": "Umbra-08",
+        "center_utc": "2025-06-22T03:22:41.900000Z",
+        "incidence_deg": 42.66363950093814,
+        "view_azimuth_deg_raw": 100.95706395704882,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/c9a6e76c-ebdb-4974-ade7-08f4704a7f8d/2025-06-22-03-22-37_UMBRA-08/2025-06-22-03-22-37_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.83466850011672,
+              1.2322439489183947
+            ],
+            [
+              103.86967495390311,
+              1.2605915747459657
+            ],
+            [
+              103.84151004970812,
+              1.2958255334858353
+            ],
+            [
+              103.80650342952144,
+              1.2674775333065558
+            ],
+            [
+              103.83466850011672,
+              1.2322439489183947
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "d5f938d3-78a1-42d5-b758-4138dd060258",
+        "platform": "Umbra-05",
+        "center_utc": "2025-06-26T14:31:09.900000Z",
+        "incidence_deg": 26.419389962117243,
+        "view_azimuth_deg_raw": 231.18110772750995,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/2d7c0ec4-8df7-412e-87d9-d3a6f7829e1a/2025-06-26-14-31-05_UMBRA-05/2025-06-26-14-31-05_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86102384538098,
+              1.2861595698226032
+            ],
+            [
+              103.81610330621193,
+              1.2871167420588614
+            ],
+            [
+              103.81515270352277,
+              1.241904999848366
+            ],
+            [
+              103.8600724661484,
+              1.2409478438310624
+            ],
+            [
+              103.86102384538098,
+              1.2861595698226032
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "02c57535-0055-4a95-9487-33f5419274ad",
+        "platform": "Umbra-10",
+        "center_utc": "2025-07-05T03:45:29.100000Z",
+        "incidence_deg": 23.484857794232795,
+        "view_azimuth_deg_raw": 91.21281063505258,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/f3633ba1-245d-449e-85a2-bd14b3b4085e/2025-07-05-03-45-24_UMBRA-10/2025-07-05-03-45-24_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86845728109631,
+              1.2734239605822861
+            ],
+            [
+              103.82875701805791,
+              1.2945994764176671
+            ],
+            [
+              103.80771844732763,
+              1.254641572952106
+            ],
+            [
+              103.84741827396475,
+              1.2334663742434786
+            ],
+            [
+              103.86845728109631,
+              1.2734239605822861
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "e17d8fd7-b3ba-45c2-b764-f9776305dd67",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-09T14:15:12.299999Z",
+        "incidence_deg": 41.50053352431594,
+        "view_azimuth_deg_raw": 117.9210730184684,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/1f394bf8-24d8-499b-bcf6-a9d9f0a73e66/2025-07-09-14-15-06_UMBRA-05/2025-07-09-14-15-06_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86399367242018,
+              1.2825422018067203
+            ],
+            [
+              103.81969621164951,
+              1.2901071362160603
+            ],
+            [
+              103.81218049641016,
+              1.2455224400951914
+            ],
+            [
+              103.85647722344115,
+              1.2379576320972847
+            ],
+            [
+              103.86399367242018,
+              1.2825422018067203
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "f894b295-2f4b-4170-b840-6aacb6c2eb41",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-14T14:12:56.199999Z",
+        "incidence_deg": 43.7524550901642,
+        "view_azimuth_deg_raw": 99.62991287110093,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/6f27b77c-a106-4aeb-9adb-dc427f215611/2025-07-14-14-12-51_UMBRA-05/2025-07-14-14-12-51_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.84044174897785,
+              1.2321458503766864
+            ],
+            [
+              103.86977109953483,
+              1.266403587896999
+            ],
+            [
+              103.83573405625316,
+              1.2959234537719757
+            ],
+            [
+              103.80640482054974,
+              1.2616653372214965
+            ],
+            [
+              103.84044174897785,
+              1.2321458503766864
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "4c6cba2c-1e85-4807-ad2e-569f7cda7ce4",
+        "platform": "Umbra-08",
+        "center_utc": "2025-07-20T15:45:15.800000Z",
+        "incidence_deg": 33.74445739329839,
+        "view_azimuth_deg_raw": 220.7511111857056,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/6a2ae365-6274-43c1-b6ee-fa7f6b2d5ff0/2025-07-20-15-45-10_UMBRA-08/2025-07-20-15-45-10_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.84788219682167,
+              1.2944511002734014
+            ],
+            [
+              103.80786448452838,
+              1.2738898077441034
+            ],
+            [
+              103.8282932427772,
+              1.2336127180499603
+            ],
+            [
+              103.86831049918402,
+              1.2541737001881936
+            ],
+            [
+              103.84788219682167,
+              1.2944511002734014
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "fc857552-3e88-4e75-9ba0-addf2ec8ac4f",
+        "platform": "Umbra-05",
+        "center_utc": "2025-07-24T02:19:48.699999Z",
+        "incidence_deg": 35.97894983038839,
+        "view_azimuth_deg_raw": 62.95613615578707,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/222c0a07-d2a8-477d-bd89-36f9e76d8760/2025-07-24-02-19-43_UMBRA-05/2025-07-24-02-19-43_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85903061215215,
+              1.2880773660798959
+            ],
+            [
+              103.8141967571008,
+              1.2851113450490441
+            ],
+            [
+              103.81714400933696,
+              1.2399868798048128
+            ],
+            [
+              103.86197709383572,
+              1.2429528506719423
+            ],
+            [
+              103.85903061215215,
+              1.2880773660798959
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "eb70e23b-1a45-4d6a-9bdc-8eb760ea5e73",
+        "platform": "Umbra-08",
+        "center_utc": "2025-07-29T15:26:08.800000Z",
+        "incidence_deg": 38.95330563580731,
+        "view_azimuth_deg_raw": 86.23940478489493,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/f33d15dc-09ec-47da-a06c-d4b5d71c00c7/2025-07-29-15-26-04_UMBRA-08/2025-07-29-15-26-04_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86837668591487,
+              1.2736806039722843
+            ],
+            [
+              103.82850087702234,
+              1.2945193012737213
+            ],
+            [
+              103.80779695611886,
+              1.254384719760713
+            ],
+            [
+              103.8476723178537,
+              1.2335463359216794
+            ],
+            [
+              103.86837668591487,
+              1.2736806039722843
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "8c3333fa-c8c2-4ebf-9c5b-b0ecde9b1d3d",
+        "platform": "Umbra-10",
+        "center_utc": "2025-08-15T15:42:59.200000Z",
+        "incidence_deg": 38.43782621290012,
+        "view_azimuth_deg_raw": 117.43917893023858,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/8ed8314c-f36f-4aa6-bd5a-a4a279232ac4/2025-08-15-15-42-59_UMBRA-10/2025-08-15-15-42-59_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86384563867995,
+              1.2827503227670534
+            ],
+            [
+              103.81948943080629,
+              1.289958123449572
+            ],
+            [
+              103.81232854510806,
+              1.2453143038291221
+            ],
+            [
+              103.85668401523179,
+              1.2381066237499654
+            ],
+            [
+              103.86384563867995,
+              1.2827503227670534
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "3aaa6309-9dce-4ad3-b79b-c4a80c67aaf1",
+        "platform": "Umbra-09",
+        "center_utc": "2025-08-16T15:38:46.900000Z",
+        "incidence_deg": 43.05372997523667,
+        "view_azimuth_deg_raw": 99.17127009611221,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/407c1757-23bb-467e-bbf1-d191bdcce09a/2025-08-16-15-38-46_UMBRA-09/2025-08-16-15-38-46_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86003614098377,
+              1.287150996331954
+            ],
+            [
+              103.81511713893943,
+              1.2861234925568517
+            ],
+            [
+              103.81613839546726,
+              1.2409133142301627
+            ],
+            [
+              103.86105662107448,
+              1.2419408005938948
+            ],
+            [
+              103.86003614098377,
+              1.287150996331954
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "6ba12abb-a55f-40a4-96fe-58e55574252f",
+        "platform": "Umbra-05",
+        "center_utc": "2025-08-25T02:18:34.799998Z",
+        "incidence_deg": 44.24782373717209,
+        "view_azimuth_deg_raw": 88.69805904314475,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/74df179c-6b10-4e77-84d7-bacaf6d57537/2025-08-25-02-18-34_UMBRA-05/2025-08-25-02-18-34_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86920645487771,
+              1.2704716515873604
+            ],
+            [
+              103.83168926282663,
+              1.2953546786438959
+            ],
+            [
+              103.80696704427251,
+              1.2575939335687942
+            ],
+            [
+              103.84448392972263,
+              1.2327112586722206
+            ],
+            [
+              103.86920645487771,
+              1.2704716515873604
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "ec8dd95a-bb4a-4697-864e-a5e535af0c2b",
+        "platform": "Umbra-09",
+        "center_utc": "2025-09-02T15:43:53.300000Z",
+        "incidence_deg": 41.55326156252515,
+        "view_azimuth_deg_raw": 123.38343865122424,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/1cd3ab67-0b74-4f18-b664-a6fdbc9e1f74/2025-09-02-15-43-53_UMBRA-09/2025-09-02-15-43-53_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.83313863868881,
+              1.2324484026767473
+            ],
+            [
+              103.86947071284871,
+              1.2590526523047951
+            ],
+            [
+              103.84303798258622,
+              1.2956208678009786
+            ],
+            [
+              103.80670566920358,
+              1.2690162535393492
+            ],
+            [
+              103.83313863868881,
+              1.2324484026767473
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "9f0ae880-5264-4256-bcf5-e845a085fbe8",
+        "platform": "Umbra-08",
+        "center_utc": "2025-09-08T15:54:43.200000Z",
+        "incidence_deg": 43.695815721302665,
+        "view_azimuth_deg_raw": 233.9628940392786,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/39753e5f-c3ae-4ca4-a22e-7e39834fd345/2025-09-08-15-54-43_UMBRA-08/2025-09-08-15-54-43_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86294966689569,
+              1.283939854573855
+            ],
+            [
+              103.81830756188259,
+              1.2890562305584403
+            ],
+            [
+              103.81322460508338,
+              1.2441246851643744
+            ],
+            [
+              103.8578659527545,
+              1.2390083953403157
+            ],
+            [
+              103.86294966689569,
+              1.283939854573855
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "c6ac67ce-c65a-44a1-a7d3-c8ddd5879680",
+        "platform": "Umbra-10",
+        "center_utc": "2025-09-19T15:40:23.900000Z",
+        "incidence_deg": 44.01252829280379,
+        "view_azimuth_deg_raw": 96.49626704401301,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/63a1bdcb-1471-4834-9659-4aff8be6297c/2025-09-19-15-40-23_UMBRA-10/2025-09-19-15-40-23_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.80707730815821,
+              1.2570887699001851
+            ],
+            [
+              103.84498913075588,
+              1.2328200810903756
+            ],
+            [
+              103.86910163855777,
+              1.2709779887508783
+            ],
+            [
+              103.83118948642098,
+              1.2952470246473342
+            ],
+            [
+              103.80707730815821,
+              1.2570887699001851
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "4ea4a5f1-bbb8-4be5-8090-34e78870a58f",
+        "platform": "Umbra-07",
+        "center_utc": "2025-09-26T02:55:37.500000Z",
+        "incidence_deg": 28.391716888748967,
+        "view_azimuth_deg_raw": 302.45670477661616,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/b5fe11ac-ed7f-4932-901c-c3ea47ca4ac6/2025-09-26-02-55-37_UMBRA-07/2025-09-26-02-55-37_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85188650923908,
+              1.2928350530326755
+            ],
+            [
+              103.809469948093,
+              1.2779203393191998
+            ],
+            [
+              103.8242886561318,
+              1.235228870815988
+            ],
+            [
+              103.86670460912575,
+              1.250143345882251
+            ],
+            [
+              103.85188650923908,
+              1.2928350530326755
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "f732c1fd-a8a8-4f50-91fa-c3bfd3f43be0",
+        "platform": "Umbra-10",
+        "center_utc": "2025-10-03T15:47:37Z",
+        "incidence_deg": 30.488379397697692,
+        "view_azimuth_deg_raw": 70.74279447320416,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/b0b41cc6-3df7-4716-a143-3554b69fe6c1/2025-10-03-15-47-37_UMBRA-10/2025-10-03-15-47-37_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86840023018327,
+              1.2736053986264069
+            ],
+            [
+              103.8285756001053,
+              1.2945430037674295
+            ],
+            [
+              103.80777340821993,
+              1.25445993114499
+            ],
+            [
+              103.84759759428103,
+              1.233522640549966
+            ],
+            [
+              103.86840023018327,
+              1.2736053986264069
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "1f924153-c469-42d6-8db2-a0db285bc4fa",
+        "platform": "Umbra-07",
+        "center_utc": "2025-10-10T14:31:50.200000Z",
+        "incidence_deg": 38.031446767539585,
+        "view_azimuth_deg_raw": 117.5804692748135,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/a8f88b0a-2ae3-4275-9057-3eaf3e710a51/2025-10-10-14-31-50_UMBRA-07/2025-10-10-14-31-50_UMBRA-07.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85356313931139,
+              1.2919585807830507
+            ],
+            [
+              103.81034070968305,
+              1.2796079607905626
+            ],
+            [
+              103.82261190593131,
+              1.2361054011167287
+            ],
+            [
+              103.86583367426695,
+              1.2484558197349962
+            ],
+            [
+              103.85356313931139,
+              1.2919585807830507
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "6df88501-bf64-4465-8eeb-0a56ac9f670d",
+        "platform": "Umbra-09",
+        "center_utc": "2025-10-17T15:45:35.200000Z",
+        "incidence_deg": 37.3452422457772,
+        "view_azimuth_deg_raw": 74.15061732388622,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/004da100-a5fa-4050-9fce-080bdb0b53ac/2025-10-17-15-45-35_UMBRA-09/2025-10-17-15-45-35_UMBRA-09.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.86789819399455,
+              1.2750878051395054
+            ],
+            [
+              103.82710270216248,
+              1.2940376007668681
+            ],
+            [
+              103.8082755184709,
+              1.252977406388235
+            ],
+            [
+              103.8490705060173,
+              1.2340279023837952
+            ],
+            [
+              103.86789819399455,
+              1.2750878051395054
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "fad5455b-925f-4c5d-a0dd-6c4e726a2a2d",
+        "platform": "Umbra-05",
+        "center_utc": "2025-10-18T14:32:50Z",
+        "incidence_deg": 32.81137768561899,
+        "view_azimuth_deg_raw": 114.77382635498843,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/b4d64c24-9599-45e5-b2e9-d0bb531b2924/2025-10-18-14-32-50_UMBRA-05/2025-10-18-14-32-50_UMBRA-05.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85037941913045,
+              1.2935184217358924
+            ],
+            [
+              103.80879104387182,
+              1.2764033762281906
+            ],
+            [
+              103.82579585131957,
+              1.2345454572509797
+            ],
+            [
+              103.8673836719963,
+              1.2516602342513483
+            ],
+            [
+              103.85037941913045,
+              1.2935184217358924
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "332ebdec-83bc-4838-ae98-eee55762af4f",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-24T15:43:11.900000Z",
+        "incidence_deg": 23.51077935552125,
+        "view_azimuth_deg_raw": 67.76134081083491,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/e367b6f3-f6e7-42da-84f2-b4dd9c9e42d0/2025-10-24-15-43-11_UMBRA-08/2025-10-24-15-43-11_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85162594565075,
+              1.2929600442687077
+            ],
+            [
+              103.80934577253106,
+              1.277658068317405
+            ],
+            [
+              103.82454923807101,
+              1.23510387134837
+            ],
+            [
+              103.86682881193333,
+              1.2504056032432271
+            ],
+            [
+              103.85162594565075,
+              1.2929600442687077
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "4f87fd78-3a88-4517-a36b-a6f668e7e2ab",
+        "platform": "Umbra-08",
+        "center_utc": "2025-10-26T15:38:06.300000Z",
+        "incidence_deg": 40.32753986525353,
+        "view_azimuth_deg_raw": 70.22222558213954,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/b0ea6b76-516d-4434-901d-36cc43237bfe/2025-10-26-15-38-06_UMBRA-08/2025-10-26-15-38-06_UMBRA-08.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.808757345184,
+              1.2517482845196037
+            ],
+            [
+              103.85029529632338,
+              1.234511256592658
+            ],
+            [
+              103.86742156546418,
+              1.2763189799009098
+            ],
+            [
+              103.82588306293546,
+              1.2935562779287644
+            ],
+            [
+              103.808757345184,
+              1.2517482845196037
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "e4234d91-3d6d-4de4-90d9-6ad57f865854",
+        "platform": "Umbra-10",
+        "center_utc": "2025-11-07T04:16:29.400000Z",
+        "incidence_deg": 40.35713187085129,
+        "view_azimuth_deg_raw": 292.4060989946255,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/2f23642f-e0d7-46ac-ab9e-c448d2665d40/2025-11-07-04-16-29_UMBRA-10/2025-11-07-04-16-29_UMBRA-10.stac.v2.json"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              103.85645205831567,
+              1.290125263008651
+            ],
+            [
+              103.81216212029712,
+              1.282515840209837
+            ],
+            [
+              103.81972277012441,
+              1.2379388421788653
+            ],
+            [
+              103.8640119749168,
+              1.2455481378432518
+            ],
+            [
+              103.85645205831567,
+              1.290125263008651
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "site_id": "singapore",
+        "stac_id": "82fd3fd6-620a-46b9-9115-ea2a6b878bea",
+        "platform": "Umbra-07",
+        "center_utc": "2025-11-18T02:32:34.500000Z",
+        "incidence_deg": 24.45892192170757,
+        "view_azimuth_deg_raw": 80.31291069173848,
+        "stac_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/d676ecef-d897-4a31-b3a2-d3ddd13ef9dc/2025-11-18-02-32-34_UMBRA-07/2025-11-18-02-32-34_UMBRA-07.stac.v2.json"
+      }
+    }
+  ]
+}

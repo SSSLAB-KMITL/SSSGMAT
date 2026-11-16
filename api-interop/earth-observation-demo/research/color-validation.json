@@ -1,0 +1,122 @@
+{
+  "verified_utc": "2026-11-15T04:06:05.913155+00:00",
+  "backend_tests": 20,
+  "frontend_tests": 7,
+  "worker_jobs": 6,
+  "samples": [
+    {
+      "site": "suvarnabhumi",
+      "scene_id": "f4fad495-82ca-452a-9141-18b538fd5fdc",
+      "products": {
+        "csi": {
+          "date": "2024-11-15T03:34:35.600000Z",
+          "source_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Suvarnabhumi%20International%20Airport%2C%20Thailand/9546c873-2084-458b-a431-406786270e0a/2024-11-15-03-34-29_UMBRA-08/2024-11-15-03-34-29_UMBRA-08_CSI.tif",
+          "valid_fraction": 0.7910881042480469,
+          "cloud_shadow_percent": null,
+          "png_checks": {
+            "preview": {
+              "sha256": "c56e57554fc30e3a6e9e30a1390eaae44291611fe252ebdabd5b7b969f1be975",
+              "bytes": 1280972
+            },
+            "roi": {
+              "sha256": "b684f7b3b397f4752a2f029a8cd5127f9c273bedf95353c1f2d62754bc7f0b85",
+              "bytes": 9517564
+            }
+          }
+        },
+        "optical": {
+          "date": "2024-11-16T03:54:25.290000Z",
+          "source_url": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/47/P/PR/2024/11/S2A_47PPR_20241116_0_L2A/TCI.tif",
+          "valid_fraction": 1.0,
+          "cloud_shadow_percent": 4.1839599609375,
+          "png_checks": {
+            "preview": {
+              "sha256": "33b132f54fccffe0fa9df65f3c7d39da4d2ce0574d882d67dfcac1c43fff9aaf",
+              "bytes": 2038013
+            },
+            "roi": {
+              "sha256": "18e332b6b212fdfd1e13ef22fc268209e28aa637b68115e88c64b1df433221ae",
+              "bytes": 1634517
+            }
+          }
+        }
+      }
+    },
+    {
+      "site": "rotterdam",
+      "scene_id": "2d8eef22-6818-4277-b131-addffbb83d9c",
+      "products": {
+        "csi": {
+          "date": "2024-12-21T11:07:20.200000Z",
+          "source_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Rotterdam%2C%20Netherlands/f1269ee5-c759-4ffe-bfd8-776d0e854e92/2024-12-21-11-07-15_UMBRA-08/2024-12-21-11-07-15_UMBRA-08_CSI.tif",
+          "valid_fraction": 0.5386810302734375,
+          "cloud_shadow_percent": null,
+          "png_checks": {
+            "preview": {
+              "sha256": "a84a7c8ed400b65deb720a8f5c9d0201e7444c6d541c9eb2afb0d08b12850d91",
+              "bytes": 844940
+            },
+            "roi": {
+              "sha256": "dab1546e2a8effa886e327ecee005db786508c18ee8d2216b88379ce1d6c7c24",
+              "bytes": 928056
+            }
+          }
+        },
+        "optical": {
+          "date": "2025-02-03T10:57:08.522000Z",
+          "source_url": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/31/U/ET/2025/2/S2C_31UET_20250203_0_L2A/TCI.tif",
+          "valid_fraction": 1.0,
+          "cloud_shadow_percent": 15.20233154296875,
+          "png_checks": {
+            "preview": {
+              "sha256": "6fddf601692b6fcb9c60a0a5e1e1a5ea0ca5ca04210c053f5c8fabf92c24871f",
+              "bytes": 2016036
+            },
+            "roi": {
+              "sha256": "86534beae7093d99436661488fd904c8833c4a10d6db80188006d6fae902356a",
+              "bytes": 130621
+            }
+          }
+        }
+      }
+    },
+    {
+      "site": "singapore",
+      "scene_id": "20edbb8c-fac7-4b8e-9aa9-659b61efeae2",
+      "products": {
+        "csi": {
+          "date": "2024-11-28T03:20:15.100000Z",
+          "source_url": "https://umbra-open-data-catalog.s3.us-west-2.amazonaws.com/sar-data/tasks/Port%20of%20Singapore%2C%20Singapore/a46eacc4-e110-4be5-871b-633590755261/2024-11-28-03-20-10_UMBRA-08/2024-11-28-03-20-10_UMBRA-08_CSI.tif",
+          "valid_fraction": 0.5000114440917969,
+          "cloud_shadow_percent": null,
+          "png_checks": {
+            "preview": {
+              "sha256": "5bc7b00cf0eebda5b9f0bf9bcb1dd637b7421063c016559ab200b6041020160e",
+              "bytes": 808839
+            },
+            "roi": {
+              "sha256": "fe3ccf7055aa3b550dd6f30eaef46e83dc3367d74d0625742279b514f0d06f26",
+              "bytes": 913653
+            }
+          }
+        },
+        "optical": {
+          "date": "2024-11-05T03:37:43.024000Z",
+          "source_url": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/48/N/UG/2024/11/S2B_48NUG_20241105_0_L2A/TCI.tif",
+          "valid_fraction": 1.0,
+          "cloud_shadow_percent": 12.48321533203125,
+          "png_checks": {
+            "preview": {
+              "sha256": "64138943f2389801e41f8fd73ea4f0ba55f51fbdfa58615d04d62431ec12a429",
+              "bytes": 2043658
+            },
+            "roi": {
+              "sha256": "b6541b0f18dd539e4a2d0751872aea75b065748330334a2de4bc787a62106186",
+              "bytes": 143847
+            }
+          }
+        }
+      }
+    }
+  ]
+}

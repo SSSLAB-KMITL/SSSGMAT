@@ -1,0 +1,1451 @@
+{
+  "date_bangkok": "2026-11-15",
+  "status": "146 acquisitions prepared from actual public imagery; research baseline only",
+  "sites": {
+    "suvarnabhumi": {
+      "catalog_scenes": 49,
+      "prepared_scenes": 49,
+      "geometry_scenes": 49,
+      "scenes": [
+        {
+          "id": "f4fad495-82ca-452a-9141-18b538fd5fdc",
+          "center_utc": "2024-11-15T03:34:35.600000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 306,
+          "altitude_km": 493.7814,
+          "geometry_downloaded_bytes": 104508
+        },
+        {
+          "id": "71636cc6-3993-439f-bd28-2b176bdc0c52",
+          "center_utc": "2024-11-18T15:38:06.500000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 209,
+          "altitude_km": 559.7063,
+          "geometry_downloaded_bytes": 140368
+        },
+        {
+          "id": "d0dc4eba-71c1-4829-a77f-2a0eae569774",
+          "center_utc": "2025-01-10T15:49:58.200000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 338,
+          "altitude_km": 497.2433,
+          "geometry_downloaded_bytes": 135765
+        },
+        {
+          "id": "bd490a96-1c08-43e5-9b8d-a22f47934eda",
+          "center_utc": "2025-01-13T04:17:59.600000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 286,
+          "altitude_km": 571.4375,
+          "geometry_downloaded_bytes": 146065
+        },
+        {
+          "id": "1c3ca28a-6ae4-40ec-ab37-f916a3fd6be3",
+          "center_utc": "2025-01-23T04:18:19.500000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 325,
+          "altitude_km": 572.2238,
+          "geometry_downloaded_bytes": 125508
+        },
+        {
+          "id": "da8f7829-4e63-4cb5-9ea8-e31d3fd972e7",
+          "center_utc": "2025-01-30T15:37:44.700000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 284,
+          "altitude_km": 563.6617,
+          "geometry_downloaded_bytes": 93423
+        },
+        {
+          "id": "0b61feb1-f28f-4fb8-987b-e7fa9237406e",
+          "center_utc": "2025-02-03T14:37:50.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 252,
+          "altitude_km": 490.0436,
+          "geometry_downloaded_bytes": 125523
+        },
+        {
+          "id": "681594ca-0d8f-458a-b55e-21fd63fd9346",
+          "center_utc": "2025-02-07T15:31:53.300000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 198,
+          "altitude_km": 562.7117,
+          "geometry_downloaded_bytes": 103489
+        },
+        {
+          "id": "248e029e-496e-4d4c-a1d9-17581136a70b",
+          "center_utc": "2025-02-11T15:29:27.900000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 231,
+          "altitude_km": 562.5207,
+          "geometry_downloaded_bytes": 110134
+        },
+        {
+          "id": "f97f18e0-3513-4984-bedb-372262154901",
+          "center_utc": "2025-02-21T15:24:31.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 330,
+          "altitude_km": 496.0348,
+          "geometry_downloaded_bytes": 117692
+        },
+        {
+          "id": "63b6a3ff-fbe9-444d-8243-5b5ddd36a509",
+          "center_utc": "2025-03-20T15:51:38.100000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 378,
+          "altitude_km": 487.4281,
+          "geometry_downloaded_bytes": 133199
+        },
+        {
+          "id": "b37e10d9-9c42-4477-bf83-dc2264bfef5f",
+          "center_utc": "2025-03-27T04:05:54.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 315,
+          "altitude_km": 480.1511,
+          "geometry_downloaded_bytes": 117687
+        },
+        {
+          "id": "b61eb44b-d0b7-49d2-a5f5-b4be7ed8febd",
+          "center_utc": "2025-04-01T15:23:14.300000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 341,
+          "altitude_km": 483.5601,
+          "geometry_downloaded_bytes": 108214
+        },
+        {
+          "id": "f9a85d17-97ad-47bc-9dfe-c0e77490f3a7",
+          "center_utc": "2025-04-16T02:25:37.400000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 298,
+          "altitude_km": 466.175,
+          "geometry_downloaded_bytes": 123957
+        },
+        {
+          "id": "8ba1f165-7cd8-4594-8590-8568fcfcb753",
+          "center_utc": "2025-05-01T14:12:07.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 352,
+          "altitude_km": 460.4477,
+          "geometry_downloaded_bytes": 101605
+        },
+        {
+          "id": "42d01728-9801-48a5-9015-3c3ff1068dcd",
+          "center_utc": "2025-05-08T15:47:59.100000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 291,
+          "altitude_km": 472.6222,
+          "geometry_downloaded_bytes": 105068
+        },
+        {
+          "id": "5c4ffa19-8f17-46f0-8cc6-957f9fa4cd6b",
+          "center_utc": "2025-05-13T03:54:09.100000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 369,
+          "altitude_km": 554.853,
+          "geometry_downloaded_bytes": 96956
+        },
+        {
+          "id": "cdf72ddc-bc9d-457d-bf00-c95687d03379",
+          "center_utc": "2025-05-15T02:26:54.900000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 420,
+          "altitude_km": 458.427,
+          "geometry_downloaded_bytes": 130542
+        },
+        {
+          "id": "66ef3e4b-34e2-4c5a-bf9a-45d06ac91f8d",
+          "center_utc": "2025-05-23T03:37:09.600000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 320,
+          "altitude_km": 566.402,
+          "geometry_downloaded_bytes": 113119
+        },
+        {
+          "id": "cc7ddc6b-5ef1-4d4a-875d-28c05a4b07a7",
+          "center_utc": "2025-05-25T03:36:58.500000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 304,
+          "altitude_km": 566.6815,
+          "geometry_downloaded_bytes": 122056
+        },
+        {
+          "id": "fe5703b0-f6a0-43c3-9de1-573731c8c9ba",
+          "center_utc": "2025-06-06T03:43:05.700000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 252,
+          "altitude_km": 467.4258,
+          "geometry_downloaded_bytes": 124027
+        },
+        {
+          "id": "aa1f05a6-7e67-4748-a73d-277dce4d94da",
+          "center_utc": "2025-06-13T15:42:33.300000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 363,
+          "altitude_km": 554.7608,
+          "geometry_downloaded_bytes": 154817
+        },
+        {
+          "id": "2e2c8dda-5378-47c2-891a-63b93488eccc",
+          "center_utc": "2025-06-16T02:35:21.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 255,
+          "altitude_km": 446.2582,
+          "geometry_downloaded_bytes": 109787
+        },
+        {
+          "id": "df3327be-d114-444f-bea6-7626d1719a49",
+          "center_utc": "2025-06-24T04:28:42.100000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 297,
+          "altitude_km": 552.1949,
+          "geometry_downloaded_bytes": 128206
+        },
+        {
+          "id": "f503b6bd-2771-4b85-a89a-0ad77609b184",
+          "center_utc": "2025-06-29T14:17:33.400000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 420,
+          "altitude_km": 450.6256,
+          "geometry_downloaded_bytes": 138180
+        },
+        {
+          "id": "7e4139ce-d8bc-4b77-bfb9-11732a2f53ba",
+          "center_utc": "2025-07-04T02:30:55.500000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 421,
+          "altitude_km": 442.1053,
+          "geometry_downloaded_bytes": 158427
+        },
+        {
+          "id": "16de2e50-f2ef-4763-a4d4-5c570f92738a",
+          "center_utc": "2025-07-09T14:18:38.299998Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 381,
+          "altitude_km": 446.7208,
+          "geometry_downloaded_bytes": 109797
+        },
+        {
+          "id": "0c5f4474-847b-44ca-8210-c4d54128dc98",
+          "center_utc": "2025-07-14T04:07:35.700000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 346,
+          "altitude_km": 459.1921,
+          "geometry_downloaded_bytes": 106213
+        },
+        {
+          "id": "e9bcb20c-3867-452d-a72f-4ecd9662e7ea",
+          "center_utc": "2025-07-21T16:11:16Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 280,
+          "altitude_km": 551.1436,
+          "geometry_downloaded_bytes": 122860
+        },
+        {
+          "id": "9a8aedbf-80ce-463d-b71d-5b42ba0802b4",
+          "center_utc": "2025-07-26T14:19:32.799998Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 377,
+          "altitude_km": 438.8642,
+          "geometry_downloaded_bytes": 153997
+        },
+        {
+          "id": "06ce7af5-741a-4b76-b886-52090232a778",
+          "center_utc": "2025-07-30T03:00:27Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 293,
+          "altitude_km": 437.962,
+          "geometry_downloaded_bytes": 148712
+        },
+        {
+          "id": "15c688ca-cc2e-47e4-9f11-a387ce020edf",
+          "center_utc": "2025-08-15T15:46:18Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 497,
+          "altitude_km": 549.9948,
+          "geometry_downloaded_bytes": 103662
+        },
+        {
+          "id": "0ce0d872-abdc-445f-b9bc-e3f4a10421cf",
+          "center_utc": "2025-08-25T03:26:43.100000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 408,
+          "altitude_km": 565.653,
+          "geometry_downloaded_bytes": 124525
+        },
+        {
+          "id": "feb63cce-b9f6-4441-b71e-d1a5341c64fd",
+          "center_utc": "2025-09-02T14:25:32.100000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 300,
+          "altitude_km": 424.2179,
+          "geometry_downloaded_bytes": 100741
+        },
+        {
+          "id": "9596a911-de71-48db-ae6d-6bfd00cee6a3",
+          "center_utc": "2025-09-08T04:10:47.300000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 241,
+          "altitude_km": 442.2801,
+          "geometry_downloaded_bytes": 130835
+        },
+        {
+          "id": "1d54ba99-911b-490a-a930-baa785993208",
+          "center_utc": "2025-09-18T15:09:30.900000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 376,
+          "altitude_km": 562.6416,
+          "geometry_downloaded_bytes": 158926
+        },
+        {
+          "id": "f23553a3-ddc7-4de4-8054-0292e2985bce",
+          "center_utc": "2025-09-19T15:44:37.600000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 340,
+          "altitude_km": 548.4228,
+          "geometry_downloaded_bytes": 111376
+        },
+        {
+          "id": "06a55a19-686e-4b4d-a276-7bb5ab40f888",
+          "center_utc": "2025-09-26T02:52:28.200000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 331,
+          "altitude_km": 561.0841,
+          "geometry_downloaded_bytes": 131045
+        },
+        {
+          "id": "9ce7ba30-67ac-479b-a5d1-6a5a6c098a50",
+          "center_utc": "2025-10-03T15:50:53Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 491,
+          "altitude_km": 545.616,
+          "geometry_downloaded_bytes": 104786
+        },
+        {
+          "id": "958c54bd-a195-4c02-ad9e-977526f63dbe",
+          "center_utc": "2025-10-10T14:35:08.200000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 281,
+          "altitude_km": 562.7305,
+          "geometry_downloaded_bytes": 155364
+        },
+        {
+          "id": "809d9740-0843-4427-90b4-8307f31361fb",
+          "center_utc": "2025-10-17T15:48:25.500000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 545,
+          "altitude_km": 543.2303,
+          "geometry_downloaded_bytes": 157350
+        },
+        {
+          "id": "e9555485-4732-4231-9a63-c5b807fdb281",
+          "center_utc": "2025-10-23T04:35:52.200000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 283,
+          "altitude_km": 541.8703,
+          "geometry_downloaded_bytes": 147182
+        },
+        {
+          "id": "6117bb81-6941-4c30-80a2-37f8bb7fdecc",
+          "center_utc": "2025-10-24T15:45:56.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 370,
+          "altitude_km": 410.168,
+          "geometry_downloaded_bytes": 119541
+        },
+        {
+          "id": "4122fdf5-3c65-450e-903f-0ac3d908f878",
+          "center_utc": "2025-10-26T03:58:51.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 267,
+          "altitude_km": 406.9624,
+          "geometry_downloaded_bytes": 113649
+        },
+        {
+          "id": "5657f3f6-2803-4035-8eea-e12a636d5433",
+          "center_utc": "2025-10-29T15:52:32Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 453,
+          "altitude_km": 541.0481,
+          "geometry_downloaded_bytes": 110315
+        },
+        {
+          "id": "341a0c75-300c-496f-8179-789a5bedee76",
+          "center_utc": "2025-10-31T03:18:43Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 357,
+          "altitude_km": 555.3691,
+          "geometry_downloaded_bytes": 116961
+        },
+        {
+          "id": "8178fd63-8f34-4a24-b64c-6fde51ae5a62",
+          "center_utc": "2025-11-07T16:16:12.400000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 176,
+          "altitude_km": 539.7098,
+          "geometry_downloaded_bytes": 98416
+        },
+        {
+          "id": "da29ea5f-d312-49fb-8733-5a0b46196f39",
+          "center_utc": "2025-11-11T02:50:41.300000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 226,
+          "altitude_km": 555.5412,
+          "geometry_downloaded_bytes": 104789
+        },
+        {
+          "id": "e264a486-7f98-4d55-8cea-229c0665649f",
+          "center_utc": "2025-11-16T04:33:19.700000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 324,
+          "altitude_km": 539.01,
+          "geometry_downloaded_bytes": 100704
+        }
+      ]
+    },
+    "rotterdam": {
+      "catalog_scenes": 55,
+      "prepared_scenes": 55,
+      "geometry_scenes": 55,
+      "scenes": [
+        {
+          "id": "2d8eef22-6818-4277-b131-addffbb83d9c",
+          "center_utc": "2024-12-21T11:07:20.200000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 388,
+          "altitude_km": 497.5861,
+          "geometry_downloaded_bytes": 109608
+        },
+        {
+          "id": "b7ced736-7644-4f53-85ca-628b2668c6da",
+          "center_utc": "2025-01-29T10:39:14.700000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 483,
+          "altitude_km": 577.086,
+          "geometry_downloaded_bytes": 143902
+        },
+        {
+          "id": "2f31da82-3110-40f4-9a77-e7713529e57b",
+          "center_utc": "2025-02-02T09:12:59.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 62,
+          "altitude_km": 501.9927,
+          "geometry_downloaded_bytes": 90683
+        },
+        {
+          "id": "f4049777-b7f6-45cb-a70e-3ac5002d515e",
+          "center_utc": "2025-02-07T10:48:29.600000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 48,
+          "altitude_km": 575.3345,
+          "geometry_downloaded_bytes": 139824
+        },
+        {
+          "id": "27a11f88-9d30-42c8-82dd-ca1d552a3b00",
+          "center_utc": "2025-02-11T10:48:44.200000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 361,
+          "altitude_km": 575.2489,
+          "geometry_downloaded_bytes": 151075
+        },
+        {
+          "id": "a474df22-48c0-43b4-b0bc-88e7ade87696",
+          "center_utc": "2025-02-16T10:50:49.200000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 203,
+          "altitude_km": 574.4274,
+          "geometry_downloaded_bytes": 143899
+        },
+        {
+          "id": "dff8326e-dace-414f-a25d-3487921187a8",
+          "center_utc": "2025-02-20T20:42:46.100000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 276,
+          "altitude_km": 496.8358,
+          "geometry_downloaded_bytes": 90674
+        },
+        {
+          "id": "b3d22236-a8ce-41e4-baf9-3f8b3fcf1935",
+          "center_utc": "2025-03-03T21:15:52.600000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 928,
+          "altitude_km": 499.5782,
+          "geometry_downloaded_bytes": 151085
+        },
+        {
+          "id": "607477f7-3ddb-4e25-8b15-6ae0d7d8aba2",
+          "center_utc": "2025-03-07T10:35:32.800000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 557,
+          "altitude_km": 497.3815,
+          "geometry_downloaded_bytes": 131619
+        },
+        {
+          "id": "84e664cd-8d21-4bcc-8bc0-d46cb49ebaea",
+          "center_utc": "2025-03-20T10:38:54.800000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1681,
+          "altitude_km": 567.6767,
+          "geometry_downloaded_bytes": 90647
+        },
+        {
+          "id": "1c50494f-523f-4529-9a5c-8c78cf62e734",
+          "center_utc": "2025-03-23T21:26:48.400000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1752,
+          "altitude_km": 568.1687,
+          "geometry_downloaded_bytes": 151083
+        },
+        {
+          "id": "e8d1c57e-2f9d-4958-b897-af8772691e70",
+          "center_utc": "2025-03-28T20:42:33.900000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1566,
+          "altitude_km": 480.598,
+          "geometry_downloaded_bytes": 123434
+        },
+        {
+          "id": "cff5d022-06ad-4b48-893a-3801bae10aea",
+          "center_utc": "2025-05-01T09:59:49.400000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 779,
+          "altitude_km": 468.9446,
+          "geometry_downloaded_bytes": 127684
+        },
+        {
+          "id": "dba36c55-39f6-40d6-a130-4d47325f40f2",
+          "center_utc": "2025-05-05T09:23:17Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 552,
+          "altitude_km": 467.9155,
+          "geometry_downloaded_bytes": 133836
+        },
+        {
+          "id": "207d70e6-0522-4cf6-9026-311e4053d29c",
+          "center_utc": "2025-05-10T21:15:41.600000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 526,
+          "altitude_km": 477.9974,
+          "geometry_downloaded_bytes": 129720
+        },
+        {
+          "id": "abd5c342-674e-4734-b8b8-d7903a0c7028",
+          "center_utc": "2025-05-18T09:57:33.299998Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 119,
+          "altitude_km": 465.3713,
+          "geometry_downloaded_bytes": 103110
+        },
+        {
+          "id": "0763c385-1935-45d8-a1fe-3db042454af9",
+          "center_utc": "2025-05-20T22:10:02Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 161,
+          "altitude_km": 562.0831,
+          "geometry_downloaded_bytes": 125622
+        },
+        {
+          "id": "99e80f46-ec7b-417e-9db7-8fdd8783cbe3",
+          "center_utc": "2025-05-25T21:44:51.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 514,
+          "altitude_km": 477.4276,
+          "geometry_downloaded_bytes": 113355
+        },
+        {
+          "id": "b4e551bf-a2ff-4b7c-9905-5a5d05ce9d4b",
+          "center_utc": "2025-06-06T09:55:37.400000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 265,
+          "altitude_km": 458.4923,
+          "geometry_downloaded_bytes": 144073
+        },
+        {
+          "id": "d4c732e3-7ac8-45dd-8a7e-450aeaf83d4e",
+          "center_utc": "2025-06-10T09:54:26.300000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 426,
+          "altitude_km": 573.5871,
+          "geometry_downloaded_bytes": 96940
+        },
+        {
+          "id": "00748bc9-48aa-489e-850e-28981aefb87b",
+          "center_utc": "2025-06-15T22:07:50.200000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 848,
+          "altitude_km": 559.0053,
+          "geometry_downloaded_bytes": 105135
+        },
+        {
+          "id": "4581a963-39c7-4d8e-8a60-bd8d5360741a",
+          "center_utc": "2025-06-22T10:49:54.500002Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 346,
+          "altitude_km": 558.3309,
+          "geometry_downloaded_bytes": 96432
+        },
+        {
+          "id": "650781db-fbdb-4367-8db8-7ce391ea3ad9",
+          "center_utc": "2025-06-25T20:02:09.100000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 103,
+          "altitude_km": 455.5682,
+          "geometry_downloaded_bytes": 150194
+        },
+        {
+          "id": "5f370b42-bc18-421a-948b-444d5656e4d0",
+          "center_utc": "2025-07-04T09:58:59.500000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 171,
+          "altitude_km": 570.2527,
+          "geometry_downloaded_bytes": 96955
+        },
+        {
+          "id": "ab3a7e5a-297e-4947-9553-7d10aa08d836",
+          "center_utc": "2025-07-09T20:42:58.600000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1577,
+          "altitude_km": 450.0557,
+          "geometry_downloaded_bytes": 96973
+        },
+        {
+          "id": "a6bccaa4-2617-4185-a214-e82d705ebfaa",
+          "center_utc": "2025-07-14T10:04:56Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 683,
+          "altitude_km": 446.1472,
+          "geometry_downloaded_bytes": 97498
+        },
+        {
+          "id": "66529464-113e-42d8-a390-4be49d57e96d",
+          "center_utc": "2025-07-19T21:13:41Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 134,
+          "altitude_km": 465.6563,
+          "geometry_downloaded_bytes": 138950
+        },
+        {
+          "id": "92c41b3b-85c4-45ce-a6a9-c3718e01147b",
+          "center_utc": "2025-07-26T11:32:30.400000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1164,
+          "altitude_km": 556.6013,
+          "geometry_downloaded_bytes": 130250
+        },
+        {
+          "id": "ed11b545-7e68-4b1e-ae7d-b9c44e9267fa",
+          "center_utc": "2025-07-29T11:17:17Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 779,
+          "altitude_km": 462.2976,
+          "geometry_downloaded_bytes": 105674
+        },
+        {
+          "id": "20fe5832-4f99-497d-b259-5a7516ddf824",
+          "center_utc": "2025-08-03T10:54:39.700000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 740,
+          "altitude_km": 556.2413,
+          "geometry_downloaded_bytes": 146621
+        },
+        {
+          "id": "cd4972f4-0d47-4d39-a854-6873e3b8ccf1",
+          "center_utc": "2025-08-21T10:59:38.600000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 249,
+          "altitude_km": 556.3352,
+          "geometry_downloaded_bytes": 138446
+        },
+        {
+          "id": "e4d28e1c-1639-4364-b928-5731ba884221",
+          "center_utc": "2025-08-28T20:30:39.900000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1161,
+          "altitude_km": 569.037,
+          "geometry_downloaded_bytes": 97490
+        },
+        {
+          "id": "886d18e1-75fa-4229-a0e7-1d72186dc9db",
+          "center_utc": "2025-08-28T21:27:38.700000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1626,
+          "altitude_km": 454.2331,
+          "geometry_downloaded_bytes": 97486
+        },
+        {
+          "id": "e8f2df92-35e2-4b71-8994-097af2b1eaad",
+          "center_utc": "2025-09-10T21:34:22.500000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 958,
+          "altitude_km": 554.3351,
+          "geometry_downloaded_bytes": 97516
+        },
+        {
+          "id": "56b30b31-8884-4bcc-b53a-c831c917312c",
+          "center_utc": "2025-09-18T22:22:11.600000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 696,
+          "altitude_km": 553.2548,
+          "geometry_downloaded_bytes": 102605
+        },
+        {
+          "id": "a423b660-7d54-4e6c-a890-f992249bff8f",
+          "center_utc": "2025-09-24T20:46:18Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 80,
+          "altitude_km": 417.0394,
+          "geometry_downloaded_bytes": 105178
+        },
+        {
+          "id": "6863895e-cd0e-4e4e-9ce7-34f068591e78",
+          "center_utc": "2025-10-05T10:12:30.900000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 55,
+          "altitude_km": 400.0447,
+          "geometry_downloaded_bytes": 130252
+        },
+        {
+          "id": "4528f2a9-d363-48a3-877c-8adb5f72d7eb",
+          "center_utc": "2025-10-08T10:59:49.700000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 590,
+          "altitude_km": 549.0863,
+          "geometry_downloaded_bytes": 113866
+        },
+        {
+          "id": "e0057bd4-f3ac-4839-a31f-443fab9e351e",
+          "center_utc": "2025-10-15T21:29:25.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1331,
+          "altitude_km": 424.8142,
+          "geometry_downloaded_bytes": 133299
+        },
+        {
+          "id": "4c72cc33-4b86-4938-af37-8a309803445d",
+          "center_utc": "2025-10-15T21:29:42.400000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1357,
+          "altitude_km": 425.0549,
+          "geometry_downloaded_bytes": 150733
+        },
+        {
+          "id": "f09de454-56bf-4337-972f-07c3393749ee",
+          "center_utc": "2025-10-15T21:30:04.400000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1244,
+          "altitude_km": 425.3606,
+          "geometry_downloaded_bytes": 130243
+        },
+        {
+          "id": "be545b1c-d9c0-4d4a-9335-b6c6b39c7fe6",
+          "center_utc": "2025-10-17T22:20:06.900000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 684,
+          "altitude_km": 548.1587,
+          "geometry_downloaded_bytes": 134359
+        },
+        {
+          "id": "dff90870-d1ff-4b68-9e34-c5ac283ca9ae",
+          "center_utc": "2025-10-18T20:54:36.800001Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 153,
+          "altitude_km": 384.1294,
+          "geometry_downloaded_bytes": 101587
+        },
+        {
+          "id": "3421baf2-e129-49d4-bccb-b87167516b04",
+          "center_utc": "2025-10-20T20:28:05.699999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 467,
+          "altitude_km": 379.8889,
+          "geometry_downloaded_bytes": 104667
+        },
+        {
+          "id": "3753e133-1488-481e-aad6-4922dab3cd3e",
+          "center_utc": "2025-10-21T11:02:05.400000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 67,
+          "altitude_km": 547.6144,
+          "geometry_downloaded_bytes": 97500
+        },
+        {
+          "id": "8547675d-1a04-48af-9c3e-8026146efd63",
+          "center_utc": "2025-10-22T10:54:33.800024Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1166,
+          "altitude_km": 547.5081,
+          "geometry_downloaded_bytes": 127147
+        },
+        {
+          "id": "273f3d7e-4d7b-450e-83b2-8d842f6d1912",
+          "center_utc": "2025-10-23T21:35:22.900000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 501,
+          "altitude_km": 546.8305,
+          "geometry_downloaded_bytes": 122078
+        },
+        {
+          "id": "864014f9-e047-4800-9786-b193b8b3e4be",
+          "center_utc": "2025-10-23T21:36:31.300000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 630,
+          "altitude_km": 547.8131,
+          "geometry_downloaded_bytes": 138450
+        },
+        {
+          "id": "d0068130-8d69-4569-ad59-a049047207e5",
+          "center_utc": "2025-10-24T22:07:00.200000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 211,
+          "altitude_km": 416.1855,
+          "geometry_downloaded_bytes": 122054
+        },
+        {
+          "id": "2e439c00-3577-47a9-a4b2-57091fef7633",
+          "center_utc": "2025-10-26T20:27:40.299998Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 56,
+          "altitude_km": 368.8575,
+          "geometry_downloaded_bytes": 146679
+        },
+        {
+          "id": "f2615a93-e5b7-4b27-8f36-c52e312f3bc0",
+          "center_utc": "2025-10-26T20:28:02.900000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 61,
+          "altitude_km": 369.1858,
+          "geometry_downloaded_bytes": 105694
+        },
+        {
+          "id": "a09b81cf-4a8c-4f7b-b485-659957ca4861",
+          "center_utc": "2025-10-28T11:25:32.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 208,
+          "altitude_km": 412.7739,
+          "geometry_downloaded_bytes": 130236
+        },
+        {
+          "id": "4d4125e4-22f6-454c-aac7-9670afbed7a5",
+          "center_utc": "2025-10-30T11:18:10.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 94,
+          "altitude_km": 410.5902,
+          "geometry_downloaded_bytes": 115919
+        },
+        {
+          "id": "f56c7fa3-a07d-4abb-aae8-50024f736d85",
+          "center_utc": "2025-10-30T22:16:34.200000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1095,
+          "altitude_km": 545.7456,
+          "geometry_downloaded_bytes": 146656
+        },
+        {
+          "id": "170bb639-915a-4475-b061-04cfb2cc4fd2",
+          "center_utc": "2025-11-19T21:05:15.400000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 148,
+          "altitude_km": 559.3392,
+          "geometry_downloaded_bytes": 113858
+        }
+      ]
+    },
+    "singapore": {
+      "catalog_scenes": 42,
+      "prepared_scenes": 42,
+      "geometry_scenes": 42,
+      "scenes": [
+        {
+          "id": "20edbb8c-fac7-4b8e-9aa9-659b61efeae2",
+          "center_utc": "2024-11-28T03:20:15.100000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 202,
+          "altitude_km": 488.1602,
+          "geometry_downloaded_bytes": 97855
+        },
+        {
+          "id": "925509b6-6c07-4519-81ec-1cd5c51b7813",
+          "center_utc": "2025-01-24T15:39:01.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 659,
+          "altitude_km": 498.887,
+          "geometry_downloaded_bytes": 94755
+        },
+        {
+          "id": "bc99adec-b581-4041-9b6b-0727bb794708",
+          "center_utc": "2025-01-29T03:40:03.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 300,
+          "altitude_km": 501.5737,
+          "geometry_downloaded_bytes": 123440
+        },
+        {
+          "id": "d90e2949-b264-4685-849f-acfb28eba95b",
+          "center_utc": "2025-02-04T15:30:56.700000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 608,
+          "altitude_km": 564.3892,
+          "geometry_downloaded_bytes": 115215
+        },
+        {
+          "id": "a38c6a26-8e0e-4a51-a883-6be906f7012e",
+          "center_utc": "2025-02-07T15:29:10.700000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1034,
+          "altitude_km": 563.6958,
+          "geometry_downloaded_bytes": 143933
+        },
+        {
+          "id": "4be2cd7f-ef6e-4fe3-bbb4-218f79227d13",
+          "center_utc": "2025-02-11T15:25:45.600000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 331,
+          "altitude_km": 563.7467,
+          "geometry_downloaded_bytes": 141863
+        },
+        {
+          "id": "110225f2-8f0d-4b4a-8466-310f80c4a0ee",
+          "center_utc": "2025-02-21T15:20:57.800000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 351,
+          "altitude_km": 496.4144,
+          "geometry_downloaded_bytes": 96326
+        },
+        {
+          "id": "222e6146-b379-4b6f-a0a0-46eeb3b720fa",
+          "center_utc": "2025-03-21T15:23:15.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 458,
+          "altitude_km": 487.646,
+          "geometry_downloaded_bytes": 131639
+        },
+        {
+          "id": "99ab7bc2-89f0-4065-a13b-d1b098881764",
+          "center_utc": "2025-03-25T14:03:21.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 659,
+          "altitude_km": 480.0402,
+          "geometry_downloaded_bytes": 98889
+        },
+        {
+          "id": "ca49f4f3-057e-4293-81db-5e176d6c7163",
+          "center_utc": "2025-03-29T03:17:10.400000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1124,
+          "altitude_km": 480.4772,
+          "geometry_downloaded_bytes": 151087
+        },
+        {
+          "id": "3468eff7-9cae-41d9-a216-c1dee348bf6f",
+          "center_utc": "2025-05-02T03:43:51.800000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1911,
+          "altitude_km": 473.8221,
+          "geometry_downloaded_bytes": 123075
+        },
+        {
+          "id": "35f2203f-7d2c-4ceb-8a7a-3ce10534857f",
+          "center_utc": "2025-05-06T14:32:10.900001Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 838,
+          "altitude_km": 459.709,
+          "geometry_downloaded_bytes": 113345
+        },
+        {
+          "id": "1113e59c-798a-4acb-a185-de8d2c8cb66f",
+          "center_utc": "2025-05-13T03:57:31.800000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 407,
+          "altitude_km": 555.4699,
+          "geometry_downloaded_bytes": 99005
+        },
+        {
+          "id": "9e41c4e2-e24e-4945-b224-7ced5e6b2f23",
+          "center_utc": "2025-05-15T02:29:55.699999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 202,
+          "altitude_km": 458.4697,
+          "geometry_downloaded_bytes": 154321
+        },
+        {
+          "id": "11b33efd-f00c-4a2c-80bb-33315c73d7c3",
+          "center_utc": "2025-05-20T03:33:51Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1328,
+          "altitude_km": 554.704,
+          "geometry_downloaded_bytes": 157372
+        },
+        {
+          "id": "14795289-efe1-4e52-9077-fa86b640574d",
+          "center_utc": "2025-05-25T03:29:42.700000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 144,
+          "altitude_km": 470.7632,
+          "geometry_downloaded_bytes": 96984
+        },
+        {
+          "id": "1157073c-59a0-4d52-9b36-99ed1b363ad4",
+          "center_utc": "2025-06-06T03:45:53.500000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1511,
+          "altitude_km": 467.6422,
+          "geometry_downloaded_bytes": 104129
+        },
+        {
+          "id": "c9854718-8bd0-4dd2-a971-762146a413a2",
+          "center_utc": "2025-06-11T02:30:40.500000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 881,
+          "altitude_km": 447.8821,
+          "geometry_downloaded_bytes": 137951
+        },
+        {
+          "id": "7ebd8554-837b-45d2-bf5e-ee552cdda663",
+          "center_utc": "2025-06-16T03:21:35.200000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1557,
+          "altitude_km": 465.296,
+          "geometry_downloaded_bytes": 146095
+        },
+        {
+          "id": "f6f338fb-3aa3-4935-bb9d-c9a75e13506a",
+          "center_utc": "2025-06-22T03:22:41.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1653,
+          "altitude_km": 464.1758,
+          "geometry_downloaded_bytes": 96953
+        },
+        {
+          "id": "d5f938d3-78a1-42d5-b758-4138dd060258",
+          "center_utc": "2025-06-26T14:31:09.900000Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 36,
+          "altitude_km": 452.6022,
+          "geometry_downloaded_bytes": 113386
+        },
+        {
+          "id": "02c57535-0055-4a95-9487-33f5419274ad",
+          "center_utc": "2025-07-05T03:45:29.100000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1400,
+          "altitude_km": 552.62,
+          "geometry_downloaded_bytes": 96936
+        },
+        {
+          "id": "e17d8fd7-b3ba-45c2-b764-f9776305dd67",
+          "center_utc": "2025-07-09T14:15:12.299999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 480,
+          "altitude_km": 448.2324,
+          "geometry_downloaded_bytes": 103632
+        },
+        {
+          "id": "f894b295-2f4b-4170-b840-6aacb6c2eb41",
+          "center_utc": "2025-07-14T14:12:56.199999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 334,
+          "altitude_km": 446.0736,
+          "geometry_downloaded_bytes": 97005
+        },
+        {
+          "id": "4c6cba2c-1e85-4807-ad2e-569f7cda7ce4",
+          "center_utc": "2025-07-20T15:45:15.800000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 777,
+          "altitude_km": 461.8613,
+          "geometry_downloaded_bytes": 119006
+        },
+        {
+          "id": "fc857552-3e88-4e75-9ba0-addf2ec8ac4f",
+          "center_utc": "2025-07-24T02:19:48.699999Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 642,
+          "altitude_km": 440.0986,
+          "geometry_downloaded_bytes": 146692
+        },
+        {
+          "id": "eb70e23b-1a45-4d6a-9bdc-8eb760ea5e73",
+          "center_utc": "2025-07-29T15:26:08.800000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1113,
+          "altitude_km": 458.4012,
+          "geometry_downloaded_bytes": 101588
+        },
+        {
+          "id": "8c3333fa-c8c2-4ebf-9c5b-b0ecde9b1d3d",
+          "center_utc": "2025-08-15T15:42:59.200000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 305,
+          "altitude_km": 550.8192,
+          "geometry_downloaded_bytes": 100575
+        },
+        {
+          "id": "3aaa6309-9dce-4ad3-b79b-c4a80c67aaf1",
+          "center_utc": "2025-08-16T15:38:46.900000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 903,
+          "altitude_km": 550.727,
+          "geometry_downloaded_bytes": 141066
+        },
+        {
+          "id": "6ba12abb-a55f-40a4-96fe-58e55574252f",
+          "center_utc": "2025-08-25T02:18:34.799998Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1132,
+          "altitude_km": 429.2187,
+          "geometry_downloaded_bytes": 116472
+        },
+        {
+          "id": "ec8dd95a-bb4a-4697-864e-a5e535af0c2b",
+          "center_utc": "2025-09-02T15:43:53.300000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 965,
+          "altitude_km": 550.1886,
+          "geometry_downloaded_bytes": 138482
+        },
+        {
+          "id": "9f0ae880-5264-4256-bcf5-e845a085fbe8",
+          "center_utc": "2025-09-08T15:54:43.200000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 840,
+          "altitude_km": 443.8161,
+          "geometry_downloaded_bytes": 103632
+        },
+        {
+          "id": "c6ac67ce-c65a-44a1-a7d3-c8ddd5879680",
+          "center_utc": "2025-09-19T15:40:23.900000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1554,
+          "altitude_km": 549.0054,
+          "geometry_downloaded_bytes": 97480
+        },
+        {
+          "id": "4ea4a5f1-bbb8-4be5-8090-34e78870a58f",
+          "center_utc": "2025-09-26T02:55:37.500000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 677,
+          "altitude_km": 561.3171,
+          "geometry_downloaded_bytes": 118003
+        },
+        {
+          "id": "f732c1fd-a8a8-4f50-91fa-c3bfd3f43be0",
+          "center_utc": "2025-10-03T15:47:37Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 958,
+          "altitude_km": 546.0729,
+          "geometry_downloaded_bytes": 105693
+        },
+        {
+          "id": "1f924153-c469-42d6-8db2-a0db285bc4fa",
+          "center_utc": "2025-10-10T14:31:50.200000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 533,
+          "altitude_km": 563.447,
+          "geometry_downloaded_bytes": 100578
+        },
+        {
+          "id": "6df88501-bf64-4465-8eeb-0a56ac9f670d",
+          "center_utc": "2025-10-17T15:45:35.200000Z",
+          "platform": "Umbra-09",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1107,
+          "altitude_km": 543.8064,
+          "geometry_downloaded_bytes": 102623
+        },
+        {
+          "id": "fad5455b-925f-4c5d-a0dd-6c4e726a2a2d",
+          "center_utc": "2025-10-18T14:32:50Z",
+          "platform": "Umbra-05",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 289,
+          "altitude_km": 379.8937,
+          "geometry_downloaded_bytes": 100571
+        },
+        {
+          "id": "332ebdec-83bc-4838-ae98-eee55762af4f",
+          "center_utc": "2025-10-24T15:43:11.900000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 666,
+          "altitude_km": 410.4567,
+          "geometry_downloaded_bytes": 157913
+        },
+        {
+          "id": "4f87fd78-3a88-4517-a36b-a6f668e7e2ab",
+          "center_utc": "2025-10-26T15:38:06.300000Z",
+          "platform": "Umbra-08",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 1379,
+          "altitude_km": 408.49,
+          "geometry_downloaded_bytes": 158436
+        },
+        {
+          "id": "e4234d91-3d6d-4de4-90d9-6ad57f865854",
+          "center_utc": "2025-11-07T04:16:29.400000Z",
+          "platform": "Umbra-10",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 895,
+          "altitude_km": 540.8939,
+          "geometry_downloaded_bytes": 116452
+        },
+        {
+          "id": "82fd3fd6-620a-46b9-9115-ea2a6b878bea",
+          "center_utc": "2025-11-18T02:32:34.500000Z",
+          "platform": "Umbra-07",
+          "roi_width_m": 250,
+          "candidate_count_unvalidated": 398,
+          "altitude_km": 556.9733,
+          "geometry_downloaded_bytes": 97501
+        }
+      ]
+    }
+  },
+  "sequences": [
+    {
+      "scene_id": "2e2c8dda-5378-47c2-891a-63b93488eccc",
+      "frame_count": 8,
+      "downloaded_bytes": 80129243,
+      "status": "experimental_aspect_sequence",
+      "gif_url": "/api/eo/scenes/2e2c8dda-5378-47c2-891a-63b93488eccc/files/sequence.gif",
+      "mp4_url": "/api/eo/scenes/2e2c8dda-5378-47c2-891a-63b93488eccc/files/sequence.mp4",
+      "warning": "Aspect sequence, not a validated time-domain video. Frames overlap; frame-to-time mapping, motion and speed are not validated. This chip is at the SICD scene centre, not the interactive GEC ROI. Playback speed is a presentation setting."
+    },
+    {
+      "scene_id": "f4fad495-82ca-452a-9141-18b538fd5fdc",
+      "frame_count": 8,
+      "downloaded_bytes": 56989756,
+      "status": "experimental_aspect_sequence",
+      "gif_url": "/api/eo/scenes/f4fad495-82ca-452a-9141-18b538fd5fdc/files/sequence.gif",
+      "mp4_url": "/api/eo/scenes/f4fad495-82ca-452a-9141-18b538fd5fdc/files/sequence.mp4",
+      "warning": "Aspect sequence, not a validated time-domain video. Frames overlap; frame-to-time mapping, motion and speed are not validated. This chip is at the SICD scene centre, not the interactive GEC ROI. Playback speed is a presentation setting."
+    },
+    {
+      "scene_id": "2d8eef22-6818-4277-b131-addffbb83d9c",
+      "frame_count": 8,
+      "downloaded_bytes": 44280872,
+      "status": "experimental_aspect_sequence",
+      "gif_url": "/api/eo/scenes/2d8eef22-6818-4277-b131-addffbb83d9c/files/sequence.gif",
+      "mp4_url": "/api/eo/scenes/2d8eef22-6818-4277-b131-addffbb83d9c/files/sequence.mp4",
+      "warning": "Aspect sequence, not a validated time-domain video. Frames overlap; frame-to-time mapping, motion and speed are not validated. This chip is at the SICD scene centre, not the interactive GEC ROI. Playback speed is a presentation setting."
+    },
+    {
+      "scene_id": "20edbb8c-fac7-4b8e-9aa9-659b61efeae2",
+      "frame_count": 8,
+      "downloaded_bytes": 57835071,
+      "status": "experimental_aspect_sequence",
+      "gif_url": "/api/eo/scenes/20edbb8c-fac7-4b8e-9aa9-659b61efeae2/files/sequence.gif",
+      "mp4_url": "/api/eo/scenes/20edbb8c-fac7-4b8e-9aa9-659b61efeae2/files/sequence.mp4",
+      "warning": "Aspect sequence, not a validated time-domain video. Frames overlap; frame-to-time mapping, motion and speed are not validated. This chip is at the SICD scene centre, not the interactive GEC ROI. Playback speed is a presentation setting."
+    }
+  ],
+  "comparisons": [
+    {
+      "scene_id": "7ebd8554-837b-45d2-bf5e-ee552cdda663",
+      "reference_id": "6ba12abb-a55f-40a4-96fe-58e55574252f",
+      "shift_pixels": [
+        -19.0,
+        22.0
+      ],
+      "translation_m": [
+        -6.65266106442577,
+        7.7030812324929965
+      ],
+      "geometry_matched": true,
+      "incidence_difference_deg": 0.06248027144018664,
+      "azimuth_difference_deg": 0.1928163889888026,
+      "quality": "Unvalidated translation estimate; requires independent tie points. Display-intensity change only.",
+      "url": "/api/eo/scenes/7ebd8554-837b-45d2-bf5e-ee552cdda663/files/change.png",
+      "mean_absolute_intensity_change": 0.16953336965154345
+    },
+    {
+      "scene_id": "e0057bd4-f3ac-4839-a31f-443fab9e351e",
+      "reference_id": "273f3d7e-4d7b-450e-83b2-8d842f6d1912",
+      "shift_pixels": [
+        -53.0,
+        33.0
+      ],
+      "translation_m": [
+        -18.557422969187673,
+        11.554621848739496
+      ],
+      "geometry_matched": true,
+      "incidence_difference_deg": 0.28581045225541857,
+      "azimuth_difference_deg": 0.23940923614370035,
+      "quality": "Unvalidated translation estimate; requires independent tie points. Display-intensity change only.",
+      "url": "/api/eo/scenes/e0057bd4-f3ac-4839-a31f-443fab9e351e/files/change.png",
+      "mean_absolute_intensity_change": 0.09235084416655957
+    },
+    {
+      "scene_id": "0ce0d872-abdc-445f-b9bc-e3f4a10421cf",
+      "reference_id": "341a0c75-300c-496f-8179-789a5bedee76",
+      "shift_pixels": [
+        -28.0,
+        49.0
+      ],
+      "translation_m": [
+        -7.0,
+        12.25
+      ],
+      "geometry_matched": true,
+      "incidence_difference_deg": 0.030878158861717964,
+      "azimuth_difference_deg": 0.06605619377018002,
+      "quality": "Unvalidated translation estimate; requires independent tie points. Display-intensity change only.",
+      "url": "/api/eo/scenes/0ce0d872-abdc-445f-b9bc-e3f4a10421cf/files/change.png",
+      "mean_absolute_intensity_change": 0.10500802887015787
+    }
+  ],
+  "validation_limits": [
+    "No calibrated sigma0 claimed for 8-bit GEC display intensity.",
+    "Candidates are not confirmed vehicle/vessel counts.",
+    "No precision/recall or 1 m registration acceptance claim.",
+    "No validated time-domain video or speed estimation."
+  ],
+  "data_root": "data/ (ignored in Git; regenerate with bootstrap.py)",
+  "source_sha256": {
+    "eo_engine/catalog.py": "8423af89f0694e2de7069b5147b217d7c1690353a628de8e298cc28781b86756",
+    "eo_engine/worker.py": "6a24f280f0456c3374ab6c3264a88087d49ad9ab3229acb03cd83cc50a731865",
+    "eo_engine/remote.py": "a97531b58f3b923446cd386051ecf928f1c09ba752e9c642d1e64e062d334737",
+    "eo_engine/sequence.py": "071e1b68179d572048bcce1a0cd644d2050ad5d6c2a6640c4a0c45eec3fc3184",
+    "eo_engine/__init__.py": "2ccaff60ffc4847ed8a6872251815844e172acb39efc1c48242d4cf34c40705e",
+    "eo_engine/pipeline.py": "525cf8fc531ffc230e9a9fd8748fc0e4f8924a5bbfcbaa8b2f8515b6ec3a4ca1",
+    "eo_engine/geometry.py": "fb10a3f7944e6f80a9645968683a0684450fa60c100ee996f5e5f9f2d3d17fe3"
+  }
+}

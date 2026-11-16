@@ -1,0 +1,263 @@
+{
+  "item_url": "https://maxar-opendata.s3.amazonaws.com/events/Earthquake-Myanmar-March-2025/ard/46/122000133323/2025-03-26/10500100415E6E00.json",
+  "item": {
+    "type": "Feature",
+    "stac_version": "1.0.0",
+    "stac_extensions": [
+      "https://stac-extensions.github.io/view/v1.0.0/schema.json",
+      "https://stac-extensions.github.io/projection/v1.0.0/schema.json",
+      "https://stac-extensions.github.io/eo/v1.0.0/schema.json",
+      "https://stac-extensions.github.io/raster/v1.1.0/schema.json",
+      "https://stac-extensions.github.io/grid/v1.0.0/schema.json"
+    ],
+    "id": "46/122000133323/10500100415E6E00",
+    "properties": {
+      "datetime": "2025-03-26 04:22:44Z",
+      "platform": "GE01",
+      "gsd": 0.46,
+      "ard_metadata_version": "0.0.1",
+      "catalog_id": "10500100415E6E00",
+      "utm_zone": 46,
+      "quadkey": "122000133323",
+      "view:off_nadir": 21.0,
+      "view:azimuth": 261.3,
+      "view:incidence_angle": 66.7,
+      "view:sun_azimuth": 132.4,
+      "view:sun_elevation": 62.8,
+      "proj:epsg": 32646,
+      "proj:geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              804843.75,
+              2405156.25
+            ],
+            [
+              804843.75,
+              2399843.75
+            ],
+            [
+              810156.25,
+              2399843.75
+            ],
+            [
+              810156.25,
+              2405156.25
+            ],
+            [
+              804843.75,
+              2405156.25
+            ]
+          ]
+        ]
+      },
+      "grid:code": "MXRA-Z46-122000133323",
+      "proj:bbox": [
+        804843.75,
+        2399843.75,
+        810156.25,
+        2405156.25
+      ],
+      "tile:data_area": 28.2,
+      "tile:clouds_area": 0.0,
+      "tile:clouds_percent": 0
+    },
+    "bbox": [
+      95.94571557233458,
+      21.67492000582201,
+      95.99799044664337,
+      21.723773097752535
+    ],
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            95.94669163281112,
+            21.723773097752535
+          ],
+          [
+            95.94571557233458,
+            21.67583897078357
+          ],
+          [
+            95.99699745548607,
+            21.67492000582201
+          ],
+          [
+            95.99799044664337,
+            21.722851899265326
+          ],
+          [
+            95.94669163281112,
+            21.723773097752535
+          ]
+        ]
+      ]
+    },
+    "links": [
+      {
+        "rel": "collection",
+        "href": "../../../acquisition_collections/10500100415E6E00_collection.json",
+        "type": "application/json"
+      },
+      {
+        "rel": "parent",
+        "href": "../../../acquisition_collections/10500100415E6E00_collection.json",
+        "type": "application/json"
+      },
+      {
+        "rel": "root",
+        "href": "../../../order_collections/6681515820951084061_root_collection.json",
+        "type": "application/json"
+      }
+    ],
+    "assets": {
+      "data-mask": {
+        "type": "application/geopackage+sqlite3",
+        "title": "Data Mask",
+        "href": "./10500100415E6E00-data-mask.gpkg",
+        "roles": [
+          "data-mask"
+        ]
+      },
+      "ms_analytic": {
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Multispectral Image",
+        "href": "./10500100415E6E00-ms.tif",
+        "proj:bbox": [
+          804843.75,
+          2399843.75,
+          810156.25,
+          2405156.25
+        ],
+        "proj:shape": [
+          3003,
+          3003
+        ],
+        "proj:transform": [
+          1.769064269064269,
+          0.0,
+          804843.75,
+          0.0,
+          -1.769064269064269,
+          2405156.25,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "eo:bands": [
+          {
+            "name": "BAND_B",
+            "common_name": "blue",
+            "description": "Blue"
+          },
+          {
+            "name": "BAND_G",
+            "common_name": "green",
+            "description": "Green"
+          },
+          {
+            "name": "BAND_R",
+            "common_name": "red",
+            "description": "Red"
+          },
+          {
+            "name": "BAND_N",
+            "common_name": "nir08",
+            "description": "Near Infrared 1"
+          }
+        ],
+        "roles": [
+          "data"
+        ]
+      },
+      "pan_analytic": {
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Panchromatic Image",
+        "href": "./10500100415E6E00-pan.tif",
+        "proj:bbox": [
+          804843.75,
+          2399843.75,
+          810156.25,
+          2405156.25
+        ],
+        "proj:shape": [
+          12012,
+          12012
+        ],
+        "proj:transform": [
+          0.44226606726606726,
+          0.0,
+          804843.75,
+          0.0,
+          -0.44226606726606726,
+          2405156.25,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "eo:bands": [
+          {
+            "name": "BAND_P",
+            "description": "Pan"
+          }
+        ],
+        "roles": [
+          "data"
+        ]
+      },
+      "visual": {
+        "type": "image/tiff; application=geotiff; profile=cloud-optimized",
+        "title": "Visual Image",
+        "href": "./10500100415E6E00-visual.tif",
+        "proj:bbox": [
+          804843.75,
+          2399843.75,
+          810156.25,
+          2405156.25
+        ],
+        "proj:shape": [
+          17408,
+          17408
+        ],
+        "proj:transform": [
+          0.30517578125,
+          0.0,
+          804843.75,
+          0.0,
+          -0.30517578125,
+          2405156.25,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "eo:bands": [
+          {
+            "name": "BAND_R",
+            "common_name": "red",
+            "description": "Red"
+          },
+          {
+            "name": "BAND_G",
+            "common_name": "green",
+            "description": "Green"
+          },
+          {
+            "name": "BAND_B",
+            "common_name": "blue",
+            "description": "Blue"
+          }
+        ],
+        "roles": [
+          "visual"
+        ]
+      }
+    },
+    "collection": "10500100415E6E00"
+  },
+  "asset_url": "https://maxar-opendata.s3.amazonaws.com/events/Earthquake-Myanmar-March-2025/ard/46/122000133323/2025-03-26/10500100415E6E00-visual.tif",
+  "lon": 95.977,
+  "lat": 21.704
+}
