@@ -497,6 +497,11 @@ describe("commands and panels", () => {
     act(() => useSelection.getState().select(GPS));
     runCommand("object.reportGraphManager");
     expect(opened.at(-1)).toEqual({ kind: RGM_KIND, params: { objectType: "Constellation", objects: [GPS] } });
+    // QA-02: เมนูของ Scenario (ราก "*") = Object Type All Types ไม่เลือก object ใด
+    act(() => useSelection.getState().select("*"));
+    expect(isEnabled("object.reportGraphManager")).toBe(true);
+    runCommand("object.reportGraphManager");
+    expect(opened.at(-1)).toEqual({ kind: RGM_KIND, params: { objectType: "All", objects: [] } });
     off();
     expect(isRegistered("analysis.reportGraphManager")).toBe(false);
   });

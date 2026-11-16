@@ -1,5 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { DockviewApi } from "dockview-react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../../src/api/client";
 import { t } from "../../src/labels/labels";
@@ -235,6 +237,52 @@ describe("openPanel", () => {
     const size = getPanelDef("propertiesBrowser")!.size!;
     expect(box).toMatchObject({ width: size.width, height: size.height });
     expectCentred(api, box);
+  });
+
+  // QA-05: Globe Manager (480 px) ล้นจอเล็ก ขอบล่าง (กลุ่ม OpenStreetMap) ถูกตัด: หน้าต่างลอยทุกบานสูงไม่เกินจอ - 80 และไม่เกินพื้นที่ที่ลอยได้
+  describe("the initial height of a floating window fits the screen (QA-05)", () => {
+    const realHeight = window.innerHeight;
+    const setInnerHeight = (h: number) => Object.defineProperty(window, "innerHeight", { value: h, configurable: true, writable: true });
+    afterEach(() => setInnerHeight(realHeight));
+
+    test("innerHeight 700: at most 620", async () => {
+      setInnerHeight(700);
+      const { api } = await mount();
+      act(() => api.layout(1600, 1200, true));
+      st().openPanel("globeManager");
+      expect(floatBox(api).height).toBeLessThanOrEqual(620);
+      expect(floatBox(api).height).toBe(getPanelDef("globeManager")!.size!.height); // สูงพอ: ขนาดตามที่กำหนด
+    });
+
+    test("a short screen: the window is cut to innerHeight - 80, still centred", async () => {
+      setInnerHeight(500);
+      const { api } = await mount();
+      act(() => api.layout(1600, 1200, true));
+      st().openPanel("globeManager");
+      const box = floatBox(api);
+      expect(box.height).toBe(420);
+      expect(box.width).toBe(getPanelDef("globeManager")!.size!.width);
+      expectCentred(api, box);
+    });
+
+    test("a short workspace (menus, toolbars and docked windows take the rest): no taller than the area it floats in", async () => {
+      const { api } = await mount();
+      act(() => api.layout(1600, 400, true));
+      st().openPanel("globeManager");
+      const box = floatBox(api);
+      expect(box.top).toBeGreaterThanOrEqual(0);
+      expect(box.top + box.height).toBeLessThanOrEqual(400);
+    });
+
+    test("the body of every floating window scrolls inside it", async () => {
+      const { api } = await mount();
+      act(() => api.layout(1600, 1200, true));
+      st().openPanel("globeManager");
+      expect(document.querySelector(".dv-resize-container .dv-content-container")).not.toBeNull();
+      const css = readFileSync(resolve(__dirname, "../../src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      const rule = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].find(([, sel]) => sel.split(",").some((s) => s.trim() === ".dv-resize-container .dv-content-container"));
+      expect(rule?.[2]).toMatch(/overflow:\s*auto/);
+    });
   });
 
   test("opens with the title and params it was given", async () => {

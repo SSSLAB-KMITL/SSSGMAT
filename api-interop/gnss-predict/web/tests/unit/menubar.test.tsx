@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CommandContextMenu } from "../../src/chrome/ContextMenu";
 import { MenuBar } from "../../src/chrome/MenuBar";
-import { OBJECT_MENU, SATELLITE_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
+import { OBJECT_MENU, SATELLITE_MENU, SCENARIO_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
 import { commandTooltip, registerCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -88,14 +88,28 @@ describe("menu contents", () => {
     expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
   });
 
-  test("the Facility, Constellation and Scenario menus keep their items", async () => {
+  test("the Facility and Constellation menus keep their items", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    for (const [path, label] of [["*/Facility/THBK", "Facility"], ["*/Constellation/GPS", "Constellation"], ["*", "Scenario"]] as const) {
+    for (const [path, label] of [["*/Facility/THBK", "Facility"], ["*/Constellation/GPS", "Constellation"]] as const) {
       act(() => useSelection.getState().select(path));
       const menu = await openMenu(user, label);
       expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent), label).toEqual([
         "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      ]);
+      await user.keyboard("{Escape}");
+    }
+  });
+
+  // QA-02: เมนูที่ชื่อ Scenario (ราก, ไม่เลือก, หรือ path ที่ไม่ใช่ object) คือเมนูของ Scenario ชุดเดียวกับคลิกขวาที่ราก
+  test("the Scenario menu (root, nothing or a non-object selected) is the Scenario's own menu", async () => {
+    const user = userEvent.setup();
+    render(<MenuBar />);
+    for (const path of ["*", null, "*/Group/GPS"]) {
+      act(() => useSelection.getState().select(path));
+      const menu = await openMenu(user, "Scenario");
+      expect(within(menu).getAllByRole("menuitem").map((m) => m.querySelector(".menu-label")?.textContent), String(path)).toEqual([
+        "Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario",
       ]);
       await user.keyboard("{Escape}");
     }
@@ -120,10 +134,16 @@ describe("menu contents", () => {
     expect(commands("Satellite")).toEqual([
       "object.properties", "object.sensorView", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
     ]);
-    for (const cls of ["Facility", "Constellation", "Scenario", undefined] as const) {
+    for (const cls of ["Facility", "Constellation", undefined] as const) {
       expect(objectMenuFor(cls), String(cls)).toBe(OBJECT_MENU);
     }
     expect(commands("Facility")).not.toContain("object.sensorView");
+    // QA-02: Scenario (ราก) มีเมนูของตัวเอง: ไม่มี Access..., Zoom To, Rename, Delete; Insert... / Close Scenario เป็นคำสั่งเดิมในชื่อของเมนู Scenario ของ STK
+    expect(objectMenuFor("Scenario")).toBe(SCENARIO_MENU);
+    expect(commands("Scenario")).toEqual(["object.properties", "object.reportGraphManager", "insert.new", "file.save", "file.saveAs", "file.close"]);
+    expect(SCENARIO_MENU.flatMap((e) => ("command" in e && e.label !== undefined ? [[e.command, e.label]] : []))).toEqual([
+      ["insert.new", "menu.scenario.insert"], ["file.close", "menu.scenario.closeScenario"],
+    ]);
   });
 
   test("sceneMenuFor (right-click in a 3D window) is short: a satellite and a facility have one, nothing else does", () => {
@@ -226,7 +246,8 @@ describe("disabled items", () => {
   test("Access... and Report & Graph Manager... of the class menu (built) carry no note while unregistered, and the registered reason once registered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    const menu = await openMenu(user, "Scenario");
+    act(() => useSelection.getState().select("*/Facility/THBK")); // เมนู Scenario ไม่มี Access... (QA-02) จึงดูที่เมนูของ Facility
+    const menu = await openMenu(user, "Facility");
     for (const name of ["Access...", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
     expect(commandTooltip("object.access")).toBeUndefined();
     expect(commandTooltip("object.reportGraphManager")).toBeUndefined();

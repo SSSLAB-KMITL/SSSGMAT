@@ -272,6 +272,34 @@ describe("the window", () => {
     expect(views()[0].params?.zoom).toBe(131072);
   });
 
+  // QA-03: คำแนะนำของช่อง Width ยาวกว่าแถบ (1280 px ก็ไม่พอ) ต้องเห็นครบ: แถวของตัวเองใต้แถบเครื่องมือ ตัดบรรทัดได้ ไม่อยู่ในแถบที่ไม่ตัดบรรทัด
+  test("the Width hint is shown in full: a wrapping row of its own under the toolbar row, not clipped inside the zoom group", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    const box = within(bar).getByRole("textbox", { name: t("sensorView.width") }) as HTMLInputElement;
+    await user.clear(box);
+    await user.type(box, "abc{Enter}");
+    const hint = screen.getByText(msg("sensorView.widthInvalid"));
+    expect(hint.textContent).toBe(msg("sensorView.widthInvalid")); // ข้อความเต็มอยู่ใน DOM
+    expect(hint.getAttribute("role")).toBe("status");
+    expect(hint.closest(".toolbar")).toBeNull(); // ไม่อยู่ในแถบ (flex แถวเดียว) ของ Zoom/Width
+    expect(hint.parentElement?.classList.contains("gfx-toolbars")).toBe(true); // แถบเครื่องมือของหน้าต่างตัดแถวได้ (flex-wrap)
+    expect(hint.getAttribute("style")).toBeNull();
+    // กฎ CSS ของคำแนะนำ: ไม่มี nowrap / overflow hidden / ellipsis และกินเต็มความกว้าง (ขึ้นแถวใหม่ใต้แถบ)
+    const css = readFileSync(resolve(__dirname, "../../src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel]) => sel.split(",").some((s) => s.trim() === ".sensor-view-width-hint"));
+    expect(rules.length).toBeGreaterThan(0);
+    const body = rules.map(([, , b]) => b).join(";");
+    expect(body).not.toMatch(/white-space:\s*nowrap/);
+    expect(body).not.toMatch(/overflow:\s*hidden/);
+    expect(body).not.toMatch(/text-overflow/);
+    expect(body).toMatch(/white-space:\s*normal/);
+    expect(body).toMatch(/flex:\s*1 0 100%/);
+  });
+
   test("the Width box shows the ground width now; Enter sets the zoom that gives the typed width at the sub-point; bad input reverts with a Thai hint", async () => {
     const user = userEvent.setup();
     await mount({ G01: ["Sensor1"] });

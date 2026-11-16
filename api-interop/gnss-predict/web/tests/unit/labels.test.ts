@@ -8,11 +8,13 @@ import { MSG_KEYS, msg, type MsgKey } from "../../src/labels/messages.th";
 const ref = readFileSync(resolve(__dirname, "../../../docs/2026-11-11-gnss-studio-stk-reference.md"), "utf8");
 /** ผลตรวจคำของ help.agi.com (Access, Report & Graph Manager, Style Properties, หน้าต่างรายงาน/กราฟ) หลักฐานของ stkHelp */
 const helpTerms = readFileSync(resolve(__dirname, "../../../docs/2026-11-15-stk-terms-access-reports.md"), "utf8");
+/** ผลตรวจคำของ help.agi.com ชุดที่สอง (เมนูคลิกขวาของ Scenario/object, ปุ่ม Properties ของ 3D/2D Window Defaults) หลักฐานของ stkHelp ด้วย (QA-02) */
+const menuTerms = readFileSync(resolve(__dirname, "../../../docs/2026-11-17-stk-terms-context-menus.md"), "utf8");
 
 // ---- ตรวจกับ STK reference (ข้อ 1-4 ตามบรีฟ) ----
 
 test("every stk label appears verbatim in the STK reference", () => {
-  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !(l.ref === STK_HELP_REF ? helpTerms : ref).includes(l.text)).map(([k]) => k);
+  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !(l.ref === STK_HELP_REF ? helpTerms + menuTerms : ref).includes(l.text)).map(([k]) => k);
   expect(missing).toEqual([]);
 });
 
@@ -275,7 +277,25 @@ function helpQuotes(doc: string): string[] {
   }
   return out;
 }
-const HELP_QUOTES = helpQuotes(helpTerms);
+/**
+ * คำในเครื่องหมาย `...` ของไฟล์ผลตรวจชุดที่สอง (2026-11-17) เฉพาะในหัวข้อที่ชื่อมี "ยืนยันตรงตัว" (จนถึงหัวข้อถัดไป)
+ * หัวข้อ "อนุมาน" ไม่ให้หลักฐาน; ข้อความที่มี "->" (ทางไปในเมนู เช่น View -> Toolbars) ไม่ใช่ชื่อเดียว ไม่นับ
+ */
+function verifiedTerms(doc: string): string[] {
+  const out: string[] = [];
+  let verified = false;
+  for (const line of doc.split("\n")) {
+    if (line.startsWith("#")) {
+      verified = line.includes("ยืนยันตรงตัว");
+      continue;
+    }
+    if (!verified) continue;
+    for (const m of line.matchAll(/`([^`]+)`/g)) if (!m[1].includes("->")) out.push(m[1]);
+  }
+  return out;
+}
+const MENU_QUOTES = verifiedTerms(menuTerms);
+const HELP_QUOTES = [...helpQuotes(helpTerms), ...MENU_QUOTES];
 
 /**
  * stkHelp ที่ไม่ตรงกับข้อความอ้างทั้งก้อน: อ้างส่วนหนึ่งของข้อความอ้างตรงตัว (ยาวไม่เกิน 60 ตัวอักษร และมีข้อความของ label อยู่ในนั้น)
@@ -300,6 +320,22 @@ describe("stk labels verified on help.agi.com", () => {
     expect(HELP_QUOTES).not.toContain("Generate as .txt file...");   // แถวไม่พบ
   });
 
+  test("the second help check (2026-11-17) counts only its verified sections", () => {
+    for (const term of ["Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario", "Set as Default Scenario", "3D Window Defaults", "2D Window Defaults"]) {
+      expect(MENU_QUOTES, term).toContain(term);
+    }
+    expect(MENU_QUOTES).not.toContain("Duplicate 3D Graphics Window"); // อยู่ในหัวข้อ 2.2 อนุมาน เท่านั้น
+    expect(MENU_QUOTES).not.toContain("View -> Toolbars");
+  });
+
+  // QA-02: ชื่อใหม่ของเมนู Scenario ยืนยันในผลตรวจชุดที่สองเท่านั้น (reference 11-11 ไม่แตะ)
+  test("Insert... and Close Scenario of the Scenario menu are stkHelp, verified in the 2026-11-17 check", () => {
+    for (const [k, text] of [["menu.scenario.insert", "Insert..."], ["menu.scenario.closeScenario", "Close Scenario"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "stk", ref: STK_HELP_REF });
+      expect(MENU_QUOTES, k).toContain(text);
+    }
+  });
+
   test("each stkHelp label equals a quoted help text, or quotes a part of one (HELP_EVIDENCE)", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
@@ -307,7 +343,11 @@ describe("stk labels verified on help.agi.com", () => {
       if (l.source !== "stk") { bad.push(`${k}: ${STK_HELP_REF} on an ours label`); continue; }
       const whole = HELP_QUOTES.includes(l.text);
       const quote = HELP_EVIDENCE[k as LabelKey];
-      if (whole) { if (quote !== undefined) bad.push(`${k}: HELP_EVIDENCE not needed`); continue; }
+      // หลักฐานที่ชี้ข้อความอ้างของชุด 2026-11-15 คงไว้ได้ แม้คำเดียวกันจะมีทั้งก้อนในชุด 2026-11-17 (คนละที่ เช่น Save ของเมนู Scenario ไม่ใช่ Save ของกราฟ)
+      if (whole && (quote === undefined || !MENU_QUOTES.includes(l.text) || helpQuotes(helpTerms).includes(l.text))) {
+        if (quote !== undefined) bad.push(`${k}: HELP_EVIDENCE not needed`);
+        continue;
+      }
       if (quote === undefined) bad.push(`${k}: "${l.text}" is not a quoted help text`);
       else if (!HELP_QUOTES.some((q) => q.includes(quote))) bad.push(`${k}: ${JSON.stringify(quote)} is not part of a quoted help text`);
       else if (!quote.includes(l.text)) bad.push(`${k}: ${JSON.stringify(quote)} does not contain "${l.text}"`);

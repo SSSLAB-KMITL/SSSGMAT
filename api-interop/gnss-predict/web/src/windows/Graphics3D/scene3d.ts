@@ -71,6 +71,7 @@ import {
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
+import { watchResize } from "../../cesium/resizeWatch";
 import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
 import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
@@ -390,6 +391,8 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     );
     this.homeView();
     this.refreshScene();
+    // ขนาดจริงของ element เปลี่ยน = resize, fov ของ Sensor View ตามสัดส่วนใหม่ แล้ววาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว)
+    this.offs.push(watchResize(el, viewer, () => this.updateSensorCamera()));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene3D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
     this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
   }

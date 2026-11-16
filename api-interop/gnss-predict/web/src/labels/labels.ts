@@ -7,6 +7,7 @@
 //          ไม่นับเศษของชื่อที่ยาวกว่า) และ reference ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู)
 //          ชื่อที่ reference เขียนกลางประโยคมีข้อความอ้างตรงตัวใน test (PROSE_EVIDENCE)
 //   stkHelp = ข้อความนี้ยืนยันตรงตัวบน help.agi.com ใน docs/2026-11-15-stk-terms-access-reports.md (ข้อความอ้างในเครื่องหมายคำพูดของแถวที่ไม่ใช่ "ไม่พบ")
+//          หรือใน docs/2026-11-17-stk-terms-context-menus.md (คำใน `...` ของหัวข้อ "ยืนยันตรงตัว" เท่านั้น ไม่นับหัวข้อ "อนุมาน")
 //          ใช้กับคำของ Report & Graph Manager / Style Properties / หน้าต่างรายงานและกราฟที่ reference §F ไม่มี (test ตรวจกับไฟล์นั้น HELP_EVIDENCE)
 //   ours = ที่เหลือทั้งหมด แม้ฟังดูเหมือน STK (เช่น "Save", "Basic - Description") เพราะ reference ไม่ได้ยืนยัน
 //          UI "Help → STK UI Reference" แสดงทั้งสองกลุ่ม และ About ติดป้าย "Added by GNSS Studio" ที่รายการ ours
@@ -90,6 +91,9 @@ const LABELS = {
   "menu.object.delete": stk("Delete", "B"),
   // STK ไม่มีคำสั่งมองผ่าน sensor (§G "View through a sensor" = NF; ใกล้สุดคือ Obscuration...) จึงเป็น ours
   "menu.object.sensorView": ours("Sensor View"),
+  // เมนูของ Scenario (โหนดราก, docs/2026-11-17-stk-terms-context-menus.md §1.1): ชื่อของคำสั่งเดิม (insert.new, file.close) ในเมนูนี้
+  "menu.scenario.insert": stkHelp("Insert..."),
+  "menu.scenario.closeScenario": stkHelp("Close Scenario"),
 
   "menu.utilities.fetchOrbitData": ours("Fetch Orbit Data..."),
   "menu.utilities.dailyForecastSettings": ours("Daily Forecast Settings..."),

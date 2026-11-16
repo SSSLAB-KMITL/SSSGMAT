@@ -261,6 +261,53 @@ describe("Camera display of a Sensor View", () => {
     mainScene.destroy();
   });
 
+  // QA-01: viewer ทุกตัวฟังขนาดจริงของ element ของมันเอง (cesium/resizeWatch.ts) ไม่พึ่งขนาดจาก Dockview อย่างเดียว
+  test("the 3D window and the Sensor View each watch their own element: a change resizes and redraws that viewer once per frame; destroy stops it", async () => {
+    const watched: { target: Element; callback: ResizeObserverCallback; disconnected: boolean }[] = [];
+    class Observer {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element): void {
+        watched.push({ target, callback: this.callback, disconnected: false });
+      }
+      unobserve(): void {}
+      disconnect(): void {
+        for (const w of watched) if (w.callback === this.callback) w.disconnected = true;
+      }
+    }
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("ResizeObserver", Observer);
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    try {
+      const { main, sensor, mainScene, sensorScene } = await mountBoth();
+      expect(watched).toHaveLength(2); // หน้าต่าง 3D (สร้างก่อน) แล้ว Sensor View
+      expect(watched[0].target).not.toBe(watched[1].target);
+      const spies = (v: FakeViewer) => ({ resize: vi.spyOn(v, "resize"), render: vi.spyOn(v.scene, "requestRender") });
+      const m = spies(main);
+      const s = spies(sensor);
+
+      // Sensor View เปลี่ยนขนาดสองครั้งในเฟรมเดียว (Dockview แบ่งคอลัมน์ แล้ว CSS layout นิ่งทีหลัง)
+      watched[1].callback([], {} as ResizeObserver);
+      watched[1].callback([], {} as ResizeObserver);
+      expect(frames).toHaveLength(1);
+      for (const cb of frames.splice(0)) cb(0);
+      expect(s.resize).toHaveBeenCalledTimes(1);
+      expect(s.render.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(s.resize.mock.invocationCallOrder[0]);
+      expect(m.resize).not.toHaveBeenCalled();
+
+      watched[0].callback([], {} as ResizeObserver);
+      for (const cb of frames.splice(0)) cb(0);
+      expect(m.resize).toHaveBeenCalledTimes(1);
+      expect(m.render.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(m.resize.mock.invocationCallOrder[0]);
+
+      sensorScene.destroy();
+      mainScene.destroy();
+      expect(watched.map((w) => w.disconnected)).toEqual([true, true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("hides everything in its own viewer only; Sensor brings back exactly what the scenario shows (user-hidden stays hidden)", async () => {
     const { main, sensor, mainScene, sensorScene } = await mountBoth();
     const mainBefore = shown(main);

@@ -3,6 +3,7 @@
 //
 // - analysis.reportGraphManager: ใช้ได้เมื่อมี scenario และพื้นที่ทำงาน mount แล้ว เปิดโดยไม่เปลี่ยน Object Type ของบานที่เปิดอยู่
 // - object.reportGraphManager: object ที่เลือกเป็น Facility / Satellite / Constellation ที่มีอยู่ใน doc = Object Type ตามชนิดนั้นและเลือก object นั้นไว้
+//   Scenario (ราก "*", เมนูของ Scenario: QA-02) = Object Type All Types ไม่เลือก object ใด
 // - openReportGraphManager ใช้ร่วมกับปุ่มใน Access tool (Object Type = Access และ access ที่ติ๊กอยู่)
 // - การเปลี่ยนแปลงของ My Styles (Copy / Delete / OK ของหน้าต่างแก้ style) แจ้งผ่าน useStyleRevision ให้ Manager อ่านรายการใหม่
 
@@ -38,11 +39,12 @@ export const useStyleRevision = create<{ revision: number; bump(): void }>()((se
 
 const CLASSES = ["Facility", "Satellite", "Constellation"] as const;
 
-/** object ที่เลือกเป็น Facility / Satellite / Constellation ที่มีอยู่ใน doc: [ชนิด, path] ไม่งั้น null */
-function selectedObject(): [RgmObjectType, string] | null {
+/** object ที่เลือกเป็น Facility / Satellite / Constellation ที่มีอยู่ใน doc: [ชนิด, path] Scenario (ราก) = ["All", null] ไม่งั้น null */
+function selectedObject(): [RgmObjectType, string | null] | null {
   const path = useSelection.getState().activePath;
   const doc = useScenario.getState().doc;
   if (path === null || doc === null) return null;
+  if (path === "*") return ["All", null];
   const obj = doc.objects.find((o) => `*/${o.class}/${o.name}` === path);
   const cls = CLASSES.find((c) => c === obj?.class);
   return cls === undefined ? null : [cls, path];
@@ -63,7 +65,7 @@ export function registerReportGraphManagerCommands(): () => void {
       label: COMMAND_LABELS["object.reportGraphManager"],
       run: () => {
         const sel = selectedObject();
-        if (sel !== null) openReportGraphManager({ objectType: sel[0], objects: [sel[1]] });
+        if (sel !== null) openReportGraphManager({ objectType: sel[0], objects: sel[1] === null ? [] : [sel[1]] });
       },
       enabled: () => ready() && selectedObject() !== null,
       tooltip: () => noScenario() ?? (selectedObject() === null ? msg("rgm.forObject") : undefined),

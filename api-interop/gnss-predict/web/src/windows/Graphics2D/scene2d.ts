@@ -41,6 +41,7 @@ import { indexAer, ippAt, ippSource, type IppIndex, type IppSource } from "../..
 import {
   fillMoved, fillStates, ippItems, Overlays2D, sensorFillStates, sensorItems, sensorKey, swathInputs, swathItems, terminatorItem, type FillState,
 } from "../../cesium/overlay2d";
+import { watchResize } from "../../cesium/resizeWatch";
 import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
 import type { AerRow } from "../../data/files";
@@ -205,6 +206,8 @@ class Scene2D implements Scene2DHandle {
     this.refreshScene();
     this.refreshIpp();
     this.redraw();
+    // ขนาดจริงของ element เปลี่ยน = resize + วาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว) เลิกฟังใน destroy() ก่อน destroyViewer
+    this.offs.push(watchResize(el, viewer));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene2D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
     this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
   }

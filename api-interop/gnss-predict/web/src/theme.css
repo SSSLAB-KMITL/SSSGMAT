@@ -1616,6 +1616,11 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* เนื้อของหน้าต่างลอยทุกบาน (QA-05): หน้าต่างที่สูงเกินจอถูกจำกัดความสูงตอนเปิด (layout/placement.ts floatingHeight) ส่วนที่เหลือเลื่อนดูในหน้าต่าง */
+.dv-resize-container .dv-content-container {
+  overflow: auto;
+}
+
 /* Globe Manager (src/windows/GlobeManager): ภาพฐาน + สี่กลุ่มตามแหล่ง (สวิตช์ + ตารางชั้นภาพ; กลุ่ม Cesium ion มีช่อง token และตัวเลือก asset) */
 .globe {
   box-sizing: border-box;
@@ -1877,11 +1882,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* คำแนะนำของช่อง Width (QA-03): แถวของตัวเองใต้แถบเครื่องมือ (.gfx-toolbars ตัดแถว) กว้างเต็มและตัดบรรทัดได้ ข้อความยาวจึงเห็นครบ */
 .sensor-view-width-hint {
-  margin-left: 6px;
+  flex: 1 0 100%;
+  min-width: 0;
   color: var(--menu-text);
   font-style: italic;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* คำแนะนำ Globe Manager ใน HUD (โหมด Camera ซูมลึกโดยไม่มีภาพออนไลน์) */

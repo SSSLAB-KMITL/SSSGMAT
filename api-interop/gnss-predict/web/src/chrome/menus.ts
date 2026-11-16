@@ -6,8 +6,11 @@ import type { LabelKey } from "../labels/labels";
 import type { RowClass } from "../windows/ObjectBrowser/tree";
 
 export type MenuEntry =
-  /** optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน) */
-  | { command: CommandId; optional?: boolean }
+  /**
+   * optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน)
+   * label: ชื่อของรายการในเมนูนี้แทนชื่อของคำสั่ง (คำสั่งเดียวกันที่ STK เรียกต่างกันตามเมนู เช่น Close ของ File = Close Scenario ของเมนู Scenario)
+   */
+  | { command: CommandId; optional?: boolean; label?: LabelKey }
   | { separator: true }
   /** เมนูย่อย (View → Toolbars ▸) */
   | { submenu: LabelKey; items: readonly MenuEntry[] }
@@ -56,7 +59,7 @@ export const INSERT_MENU: readonly MenuEntry[] = [
 
 export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];
 
-/** เมนูของ object ชนิดทั่วไป (Scenario, Facility, Constellation) */
+/** เมนูของ object ชนิดทั่วไป (Facility, Constellation) */
 export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.properties"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
@@ -84,10 +87,26 @@ export const SENSOR_MENU: readonly MenuEntry[] = [
 ];
 
 /**
+ * เมนูของ Scenario (โหนดรากของ Object Browser, QA-02): ตามเมนูคลิกขวาของ Scenario ของ STK (docs/2026-11-17-stk-terms-context-menus.md §1.1)
+ * เฉพาะที่แอปทำได้ ตามลำดับ Properties, Report & Graph Manager... (All Types), Insert..., Save, Save As..., Close Scenario
+ * ไม่มี Set as Default Scenario (ไม่รองรับ) และไม่มี Access..., Zoom To, Rename, Delete ของ object
+ */
+export const SCENARIO_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.reportGraphManager"),
+  SEPARATOR,
+  { command: "insert.new", label: "menu.scenario.insert" },
+  SEPARATOR,
+  cmd("file.save"), cmd("file.saveAs"),
+  SEPARATOR,
+  { command: "file.close", label: "menu.scenario.closeScenario" },
+];
+
+/**
  * เมนูตามชนิดของ object ที่เลือก: แถบเมนู (ชื่อเมนูที่ 6) และเมนูคลิกขวาของ Object Browser ใช้ชุดเดียวกันตามชนิดนี้
- * ชนิดที่ไม่มีเมนูของตัวเอง (และไม่เลือกอะไร) ใช้ OBJECT_MENU
+ * Scenario ใช้ SCENARIO_MENU ชนิดที่ไม่มีเมนูของตัวเอง (และไม่ระบุชนิด) ใช้ OBJECT_MENU
  */
 export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
+  if (cls === "Scenario") return SCENARIO_MENU;
   if (cls === "Sensor") return SENSOR_MENU;
   return cls === "Satellite" ? SATELLITE_MENU : OBJECT_MENU;
 }
