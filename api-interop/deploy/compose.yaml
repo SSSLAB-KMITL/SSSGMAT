@@ -1,0 +1,129 @@
+# Production: GNSS Studio + Gpredict Web + Earth Observation Studio หลัง Caddy (HTTPS + basic auth) — README.md
+#
+#   cp .env.example .env && แก้ค่าใน .env
+#   ./build.sh                 # build image ทั้งสามจาก commit ที่ระบุ (หรือ docker load image ที่ build มาจากเครื่องอื่น)
+#   docker compose up -d
+#
+# - เฉพาะ caddy ที่ publish port (80/443) แอปทั้งสามอยู่ใน network ภายในของ compose เท่านั้น
+# - ข้อมูลอยู่ใน named volume (ดู README หัวข้อ "ย้ายข้อมูลเดิมขึ้น") ไม่อยู่ใน image
+# - ทุก container: ไม่มี capability (caddy ได้เฉพาะ NET_BIND_SERVICE) และ no-new-privileges แอปรันเป็น uid 10001
+name: sss-apps
+
+x-hardening: &hardening
+  security_opt:
+    - "no-new-privileges:true"
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  caddy:
+    <<: *hardening
+    image: ${CADDY_IMAGE:-caddy:2.11.9}
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?ตั้ง ACME_EMAIL ใน .env}
+      HTTP_PORT: ${HTTP_PORT:-80}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?ตั้ง BASIC_AUTH_USER ใน .env}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?ตั้ง BASIC_AUTH_HASH ใน .env (caddy hash-password)}
+      GNSS_STUDIO_DOMAIN: ${GNSS_STUDIO_DOMAIN:?ตั้ง GNSS_STUDIO_DOMAIN ใน .env}
+      GPREDICT_WEB_DOMAIN: ${GPREDICT_WEB_DOMAIN:?ตั้ง GPREDICT_WEB_DOMAIN ใน .env}
+      EO_STUDIO_DOMAIN: ${EO_STUDIO_DOMAIN:?ตั้ง EO_STUDIO_DOMAIN ใน .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gnss-studio:
+        condition: service_started
+      gpredict-web:
+        condition: service_started
+      eo-studio:
+        condition: service_started
+
+  # เตรียม volume ครั้งแรก (root ครั้งเดียวแล้วจบ): ให้รากของทุก volume เป็นของ uid 10001 และสร้าง orbits/_cache ใน gnss_data
+  # ก่อน Docker สร้างจุด mount ของ celestrak_cache (ไม่งั้นโฟลเดอร์ orbits/ เป็นของ root และ GNSS Studio เขียนไม่ได้)
+  # ไม่ chown -R: ข้อมูลที่ย้ายขึ้นด้วย seed-volume.sh เป็นของ 10001 อยู่แล้ว
+  init-volumes:
+    image: ${EO_STUDIO_IMAGE:-eo-studio:prod}
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        set -eu;
+        mkdir -p /v/gnss/orbits/_cache;
+        chown 10001:10001 /v/gnss /v/gnss/orbits /v/gnss/orbits/_cache /v/gpredict /v/eo /v/cache;
+        echo init-volumes: ok
+    # CHOWN: เปลี่ยนเจ้าของ / DAC_OVERRIDE: สร้างโฟลเดอร์ใน volume ที่เป็นของ 10001 แล้ว (ย้ายข้อมูลขึ้นด้วย seed-volume.sh)
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    security_opt:
+      - "no-new-privileges:true"
+    network_mode: none
+    restart: "no"
+    volumes:
+      - gnss_data:/v/gnss
+      - gpredict_data:/v/gpredict
+      - eo_data:/v/eo
+      - celestrak_cache:/v/cache
+
+  gnss-studio:
+    <<: *hardening
+    image: ${GNSS_STUDIO_IMAGE:-gnss-studio:prod}
+    environment:
+      GNSS_STUDIO_PORT: "8000"
+      CESIUM_ION_TOKEN: ${CESIUM_ION_TOKEN:-}
+    volumes:
+      - gnss_data:/data
+      - celestrak_cache:/data/orbits/_cache
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+
+  gpredict-web:
+    <<: *hardening
+    image: ${GPREDICT_WEB_IMAGE:-gpredict-web:prod}
+    environment:
+      GPREDICT_WEB_PORT: "8740"
+    # rigctld/rotctld บนเครื่อง host: ตั้ง Host ใน Preferences → Interfaces เป็น host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - gpredict_data:/data
+      - celestrak_cache:/engine-data/orbits/_cache
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+
+  eo-studio:
+    <<: *hardening
+    image: ${EO_STUDIO_IMAGE:-eo-studio:prod}
+    volumes:
+      - eo_data:/data
+    # worker ประมวลผล SAR/YOLO ใช้หน่วยความจำมาก จำกัดไว้ไม่ให้กินเครื่องจนแอปอื่นล้ม (ปรับใน .env)
+    mem_limit: ${EO_STUDIO_MEM_LIMIT:-8g}
+    depends_on:
+      init-volumes:
+        condition: service_completed_successfully
+
+volumes:
+  caddy_data:
+  caddy_config:
+  gnss_data:
+  gpredict_data:
+  eo_data:
+  celestrak_cache:

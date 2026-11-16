@@ -1,0 +1,62 @@
+# Caddy: ทางเข้าเดียวของทั้งสามแอป (HTTPS อัตโนมัติจาก Let's Encrypt + basic auth) ค่าทั้งหมดมาจาก .env (README.md)
+#
+# แอปทั้งสามไม่มี login และกันคำขอข้ามเว็บไซต์ด้วย Host/Origin ที่ต้องเป็น 127.0.0.1:<port> ของตัวเอง proxy จึง:
+#   1. ตรวจ username/password (basic_auth) ก่อนส่งต่อทุกคำขอ
+#   2. เขียน Host เป็น 127.0.0.1:<port> ของแอป
+#   3. เขียน Origin เป็น http://127.0.0.1:<port> เฉพาะเมื่อ Origin คือหน้าเว็บของ proxy เอง (https://<host ที่เปิด>)
+#      Origin อื่นส่งผ่านตามเดิม ตัวกันในแอปจึงยังปฏิเสธคำสั่งจากเว็บไซต์อื่น (403) แม้ browser แนบรหัส basic auth ไปด้วย
+# ไม่บีบอัด /api/* และ /ws/* (SSE ของ GNSS Studio และ WebSocket ของ Gpredict Web ต้องส่งทันที)
+{
+	email {$ACME_EMAIL}
+	http_port {$HTTP_PORT:80}
+	https_port {$HTTPS_PORT:443}
+}
+
+(protected) {
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	@static not path /api/* /ws/*
+	encode @static zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# args: <port ของแอป> <ชื่อ service ใน compose>
+(app) {
+	@own_origin expression `{http.request.header.Origin} == "https://" + {http.request.hostport}`
+	request_header @own_origin Origin http://127.0.0.1:{args[0]}
+
+	reverse_proxy {args[1]}:{args[0]} {
+		header_up Host 127.0.0.1:{args[0]}
+	}
+}
+
+{$GNSS_STUDIO_DOMAIN} {
+	import protected
+	import app 8000 gnss-studio
+}
+
+{$GPREDICT_WEB_DOMAIN} {
+	import protected
+	# File → Quit ของ Gpredict Web หยุด server: ใน production ไม่ให้สั่งผ่านเว็บ (container ถูก restart อยู่แล้ว)
+	respond /api/quit 403
+	import app 8740 gpredict-web
+}
+
+{$EO_STUDIO_DOMAIN} {
+	import protected
+	import app 8018 eo-studio
+}

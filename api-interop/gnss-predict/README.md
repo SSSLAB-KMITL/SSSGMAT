@@ -1368,6 +1368,7 @@ GNSS_STUDIO_PORT=8010 docker compose up -d     # http://127.0.0.1:8010/
 ```
 
 ห้ามแก้เป็น `"8000:8000"` หรือ `0.0.0.0:...` (เปิดให้ทั้งเครือข่าย) ถ้าจำเป็นต้องใช้จากเครื่องอื่นให้ทำ reverse proxy ที่มี login และ HTTPS เอง
+(ทำไว้แล้วใน `api-interop/deploy/`: Caddy + HTTPS + basic auth รวมกับ Gpredict Web และ Earth Observation Studio ดู README ของโฟลเดอร์นั้น)
 proxy ต้องเขียน header `Host` เป็น `127.0.0.1:<port>` (ชื่ออื่นได้ 400 `Invalid host header`) ส่วนคำสั่งที่แก้ข้อมูลจาก browser จะมี Origin
 เป็นชื่อของ proxy ซึ่งตัวกัน Origin ปฏิเสธ (403) เสมอ: proxy ต้องเขียน `Origin` เป็น `http://127.0.0.1:<port>` เฉพาะคำขอที่ Origin เป็นของ proxy เอง
 (แบบ `web/devOrigin.ts`) และส่ง Origin อื่นผ่านไปตามเดิม ตัวกันจึงยังบล็อกคำสั่งข้ามเว็บไซต์ได้
