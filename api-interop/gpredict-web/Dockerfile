@@ -63,7 +63,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # tini: PID 1 ที่ส่งสัญญาณต่อและเก็บ process ลูกของ GMAT / ca-certificates: ดึง TLE (CelesTrak) และ transponder (SatNOGS) เมื่อผู้ใช้สั่ง
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates tini libgomp1 \
+ && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates curl tini libgomp1 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY api-interop/gpredict-web/docker/constraints.txt /tmp/pyreq/constraints.txt
