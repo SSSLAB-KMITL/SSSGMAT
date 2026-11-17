@@ -4,13 +4,18 @@
 
 `<out_dir>` must not exist yet (or be empty). It gets
 
-- `orbits/20261110T0000Z`   a copy of the engine's snapshot fixture (tests/fixtures/studio/snapshot)
+- `orbits/20261110T0000Z`   a copy of the engine's snapshot fixture (tests/fixtures/studio/snapshot) plus the hand-written
+                            imaging group files `weather.json`, `science.json` and `visual.json` (tests/fixtures/studio/imaging):
+                            the Satellite Catalog lists the imaging satellites X01..X08 (GNSS-only scenes keep their hash: plan Ruling a)
 - `settings.json`           the daily job switched OFF, written before any server starts on this folder
 - `scenarios/E2E`           thbk-gnss, 2026-11-10T00:00Z .. 06:00Z, with results (propagate + analyze for THBK) and
                             its THBK access marked `computed: true` (as the daily job does), so access lines and
                             Timeline rows are shown
 - `scenarios/E2E_NORES`     the same scenario without results (its template access stays `computed: false`)
 - `scenarios/E2E_EMPTY`     the "empty" template
+- `scenarios/E2E_IMG`       the "empty" template plus THBK, the imaging satellite Terra (`X04`, NORAD 25994) and its primary
+                            sensor `MODIS` (Rectangular 55.0 / 0.41 from the preset), with results (propagate + analyze for THBK):
+                            the e2e server has no GMAT, so the fixture "propagates" X04 with the made-up orbits (ข2 plan Ruling t)
 - `scenarios/E2E_ACCESS`    like `E2E` with results for THBK but no access at all (`accesses: []`): access-reports.spec
                             computes, clears and removes accesses itself and restores the document afterwards
 - `scenarios/E2E_SAVE`      the same as `E2E_ACCESS`, for the spec that saves a workbook (File -> Save) so the
@@ -47,12 +52,14 @@ PKG_ROOT = Path(__file__).resolve().parents[4]          # api-interop/gnss-predi
 sys.path[:0] = [str(PKG_ROOT), str(PKG_ROOT / "server")]  # python -I does not look next to the script or in the cwd
 
 from gnss_predict import studio                          # noqa: E402
+from gnss_predict.imaging import preset_by_norad         # noqa: E402
 from gnss_predict.propagate import Ephemeris             # noqa: E402
 from gnss_studio_server.daily import _mark_computed      # noqa: E402
 from gnss_studio_server.store import ScenarioStore       # noqa: E402
-from gnss_studio_server.templates import THBK, facility, new_scenario  # noqa: E402
+from gnss_studio_server.templates import DEFAULT_COLOR, THBK, facility, imaging_sensor, new_scenario, satellite  # noqa: E402
 
 SNAPSHOT_SRC = PKG_ROOT / "tests" / "fixtures" / "studio" / "snapshot"
+IMAGING_SRC = PKG_ROOT / "tests" / "fixtures" / "studio" / "imaging"   # weather/science/visual OMM เขียนเอง (ข2)
 SNAPSHOT = "20261110T0000Z"
 START, STOP = "2026-11-10T00:00:00Z", "2026-11-10T06:00:00Z"
 DATELINE_STOP = "2026-11-10T12:00:00Z"
@@ -71,9 +78,11 @@ SETTINGS = {
 
 MU_KM3_S2 = 398600.4418
 OMEGA_E = 7.2921151467e-5                     # rad/s
-RADIUS_KM = {"G": 26560.0, "R": 25508.0, "E": 29600.0, "C": 27906.0}
+# X = ดาวถ่ายภาพ LEO (ข2): ราว 705 km เหนือทรงกลม เอียง 98.2° แบบ Terra
+RADIUS_KM = {"G": 26560.0, "R": 25508.0, "E": 29600.0, "C": 27906.0, "X": 7076.0}
 GEO_RADIUS_KM = 42164.0
-INCLINATION_DEG = {"G": 55.0, "R": 64.8, "E": 56.0, "C": 55.0}
+INCLINATION_DEG = {"G": 55.0, "R": 64.8, "E": 56.0, "C": 55.0, "X": 98.2}
+TERRA_NORAD = 25994
 BEIDOU_GEO = {1, 2, 3, 4, 5, 59, 60, 61}      # the other BeiDou PRNs fly at RADIUS_KM["C"]
 GEO_LON_DEG = {1: 140.0, 2: 80.0, 3: 110.5, 4: 160.0, 5: 58.75, 59: 144.5, 60: 80.0, 61: 140.0}
 
@@ -210,6 +219,18 @@ def _with_results(store: ScenarioStore, out: Path, name: str, stop: str, facilit
         studio.run_analyze(scenario_dir, f["name"], out)
 
 
+def _with_imaging(store: ScenarioStore, out: Path) -> None:
+    """E2E_IMG: THBK + X04 (Terra) + Sensor MODIS ตาม preset (ลูกของ X04) มีผล propagate และ analyze ของ THBK (ไม่มี access)"""
+    terra = preset_by_norad(TERRA_NORAD)
+    doc = new_scenario("E2E_IMG", START, STOP, "empty", SNAPSHOT, out)
+    doc["objects"] += [facility(**THBK), satellite(terra.prn, terra.norad, DEFAULT_COLOR),
+                       imaging_sensor(terra.camera, f"*/Satellite/{terra.prn}", terra.sensor.definition())]
+    store.create("E2E_IMG", doc)
+    scenario_dir = out / "scenarios" / "E2E_IMG"
+    studio.run_propagate(scenario_dir, out)
+    studio.run_analyze(scenario_dir, THBK["name"], out)
+
+
 def _refuse_network(*_args, **_kwargs):
     raise RuntimeError("build_fixture.py must not use the network")
 
@@ -219,6 +240,8 @@ def build(out: Path) -> None:
         raise SystemExit(f"{out} is not empty; give build_fixture.py a folder that does not exist yet")
     out.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SNAPSHOT_SRC, out / "orbits" / SNAPSHOT)
+    for group in sorted(IMAGING_SRC.glob("*.json")):
+        shutil.copyfile(group, out / "orbits" / SNAPSHOT / group.name)
     (out / "settings.json").write_text(json.dumps(SETTINGS, separators=(",", ":")), encoding="utf-8")
 
     store = ScenarioStore(out)
@@ -238,6 +261,7 @@ def build(out: Path) -> None:
     _with_results(store, out, "E2E_ACCESS", STOP, [])
     _with_results(store, out, "E2E_SAVE", STOP, [])
     _with_results(store, out, "E2E_DATELINE", DATELINE_STOP, [DATELINE])
+    _with_imaging(store, out)
     _write_validation(out, store)
 
 

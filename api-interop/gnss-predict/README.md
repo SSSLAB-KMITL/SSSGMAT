@@ -148,7 +148,7 @@ GMAT (`SPICESGP4`) คำนวณตำแหน่งดาวทุกดว�
 รันจากโฟลเดอร์ `api-interop/gnss-predict`
 
 ```bash
-python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC]
+python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC[X]]
 python3 -m gnss_predict.studio propagate --scenario DIR [--data DIR]
 python3 -m gnss_predict.studio analyze   --scenario DIR --facility NAME [--data DIR]
 python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 FILE] [--facility NAME] [--data DIR]
@@ -158,7 +158,7 @@ python3 -m gnss_predict.studio report    --scenario DIR --style NAME --object PA
 
 | คำสั่ง | ทำอะไร | ผลลัพธ์ |
 |---|---|---|
-| `fetch` | ดึง OMM (JSON) ของ CelesTrak กลุ่ม `gps-ops`, `glo-ops`, `galileo`, `beidou`, IGS satellite metadata และไฟล์ broadcast รายวันของเมื่อวาน (UTC) จาก CDDIS | snapshot ใหม่ `<data>/orbits/<YYYYMMDDTHHMMZ>/` |
+| `fetch` | ดึง OMM (JSON) ของ CelesTrak กลุ่ม `gps-ops`, `glo-ops`, `galileo`, `beidou`, IGS satellite metadata และไฟล์ broadcast รายวันของเมื่อวาน (UTC) จาก CDDIS (`X` ใน `--systems` = ดึงกลุ่มดาวถ่ายภาพ `weather`, `science`, `visual` ด้วย: หัวข้อ 9.13) | snapshot ใหม่ `<data>/orbits/<YYYYMMDDTHHMMZ>/` |
 | `propagate` | สร้างรายชื่อดาวจาก snapshot ที่ระบุใน `orbit_snapshot` ของ scenario แล้ว propagate ดาวที่แสดงด้วย GMAT | `<scenario>/ephem/<hash>/` |
 | `analyze` | AER, IPP/MF, ช่วง access, Global Statistics และ DOP ของ Facility ที่ระบุ (ถ้ายังไม่มีผล propagate จะ propagate ก่อน) | `<scenario>/access/<facility>/<hash>/` |
 | `report` | รายงานของ style (Scenario Styles แล้ว Installed Styles ไม่สนตัวพิมพ์) กับ object ที่ระบุ จากผลที่มีอยู่แล้ว (ไม่คำนวณใหม่ ไม่ต่อเน็ต) object แบบ Access เป็นคู่ path `"*/Facility/THBK */Satellite/G01"` (หัวข้อ 9.12) | เนื้อไฟล์ `.txt` หรือ `.csv` ทาง stdout (เปลี่ยนทางเองด้วย `> THBK-To-G01_Access.txt`) |
@@ -220,6 +220,7 @@ data/
                                   ที่ fetch และ validate ใช้, celestrak_state.json (ใช้ร่วมกับ CLI เดิม)
     <YYYYMMDDTHHMMZ>/             snapshot หนึ่งชุด ใช้ร่วมกันทุก scenario
       gps-ops.json glo-ops.json galileo.json beidou.json      OMM JSON จาก CelesTrak
+      weather.json science.json visual.json                  OMM ของกลุ่มดาวถ่ายภาพ (มีเมื่อ cache มีไฟล์อายุไม่เกิน 14 วัน: หัวข้อ 9.13)
       igs_satellite_metadata.snx
       brdc/BRDC00IGS_R_<YYYYDDD>0000_01D_MN.rnx.gz
       SHA256SUMS                  ตรวจได้ด้วย shasum -a 256 -c SHA256SUMS
@@ -497,7 +498,7 @@ job ที่สั่งเองนับเป็นรอบของวั�
 | กลุ่ม | Endpoint | Spec |
 |---|---|---|
 | ทั่วไป | `GET /health`, `GET/PUT /settings`, `GET /events` (SSE), `GET /messages` | §6.1, §8 |
-| วงโคจร | `GET /orbits`, `POST /orbits/fetch` (ดึงจากเน็ต), `GET /catalog` | §6.2 |
+| วงโคจร | `GET /orbits`, `POST /orbits/fetch` (ดึงจากเน็ต; `systems` รับ `X` เพิ่มได้เมื่อมีระบบ GNSS อย่างน้อยหนึ่งตัว), `GET /catalog` (`system=X` = ดาวถ่ายภาพ ทุกแถวมี `category` และ `display_name`), `GET /imaging/presets` (ของเรา: ตาราง preset ของดาวถ่ายภาพ X01–X08 คงที่ ไม่อ่าน snapshot ไม่ต่อเน็ต ดู 9.13) | §6.2, ข2 spec §4 |
 | Scenario | `GET/POST /scenarios`, `GET/PUT/DELETE /scenarios/{sc}`, `POST /scenarios/{sc}/copy`, `GET/PUT /scenarios/{sc}/workbook` | §6.3 |
 | Object | `GET/POST /scenarios/{sc}/objects`, `GET/PATCH/DELETE /scenarios/{sc}/objects/{class}/{name}`, `POST .../rename`, `POST /scenarios/{sc}/groups` (`{name, members[]}` ต้องส่ง `members`) | §6.4 |
 | ผลลัพธ์ | `GET /scenarios/{sc}/results`, `POST /scenarios/{sc}/propagate`, `GET /scenarios/{sc}/ephem/{hash}/{file}`, `GET /scenarios/{sc}/access/{facility}/{hash}/{file}` | §6.5 |
@@ -724,9 +725,10 @@ server แค่เก็บค่าสวิตช์และ Cesium ion toke
 server ไม่รับ URL, host หรือ path จากผู้ใช้ และไม่ตาม redirect เลย (3xx นับเป็นดึงไม่สำเร็จ) browser ไม่ติดต่อ GIBS หรือ EOX ตรง: ทุกคำขอไปที่ server ในเครื่อง
 
 **ชั้นภาพ** (ตารางเดียวใน `server/gnss_studio_server/imagery.py` ลำดับในตาราง = ลำดับวาด ชั้นหลังทับชั้นก่อน แต่ละแถวบอกแหล่ง `source`):
-GIBS 8 ชั้น `BlueMarble_NextGeneration` (คงที่), `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`,
+GIBS 10 ชั้น `BlueMarble_NextGeneration` (คงที่), `VIIRS_NOAA20_CorrectedReflectance_TrueColor`, `VIIRS_SNPP_CorrectedReflectance_TrueColor`,
 `MODIS_Terra_CorrectedReflectance_TrueColor` (รายวัน), `Himawari_AHI_Band3_Red_Visible_1km`, `Himawari_AHI_Band13_Clean_Infrared`,
-`GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor` (ทุก 10 นาที) และ EOX 1 ชั้น `s2cloudless-2024_3857` (ภาพคงที่รายปี ชื่อบนจอ Sentinel-2 cloudless 2024,
+`GOES-East_ABI_GeoColor`, `GOES-West_ABI_GeoColor` (ทุก 10 นาที), `MODIS_Aqua_CorrectedReflectance_TrueColor`, `VIIRS_NOAA21_CorrectedReflectance_TrueColor`
+(รายวัน jpg ระดับสูงสุด 9 เพิ่มในงาน ข2 ให้ดาวถ่ายภาพทุกดวงมีชั้นของตัวเอง: หัวข้อ 9.13; ต่อท้าย GOES-West ก่อนแถว EOX ลำดับเดิมจึงไม่เลื่อน) และ EOX 1 ชั้น `s2cloudless-2024_3857` (ภาพคงที่รายปี ชื่อบนจอ Sentinel-2 cloudless 2024,
 TileMatrixSet `g`, ระดับสูงสุด 15, jpg, เวลาใน route ใช้ `default`) ค่า TileMatrixSet, นามสกุลไฟล์และรูปแบบเวลาของแต่ละชั้นเป็นค่าที่คาดไว้ตาม spec
 **ส่วนใหญ่ยังไม่ได้ยืนยันกับของจริง** (ที่ตรวจแล้วและที่ยังไม่ตรวจ: หัวข้อ 9.10 ไม่มี test หรือโค้ดใดต่อเน็ตจริง) ถ้าโฮสต์ตอบต่างไปแก้ที่ตารางนั้นที่เดียว
 
@@ -861,15 +863,16 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
 `playwright.config.ts` เปิด server เองด้วย `tests/e2e/start-server.sh` (ไม่ใช้ server ที่เปิดค้างไว้: `reuseExistingServer: false` จึงต้องไม่มีอะไรฟัง port 8766)
 
 - ข้อมูลของ e2e สร้างใหม่ทุกครั้งที่ `web/test-results/e2e-data` โดย `tests/e2e/fixture/build_fixture.py` (รันด้วย `server/.venv/bin/python -I`):
-  คัดลอก snapshot fixture ของ engine (`tests/fixtures/studio/snapshot`), เขียน `settings.json` ที่ปิดงานประจำวัน **ก่อน** server เริ่ม,
+  คัดลอก snapshot fixture ของ engine (`tests/fixtures/studio/snapshot`) พร้อมไฟล์กลุ่มดาวถ่ายภาพที่เขียนเอง (`tests/fixtures/studio/imaging`), เขียน `settings.json` ที่ปิดงานประจำวัน **ก่อน** server เริ่ม,
   สร้าง scenario `E2E` (thbk-gnss ช่วง 2026-11-10 00:00–06:00 UTC **มีผลลัพธ์** และ access ของ THBK ตั้ง `computed: true` แบบที่งานประจำวันทำ),
   `E2E_NORES` (ชุดเดียวกัน ไม่มีผล access ของแม่แบบเป็น `computed: false`), `E2E_EMPTY` (ว่าง),
   `E2E_ACCESS` และ `E2E_SAVE` (แบบ `E2E` มีผลของ THBK แต่ `accesses: []`: spec Compute/Clear/Remove เองแล้วคืนเอกสารเดิม; `E2E_SAVE` สำหรับ test ที่ File → Save),
   `E2E_DATELINE` (12 ชั่วโมง เพิ่ม Facility DATELINE ที่ 29.3 N, 179.5 E มีผลของ DATELINE: ดาว C09 ข้ามเส้น 180° ระหว่าง access ราว 11:21Z),
+  `E2E_IMG` (แม่แบบว่าง + THBK + ดาวถ่ายภาพ X04 Terra + Sensor MODIS แบบ Rectangular 55.0/0.41 มีผลของ THBK; หัวข้อ 9.13),
   scenario รายวัน `daily_20261111` (วันรอผลตรวจ) กับ `daily_20261112` (เลิกตรวจแล้ว ตาม `daily/state.json`) และผลตรวจที่เขียนจาก JSON ในสคริปต์
   (`validation/history.jsonl` สองวันของ `E2E`: 2026-11-09 Pass, 2026-11-10 Fail G22 และ `validation/E2E/validation_2026-11-10.json`) ไม่รันการตรวจจริงและไม่ดาวน์โหลด
   ผลลัพธ์ของ `E2E` มาจาก `run_propagate` และ `run_analyze("THBK")` ของ engine จริง โดยแทน `propagate`, `find_gmat_console` และ `gmat_version`
-  ด้วยวงโคจรวงกลมปลอม (รัศมี G 26 560 km, R 25 508 km, E 29 600 km, BeiDou MEO/IGSO 27 906 km, GEO 42 164 km ที่ลองจิจูดคงที่; ตำแหน่ง Earth-fixed
+  ด้วยวงโคจรวงกลมปลอม (รัศมี G 26 560 km, R 25 508 km, E 29 600 km, BeiDou MEO/IGSO 27 906 km, GEO 42 164 km ที่ลองจิจูดคงที่, ดาวถ่ายภาพ X 7 076 km เอียง 98.2°; ตำแหน่ง Earth-fixed
   คือวงกลมเฉื่อยหมุนด้วย ωe = 7.2921151467e-5 rad/s) จึงไม่ต้องใช้ GMAT และไฟล์มีรูปแบบเหมือนของจริงทุกประการ สคริปต์ปิดการเชื่อมต่อเครือข่ายขณะสร้าง
 - **ไม่มี test ใดดาวน์โหลดจากเน็ต**: server ของ e2e มี `GMAT_BIN=/nonexistent` และ `daily.enabled: false` และ spec ไม่เรียก
   `/api/orbits/fetch`, `/api/daily/run` หรือ `/api/scenarios/*/validate` (CelesTrak จำกัดความถี่ และห้ามดึงโดยไม่ได้ยินยอม)
@@ -885,7 +888,9 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
   คลิกซ้ายและขวาที่ดาวในหน้าต่าง 3D, ลบดาวแล้วหน้าต่างปิด, scenario ที่ไม่มีผลลัพธ์; หัวข้อ 9.9), `imagery` (Sensor View เปิดเป็นโหมด Camera ไม่มี entity แสดง,
   Zoom In สี่ครั้ง (ทีละ ×√2) ได้มุมกว้างด้านสั้น 1/4 ของ ×1 คลาดไม่เกิน 1% และกล้องยังอยู่ที่ดาว, Zoom In 26 ครั้งถึง ×8192 (มุมกว้างด้านสั้น 1/8192 ของ ×1, ทิศกล้องคลาดไม่เกิน 0.01°, HUD แสดงความกว้างพื้นที่),
   ช่อง Width "1.5 km" ได้พื้นที่กว้าง 1.5 km คลาดไม่เกิน 3%,
-  สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (11 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `models` (ดาวที่แสดงในหน้าต่าง 3D เป็นโมเดลทุกดวง `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์, ปิด Satellite Models แล้วจุดกลับมาและเปิดใหม่ไม่ fetch ซ้ำ, +Z ของดาวชี้ลงโลกคลาดไม่เกิน 0.5° และตามเวลา; หัวข้อ 9.11), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+  สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (13 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `models` (ดาวที่แสดงในหน้าต่าง 3D เป็นโมเดลทุกดวง `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์, ปิด Satellite Models แล้วจุดกลับมาและเปิดใหม่ไม่ fetch ซ้ำ, +Z ของดาวชี้ลงโลกคลาดไม่เกิน 0.5° และตามเวลา; หัวข้อ 9.11), `imaging` (Insert X04 จาก Catalog ด้วยตัวกรอง Imaging ได้ Sensor MODIS ลูกของดาวพร้อม Rectangular 55/0.41, X04 ใน 3D ที่ความสูง 690–720 km และรอย MODIS 73 จุดทั้ง 3D และ 2D,
+  Show Imagery ที่ GIBS ปิดขึ้นกล่องยืนยันแล้ว Cancel ไม่มี `PUT /api/settings` ไม่มี Sensor View, ดาวที่ไม่มี Sensor ไม่มี `POST .../objects` และกล้องบินไปเหนือจุดใต้ดาว
+  (test นี้ตอบ `/api/imagery/layers` และชิ้นภาพด้วย `page.route` ในเบราว์เซอร์ ไม่มีคำขอถึง GIBS หรือ server; หัวข้อ 9.13), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
 - ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
   ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
   เมื่อตั้ง `GNSS_E2E_PERF_URL` (หัวข้อ 9.6) ตัวตรวจอนุญาต origin ของ URL นั้นเพิ่มอีกหนึ่ง origin ตรงตัว (เช่น `http://127.0.0.1:8767/`) ไม่กว้างกว่านั้น (ตรรกะอยู่ใน `tests/e2e/localRequest.ts`)
@@ -1128,7 +1133,7 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
   การลองใหม่เป็นการขอใหม่จริง: Cesium จำผลการขอข้อมูล asset ต่อ asset + token ไว้และไม่ลบผลที่ล้มเหลวเอง โปรแกรมจึงลบรายการนั้นทิ้งทุกครั้งที่ ion ล้มเหลว
 - **เงื่อนไขของบัญชี**: บัญชี Community (ฟรี) ของ Cesium ion ใช้ได้เฉพาะงานไม่เชิงพาณิชย์ตามเงื่อนไขของ Cesium (กล่องยืนยันบอกข้อนี้) ภาพ Bing และ Google มีเงื่อนไขของผู้ให้ภาพเองด้วย
 
-**เลือกชั้นภาพใน Globe Manager**: ตารางมี 11 แถวใน 4 กลุ่ม: Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) + GIBS 8 ชั้น + Sentinel-2 cloudless 2024 + OpenStreetMap
+**เลือกชั้นภาพใน Globe Manager**: ตารางมี 13 แถวใน 4 กลุ่ม: Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) + GIBS 10 ชั้น + Sentinel-2 cloudless 2024 + OpenStreetMap
 แต่ละชั้นมีช่อง **Show** และ **% Translucency** (จำนวนเต็ม 0-100) กลุ่ม Cesium ion ไม่มีตาราง (มีช่อง token และตัวเลือก asset)
 ลำดับวาด (ชั้นที่อยู่ล่างทับชั้นบน): Natural Earth II → GIBS ตามตาราง → Sentinel-2 cloudless → OpenStreetMap → เส้น Lat/Lon อยู่บนสุดเสมอ (ยกเว้นเมื่อ ion แสดง: ion ชั้นเดียว)
 เมื่อสวิตช์ของแหล่งใดปิด แถวของแหล่งนั้นปิดใช้ (เทา) พร้อมคำอธิบาย ค่าตั้งต้นเมื่อเปิดสวิตช์ครั้งแรก: **Blue Marble** กับ **VIIRS NOAA-20 True Color** แสดง ชั้นอื่นของ GIBS ซ่อน
@@ -1150,6 +1155,8 @@ Object Browser วาด sensor ซ้อนใต้ดาวของมัน
 | Himawari-9 Clean Infrared | GIBS | 10 นาที | 6 | NASA GIBS / EOSDIS, JMA |
 | GOES-East GeoColor | GIBS | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
 | GOES-West GeoColor | GIBS | 10 นาที | 7 | NASA GIBS / EOSDIS, NOAA |
+| MODIS Aqua True Color | GIBS | รายวัน | 9 | NASA GIBS / EOSDIS |
+| VIIRS NOAA-21 True Color | GIBS | รายวัน | 9 | NASA GIBS / EOSDIS |
 | Sentinel-2 cloudless 2024 | EOX | คงที่ | 15 | Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024) |
 | OpenStreetMap | OSM | คงที่ | 19 | © OpenStreetMap contributors |
 
@@ -1382,6 +1389,93 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - Strip Chart Duration คงที่ 3600 วินาที (ไม่มีช่องให้แก้) และแกน y ของ Strip Chart ไม่ปรับตามชั่วโมงที่เห็น; Export ของกราฟดาวน์โหลด CSV ด้วย Export Setup ตั้งต้นทันที (ไม่มีกล่อง)
 - CLI `report` ใช้ Scenario Styles กับ Installed Styles เท่านั้น (ไม่อ่าน My Styles) และไม่ใช้ `time` ของ style หรือช่วงเวลาที่เก็บไว้ใน access (หัวข้อ 7.1)
 - คำบางคำที่ STK มีแต่ไม่พบในเอกสาร STK ที่ตรวจได้ (Constellation ใน Object Types, คลิกขวา Copy to My Styles / Delete / Generate as .txt/.csv, Setup... ของเมนู Export และกล่อง Export Setup) ยังมีตาม spec แต่ใช้ป้ายของเรา
+
+### 9.13 ดาวถ่ายภาพ X01–X08 (งานเสริม ข2)
+
+ดาวถ่ายภาพโลก 8 ดวงใส่ในฉากได้เหมือนดาว GNSS: Insert จาก Satellite Catalog พร้อม Sensor ของกล้องหลัก, propagate ด้วย GMAT SGP4, มี Access/AER ถึง Facility,
+วาดในหน้าต่าง 3D/2D พร้อมโมเดล และคลิกขวา **Show Imagery** เปิดชั้นภาพ GIBS ของดวงนั้น ดาวเหล่านี้ **ไม่ถูกนับใน DOP และไม่อยู่ในการตรวจ Validation**
+
+- Spec: [docs/2026-11-15-gnss-studio-imaging-satellites-design.md](docs/2026-11-15-gnss-studio-imaging-satellites-design.md), แผนและ Ruling: [docs/2026-11-15-gnss-studio-imaging-satellites-plan.md](docs/2026-11-15-gnss-studio-imaging-satellites-plan.md)
+- การตัดสินใจระหว่างลงมือ: [docs/2026-11-14-gnss-studio-imagery-decisions.md](docs/2026-11-14-gnss-studio-imagery-decisions.md) หัวข้อ "ข2 ดาวถ่ายภาพ"
+- ตาราง preset มีที่เดียว: `gnss_predict/imaging.py` (`IMAGING_SATELLITES`) server ส่งต่อที่ `GET /api/imaging/presets` (คงที่ ไม่ต่อเน็ต)
+
+**ดาว 8 ดวง** (รหัส `X0n` คงที่ ใช้เป็นชื่อดาวในฉาก, ชื่อ GMAT Spacecraft, รหัสใน SP3, id ใน CZML และคีย์ของ AER/Access; ชื่อที่แสดงมาจาก preset ไม่ใช่ชื่อใน CelesTrak)
+
+| รหัส | ดาว | NORAD | กลุ่ม CelesTrak | กล้อง (ชื่อ Sensor) | Sensor | ชั้นภาพ GIBS |
+|---|---|---|---|---|---|---|
+| X01 | Himawari-9 | 41836 | `weather` | AHI | Simple Conic 8.7° | Himawari-9 Red Visible (`Himawari_AHI_Band3_Red_Visible_1km`) |
+| X02 | GOES-18 | 51850 | `weather` | ABI | Simple Conic 8.7° | GOES-West GeoColor |
+| X03 | GOES-19 | 60133 | `weather` | ABI | Simple Conic 8.7° | GOES-East GeoColor |
+| X04 | Terra | 25994 | `science`, `visual` | MODIS | Rectangular V 55.0° / H 0.41° | MODIS Terra True Color |
+| X05 | Aqua | 27424 | `visual` | MODIS | Rectangular V 55.0° / H 0.41° | MODIS Aqua True Color |
+| X06 | Suomi NPP | 37849 | `weather` | VIIRS | Rectangular V 56.28° / H 0.42° | VIIRS Suomi NPP True Color |
+| X07 | NOAA-20 | 43013 | `weather` | VIIRS | Rectangular V 56.28° / H 0.42° | VIIRS NOAA-20 True Color |
+| X08 | NOAA-21 | 54234 | `weather` | VIIRS | Rectangular V 56.28° / H 0.42° | VIIRS NOAA-21 True Color |
+
+**ข้อมูลวงโคจรของดาวถ่ายภาพ (snapshot)**
+
+- **ดาวถ่ายภาพขึ้นใน Satellite Catalog หลังจากที่ผู้ใช้กด Fetch Now เองโดยติ๊ก Imaging satellites แล้วเท่านั้น** (Utilities → Fetch Orbit Data...)
+  ช่อง **Imaging satellites** (ป้ายของเรา ตั้งต้นไม่ติ๊ก) ติ๊ก = ส่ง `systems: "GRECX"` ดึงกลุ่ม `weather`, `science` และ `visual` ของ CelesTrak เพิ่ม
+  ภายใต้กติกาเดิม (1 ครั้งต่อกลุ่มต่อ 2 ชม., ไม่ลองซ้ำหลัง 403) คำอธิบายภาษาไทยใต้ช่องบอกชื่อสามกลุ่มนี้ ไม่ติ๊ก = คำขอเดิมทุกตัวอักษร (ดึงเฉพาะ GNSS)
+  CLI: `python3 -m gnss_predict.studio fetch --systems GRECX` ; `X` อย่างเดียวไม่ได้ (ต้องมีระบบ GNSS อย่างน้อยหนึ่งตัว: CLI ตัวเลือกผิด exit 2, server 422)
+- ทุกการ fetch (ติ๊กหรือไม่ก็ตาม) คัดลอกไฟล์ล่าสุดใน cache `<group>_*.json` ของสามกลุ่มนี้ลง snapshot ใหม่เป็น `<group>.json` โดยไม่ส่งคำขอ และรวมใน `SHA256SUMS`
+  snapshot ที่สร้างก่อนงานนี้ไม่มีไฟล์เหล่านี้ และไม่มีทางอ่าน `_cache` ตอนสร้าง catalog (ผลจึงทำซ้ำได้จาก snapshot เสมอ)
+- **อายุของไฟล์ใน cache**: คัดลอกเฉพาะไฟล์ที่เวลาในชื่อไฟล์ (`<group>_YYYYMMDDTHHMMZ.json`) ห่างจากตอน fetch ไม่เกิน **14 วัน** (เกณฑ์ซ่อนดาว GEO; ชื่อที่อ่านเวลาไม่ได้นับว่าเก่าเกิน)
+  ไฟล์ที่เก่ากว่าไม่ถูกใส่ และมีข้อความ `IMAGING_CACHE_TOO_OLD` (fetch ที่ไม่มี X = info หนึ่งข้อความรวมทุกกลุ่ม, fetch ที่มี X = warning ต่อกลุ่ม)
+  กฎเดียวกันใช้กับไฟล์ cache ที่ `fetch_group` คืนมาเมื่อดึงไม่สำเร็จ ; ดึงกลุ่มไม่ได้และไม่มี cache = `IMAGING_GROUP_UNAVAILABLE` (warning) snapshot ของ GNSS ยังเขียนได้ตามปกติ
+- จับคู่ด้วย `NORAD_CAT_ID` เท่านั้น (ไม่ใช้ชื่อ: `ROBUSTA-3A` มีคำว่า TERRA) ดวงเดียวกันอยู่หลายกลุ่ม = ใช้ record ที่ EPOCH ใหม่สุด (record นั้นแปลงเป็น TLE ไม่ได้ = `TLE_UNAVAILABLE` ไม่ย้อนไปใช้ record เก่า)
+  ไม่พบใน snapshot = อยู่ใน `unmapped` เหตุผล `TLE_UNAVAILABLE` ; ไฟล์กลุ่มที่อ่านไม่ได้ = ข้ามกลุ่มนั้นพร้อม `IMAGING_GROUP_UNREADABLE` (warning)
+- **ธงอายุ**: LEO ใช้เกณฑ์เดิม (stale > 2 วัน, too_old ซ่อน > 7 วัน) ส่วน **GEO** (mean motion < 1.1 รอบ/วัน: X01–X03) stale > 7 วัน และ too_old (ซ่อน) > 14 วัน
+  ดาวระบบ X ไม่มีธง `no_broadcast`, `unhealthy`, `prn_changed` และ `name_mismatch` ไม่ fetch นานเกิน 14 วัน = ดาว GEO ถูกซ่อน (คอลัมน์ Status ของ Satellite Catalog แสดงธง; engine ไม่ส่ง `SAT_FLAGGED` ของดาว X)
+- ฉากที่ไม่มีดาวระบบ X ได้ hash และผลลัพธ์เดิมทุกไบต์แม้ snapshot มีไฟล์กลุ่มดาวถ่ายภาพ (ไฟล์เหล่านี้เข้า hash เฉพาะฉากที่มี NORAD ของดาวถ่ายภาพ) ephemeris เดิมจึงไม่หมดอายุ
+
+**DOP, Validation และรายงาน**
+
+- **DOP** นับเฉพาะ `G`, `R`, `E`, `C` ดาว X ไม่อยู่ใน `ALL` และไม่มีแถวของตัวเองใน `dop.csv`
+- **Validation** ข้ามดาว X ทั้งหมด (ไม่มีแถว `unverified` ไม่มีคีย์ใหม่ใน JSON) และเพิ่มข้อความ info `IMAGING_SKIPPED` "ข้ามดาวถ่ายภาพ n ดวง (ไม่มีข้อมูลอ้างอิง)"
+  ใน messages และหนึ่งบรรทัดใน `validation_<วัน>.md` (เฉพาะเมื่อ n > 0) หน้าต่าง Validation แสดงวันที่ไม่มีระบบ GNSS ใดเป็น **No GNSS** แทน Fail
+  (รวมวันของฉาก GNSS ที่ไม่มีระบบใดตัดสินได้ ซึ่ง markdown ของ engine เรียกว่า "ตัดสินไม่ได้")
+- **Access/AER** คำนวณให้ดาว X ด้วย แต่ IPP และ MF ของดาว X ว่าง (ไม่ใช่สัญญาณ L-band): `aer.csv` เป็นช่องว่าง, IPP Data ในรายงาน .txt เป็น `N/A`, .csv เป็นช่องว่าง, JSON เป็น `null`
+  ชั้น IPP ในหน้าต่าง 3D/2D ข้ามดาว X ; `legacy_gps.csv` มีเฉพาะ GPS เหมือนเดิม
+- **ความต่างของ CLI**: `fetch` รับ `--systems GRECX` ; `validate` พิมพ์ `info: ข้ามดาวถ่ายภาพ n ดวง (ไม่มีข้อมูลอ้างอิง)` เมื่อฉากมีดาว X ;
+  `report` ของ object ที่เป็นดาว X หรือ access ถึงดาว X ได้ IPP/MF เป็น `N/A` (.txt) หรือช่องว่าง (.csv) ; `dop.csv` และค่า DOP ในรายงานไม่รวมดาว X
+- **รหัส `X0n` ไม่ใช่มาตรฐาน IGS**: `predicted.sp3` ที่ส่งออกไปโปรแกรมอื่น (เช่น STK "From SP3 File") จะเห็นระบบ `X` ที่ไม่รู้จัก โปรแกรมนั้นอาจข้ามหรือปฏิเสธดาวเหล่านี้
+- `intervals.json` (Global Statistics) ยังรวมดาว X กับดาว GNSS ในฉากผสม
+
+**Insert จาก Satellite Catalog**
+
+- Insert → New... → Satellite → From Satellite Catalog: ตัวกรอง **System** มี **Imaging** (ป้ายของเรา) คอลัมน์ PRN แสดง `X0n` คอลัมน์ Name แสดงชื่อจาก preset และช่องค้นหาค้นชื่อนี้ด้วย
+- ช่อง **Add Primary Sensor** (ป้ายของเรา ติ๊กไว้ตั้งต้น): Insert แล้วได้ Sensor ลูกของดาวตาม preset ชื่อ Sensor = ชื่อกล้อง (AHI/ABI/MODIS/VIIRS)
+  ชื่อนั้นมีอยู่แล้ว (ไม่สนตัวพิมพ์) = `<กล้อง>_<รหัส>` เช่น Terra กับ Aqua ได้ `MODIS` และ `MODIS_X05` ; ชนอีก = 409 `NAME_EXISTS` และไม่สร้างอะไรเลย
+  Sensor ไม่เป็นสมาชิกของ Constellation ที่สร้างพร้อมกัน ; ส่ง `primary_sensors: true` เฉพาะเมื่อติ๊กและที่เลือกมีดาว X (Insert ดาว GNSS เหมือนเดิมทุกตัวอักษร)
+
+**Rectangular sensor** (คำ `Rectangular` จาก STK reference §G; Vertical/Horizontal Half Angle เป็นป้ายของเรา "Added by GNSS Studio")
+
+- แกนตาม **STK** (Rectangular แบบมาตรฐาน) ไม่ใช่ตามข้อความเดิมใน spec: **Horizontal Half Angle** อยู่ในระนาบ XZ ของ sensor = ±X = **ตามแนวบิน**
+  และ **Vertical Half Angle** อยู่ในระนาบ YZ = ±Y = **ขวางแนวบิน** preset จึงเก็บ MODIS `vertical_half_angle` 55.0 / `horizontal_half_angle` 0.41 (แถบกว้างราว 2,330 km ยาว 10 km)
+  และ VIIRS 56.28 / 0.42 (ราว 3,052 × 12 km) กรอบ sensor ชี้แบบ Az-El: หมุน Az รอบ +Z แล้ว 90° − El รอบ +Y ใหม่ (Az 0 / El 90 = กรอบตัวดาวพอดี)
+- ช่วงค่า 0 < มุม ≤ 89° ทั้งสองช่อง (ว่างไม่ได้) Rectangular ไม่เก็บ `cone_half_angle` (server ทิ้งค่าที่ส่งมา) ไฟล์เก่าที่ไม่มีช่องใหม่โหลดเป็น Simple Conic
+- วาด: 3D = วงรอยบนพื้น 4 ด้าน × 18 จุด (ทรงกลมรัศมี 6371.0088 km เดียวกับกรวย) พร้อม Radial Lines ถึง 4 มุม ไม่มีผิวโปร่ง ; 2D = วงรอยอย่างเดียว ไม่ระบายสี
+  (หน้า 2D Graphics - Attributes ซ่อน Fill และ % Translucency ของ Rectangular)
+- Sensor View: ครึ่งมุมของกล้อง = max(Vertical, Horizontal) = ครึ่งมุมขวางแนวบิน แล้วใช้สูตรเดิม `min(2α × 1.05, 120°)`: MODIS 115.5°, VIIRS 118.188°, GEO 8.7° ได้ 18.27°
+  วงกลมของโหมด Sensor ซ่อนสำหรับ Rectangular และบรรทัดใน HUD บอกทั้งสองมุม
+
+**Show Imagery** (ป้ายของเรา: เมนู Satellite, คลิกขวาที่ดาวใน Object Browser และในหน้าต่าง 3D ต่อจาก Sensor View)
+
+- ใช้ได้เฉพาะดาวที่ NORAD มี preset (ดาว GNSS เห็นเป็นสีเทา)
+- สวิตช์ GIBS ปิด = กล่องยืนยันเดียวกับสวิตช์ GIBS ใน Globe Manager ทุกตัวอักษร **Cancel หรือ Esc = ไม่ทำอะไรเลย** (ไม่มี `PUT /api/settings` ไม่แตะชั้นภาพ ไม่เปิดหน้าต่าง ไม่มีคำขอออกนอกเครื่อง)
+- ยืนยันแล้ว (หรือ GIBS เปิดอยู่แล้ว) = ติ๊ก Show ของชั้นภาพของดาวนั้น (% Translucency คงเดิม) และ **ซ่อนชั้นทึบที่วาดทับอยู่** (EOX, OpenStreetMap หรือชั้น GIBS ภาพคงที่ที่ทึบ
+  ซึ่งแหล่งเปิดและ Show ติ๊กอยู่: ปิด Show ของแถวใน workbook ไม่แตะสวิตช์แหล่ง) และ Cesium ion ที่แสดงแทนทุกชั้น (asset = None สวิตช์ ion คงเปิด) พร้อมข้อความไทยหนึ่งข้อความบอกชื่อชั้นที่ซ่อน
+- ดาวมี Sensor ลูก = เปิด Sensor View ของ Sensor ตัวแรกในต้นไม้ ; **ไม่มี Sensor** = กล้องของหน้าต่าง 3D ที่ active บินไปเหนือจุดใต้ดาว ณ เวลาปัจจุบัน
+  ที่ความสูง max(ความสูงของดาว, 3,000 km) **ไม่สร้าง object ใด** ; ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว = ข้อความไทย ไม่ย้ายกล้อง
+- ภาพ GIBS ของ **VIIRS Suomi NPP** ล่าช้า: ตอนตรวจ (research §6) ภาพล่าสุดของชั้นนี้เป็นของ 2026-11-02 Show Imagery ยังเปิดชั้นได้ วันที่ยังไม่มีภาพ HUD ของ Sensor View บอก "ไม่มีภาพเวลานี้" ตามเดิม
+
+**ข้อจำกัด** (รายละเอียดในเอกสารการตัดสินใจ)
+
+- ไม่มีแถบสแกนสะสม (swath corridor) บนแผนที่ 2D ใช้รอยของ Sensor ณ เวลาปัจจุบัน ; ไม่สลับชั้นกลางคืน/IR ให้เอง (เปลี่ยนเองใน Globe Manager)
+- ไม่ fetch กลุ่ม `resource`, `goes`, `noaa` ; Aqua อยู่เฉพาะกลุ่ม `visual` (100 ดวงที่สว่างสุด) ซึ่งอาจหลุดจากกลุ่มได้
+- ดาวถ่ายภาพมีเฉพาะ 8 ดวงนี้ (เพิ่มได้ที่ตาราง preset ที่เดียว)
+- e2e ใช้ snapshot ปลอม: `E2E_IMG` (THBK + X04 + MODIS) ถูก "propagate" ด้วยวงโคจรปลอมของ `build_fixture.py` เพราะ server ของ e2e ไม่มี GMAT (`web/tests/e2e/imaging.spec.ts`)
 
 ## 10. Docker (GNSS Studio ใน container)
 

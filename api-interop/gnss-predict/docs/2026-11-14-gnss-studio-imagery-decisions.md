@@ -265,3 +265,130 @@
 ### ผลทดสอบ
 
 - `attitude-laws.test.ts` 183 test (หลังรอบแก้): ทุกกฎที่ β = ±0.5°, ±2°, 5°, 15° (QZS-1 ที่ 25°): ψ ต่อเนื่องข้าม noon/midnight (ก้าว 2 s ±25° รอบ node + ทั้งรอบก้าว 0.5°) |ψ̇| ≤ R × 1.02 (IIR 0.20, IIF 0.11, III 0.082, GLO-M 0.25, GLO-K 0.24987, IOV 0.2, FOC 0.1, QZSS-2 0.055, CAST 1.1 μ̇/tan 3°, SECM μ̇/tan 3°), nominal นอกช่วง, ON ได้ ex ตามความเร็ว, เครื่องหมายตาม §1.3, กรอบตั้งฉากมือขวา ez = nadir, ไม่ขึ้นกับการเรียกก่อนหน้า และพฤติกรรมเฉพาะรุ่น (IIF หมุนกลับทาง, IIF อัตราคงที่ในเงา, GLO-M ค้างในเงาเกิน 30 นาที, FOC ≈ 2828 s, NavIC ez ชี้เป้า < 0.01°, …)
+
+## ข2 ดาวถ่ายภาพ
+
+- Branch เดิม `feature/gnss-studio-imagery` (BASE fb9f4ee) ไม่ merge ไม่ push
+- [spec](2026-11-15-gnss-studio-imaging-satellites-design.md) (อ้างว่า "spec §n"), [แผน](2026-11-15-gnss-studio-imaging-satellites-plan.md) พร้อม Ruling (a)–(u) และ amendments (v)–(ab)
+  หลังการตรวจแผนแบบอิสระ (`docs/2026-11-17-imaging-plan-review.md` บน models branch cc54756, R-01..R-07)
+- ลงมือแบบ subagent-driven: 8 งาน แต่ละงานมีผู้ตรวจแยก ผู้ใช้อ่านได้ที่ README หัวข้อ 9.13
+
+### Ruling ของแผน (a)–(u)
+
+- (a) hash: `_files_sha256(..., imaging_files=())` เพิ่มไฟล์กลุ่มดาวถ่ายภาพเฉพาะฉากที่มี NORAD ของดาวถ่ายภาพ `_plan` อ่าน imaging catalog เฉพาะตอนนั้น ฉาก GNSS ล้วนอ่านไฟล์เดิมและได้ hash เดิมแม้ snapshot มี `weather.json`
+- (b) catalog รวม = `imaging.scenario_catalog(snapshot_dir, period, systems, with_imaging)` = ผลเดิมของ `build_catalog` ต่อท้ายด้วย X01…X08 engine เรียกจาก `_plan` server เรียกจาก `templates.load_catalog` (`with_imaging=True`) แม่แบบ thbk-gnss ข้าม X ด้วย `SYSTEM_COLORS`
+- (c) IPP/MF ของ X เป็น `None`: `AerRow` ยอม `float | None`, `aer.csv` เป็นช่องว่าง, `dataproviders._load_access` อ่านด้วย `_optional`, รายงานเป็น N/A / ช่องว่าง / `null`
+- (d) คำ STK: "Rectangular" = `stk(..., "G")`; "Vertical/Horizontal Half Angle" เป็น `ours()` (ยืนยันใน STK terms §2 แต่ไม่อยู่ใน STK reference) "Imaging", "Add Primary Sensor", "Show Imagery" เป็น `ours()`
+- (e) กล้อง Sensor View ไม่มีโค้ดใหม่: ครึ่งมุมจาก `viewHalfAngleOf` (cone หรือ max(V, H)) MODIS 115.5°, VIIRS 118.188°, GEO 18.27° วงกลมโหมด Sensor ซ่อนสำหรับ Rectangular HUD บอกสองมุม
+- (f) กล่องยืนยันใช้ร่วม: `enableSourceWithConsent(id)` ใน `GlobeManager/consent.ts` (+ `CONSENT_KEYS`) ทั้ง Globe Manager และ Show Imagery
+- (g) แกนตาม STK (ไม่ใช่ตามข้อความ spec §4, §5.2 ที่เป็นแบบ EOIR): Horizontal = ระนาบ XZ = ตามแนวบิน, Vertical = ระนาบ YZ = ขวางแนวบิน preset จึงเก็บ MODIS V 55.0 / H 0.41 และ VIIRS V 56.28 / H 0.42
+- (h) ชื่อช่องจริง: `SensorObj.definition = {type, vertical_half_angle, horizontal_half_angle}` (องศา ไม่มี `_deg` เหมือน `cone_half_angle`)
+- (i) `sensorFrame(f, az, el)`: หมุน Az รอบ +Z แล้ว 90° − El รอบ +Y ใหม่ Az 0 / El 90 = กรอบตัวดาวพอดี
+- (j) รอยของ Rectangular ตัดทรงกลม Re = 6371.0088 km เดียวกับกรวยและ Swath (ไม่ใช่ WGS84 ตาม spec)
+- (k) 3D วาดวงรอย 4 × 18 จุด + Radial Lines ถึง 4 มุม ไม่มีผิวโปร่ง ; 2D วาดวงรอย ไม่ระบาย (`centralAngleRad` = null)
+- (l) ชื่อ Sensor หลัก: ชื่อกล้อง → `<กล้อง>_<PRN>` → 409 `NAME_EXISTS` ไม่สร้างอะไร
+- (m) body `primary_sensors: bool` (ตั้งต้น false) เว็บส่งเฉพาะเมื่อติ๊กและมีแถว X ลำดับที่สร้าง: ดาว, Constellation (เฉพาะดาว), Sensor
+- (n) Sensor หลักของ Show Imagery = Sensor ลูกตัวแรกในต้นไม้ (`firstSensorOf`) ส่วน "ไม่มี Sensor = สร้าง Sensor<n>" ถูกแทนด้วย amendment (z)
+- (o) `object.showImagery` ต่อจาก `object.sensorView` ใน `SATELLITE_MENU` และ `SCENE_SATELLITE_MENU` ใช้ได้เฉพาะดาวที่มี preset
+- (p) `GET /api/imaging/presets` (คงที่ ไม่ต่อเน็ต typed) เว็บโหลดครั้งเดียวตอนเริ่มแอป และระบุดาว X ด้วย NORAD
+- (q) snapshot: ทุก fetch คัดลอกไฟล์ cache ล่าสุดของ `weather`/`science`/`visual` (ไม่ส่งคำขอ) และรวมใน `SHA256SUMS` ; มี X = `fetch_group` ของสามกลุ่มตามกติกาเดิม ;
+  snapshot เก่าไม่มีไฟล์ จึงเห็นดาวถ่ายภาพหลัง Fetch Now ครั้งถัดไปของผู้ใช้ ไม่อ่าน `_cache` ตอนสร้าง catalog (ทำซ้ำได้)
+- (r) ไฟล์กลุ่มที่อ่านไม่ได้ = `IMAGING_GROUP_UNREADABLE` (warning) ข้ามกลุ่มนั้น ไม่ raise
+- (s) CATALOG ของ GIBS เพิ่ม `MODIS_Aqua_CorrectedReflectance_TrueColor` และ `VIIRS_NOAA21_CorrectedReflectance_TrueColor` (daily, Level9, jpg) ต่อจาก GOES-West ก่อน EOX
+  ; VIIRS SNPP บน GIBS ล่าช้าถึง 2026-11-02 ตอนตรวจ ใช้เส้นทาง "ไม่มีภาพเวลานี้" ของ HUD เดิม
+- (t) e2e: server ไม่มี GMAT การ propagate ของ `E2E_IMG` (THBK + X04 + MODIS) ทำใน `build_fixture.py` ด้วยวงโคจรปลอม Insert ทดสอบบน `E2E_NORES`
+- (u) `validate_ephemeris` ตัด X ก่อนเทียบ ไม่เพิ่มคีย์ `run_validate` เพิ่ม `IMAGING_SKIPPED` (info) และบรรทัด markdown เมื่อ n > 0
+
+### Amendments (v)–(ab) หลังการตรวจแผน (มีผลเหนือ task)
+
+- (v, R-01) Rectangular ไม่มี `cone_half_angle`: model validator ทิ้งค่า และฟอร์มเว็บไม่ส่ง
+- (w, R-02) snapshot ที่ไม่มีไฟล์กลุ่มดาวถ่ายภาพ = catalog ดาวถ่ายภาพว่าง (ไม่มีแถว `TLE_UNAVAILABLE`)
+- (x, R-03) Show Imagery ซ่อนชั้นทึบที่วาดทับชั้น GIBS ของดาว (Show ของแถว ไม่ใช่สวิตช์แหล่ง) พร้อมข้อความไทยหนึ่งข้อความ
+- (y, R-04) `fetch_snapshot` คัดลอกไฟล์ cache เฉพาะที่อายุไม่เกิน 14 วัน (เกณฑ์ซ่อน GEO) ที่เก่ากว่ามีข้อความไทย
+- (z, R-05) มี Sensor = Sensor View ของ Sensor นั้น ; ไม่มี = เปิดชั้น GIBS และบินกล้อง 3D ไปเหนือจุดใต้ดาว ห้ามสร้าง object (แก้ spec §5.4 และ Ruling n)
+- (aa, R-07) ตรวจระบบด้วย `prn[:1]` ไม่ใช่ `prn[0]` ใน `dop.py` และ `studio_validate.py`
+- (ab) Fetch Orbit Data มีช่อง "Imaging satellites" (ours ตั้งต้นไม่ติ๊ก) ติ๊ก = `systems` มี X (`GRECX`) คำอธิบายไทยบอกชื่อสามกลุ่ม ไม่ติ๊ก = คำขอเดิม
+- R-06 (บรรทัดคลาด 1–5 บรรทัด) ไม่ต้องมี Ruling
+
+### การตัดสินใจระหว่างลงมือ (Ruling — เหตุผล — ถ้าผิดเสียอะไร)
+
+ทุกบรรทัด Ruling ของสมุดบันทึกงาน (progress ledger) และรายงานของแต่ละงาน
+
+- ภาพรวม: ข้อห้ามแตะ `accessHighlight.ts`/`graphics.ts`/`sceneSource.ts`/TimelineView ในแผนหมดผลแล้ว (agent นั้นจบ SP4 ที่ fb9f4ee) — ไม่มีใครแก้ไฟล์เหล่านั้นอยู่ — ไม่มี
+- งาน 1:
+  - ใช้เฉพาะ record ใหม่สุดของ NORAD แปลงเป็น TLE ไม่ได้ = `TLE_UNAVAILABLE` ไม่ย้อนไป record เก่า — spec §3.2 "ใช้ record ที่ EPOCH ใหม่สุด" และดาวไม่อยู่ทั้งใน `satellites` และ `unmapped` — ลูปสำรองหนึ่งลูป
+  - จับคู่ข้ามทุกไฟล์กลุ่มที่มี ไม่ใช่เฉพาะ `groups` ของ preset — spec ให้จับคู่ด้วย NORAD เท่านั้น `groups` เป็นข้อมูลสำหรับ fetch — กรองหนึ่งบรรทัด
+  - แหล่งของ fixture บันทึกเป็นบรรทัดเดียวใน `tests/fixtures/studio/SOURCES.md` เดิม — ตามรายการไฟล์ของ brief — เพิ่มไฟล์เดียว
+- งาน 2:
+  - อายุไฟล์ cache มาจากเวลาในชื่อไฟล์ (อ่านไม่ได้ = เก่าเกิน) และกฎ 14 วันใช้กับไฟล์ที่ `fetch_group` คืนมาหลังดึงไม่สำเร็จด้วย — เวลาในชื่อแน่นอนกว่า mtime — เปลี่ยนเป็น mtime หรือตัดเงื่อนไขหนึ่ง `if`
+  - `X` อย่างเดียวไม่ได้ (ต้องมีตัวอักษร GNSS) — snapshot ที่ไม่มี OMM ของ GNSS propagate ไม่ได้ — ตัดเงื่อนไข `not gnss`
+  - มี X แต่กลุ่มดาวถ่ายภาพดึงไม่ได้และไม่มี cache = `IMAGING_GROUP_UNAVAILABLE` (warning) snapshot ยังเขียน ; กลุ่ม GNSS ล้มยัง raise — กลุ่มเสริมไม่ควรขวาง snapshot GNSS — เอา try/except ออก
+  - test ที่ใช้ `"GX"` เป็นค่าผิดเปลี่ยนเป็น `"GZ"` — `GX` กลายเป็นค่าถูก และ CLI test จะ fetch จริง — ไม่มี
+  - `IMAGING_CACHE_TOO_OLD` เป็น warning บนเส้นทาง X — ดาวถ่ายภาพหายจาก snapshot ใหม่จนกว่าจะ fetch ด้วย X ผู้ใช้ควรเห็น — เปลี่ยนระดับ
+- งาน 3:
+  - `tests/report_fixture.py` เข้า commit (kwargs `satellites`/`imaging` และ `imaging_ecef()` ค่าตั้งต้นเดิม) — test ข้อมูลรายงานกับ report ต้องใช้ฉาก X04 เดียวกัน — สร้างฉากซ้ำในสอง test
+  - จำนวนที่ข้ามนับจากดาวใน manifest ที่ `prn[:1] == "X"` และ `propagated` — ตรงกับดาว X ใน `predicted.sp3` ไม่ต้องอ่าน SP3 ซ้ำ — นับจาก `read_sp3_all` หนึ่งบรรทัด
+  - `IMAGING_SKIPPED` อยู่ใน `messages` เดิมของ JSON validation ด้วย (ไม่มีคีย์ใหม่) — รายการนั้นเก็บข้อความ validate อยู่แล้ว — เอาออกหนึ่งบรรทัด
+  - บรรทัด markdown อยู่ท้ายรายการหัวเรื่องก่อน "## ระดับระบบ" — spec ไม่ระบุตำแหน่ง — ย้ายหนึ่งบล็อก
+  - (M1) fetch ที่ไม่มี X ใช้รหัส `IMAGING_CACHE_TOO_OLD` ระดับ info ข้อความเดียวรวมทุกกลุ่ม ไม่ตั้งรหัสใหม่ — รหัสน้อยลงสำหรับงาน 4/7 — เปลี่ยนชื่อรหัส
+  - ข้อความ X-path ย้ายเหตุผลเข้าวงเล็บพร้อมชื่อไฟล์ (ใช้ตัวสร้างข้อความเดียว) — ไม่มีใคร parse ข้อความ — ไม่มี
+- งาน 4:
+  - `/catalog` `q` ค้น `display_name` ด้วย — ชื่อ preset ต่างจากชื่อ CelesTrak (NOAA-21, Suomi NPP) — ตัดหนึ่ง `or`
+  - `system` รับ `G R E C X` แบบตัวพิมพ์ตรง (`x` = 422) — เหมือนการปฏิเสธ `g` เดิม — ไม่มี
+  - ข้อกำหนด "`SYSTEM_LETTERS` คง `GREC`" ใช้กับ engine ; `jobs.SYSTEM_LETTERS` ของ server เป็น `GRECX` และเก็บ `GNSS_LETTERS = GREC` — ตาม brief งาน 4 — เปลี่ยนชื่อสองค่าคงที่
+- งาน 5:
+  - Ruling (v) บังคับสองที่ (validator ของ schema และการ merge ของ Define/Apply) ; PUT ทั้ง scenario เก็บ `cone_half_angle` ที่ client ส่งสำหรับ Rectangular ไม่ได้ (validator ทิ้ง)
+  - ล้างเฉพาะ Rectangular: Simple Conic เก็บ V/H ที่ client ส่ง (ตรวจช่วงค่าแต่ไม่ใช้) หลังสลับ Rectangular → Simple Conic — อ่าน (v) แบบน้อยที่สุด — drop แบบสมมาตรสามบรรทัด
+  - 409 ของ Sensor หลักรายงาน `field = "primary_sensors"` `detail` = ชื่อ `<กล้อง>_<PRN>` ที่ชน — ไม่มีรหัส field อื่นที่เหมาะ — เปลี่ยนหนึ่งข้อความ
+  - `primary_sensors` รับเฉพาะ From Satellite Catalog ; Define Properties และ Insert Default ได้ 422 ที่ key นั้น — เหมือน key อื่นนอกชุด — ไม่มี
+  - ขยายขอบเขตงาน 5 ไปที่ `labels.ts` (`option.sensorType.rectangular = stk("Rectangular", "G")` + แผนที่ `sensor_type`) และ test labels/enums — ให้ branch เขียวทุกงานหลัง enum ที่ generate ได้ `Rectangular` — ทับงาน label ของงาน 6 เล็กน้อย
+- งาน 6:
+  - Vertical/Horizontal Half Angle คง `ours()` ไม่ใช่ `stkHelp()` — test หลักฐาน stkHelp รู้จักเฉพาะเอกสาร access-reports และ context-menus การเพิ่มเอกสารที่สามเป็นการตัดสินของผู้ใช้ — สองบรรทัดป้าย + `HELP_QUOTES`
+  - รูปร่างใน HUD คำนวณด้วย `sensorHudShape(sensor)` (pure) ใน `sensorDraw.ts` — unit test ได้โดยไม่ต้องมี WebGL — ย้ายกลับเข้า scene3d
+  - ครึ่งมุมของ Rectangular เป็นช่องบังคับ (ว่าง = "ต้องเป็นตัวเลข") — server ไม่มีค่าตั้งต้นและ 422 null — ตัดธง `required`
+  - boresight ของ Simple Conic ยังใช้ `boresightOf` ไม่ใช่ `sensorFrame(...).z` — ผลของ Simple Conic ต้องตรงทุกบิต — ไม่มี
+  - ไม่มี V หรือ H (server ไม่ยอมอยู่แล้ว) วาดด้วย 45° เหมือนกรวย — ไม่มี
+- งาน 7:
+  - amendment (z) แทน test ของ brief "Sensor ถูกลบแล้วใช้ทางสร้างแล้วเปิด" Show Imagery เรียก `firstSensorOf`/`openSensorView` ตรง — spec ห้ามสร้าง object — กลับไปใช้ `openSensorViewForSatellite` หนึ่งบรรทัด
+  - บินไปที่ความสูง max(ความสูงดาว, 3,000 km) ในหน้าต่าง 3D ที่ active ไม่มีหน้าต่าง 3D หรือตำแหน่ง = ข้อความไทย info — 3,000 km เห็นพื้นราว 3,500 km กว้างกว่าแนว VIIRS — ค่าคงที่หนึ่งค่า
+  - ซ่อน ion = asset None (`setGlobeIon(null)`) ไม่ปิดสวิตช์ ion ใช้เมื่อ `ionPlan()` เป็น shown หรือ waiting — เทียบเท่า "Show off" ของ workbook — ผู้ใช้เลือก asset ใหม่
+  - "ชั้นทึบที่อยู่เหนือ" ใช้ `isOpaqueLayer` เดิมกับชั้นที่วาดจริง (แหล่งเปิดและ Show ติ๊ก) EOX ที่โปร่งหรือ OSM ที่สวิตช์ปิดไม่ถูกแตะ — ตรงกับสิ่งที่บังจริง — กรองหนึ่งบรรทัด
+  - `isOpaqueLayer` และลำดับวาดของแหล่งย้าย (ไม่แก้) จาก `cesium/imageryLayers.ts` ไป `stores/imagery.ts` — คำสั่งใน bundle หลักไม่ดึง Cesium — ไม่มี
+  - การติ๊กแถว OSM และ preset แรกของ ion อยู่ใน `enableSourceWithConsent` — ทุกผู้เรียกได้พฤติกรรมเดียวกัน — ย้ายสองบรรทัดกลับ
+  - Fetch Orbit Data ไม่มีตัวเลือกระบบ GNSS จึงไม่มีกรณี "ติ๊กแต่ Imaging" (ติ๊ก = GREC + X เสมอ) บันทึกเหตุผลในคอมเมนต์ — ถ้าเพิ่มช่องระบบ GNSS ภายหลังต้องเพิ่มตัวกันและคำอธิบาย
+  - `no_gnss` ของ Validation ตัดสินจาก `systems` ของบรรทัดประวัติ (ไม่มี G/R/E/C = กลาง) ครอบคลุมวัน GNSS ที่ไม่มีระบบใดตัดสินได้ด้วย (เดิมแสดง Fail; engine เรียกว่า "ตัดสินไม่ได้") — แม่นกว่า Fail — ต้องอ่านไฟล์วันเพิ่ม
+  - `CatalogEntry.category` และ `display_name` เป็น optional — แถว cache เก่าและ fixture ไม่มี — บังคับแล้วแก้ helper สามตัว
+  - ช่อง Add Primary Sensor ใช้ได้เสมอแม้ไม่ได้เลือกดาว X — ไม่มีผลกับ Insert GNSS — ปิดใช้เมื่อไม่มีแถว X
+  - test "Insert G01" ของ brief ใช้ G22 เพราะ fixture มี G01 อยู่แล้ว — ไม่มี
+- งาน 8:
+  - `E2E_IMG` สร้างจากแม่แบบ `empty` + THBK + `X04` (สี `DEFAULT_COLOR` เหมือน Insert ของ server) + `MODIS` จาก `preset_by_norad(25994).sensor.definition()` (ไม่พิมพ์ค่าซ้ำ) วงโคจรปลอม X รัศมี 7076 km เอียง 98.2°
+    — ค่า preset มาจากที่เดียว — ฉาก GNSS ของ e2e ได้ hash เดิม (`E2E` ac0b3324dc02, `E2E_DATELINE` e3c54e56e5dd ตรวจกับ builder ก่อนแก้) — ไม่มี
+  - test "ไม่มี Sensor" ให้หน้าเว็บเห็น GIBS เปิดด้วย `page.route` ของ `/api/imagery/layers` และตอบชิ้นภาพ `/api/imagery/tiles` ในเบราว์เซอร์ (PNG 1×1) — Show Imagery ถามยินยอมก่อนดู Sensor
+    ถ้ายืนยันจริงจะ `PUT /api/settings` และ server ของ e2e จะเปิด GIBS ; route ทำให้ไม่มีคำขอถึง server หรือ GIBS (server สวิตช์ปิดตอบ 403 โดยไม่ต่อเน็ตอยู่แล้ว) — test ผูกกับรูปของ payload `/imagery/layers`
+  - test เดียวกันปิด Satellite Models ก่อน Show Imagery — ข้อบกพร่องของ `terra.glb` (ด้านล่าง) ทำให้ render loop ของหน้าต่าง 3D หยุดเมื่อกล้องเข้าใกล้ Terra กล้องค้างกลางทาง test นี้ตรวจคำสั่ง ไม่ใช่โมเดล — โมเดล Terra ยังไม่มี e2e จนกว่าจะแก้ glb
+  - README รวมเรื่องของ ข2 ไว้ที่หัวข้อ 9.13 พร้อมตัวชี้ใน 7.1, 7.2, 8.4 และแก้จำนวนชั้น GIBS (10 ชั้น, Globe Manager 13 แถว) ใน 8.8 และ 9.10 — ผู้ใช้อ่านที่เดียว — ย้ายย่อหน้า
+  - README เขียนพฤติกรรมจริง: ดาว GEO ที่ too_old ถูกซ่อนโดยไม่มีข้อความ `SAT_FLAGGED` (engine ไม่ส่งของดาว X; เห็นธงในคอลัมน์ Status ของ Catalog) ขณะที่ spec §7 บอกว่า "มีข้อความบอก" — ไม่เขียนสิ่งที่ไม่มี — ดูข้อเลื่อนไว้
+
+### ข้อบกพร่องที่ e2e ของงาน 8 พบ
+
+- **`models/terra/terra.glb`**: primitive `wing-Y` สองชิ้นใช้วัสดุ 10 และ 11 (`Main Solar Panels.001`, `Main Solar Panels Back`) ที่มี `baseColorTexture` แต่ไม่มี `TEXCOORD_0`
+  shader ของ Cesium คอมไพล์ไม่ผ่าน (`'v_texCoord_0' : undeclared identifier` เป็นข้อผิดพลาดของ GLSL จึงเกิดกับทุก GPU ไม่ใช่เฉพาะ SwiftShader) เมื่อ Terra กลายเป็นโมเดล
+  (กล้องอยู่ใน Model Detail Threshold 30,000 km) แล้ว render loop ของหน้าต่าง 3D หยุด (frameCount ค้าง กล้องที่กำลังบินค้างกลางทาง) โมเดลอื่นทั้ง 25 ตัวใน `dist/models` ไม่มีปัญหานี้
+  แก้ที่ `models/terra/scripts/build.py` (ใส่ UV ให้แผงหรือใช้วัสดุไม่มีภาพ) อยู่นอกขอบเขตงาน 8 จึงไม่ได้แก้
+
+### ข้อเล็กที่เลื่อนไว้
+
+- **ไม่ทำในรอบนี้ (spec §2)**: แถบสแกนสะสม (swath corridor) บนแผนที่ 2D ; สลับชั้นกลางคืน/IR อัตโนมัติ ; fetch กลุ่ม `resource`, `goes`, `noaa` (Aqua อยู่เฉพาะ `visual` ซึ่งอาจหลุดได้: spec §7)
+- **รอผู้ใช้ตัดสิน**: เพิ่ม `docs/2026-11-15-stk-terms-rectangular-sensor.md` เป็นเอกสารหลักฐาน stkHelp ตัวที่สาม (เฉพาะคำที่ยกมาตรงตัว) ให้ Vertical/Horizontal Half Angle เป็น `stkHelp` แทน "Added by GNSS Studio"
+  หรือเพิ่มสองคำนี้ใน STK reference §G (Ruling d)
+- **การ normalise เมื่อสลับชนิด Sensor**: Rectangular → Simple Conic เก็บ V/H เดิมและไม่มี cone ; ถ้ามี UI สลับชนิดภายหลัง ให้ normalise ที่ `_normalise_sensor_definition` ในจุด merge ของ `objects.py` เท่านั้น (ไม่ใช่ schema หรือ PUT)
+- ต้องตัดสิน: `intervals.json` global_statistics รวมดาว X กับ GNSS ในฉากผสม ; ฉากที่มีแต่ดาวถ่ายภาพบันทึก validation `pass: false` (หน้าต่างแสดง No GNSS แล้ว แต่ JSON ยังเป็น false)
+- ดาว GEO ที่ถูกซ่อนเพราะ too_old ไม่มีข้อความบอก (spec §7)
+- Show Imagery ถามยินยอมนอกตัวล็อกของ Globe Manager: กด Globe Manager กับ Show Imagery ซ้อนกันได้ `PUT /api/settings` ทับกัน (รายงานงาน 7)
+- งาน 2: `fetch_group` เลือกไฟล์ตามชื่อ (lexicographic) ขณะที่ `_latest_cached` เลือกตามเวลาที่ parse ได้ และกิ่งชื่อที่ parse ไม่ได้ยังไม่มี test ; snapshot ชนกันเมื่อ fetch GREC แล้ว GRECX ภายในนาทีเดียว (ได้ snapshot แรก) ; ตัวคั่นในข้อความ `IMAGING_GROUP_UNAVAILABLE`
+- งาน 3: ไฟล์ cache ที่เวลาในชื่ออยู่ในอนาคตบังไฟล์เก่าที่ใช้ได้ของกลุ่มเดียวกัน ; `_optional` ของ IPP/MF ใช้กับทุก PRN (จำกัดเฉพาะ X ได้) ; test GMAT ของ X01 ไม่ดูกรอบ (ควรตรวจกล่อง ECEF ตลอด 6 ชม.) ;
+  ไม่มี test DOP ที่ X ทำให้ n < 4 กลายเป็น ≥ 4 ; ตัวช่วย ENU→ECEF มีสำเนาที่ 4 ; คอมเมนต์/บรรทัดว่างผิดที่ใน test_studio_validate/test_dop
+- งาน 4: กฎของ systems ซ้ำกันใน `jobs._check_value` กับ `studio._system_letters`
+- งาน 5: test ที่ยังขาด (VIIRS และ ABI/ABI_X03 Insert, Sensor ตัวที่สองชน, If-Match เก่าพร้อม `primary_sensors`, เทียบไบต์ไฟล์ Sensor เก่า) ; ชื่อ `_Names.first_free_of`, รูปแบบ import, deepcopy ซ้ำ, fixture `imaging_snapshot` ;
+  `SensorPages` พึ่งลำดับของ Literal (Simple Conic ก่อน)
+- งาน 6: `sensorFrame` คำนวณให้ทุกกรวย ; การตรวจป้ายแบบปฏิเสธเปราะ ; ช่องคงที่ได้ 422 ; ยังไม่มี test รอยสี่เหลี่ยมที่ตัดขอบโลกบางส่วน ; HUD ในฉากจริงยังดูด้วยตา
