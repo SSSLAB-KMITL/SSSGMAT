@@ -13,36 +13,24 @@ from gnss_predict import custom_satellites as custom
 from gnss_predict.config import CELESTRAK_STATE_FILE
 from gnss_predict.omm import fetch_group
 from gnss_predict.sp3 import MAX_SATELLITES as MAX_SCENARIO_SATELLITES
-from . import objects, templates
+from . import gpredict_catalog, objects, templates
 from .errors import ApiError
 
 _LOOKUP_LOCK = threading.Lock()
 
 
-def _read_gpredict(folder):
-    if folder is None:
-        raise ValueError('ยังไม่ได้เชื่อม Gpredict ในเครื่อง: ตั้ง GNSS_STUDIO_GPREDICT_DATA หรือเลือกไฟล์ satdb.json')
-    try:
-        with (Path(folder) / 'satdb.json').open('rb') as stream:
-            raw = stream.read(custom.MAX_BYTES + 1)
-        if len(raw) > custom.MAX_BYTES:
-            raise ValueError('ไฟล์ Gpredict ต้องไม่เกิน 5 MB')
-        return raw.decode('utf-8')
-    except OSError as exc:
-        raise ValueError('อ่านฐานข้อมูล Gpredict ที่เชื่อมไว้ไม่ได้') from exc
-
-
 def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=None):
-    allowed = {'class', 'method', 'format', 'text', 'norad', 'group', 'add_to_scenario'}
+    allowed = {'class', 'method', 'format', 'text', 'norad', 'group', 'batch', 'batch_size', 'replace_unselected', 'add_to_scenario'}
     if set(body) - allowed:
         raise ApiError(422, 'ORBIT_IMPORT_INVALID', 'มีช่องนำเข้าที่ไม่รู้จัก')
     now = now or datetime.now(timezone.utc)
     import_format = body.get('format')
     add_to_scenario = body.get('add_to_scenario', True)
+    replace_unselected = body.get('replace_unselected', False)
     source = Path(data_dir) / templates.ORBITS_DIR / templates.resolve_snapshot(data_dir, doc['orbit_snapshot'])
     try:
-        if type(add_to_scenario) is not bool:
-            raise ValueError('add_to_scenario ต้องเป็น true หรือ false')
+        if type(add_to_scenario) is not bool or type(replace_unselected) is not bool:
+            raise ValueError('add_to_scenario และ replace_unselected ต้องเป็น true หรือ false')
         if import_format in ('norad', 'group'):
             if import_format == 'norad':
                 norad = body.get('norad')
@@ -63,7 +51,8 @@ def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=Non
             if import_format == 'norad' and (len(records) != 1 or records[0].norad != norad):
                 raise ValueError('แหล่งข้อมูลตอบกลับ NORAD ไม่ตรงกับที่ขอ')
         elif import_format == 'gpredict_local':
-            records = custom.parse_import(_read_gpredict(gpredict_data), 'gpredict')
+            text = gpredict_catalog.import_text(gpredict_data, body.get('group'), body.get('batch'), body.get('batch_size', custom.MAX_SATELLITES))
+            records = custom.parse_import(text, 'gpredict')
         else:
             records = custom.parse_import(body.get('text'), import_format)
         present = {o['norad'] for o in doc['objects'] if o['class'] == 'Satellite'}
@@ -73,7 +62,11 @@ def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=Non
         catalog = templates.load_catalog(data_dir, doc['orbit_snapshot'],
             templates.parse_utc(period['start'], 'start'), templates.parse_utc(period['stop'], 'stop'))
         native = {s.norad for s in catalog.satellites if s.system != 'U'}
-        payload, _skipped = custom.merged_registry(custom.read_registry(source), records, native)
+        existing_rows = custom.read_registry(source)
+        if replace_unselected:
+            keep = present | {r.norad for r in records}
+            existing_rows = [r for r in existing_rows if r['norad'] in keep]
+        payload, _skipped = custom.merged_registry(existing_rows, records, native)
     except ValueError as exc:
         field = {'norad': 'norad', 'group': 'group', 'gpredict_local': 'format'}.get(import_format, 'text')
         raise ApiError(422, 'ORBIT_IMPORT_INVALID', str(exc), field) from exc

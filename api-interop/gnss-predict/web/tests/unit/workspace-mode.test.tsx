@@ -70,11 +70,11 @@ test("mode-specific catalog filter keeps all four GNSS systems and can reveal ge
 });
 
 test("general catalog opens Gpredict import but does not import or download automatically", async () => {
-  const f = stubFetch({ "GET /api/catalog": { json: [] } });
+  const f = stubFetch({ "GET /api/catalog": { json: [] }, "GET /api/gpredict/groups": { json: { total: 906, groups: [] } } });
   render(<SatelliteCatalog params={{ catalogMode: "satellites", expandImport: true, importFormat: "gpredict_local", requestId: 2 }} />);
   expect((screen.getByLabelText("รูปแบบข้อมูลวงโคจร") as HTMLSelectElement).value).toBe("gpredict_local");
   expect((screen.getByText("เพิ่มดาวด้วย NORAD หรือไฟล์ TLE / OMM").closest("details") as HTMLDetailsElement).open).toBe(true);
-  await waitFor(() => expect(f.calls).toHaveLength(1));
+  await waitFor(() => expect(f.calls).toHaveLength(2));
   expect(f.calls[0].method).toBe("GET");
 });
 

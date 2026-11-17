@@ -16,6 +16,7 @@ async function mount() {
 }
 function server() {
   return stubFetch({
+    "GET /api/gpredict/groups": { json: { total: 906, groups: [{ name: "amateur", count: 99 }] } },
     "POST /api/scenarios/S1/objects": { status: 201, json: { created: ["*/Satellite/ISS"], etag: "e2", results_stale: false }, headers: { ETag: '"e2"' } },
     "GET /api/scenarios/S1": { json: makeScenarioDoc(), headers: { ETag: '"e2"' } },
     "GET /api/scenarios/S1/objects": { json: makeTree() },
@@ -80,4 +81,19 @@ test("CelesTrak group import sends one group request", async () => {
   const posts = f.calls.filter(c => c.method === "POST");
   expect(posts).toHaveLength(1);
   expect(posts[0].body).toEqual({ class: "Satellite", method: "Import Orbits", format: "group", group: "amateur", add_to_scenario: false });
+});
+
+test("large Gpredict catalogs select a bounded group and batch without importing the entire database", async () => {
+  const f = server();
+  f.routes["GET /api/gpredict/groups"] = { json: { total: 17037, groups: [{ name: "amateur", count: 99 }, { name: "starlink", count: 11185 }] } };
+  await mount();
+  await userEvent.selectOptions(screen.getByLabelText("รูปแบบข้อมูลวงโคจร"), "gpredict_local");
+  await screen.findByLabelText("กลุ่มจาก Gpredict");
+  expect((screen.getByLabelText("กลุ่มจาก Gpredict") as HTMLSelectElement).value).toBe("amateur");
+  await userEvent.selectOptions(screen.getByLabelText("กลุ่มจาก Gpredict"), "starlink");
+  await userEvent.clear(screen.getByLabelText("ชุดที่นำเข้า"));
+  await userEvent.type(screen.getByLabelText("ชุดที่นำเข้า"), "2");
+  await userEvent.click(button());
+  await waitFor(() => expect(screen.getByRole("status")).toBeDefined());
+  expect(f.calls.find(c => c.method === "POST")!.body).toEqual({ class: "Satellite", method: "Import Orbits", format: "gpredict_local", group: "starlink", batch: 1, batch_size: 100, add_to_scenario: false });
 });

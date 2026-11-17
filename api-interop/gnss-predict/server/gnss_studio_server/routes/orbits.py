@@ -93,6 +93,15 @@ def list_orbits(config: Config = Depends(get_config)) -> list[dict]:
     return [_snapshot_entry(config.data_dir / ORBITS_DIR / name) for name in snapshot_names(config.data_dir)]
 
 
+@router.get("/gpredict/groups")
+def gpredict_groups(config: Config = Depends(get_config)) -> dict:
+    from ..gpredict_catalog import group_summary
+    try:
+        return group_summary(config.gpredict_data)
+    except ValueError as exc:
+        raise ApiError(422, "ORBIT_IMPORT_INVALID", str(exc), "format") from exc
+
+
 @router.post("/orbits/fetch", status_code=202)
 def fetch_orbits(body: FetchRequest | None = None, jobs: JobManager = Depends(get_jobs)) -> dict:
     """ตัวอักษรระบบผิด -> 422 ที่ field systems (ตรวจโดยคิว job)"""

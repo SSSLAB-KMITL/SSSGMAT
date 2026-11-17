@@ -2608,6 +2608,26 @@
         "summary": "Events"
       }
     },
+    "/api/gpredict/groups": {
+      "get": {
+        "operationId": "gpredict_groups_api_gpredict_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gpredict Groups Api Gpredict Groups Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Gpredict Groups"
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
