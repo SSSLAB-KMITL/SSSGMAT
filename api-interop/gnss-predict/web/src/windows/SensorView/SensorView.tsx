@@ -5,6 +5,7 @@
 // - ข้อความบนภาพ (P4): handle.sensorHud() อ่านใหม่ทุกครั้งที่เวลา (useThrottledTime) หรือ doc เปลี่ยน และเมื่อภาพแจ้ง (ทะเบียน Sensor View)
 //   ชื่อ sensor และดาว, เวลารูปแบบเดียวกับแถบ Animation, จุดใต้ดาว (ทศนิยม 2 ตำแหน่ง), ความสูง km (ทศนิยม 0), Cone Half Angle (ทศนิยม 1)
 //   และวงขอบกรวย (SVG ที่ viewBox [−1, 1] พอดีด้านสั้นของภาพ: รัศมี = tan α / tan(fs/2) เท่าของครึ่งด้านสั้น)
+//   Rectangular (ข2 Ruling e): บรรทัดครึ่งมุมแสดง Vertical × Horizontal (ทศนิยม 1) ไม่มีวงขอบกรวย ภาพใช้ α = max(V, H)
 // - ดาวแม่ไม่มีตำแหน่ง (sensorHud() = null: ไม่มีผลหรือนอกช่วงเวลา) = ภาพว่างพร้อมข้อความไทย (ไม่ใช่ error)
 // - Shift + ล้อเมาส์ = Step Forward / Backward แบบหน้าต่าง 3D; ลาก หมุน ซูมด้วยเมาส์ถูกปิดใน scene (กล้องล็อก)
 // - โหมดกล้อง (imagery spec §5.3): แถบ Display (Camera ตั้งต้น | Sensor) และ Zoom In / Zoom Out พร้อม "×n" เก็บใน params (display, zoom) แบบ Up
@@ -284,7 +285,8 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
     );
   }
   const sensor = doc?.objects.find((o) => o.class === "Sensor" && objectPath(o) === path) as SensorObj | undefined;
-  const radius = display === "sensor" ? coneCircleRadius(hud.coneHalfAngle, zoom) : null;
+  // Rectangular ไม่มีวงขอบกรวย (ข2 Ruling e): ขอบจริงเป็นสี่เหลี่ยม วงจะบอกขอบผิด
+  const radius = display === "sensor" && hud.halfAngles === null ? coneCircleRadius(hud.coneHalfAngle, zoom) : null;
   // ไม่มีชั้นออนไลน์บนจอจริง (สวิตช์ปิดทั้งหมด หรือเปิดแต่ไม่มีชั้นที่แสดง เช่น ion ยังไม่เลือก asset / ion ล้มเหลว / ซ่อนทุกแถว) = แนะนำ Globe Manager
   const hint = hud.imagery === null && display === "camera" && zoom >= HINT_ZOOM;
   const groundWidth = sensorViewGroundWidthM(hud.altKm, hud.fovDeg);
@@ -303,7 +305,11 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
         <div>{format(time)}</div>
         <div>{msg("sensorView.hudSubPoint", { lat: fixed(hud.lat, 2), lon: fixed(hud.lon, 2) })}</div>
         <div>{msg("sensorView.hudAltitude", { alt: fixed(hud.altKm, 0) })}</div>
-        <div>{msg("sensorView.hudCone", { angle: fixed(hud.coneHalfAngle, 1) })}</div>
+        <div>
+          {hud.halfAngles === null
+            ? msg("sensorView.hudCone", { angle: fixed(hud.coneHalfAngle, 1) })
+            : msg("sensorView.hudRect", { v: fixed(hud.halfAngles.vertical, 1), h: fixed(hud.halfAngles.horizontal, 1) })}
+        </div>
         <div>{msg("sensorView.hudFov", { fov: fovText(hud.fovDeg), zoom: zoomText(hud.zoom) })}</div>
         {groundLine !== null && <div>{groundLine}</div>}
         <div>{imageryLine(hud.imagery)}</div>

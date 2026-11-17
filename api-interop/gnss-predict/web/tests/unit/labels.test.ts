@@ -409,6 +409,19 @@ describe("sensor labels", () => {
     }
   });
 
+  test("Rectangular (ข2 Ruling d): the §G delimiter rule accepts the sensor type; the two half angles are ours", () => {
+    expect(hasTerm(sections.get("G")!, "Rectangular")).toBe(true);
+    expect(labels["option.sensorType.rectangular"]).toEqual({ text: "Rectangular", source: "stk", ref: "STK ref §G" });
+    expect(optionLabel("sensor_type", "Rectangular")).toBe("Rectangular");
+    // STK terms §2 ยืนยันบน help.agi.com แต่ไม่อยู่ใน reference และไม่ใช่ไฟล์หลักฐานของ stkHelp จึงเป็น ours
+    expect(labels["field.verticalHalfAngle"]).toEqual({ text: "Vertical Half Angle", source: "ours" });
+    expect(labels["field.horizontalHalfAngle"]).toEqual({ text: "Horizontal Half Angle", source: "ours" });
+    for (const text of ["Vertical Half Angle", "Horizontal Half Angle"]) {
+      expect(ref.includes(text), text).toBe(false);
+      expect((helpTerms + menuTerms).includes(text), text).toBe(false);
+    }
+  });
+
   test("the sensor menu and pages the reference does not spell out in full are tagged like their nearest existing key", () => {
     // "Sensor..." ไม่มีใน reference (มีแค่ Insert menu "New..." กับ "Default Object...") จึงเป็น ours เหมือน menu.insert.satellite
     expect(labels["menu.insert.sensor"]).toEqual({ text: "Sensor...", source: "ours" });
@@ -725,7 +738,7 @@ describe("Thai messages", () => {
   });
 
   test("the sensor messages are exactly the agreed text", () => {
-    const vars = { satellite: "G01", sensor: "Sensor1", angle: 45, lat: "13.7", lon: "100.5", alt: "20200" };
+    const vars = { satellite: "G01", sensor: "Sensor1", angle: 45, lat: "13.7", lon: "100.5", alt: "20200", v: "55.0", h: "0.4" };
     const expected: [MsgKey, string][] = [
       ["sensorView.noPosition", "ดาว G01 ยังไม่มีตำแหน่ง ณ เวลานี้ (ยังไม่มีผลการคำนวณวงโคจร หรือเวลาอยู่นอกช่วงวิเคราะห์)"],
       ["sensorView.limit", "เปิด Sensor View พร้อมกันได้ไม่เกิน 4 หน้าต่าง ปิดบานใดบานหนึ่งก่อน"],
@@ -736,6 +749,7 @@ describe("Thai messages", () => {
       ["sensorView.hudSubPoint", "จุดใต้ดาว 13.7, 100.5"],
       ["sensorView.hudAltitude", "ความสูง 20200 km"],
       ["sensorView.hudCone", "Cone Half Angle 45°"],
+      ["sensorView.hudRect", "ครึ่งมุม Vertical 55.0° × Horizontal 0.4°"],
     ];
     for (const [k, text] of expected) { expect(msg(k, vars), k).toBe(text); if (!NO_THAI.has(k)) expect(msg(k, vars), k).toMatch(THAI); }
     // ไม่ส่งค่า = ช่อง {var} ยังเห็นอยู่

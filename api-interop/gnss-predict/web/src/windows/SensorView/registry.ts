@@ -60,7 +60,11 @@ export interface SensorHud {
   lon: number;
   /** ความสูงเหนือโลกทรงกลมรัศมี Re (km) แบบเดียวกับรอยของกรวย */
   altKm: number;
-  /** Cone Half Angle (องศา) */
+  /** ชนิดของ sensor (Sensor Type) */
+  shape: "Simple Conic" | "Rectangular";
+  /** Vertical / Horizontal Half Angle (องศา) ของ Rectangular, Simple Conic = null */
+  halfAngles: { vertical: number; horizontal: number } | null;
+  /** ครึ่งมุมของภาพ (องศา) = viewHalfAngleOf: Cone Half Angle ของ Simple Conic, max(Vertical, Horizontal) ของ Rectangular (ข2 Ruling e) */
   coneHalfAngle: number;
   /** มุมกว้างด้านสั้นของภาพ (องศา) = sensorViewShortFovDeg(α, zoom) */
   fovDeg: number;

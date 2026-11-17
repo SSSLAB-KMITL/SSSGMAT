@@ -76,7 +76,7 @@ import {
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
 import { watchResize } from "../../cesium/resizeWatch";
-import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
+import { sensor3dParts, sensorHudShape, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
 import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
 import { createViewer, destroyViewer, latLonGrid, removeViewerPicking, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
@@ -942,12 +942,13 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const target = this.sensorTarget();
     if (target === null) return null;
     const sub = subSatellite(target.state.pos);
-    const coneHalfAngle = coneHalfAngleOf(target.sensor);
+    // Rectangular: ครึ่งมุมของภาพ = max(V, H) และ HUD แสดงทั้งสองมุม (ข2 Ruling e)
+    const { shape, halfAngles, coneHalfAngle } = sensorHudShape(target.sensor);
     const zoom = this.view.kind === "sensor" ? this.view.zoom : 1;
     const top = imageryStatus(this.viewer).topLayer;
     const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
     return {
-      sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle,
+      sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, shape, halfAngles, coneHalfAngle,
       fovDeg: sensorViewShortFovDeg(coneHalfAngle, zoom), zoom,
       imagery: top === null ? null : {
         title: top.title, label: top.label, missing: top.missingRatio > IMAGERY_MISSING_RATIO, source: top.source, maxLevel: top.max_level,

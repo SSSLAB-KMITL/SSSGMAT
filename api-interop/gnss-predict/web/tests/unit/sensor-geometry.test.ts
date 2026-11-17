@@ -13,12 +13,17 @@ import {
   isNadir,
   nadirCentralAngleRad,
   neededImageryLevel,
+  rectangleFootprint,
+  rectangleRays,
   sensorFootprint,
+  sensorFrame,
   sensorViewGroundWidthM,
   sensorViewFovDeg,
   sensorViewGroundWidthRangeM,
   sensorViewShortFovDeg,
   sensorViewZoomForGroundWidth,
+  type BodyFrame,
+  type Vec3,
 } from "../../src/cesium/sensorGeometry";
 import { EARTH_RADIUS_KM, WGS84_E2 } from "../../src/cesium/swath";
 
@@ -313,4 +318,127 @@ test("sensorViewGroundWidthRangeM gives the widest (at the min zoom) and narrowe
   // ไม่มีช่วง: ดาวไม่อยู่เหนือพื้น หรือกรวยไม่มีขนาด
   expect(sensorViewGroundWidthRangeM(0, 14.4)).toBeNull();
   expect(sensorViewGroundWidthRangeM(GPS_H, 0)).toBeNull();
+});
+
+// ---------- Sensor แบบ Rectangular (ข2 Ruling g, i, j): กรอบ sensor, เส้นขอบพีระมิดสี่เหลี่ยม และรอยบนพื้นโลก ----------
+// แกนแบบ STK Rectangular (For Comm and Radar): Horizontal Half Angle = ระนาบ XZ (±X = ตามแนวบิน), Vertical Half Angle = ระนาบ YZ (±Y = ขวางแนวบิน)
+
+const vdot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+const vcross = (a: Vec3, b: Vec3): Vec3 => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+/** มุม (เรเดียน) ระหว่างเวกเตอร์หนึ่งหน่วยสองตัว แบบ atan2 (แม่นที่มุมเล็ก) */
+const angleBetween = (a: Vec3, b: Vec3): number => Math.atan2(Math.hypot(...Object.values(vcross(a, b))), vdot(a, b));
+function expectVecClose(a: Vec3, b: Vec3, tol: number): void {
+  expect(Math.abs(a.x - b.x)).toBeLessThan(tol);
+  expect(Math.abs(a.y - b.y)).toBeLessThan(tol);
+  expect(Math.abs(a.z - b.z)).toBeLessThan(tol);
+}
+
+/** ดาวเหนือ (0°, 0°) สูง h km ความเร็วเฉื่อยชี้ทิศเหนือพอดี: +X ของตัวดาว = เหนือ (ตามแนวบิน), +Y = ตะวันออก (ขวางแนวบิน) */
+function northbound(hKm: number): { pos: Vec3; frame: BodyFrame } {
+  const pos = { x: (RE + hKm) * 1000, y: 0, z: 0 };
+  const vel = { x: 0, y: -EARTH_ROTATION_RAD_S * pos.x, z: 7450 };
+  return { pos, frame: bodyFrame(pos, vel)! };
+}
+
+test("sensor frame: Az 0 / El 90 is the body frame itself (STK: the frames coincide)", () => {
+  const { frame } = northbound(826.9);
+  const sf = sensorFrame(frame, 0, 90);
+  expectVecClose(sf.x, frame.x, 1e-12);
+  expectVecClose(sf.y, frame.y, 1e-12);
+  expectVecClose(sf.z, frame.z, 1e-12);
+});
+
+test("sensor frame: +Z is the Az-El boresight, and the frame is orthonormal and right-handed", () => {
+  const { frame } = northbound(826.9);
+  const sf = sensorFrame(frame, 30, 60);
+  expectVecClose(sf.z, boresightOf(frame, 30, 60), 1e-12);
+  for (const v of [sf.x, sf.y, sf.z]) expect(Math.hypot(v.x, v.y, v.z)).toBeCloseTo(1, 12);
+  expect(vdot(sf.x, sf.y)).toBeCloseTo(0, 12);
+  expect(vdot(sf.y, sf.z)).toBeCloseTo(0, 12);
+  expect(vdot(sf.z, sf.x)).toBeCloseTo(0, 12);
+  expectVecClose(vcross(sf.x, sf.y), sf.z, 1e-12);
+});
+
+test("rectangle rays: 4·perSide unit rays, corners at 0, perSide, 2·perSide, 3·perSide at atan(√(tan²H + tan²V)) from +Z", () => {
+  const { frame } = northbound(705);
+  const sf = sensorFrame(frame, 30, 60);
+  const [V, H] = [55, 0.41];
+  for (const perSide of [1, 2, 18]) {
+    const rays = rectangleRays(sf, V, H, perSide);
+    expect(rays).toHaveLength(4 * perSide);
+    for (const r of rays) expect(Math.hypot(r.x, r.y, r.z)).toBeCloseTo(1, 12);
+    const corner = Math.atan(Math.sqrt(Math.tan(H * D) ** 2 + Math.tan(V * D) ** 2));
+    for (const i of [0, perSide, 2 * perSide, 3 * perSide]) expect(Math.abs(angleBetween(rays[i], sf.z) - corner)).toBeLessThan(1e-12);
+    // มุมแรก (+H ทาง +X, +V ทาง +Y) แล้วด้านแรกไปทาง −X ที่ +Y คงที่
+    expect(vdot(rays[0], sf.x)).toBeGreaterThan(0);
+    expect(vdot(rays[0], sf.y)).toBeGreaterThan(0);
+    expect(vdot(rays[perSide], sf.x)).toBeLessThan(0);
+    expect(vdot(rays[perSide], sf.y)).toBeGreaterThan(0);
+  }
+  // จุดบนด้านเป็นเส้นตรงใน (tan H, tan V): ทุกเส้นของด้านแรกอยู่บนระนาบขอบ +V (tan ของมุมในระนาบ YZ เท่ากับ tan V)
+  const rays = rectangleRays(sf, V, H, 18);
+  for (let i = 0; i <= 18; i++) {
+    const r = rays[i % 72];
+    expect(vdot(r, sf.y) / vdot(r, sf.z)).toBeCloseTo(Math.tan(V * D), 12);
+  }
+  // ลำดับมุม: (+H,+V) → (−H,+V) → (−H,−V) → (+H,−V)
+  const sign = (r: Vec3) => [Math.sign(vdot(r, sf.x)), Math.sign(vdot(r, sf.y))];
+  expect([0, 18, 36, 54].map((i) => sign(rays[i]))).toEqual([[1, 1], [-1, 1], [-1, -1], [1, -1]]);
+});
+
+test("vertical edge midpoints are cross-track at ±13.723826° (VIIRS V 56.28 / H 0.42 at 826.9 km)", () => {
+  const { pos, frame } = northbound(826.9);
+  const fp = rectangleFootprint(pos, sensorFrame(frame, 0, 90), 56.28, 0.42, 2);
+  expect(fp.ring).toHaveLength(9);
+  expect(fp.ring[8]).toEqual(fp.ring[0]);
+  // จุด 1 = กลางด้าน +Y (ตะวันออก), จุด 5 = กลางด้าน −Y (ตะวันตก)
+  expect(Math.abs(fp.ring[1][0] - 13.723826)).toBeLessThan(1e-6);
+  expect(Math.abs(fp.ring[1][1])).toBeLessThan(1e-9);
+  expect(Math.abs(fp.ring[5][0] + 13.723826)).toBeLessThan(1e-6);
+  expect(Math.abs(fp.ring[5][1])).toBeLessThan(1e-9);
+  const widthKm = ((fp.ring[1][0] - fp.ring[5][0]) * D) * RE;
+  expect(Math.abs(widthKm - 3052.044)).toBeLessThan(0.5);
+  // กลางด้านตามแนวบิน (จุด 3 = −X ใต้, 7 = +X เหนือ) อยู่บนเส้นเมริเดียนเดียวกับจุดใต้ดาว ห่างไม่ถึง 0.06°
+  for (const i of [3, 7]) {
+    expect(Math.abs(fp.ring[i][0])).toBeLessThan(1e-9);
+    expect(Math.abs(fp.ring[i][1])).toBeLessThan(0.06);
+  }
+  expect(fp.ring[3][1]).toBeLessThan(0);
+  expect(fp.ring[7][1]).toBeGreaterThan(0);
+  expect(fp.boresightHit![0]).toBeCloseTo(0, 9);
+  expect(fp.boresightHit![1]).toBeCloseTo(0, 9);
+});
+
+test("MODIS V 55.0 / H 0.41 at 705 km: cross-track midpoints at ±10.477365°, a 2330.063 km strip", () => {
+  const { pos, frame } = northbound(705);
+  const fp = rectangleFootprint(pos, sensorFrame(frame, 0, 90), 55.0, 0.41, 2);
+  expect(Math.abs(fp.ring[1][0] - 10.477365)).toBeLessThan(1e-6);
+  expect(Math.abs(fp.ring[5][0] + 10.477365)).toBeLessThan(1e-6);
+  expect(Math.abs(fp.ring[1][1])).toBeLessThan(1e-9);
+  expect(Math.abs(fp.ring[5][1])).toBeLessThan(1e-9);
+  expect(Math.abs(((fp.ring[1][0] - fp.ring[5][0]) * D) * RE - 2330.063)).toBeLessThan(0.5);
+});
+
+test("rectangle footprint with 18 points a side: 73 ring points, none on the horizon, symmetric corners", () => {
+  const { pos, frame } = northbound(826.9);
+  const fp = rectangleFootprint(pos, sensorFrame(frame, 0, 90), 56.28, 0.42);
+  expect(fp.ring).toHaveLength(73);
+  expect(fp.horizon).toHaveLength(72);
+  expect(fp.horizon.every((h) => !h)).toBe(true);
+  expect(fp.ring[72]).toEqual(fp.ring[0]);
+  const corners = [0, 18, 36, 54].map((i) => fp.ring[i]);
+  for (const [lon, lat] of corners.slice(1)) {
+    expect(Math.abs(Math.abs(lon) - Math.abs(corners[0][0]))).toBeLessThan(1e-9);
+    expect(Math.abs(Math.abs(lat) - Math.abs(corners[0][1]))).toBeLessThan(1e-9);
+  }
+  // มุมแรกอยู่ตะวันออกเฉียงเหนือ (+X เหนือ, +Y ตะวันออก)
+  expect(corners[0][0]).toBeGreaterThan(0);
+  expect(corners[0][1]).toBeGreaterThan(0);
+});
+
+test("a rectangle wider than the Earth disc ends on the horizon, like the cone", () => {
+  const { pos, frame } = northbound(826.9);
+  const fp = rectangleFootprint(pos, sensorFrame(frame, 0, 90), 80, 80, 4);
+  expect(fp.horizon.every(Boolean)).toBe(true);
+  expect(fp.ring.flat().every(Number.isFinite)).toBe(true);
 });

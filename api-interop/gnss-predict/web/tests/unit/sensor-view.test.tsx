@@ -62,7 +62,12 @@ function fakeView(panelId: string): Fake {
 }
 
 const HUD: SensorHud = {
-  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1, imagery: null, shortSidePx: 600,
+  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, shape: "Simple Conic", halfAngles: null, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1,
+  imagery: null, shortSidePx: 600,
+};
+/** MODIS บน Terra (ข2 Ruling e, g): Rectangular V 55.0 / H 0.41 ครึ่งมุมของภาพ = max(V, H) */
+const HUD_RECT: SensorHud = {
+  ...HUD, sensor: "MODIS", satellite: "X04", altKm: 705, shape: "Rectangular", halfAngles: { vertical: 55.0, horizontal: 0.41 }, coneHalfAngle: 55, fovDeg: 115.5,
 };
 
 /** handle ที่หน้าต่างแต่ละบานได้ ตาม panelId; nextHud = ข้อความบนภาพของบานที่จะเปิดถัดไป */
@@ -217,6 +222,22 @@ describe("the window", () => {
     await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38)!, 9));
     await user.click(screen.getByRole("button", { name: t("toolbar.zoomIn") }));
     await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38, Math.SQRT2)!, 9));
+  });
+
+  test("a Rectangular sensor: no cone circle in Sensor display, and the HUD shows both half angles instead of the cone", async () => {
+    const user = userEvent.setup();
+    nextHud = HUD_RECT;
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    const hud = await screen.findByTestId("sensor-view-hud");
+    await user.click(screen.getByRole("button", { name: t("sensorView.display.sensor") }));
+    await waitFor(() => expect(views()[0].params).toMatchObject({ display: "sensor" }));
+    expect(document.querySelector(".sensor-view-cone")).toBeNull();
+    const lines = within(hud).getAllByText(/.+/).map((el) => el.textContent);
+    expect(lines).toContain(msg("sensorView.hudRect", { v: "55.0", h: "0.4" }));
+    expect(hud.textContent).toContain("Vertical 55.0° × Horizontal 0.4°");
+    expect(hud.textContent).not.toContain("Cone Half Angle");
+    expect(lines).toContain(msg("sensorView.hudFov", { fov: "115.5", zoom: 1 }));
   });
 
   test("Display: new windows start in Camera; Sensor and back are stored in the params and sent to the scene", async () => {

@@ -359,6 +359,9 @@ const LABELS = {
   "field.parentObject": ours("Parent"),
   "field.sensorType": stk("Sensor Type", "G"),
   "field.coneHalfAngle": stk("Cone Half Angle", "G"),
+  // Rectangular (ข2 Ruling d): ยืนยันบน help.agi.com ใน STK terms §2 แต่ไม่อยู่ใน reference และไม่ใช่ไฟล์หลักฐานของ stkHelp จึงเป็น ours
+  "field.verticalHalfAngle": ours("Vertical Half Angle"),
+  "field.horizontalHalfAngle": ours("Horizontal Half Angle"),
   "field.pointingType": stk("Pointing Type", "G"),
   "field.orientationMethod": stk("Orientation Method", "G"),
   "field.azimuth": stk("Azimuth", "G"),
