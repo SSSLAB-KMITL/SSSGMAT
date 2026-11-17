@@ -114,8 +114,11 @@ async function createAndOpen(satellitePath: string): Promise<void> {
   openSensorView(path);
 }
 
-/** Sensor View ของดาว: sensor ตัวแรกในต้นไม้ ไม่มี = สร้าง Sensor<n> แบบ Simple Conic แล้วเปิด (ข2 Ruling n) */
-export async function openSensorViewForSatellite(satellitePath: string): Promise<void> {
+/**
+ * คำสั่ง Sensor View บนดาว (sensor spec §5.4): sensor ตัวแรกในต้นไม้ ไม่มี = สร้าง Sensor<n> แบบ Simple Conic แล้วเปิด
+ * Show Imagery ไม่ใช้ตัวนี้ (ข2 amendment z: ไม่มี sensor = บินกล้องไปเหนือดาว ไม่สร้าง object)
+ */
+async function openSensorViewForSatellite(satellitePath: string): Promise<void> {
   const first = firstSensorOf(satellitePath);
   if (first !== null) openSensorView(first);
   else await createAndOpen(satellitePath);

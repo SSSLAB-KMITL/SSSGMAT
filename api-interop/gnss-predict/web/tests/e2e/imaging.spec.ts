@@ -264,25 +264,31 @@ test.describe("Imaging satellites", () => {
   }
 
   test("Show Imagery on a satellite without a sensor creates nothing and flies over it", async ({ page, request }) => {
-    // Satellite Models ปิด: โมเดล terra.glb มี primitive (wing-Y) ที่ใช้วัสดุมีภาพแต่ไม่มี TEXCOORD_0 shader คอมไพล์ไม่ผ่าน
-    // เมื่อกล้องเข้าใกล้ Terra ภายใน Model Detail Threshold แล้ว render loop ของหน้าต่าง 3D หยุด (กล้องค้างกลางทาง) แยกเป็นข้อบกพร่องของโมเดล
-    // test นี้ตรวจคำสั่ง Show Imagery จึงใช้จุดของดาวแทนโมเดล
+    // Satellite Models ปิด: test นี้ตรวจคำสั่ง Show Imagery อย่างเดียว จึงใช้จุดของดาวแทนโมเดล
+    // (Terra เป็นโมเดลกับ terra.glb ที่ยังเสีย = test ถัดไป: ตัวกันปิดโมเดลของหน้าต่างแล้ววาดต่อ)
     await showImageryWithoutSensor(page, request, false);
   });
 
-  // ช่องว่างที่ติดตามไว้: เปิด test นี้เมื่อแก้ terra.glb (feature/gnss-studio-models) หรือเมื่อตัวกันในเว็บ (render error = ปิดโมเดลของ viewer นั้น) เข้ามา
-  test.fixme(
-    "Show Imagery on Terra with Satellite Models on",
-    {
-      annotation: {
-        type: "issue",
-        description:
-          "models/terra/terra.glb: mesh wing-Y uses textured materials 10/11 without TEXCOORD_0; Cesium's shader fails ('v_texCoord_0' undeclared) " +
-          "and the 3D render loop stops once Terra becomes a model (camera within 30,000 km). See docs/2026-11-14-gnss-studio-imagery-decisions.md, ข2.",
-      },
-    },
-    async ({ page, request }) => {
-      await showImageryWithoutSensor(page, request, true);
-    },
-  );
+  // ตัวกันในเว็บ (ข2 final C1): models/terra/terra.glb ยังมีข้อบกพร่อง (mesh wing-Y ใช้วัสดุมีภาพ 10/11 แต่ไม่มี TEXCOORD_0 shader ของ Cesium
+  // คอมไพล์ไม่ผ่าน 'v_texCoord_0') เมื่อ Terra เป็นโมเดลในภาพ renderError ครั้งแรก = หน้าต่างนั้นปิดโมเดลของตัวเอง ดาวเป็นจุด แล้ววาดต่อ
+  // test นี้จึงใช้ glb ที่เสียจริงเป็นตัวพิสูจน์ (แก้ glb แล้ว ข้อความ SCENE_MODELS_DISABLED จะไม่เกิด: ให้ปรับ test นี้ตามนั้น)
+  test("Show Imagery on Terra with Satellite Models on", async ({ page, request }) => {
+    // บินไปและวาดต่อหลังบิน (ตรวจใน helper) ทั้งที่ Satellite Models ของหน้าต่างเปิดอยู่
+    await showImageryWithoutSensor(page, request, true);
+    // โมเดลของหน้าต่างนี้ปิดในหน่วยความจำ: ไม่มีโมเดล X04 เป็นจุด
+    await expect.poll(() => page.evaluate(() => window.__gnssStudioTest!.modelCount()), { message: "satellite models in the 3D window" }).toBe(0);
+    expect(await page.evaluate((n) => window.__gnssStudioTest!.pointShown(n), TERRA.prn), `${TERRA.prn} drawn as a point`).toBe(true);
+    // Message Viewer: SCENE_MODELS_DISABLED หนึ่งข้อความ ไม่มี SCENE_RENDER และไม่มีข้อความ "หยุดทำงาน" แทนภาพ
+    await page.getByRole("tab", { name: "Message Viewer" }).click();
+    const disabled = page.getByRole("row").filter({ hasText: "SCENE_MODELS_DISABLED" });
+    await expect(disabled).toHaveCount(1);
+    await expect(disabled).toContainText("v_texCoord_0");
+    await expect(page.getByRole("row").filter({ hasText: "SCENE_RENDER" })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: msg("scene.renderStopped") })).toHaveCount(0);
+    // ยังวาดอยู่หลังปิดโมเดล: เวลาเปลี่ยนแล้วมีเฟรมใหม่ และไม่มีข้อความเพิ่ม
+    const frames = await hooks.frames(page);
+    await page.evaluate((t) => window.__gnssStudioTest!.setTime(t), "2026-11-10T00:02:00Z");
+    await expect.poll(() => hooks.frames(page), { message: "3D frames with the models off" }).toBeGreaterThan(frames);
+    await expect(disabled).toHaveCount(1);
+  });
 });

@@ -2,6 +2,7 @@
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
 //   System (ทั้งหมด / G / R / E / C / Imaging = X) และคำค้น (ไม่สนตัวพิมพ์ ค้น PRN SVN NORAD Block ชื่อ CelesTrak และชื่อที่แสดง)
+//   Imaging กับ snapshot ที่ไม่มีดาวถ่ายภาพเลย (orbit_snapshot ตั้งตอนสร้าง scenario: Fetch ใหม่ไม่เติมให้ scenario เดิม) = ข้อความบอกทางแทน "ไม่พบดาว"
 // - ตาราง PRN, SVN, NORAD, Block, Name (display_name: ดาวถ่ายภาพ = ชื่อ preset เช่น Terra, GNSS = ชื่อ CelesTrak), Age, Status (ธง; ดาวที่อยู่ใน scenario แล้ว = "มีแล้ว") เลือกหลายแถว: คลิก, Ctrl/Cmd-คลิก (เพิ่ม/เอาออก),
 //   Shift-คลิก (ช่วงจากแถวที่คลิกล่าสุด; Ctrl+Shift เพิ่มช่วง) คีย์บอร์ด: ลูกศรเลื่อน (Shift ขยายช่วง) Space สลับ Ctrl/Cmd+A เลือกทั้งหมดที่เห็น
 //   แถวที่มี NORAD ตรงกับดาวใน scenario เลือกไม่ได้ ตัวกรองที่ซ่อนแถวที่เลือกไว้ = เอาแถวนั้นออกจากที่เลือก (Insert ส่งเฉพาะที่เห็นอยู่)
@@ -130,6 +131,8 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
     return (entries ?? []).filter((e) => (system === "" || e.system === system) && (needle === "" || matches(e, needle)));
   }, [entries, system, search]);
   const selectable = useMemo(() => visible.filter((e) => !present.has(e.norad)), [visible, present]);
+  // System = Imaging แต่ snapshot ของ scenario ไม่มีดาวถ่ายภาพเลย: บอกทาง (Fetch ใหม่แล้วสร้าง scenario ใหม่) แทน "ไม่พบดาว"
+  const noImaging = system === IMAGING && entries !== null && !entries.some((e) => e.category === "imaging");
 
   // ตัวกรองซ่อนแถวที่เลือกไว้ = เอาออกจากที่เลือก (กลับมาแสดงแล้วไม่กลับมาเลือกเอง)
   useEffect(() => {
@@ -329,7 +332,11 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
             </tbody>
           </table>
         )}
-        {doc !== null && load.status === "ready" && visible.length === 0 && <p className="catalog-note">{msg("catalog.noMatch")}</p>}
+        {doc !== null && load.status === "ready" && visible.length === 0 && (
+          <p className="catalog-note">
+            {noImaging ? msg("catalog.noImaging", { snapshot: snapshot ?? "" }) : msg("catalog.noMatch")}
+          </p>
+        )}
       </div>
 
       <div className="catalog-footer">

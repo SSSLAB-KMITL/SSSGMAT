@@ -946,3 +946,14 @@ test("the Sensor View window, its commands, track.ts and the test hooks load no 
   expect([...seen].some((f) => f.endsWith("Graphics3D/scene3d.ts"))).toBe(false);
   expect(seen.size).toBeGreaterThan(10);
 });
+
+// ข2 final minor: ทางของดาว (sensor ตัวแรกหรือสร้าง Sensor<n>) เป็นของคำสั่ง Sensor View เท่านั้น Show Imagery ไม่ใช้ (amendment z) จึงไม่ export
+test("the satellite branch of the Sensor View command is internal to SensorView/commands.ts", async () => {
+  const commands = await import("../../src/windows/SensorView/commands");
+  expect(Object.keys(commands)).not.toContain("openSensorViewForSatellite");
+  const source = readFileSync(resolve(import.meta.dirname, "../../src/windows/SensorView/commands.ts"), "utf8");
+  // doc comment ของมันอ้าง amendment z (Ruling n ใช้กับ firstSensorOf ของ Show Imagery เท่านั้น)
+  const doc = /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*async function openSensorViewForSatellite\b/.exec(source)?.[1] ?? "";
+  expect(doc).toContain("amendment z");
+  expect(doc).not.toMatch(/Ruling n\b/);
+});

@@ -44,6 +44,10 @@
 //   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
 //   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นชุดละ 100 ms: SatModelSource)
 //   Cesium โหลดโมเดลไม่สำเร็จ (errorEvent ของ primitive: watchModelErrors) = โมเดลนั้นล้มเหลวทั้งหน้าเว็บ ดาวกลับเป็นจุด + ข้อความไทยครั้งเดียวต่อโมเดล
+//   วาดไม่ได้ (ข2 final C1: renderError ขณะมีโมเดลในภาพ เช่น glb ที่ shader คอมไพล์ไม่ผ่าน) = ตัวกัน onRenderError: ปิดโมเดลของหน้าต่างนี้ในหน่วยความจำ
+//   (modelsSuppressed ไม่เขียนลง workbook ทุกที่ที่อ่าน satelliteModels ถือว่าปิด) ดาวเป็นจุด วาดต่อ (watchRenderFailure เริ่ม loop ใหม่แล้ว) ข้อความไทยครั้งเดียว
+//   ต่อ viewer ไม่ส่งต่อให้ onRenderStopped; ครั้งต่อไป (หรือไม่มีโมเดลในภาพ) ส่งต่อตามเดิม ล้างเมื่อผู้ใช้ปิดแล้วเปิด Satellite Models ของหน้าต่างนี้
+//   (Sensor View ไม่มี Properties ของตัวเอง: ล้างเมื่อปิดแล้วเปิดหน้าต่างใหม่)
 //   เลือกดาว (useSelection) = ขอบหนาขึ้นรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) ดาวที่กล้องอยู่ในตัว (ดาวแม่ของ Sensor View หรือดาว From ของ
 //   View From/To: cameraSatellite) ถูกซ่อนทั้งโมเดล จุด และป้าย (วัสดุเป็น doubleSided กล้องในโมเดลเห็นแต่ผนังด้านใน) เข้าและออกจาก View From/To = restyle
 //   Model Detail Threshold (3D Graphics Window Properties → Details): ทุกรอบ throttle เดียวกับท่าทาง ดาวที่ห่างกล้องน้อยกว่าค่านี้เป็นโมเดล ไกลกว่าเป็นจุด
@@ -61,6 +65,7 @@ import {
   SceneTransforms, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Camera, type Entity, type ImageryLayer,
   type Viewer,
 } from "cesium";
+import { errorText } from "../../api/client";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
@@ -81,6 +86,8 @@ import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
 import { createViewer, destroyViewer, latLonGrid, removeViewerPicking, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
+import { msg } from "../../labels/messages.th";
+import { report } from "../../stores/messages";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
@@ -324,6 +331,10 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   private sensorCameraSet = false;
   /** Sensor View: fov และ near ของ frustum ก่อนเข้าโหมด sensor (คืนตอนออก) */
   private savedFrustum: { fov: number | undefined; near: number } | null = null;
+  /** โมเดลของดาววาดไม่ได้ในหน้าต่างนี้ (onRenderError) = ถือว่า Satellite Models ปิด ในหน่วยความจำเท่านั้น ไม่เขียนลง windowProps / workbook */
+  private modelsSuppressed = false;
+  /** แจ้ง SCENE_MODELS_DISABLED ของ viewer นี้แล้ว (ครั้งเดียวต่อ viewer) */
+  private modelsDisabledReported = false;
 
   constructor(
     readonly panelId: string,
@@ -382,6 +393,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
         const before = this.props;
         this.props = props3d(s.windowProps[panelId]);
         this.applyProps();
+        if (!before.satelliteModels && this.props.satelliteModels) this.modelsSuppressed = false; // ผู้ใช้ปิดแล้วเปิด Satellite Models = ลองวาดโมเดลใหม่
         if (
           before.labelDeclutter !== this.props.labelDeclutter || before.satelliteModels !== this.props.satelliteModels
           || before.modelPixelSize !== this.props.modelPixelSize || before.modelDetailThreshold !== this.props.modelDetailThreshold
@@ -399,7 +411,34 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     // ขนาดจริงของ element เปลี่ยน = resize, fov ของ Sensor View ตามสัดส่วนใหม่ แล้ววาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว)
     this.offs.push(watchResize(el, viewer, () => this.updateSensorCamera()));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene3D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
-    this.offs.push(watchRenderFailure(viewer, (reason, error, recovering) => onRenderStopped?.(reason, error, recovering)));
+    this.offs.push(watchRenderFailure(viewer, (reason, error, recovering) => {
+      if (!this.onRenderError(reason, error, recovering)) onRenderStopped?.(reason, error, recovering);
+    }));
+  }
+
+  /**
+   * ตัวกันของภาพที่หยุดเพราะโมเดล (ข2 final C1): renderError ที่ watchRenderFailure เริ่ม loop ใหม่แล้ว (recovering) ขณะ Satellite Models เปิด
+   * และมีโมเดลในภาพ = ปิดโมเดลของหน้าต่างนี้ (ดาวเป็นจุด) วาดใหม่ แจ้งครั้งเดียวต่อ viewer แล้วคืน true (ไม่ส่งต่อ onRenderStopped)
+   * กรณีอื่นทั้งหมด (ปิดไปแล้วรอบหนึ่ง ไม่มีโมเดล loop หยุด context หาย หรือเลิกเริ่มใหม่) คืน false: ผู้เรียกส่งต่อตามเดิม
+   */
+  private onRenderError(reason: RenderFailure, error: unknown, recovering: boolean): boolean {
+    if (this.destroyed || reason !== "renderError" || !recovering || !this.props.satelliteModels || this.modelsSuppressed || this.modelCount() === 0) return false;
+    this.modelsSuppressed = true;
+    this.restyle();
+    this.viewer.scene.requestRender();
+    if (!this.modelsDisabledReported) {
+      this.modelsDisabledReported = true;
+      const sensorView = this.opts.props !== undefined;
+      const title = useLayout.getState().listWindows().find((w) => w.id === this.panelId)?.title ?? (sensorView ? "Sensor View" : "3D");
+      const text = msg(sensorView ? "scene.modelsDisabledSensorView" : "scene.modelsDisabled", { window: title, message: errorText(error) });
+      report("warning", "SCENE_MODELS_DISABLED", text);
+    }
+    return true;
+  }
+
+  /** Satellite Models ที่ใช้จริง: ค่าของหน้าต่างและโมเดลยังวาดได้ (modelsSuppressed = ปิด) */
+  private modelsOn(): boolean {
+    return this.props.satelliteModels && !this.modelsSuppressed;
   }
 
   // ---------- data source ----------
@@ -475,7 +514,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   /** โมเดลของดาวสำหรับ applyGraphics (ปิด Satellite Models = ไม่มี: ดาวเป็นจุด) block จาก catalog ของ snapshot */
   private modelCtx(): SatelliteModels | undefined {
-    if (!this.props.satelliteModels) return undefined;
+    if (!this.modelsOn()) return undefined;
     return {
       pixelSize: this.props.modelPixelSize,
       specFor: (norad) => this.models.specFor({ block: satelliteInfo(norad)?.block ?? null, norad }),
@@ -485,12 +524,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   /** catalog หรือ glb ชุดหนึ่งโหลดเสร็จ (SatModelSource รวบเป็นชุดละ MODEL_BATCH_MS แล้ว): วาดใหม่ครั้งเดียวต่อชุด */
   private modelsChanged(): void {
-    if (!this.destroyed && this.props.satelliteModels) this.restyle();
+    if (!this.destroyed && this.modelsOn()) this.restyle();
   }
 
   private outlineSelected(): void {
     const ds = this.ds;
-    if (ds === null || this.destroyed || !this.props.satelliteModels) return;
+    if (ds === null || this.destroyed || !this.modelsOn()) return;
     setModelSelection(ds.entities, this.selectedEntityId());
     this.viewer.scene.requestRender();
   }
@@ -508,7 +547,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (ds === null || this.destroyed) return;
     const time = this.viewer.clock.currentTime;
     const thresholdM = this.props.modelDetailThreshold * 1000;
-    const switched = this.props.satelliteModels ? applyModelDetail(ds.entities, this.viewer.camera.positionWC, thresholdM, time, this.cameraSatellite()) : 0;
+    const switched = this.modelsOn() ? applyModelDetail(ds.entities, this.viewer.camera.positionWC, thresholdM, time, this.cameraSatellite()) : 0;
     if (updateModelAttitudes(ds.entities, time) > 0 || switched > 0) this.viewer.scene.requestRender();
   }
 

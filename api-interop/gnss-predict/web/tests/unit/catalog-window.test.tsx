@@ -441,6 +441,31 @@ describe("imaging satellites", () => {
     expect(cellsOf(rowOf("X04"))).toEqual(["X04", "", "25994", "EOS AM-1", "Terra", "1.3 d", ""]);
   });
 
+  // ข2 final I1: snapshot ของ scenario ถูกตั้งตอนสร้าง Fetch ใหม่ไม่เติมดาวถ่ายภาพให้ scenario เดิม: บอกทางแทน "ไม่พบดาว"
+  test("Imaging on a snapshot without imaging rows shows a Thai hint naming the snapshot in place of the no-match note", async () => {
+    server(); // CATALOG มีแต่ GNSS (snapshot "snap" ก่อน ข2)
+    await mount();
+    await user.selectOptions(systemSelect(), "X");
+    expect(prns()).toEqual([]);
+    expect(screen.getByText(msg("catalog.noImaging", { snapshot: "snap" }))).toBeDefined();
+    expect(screen.queryByText(msg("catalog.noMatch"))).toBeNull();
+    // ระบบอื่นที่ไม่มีแถว: ข้อความเดิม
+    await user.selectOptions(systemSelect(), "C");
+    await user.type(searchBox(), "zzz");
+    expect(screen.getByText(msg("catalog.noMatch"))).toBeDefined();
+    expect(screen.queryByText(msg("catalog.noImaging", { snapshot: "snap" }))).toBeNull();
+  });
+
+  test("Imaging with imaging rows that a search hides keeps the plain no-match note", async () => {
+    imagingServer();
+    await mount();
+    await user.selectOptions(systemSelect(), "X");
+    await user.type(searchBox(), "zzz");
+    expect(prns()).toEqual([]);
+    expect(screen.getByText(msg("catalog.noMatch"))).toBeDefined();
+    expect(screen.queryByText(msg("catalog.noImaging", { snapshot: "snap" }))).toBeNull();
+  });
+
   test("a GNSS row keeps its CelesTrak name, and a row without display_name (an older server) falls back to it", async () => {
     server(); // CATALOG ไม่มี category / display_name
     await mount();

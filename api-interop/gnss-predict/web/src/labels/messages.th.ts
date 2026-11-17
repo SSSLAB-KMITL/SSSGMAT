@@ -47,6 +47,10 @@ const MESSAGES = {
   // {value} = ค่า cell_normal ใน catalog ที่ไม่ใช่ +X, -X, +Z, -Z
   "model.cellNormalInvalid": "ด้านเซลล์ของแผงโซลาร์ของโมเดล 3 มิติ {model} ใน catalog อ่านไม่ได้ (cell_normal = {value} ต้องเป็น +X, -X, +Z หรือ -Z) จึงใช้ค่าสำรองในโปรแกรมแทน",
   "model.catalogFailed": "โหลดรายการโมเดล 3 มิติของดาวไม่สำเร็จ ({message}) ดาวทุกดวงในหน้าต่าง 3D แสดงเป็นจุดแทน",
+  // ข2 final C1: โมเดลในภาพทำให้วาดไม่ได้ (renderError) หน้าต่างนั้นปิดโมเดลของตัวเองในหน่วยความจำ แจ้งครั้งเดียวต่อหน้าต่าง {window} = ชื่อหน้าต่าง
+  "scene.modelsDisabled": "หน้าต่าง {window} วาดโมเดล 3 มิติของดาวไม่ได้ ({message}) จึงปิด Satellite Models ของหน้าต่างนี้และแสดงดาวเป็นจุดแทน เปิดใหม่ได้ที่ 3D Graphics Window Properties → Details",
+  // Sensor View ไม่มี Properties ของตัวเอง: ลองใหม่ได้โดยปิดแล้วเปิดหน้าต่าง
+  "scene.modelsDisabledSensorView": "หน้าต่าง {window} วาดโมเดล 3 มิติของดาวไม่ได้ ({message}) จึงแสดงดาวเป็นจุดแทนในหน้าต่างนี้ ปิดแล้วเปิดหน้าต่างนี้ใหม่เพื่อลองวาดโมเดลอีกครั้ง",
   "g3d.noWindow": "หน้าต่าง 3D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 3D ที่ต้องการ",
   // หน้าต่าง 2D: 2D Graphics Window Properties (spec §9.3)
   "g2d.noWindow": "หน้าต่าง 2D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 2D ที่ต้องการ",
@@ -124,6 +128,8 @@ const MESSAGES = {
   "catalog.windowFailed": "โหลดรายชื่อดาวของ snapshot ไม่สำเร็จ: {message}",
   "catalog.inScenario": "มีแล้ว",
   "catalog.noMatch": "ไม่พบดาวที่ตรงกับตัวกรอง",
+  // ข2 final I1: System = Imaging แต่ snapshot ของ scenario (ตั้งตอนสร้าง) ไม่มีดาวถ่ายภาพ {snapshot} = ชื่อ snapshot
+  "catalog.noImaging": "Orbit Data ของ scenario นี้ ({snapshot}) ไม่มีข้อมูลดาวถ่ายภาพ — ติ๊ก Imaging satellites ใน Fetch Orbit Data แล้วกด Fetch Now จากนั้นสร้าง scenario ใหม่ใน New Scenario Wizard โดยเลือก Orbit Data ล่าสุด",
   "catalog.selected": "เลือกแล้ว {n} ดวง",
   "catalog.nameTaken": "มี object ชื่อ \"{name}\" อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่)",
   "catalog.onlineHint": "Online CelesTrak เปิดหน้า Fetch Orbit Data ให้ หน้านี้ไม่ดาวน์โหลดเอง",
