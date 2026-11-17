@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from gnss_predict.catalog import Catalog, build_catalog
+from gnss_predict import imaging
+from gnss_predict.catalog import Catalog
 from gnss_predict.config import GNSS_GROUPS, SHELL_KM, STEP_S
 
 from .errors import ApiError
@@ -150,13 +151,14 @@ def access_graphics() -> dict:
 
 
 def load_catalog(data_dir: Path, snapshot: str, start: datetime, stop: datetime, field: str = "snapshot") -> Catalog:
-    """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) ไม่มี snapshot หรือไม่มีไฟล์ OMM เลย
-    -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
+    """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) แล้วต่อท้ายด้วยดาวถ่ายภาพ X01…X08
+    ที่มีในไฟล์กลุ่ม weather/science/visual ของ snapshot (ไม่มีไฟล์กลุ่มเหล่านี้ = ไม่มีดาว X) ไม่มี snapshot หรือไม่มีไฟล์ OMM
+    ของ GNSS เลย -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
     snapshot_dir = Path(data_dir) / ORBITS_DIR / snapshot
     systems = {system for system, group in GNSS_GROUPS.items() if (snapshot_dir / f"{group}.json").is_file()}
     if not systems:
         raise ApiError(422, "ORBIT_SOURCE_UNAVAILABLE", f"snapshot {snapshot} ไม่มีอยู่หรือไม่มีไฟล์ข้อมูลวงโคจร (OMM) ของระบบใดเลย", field)
-    return build_catalog(snapshot_dir, (start, stop), systems)
+    return imaging.scenario_catalog(snapshot_dir, (start, stop), systems, with_imaging=True)
 
 
 def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,

@@ -14,7 +14,7 @@ export interface paths {
         /**
          * Get Catalog
          * @description snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)
-         *     system ต้องเป็น G R E C (ไม่ระบุ = ทั้งสี่) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD และชื่อ CelesTrak
+         *     system ต้องเป็น G R E C หรือ X (ดาวถ่ายภาพ; ไม่ระบุ = ทุกระบบ) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD, ชื่อ CelesTrak และชื่อที่แสดง
          */
         get: operations["get_catalog_api_catalog_get"];
         put?: never;
@@ -102,6 +102,26 @@ export interface paths {
         };
         /** Get Tile */
         get: operations["get_tile_api_imagery_tiles__layer___time___z___y___x__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imaging/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Imaging Presets
+         * @description preset X01…X08 ตามลำดับ (ตารางเดียวของ engine: gnss_predict.imaging) เว็บรู้ว่าดาวใดเป็นดาวถ่ายภาพจาก NORAD
+         */
+        get: operations["imaging_presets_api_imaging_presets_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1249,6 +1269,20 @@ export interface components {
             /** Writable */
             writable: boolean;
         };
+        /** ImagingPresetOut */
+        ImagingPresetOut: {
+            /** Camera */
+            camera: string;
+            /** Gibs Layer */
+            gibs_layer: string;
+            /** Name */
+            name: string;
+            /** Norad */
+            norad: number;
+            /** Prn */
+            prn: string;
+            sensor: components["schemas"]["SensorDefinitionOut"];
+        };
         /** Ionosphere */
         Ionosphere: {
             /**
@@ -1634,6 +1668,23 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * SensorDefinitionOut
+         * @description Sensor หลักของ preset: Simple Conic ใช้ cone_half_angle, Rectangular ใช้ vertical/horizontal (ช่องของอีกชนิดเป็น null)
+         */
+        SensorDefinitionOut: {
+            /** Cone Half Angle */
+            cone_half_angle: number | null;
+            /** Horizontal Half Angle */
+            horizontal_half_angle: number | null;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "Simple Conic" | "Rectangular";
+            /** Vertical Half Angle */
+            vertical_half_angle: number | null;
+        };
+        /**
          * SensorObj
          * @description Sensor ของดาว: เก็บเป็น object แบบแบนใน `objects` เหมือน class อื่น `parent` คือดาวที่ติดตั้ง (ต้องมีอยู่จริง ตรวจใน `validate_scenario`)
          *     engine ไม่ใช้ class นี้
@@ -1987,6 +2038,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    imaging_presets_api_imaging_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagingPresetOut"][];
                 };
             };
         };

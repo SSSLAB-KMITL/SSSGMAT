@@ -139,6 +139,11 @@ CATALOG: tuple[Layer, ...] = (
           "gibs"),
     Layer("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "png", "NASA GIBS / EOSDIS, NOAA",
           "gibs"),
+    # ชั้นภาพของดาวถ่ายภาพ X05 (Aqua) และ X08 (NOAA-21): อยู่ก่อนแถว EOX เพื่อให้ลำดับเดิมไม่เปลี่ยน
+    Layer("MODIS_Aqua_CorrectedReflectance_TrueColor", "MODIS Aqua True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
+          "NASA GIBS / EOSDIS", "gibs"),
+    Layer("VIIRS_NOAA21_CorrectedReflectance_TrueColor", "VIIRS NOAA-21 True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
+          "NASA GIBS / EOSDIS", "gibs"),
     # EOX: TileMatrixSet `g`, ชื่อชั้น และระดับสูงสุด 15 ตาม spec ยังรอยืนยันกับของจริง; ภาพคงที่รายปี เวลา = `default`
     Layer("s2cloudless-2024_3857", "Sentinel-2 cloudless 2024", "static", "g", 15, "jpg",
           "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)", "eox"),
