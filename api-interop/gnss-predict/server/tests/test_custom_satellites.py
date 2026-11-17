@@ -100,3 +100,78 @@ def test_real_gmat_propagates_imported_satellite(client,s_empty,snapshot,data_di
     doc=json.loads((out/'manifest.json').read_text())
     assert any(s['prn']=='U01' and s['norad']==25544 and s['propagated'] for s in doc['satellites'])
     assert 'sat/U01' in (out/'scene.czml').read_text()
+
+
+def bulk_database(count=906):
+    from gnss_predict.omm import _parse_records,to_tle_lines
+    template=json.loads((FX/'studio/omm_sample.json').read_text())[0]
+    omm=[{**template,'NORAD_CAT_ID':20000+i,'OBJECT_NAME':f'BULK_{i}'} for i in range(count)]
+    records=_parse_records(json.dumps(omm))
+    return {'version':1,'satellites':{str(r.norad):{'name':r.name,'tle':list(to_tle_lines(r))} for r in records}}
+
+
+def test_local_gpredict_906_import_is_read_only_and_repeatable(client,s_empty,snapshot,data_dir,tmp_path):
+    from dataclasses import replace
+    folder=tmp_path/'gpredict';folder.mkdir()
+    raw=json.dumps(bulk_database());(folder/'satdb.json').write_text(raw)
+    client.app.state.config=replace(client.app.state.config,gpredict_data=folder)
+    _,tag=s_empty
+    body={'class':'Satellite','method':'Import Orbits','format':'gpredict_local'}
+    r=client.post('/api/scenarios/S1/objects',json=body,headers={'If-Match':tag})
+    assert r.status_code==201,r.text
+    assert len(r.json()['created'])==906
+    assert len(plan_propagate(data_dir/'scenarios/S1',data_dir).satellites)==906
+    doc=client.get('/api/scenarios/S1').json()
+    rows=custom.read_registry(data_dir/'orbits'/doc['orbit_snapshot'])
+    assert len(rows)==906 and len({r['prn'] for r in rows})==906
+    r2=client.post('/api/scenarios/S1/objects',json=body,headers={'If-Match':r.headers['etag']})
+    assert r2.status_code==201 and r2.json()['created']==[]
+    assert (folder/'satdb.json').read_text()==raw
+    assert not (snapshot/custom.FILE).exists()
+
+
+def test_catalog_only_bulk_then_select_subset(client,s_empty,snapshot,data_dir):
+    _,tag=s_empty
+    body={'class':'Satellite','method':'Import Orbits','format':'gpredict','text':json.dumps(bulk_database()),'add_to_scenario':False}
+    r=client.post('/api/scenarios/S1/objects',json=body,headers={'If-Match':tag})
+    assert r.status_code==201 and r.json()['created']==[],r.text
+    doc=client.get('/api/scenarios/S1').json()
+    assert doc['objects']==[] and len(custom.read_registry(data_dir/'orbits'/doc['orbit_snapshot']))==906
+    insert={'class':'Satellite','method':'From Satellite Catalog','norads':[20098,20099,20905]}
+    selected=client.post('/api/scenarios/S1/objects',json=insert,headers={'If-Match':r.headers['etag']})
+    assert selected.status_code==201,selected.text
+    assert len(selected.json()['created'])==3
+    assert set(plan_propagate(data_dir/'scenarios/S1',data_dir).satellites)=={'U99','V01',custom.CODES[905]}
+
+
+def test_missing_connection_and_invalid_inputs_do_not_mutate(client,s_empty,snapshot,data_dir):
+    _,tag=s_empty
+    before=client.get('/api/scenarios/S1').json()
+    for fields in [{'format':'gpredict_local'},{'format':'group','group':'amateur&FORMAT=xml'},{'format':'tle','text':TEXT,'add_to_scenario':'yes'}]:
+        r=client.post('/api/scenarios/S1/objects',json={'class':'Satellite','method':'Import Orbits',**fields},headers={'If-Match':tag})
+        assert r.status_code==422,r.text
+    assert client.get('/api/scenarios/S1').json()==before
+    assert list((data_dir/'orbits').iterdir())==[snapshot]
+
+
+def test_group_import_uses_one_group_download(client,s_empty,snapshot,data_dir):
+    from gnss_studio_server import custom_orbits
+    _,tag=s_empty
+    body={'class':'Satellite','method':'Import Orbits','format':'group','group':'amateur','add_to_scenario':False}
+    with patch.object(custom_orbits,'fetch_group',return_value=(FX/'studio/omm_sample.json',[])) as fetch:
+        r=client.post('/api/scenarios/S1/objects',json=body,headers={'If-Match':tag})
+    assert r.status_code==201,r.text
+    assert fetch.call_count==1 and fetch.call_args.args[0]=='amateur'
+    assert fetch.call_args.kwargs['url'].endswith('?GROUP=amateur&FORMAT=json')
+
+
+def test_import_over_scenario_capacity_is_atomic(client,s_empty,snapshot,data_dir):
+    _,tag=s_empty
+    r=import_iss(client,tag);assert r.status_code==201,r.text
+    before=client.get('/api/scenarios/S1').json()
+    folders=set((data_dir/'orbits').iterdir())
+    body={'class':'Satellite','method':'Import Orbits','format':'gpredict','text':json.dumps(bulk_database(999))}
+    bad=client.post('/api/scenarios/S1/objects',json=body,headers={'If-Match':r.headers['etag']})
+    assert bad.status_code==422 and '999' in bad.json()['text']
+    assert client.get('/api/scenarios/S1').json()==before
+    assert set((data_dir/'orbits').iterdir())==folders

@@ -60,7 +60,7 @@ from .predict import HEADER as LEGACY_HEADER
 from .propagate import ephemeris_from_sp3, propagate
 from .run_gmat import find_gmat_console, gmat_version
 from .scenario import EngineScenario, Facility, load_scenario
-from .sp3 import fetch_mgx_sp3, write_sp3
+from .sp3 import MAX_SATELLITES as MAX_PROPAGATED_SATELLITES, fetch_mgx_sp3, write_sp3
 from .studio_validate import imaging_skipped_text, validate_ephemeris, validation_markdown
 
 Progress = Callable[[str, float], None]
@@ -442,6 +442,8 @@ def _plan(scenario_dir: Path, data_dir: Path, report: Progress | None = None) ->
     sel = _select(sc, catalog)
     if not sel.selected:
         raise _no_satellites(sel)
+    if len(sel.selected) > MAX_PROPAGATED_SATELLITES:
+        raise ScenarioError(f"เลือกคำนวณได้สูงสุด {MAX_PROPAGATED_SATELLITES} ดวงต่อ Scenario ให้ลดดาวที่เลือกก่อนคำนวณ", "objects")
 
     extra_files = imaging.imaging_group_files(snapshot_dir) if with_imaging else []
     if with_custom:

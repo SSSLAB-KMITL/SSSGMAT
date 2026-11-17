@@ -158,6 +158,7 @@ _SATS_PER_LINE = 17
 _MIN_SAT_LINES = 5          # SP3-c/d: บรรทัด '+' และ '++' อย่างน้อย 5 บรรทัด
 _BAD_VALUE = 999999.0       # SP3 ใช้ 999999.999999 แทนค่าที่ไม่มี (ตำแหน่ง 0.000000 ก็คือไม่มีเช่นกัน)
 _CLOCK_UNKNOWN = 999999.999999
+MAX_SATELLITES = 999
 _MAX_STEP_RATIO = 1.5       # lagrange_at: ระยะห่างระหว่างจุดในหน้าต่างห่างกันเกินอัตรานี้ถือว่ามีช่องว่าง
 _COMMENT = "GNSS Studio predicted orbit from TLE/SGP4 (GMAT)"
 
@@ -293,6 +294,8 @@ def write_sp3(times_utc: list[datetime], positions_km: dict[str, list[Position]]
     """
     if not times_utc:
         raise ValueError("write_sp3 ต้องมีอย่างน้อย 1 epoch")
+    if len(positions_km) > MAX_SATELLITES:
+        raise ValueError(f"SP3-d รองรับสูงสุด {MAX_SATELLITES} ดวงต่อไฟล์")
     for sat, series in positions_km.items():
         if len(sat) != 3:
             raise ValueError(f"รหัสดาว '{sat}' ต้องยาว 3 ตัวอักษร เช่น G01")

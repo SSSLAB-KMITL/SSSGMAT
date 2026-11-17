@@ -39,7 +39,7 @@ class CustomSatelliteTest(unittest.TestCase):
 
     def test_import_limits_and_invalid_omm(self):
         data=json.loads((FX/'studio/omm_sample.json').read_text())[0]
-        with self.assertRaises(ValueError):c.parse_import(json.dumps([{**data,'NORAD_CAT_ID':i} for i in range(1,101)]),'omm')
+        with self.assertRaises(ValueError):c.parse_import(json.dumps([{**data,'NORAD_CAT_ID':i} for i in range(1,c.MAX_SATELLITES+2)]),'omm')
         with self.assertRaises(ValueError):c.parse_import(json.dumps({**data,'MEAN_MOTION_DDOT':float('inf')}),'omm')
         with self.assertRaises(ValueError):c.parse_import('['*2000+']'*2000,'omm')
         with self.assertRaises(ValueError):c.parse_import('x'*(c.MAX_BYTES+1),'tle')
@@ -72,3 +72,43 @@ class CustomSatelliteTest(unittest.TestCase):
         self.assertEqual(len(rows),1);self.assertIsNone(rows[0].ipp_lat_deg);self.assertIsNone(rows[0].mf)
         result=dop_series(rows,fac,{},times_utc=eph.times_utc)
         self.assertTrue(all(row['n_visible']==0 and row['gdop'] is None for row in result))
+
+    def test_all_999_codes_roundtrip_and_keep_existing_ids(self):
+        data=json.loads((FX/'studio/omm_sample.json').read_text())[0]
+        records=c.parse_import(json.dumps([{**data,'NORAD_CAT_ID':20000+i,'OBJECT_NAME':f'BULK {i}'} for i in range(c.MAX_SATELLITES)]),'omm')
+        original,_=c.merged_registry([],records[:99],set())
+        full,_=c.merged_registry(original['satellites'],records,set())
+        by_id={r['norad']:r['prn'] for r in full['satellites']}
+        self.assertEqual(len(by_id),999)
+        self.assertEqual((by_id[20000],by_id[20098],by_id[20099]),('U01','U99','V01'))
+        self.assertEqual({r['norad']:r['prn'] for r in original['satellites']},{n:by_id[n] for n in range(20000,20099)})
+        self.assertTrue(all(len(code)==3 and code[0] not in 'GRECX' for code in by_id.values()))
+        with tempfile.TemporaryDirectory() as temp:
+            snapshot=Path(temp);(snapshot/c.FILE).write_text(json.dumps(full))
+            self.assertEqual(c.read_registry(snapshot),full['satellites'])
+        again,_=c.merged_registry(full['satellites'],list(reversed(records)),set())
+        self.assertEqual(full,again)
+        extra=c.parse_import(json.dumps({**data,'NORAD_CAT_ID':50000}),'omm')
+        with self.assertRaises(ValueError):c.merged_registry(full['satellites'],extra,set())
+
+    def test_gpredict_database_import_checks_identity_and_blank_exponent(self):
+        lines=TEXT.splitlines()[1:]
+        # A blank exponent sign represents positive; keep its checksum valid.
+        a=lines[0][:50]+' '+lines[0][51:68]
+        a+=str(sum(int(x) if x.isdigit() else 1 if x=='-' else 0 for x in a)%10)
+        doc={'version':1,'satellites':{'25544':{'name':'ISS','tle':[a,lines[1]]}}}
+        records=c.parse_import(json.dumps(doc),'gpredict')
+        self.assertEqual(records[0].norad,25544)
+        doc['satellites']['99999']=doc['satellites'].pop('25544')
+        with self.assertRaises(ValueError):c.parse_import(json.dumps(doc),'gpredict')
+
+    def test_999_identifiers_survive_sp3_and_1000_is_rejected(self):
+        from gnss_predict.sp3 import write_sp3,read_sp3_all
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'predicted.sp3'
+            positions={code:[(7000.,10.,20.)] for code in c.CODES}
+            write_sp3([PERIOD[0]],positions,p)
+            self.assertEqual(set(read_sp3_all(p)),set(c.CODES))
+            before=p.read_bytes()
+            with self.assertRaises(ValueError):write_sp3([PERIOD[0]],{**positions,'G01':[(20000.,0.,0.)]},p)
+            self.assertEqual(p.read_bytes(),before)

@@ -1,6 +1,6 @@
 """User-supplied SGP4 satellites in immutable orbit snapshots.
 
-U01..U99 are internal SP3 identifiers, not navigation PRNs. These satellites do
+Imported identifiers are internal three-character keys, not navigation PRNs. These satellites do
 not enter GNSS DOP, IPP or health calculations. The original GNSS catalog wins
 on a duplicate NORAD so importing a file cannot overwrite navigation data.
 """
@@ -19,7 +19,11 @@ from .omm import _parse_records, to_tle_lines
 
 FILE = 'custom_satellites.json'
 SYSTEM = 'U'
-MAX_SATELLITES = 99
+MAX_SATELLITES = 999
+# Keep existing U01..U99 stable. Never allocate a GNSS or imaging prefix.
+CODE_PREFIXES = 'UVWYZHKLMNT'
+CODES = tuple(f'{letter}{i:02d}' for letter in CODE_PREFIXES for i in range(1,100))[:MAX_SATELLITES]
+CODE_SET = frozenset(CODES)
 MAX_BYTES = 5 * 1024 * 1024
 UTC = timezone.utc
 
@@ -67,7 +71,7 @@ def validate_tle(name, lines, source='local_tle'):
         raise ValueError('ค่าองค์ประกอบวงโคจรใน TLE ไม่ถูกต้อง')
     if any(not 0<=angle<360 for angle in (raan,argp,anomaly)):
         raise ValueError('มุมใน TLE ต้องอยู่ในช่วง 0–360 องศา')
-    if any(not re.fullmatch(r'[ +\-]\d{5}[+\-]\d',field) for field in (a[44:52],a[53:61])) or not math.isfinite(float(a[33:43])):
+    if any(not re.fullmatch(r'[ +\-]\d{5}[ +\-]\d',field) for field in (a[44:52],a[53:61])) or not math.isfinite(float(a[33:43])):
         raise ValueError('ค่า drag ใน TLE ไม่ถูกต้อง')
     if a[62]!='0':
         raise ValueError('รองรับ TLE แบบ SGP4 (ephemeris type 0) เท่านั้น')
@@ -97,6 +101,20 @@ def parse_import(text: str, format: str, source=None):
             except OverflowError as exc:
                 raise ValueError('องค์ประกอบวงโคจร OMM อยู่นอกช่วงที่รองรับ') from exc
             found.append(validate_tle(rec.name,lines,source or 'local_omm'))
+    elif format=='gpredict':
+        try:
+            doc=json.loads(text.lstrip('\ufeff'))
+        except RecursionError as exc:
+            raise ValueError('ข้อมูล JSON ซ้อนลึกเกินไป') from exc
+        if not isinstance(doc,dict) or doc.get('version')!=1 or not isinstance(doc.get('satellites'),dict):
+            raise ValueError('ต้องเป็นไฟล์ satdb.json ของ Gpredict Web รุ่น 1')
+        for key,row in doc['satellites'].items():
+            if not isinstance(row,dict) or not isinstance(row.get('tle'),list) or len(row['tle'])!=2 or not all(isinstance(v,str) for v in row['tle']):
+                raise ValueError(f'ข้อมูล Gpredict NORAD {key} ไม่มี TLE ที่ถูกต้อง')
+            orbit=validate_tle(row.get('name',''),row['tle'],source or 'gpredict_database')
+            if str(orbit.norad)!=key:
+                raise ValueError(f'ข้อมูล Gpredict NORAD {key} ไม่ตรงกับ TLE')
+            found.append(orbit)
     elif format=='tle':
         lines=[line.strip() for line in text.lstrip('\ufeff').splitlines() if line.strip()]
         i=0;name=''
@@ -112,12 +130,12 @@ def parse_import(text: str, format: str, source=None):
                 name=line[2:] if line.startswith('0 ') else line;i+=1
         if name:raise ValueError('ชื่อดาวไม่มี TLE ตามหลัง')
     else:
-        raise ValueError('format ต้องเป็น tle หรือ omm')
+        raise ValueError('format ต้องเป็น tle, omm หรือ gpredict')
     best={}
     for row in found:
         if row.norad not in best or row.epoch>best[row.norad].epoch:best[row.norad]=row
     if not best:raise ValueError('ไม่พบข้อมูลวงโคจรที่นำเข้าได้')
-    if len(best)>MAX_SATELLITES:raise ValueError('นำเข้าดาวทั่วไปได้สูงสุด 99 ดวงต่อ snapshot')
+    if len(best)>MAX_SATELLITES:raise ValueError(f'นำเข้าได้สูงสุด {MAX_SATELLITES} ดวงต่อครั้ง ให้แบ่งไฟล์หรือเลือกกลุ่มที่เล็กลง')
     return list(best.values())
 
 
@@ -129,10 +147,10 @@ def read_registry(snapshot: Path):
         if not isinstance(doc,dict) or doc.get('version')!=1 or not isinstance(doc.get('satellites'),list):
             raise ValueError('รูปแบบ registry ไม่ถูกต้อง')
         rows=doc['satellites'];seen=set();codes=set()
-        if len(rows)>MAX_SATELLITES:raise ValueError('มีดาวทั่วไปเกิน 99 ดวง')
+        if len(rows)>MAX_SATELLITES:raise ValueError(f'มีดาวทั่วไปเกิน {MAX_SATELLITES} ดวง')
         for row in rows:
             orbit=validate_tle(row['name'],row['tle'],row['source'])
-            if orbit.norad!=row['norad'] or not re.fullmatch(r'U(?:0[1-9]|[1-9]\d)',row['prn']):
+            if orbit.norad!=row['norad'] or row['prn'] not in CODE_SET:
                 raise ValueError('NORAD หรือรหัสดาวทั่วไปไม่ถูกต้อง')
             if row['norad'] in seen or row['prn'] in codes:raise ValueError('มีดาวซ้ำใน registry')
             seen.add(row['norad']);codes.add(row['prn'])
@@ -144,13 +162,14 @@ def read_registry(snapshot: Path):
 def merged_registry(existing, imported, native_norads):
     rows={r['norad']:dict(r) for r in existing};used={r['prn'] for r in existing}
     skipped=[]
+    available=iter(code for code in CODES if code not in used)
     for orbit in imported:
         if orbit.norad in native_norads:
             skipped.append(orbit.norad);continue
         old=rows.get(orbit.norad)
         if old and validate_tle(old['name'],old['tle']).epoch>orbit.epoch:continue
-        code=old['prn'] if old else next((f'U{i:02d}' for i in range(1,100) if f'U{i:02d}' not in used),None)
-        if code is None:raise ValueError('snapshot นี้มีดาวทั่วไปครบ 99 ดวงแล้ว')
+        code=old['prn'] if old else next(available,None)
+        if code is None:raise ValueError(f'snapshot นี้มีดาวทั่วไปครบ {MAX_SATELLITES} ดวงแล้ว')
         used.add(code)
         rows[orbit.norad]={'prn':code,'norad':orbit.norad,'name':orbit.name,'epoch':orbit.epoch.isoformat().replace('+00:00','Z'),
                            'tle':list(orbit.tle),'source':orbit.source}

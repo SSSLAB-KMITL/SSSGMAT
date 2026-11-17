@@ -60,3 +60,24 @@ test("requires an open scenario", async () => {
   await mount();
   expect((button() as HTMLButtonElement).disabled).toBe(true);
 });
+
+test("Gpredict import defaults to catalog only", async () => {
+  const f = server();
+  await mount();
+  await userEvent.selectOptions(screen.getByLabelText("รูปแบบข้อมูลวงโคจร"), "gpredict_local");
+  expect((screen.getByRole("checkbox", { name: "เพิ่มดาวลง Scenario ทันที" }) as HTMLInputElement).checked).toBe(false);
+  await userEvent.click(button());
+  await waitFor(() => expect(screen.getByRole("status")).toBeDefined());
+  expect(f.calls.find(c => c.method === "POST")!.body).toEqual({ class: "Satellite", method: "Import Orbits", format: "gpredict_local", add_to_scenario: false });
+});
+
+test("CelesTrak group import sends one group request", async () => {
+  const f = server();
+  await mount();
+  await userEvent.selectOptions(screen.getByLabelText("รูปแบบข้อมูลวงโคจร"), "group");
+  await userEvent.click(button());
+  await waitFor(() => expect(screen.getByRole("status")).toBeDefined());
+  const posts = f.calls.filter(c => c.method === "POST");
+  expect(posts).toHaveLength(1);
+  expect(posts[0].body).toEqual({ class: "Satellite", method: "Import Orbits", format: "group", group: "amateur", add_to_scenario: false });
+});
