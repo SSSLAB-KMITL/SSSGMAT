@@ -199,7 +199,7 @@ test.describe("Imaging satellites", () => {
     expect(seen.tiles, "browser requests to /api/imagery/tiles").toEqual([]);
   });
 
-  /** Show Imagery ของ X04 ที่ไม่มี Sensor (amendment z) satelliteModels = false: ปิด Satellite Models ก่อน (ดูข้อบกพร่องของ terra.glb ข้างล่าง) */
+  /** Show Imagery ของ X04 ที่ไม่มี Sensor (amendment z) ; satelliteModels = false ปิด Satellite Models ก่อน, true เปิดไว้เพื่อตรวจตัวกันของเว็บกับ terra.glb ที่ยังเสีย (ดู test ข้างล่าง) */
   async function showImageryWithoutSensor(page: Page, request: APIRequestContext, satelliteModels: boolean): Promise<void> {
     // ลบ MODIS ออกจาก E2E_IMG (afterEach คืนเอกสารเดิม) sensor ไม่อยู่ในข้อมูลตั้งต้นของ ephem จึงยังมีผลลัพธ์อยู่
     const reply = await request.get(`/api/scenarios/${SCENARIO}`);

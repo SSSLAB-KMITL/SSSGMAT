@@ -372,7 +372,7 @@
     — ค่า preset มาจากที่เดียว — ฉาก GNSS ของ e2e ได้ hash เดิม (`E2E` ac0b3324dc02, `E2E_DATELINE` e3c54e56e5dd ตรวจกับ builder ก่อนแก้) — ไม่มี
   - test "ไม่มี Sensor" ให้หน้าเว็บเห็น GIBS เปิดด้วย `page.route` ของ `/api/imagery/layers` และตอบชิ้นภาพ `/api/imagery/tiles` ในเบราว์เซอร์ (PNG 1×1) — Show Imagery ถามยินยอมก่อนดู Sensor
     ถ้ายืนยันจริงจะ `PUT /api/settings` และ server ของ e2e จะเปิด GIBS ; route ทำให้ไม่มีคำขอถึง server หรือ GIBS (server สวิตช์ปิดตอบ 403 โดยไม่ต่อเน็ตอยู่แล้ว) — test ผูกกับรูปของ payload `/imagery/layers`
-  - test เดียวกันปิด Satellite Models ก่อน Show Imagery — ข้อบกพร่องของ `terra.glb` (ด้านล่าง) ทำให้ render loop ของหน้าต่าง 3D หยุดเมื่อกล้องเข้าใกล้ Terra กล้องค้างกลางทาง test นี้ตรวจคำสั่ง ไม่ใช่โมเดล — โมเดล Terra ยังไม่มี e2e จนกว่าจะแก้ glb
+  - test เดียวกันปิด Satellite Models ก่อน Show Imagery (ตรวจคำสั่ง ไม่ใช่โมเดล) ; test "Show Imagery on Terra with Satellite Models on" (เดิม `test.fixme`) เปิดโมเดลและยืนยันตัวกันในเว็บ (edab06e) กับ glb ที่ยังเสีย — แก้ test นี้เมื่อแก้ glb แล้ว
   - README รวมเรื่องของ ข2 ไว้ที่หัวข้อ 9.13 พร้อมตัวชี้ใน 7.1, 7.2, 8.4 และแก้จำนวนชั้น GIBS (10 ชั้น, Globe Manager 13 แถว) ใน 8.8 และ 9.10 — ผู้ใช้อ่านที่เดียว — ย้ายย่อหน้า
   - README บอกว่าดาวถ่ายภาพที่มีธง (รวม GEO "เก่าเกิน 14 วัน") ได้ `SAT_FLAGGED` เหมือน GNSS (`build_imaging_catalog` คืน `messages + flagged`, `test_imaging.py` ตรวจ X03) ตรงกับ spec §7
     และบอกว่า `GET /api/catalog` ไม่ส่งข้อความ กล่อง Insert จึงเห็นเฉพาะธงในคอลัมน์ Status — (รอบแรกเขียนผิดว่าไม่มีข้อความ แก้ในรอบแก้ 1) — ไม่มี
@@ -385,9 +385,9 @@
   (ผู้ตรวจยืนยัน: primitive 1, 2 ของ mesh `wing-Y` มีแค่ NORMAL/POSITION ข้อบกพร่องมีก่อน 225020ef)
 - Ruling สองส่วน:
   1. แก้โมเดลบน branch `feature/gnss-studio-models`: `models/terra/scripts/build.py` ใส่ UV ให้แผง หรือใช้วัสดุไม่มีภาพ — โมเดลเป็นของงานโมเดล — ส่งต่อให้ agent ของงานโมเดล
-  2. ตัวกันในเว็บ วางแผนไว้ในรอบสุดท้ายของ ข2: render error บน viewer ที่เปิดโมเดลอยู่ = ปิดโมเดลดาวของ viewer นั้น (กลับเป็นจุด) พร้อมข้อความไทย
+  2. ตัวกันในเว็บ ทำแล้วในรอบสุดท้ายของ ข2 (edab06e, ผ่าน review): render error บน viewer ที่เปิดโมเดลอยู่ = ปิดโมเดลดาวของ viewer นั้น (กลับเป็นจุด) พร้อมข้อความไทย
      แทนการเริ่ม render loop ใหม่แล้วตายซ้ำ — glb ที่เสียตัวใดก็ไม่ทำให้หน้าต่างค้าง — ถ้าไม่ทำ หน้าต่าง 3D ค้างเมื่อเข้าใกล้ Terra จนกว่าจะแก้ glb
-- e2e มี `test.fixme` "Show Imagery on Terra with Satellite Models on" ใน `imaging.spec.ts` ไว้ติดตามช่องว่างนี้
+- e2e "Show Imagery on Terra with Satellite Models on" ใน `imaging.spec.ts` ยืนยันตัวกันกับ glb จริง (ข้อความมี `v_texCoord_0`) ; เมื่อแก้ glb test นี้จะล้มเสียงดัง ต้องเปลี่ยนให้คาดว่าวาดโมเดลได้และไม่มีข้อความ
 
 ### ข้อเล็กที่เลื่อนไว้
 

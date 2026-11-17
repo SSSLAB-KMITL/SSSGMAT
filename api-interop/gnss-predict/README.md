@@ -891,7 +891,7 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
   สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (13 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `models` (ดาวที่แสดงในหน้าต่าง 3D เป็นโมเดลทุกดวง `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์, ปิด Satellite Models แล้วจุดกลับมาและเปิดใหม่ไม่ fetch ซ้ำ, +Z ของดาวชี้ลงโลกคลาดไม่เกิน 0.5° และตามเวลา; หัวข้อ 9.11), `imaging` (Insert X04 จาก Catalog ด้วยตัวกรอง Imaging ได้ Sensor MODIS ลูกของดาวพร้อม Rectangular 55/0.41, X04 ใน 3D ที่ความสูง 690–720 km และรอย MODIS 73 จุดทั้ง 3D และ 2D,
   Show Imagery ที่ GIBS ปิดขึ้นกล่องยืนยันแล้ว Cancel ไม่มี `PUT /api/settings` ไม่มี Sensor View, ดาวที่ไม่มี Sensor ไม่มี `POST .../objects` และกล้องบินไปเหนือจุดใต้ดาว
   (test นี้แก้คำตอบของ `/api/imagery/layers` ด้วย `page.route` ซึ่งขอของจริงจาก server ของ e2e ในเครื่องด้วย `route.fetch()` แล้วตั้ง GIBS เป็นเปิด
-  และตอบชิ้นภาพ `/api/imagery/tiles` เองในเบราว์เซอร์ ไม่มีชิ้นภาพใดถึง server และไม่มีคำขอถึง GIBS; test นี้ปิด Satellite Models และมี `test.fixme` แบบเปิดโมเดลรอการแก้ `terra.glb`; หัวข้อ 9.13), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+  และตอบชิ้นภาพ `/api/imagery/tiles` เองในเบราว์เซอร์ ไม่มีชิ้นภาพใดถึง server และไม่มีคำขอถึง GIBS; test หนึ่งปิด Satellite Models อีก test เปิดโมเดลไว้และยืนยันว่าตัวกันในเว็บทำงานกับ `terra.glb` ที่ยังเสีย: หน้าต่างยังวาดต่อ ดาวกลับเป็นจุด มีข้อความ SCENE_MODELS_DISABLED หนึ่งรายการ; หัวข้อ 9.13), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
 - ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
   ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
   เมื่อตั้ง `GNSS_E2E_PERF_URL` (หัวข้อ 9.6) ตัวตรวจอนุญาต origin ของ URL นั้นเพิ่มอีกหนึ่ง origin ตรงตัว (เช่น `http://127.0.0.1:8767/`) ไม่กว้างกว่านั้น (ตรรกะอยู่ใน `tests/e2e/localRequest.ts`)
@@ -1487,9 +1487,10 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - ไม่มีแถบสแกนสะสม (swath corridor) บนแผนที่ 2D ใช้รอยของ Sensor ณ เวลาปัจจุบัน ; ไม่สลับชั้นกลางคืน/IR ให้เอง (เปลี่ยนเองใน Globe Manager)
 - ไม่ fetch กลุ่ม `resource`, `goes`, `noaa` ; Aqua อยู่เฉพาะกลุ่ม `visual` (100 ดวงที่สว่างสุด) ซึ่งอาจหลุดจากกลุ่มได้
 - ดาวถ่ายภาพมีเฉพาะ 8 ดวงนี้ (เพิ่มได้ที่ตาราง preset ที่เดียว)
-- **โมเดล Terra (`models/terra/terra.glb`) ทำให้หน้าต่าง 3D หยุดวาด**: แผง `wing-Y` ใช้วัสดุที่มีภาพแต่ไม่มีพิกัดภาพ (`TEXCOORD_0`) shader ของ Cesium คอมไพล์ไม่ผ่าน
-  เมื่อเปิด Satellite Models และกล้องอยู่ห่าง Terra (X04) ไม่เกิน Model Detail Threshold (ตั้งต้น 30,000 km) หน้าต่าง 3D นั้นค้าง
-  จนกว่าจะแก้ glb หรือมีตัวกันในเว็บ ; ทางเลี่ยง: ปิด Satellite Models (3D Graphics Window Properties → Details) หรือลด Model Detail Threshold
+- **โมเดล Terra (`models/terra/terra.glb`) วาดไม่ได้**: แผง `wing-Y` ใช้วัสดุที่มีภาพแต่ไม่มีพิกัดภาพ (`TEXCOORD_0`) shader ของ Cesium คอมไพล์ไม่ผ่าน
+  เมื่อเปิด Satellite Models และกล้องอยู่ห่าง Terra (X04) ไม่เกิน Model Detail Threshold (ตั้งต้น 30,000 km)
+  ตัวกันในเว็บ (edab06e): เมื่อวาดโมเดลไม่ได้ หน้าต่างนั้นปิด Satellite Models เอง แสดงดาวเป็นจุด และมีข้อความไทย SCENE_MODELS_DISABLED หนึ่งครั้ง หน้าต่างไม่ค้าง
+  (กล่อง Satellite Models ยังติ๊กอยู่ ติ๊กออกแล้วติ๊กใหม่เพื่อลองอีกครั้ง ; Sensor View ปิดแล้วเปิดใหม่) จนกว่าจะแก้ glb บน branch งานโมเดล Terra จะแสดงเป็นจุดเมื่อเข้าใกล้
 - e2e ใช้ snapshot ปลอม: `E2E_IMG` (THBK + X04 + MODIS) ถูก "propagate" ด้วยวงโคจรปลอมของ `build_fixture.py` เพราะ server ของ e2e ไม่มี GMAT (`web/tests/e2e/imaging.spec.ts`)
 
 ## 10. Docker (GNSS Studio ใน container)
