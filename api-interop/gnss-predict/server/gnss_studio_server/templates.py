@@ -6,6 +6,7 @@
 - `snapshot` ที่ไม่ระบุใช้โฟลเดอร์ใต้ `<data>/orbits/` ที่ใหม่ที่สุด (ชื่อ `YYYYMMDDTHHMMZ`; `_cache` ไม่นับ)
 """
 
+import copy
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,6 +137,11 @@ def sensor(name: str, parent: str, cone_half_angle: float = SENSOR_CONE_HALF_ANG
             "pointing": {"type": "Fixed", "orientation": "Az-El", "azimuth": 0.0, "elevation": 90.0, "about_boresight": "Rotate"},
             "graphics2d": {"show": True, "color": SENSOR_COLOR, "fill": False, "fill_translucency": 50},
             "graphics3d": {"show": True, "color": SENSOR_COLOR, "show_radial_lines": True, "show_boresight_marker": False}}
+
+
+def imaging_sensor(name: str, parent: str, definition: dict) -> dict:
+    """primary sensor ของดาวถ่ายภาพ: เหมือน `sensor` (ชี้ Az 0 El 90) แต่ definition มาจาก preset (สำเนา)"""
+    return {**sensor(name, parent), "definition": copy.deepcopy(definition)}
 
 
 def constellation(name: str, system: str | None, color: str, assigned_objects: list[str]) -> dict:

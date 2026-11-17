@@ -1650,7 +1650,9 @@ export interface components {
         };
         /**
          * SensorDefinition
-         * @description Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา
+         * @description Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา
+         *     แกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)
+         *     Rectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ
          */
         SensorDefinition: {
             /**
@@ -1659,11 +1661,21 @@ export interface components {
              */
             cone_half_angle?: number;
             /**
+             * Horizontal Half Angle
+             * @default null
+             */
+            horizontal_half_angle?: number | null;
+            /**
              * Type
              * @default Simple Conic
-             * @constant
+             * @enum {string}
              */
-            type?: "Simple Conic";
+            type?: "Simple Conic" | "Rectangular";
+            /**
+             * Vertical Half Angle
+             * @default null
+             */
+            vertical_half_angle?: number | null;
         } & {
             [key: string]: unknown;
         };

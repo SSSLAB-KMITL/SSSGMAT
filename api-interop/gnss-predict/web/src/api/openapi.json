@@ -1982,7 +1982,7 @@
       },
       "SensorDefinition": {
         "additionalProperties": true,
-        "description": "Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา",
+        "description": "Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา\nแกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)\nRectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ",
         "properties": {
           "cone_half_angle": {
             "default": 45.0,
@@ -1991,11 +1991,42 @@
             "title": "Cone Half Angle",
             "type": "number"
           },
+          "horizontal_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Horizontal Half Angle"
+          },
           "type": {
-            "const": "Simple Conic",
             "default": "Simple Conic",
+            "enum": [
+              "Simple Conic",
+              "Rectangular"
+            ],
             "title": "Type",
             "type": "string"
+          },
+          "vertical_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vertical Half Angle"
           }
         },
         "title": "SensorDefinition",

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from conftest import SNAPSHOT_SRC
 from gnss_predict.catalog import build_catalog
 from gnss_predict.scenario import load_scenario
 from gnss_studio_server import objects
@@ -1091,7 +1092,9 @@ SENSOR_BAD_VALUES = [
     ("definition", "cone_half_angle", -1),
     ("definition", "cone_half_angle", "45"),
     ("definition", "cone_half_angle", True),
-    ("definition", "type", "Rectangular"),
+    ("definition", "type", "Custom"),
+    ("definition", "vertical_half_angle", 0),
+    ("definition", "horizontal_half_angle", 89.5),
     ("pointing", "azimuth", 360),
     ("pointing", "azimuth", -1),
     ("pointing", "elevation", 91),
@@ -1349,3 +1352,126 @@ def test_sensor_edits_keep_unknown_fields(client, s1):
     assert_saved(rename(client, "Satellite/G01", "GPS01"), client)
     sensor = obj_in(doc_of(client), "Sensor", "S1")
     assert sensor["x_note"] == "keep" and sensor["pointing"]["x_axes"] == "body" and sensor["parent"] == "*/Satellite/GPS01"
+
+
+# ---------- Sensor แบบ Rectangular (Ruling g, v) ----------
+
+RECTANGULAR_MODIS = {"type": "Rectangular", "vertical_half_angle": 55.0, "horizontal_half_angle": 0.41}
+
+
+def test_insert_rectangular_sensor_define_properties_has_no_cone_half_angle(client, s1):
+    _add_sensor(client, "Cam", definition=RECTANGULAR_MODIS)
+    sensor = obj_in(doc_of(client), "Sensor", "Cam")
+    assert sensor["definition"] == RECTANGULAR_MODIS                     # แม่แบบมี cone_half_angle 45 แต่ Rectangular ไม่เก็บ
+    assert pages(client, "Sensor/Cam")["basic"]["definition"] == RECTANGULAR_MODIS
+
+
+def test_patch_simple_conic_to_rectangular_drops_cone_half_angle(client, s1, data_dir):
+    _add_sensor(client)
+    before = file_bytes(data_dir)
+    assert_error(patch(client, "Sensor/S1", {"basic": {"definition": {"type": "Rectangular"}}}), 422, "SCENARIO_INVALID",
+                 "basic.definition")                                    # ต้องมีทั้งสองครึ่งมุม
+    assert_error(patch(client, "Sensor/S1", {"basic": {"definition": {**RECTANGULAR_MODIS, "vertical_half_angle": 89.5}}}),
+                 422, "SCENARIO_INVALID", "basic.definition.vertical_half_angle")
+    assert file_bytes(data_dir) == before
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"definition": RECTANGULAR_MODIS}}), client)
+    assert obj_in(doc_of(client), "Sensor", "S1")["definition"] == RECTANGULAR_MODIS
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"definition": {"horizontal_half_angle": 0.5}}}), client)
+    assert obj_in(doc_of(client), "Sensor", "S1")["definition"] == {**RECTANGULAR_MODIS, "horizontal_half_angle": 0.5}
+    assert_saved(patch(client, "Sensor/S1", {"basic": {"definition": {"type": "Simple Conic", "cone_half_angle": 20}}}), client)
+    assert obj_in(doc_of(client), "Sensor", "S1")["definition"]["cone_half_angle"] == 20
+
+
+def test_templates_imaging_sensor():
+    definition = {"type": "Simple Conic", "cone_half_angle": 8.7}
+    sensor = templates.imaging_sensor("AHI", "*/Satellite/X01", definition)
+    assert sensor == {**templates.sensor("AHI", "*/Satellite/X01"), "definition": definition}
+    assert sensor["definition"] is not definition                       # สำเนา แก้แล้วไม่กระทบ preset
+
+
+# ---------- Insert ดาวถ่ายภาพพร้อม primary sensor (Ruling l, m) ----------
+
+TERRA, AQUA, HIMAWARI, G01_NORAD = 25994, 27424, 41836, 62339
+POINTING_NADIR = {"type": "Fixed", "orientation": "Az-El", "azimuth": 0.0, "elevation": 90.0, "about_boresight": "Rotate"}
+
+
+@pytest.fixture
+def imaging_snapshot(snapshot):
+    """snapshot ของ fixture พร้อมไฟล์กลุ่มดาวถ่ายภาพทั้งสาม (OMM ปลอมเขียนมือ)"""
+    for path in sorted((SNAPSHOT_SRC.parent / "imaging").glob("*.json")):
+        shutil.copyfile(path, snapshot / path.name)
+    return snapshot
+
+
+def test_imaging_sensor_presets(client, s_empty, imaging_snapshot):
+    r = insert(client, {**CATALOG_INSERT, "norads": [TERRA], "primary_sensors": True})
+    assert r.json()["created"] == ["*/Satellite/X04", "*/Sensor/MODIS"]
+    assert_saved(r, client, 201)
+    doc = doc_of(client)
+    modis = obj_in(doc, "Sensor", "MODIS")
+    assert modis["definition"] == {"type": "Rectangular", "vertical_half_angle": 55.0, "horizontal_half_angle": 0.41}
+    assert modis["parent"] == "*/Satellite/X04" and modis["pointing"] == POINTING_NADIR
+    assert modis == templates.imaging_sensor("MODIS", "*/Satellite/X04", modis["definition"])
+    r = insert(client, {**CATALOG_INSERT, "norads": [HIMAWARI], "primary_sensors": True})
+    assert r.json()["created"] == ["*/Satellite/X01", "*/Sensor/AHI"]
+    ahi = obj_in(doc_of(client), "Sensor", "AHI")
+    assert ahi["definition"] == {"type": "Simple Conic", "cone_half_angle": 8.7}
+    assert ahi["parent"] == "*/Satellite/X01" and ahi["pointing"] == POINTING_NADIR
+    assert [n["name"] for n in next(c for c in tree_of(client)["children"] if c["name"] == "X04")["children"]] == ["MODIS"]
+
+
+def test_catalog_insert_primary_sensors_names_and_order(client, s_empty, imaging_snapshot):
+    r = insert(client, {**CATALOG_INSERT, "norads": [TERRA, AQUA, G01_NORAD], "create_constellation": "EO", "primary_sensors": True})
+    assert r.json()["created"] == ["*/Satellite/X04", "*/Satellite/X05", "*/Satellite/G01", "*/Constellation/EO",
+                                   "*/Sensor/MODIS", "*/Sensor/MODIS_X05"]
+    assert_saved(r, client, 201)
+    doc = doc_of(client)
+    assert [o["name"] for o in doc["objects"]] == ["X04", "X05", "G01", "EO", "MODIS", "MODIS_X05"]
+    assert obj_in(doc, "Constellation", "EO")["assigned_objects"] == ["*/Satellite/X04", "*/Satellite/X05", "*/Satellite/G01"]
+    assert obj_in(doc, "Sensor", "MODIS")["parent"] == "*/Satellite/X04"
+    assert obj_in(doc, "Sensor", "MODIS_X05")["parent"] == "*/Satellite/X05"
+    assert obj_in(doc, "Sensor", "MODIS_X05")["definition"] == RECTANGULAR_MODIS
+    assert [o["parent"] for o in doc["objects"] if o["class"] == "Sensor"] == ["*/Satellite/X04", "*/Satellite/X05"]   # G01 ไม่มี sensor
+
+
+def test_primary_sensor_name_taken_case_insensitively_uses_prn(client, s_empty, imaging_snapshot):
+    assert_saved(insert(client, {"class": "Facility", "method": "Define Properties", "name": "modis",
+                                 "position": {"lat_deg": 0, "lon_deg": 0, "alt_m": 0}}), client, 201)
+    r = insert(client, {**CATALOG_INSERT, "norads": [TERRA], "primary_sensors": True})
+    assert r.json()["created"] == ["*/Satellite/X04", "*/Sensor/MODIS_X04"]
+
+
+def test_primary_sensor_name_clash_creates_nothing(client, s_empty, imaging_snapshot, data_dir):
+    assert_saved(insert(client, {**CATALOG_INSERT, "norads": [G01_NORAD]}), client, 201)
+    for name in ("MODIS", "MODIS_X04"):
+        assert_saved(insert(client, {**SENSOR_DEFINE, "name": name, "parent": "*/Satellite/G01"}), client, 201)
+    before_doc, before = doc_of(client), file_bytes(data_dir)
+    j = assert_error(insert(client, {**CATALOG_INSERT, "norads": [TERRA, AQUA], "create_constellation": "EO", "primary_sensors": True}),
+                     409, "NAME_EXISTS", "primary_sensors")
+    assert j["detail"] == "MODIS_X04"
+    assert doc_of(client)["objects"] == before_doc["objects"] and file_bytes(data_dir) == before
+
+
+def test_primary_sensors_default_false(client, s_empty, imaging_snapshot, data_dir):
+    r = insert(client, {**CATALOG_INSERT, "norads": [TERRA, HIMAWARI]})
+    assert r.json()["created"] == ["*/Satellite/X04", "*/Satellite/X01"]
+    assert names_of(doc_of(client), "Sensor") == []
+    before = file_bytes(data_dir)
+    for bad in ("yes", 1, 0, None, [True]):
+        assert_error(insert(client, {**CATALOG_INSERT, "norads": [AQUA], "primary_sensors": bad}), 422, "SCENARIO_INVALID", "primary_sensors")
+    assert file_bytes(data_dir) == before
+    r = insert(client, {**CATALOG_INSERT, "norads": [AQUA], "primary_sensors": False})
+    assert r.json()["created"] == ["*/Satellite/X05"] and names_of(doc_of(client), "Sensor") == []
+
+
+def test_primary_sensors_only_with_from_satellite_catalog(client, s1, data_dir):
+    before = file_bytes(data_dir)
+    assert_error(insert(client, {"class": "Satellite", "method": "Define Properties", "name": "A", "norad": 5, "primary_sensors": True}),
+                 422, "SCENARIO_INVALID", "primary_sensors")
+    assert_error(insert(client, {**SENSOR_DEFAULT, "parent": G01, "primary_sensors": True}), 422, "SCENARIO_INVALID", "primary_sensors")
+    assert file_bytes(data_dir) == before
+
+
+def test_primary_sensors_for_gnss_only_creates_no_sensor(client, s_empty, imaging_snapshot):
+    r = insert(client, {**CATALOG_INSERT, "norads": [G01_NORAD], "primary_sensors": True})
+    assert r.json()["created"] == ["*/Satellite/G01"]

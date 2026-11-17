@@ -409,6 +409,75 @@ def test_put_doc_with_sensor_roundtrips_and_sensor_may_precede_its_satellite(cli
     load_scenario(scenario_dir(data_dir) / "scenario.json")                                 # engine ข้าม class Sensor
 
 
+RECTANGULAR_MODIS = {"type": "Rectangular", "vertical_half_angle": 55.0, "horizontal_half_angle": 0.41}
+
+
+def _with_sensor_definition(original, definition):
+    """สำเนาของ doc ที่มี Sensor S1 ของ G01 ต่อท้าย (definition ตามที่ให้) และตำแหน่งของ Sensor นั้น"""
+    doc = copy.deepcopy(original)
+    doc["objects"].append({**templates.sensor("S1", "*/Satellite/G01"), "definition": copy.deepcopy(definition)})
+    return doc, len(doc["objects"]) - 1
+
+
+def test_rectangular_sensor_round_trip(client, snapshot, data_dir):
+    r = make(client)
+    doc, _ = _with_sensor_definition(r.json(), RECTANGULAR_MODIS)
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(r)})
+    assert ok.status_code == 200, ok.text
+    saved = client.get("/api/scenarios/S1").json()
+    assert saved == doc and json.loads(file_bytes(data_dir)) == doc
+    assert saved["objects"][-1]["definition"] == RECTANGULAR_MODIS                         # Ruling (v): ไม่มี cone_half_angle
+    assert "cone_half_angle" not in json.loads(file_bytes(data_dir))["objects"][-1]["definition"]
+    load_scenario(scenario_dir(data_dir) / "scenario.json")
+
+
+def test_rectangular_ranges(client, snapshot, data_dir):
+    r = make(client); tag = tag_of(r); original = r.json(); before = file_bytes(data_dir)
+    for key in ("vertical_half_angle", "horizontal_half_angle"):
+        for bad in (0, -1, 89.5, 90, "45", True):
+            doc, i = _with_sensor_definition(original, {**RECTANGULAR_MODIS, key: bad})
+            field = f"objects[{i}].definition.{key}"
+            j = assert_error(client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag}), 422, "SCENARIO_INVALID", field)
+            assert field in j["text"] and file_bytes(data_dir) == before, (key, bad)
+        doc, i = _with_sensor_definition(original, {"type": "Rectangular", **{k: v for k, v in RECTANGULAR_MODIS.items() if k not in ("type", key)}})
+        j = assert_error(client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag}), 422, "SCENARIO_INVALID", f"objects[{i}].definition")
+        assert "Rectangular ต้องมี vertical_half_angle และ horizontal_half_angle" in j["text"] and file_bytes(data_dir) == before
+        doc, i = _with_sensor_definition(original, {**RECTANGULAR_MODIS, key: None})
+        assert_error(client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag}), 422, "SCENARIO_INVALID", f"objects[{i}].definition")
+    doc, i = _with_sensor_definition(original, {**RECTANGULAR_MODIS, "vertical_half_angle": float("nan")})
+    body = json.dumps(doc, allow_nan=True)
+    resp = client.put("/api/scenarios/S1", content=body, headers={"If-Match": tag, "Content-Type": "application/json"})
+    assert_error(resp, 422, "SCENARIO_INVALID", f"objects[{i}].definition.vertical_half_angle")
+    assert file_bytes(data_dir) == before
+    doc, _ = _with_sensor_definition(original, {"type": "Rectangular", "vertical_half_angle": 89, "horizontal_half_angle": 89})
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag})
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/scenarios/S1").json() == doc
+
+
+def test_rectangular_ignores_cone_half_angle(client, snapshot, data_dir):
+    """Ruling (v): Rectangular ไม่มี cone_half_angle ค่าที่ client ส่งมาด้วย (แม้ผิดช่วง) ไม่ถูกตรวจ"""
+    r = make(client)
+    doc, _ = _with_sensor_definition(r.json(), {**RECTANGULAR_MODIS, "cone_half_angle": 0})
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(r)})
+    assert ok.status_code == 200, ok.text
+
+
+def test_old_sensor_without_type_loads_as_simple_conic(client, snapshot, data_dir):
+    r = make(client); tag = tag_of(r); original = r.json()
+    doc, _ = _with_sensor_definition(original, {"cone_half_angle": 30})
+    ok = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag})
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/scenarios/S1").json() == doc
+    assert json.loads(file_bytes(data_dir))["objects"][-1]["definition"] == {"cone_half_angle": 30}       # ไม่เติม type ให้
+    doc, i = _with_sensor_definition(original, {"cone_half_angle": 0})                  # ยังตรวจ cone_half_angle ของ Simple Conic
+    assert_error(client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(ok)}), 422, "SCENARIO_INVALID",
+                 f"objects[{i}].definition.cone_half_angle")
+    doc, _ = _with_sensor_definition(original, {"type": "Simple Conic", "cone_half_angle": 30, "vertical_half_angle": 55.0})
+    ok2 = client.put("/api/scenarios/S1", json=doc, headers={"If-Match": tag_of(ok)})
+    assert ok2.status_code == 200, ok2.text
+
+
 def test_put_nan_in_unknown_field_is_422_and_keeps_file(client, snapshot, data_dir):
     r = make(client); before = file_bytes(data_dir)
     body = json.dumps({**r.json(), "x_custom": float("nan")})                    # "NaN" บันทึกเป็น JSON มาตรฐานไม่ได้
