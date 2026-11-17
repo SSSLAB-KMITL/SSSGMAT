@@ -6,12 +6,13 @@ type ImportFormat = "norad" | "group" | "tle" | "omm" | "gpredict" | "gpredict_l
 const GROUPS = ["amateur", "stations", "visual", "weather", "noaa", "goes", "resource", "cubesat", "science", "education", "geo"];
 
 /** Import and insert use the scenario's existing serialized ETag write queue. */
-export function ImportSatellites() {
-  const [format, setFormat] = useState<ImportFormat>("norad");
+export function ImportSatellites({ initialFormat = "norad", initiallyOpen = false }: { initialFormat?: ImportFormat; initiallyOpen?: boolean } = {}) {
+  const [format, setFormat] = useState<ImportFormat>(initialFormat);
+  const [expanded, setExpanded] = useState(initiallyOpen);
   const [norad, setNorad] = useState("");
   const [group, setGroup] = useState("amateur");
   const [text, setText] = useState("");
-  const [addToScenario, setAddToScenario] = useState(true);
+  const [addToScenario, setAddToScenario] = useState(initialFormat === "norad" || initialFormat === "tle" || initialFormat === "omm");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -53,7 +54,7 @@ export function ImportSatellites() {
       setFormat(detected); setText(value);
     } catch (e) { setError(errorText(e)); }
   };
-  return <details className="custom-orbit-import">
+  return <details className="custom-orbit-import" open={expanded} onToggle={e => setExpanded(e.currentTarget.open)}>
     <summary>เพิ่มดาวด้วย NORAD หรือไฟล์ TLE / OMM</summary>
     <p>นำเข้าดาวทั่วไปและรายการจาก Gpredict แล้วคำนวณวงโคจรและ Access ด้วย GMAT ได้ ดาวทั่วไปจะไม่รวมใน DOP</p>
     <label>แหล่งข้อมูล <select aria-label="รูปแบบข้อมูลวงโคจร" value={format} disabled={busy} onChange={e => {

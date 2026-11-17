@@ -2713,3 +2713,7 @@ body {
 .custom-orbit-import p { margin: 7px 0; line-height: 1.5; }
 .custom-orbit-import textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; font-family: monospace; }
 .custom-orbit-import input, .custom-orbit-import select { margin: 5px; }
+
+.workspace-mode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; }
+.workspace-mode-bar select, .workspace-mode-bar button { min-height: 26px; }
+.workspace-mode-hint { color: var(--text-muted); margin-left: 6px; }
