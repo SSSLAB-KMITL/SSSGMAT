@@ -35,6 +35,13 @@ PINNED_GNSS_HASH = "c8237bda07a5"
 PINNED_GNSS_BYTES = {"predicted.sp3": "b665b41d85a6ed39634a646cb92a1b98c3f45ec1e89c3fbe7ee7d9d05a470249",
                      "scene.czml": "7a68f18d1075c98732033c4a84802ba3d91fad8161bab17e9b43ba6057d75833"}
 PINNED_GNSS_MANIFEST = "331eb9a40068c36e6b2223a3fb69bccb403bf52be47974ab22672e890d68ba0d"
+PINNED_GNSS_ACCESS = {"folder": "access/THBK/927f013db234",
+                      "aer.csv": "8231b3935db9265750e3b88fe1059626d21cc9cf5f77377fc25fed14d1b69f35",
+                      "intervals.json": "8aa1568f5efb0f002f553ca8c16697656e4b4702b7fcc8b1c7306b35739f439f",
+                      "dop.csv": "eb24d23c510d387b6bbc58729ac75d57d5d067d7b0c3ca8118b7b96b5282a5dd",
+                      "access.czml": "170d9b6b4fb38e243eb933425c2212b111fa3fdfbeb8ceca761fe58e09ae84bd",
+                      "legacy_gps.csv": "c1b2f4c46393ac37443e5b4f10c50bd6204b7940dbcba28eb8376fe2980a8f51",
+                      "manifest.json": "fb6d7b9d293c82fb6400d47033ce4e68e5b5d7a153527db3d6ec1eb964880ba8"}
 SNAPSHOT_NAME = "20261110T0000Z"
 NOW = datetime(2026, 11, 10, 6, 5, 42, tzinfo=UTC)
 GROUP_FILES = ["beidou.json", "galileo.json", "glo-ops.json", "gps-ops.json"]
@@ -270,10 +277,54 @@ class TestFetchSnapshot(unittest.TestCase):
                           if line.endswith("  weather.json")])
         old = [m for m in msgs if m.code == "IMAGING_CACHE_TOO_OLD"]
         self.assertEqual(len(old), 1)
-        self.assertEqual(old[0].level, "warning")
+        self.assertEqual(old[0].level, "info")
         self.assertIn("weather_20261021T0000Z.json", old[0].text)
         self.assertIn("20.3 วัน", old[0].text)
         self.assertIn("ดาวถ่ายภาพ", old[0].text)
+
+    def test_old_cached_imaging_groups_give_one_info(self):
+        # M1: fetch ที่ไม่สั่ง X (เช่นงานรายวัน) ไม่เตือนซ้ำทุกกลุ่มทุกวัน: ข้อความ info เดียวที่บอกทุกกลุ่มที่ไม่ใส่
+        self.cache_file("weather_20261021T0000Z.json", (IMG / "weather.json").read_bytes())    # 20.25 วัน
+        self.cache_file("science_20261001T0000Z.json", (IMG / "science.json").read_bytes())    # 40.25 วัน
+        visual = (IMG / "visual.json").read_bytes()
+        self.cache_file("visual_20261109T0000Z.json", visual)                                   # 1.25 วัน
+        snap, msgs = fetch_snapshot(self.data, NOW, opener=fixture_opener(), brdc_fetcher=self.failing_brdc)
+        self.assertFalse((snap / "weather.json").exists())
+        self.assertFalse((snap / "science.json").exists())
+        self.assertEqual((snap / "visual.json").read_bytes(), visual)
+        old = [m for m in msgs if m.code.startswith("IMAGING_")]
+        self.assertEqual(len(old), 1, old)
+        self.assertEqual((old[0].code, old[0].level), ("IMAGING_CACHE_TOO_OLD", "info"))
+        for text in ("weather", "science", "weather_20261021T0000Z.json", "science_20261001T0000Z.json"):
+            self.assertIn(text, old[0].text)
+        self.assertNotIn("visual", old[0].text)
+        self.assertEqual([m.level for m in msgs if m.code != "IMAGING_CACHE_TOO_OLD"], ["warning"])   # brdc เท่านั้น
+
+    def test_future_cached_imaging_file_dropped(self):
+        # M2: เวลาในชื่อไฟล์อยู่ในอนาคต 20 วัน (นาฬิกาเพี้ยน) อายุติดลบต้องไม่ผ่านเกณฑ์ 14 วัน
+        self.cache_file("visual_20261130T0605Z.json", (IMG / "visual.json").read_bytes())
+        snap, msgs = fetch_snapshot(self.data, NOW, opener=fixture_opener(), brdc_fetcher=self.failing_brdc)
+        self.assertFalse((snap / "visual.json").exists())
+        old = [m for m in msgs if m.code == "IMAGING_CACHE_TOO_OLD"]
+        self.assertEqual(len(old), 1)
+        self.assertIn("visual_20261130T0605Z.json", old[0].text)
+
+    def test_imaging_cache_age_boundaries(self):
+        # M4: อายุ 14.0 วันพอดีใส่ได้ เกิน 1 วินาทีไม่ใส่ (ทั้งสองทิศเพราะเทียบ |อายุ|)
+        cases = [("visual_20261027T0605Z.json", datetime(2026, 11, 10, 6, 5, 0, tzinfo=UTC), True),
+                 ("visual_20261027T0605Z.json", datetime(2026, 11, 10, 6, 5, 1, tzinfo=UTC), False),
+                 ("visual_20261124T0605Z.json", datetime(2026, 11, 10, 6, 5, 0, tzinfo=UTC), True),
+                 ("visual_20261124T0605Z.json", datetime(2026, 11, 10, 6, 4, 59, tzinfo=UTC), False)]
+        for name, now, kept in cases:
+            with self.subTest(name=name, now=now):
+                data = Path(tempfile.mkdtemp())
+                self.addCleanup(shutil.rmtree, data, ignore_errors=True)
+                cache = data / "orbits" / "_cache"
+                cache.mkdir(parents=True)
+                (cache / name).write_bytes((IMG / "visual.json").read_bytes())
+                snap, msgs = fetch_snapshot(data, now, opener=fixture_opener(), brdc_fetcher=self.failing_brdc)
+                self.assertEqual((snap / "visual.json").exists(), kept)
+                self.assertEqual(any(m.code == "IMAGING_CACHE_TOO_OLD" for m in msgs), not kept)
 
     def test_systems_x_fetches_imaging_groups(self):
         opener = fixture_opener()
@@ -310,7 +361,9 @@ class TestFetchSnapshot(unittest.TestCase):
                                                  "visual.json"]))
         codes = [m.code for m in msgs]
         self.assertIn("ORBIT_DOWNLOAD_FAILED", codes)                      # weather: ใช้ cache เดิม (แต่เก่าเกิน)
-        self.assertIn("IMAGING_CACHE_TOO_OLD", codes)
+        too_old = [m for m in msgs if m.code == "IMAGING_CACHE_TOO_OLD"]
+        self.assertEqual([m.level for m in too_old], ["warning"])         # สั่ง X เอง: ยังเตือน
+        self.assertIn("weather_20261021T0000Z.json", too_old[0].text)
         unavailable = [m for m in msgs if m.code == "IMAGING_GROUP_UNAVAILABLE"]
         self.assertEqual(len(unavailable), 1)
         self.assertEqual(unavailable[0].level, "warning")
@@ -565,6 +618,19 @@ class TestHashInputs(FakeGmat):
         self.assertEqual(hashlib.sha256(json.dumps(man, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
                          PINNED_GNSS_MANIFEST)
 
+    def test_gnss_only_access_bytes_are_pinned(self):
+        # ไบต์ของผล analyze ฉาก GNSS ล้วน (AER, ช่วง access, DOP, CZML, legacy) บันทึกจากโค้ดก่อนงานที่ 3 (53e01a1)
+        # ขณะ snapshot มีไฟล์ imaging: ต้องไม่เปลี่ยนแม้แต่ไบต์เดียว manifest ตัด created_utc ออกแล้วเรียง key ก่อน hash
+        add_imaging_files(self.data / "orbits" / SNAPSHOT_NAME)
+        acc, _ = run_analyze(self.sc, "THBK", data_dir=self.data)
+        digest = {n: hashlib.sha256((acc / n).read_bytes()).hexdigest()
+                  for n in ("aer.csv", "intervals.json", "dop.csv", "access.czml", "legacy_gps.csv")}
+        man = json.loads((acc / "manifest.json").read_bytes())
+        man.pop("created_utc")
+        digest["manifest.json"] = hashlib.sha256(json.dumps(man, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        digest["folder"] = f"{acc.parent.parent.name}/{acc.parent.name}/{acc.name}"
+        self.assertEqual(digest, PINNED_GNSS_ACCESS)
+
     def test_ephem_hash_changes_with_every_input(self):
         base = self.ephem_name()
         names = {}
@@ -680,6 +746,26 @@ class TestImagingScenario(FakeGmat):
         self.assertEqual(plan.satellites, ["G01"])
         missing = [m for m in plan.messages if m.code == "SAT_NOT_IN_SNAPSHOT"]
         self.assertEqual([m.object for m in missing], ["Terra"])
+
+    def test_validate_message(self):
+        # ไม่ใช้เน็ต: SP3 จริงจาก fixture และไม่มี broadcast
+        sp3 = Path(__file__).parent / "fixtures" / "studio" / "mgx_sample.sp3"
+        with mock.patch.object(studio, "_validate_nav", return_value=(None, [])), \
+                mock.patch.object(studio, "fetch_mgx_sp3", side_effect=AssertionError("ไม่คาดว่าจะดึง SP3")):
+            ephem, msgs = run_validate(self.img, date(2026, 11, 10), self.data, sp3=sp3)
+            gnss_ephem, gnss_msgs = run_validate(self.sc, date(2026, 11, 10), self.data, sp3=sp3)
+        skipped = [m for m in msgs if m.code == "IMAGING_SKIPPED"]
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual((skipped[0].level, skipped[0].text), ("info", "ข้ามดาวถ่ายภาพ 1 ดวง (ไม่มีข้อมูลอ้างอิง)"))
+        self.assertEqual([m for m in gnss_msgs if m.code == "IMAGING_SKIPPED"], [])
+        doc = json.loads((ephem / "validation_2026-11-10.json").read_bytes())
+        gnss_doc = json.loads((gnss_ephem / "validation_2026-11-10.json").read_bytes())
+        self.assertEqual(sorted(doc), sorted(gnss_doc))                    # ไม่มี key ใหม่
+        self.assertEqual(sorted(doc["satellites"]), ["G01"])
+        self.assertEqual([m["code"] for m in doc["messages"]], ["IMAGING_SKIPPED"])
+        md = (ephem / "validation_2026-11-10.md").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(md.count("- ข้ามดาวถ่ายภาพ 1 ดวง (ไม่มีข้อมูลอ้างอิง)"), 1)
+        self.assertNotIn("ดาวถ่ายภาพ", (gnss_ephem / "validation_2026-11-10.md").read_text(encoding="utf-8"))
 
     def test_too_old_geo_hidden(self):
         # GOES-19 (X03) EPOCH 2026-10-26T03:00Z อายุ 15 วันที่กึ่งกลางช่วง: เกินเกณฑ์ซ่อน 14 วันของ GEO

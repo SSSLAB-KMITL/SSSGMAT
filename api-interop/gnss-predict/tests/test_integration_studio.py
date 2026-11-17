@@ -14,6 +14,7 @@ from gnss_predict.sp3 import read_sp3_all
 from gnss_predict.studio import run_analyze, run_propagate
 
 SNAP = Path(__file__).parent / "fixtures" / "studio" / "snapshot"
+IMG = Path(__file__).parent / "fixtures" / "studio" / "imaging"
 SATELLITES = [("G01", 62339), ("E11", 37846), ("R05", 43508), ("C01", 56564), ("C40", 44542), ("R10", 100744)]
 
 
@@ -76,6 +77,24 @@ class TestStudioIntegration(unittest.TestCase):
         self.assertTrue(all(r.split(",")[2].startswith("G") for r in legacy[1:]))
         self.assertEqual(len((acc / "dop.csv").read_text(encoding="utf-8").splitlines()) - 1, 721 * 5)
         self.assertEqual((calls[0][1], calls[-1][1]), (0.0, 1.0))
+
+    def test_propagate_imaging_x01_x04(self):
+        # snapshot ใน fixture + ไฟล์กลุ่ม imaging (เขียนเอง): Himawari-9 (X01, GEO) และ Terra (X04, LEO)
+        snapshot = self.data / "orbits" / "20261110T0000Z"
+        for name in ("science.json", "visual.json", "weather.json"):
+            shutil.copyfile(IMG / name, snapshot / name)
+        scenario = json.loads((self.sc / "scenario.json").read_text(encoding="utf-8"))
+        scenario["objects"] = [o for o in scenario["objects"] if o["class"] == "Facility"] + [
+            {"class": "Satellite", "name": "Himawari-9", "norad": 41836},
+            {"class": "Satellite", "name": "Terra", "norad": 25994}]
+        (self.sc / "scenario.json").write_text(json.dumps(scenario), encoding="utf-8")
+        ephem, _ = run_propagate(self.sc, data_dir=self.data)
+        sp3 = read_sp3_all(ephem / "predicted.sp3")
+        self.assertEqual(set(sp3), {"X01", "X04"})
+        for prn, (low, high) in {"X01": (42114.0, 42214.0), "X04": (6900.0, 7200.0)}.items():
+            radii = [math.dist(p, (0, 0, 0)) for p in sp3[prn].values()]
+            self.assertEqual(len(radii), 721, prn)
+            self.assertTrue(all(low <= r <= high for r in radii), (prn, min(radii), max(radii)))
 
 
 if __name__ == "__main__":

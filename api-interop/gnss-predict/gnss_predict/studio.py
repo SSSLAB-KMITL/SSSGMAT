@@ -61,7 +61,7 @@ from .propagate import ephemeris_from_sp3, propagate
 from .run_gmat import find_gmat_console, gmat_version
 from .scenario import EngineScenario, Facility, load_scenario
 from .sp3 import fetch_mgx_sp3, write_sp3
-from .studio_validate import validate_ephemeris, validation_markdown
+from .studio_validate import imaging_skipped_text, validate_ephemeris, validation_markdown
 
 Progress = Callable[[str, float], None]
 
@@ -219,20 +219,28 @@ def _latest_cached(cache: Path, group: str) -> Path | None:
     return max(dated)[1] if dated else None
 
 
-def _fresh_imaging_file(group: str, path: Path, now: datetime) -> tuple[Path | None, list[Message]]:
-    """ไฟล์กลุ่ม imaging จาก cache ใส่ใน snapshot ได้เมื่ออายุ (จากเวลาในชื่อไฟล์) ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS
-    (Ruling y: ไฟล์ที่เก่ากว่านี้ทำให้ดาว GEO ถูกซ่อนอยู่แล้ว) เก่ากว่าหรืออ่านเวลาไม่ได้: None + IMAGING_CACHE_TOO_OLD"""
+def _imaging_file_problem(group: str, path: Path, now: datetime) -> str | None:
+    """ไฟล์กลุ่ม imaging จาก cache ใส่ใน snapshot ได้เมื่อ |อายุ| (จากเวลาในชื่อไฟล์) ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS
+    (Ruling y: ไฟล์ที่เก่ากว่านี้ทำให้ดาว GEO ถูกซ่อนอยู่แล้ว เวลาในอนาคตคือนาฬิกาเพี้ยน จึงเทียบค่าสัมบูรณ์เหมือน catalog)
+    ใช้ได้: None ใช้ไม่ได้: เหตุผลภาษาไทยที่มีชื่อไฟล์"""
     fetched = _cache_time(group, path)
-    if fetched is not None:
-        age_days = (now - fetched).total_seconds() / 86400
-        if age_days <= GEO_AGE_SHOWN_MAX_DAYS:
-            return path, []
-        age = f"อายุ {age_days:.1f} วัน เกิน {GEO_AGE_SHOWN_MAX_DAYS:g} วัน"
-    else:
-        age = "อ่านเวลาที่ดาวน์โหลดจากชื่อไฟล์ไม่ได้"
-    return None, [Message("IMAGING_CACHE_TOO_OLD", "warning",
-                          f"ไม่ใส่ข้อมูลวงโคจรกลุ่ม {group} ของดาวถ่ายภาพใน snapshot นี้: ไฟล์ล่าสุดใน cache "
-                          f"({path.name}) {age} ให้ดึงข้อมูลวงโคจรพร้อมดาวถ่ายภาพ (ระบบ {IMAGING_LETTER}) ใหม่")]
+    if fetched is None:
+        return f"{path.name} อ่านเวลาที่ดาวน์โหลดจากชื่อไฟล์ไม่ได้"
+    age_days = (now - fetched).total_seconds() / 86400
+    if abs(age_days) <= GEO_AGE_SHOWN_MAX_DAYS:
+        return None
+    if age_days < 0:
+        return f"{path.name} เวลาในชื่อไฟล์เลยเวลาปัจจุบันไป {-age_days:.1f} วัน"
+    return f"{path.name} อายุ {age_days:.1f} วัน เกิน {GEO_AGE_SHOWN_MAX_DAYS:g} วัน"
+
+
+def _imaging_too_old(level: str, dropped: list[tuple[str, str]]) -> Message:
+    """ข้อความเดียวของทุกกลุ่ม imaging ที่ไม่ใส่ใน snapshot: dropped = [(กลุ่ม, เหตุผล)]"""
+    groups = ", ".join(group for group, _ in dropped)
+    reasons = "; ".join(reason for _, reason in dropped)
+    return Message("IMAGING_CACHE_TOO_OLD", level,
+                   f"ไม่ใส่ข้อมูลวงโคจรกลุ่ม {groups} ของดาวถ่ายภาพใน snapshot นี้: ไฟล์ล่าสุดใน cache ({reasons}) "
+                   f"ให้ดึงข้อมูลวงโคจรพร้อมดาวถ่ายภาพ (ระบบ {IMAGING_LETTER}) ใหม่")
 
 
 def _sha256sums(files: dict[str, bytes]) -> bytes:
@@ -252,7 +260,8 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
     กลุ่มดาวถ่ายภาพ (IMAGING_GROUPS) อยู่ใน snapshot ทุกครั้งที่มีไฟล์ให้ใช้ (Ruling q, y):
     - มี X ใน systems: ดึงด้วย fetch_group ตามกติกาเดิม ดึงไม่ได้และไม่มี cache ได้ IMAGING_GROUP_UNAVAILABLE (ไม่ raise)
     - ไม่มี X: คัดลอกไฟล์ล่าสุดใน cache โดยไม่ส่ง request (ไม่มีไฟล์: ไม่มีกลุ่มนั้นและไม่มีข้อความ)
-    - ทั้งสองกรณีใส่เฉพาะไฟล์อายุไม่เกิน GEO_AGE_SHOWN_MAX_DAYS วัน ที่เก่ากว่าได้ IMAGING_CACHE_TOO_OLD
+    - ทั้งสองกรณีใส่เฉพาะไฟล์ที่ |อายุ| ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS วัน ที่เกินได้ IMAGING_CACHE_TOO_OLD:
+      มี X เป็น warning ต่อกลุ่ม ไม่มี X (เช่นงานรายวัน) เป็น info ข้อความเดียวที่บอกทุกกลุ่มที่ไม่ใส่
     """
     report = _reporter(progress)
     letters = _system_letters(systems)
@@ -271,9 +280,9 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
             except OrbitUnavailableError as exc:            # กลุ่ม imaging ไม่ทำให้ snapshot ของ GNSS ล้ม
                 path, msgs = None, [Message("IMAGING_GROUP_UNAVAILABLE", "warning",
                                             f"{exc} snapshot นี้จึงไม่มีข้อมูลวงโคจรกลุ่ม {group} ของดาวถ่ายภาพ")]
-            if path is not None:
-                path, too_old = _fresh_imaging_file(group, path, now)
-                msgs = msgs + too_old
+            problem = _imaging_file_problem(group, path, now) if path is not None else None
+            if problem is not None:
+                path, msgs = None, msgs + [_imaging_too_old("warning", [(group, problem)])]
         else:
             path, msgs = fetch_group(group, cache, cache / CELESTRAK_STATE_FILE, now, opener=opener)
         if path is not None:
@@ -281,14 +290,18 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
         messages += msgs
         report("omm", 0.6 * (i + 1) / len(groups))
     if not with_imaging:
+        dropped: list[tuple[str, str]] = []
         for group in IMAGING_GROUPS:
             path = _latest_cached(cache, group)
             if path is None:
                 continue
-            path, msgs = _fresh_imaging_file(group, path, now)
-            if path is not None:
+            problem = _imaging_file_problem(group, path, now)
+            if problem is None:
                 files[f"{group}.json"] = path.read_bytes()
-            messages += msgs
+            else:
+                dropped.append((group, problem))
+        if dropped:
+            messages.append(_imaging_too_old("info", dropped))
     path, msgs = fetch_metadata(cache, now, opener=opener)
     files[IGS_METADATA_FILE] = path.read_bytes()
     messages += msgs
@@ -658,6 +671,10 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     manifest = _read_manifest(ephem_dir)
     ages = {s["prn"]: s.get("age_days") for s in manifest.data["satellites"]}
     result = validate_ephemeris(ephem_dir / PREDICTED_SP3, truth, nav, fac, manifest.flags, ages, day)
+    # ดาวถ่ายภาพที่ propagate แล้วไม่มีค่าอ้างอิง validate_ephemeris จึงข้าม (Ruling u) บอกผู้ใช้หนึ่งข้อความ
+    skipped = sum(1 for s in manifest.data["satellites"] if s["prn"][:1] == IMAGING_LETTER and s.get("propagated"))
+    if skipped:
+        validate_messages = validate_messages + [Message("IMAGING_SKIPPED", "info", imaging_skipped_text(skipped))]
 
     report("write", 0.9)
     created = _iso_s(datetime.now(timezone.utc))
@@ -666,7 +683,7 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     _write_atomic(ephem_dir / f"validation_{day.isoformat()}.json", _json_bytes(document))
     _write_atomic(ephem_dir / f"validation_{day.isoformat()}.md",
                   validation_markdown(result, scenario=sc.name, ephem_hash=ephem_dir.name,
-                                      facility=fac.name).encode("utf-8"))
+                                      facility=fac.name, skipped_imaging=skipped).encode("utf-8"))
     history = Path(data_dir) / VALIDATION_DIR / HISTORY_FILE
     history.parent.mkdir(parents=True, exist_ok=True)
     record = {key: document[key] for key in ("day", "scenario", "ephem_hash", "truth_file", "pass", "systems",

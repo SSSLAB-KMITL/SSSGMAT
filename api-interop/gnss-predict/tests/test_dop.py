@@ -194,5 +194,26 @@ class TestDopSeries(unittest.TestCase):
         self.assertAlmostEqual(by["ALL"]["gdop"], expected.gdop, delta=1e-12)
 
 
+
+class TestImaging(unittest.TestCase):
+    """ดาวถ่ายภาพ (ระบบ X) ไม่เข้า DOP ทั้งราย system และ ALL"""
+
+    def test_dop_ignores_imaging_rows(self):
+        times = [T0, T0 + timedelta(seconds=30)]
+        rows = [row(prn, el, az, tm) for tm in times
+                for prn, el, az in (("G01", 85.0, 0.0), ("G02", 30.0, 0.0), ("R03", 30.0, 120.0),
+                                    ("E04", 30.0, 240.0), ("C05", 40.0, 60.0))]
+        x_rows = [row("X01", 45.0, 10.0), row("X04", 60.0, 100.0), row("X05", 70.0, 200.0, times[1]),
+                  row("X08", 80.0, 300.0, times[1])]
+        with_x = dop_series(rows + x_rows, FAC, {}, times_utc=times)
+        self.assertEqual(with_x, dop_series(rows, FAC, {}, times_utc=times))
+        self.assertEqual(len(with_x), 5 * len(times))
+        self.assertNotIn("X", {r["system"] for r in with_x})
+        self.assertEqual([r["n_visible"] for r in with_x if r["system"] == "ALL"], [5, 5])
+        # เวลาที่มีแต่แถว X (ไม่ส่ง times_utc) ต้องไม่เพิ่มจุดเวลาใหม่
+        lone = [row("X04", 60.0, 100.0, T0 + timedelta(seconds=90))]
+        self.assertEqual(dop_series(rows + lone, FAC, {}), dop_series(rows, FAC, {}))
+
+
 if __name__ == "__main__":
     unittest.main()

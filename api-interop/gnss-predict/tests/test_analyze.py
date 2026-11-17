@@ -175,6 +175,40 @@ class TestAerRows(unittest.TestCase):
                           (t(30), "C01"), (t(30), "G01"), (t(30), "R05")])
 
 
+class TestImagingRows(unittest.TestCase):
+    """ดาวถ่ายภาพ (ระบบ X) มี AER และช่วง access แต่ไม่มี IPP/MF (Ruling c)"""
+
+    def test_aer_rows_x_have_no_ipp(self):
+        from gnss_predict import studio
+        sta = geodetic_to_ecef(THBK.lat_deg, THBK.lon_deg, THBK.alt_m)
+        u = up_unit(THBK.lat_deg, THBK.lon_deg)
+        g01 = (sta[0] - 9000.0, sta[1] + 7000.0, sta[2] + 12000.0)
+        overhead = tuple(s + 700.0 * c for s, c in zip(sta, u))
+        slant = (sta[0] - 300.0, sta[1] + 200.0, sta[2] + 600.0)
+        far = tuple(-7000.0 * c for c in u)                  # ฝั่งตรงข้ามโลก (El < 0)
+        times = [t(0), t(30), t(60), t(90)]
+        both = Ephemeris(times, {"G01": [g01] * 4, "X04": [overhead, slant, slant, far]})
+        gnss = Ephemeris(times, {"G01": [g01] * 4})
+        rows = aer_rows(both, THBK, 400.0)
+        x_rows = [r for r in rows if r.prn == "X04"]
+        self.assertEqual(len(x_rows), 3)
+        for r, pos in zip(x_rows, [overhead, slant, slant], strict=True):
+            self.assertIsNone(r.ipp_lat_deg)
+            self.assertIsNone(r.ipp_lon_deg)
+            self.assertIsNone(r.mf)
+            self.assertEqual((r.az_deg, r.el_deg, r.range_km), ecef_to_aer(pos, sta, THBK.lat_deg, THBK.lon_deg))
+            self.assertGreaterEqual(r.el_deg, 0.0)
+        self.assertAlmostEqual(x_rows[0].range_km, 700.0, places=6)
+        self.assertEqual([r for r in rows if r.prn == "G01"], aer_rows(gnss, THBK, 400.0))
+        self.assertEqual(studio._aer_csv_row(x_rows[0])[5:], ["", "", ""])
+        self.assertTrue(all(studio._aer_csv_row(x_rows[0])[2:5]))
+        intervals = access_intervals(both, THBK)
+        self.assertIn("X04", intervals)
+        self.assertEqual(intervals["G01"], access_intervals(gnss, THBK)["G01"])
+        self.assertEqual(len(intervals["X04"]), 1)
+        self.assertEqual(legacy_rows(rows), legacy_rows(aer_rows(gnss, THBK, 400.0)))
+
+
 def _equator_sat(el_deg: float) -> tuple[float, float, float]:
     """ดาวเหนือสถานี (lat 0, lon 0, h 0) ที่ El ตามต้องการ: ความสูง 20000 กม. ระยะราบตามมุม"""
     sta = geodetic_to_ecef(0.0, 0.0, 0.0)

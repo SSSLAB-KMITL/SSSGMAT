@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from .geometry import ecef_to_aer, ecef_to_az_el, geodetic_to_ecef, ipp, mapping_factor
+from .imaging import IMAGING_LETTER
 from .propagate import Ephemeris
 from .scenario import Facility
 
@@ -22,9 +23,9 @@ class AerRow:
     az_deg: float
     el_deg: float
     range_km: float
-    ipp_lat_deg: float
-    ipp_lon_deg: float
-    mf: float
+    ipp_lat_deg: float | None              # None สำหรับดาวถ่ายภาพ (ระบบ X) ซึ่งไม่ใช่สัญญาณ GNSS จึงไม่มี IPP/MF
+    ipp_lon_deg: float | None
+    mf: float | None
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class Interval:
 
 
 def aer_rows(eph: Ephemeris, fac: Facility, shell_km: float) -> list[AerRow]:
-    """ทุกแถวที่ El ≥ 0 เรียงตามเวลาแล้ว PRN"""
+    """ทุกแถวที่ El ≥ 0 เรียงตามเวลาแล้ว PRN ดาวถ่ายภาพ (ระบบ X) มี Az/El/ระยะ แต่ IPP และ MF เป็น None"""
     sta = geodetic_to_ecef(fac.lat_deg, fac.lon_deg, fac.alt_m)
     prns = sorted(eph.positions_km)
     rows: list[AerRow] = []
@@ -43,6 +44,9 @@ def aer_rows(eph: Ephemeris, fac: Facility, shell_km: float) -> list[AerRow]:
         for prn in prns:
             az, el, rng = ecef_to_aer(eph.positions_km[prn][i], sta, fac.lat_deg, fac.lon_deg)
             if el < 0.0:
+                continue
+            if prn[:1] == IMAGING_LETTER:
+                rows.append(AerRow(time_utc, prn, az, el, rng, None, None, None))
                 continue
             lat, lon = ipp(fac.lat_deg, fac.lon_deg, az, el, shell_km=shell_km)
             rows.append(AerRow(time_utc, prn, az, el, rng, lat, lon, mapping_factor(el, shell_km=shell_km)))

@@ -3,7 +3,8 @@
 - แต่ละดาวมีแถว H = [cos El sin Az, cos El cos Az, sin El, 1] (แกน E, N, U และนาฬิกา)
   ใช้คอลัมน์นาฬิกาเดียวกับทุกระบบ เหมือน STK และ `dops()` ของ RTKLIB
 - Q = (HᵀH)⁻¹ หาด้วยการกำจัดแบบเกาส์-จอร์แดนพร้อมเลือก pivot ถ้า pivot เล็กกว่า 1e-12 ถือว่าไม่มีตัวผกผัน
-- ดาวที่ใช้ใน `dop_series`: El ≥ min_el_deg ของ Facility และไม่มีธงใน `DOP_EXCLUDED_FLAGS`
+- ดาวที่ใช้ใน `dop_series`: ดาว GNSS (G/R/E/C) ที่ El ≥ min_el_deg ของ Facility และไม่มีธงใน `DOP_EXCLUDED_FLAGS`
+  ดาวถ่ายภาพ (ระบบ X) ไม่เข้า DOP ทั้งราย system และ ALL
 """
 
 import math
@@ -13,6 +14,7 @@ from datetime import datetime
 
 from .analyze import AerRow
 from .catalog import DOP_EXCLUDED_FLAGS
+from .config import GNSS_GROUPS
 from .scenario import Facility
 
 _PIVOT_MIN = 1e-12
@@ -81,9 +83,12 @@ def dop_series(rows: list[AerRow], fac: Facility, flags: dict[str, frozenset[str
     ต้องส่ง `times_utc` (เช่น eph.times_utc) เมื่อ rows มาจาก aer_rows เพราะ aer_rows ตัดแถว El < 0 ทิ้ง
     จุดเวลาที่ไม่มีดาวเหนือขอบฟ้าเลยจึงไม่อยู่ใน rows
     n_visible นับดาวที่ El ≥ min_el_deg และไม่มีธงใน DOP_EXCLUDED_FLAGS (PRN ที่ไม่อยู่ใน flags ไม่มีธง)
-    ค่า DOP เป็น None เมื่อ `dop` คืน None"""
+    ค่า DOP เป็น None เมื่อ `dop` คืน None
+    แถวของดาวที่ไม่ใช่ GNSS (เช่นดาวถ่ายภาพระบบ X) ถูกข้ามทั้งแถว ไม่เพิ่มจุดเวลาด้วย ผลจึงเหมือนไม่มีแถวนั้น"""
     by_time: dict = {t: [] for t in times_utc} if times_utc is not None else {}
     for r in rows:
+        if r.prn[:1] not in GNSS_GROUPS:
+            continue
         by_time.setdefault(r.time_utc, [])
         if r.el_deg >= fac.min_el_deg and not (flags.get(r.prn, frozenset()) & DOP_EXCLUDED_FLAGS):
             by_time[r.time_utc].append(r)
