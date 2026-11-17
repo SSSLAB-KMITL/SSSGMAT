@@ -294,6 +294,38 @@ class TestLagrangeAt(unittest.TestCase):
         self.assertIsNone(lagrange_at(series, at(19) + timedelta(seconds=10)))
         self.assertIsNone(lagrange_at({}, self.T0))
 
+    def test_lagrange_at_with_presorted_times_matches_default(self):
+        series = self._series()
+        times = sorted(series)
+        at = lambda k: self.T0 + timedelta(seconds=300 * k)
+        # ตรงกับ epoch, ระหว่าง epoch, และนอกขอบที่ต้องได้ None เหมือนกัน
+        for t in (at(10), at(4.5), at(9.37), at(14.5), at(0), at(0.5), at(3.5), at(15.5), at(19)):
+            with self.subTest(t=t):
+                self.assertEqual(lagrange_at(series, t, times=times), lagrange_at(series, t))
+        self.assertIsNotNone(lagrange_at(series, at(9.37), times=times))
+        self.assertIsNone(lagrange_at(series, at(0.5), times=times))
+        self.assertEqual(lagrange_at(series, at(10), times=times), series[at(10)])
+        self.assertEqual(lagrange_at(series, at(7.5), 3, times=times), lagrange_at(series, at(7.5), 3))
+
+    def test_lagrange_at_with_presorted_times_does_not_sort_again(self):
+        series = self._series()
+        times = sorted(series)
+        t = self.T0 + timedelta(seconds=300 * 9.37)
+        with mock.patch("gnss_predict.sp3.sorted", create=True, side_effect=AssertionError("sorted ถูกเรียก")):
+            self.assertIsNotNone(lagrange_at(series, t, times=times))
+        with mock.patch("gnss_predict.sp3.sorted", create=True, side_effect=sorted) as spy:
+            lagrange_at(series, t)                  # ไม่ส่ง times ต้องเรียงเองหนึ่งครั้ง
+        spy.assert_called_once_with(series)
+
+    def test_lagrange_at_with_presorted_times_still_respects_holes(self):
+        at = lambda k: self.T0 + timedelta(seconds=300 * k)
+        full = self._series(50)
+        series = {t: p for k, (t, p) in enumerate(full.items()) if not 15 <= k <= 30}
+        times = sorted(series)
+        for t in (at(31.5), at(20.5), at(14.5), at(8.5), at(40.5)):
+            with self.subTest(t=t):
+                self.assertEqual(lagrange_at(series, t, times=times), lagrange_at(series, t))
+
     def test_lagrange_at_pins_first_key(self):
         series = self._series()
         first = min(series)

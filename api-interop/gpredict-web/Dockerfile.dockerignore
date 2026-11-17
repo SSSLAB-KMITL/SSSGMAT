@@ -1,0 +1,17 @@
+# build context คือราก repo: ส่งเฉพาะสิ่งที่ Dockerfile ใช้ (allowlist)
+# สำคัญ: data/ ของ gpredict-web และ gnss-predict (ข้อมูลจริงของผู้ใช้) ต้องไม่เข้า image
+*
+!License.txt
+!api-interop/gnss-predict/gnss_predict/
+!api-interop/gnss-predict/templates/
+!api-interop/gpredict-web/README.md
+!api-interop/gpredict-web/docker/
+!api-interop/gpredict-web/server/requirements.txt
+!api-interop/gpredict-web/server/gpredict_web/
+!api-interop/gpredict-web/web/
+
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+api-interop/gpredict-web/web/node_modules
+api-interop/gpredict-web/web/dist

@@ -149,5 +149,43 @@ class TestEcefToAer(unittest.TestCase):
         self.assertAlmostEqual(rng, math.sqrt(12000.0 ** 2 + 8000.0 ** 2 + 15000.0 ** 2), places=9)
 
 
+class TestEcefToGeodeticRoundTrip(unittest.TestCase):
+    def test_round_trip(self):
+        # ecef_to_geodetic คืนความสูงเป็นกม. ส่วน geodetic_to_ecef รับความสูงเป็นเมตร
+        for lat, lon, h_m in [(0, 0, 0), (90, 0, 1000), (-90, 45, 0), (13.729779, 100.781151, 6.4),
+                              (45, -120, 20_000_000)]:
+            la, lo, h_km = ecef_to_geodetic(*geodetic_to_ecef(lat, lon, h_m))
+            self.assertAlmostEqual(la, lat, delta=1e-9)
+            if abs(lat) < 90:
+                self.assertAlmostEqual(lo, lon, delta=1e-9)
+            self.assertAlmostEqual(h_km * 1000, h_m, delta=1e-3)
+
+    def test_pole_returns_lon_zero(self):
+        la, lo, h_km = ecef_to_geodetic(0.0, 0.0, 6356.752314245 + 1.0)
+        self.assertAlmostEqual(la, 90.0, delta=1e-9)
+        self.assertEqual(lo, 0.0)
+        self.assertAlmostEqual(h_km, 1.0, delta=1e-6)
+        la, lo, _ = ecef_to_geodetic(0.0, 0.0, -7000.0)
+        self.assertAlmostEqual(la, -90.0, delta=1e-9)
+        self.assertEqual(lo, 0.0)
+
+    def test_thbk_matches_config(self):
+        # THBK_LAT/LON/HEIGHT ใน config ปัดเศษจาก ECEF (ละติจูด/ลองจิจูด 6 ตำแหน่ง ≈ 0.1 ม.) จึงเทียบด้วย tolerance ระดับนั้น
+        xyz_km = tuple(v / 1000.0 for v in THBK_ECEF_M)
+        la, lo, h_km = ecef_to_geodetic(*xyz_km)
+        self.assertAlmostEqual(la, THBK_LAT_DEG, delta=1e-6)
+        self.assertAlmostEqual(lo, THBK_LON_DEG, delta=1e-6)
+        self.assertAlmostEqual(h_km * 1000, THBK_HEIGHT_M, delta=0.1)
+        # แต่ไปกลับกับ ECEF ที่แท้จริงต้องตรงระดับ 1 µm
+        back = geodetic_to_ecef(la, lo, h_km * 1000)
+        for b, v in zip(back, THBK_ECEF_M):
+            self.assertAlmostEqual(b * 1000, v, delta=1e-6)
+
+    def test_lon_in_range(self):
+        for lon in (-179.9, -90.0, 0.0, 90.0, 179.9):
+            _, lo, _ = ecef_to_geodetic(*geodetic_to_ecef(10.0, lon, 0.0))
+            self.assertAlmostEqual(lo, lon, delta=1e-9)
+
+
 if __name__ == "__main__":
     unittest.main()

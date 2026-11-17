@@ -197,8 +197,12 @@ def read_sp3_all(path: Path) -> dict[str, SatSeries]:
     return result
 
 
-def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW) -> Position | None:
+def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW,
+                times: list[datetime] | None = None) -> Position | None:
     """ตำแหน่งที่เวลา t ด้วย Lagrange 2 × half_window จุด (ค่าเริ่มต้น 10 จุด)
+
+    times คือ sorted(series) ที่ผู้เรียกเรียงไว้แล้ว (ต้องเรียงจากน้อยไปมากและตรงกับคีย์ของ series พอดี)
+    ส่งมาเมื่อเรียกหลายครั้งกับอนุกรมเดิม จะได้ไม่เรียงใหม่ทุกครั้ง ผลเท่ากับไม่ส่ง
 
     ต้องมีจุดก่อน t และหลัง t ข้างละ half_window จุด ไม่งั้นคืน None ถ้า t ตรงกับจุดที่มี คืนค่านั้นเลย
     (เหมือน interpolate) ถ้าในหน้าต่างมีช่องว่าง (ระยะห่างระหว่างจุดที่ติดกันมากสุด > 1.5 เท่าของน้อยสุด
@@ -208,7 +212,8 @@ def lagrange_at(series: SatSeries, t: datetime, half_window: int = _HALF_WINDOW)
         raise ValueError("half_window ต้องมากกว่า 0")
     if t in series:
         return series[t]
-    times = sorted(series)
+    if times is None:
+        times = sorted(series)
     i = bisect_left(times, t)                       # times[i - 1] < t < times[i]
     lo, hi = i - half_window, i + half_window
     if lo < 0 or hi > len(times):

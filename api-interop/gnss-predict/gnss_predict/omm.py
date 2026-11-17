@@ -152,19 +152,25 @@ def _fmt_time(t: datetime) -> str:
     return t.astimezone(_UTC).strftime(_STATE_TIME_FMT)
 
 
-def _parse_time(text) -> datetime | None:
+def parse_state_time(text) -> datetime | None:
+    """เวลาใน state file ("%Y-%m-%dT%H:%M:%SZ") เป็น datetime UTC หรือ None ถ้าไม่ใช่รูปแบบนี้"""
     try:
         return datetime.strptime(text, _STATE_TIME_FMT).replace(tzinfo=_UTC)
     except (TypeError, ValueError):
         return None
 
 
-def _read_state(path: Path) -> dict:
+def read_state(path: Path) -> dict:
+    """state file ของกติกา CelesTrak ({"<group>": {"last_request", "last_success"}}) ไม่มี อ่านไม่ได้ หรือไม่ใช่ object คืน {}"""
     try:
         state = json.loads(Path(path).read_bytes().decode("utf-8"))
     except (OSError, ValueError):
         return {}
     return state if isinstance(state, dict) else {}
+
+
+_parse_time = parse_state_time      # ชื่อเดิม (private) ก่อนเปิดเป็น API สาธารณะ
+_read_state = read_state
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -175,7 +181,7 @@ def _write_atomic(path: Path, data: bytes) -> None:
 
 
 def _record_state(state_file: Path, group: str, now: datetime, success: bool) -> None:
-    state = _read_state(state_file)
+    state = read_state(state_file)
     entry = state.get(group) if isinstance(state.get(group), dict) else {}
     entry["last_request"] = _fmt_time(now)
     if success:
@@ -202,8 +208,8 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
     cached = sorted(dest_dir.glob(f"{group}_*.json"))
     latest = cached[-1] if cached else None
 
-    entry = _read_state(state_file).get(group)
-    last_request = _parse_time(entry.get("last_request")) if isinstance(entry, dict) else None
+    entry = read_state(state_file).get(group)
+    last_request = parse_state_time(entry.get("last_request")) if isinstance(entry, dict) else None
     if last_request is not None and (now - last_request).total_seconds() < CELESTRAK_MIN_INTERVAL_S:
         text = (f"ข้ามการดาวน์โหลด OMM กลุ่ม {group}: ส่งคำขอครั้งก่อนเมื่อ {_fmt_time(last_request)} "
                 f"ยังไม่ครบ {CELESTRAK_MIN_INTERVAL_S // 3600} ชั่วโมง")

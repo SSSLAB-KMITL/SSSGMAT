@@ -1,0 +1,27 @@
+// The dialogs that are open (floating windows: several can be open, each once). Pure.
+
+export type Dialog =
+  | { kind: "newModule" } // File → New module: "Create new module"
+  | { kind: "editModule"; module: string } // Module menu → Configure: "Edit module"
+  | { kind: "open" } // File → Open module: "Select a module"
+  | { kind: "logBrowser" } // File → Log browser (Ctrl+L): "Log Browser" (one at a time; asking again while it is open does nothing)
+  | { kind: "tle" } // Edit → Update TLE data from network: "TLE Update"
+  | { kind: "tleFiles" } // Edit → Update TLE data from local files: "Update TLE from files" (a modal), then "TLE Update"
+  | { kind: "trsp" } // Edit → Update transponder data: "Transponder Update" (a modal)
+  | { kind: "preferences" } // Edit → Preferences: "GPREDICT Preferences :: <group>" (a modal)
+  | { kind: "help" } // Help → Online help
+  | { kind: "license" } // Help → License
+  | { kind: "about" } // Help → About Gpredict Web
+  | { kind: "clone"; module: string } // Module menu → Clone...
+  | { kind: "delete"; module: string }; // Module menu → Delete
+
+export const dialogKey = (d: Dialog): string => ("module" in d ? `${d.kind}:${d.module}` : d.kind);
+
+/** The list with `d` added at the end (in front); the same list if that dialog is open already. */
+export function showDialog(list: readonly Dialog[], d: Dialog): readonly Dialog[] {
+  return list.some((o) => dialogKey(o) === dialogKey(d)) ? list : [...list, d];
+}
+
+export function closeDialog(list: readonly Dialog[], d: Dialog): readonly Dialog[] {
+  return list.filter((o) => dialogKey(o) !== dialogKey(d));
+}

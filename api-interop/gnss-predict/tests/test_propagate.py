@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -10,6 +11,7 @@ from gnss_predict.propagate import (Ephemeris, ephemeris_from_sp3, parse_ecef_re
                                     render_ecef_script, write_tle_file)
 from gnss_predict.sp3 import write_sp3
 
+FIXTURES = Path(__file__).parent / "fixtures"
 START = datetime(2026, 11, 10, tzinfo=timezone.utc)
 TLE_G = ("1 26407U 00040A   26313.12355163  .00000023  00000+0  00000+0 0  9997",
          "2 26407  54.8262 209.4116 0115222 305.0160 227.7848  2.00558950192856")
@@ -66,6 +68,35 @@ class TestRenderScript(unittest.TestCase):
         self.assertLess(lines.index("BeginMissionSequence;"), len(lines) - 1)
         self.assertLess(lines.index("Create ReportFile RF;"), lines.index("BeginMissionSequence;"))
 
+    def test_default_script_matches_golden(self):
+        s = render_ecef_script([G01, C01], Path("/x/all.tle"), START, START + timedelta(days=1), 30,
+                               Path("/x/r.txt"))
+        self.assertEqual(s, (FIXTURES / "ecef_2sat.script").read_text(encoding="utf-8"))
+
+    def test_velocity_columns_follow_each_position(self):
+        s = render_ecef_script([G01], Path("/x/all.tle"), START, START + timedelta(hours=1), 30, Path("/x/r.txt"),
+                               with_velocity=True)
+        self.assertIn("RF.Add = {G01.UTCGregorian, G01.EarthFixed.X, G01.EarthFixed.Y, G01.EarthFixed.Z, "
+                      "G01.EarthFixed.VX, G01.EarthFixed.VY, G01.EarthFixed.VZ};", s)
+
+    def test_velocity_columns_for_two_satellites_stay_grouped_per_satellite(self):
+        s = render_ecef_script([G01, C01], Path("/x/all.tle"), START, START + timedelta(hours=1), 30,
+                               Path("/x/r.txt"), with_velocity=True)
+        self.assertIn("RF.Add = {G01.UTCGregorian, "
+                      "G01.EarthFixed.X, G01.EarthFixed.Y, G01.EarthFixed.Z, "
+                      "G01.EarthFixed.VX, G01.EarthFixed.VY, G01.EarthFixed.VZ, "
+                      "C01.EarthFixed.X, C01.EarthFixed.Y, C01.EarthFixed.Z, "
+                      "C01.EarthFixed.VX, C01.EarthFixed.VY, C01.EarthFixed.VZ};", s.splitlines())
+
+    def test_velocity_flag_changes_only_the_rf_add_line(self):
+        args = ([G01, C01], Path("/x/all.tle"), START, START + timedelta(hours=1), 30, Path("/x/r.txt"))
+        plain = render_ecef_script(*args).splitlines()
+        with_v = render_ecef_script(*args, with_velocity=True).splitlines()
+        self.assertEqual(len(plain), len(with_v))
+        changed = [i for i, (a, b) in enumerate(zip(plain, with_v)) if a != b]
+        self.assertEqual(len(changed), 1)
+        self.assertTrue(plain[changed[0]].startswith("RF.Add = "))
+
     def test_epoch_uses_start_time(self):
         start = datetime(2026, 12, 31, 23, 59, 30, tzinfo=timezone.utc)
         s = render_ecef_script([G01], Path("/x/all.tle"), start, start + timedelta(seconds=60), 30, Path("/x/r.txt"))
@@ -97,6 +128,7 @@ def report_text(header: list[str], rows: list[list[str]]) -> str:
 
 
 HEADER_G01 = ["G01.UTCGregorian", "G01.EarthFixed.X", "G01.EarthFixed.Y", "G01.EarthFixed.Z"]
+HEADER_G01_V = HEADER_G01 + ["G01.EarthFixed.VX", "G01.EarthFixed.VY", "G01.EarthFixed.VZ"]
 ROW0 = ["10 Nov 2026 00:00:00.000", "1.5", "-2.5", "3.5"]
 ROW1 = ["10 Nov 2026 00:00:30.000", "1.75", "-2.25", "3.75"]
 
@@ -123,6 +155,51 @@ class TestParseReport(TempDirCase):
         self.assertEqual((msgs[0].level, msgs[0].object), ("warning", "C01"))
         self.assertTrue(any("฀" <= ch <= "๿" for ch in msgs[0].text))
         self.assertTrue(all(t.tzinfo == timezone.utc for t in eph.times_utc))
+
+    def parse_v(self, text: str, prns=("G01",), seconds=60, step=30):
+        return parse_ecef_report(self.write(text), list(prns), START, START + timedelta(seconds=seconds), step,
+                                 with_velocity=True)
+
+    def test_parse_reads_velocity(self):
+        rows = [["10 Nov 2026 00:00:00.000", "1.5", "-2.5", "3.5", "0.1", "0.2", "0.3"],
+                ["10 Nov 2026 00:00:30.000", "1.75", "-2.25", "3.75", "0.4", "0.5", "0.6"],
+                ["10 Nov 2026 00:01:00.000", "2.0", "-2.0", "4.0", "0.7", "0.8", "0.9"]]
+        eph, msgs = self.parse_v(report_text(HEADER_G01_V, rows))
+        self.assertEqual(msgs, [])
+        self.assertEqual(eph.positions_km["G01"], [(1.5, -2.5, 3.5), (1.75, -2.25, 3.75), (2.0, -2.0, 4.0)])
+        self.assertEqual(eph.velocities_kms, {"G01": [(0.1, 0.2, 0.3), (0.4, 0.5, 0.6), (0.7, 0.8, 0.9)]})
+        self.assertEqual(eph.velocities_kms["G01"][1], (0.4, 0.5, 0.6))
+
+    def test_parse_without_velocity_flag_has_none(self):
+        eph, _ = self.parse(report_text(HEADER_G01, [ROW0, ROW1]))
+        self.assertIsNone(eph.velocities_kms)
+        # รายงานที่มีคอลัมน์ความเร็วอยู่ แต่ผู้เรียกไม่ขอ ก็ไม่อ่านความเร็ว
+        rows = [ROW0 + ["0.1", "0.2", "0.3"], ROW1 + ["0.4", "0.5", "0.6"]]
+        eph, msgs = self.parse(report_text(HEADER_G01_V, rows))
+        self.assertIsNone(eph.velocities_kms)
+        self.assertEqual(msgs, [])
+        self.assertEqual(eph.positions_km["G01"], [(1.5, -2.5, 3.5), (1.75, -2.25, 3.75)])
+
+    def test_missing_velocity_column_drops_satellite(self):
+        header = HEADER_G01_V[:-1]                              # ไม่มี G01.EarthFixed.VZ
+        rows = [ROW0 + ["0.1", "0.2"], ROW1 + ["0.4", "0.5"]]
+        eph, msgs = self.parse_v(report_text(header, rows), seconds=30)
+        self.assertNotIn("G01", eph.positions_km)
+        self.assertEqual(eph.velocities_kms, {})
+        self.assertEqual([(m.code, m.object) for m in msgs], [("SAT_MISSING_FROM_GMAT", "G01")])
+        self.assertIn("G01.EarthFixed.VZ", msgs[0].text)
+
+    def test_non_numeric_velocity_drops_that_satellite_only(self):
+        header = HEADER_G01_V + ["C01.EarthFixed.X", "C01.EarthFixed.Y", "C01.EarthFixed.Z",
+                                 "C01.EarthFixed.VX", "C01.EarthFixed.VY", "C01.EarthFixed.VZ"]
+        for bad in ("abc", "nan", "inf", ""):
+            with self.subTest(bad=bad):
+                rows = [ROW0 + ["0.1", "0.2", "0.3"] + ["10", "20", "30", "1", "2", "3"],
+                        ROW1 + ["0.4", "0.5", "0.6"] + ["11", "21", "31", "1", bad, "3"]]
+                eph, msgs = self.parse_v(report_text(header, rows), prns=["G01", "C01"], seconds=30)
+                self.assertEqual(list(eph.positions_km), ["G01"])
+                self.assertEqual(list(eph.velocities_kms), ["G01"])
+                self.assertEqual([(m.code, m.object) for m in msgs], [("SAT_MISSING_FROM_GMAT", "C01")])
 
     def test_all_sats_present_no_messages(self):
         header = HEADER_G01 + ["C01.EarthFixed.X", "C01.EarthFixed.Y", "C01.EarthFixed.Z"]
@@ -256,6 +333,38 @@ class TestPropagate(TempDirCase):
         script = (work / "ecef.script").read_text()
         self.assertIn(f"C01.EphemerisName = '{work / 'all.tle'}';", script)
         self.assertIn("Propagate TLEProp(G01, C01) {G01.ElapsedSecs = 30};", script)
+
+    def test_propagate_accepts_plain_tle_satellite(self):
+        @dataclass(frozen=True)
+        class PlainSat:                                        # มีแค่ prn กับ tle_lines ไม่ใช่ CatalogSatellite
+            prn: str
+            tle_lines: tuple[str, str]
+
+        sats = [PlainSat("S01", TLE_G), PlainSat("S02", TLE_C)]
+        axes = ("X", "Y", "Z", "VX", "VY", "VZ")
+        header = ["S01.UTCGregorian"] + [f"{prn}.EarthFixed.{a}" for prn in ("S01", "S02") for a in axes]
+        row = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+        text = report_text(header, [["10 Nov 2026 00:00:00.000", *row], ["10 Nov 2026 00:00:30.000", *row]])
+        work = self.dir / "w"
+        with mock.patch("gnss_predict.propagate.run_script", side_effect=self.fake_run(lambda: text)):
+            eph, msgs = propagate(sats, START, START + timedelta(seconds=30), 30, work, Path("/c"),
+                                  with_velocity=True)
+        self.assertEqual(msgs, [])
+        self.assertEqual(sorted(eph.positions_km), ["S01", "S02"])
+        self.assertEqual(eph.positions_km["S02"][0], (7.0, 8.0, 9.0))
+        self.assertEqual(eph.velocities_kms["S02"][0], (10.0, 11.0, 12.0))
+        work = work.resolve()
+        self.assertEqual((work / "all.tle").read_text().splitlines(), ["S01", *TLE_G, "S02", *TLE_C])
+        script = (work / "ecef.script").read_text()
+        self.assertIn("S02.EarthFixed.VZ", script)
+        self.assertIn("Propagate TLEProp(S01, S02) {S01.ElapsedSecs = 30};", script)
+
+    def test_propagate_default_does_not_request_velocity(self):
+        text = report_text(HEADER_G01, [ROW0, ROW1])
+        with mock.patch("gnss_predict.propagate.run_script", side_effect=self.fake_run(lambda: text)):
+            eph, _ = propagate([G01], START, START + timedelta(seconds=30), 30, self.dir, Path("/c"))
+        self.assertIsNone(eph.velocities_kms)
+        self.assertNotIn("EarthFixed.VX", (self.dir / "ecef.script").read_text())
 
     def test_timeout_is_passed_through(self):
         text = report_text(HEADER_G01, [ROW0, ROW1])
