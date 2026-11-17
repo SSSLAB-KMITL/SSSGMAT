@@ -15,6 +15,7 @@
 //   ไม่เขียน token ลง console, Message Viewer หรือ URL; ข้อความผิดพลาดมีแต่ข้อความของ server/เครือข่าย
 //   บันทึกสำเร็จแล้วสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ (useImagery.updateSettings ตัวเดียวกับสวิตช์) ; แผนของ ion เปลี่ยน (สวิตช์, asset, token) = ionState.ts ลืมการปฏิเสธเอง
 //   asset แบบ radio (None, preset ของ ionAssets.ts, Asset ID ที่กรอกเอง จำนวนเต็ม > 0) เขียนลง useLayout.globe.ion; เปิดสวิตช์ ion ที่ยังไม่มี asset = เลือก preset แรก
+//   ค่าตั้งต้นและตอนเปิด scenario ที่ asset ไม่มี/null = Google Maps Satellite (DEFAULT_GLOBE, globeAtOpen) radio จึงเลือก Google Maps Satellite ไว้ แม้สวิตช์ ion ปิด
 //   ion แสดงอยู่ (ionState.ts: สวิตช์ ion เปิด + มี asset + มี token และ ion ไม่ปฏิเสธ) = ชั้นอื่นทั้งหมดถูกซ่อนในทุก viewer: ทุกแถวของแหล่งอื่น (รวม Natural Earth II) บอกด้วยข้อความไทย
 
 import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";

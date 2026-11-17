@@ -688,6 +688,7 @@ describe("Cesium ion: switching on", () => {
 
   test("with no asset picked it selects the first preset (and only then)", async () => {
     server();
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     mount();
     expect(useLayout.getState().globe.ion.assetId).toBeNull();
     await confirmOn();
@@ -714,6 +715,7 @@ describe("Cesium ion: switching on", () => {
 
   test("Cancel, and a failed save, leave the asset unselected", async () => {
     server({ [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } });
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     mount();
     await user.click(sourceSwitch("ion"));
     await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
@@ -982,6 +984,19 @@ describe("Cesium ion: asset", () => {
     expect(ION_PRESETS.length).toBeGreaterThanOrEqual(3);
   });
 
+  test("the default layout selects Google Maps Satellite (and not None), also while the ion switch is off", () => {
+    expect(useLayout.getState().globe).toBe(DEFAULT_GLOBE);
+    const first = mount();
+    expect(radio("Google Maps Satellite").checked).toBe(true);
+    expect(radio(NONE).checked).toBe(false);
+    expect(radio(t("field.ionAssetId")).checked).toBe(false);
+    expect(assetIdBox().value).toBe("");
+    first.unmount();
+    useImagery.setState({ sources: SOURCES_OFF });
+    mount();
+    expect(radio("Google Maps Satellite").checked).toBe(true);
+  });
+
   test("shows the layout's asset: None when null, the preset, or Asset ID with the number", () => {
     useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } });
     const first = mount();
@@ -1050,11 +1065,11 @@ describe("Cesium ion: asset", () => {
     await typeInto(assetIdBox(), "");
     await user.tab();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182); // ค่าตั้งต้น (Google Maps Satellite) ไม่ถูกแตะ
     await typeInto(assetIdBox(), "55");
     await user.keyboard("{Escape}");
     expect(assetIdBox().value).toBe("");
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182);
     await customBox("0");
     await customBox("55");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -1065,7 +1080,8 @@ describe("Cesium ion: asset", () => {
     mount();
     await user.click(radio(t("field.ionAssetId")));
     expect(document.activeElement).toBe(assetIdBox());
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182); // ค่าตั้งต้น (Google Maps Satellite) คงเดิม
+    expect(radio("Google Maps Satellite").checked).toBe(true);
   });
 
   test("the radios and the box are disabled while the ion switch is off, the layout's choice is kept", () => {
@@ -1078,6 +1094,7 @@ describe("Cesium ion: asset", () => {
   });
 
   test("tells why ion shows nothing: no asset picked, no token, or ion refused the asset and token", async () => {
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     const { unmount } = mount();
     expect(groupOf("ion").getByText(msg("globe.ionNoAsset"))).toBeDefined();
     unmount();

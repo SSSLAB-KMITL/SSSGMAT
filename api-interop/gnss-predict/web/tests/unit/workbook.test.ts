@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { nextGraphicsTitle, PANEL_KINDS } from "../../src/layout/panels";
-import { DEFAULT_GLOBE, WORKBOOK_MAX_BYTES, validateWorkbook, withoutPanels, workbookBytes, type Workbook } from "../../src/layout/workbook";
+import { ION_PRESETS } from "../../src/cesium/ionAssets";
+import {
+  DEFAULT_GLOBE, DEFAULT_ION_ASSET_ID, WORKBOOK_MAX_BYTES, globeAtOpen, validateWorkbook, withoutPanels, workbookBytes, type GlobeSettings, type Workbook,
+} from "../../src/layout/workbook";
 
 /** workbook ที่ใช้ได้เล็กที่สุด (dockview เป็น object ใดก็ได้ เพราะ validate ตรวจแค่รูปร่าง ไม่ได้ให้ dockview ตรวจ) */
 const valid = (): Workbook => ({
@@ -174,7 +177,7 @@ describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", (
     expect(validateWorkbook({ ...valid(), globe: { layers, ion: { assetId: 3830184 } } })?.globe?.ion).toEqual({ assetId: 3830184 });
   });
 
-  test("DEFAULT_GLOBE shows Blue Marble, VIIRS NOAA-20 and Sentinel-2 cloudless opaque (each only once its source is on), OpenStreetMap hidden (task 13c), and no Cesium ion asset", () => {
+  test("DEFAULT_GLOBE shows Blue Marble, VIIRS NOAA-20 and Sentinel-2 cloudless opaque (each only once its source is on), OpenStreetMap hidden (task 13c), and Google Maps Satellite as the Cesium ion asset (shown only once ion is on with a token)", () => {
     expect(DEFAULT_GLOBE).toEqual({
       layers: {
         [BM]: { show: true, translucency: 0 },
@@ -182,8 +185,48 @@ describe("validateWorkbook: globe (Globe Manager layers, spec imagery §5.1)", (
         "s2cloudless-2024_3857": { show: true, translucency: 0 },
         osm: { show: false, translucency: 0 },
       },
-      ion: { assetId: null },
+      ion: { assetId: 3830182 },
     });
+  });
+
+  test("the default ion asset is the Google Maps Satellite preset (the first radio after None in Globe Manager)", () => {
+    expect(DEFAULT_ION_ASSET_ID).toBe(3830182);
+    expect(ION_PRESETS.find((p) => p.id === DEFAULT_ION_ASSET_ID)?.title).toBe("Google Maps Satellite");
+    expect(ION_PRESETS[0].id).toBe(DEFAULT_ION_ASSET_ID);
+  });
+});
+
+describe("globeAtOpen", () => {
+  const BM = "BlueMarble_NextGeneration";
+  const layers = { [BM]: { show: true, translucency: 10 }, osm: { show: true, translucency: 25 } };
+
+  test("an ion asset that is null (the old default \"none\") or missing opens as Google Maps Satellite; OpenStreetMap is still hidden and the rest is kept", () => {
+    const missing = { layers } as unknown as GlobeSettings; // globe จากที่อื่นที่ไม่ผ่าน validateWorkbook
+    for (const globe of [{ layers, ion: { assetId: null } }, missing, { layers, ion: undefined } as unknown as GlobeSettings]) {
+      const before = JSON.stringify(globe);
+      const out = globeAtOpen(globe);
+      expect(out, before).toEqual({ layers: { [BM]: { show: true, translucency: 10 }, osm: { show: false, translucency: 25 } }, ion: { assetId: 3830182 } });
+      expect(JSON.stringify(globe), "the input is not changed").toBe(before);
+    }
+  });
+
+  test("an asset the user picked (another preset, or a custom Asset ID) is kept", () => {
+    for (const assetId of [3830184, 3830183, 2, 777001, 3830182]) {
+      expect(globeAtOpen({ layers: {}, ion: { assetId } }).ion, String(assetId)).toEqual({ assetId });
+    }
+  });
+
+  test("with the ion asset already set and OpenStreetMap hidden, the same object comes back", () => {
+    const g: GlobeSettings = { layers: { [BM]: { show: true, translucency: 0 } }, ion: { assetId: 3830184 } };
+    expect(globeAtOpen(g)).toBe(g);
+    expect(globeAtOpen(DEFAULT_GLOBE)).toBe(DEFAULT_GLOBE);
+  });
+
+  test("a workbook whose ion was missing or invalid reads as null, and so opens as Google Maps Satellite", () => {
+    for (const ion of [undefined, null, { assetId: null }, { assetId: 0 }, { assetId: "2" }]) {
+      const w = validateWorkbook({ ...valid(), globe: { layers: {}, ion } });
+      expect(globeAtOpen(w!.globe!).ion, String(JSON.stringify(ion))).toEqual({ assetId: 3830182 });
+    }
   });
 });
 

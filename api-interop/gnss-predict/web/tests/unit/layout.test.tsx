@@ -671,32 +671,49 @@ describe("toWorkbook / fromWorkbook (W6)", () => {
     expect(st().globe.layers["GOES-East_ABI_GeoColor"]).toEqual({ show: true, translucency: 50 });
     expect(before).toEqual(DEFAULT_GLOBE);
     expect(st().globe).not.toBe(before);
-    expect(st().globe.ion).toEqual({ assetId: null });
+    expect(st().globe.ion).toEqual({ assetId: 3830182 }); // ค่าตั้งต้น (Google Maps Satellite) ไม่ถูกแตะ
   });
 
   test("setGlobeIon picks the Cesium ion asset (null = none), keeps the layers, and is written and read back", async () => {
     await mount();
     st().setGlobeLayer("osm", { translucency: 20 });
     const before = st().globe;
-    st().setGlobeIon(3830182);
-    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    st().setGlobeIon(3830184);
+    expect(st().globe.ion).toEqual({ assetId: 3830184 });
     expect(st().globe.layers).toEqual(before.layers);
-    expect(before.ion).toEqual({ assetId: null });
+    expect(before.ion).toEqual({ assetId: 3830182 });
     // ค่าที่ไม่ใช่จำนวนเต็มบวกไม่เปลี่ยนอะไร
     for (const bad of [0, -1, 1.5, Number.NaN]) {
       st().setGlobeIon(bad);
-      expect(st().globe.ion).toEqual({ assetId: 3830182 });
+      expect(st().globe.ion).toEqual({ assetId: 3830184 });
     }
     st().setGlobeLayer("osm", { show: false });
-    expect(st().globe.ion).toEqual({ assetId: 3830182 }); // setGlobeLayer ไม่ทิ้ง ion
+    expect(st().globe.ion).toEqual({ assetId: 3830184 }); // setGlobeLayer ไม่ทิ้ง ion
     const saved = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
-    expect(saved.globe?.ion).toEqual({ assetId: 3830182 });
+    expect(saved.globe?.ion).toEqual({ assetId: 3830184 });
     st().applyDefault();
-    expect(st().globe.ion).toEqual({ assetId: null });
+    expect(st().globe.ion).toEqual({ assetId: 3830182 }); // layout ตั้งต้น = Google Maps Satellite
     st().fromWorkbook(saved);
-    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    expect(st().globe.ion).toEqual({ assetId: 3830184 });
+    // None เลือกได้ในการใช้งานครั้งนั้น และ Save เก็บ null ได้
     st().setGlobeIon(null);
     expect(st().globe.ion).toEqual({ assetId: null });
+    expect(st().toWorkbook().globe?.ion).toEqual({ assetId: null });
+  });
+
+  test("opening a workbook whose ion asset is None (null, the old default) or missing gives Google Maps Satellite; a picked asset is kept", async () => {
+    await mount();
+    const saved = JSON.parse(JSON.stringify(st().toWorkbook())) as Workbook;
+    for (const ion of [{ assetId: null }, undefined]) {
+      st().setGlobeIon(3830184);
+      st().fromWorkbook({ ...saved, globe: { layers: { BlueMarble_NextGeneration: { show: true, translucency: 15 } }, ion } });
+      expect(st().globe, String(JSON.stringify(ion))).toEqual({ layers: { BlueMarble_NextGeneration: { show: true, translucency: 15 } }, ion: { assetId: 3830182 } });
+    }
+    for (const assetId of [3830184, 2, 777001]) {
+      st().fromWorkbook({ ...saved, globe: { layers: {}, ion: { assetId } } });
+      expect(st().globe.ion, String(assetId)).toEqual({ assetId });
+    }
+    expect(warnings()).toEqual([]);
   });
 
   test("window titles come from the labels table, not from the saved file", async () => {
@@ -1030,7 +1047,12 @@ describe("restoreFor (spec §4.2)", () => {
     reply = { text: "null" };
     await st().restoreFor("E2E");
     expect(st().globe.layers.osm?.show ?? false).toBe(false);
-    expect(f.calls.map((c) => `${c.method} ${c.path}`)).toEqual([url, url, url]); // ไม่มี /api/settings เลย
+    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    // workbook ที่บันทึกตอน None เป็นค่าตั้งต้น (ion null) เปิดเป็น Google Maps Satellite
+    reply = { json: { ...saved, globe: { ...saved.globe, ion: { assetId: null } } } };
+    await st().restoreFor("E2E");
+    expect(st().globe.ion).toEqual({ assetId: 3830182 });
+    expect(f.calls.map((c) => `${c.method} ${c.path}`)).toEqual([url, url, url, url]); // ไม่มี /api/settings เลย
   });
 
   test("encodes the scenario name", async () => {
