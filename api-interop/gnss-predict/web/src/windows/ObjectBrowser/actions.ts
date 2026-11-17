@@ -1,0 +1,304 @@
+// สิ่งที่ Object Browser ทำ (เลือก พับ เขียน คัดลอก/วาง ค้นหา) เป็นฟังก์ชันที่อ่านและเขียนผ่าน store ทั้งหมด ไม่รู้จัก React
+// หน้าต่าง (ObjectBrowser.tsx) กับคำสั่งระดับแอป (objectCommands.ts) เรียกชุดเดียวกัน คำสั่งจึงทำงานได้แม้หน้าต่างไม่ได้เปิดอยู่
+// การเขียนทุกอย่างผ่านเมธอดของ useScenario (เข้าคิวเขียนทีละอย่างในนั้น) ข้อผิดพลาดลง Message Viewer (writes.ts)
+
+import { confirm } from "../../chrome/Dialogs";
+import { msg } from "../../labels/messages.th";
+import { OBJECT_BROWSER_SCOPE } from "../../shortcuts";
+import { useLayout } from "../../stores/layout";
+import { useResults } from "../../stores/results";
+import { useScenario, type ObjectPages } from "../../stores/scenario";
+import { useSelection } from "../../stores/selection";
+import { copyName, useClipboard } from "./clipboard";
+import { TREE_FOCUS, useObjectBrowser } from "./state";
+import { expandableKeys, findMatches, flattenTree, isEditable, isSatellite, ROOT_KEY, type Row } from "./tree";
+import { attempt } from "../../api/writes";
+
+// ---------- แถวทั้งต้นไม้ ----------
+
+export interface ObjectRows {
+  /** key ของโหนดที่พับได้ทั้งหมด */
+  allKeys: ReadonlySet<string>;
+  /** ทุกโหนดเปิดหมด: ไว้หาแถวที่เลือกอยู่แม้โฟลเดอร์พับ ใช้ค้น และให้คำสั่งวางใช้สมาชิกครบของโฟลเดอร์ */
+  allRows: readonly Row[];
+  rowByKey: ReadonlyMap<string, Row>;
+}
+
+const NO_ROWS: ObjectRows = { allKeys: new Set(), allRows: [], rowByKey: new Map() };
+let cached: { tree: unknown; doc: unknown; catalog: unknown; prnByNorad: unknown; rows: ObjectRows } | null = null;
+
+/** แถวของ scenario ที่เปิดอยู่ (คำนวณใหม่เมื่อ tree, doc, catalog หรือ NORAD → PRN ของผลลัพธ์ (สีของกล่อง) เปลี่ยนเท่านั้น) */
+export function objectRows(): ObjectRows {
+  const { tree, doc, catalog } = useScenario.getState();
+  const { prnByNorad } = useResults.getState();
+  if (tree === null) return NO_ROWS;
+  if (cached !== null && cached.tree === tree && cached.doc === doc && cached.catalog === catalog && cached.prnByNorad === prnByNorad) return cached.rows;
+  const allKeys = new Set(expandableKeys(tree));
+  const allRows = flattenTree(tree, allKeys);
+  const rows = { allKeys, allRows, rowByKey: new Map(allRows.map((row) => [row.key, row])) };
+  cached = { tree, doc, catalog, prnByNorad, rows };
+  return rows;
+}
+
+export const hasTree = (): boolean => useScenario.getState().tree !== null;
+
+// ---------- การเลือก การพับ ----------
+
+export const selectedKey = (): string | null => useObjectBrowser.getState().groupSelected ?? useSelection.getState().activePath;
+
+export function selectedRow(): Row | undefined {
+  const key = selectedKey();
+  return key === null ? undefined : objectRows().rowByKey.get(key);
+}
+
+/** เลือกแถว: object = active object ของแอป, โฟลเดอร์ = เก็บที่นี่ (ไม่ใช่ object) และไม่มี active object */
+export function selectKey(key: string): void {
+  const row = objectRows().rowByKey.get(key);
+  if (row === undefined) return;
+  if (row.kind === "group") {
+    useObjectBrowser.setState({ groupSelected: row.key });
+    useSelection.getState().select(null);
+  } else {
+    useObjectBrowser.setState({ groupSelected: null });
+    useSelection.getState().select(row.path ?? null);
+  }
+}
+
+export function setOpen(key: string, open: boolean): void {
+  useObjectBrowser.setState((s) => {
+    if (s.collapsed.has(key) === !open) return s;
+    const next = new Set(s.collapsed);
+    if (open) next.delete(key);
+    else next.add(key);
+    return { collapsed: next };
+  });
+}
+
+/** เปิดโฟลเดอร์ที่พับครอบแถวนี้อยู่ */
+export function reveal(key: string): void {
+  const { rowByKey } = objectRows();
+  const ancestors: string[] = [];
+  for (let parent = rowByKey.get(key)?.parentKey ?? null; parent !== null; parent = rowByKey.get(parent)?.parentKey ?? null) ancestors.push(parent);
+  useObjectBrowser.setState((s) => (ancestors.some((k) => s.collapsed.has(k)) ? { collapsed: new Set([...s.collapsed].filter((k) => !ancestors.includes(k))) } : s));
+}
+
+export const requestScroll = (key: string | null): void => useObjectBrowser.setState({ scrollTarget: key });
+
+/** ให้หน้าต่างโฟกัสแถวนี้ (หรือ TREE_FOCUS = ตัวต้นไม้) เมื่อแถวถูกวาด */
+export const requestFocus = (key: string | null): void => useObjectBrowser.setState({ focusTarget: key });
+
+/** แถวที่เห็นอยู่ตอนนี้ (ตามการพับและตัวกรองธง) ลำดับเดียวกับหน้าต่าง */
+function visibleRows(): Row[] {
+  const { tree } = useScenario.getState();
+  if (tree === null) return [];
+  const { collapsed, flaggedOnly } = useObjectBrowser.getState();
+  return flattenTree(tree, new Set([...objectRows().allKeys].filter((key) => !collapsed.has(key))), { flaggedOnly });
+}
+
+/**
+ * แถวข้างเคียงของแถวที่จะหายไป: ถัดไป ไม่มีก็ก่อนหน้า (แถวที่ไม่ได้อยู่ในรายการที่เห็น = null)
+ * ลูกของแถวนั้น (Sensor ของดาวที่ขยายอยู่) หายไปพร้อมกัน จึงข้ามไป "ถัดไป" คือแถวแรกที่ไม่ใช่ลูก (ลึกกว่าแถวนั้น)
+ */
+function neighbourOf(key: string): string | null {
+  const rows = visibleRows();
+  const at = rows.findIndex((row) => row.key === key);
+  if (at < 0) return null;
+  let after = at + 1;
+  while (after < rows.length && rows[after].depth > rows[at].depth) after++;
+  return rows[after]?.key ?? rows[at - 1]?.key ?? null;
+}
+
+/**
+ * โฟกัสต้องตามการลบไปที่แถวข้างเคียงไหม: ใช่ถ้าโฟกัสอยู่ในต้นไม้ (คีย์ Delete) ในเมนู (คลิกขวา เมนูของ object) ที่จะหายไป หรือไม่มีโฟกัส
+ * ไม่ถ้าอยู่ที่ปุ่มที่ยังอยู่ต่อ (ปุ่ม Delete บนแถบเครื่องมือ หรือหน้าต่างอื่น): กล่องยืนยันคืนโฟกัสให้ที่นั่นเอง (returnFocus.ts)
+ */
+function focusFollowsDelete(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || active === document.body) return true;
+  return active.closest(`[data-focus-scope="${OBJECT_BROWSER_SCOPE}"] [role="tree"]`) !== null || active.closest('[role="menu"], [role="menubar"]') !== null;
+}
+
+export const expandAll = (): void => useObjectBrowser.setState({ collapsed: new Set() });
+/** พับทุกโฟลเดอร์และดาวที่มี Sensor แต่ราก (Scenario) ยังเปิดอยู่ เห็น Facility, Constellation และโฟลเดอร์ */
+export const collapseAll = (): void => useObjectBrowser.setState({ collapsed: new Set([...objectRows().allKeys].filter((key) => key !== ROOT_KEY)) });
+
+/** เปิดหรือโฟกัสหน้าต่าง Object Browser (คำสั่งที่ต้องมีหน้าจอ: Find, New Group, Rename, ตัวกรองธง) ไม่มีพื้นที่ทำงานให้เปิด = ไม่ทำอะไร */
+export function showObjectBrowser(): void {
+  const layout = useLayout.getState();
+  if (layout.api === null) return;
+  try {
+    layout.openPanel("objectBrowser");
+  } catch {
+    // พื้นที่ทำงานเปิดหน้าต่างตอนนี้ไม่ได้: สถานะที่ตั้งไว้แล้วจะแสดงเมื่อหน้าต่างเปิด
+  }
+}
+
+// ---------- งานที่กำลังเขียน ----------
+
+const busyCount = new Map<string, number>();
+
+function markBusy(keys: readonly string[], on: boolean): void {
+  for (const key of keys) {
+    const n = (busyCount.get(key) ?? 0) + (on ? 1 : -1);
+    if (n > 0) busyCount.set(key, n);
+    else busyCount.delete(key);
+  }
+  useObjectBrowser.setState({ busy: new Set(busyCount.keys()) });
+}
+
+async function whileBusy<T>(keys: readonly string[], work: () => Promise<T>): Promise<T> {
+  markBusy(keys, true);
+  try {
+    return await work();
+  } finally {
+    markBusy(keys, false);
+  }
+}
+
+// ---------- การกระทำกับ object ----------
+
+export function openProperties(row: Row): void {
+  if (row.kind === "object") useLayout.getState().openPanel("propertiesBrowser", { path: row.path, name: row.name });
+}
+
+const showPages = (show: boolean): ObjectPages => ({ graphics2d: { show }, graphics3d: { show } });
+
+/**
+ * ติ๊ก Show: Satellite และ Facility ตั้ง show ของหน้า 2D และ 3D; Constellation ไม่มีหน้ากราฟิก จึงตั้งของสมาชิกทีละดวงตามลำดับ
+ * (ดวงที่ซ่อนติ๊กไม่ได้ ดวงที่เป็นค่านั้นอยู่แล้วไม่ต้องเขียน สมาชิกที่เป็น Constellation ซ้อนไม่มีหน้ากราฟิกจึงข้าม) หยุดที่ดวงแรกที่ล้มเหลว
+ * แถวที่กำลังเขียนอยู่ (และสมาชิกที่ Constellation กำลังไล่เขียน) ปิดช่องติ๊กไว้จนเสร็จ การสั่งซ้ำระหว่างนั้นไม่ทำอะไร
+ */
+export async function setShow(row: Row, show: boolean): Promise<void> {
+  if (!isEditable(row) || useObjectBrowser.getState().busy.has(row.key)) return;
+  const patch = (target: { cls: string; name: string; path: string }) =>
+    attempt(() => useScenario.getState().patchObject(target.cls, target.name, showPages(show)), target.path);
+  if (row.cls !== "Constellation") {
+    await whileBusy([row.key], () => patch(row));
+    return;
+  }
+  const { rowByKey } = objectRows();
+  const busy = useObjectBrowser.getState().busy;
+  const members = (row.members ?? [])
+    .map((path) => rowByKey.get(path))
+    .filter((m): m is Row & { cls: "Satellite" | "Facility"; path: string } => m !== undefined && (m.cls === "Satellite" || m.cls === "Facility"))
+    .filter((m) => !m.hidden && m.show !== show && !busy.has(m.key));
+  await whileBusy([row.key, ...members.map((m) => m.key)], async () => {
+    for (const member of members) if (!(await patch(member)).ok) return;
+  });
+}
+
+export async function setColor(row: Row, color: string): Promise<void> {
+  if (!isEditable(row)) return;
+  // Constellation มีสีของตัวเอง (สมาชิกที่ inherit ตาม) ส่วน Facility และ Satellite ตั้งสีที่หน้า 2D Graphics และเลิก inherit
+  // Sensor มีสีแยกหน้า 2D และ 3D (Graphics3DSensor.color) และไม่มี inherit: กล่องสีคือสีที่ทั้งสองหน้าต่างวาด จึงตั้งทั้งสองหน้า (เหมือน Show)
+  const pages: ObjectPages =
+    row.cls === "Constellation"
+      ? { basic: { color } }
+      : row.cls === "Sensor"
+        ? { graphics2d: { color }, graphics3d: { color } }
+        : { graphics2d: { color, inherit: false } };
+  await attempt(() => useScenario.getState().patchObject(row.cls, row.name, pages), row.path);
+}
+
+/** จำนวน Sensor ที่ติดกับดาวนี้ (นับจาก doc: parent ของ Sensor คือ path ของดาว) server ลบพวกมันตามดาวไปด้วย */
+function sensorsOf(row: Row & { path: string }): number {
+  return useScenario.getState().doc?.objects.filter((o) => o.class === "Sensor" && (o as { parent?: unknown }).parent === row.path).length ?? 0;
+}
+
+/**
+ * ลบหลังยืนยัน (ดาวที่มี Sensor: ข้อความยืนยันบอกว่า Sensor ของดาวจะถูกลบไปด้วยกี่ตัว; ปุ่ม Delete, เมนู Edit, เมนูคลิกขวาและปุ่มลัดมาที่ฟังก์ชันนี้ทั้งหมด)
+ * สำเร็จแล้วการเลือกย้ายไปแถวข้างเคียง (ถัดไป ไม่มีก็ก่อนหน้า) ถ้าแถวที่ลบเป็นแถวที่เลือกอยู่
+ * และโฟกัสตามไปด้วยเมื่อโฟกัสอยู่ในต้นไม้หรือเมนูตอนสั่ง (focusFollowsDelete) ไม่มีแถวข้างเคียง = โฟกัสตัวต้นไม้
+ * ล้มเหลว = ไม่ย้ายอะไร (กล่องยืนยันคืนโฟกัสให้แถวเดิม)
+ */
+export async function deleteRow(row: Row): Promise<void> {
+  if (!isEditable(row)) return;
+  const followFocus = focusFollowsDelete();
+  const sensors = isSatellite(row) ? sensorsOf(row) : 0;
+  const question = sensors > 0 ? msg("confirm.deleteWithSensors", { name: row.name, count: sensors }) : msg("confirm.delete", { name: row.name });
+  if (!(await confirm(question))) return;
+  const neighbour = neighbourOf(row.key);
+  const done = await attempt(() => useScenario.getState().remove(row.cls, row.name), row.path);
+  if (!done.ok) return;
+  if (useSelection.getState().activePath === row.path) {
+    useSelection.getState().select(null);
+    if (neighbour !== null) selectKey(neighbour);
+  }
+  if (followFocus) {
+    if (neighbour !== null) requestScroll(neighbour);
+    requestFocus(neighbour ?? TREE_FOCUS);
+  }
+}
+
+// ---------- Cut / Copy / Paste (W15) ----------
+
+export function copyRow(mode: "cut" | "copy", row: Row): void {
+  if (isSatellite(row)) useClipboard.getState().set(mode, [row.path]);
+}
+
+export async function paste(): Promise<void> {
+  const content = useClipboard.getState().content;
+  const store = useScenario.getState();
+  if (content === null || content.paths.length === 0) return;
+  if (content.mode === "copy") {
+    const objects = store.doc?.objects ?? [];
+    const taken = new Set(objects.map((o) => o.name));
+    let created: string | undefined;
+    for (const path of content.paths) {
+      const source = objects.find((o) => o.class === "Satellite" && `*/Satellite/${o.name}` === path);
+      if (source === undefined || source.class !== "Satellite") continue; // ดาวที่คัดลอกไว้ถูกลบไปแล้ว
+      const name = copyName(source.name, taken);
+      taken.add(name);
+      const done = await attempt(() => store.insert({ class: "Satellite", method: "Define Properties", name, norad: source.norad }), `*/Satellite/${name}`);
+      if (!done.ok) return;
+      created = done.value[0] ?? created;
+    }
+    if (created !== undefined) {
+      useObjectBrowser.setState({ groupSelected: null });
+      useSelection.getState().select(created);
+      requestScroll(created);
+    }
+    return;
+  }
+  const target = selectedRow();
+  if (target?.kind !== "group") return;
+  const present = new Set(objectRows().allRows.filter((row) => row.cls === "Satellite").map((row) => row.path));
+  const moving = content.paths.filter((path) => present.has(path)); // ดาวที่ตัดไว้แล้วถูกลบหรือเปลี่ยนชื่อไปแล้วไม่ย้าย
+  if (moving.length === 0) {
+    useClipboard.getState().clear();
+    return;
+  }
+  // ย้ายดาวเข้ากลุ่ม = ตั้งสมาชิกของกลุ่มใหม่ทั้งหมด (server ตั้งสมาชิกตรงตัว และดึงดาวออกจากกลุ่มอื่นเอง)
+  const members = [...new Set([...(target.members ?? []), ...moving])];
+  const done = await attempt(() => store.setGroup(target.name, members));
+  if (done.ok) useClipboard.getState().clear();
+}
+
+// ---------- Find ----------
+
+/**
+ * เลือกแถวที่ตรงถัดไป (direction 1) หรือก่อนหน้า (-1) วนรอบ; คืนว่าพบไหม
+ * คำค้นเดิม = ต่อจากแถวที่เลือกอยู่ตอนนี้ (ผู้ใช้ย้ายไปเลือกที่อื่นหลังจากพบครั้งก่อน ก็ค้นต่อจากตรงนั้น ไม่ใช่จากแถวที่พบครั้งก่อน);
+ * คำค้นใหม่ = เริ่มที่แถวแรก (หรือสุดท้ายถ้าย้อนกลับ) ค้นเฉพาะแถวที่เห็นภายใต้ตัวกรองธง และเปิดโฟลเดอร์ที่พับครอบแถวที่พบ
+ */
+export function find(query: string, direction: 1 | -1): boolean {
+  const { tree } = useScenario.getState();
+  if (tree === null) return false;
+  const { flaggedOnly, findAnchor } = useObjectBrowser.getState();
+  const rows = flattenTree(tree, objectRows().allKeys, { flaggedOnly });
+  const matches = findMatches(rows, query);
+  if (matches.length === 0) return false;
+  const position = new Map(rows.map((row, i) => [row.key, i]));
+  const current = selectedKey();
+  const from = findAnchor?.query === query ? (current !== null && position.has(current) ? current : findAnchor.key) : null;
+  const at = from === null ? undefined : position.get(from);
+  let next: Row;
+  if (at === undefined) next = direction === 1 ? matches[0] : matches[matches.length - 1];
+  else if (direction === 1) next = matches.find((row) => (position.get(row.key) ?? -1) > at) ?? matches[0];
+  else next = [...matches].reverse().find((row) => (position.get(row.key) ?? -1) < at) ?? matches[matches.length - 1];
+  useObjectBrowser.setState({ findAnchor: { query, key: next.key } });
+  selectKey(next.key);
+  reveal(next.key);
+  requestScroll(next.key);
+  return true;
+}

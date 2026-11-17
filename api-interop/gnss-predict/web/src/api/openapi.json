@@ -1,0 +1,4960 @@
+{
+  "components": {
+    "schemas": {
+      "AccessDef": {
+        "additionalProperties": true,
+        "properties": {
+          "computed": {
+            "default": false,
+            "title": "Computed",
+            "type": "boolean"
+          },
+          "from": {
+            "pattern": "^\\*/(Facility|Satellite|Constellation)/[A-Za-z0-9_-]{1,32}$",
+            "title": "From",
+            "type": "string"
+          },
+          "graphics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessGraphics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "time_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessTimePeriod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "timeline": {
+            "default": true,
+            "title": "Timeline",
+            "type": "boolean"
+          },
+          "to": {
+            "items": {
+              "pattern": "^\\*/(Facility|Satellite|Constellation)/[A-Za-z0-9_-]{1,32}$",
+              "type": "string"
+            },
+            "title": "To",
+            "type": "array"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "AccessDef",
+        "type": "object"
+      },
+      "AccessGraphics": {
+        "additionalProperties": true,
+        "properties": {
+          "animate_highlight": {
+            "default": false,
+            "title": "Animate Highlight",
+            "type": "boolean"
+          },
+          "animate_line": {
+            "default": true,
+            "title": "Animate Line",
+            "type": "boolean"
+          },
+          "color_mode": {
+            "default": "object",
+            "enum": [
+              "object",
+              "custom"
+            ],
+            "title": "Color Mode",
+            "type": "string"
+          },
+          "custom_color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Custom Color"
+          },
+          "inherit": {
+            "default": true,
+            "title": "Inherit",
+            "type": "boolean"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          },
+          "static_highlight": {
+            "default": false,
+            "title": "Static Highlight",
+            "type": "boolean"
+          }
+        },
+        "title": "AccessGraphics",
+        "type": "object"
+      },
+      "AccessTimePeriod": {
+        "additionalProperties": true,
+        "description": "mode `specify` ต้องมีทั้ง start และ stop และ start ต้องมาก่อน stop (ผิดที่ช่อง start ที่ขาด หรือช่อง stop ที่ขาดหรือไม่เลย start)\nmode `object` ไม่ใช้ start/stop จึงไม่ตรวจ",
+        "properties": {
+          "mode": {
+            "default": "object",
+            "enum": [
+              "object",
+              "specify"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop"
+          }
+        },
+        "title": "AccessTimePeriod",
+        "type": "object"
+      },
+      "AnalysisPeriod": {
+        "additionalProperties": true,
+        "properties": {
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "stop": {
+            "title": "Stop",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "stop"
+        ],
+        "title": "AnalysisPeriod",
+        "type": "object"
+      },
+      "Animation": {
+        "additionalProperties": true,
+        "properties": {
+          "cycle": {
+            "default": "loop",
+            "enum": [
+              "off",
+              "stop",
+              "loop"
+            ],
+            "title": "Cycle",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Start"
+          },
+          "time_step_s": {
+            "default": 60.0,
+            "exclusiveMinimum": 0,
+            "title": "Time Step S",
+            "type": "number"
+          },
+          "update_mode": {
+            "default": "time_step",
+            "enum": [
+              "time_step",
+              "real_time",
+              "x_real_time"
+            ],
+            "title": "Update Mode",
+            "type": "string"
+          },
+          "x_real_time_multiplier": {
+            "default": 60.0,
+            "exclusiveMinimum": 0,
+            "title": "X Real Time Multiplier",
+            "type": "number"
+          }
+        },
+        "title": "Animation",
+        "type": "object"
+      },
+      "ColumnOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "time",
+              "number",
+              "int"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "kind"
+        ],
+        "title": "ColumnOut",
+        "type": "object"
+      },
+      "ComputeBody": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "graphics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessGraphics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessTimePeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "title": "To",
+            "type": "array"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "ComputeBody",
+        "type": "object"
+      },
+      "ConstellationObj": {
+        "additionalProperties": true,
+        "properties": {
+          "assigned_objects": {
+            "default": [],
+            "items": {
+              "pattern": "^\\*/(Facility|Satellite|Constellation)/[A-Za-z0-9_-]{1,32}$",
+              "type": "string"
+            },
+            "title": "Assigned Objects",
+            "type": "array"
+          },
+          "class": {
+            "const": "Constellation",
+            "title": "Class",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "enum": [
+                  "G",
+                  "R",
+                  "E",
+                  "C"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "System"
+          }
+        },
+        "required": [
+          "class",
+          "name"
+        ],
+        "title": "ConstellationObj",
+        "type": "object"
+      },
+      "CopyScenario": {
+        "properties": {
+          "new_name": {
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "title": "CopyScenario",
+        "type": "object"
+      },
+      "DailyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "facility": {
+            "default": "THBK",
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Facility",
+            "type": "string"
+          },
+          "retention_days": {
+            "default": 30,
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "run_at_utc": {
+            "default": "21:00",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "title": "Run At Utc",
+            "type": "string"
+          },
+          "validation_give_up_days": {
+            "default": 14,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Validation Give Up Days",
+            "type": "integer"
+          },
+          "validation_retry_hours": {
+            "default": 3,
+            "maximum": 168.0,
+            "minimum": 1.0,
+            "title": "Validation Retry Hours",
+            "type": "integer"
+          }
+        },
+        "title": "DailyIn",
+        "type": "object"
+      },
+      "DailyInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "created_utc": {
+            "title": "Created Utc",
+            "type": "string"
+          },
+          "for_date": {
+            "title": "For Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "for_date",
+          "created_utc"
+        ],
+        "title": "DailyInfo",
+        "type": "object"
+      },
+      "DailyRunBody": {
+        "additionalProperties": false,
+        "properties": {
+          "for_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "For Date"
+          }
+        },
+        "title": "DailyRunBody",
+        "type": "object"
+      },
+      "DataOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOut"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "title": "DataOut",
+        "type": "object"
+      },
+      "ElementOut": {
+        "properties": {
+          "interp": {
+            "enum": [
+              "linear",
+              "angle",
+              "previous",
+              "none"
+            ],
+            "title": "Interp",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "time",
+              "number",
+              "int"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "kind",
+          "interp"
+        ],
+        "title": "ElementOut",
+        "type": "object"
+      },
+      "ExportBody": {
+        "additionalProperties": false,
+        "description": "Export Setup ของ csv (ค่าตั้งต้นตรงกับ `ExportSetup` ของ engine)",
+        "properties": {
+          "delimiter": {
+            "default": ",",
+            "maxLength": 1,
+            "minLength": 1,
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "headers": {
+            "default": true,
+            "title": "Headers",
+            "type": "boolean"
+          },
+          "quote_headers": {
+            "default": false,
+            "title": "Quote Headers",
+            "type": "boolean"
+          },
+          "title": {
+            "default": false,
+            "title": "Title",
+            "type": "boolean"
+          }
+        },
+        "title": "ExportBody",
+        "type": "object"
+      },
+      "FacilityConstraints": {
+        "additionalProperties": true,
+        "properties": {
+          "elevation_angle_max_deg": {
+            "anyOf": [
+              {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Elevation Angle Max Deg"
+          },
+          "elevation_angle_min_deg": {
+            "default": 0.0,
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Elevation Angle Min Deg",
+            "type": "number"
+          }
+        },
+        "title": "FacilityConstraints",
+        "type": "object"
+      },
+      "FacilityObj": {
+        "additionalProperties": true,
+        "properties": {
+          "class": {
+            "const": "Facility",
+            "title": "Class",
+            "type": "string"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FacilityConstraints"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "graphics2d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Graphics2DFac"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "graphics3d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Graphics3DFac"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          }
+        },
+        "required": [
+          "class",
+          "name",
+          "position"
+        ],
+        "title": "FacilityObj",
+        "type": "object"
+      },
+      "FetchRequest": {
+        "properties": {
+          "systems": {
+            "default": "GREC",
+            "title": "Systems",
+            "type": "string"
+          }
+        },
+        "title": "FetchRequest",
+        "type": "object"
+      },
+      "Graphics2DFac": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          },
+          "inherit": {
+            "default": true,
+            "title": "Inherit",
+            "type": "boolean"
+          },
+          "marker_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Point",
+                  "Plus",
+                  "Star",
+                  "Square",
+                  "Circle",
+                  "Diamond",
+                  "Triangle",
+                  "Cross"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Marker Style"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics2DFac",
+        "type": "object"
+      },
+      "Graphics2DGlobal": {
+        "additionalProperties": true,
+        "properties": {
+          "show_labels": {
+            "default": true,
+            "title": "Show Labels",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics2DGlobal",
+        "type": "object"
+      },
+      "Graphics2DSat": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Color"
+          },
+          "inherit": {
+            "default": true,
+            "title": "Inherit",
+            "type": "boolean"
+          },
+          "line_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Solid",
+                  "Dashed",
+                  "Dotted",
+                  "Dot Dashed",
+                  "Long Dashed",
+                  "Dash Dot Dot",
+                  "Medium Dashed",
+                  "Short Dashed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line Style"
+          },
+          "line_width": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line Width"
+          },
+          "marker_style": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Point",
+                  "Plus",
+                  "Star",
+                  "Square",
+                  "Circle",
+                  "Diamond",
+                  "Triangle",
+                  "Cross"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Marker Style"
+          },
+          "pass": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PassSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          },
+          "swath": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SwathSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "title": "Graphics2DSat",
+        "type": "object"
+      },
+      "Graphics2DSensor": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "default": "#e8c547",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "fill": {
+            "default": false,
+            "title": "Fill",
+            "type": "boolean"
+          },
+          "fill_translucency": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Fill Translucency",
+            "type": "integer"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics2DSensor",
+        "type": "object"
+      },
+      "Graphics3DFac": {
+        "additionalProperties": true,
+        "properties": {
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics3DFac",
+        "type": "object"
+      },
+      "Graphics3DSat": {
+        "additionalProperties": true,
+        "properties": {
+          "orbit_system": {
+            "default": "Fixed by Window",
+            "enum": [
+              "Fixed by Window",
+              "Inertial by Window"
+            ],
+            "title": "Orbit System",
+            "type": "string"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics3DSat",
+        "type": "object"
+      },
+      "Graphics3DSensor": {
+        "additionalProperties": true,
+        "properties": {
+          "color": {
+            "default": "#e8c547",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "show": {
+            "default": true,
+            "title": "Show",
+            "type": "boolean"
+          },
+          "show_boresight_marker": {
+            "default": false,
+            "title": "Show Boresight Marker",
+            "type": "boolean"
+          },
+          "show_radial_lines": {
+            "default": true,
+            "title": "Show Radial Lines",
+            "type": "boolean"
+          }
+        },
+        "title": "Graphics3DSensor",
+        "type": "object"
+      },
+      "Group": {
+        "additionalProperties": true,
+        "description": "โฟลเดอร์ใน Object Browser: ชื่อเป็นข้อความอิสระ (มีช่องว่างได้ เช่น \"GPS sats\") ไม่ใช่ชื่อ object จึงไม่ใช้ NAME_PATTERN\nต้องไม่ว่างและไม่ซ้ำกันแบบไม่สนตัวพิมพ์เล็กใหญ่ (ตรวจความไม่ซ้ำใน `validate_scenario`)",
+        "properties": {
+          "members": {
+            "default": [],
+            "items": {
+              "pattern": "^\\*/(Facility|Satellite|Constellation)/[A-Za-z0-9_-]{1,32}$",
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "Group",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "daily": {
+            "additionalProperties": true,
+            "title": "Daily",
+            "type": "object"
+          },
+          "data_dir": {
+            "title": "Data Dir",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "free_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Bytes"
+          },
+          "gmat_found": {
+            "title": "Gmat Found",
+            "type": "boolean"
+          },
+          "writable": {
+            "title": "Writable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "engine_version",
+          "gmat_found",
+          "data_dir",
+          "free_bytes",
+          "writable",
+          "daily"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "ImagingPresetOut": {
+        "properties": {
+          "camera": {
+            "title": "Camera",
+            "type": "string"
+          },
+          "gibs_layer": {
+            "title": "Gibs Layer",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "norad": {
+            "title": "Norad",
+            "type": "integer"
+          },
+          "prn": {
+            "title": "Prn",
+            "type": "string"
+          },
+          "sensor": {
+            "$ref": "#/components/schemas/SensorDefinitionOut"
+          }
+        },
+        "required": [
+          "prn",
+          "norad",
+          "name",
+          "camera",
+          "gibs_layer",
+          "sensor"
+        ],
+        "title": "ImagingPresetOut",
+        "type": "object"
+      },
+      "Ionosphere": {
+        "additionalProperties": true,
+        "properties": {
+          "shell_km": {
+            "default": 400.0,
+            "exclusiveMinimum": 0,
+            "title": "Shell Km",
+            "type": "number"
+          }
+        },
+        "title": "Ionosphere",
+        "type": "object"
+      },
+      "LayerOut": {
+        "properties": {
+          "credit": {
+            "title": "Credit",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "jpg",
+              "png"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max_level": {
+            "title": "Max Level",
+            "type": "integer"
+          },
+          "period": {
+            "enum": [
+              "static",
+              "daily",
+              "10min"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "gibs",
+              "eox"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "period",
+          "max_level",
+          "format",
+          "credit",
+          "source"
+        ],
+        "title": "LayerOut",
+        "type": "object"
+      },
+      "LayersOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "layers": {
+            "items": {
+              "$ref": "#/components/schemas/LayerOut"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/SourcesOut"
+          }
+        },
+        "required": [
+          "enabled",
+          "sources",
+          "layers"
+        ],
+        "title": "LayersOut",
+        "type": "object"
+      },
+      "NewScenario": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "stop": {
+            "title": "Stop",
+            "type": "string"
+          },
+          "template": {
+            "enum": [
+              "thbk-gnss",
+              "empty"
+            ],
+            "title": "Template",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "start",
+          "stop",
+          "template"
+        ],
+        "title": "NewScenario",
+        "type": "object"
+      },
+      "OnlineImageryIn": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "eox": {
+            "default": false,
+            "title": "Eox",
+            "type": "boolean"
+          },
+          "ion": {
+            "default": false,
+            "title": "Ion",
+            "type": "boolean"
+          },
+          "osm": {
+            "default": false,
+            "title": "Osm",
+            "type": "boolean"
+          }
+        },
+        "title": "OnlineImageryIn",
+        "type": "object"
+      },
+      "PassSettings": {
+        "additionalProperties": true,
+        "properties": {
+          "lead_percent": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lead Percent"
+          },
+          "lead_time_s": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lead Time S"
+          },
+          "lead_type": {
+            "default": "Time",
+            "enum": [
+              "Time",
+              "Percent",
+              "Quarter",
+              "Half",
+              "Full",
+              "All",
+              "None",
+              "One Pass",
+              "Current Interval"
+            ],
+            "title": "Lead Type",
+            "type": "string"
+          },
+          "show_pass_labels": {
+            "default": false,
+            "title": "Show Pass Labels",
+            "type": "boolean"
+          },
+          "show_path_labels": {
+            "default": false,
+            "title": "Show Path Labels",
+            "type": "boolean"
+          },
+          "trail_percent": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trail Percent"
+          },
+          "trail_time_s": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trail Time S"
+          },
+          "trail_type": {
+            "default": "Time",
+            "enum": [
+              "Time",
+              "Percent",
+              "Quarter",
+              "Half",
+              "Full",
+              "All",
+              "None",
+              "One Pass",
+              "Current Interval",
+              "Same As Lead"
+            ],
+            "title": "Trail Type",
+            "type": "string"
+          },
+          "visible_sides": {
+            "default": "Both",
+            "enum": [
+              "Both",
+              "Ascending",
+              "Descending"
+            ],
+            "title": "Visible Sides",
+            "type": "string"
+          }
+        },
+        "title": "PassSettings",
+        "type": "object"
+      },
+      "PendingDay": {
+        "description": "วันที่ยังไม่มีผลตรวจ: pending = ยังลองอยู่ gave_up = ตัวตั้งเวลาเลิกแล้ว",
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "next_attempt_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt Utc"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "gave_up"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "day",
+          "state",
+          "next_attempt_utc"
+        ],
+        "title": "PendingDay",
+        "type": "object"
+      },
+      "Position": {
+        "additionalProperties": true,
+        "properties": {
+          "alt_m": {
+            "title": "Alt M",
+            "type": "number"
+          },
+          "lat_deg": {
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Lat Deg",
+            "type": "number"
+          },
+          "lon_deg": {
+            "maximum": 180,
+            "minimum": -180,
+            "title": "Lon Deg",
+            "type": "number"
+          },
+          "type": {
+            "const": "Geodetic",
+            "default": "Geodetic",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lat_deg",
+          "lon_deg",
+          "alt_m"
+        ],
+        "title": "Position",
+        "type": "object"
+      },
+      "ProviderOut": {
+        "properties": {
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/ElementOut"
+            },
+            "title": "Elements",
+            "type": "array"
+          },
+          "groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groups"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ours": {
+            "title": "Ours",
+            "type": "boolean"
+          },
+          "uses": {
+            "items": {
+              "enum": [
+                "Reports",
+                "Dynamic Displays"
+              ],
+              "type": "string"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "groups",
+          "elements",
+          "uses",
+          "ours"
+        ],
+        "title": "ProviderOut",
+        "type": "object"
+      },
+      "ReportBody": {
+        "additionalProperties": false,
+        "properties": {
+          "dynamic": {
+            "default": false,
+            "title": "Dynamic",
+            "type": "boolean"
+          },
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "format": {
+            "default": "json",
+            "enum": [
+              "json",
+              "txt",
+              "csv"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "report",
+                  "graph"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "objects": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Objects",
+            "type": "array"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "style",
+          "objects"
+        ],
+        "title": "ReportBody",
+        "type": "object"
+      },
+      "ReportOut": {
+        "properties": {
+          "created_utc": {
+            "title": "Created Utc",
+            "type": "string"
+          },
+          "dynamic": {
+            "title": "Dynamic",
+            "type": "boolean"
+          },
+          "global_statistics": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticOut"
+            },
+            "title": "Global Statistics",
+            "type": "array"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph"
+          },
+          "kind": {
+            "enum": [
+              "report",
+              "graph"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionOut"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "style": {
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scenario",
+          "style",
+          "kind",
+          "created_utc",
+          "sections",
+          "global_statistics",
+          "graph",
+          "dynamic"
+        ],
+        "title": "ReportOut",
+        "type": "object"
+      },
+      "ReportTime": {
+        "additionalProperties": false,
+        "description": "ตัวเลือกเวลาของ Generate: `object` = Use Object Time Period (start/stop ไม่ใช้ ไม่ตรวจเหมือน `time_period` ของ access)\n`specify` = Specify Time Properties (ต้องมี start และ stop) `step_s` ว่าง = Use default time points",
+        "properties": {
+          "mode": {
+            "default": "object",
+            "enum": [
+              "object",
+              "specify"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "step_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step S"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop"
+          }
+        },
+        "title": "ReportTime",
+        "type": "object"
+      },
+      "SatelliteFilter": {
+        "additionalProperties": true,
+        "properties": {
+          "show_no_broadcast": {
+            "default": false,
+            "title": "Show No Broadcast",
+            "type": "boolean"
+          },
+          "show_too_old": {
+            "default": false,
+            "title": "Show Too Old",
+            "type": "boolean"
+          }
+        },
+        "title": "SatelliteFilter",
+        "type": "object"
+      },
+      "SatelliteObj": {
+        "additionalProperties": true,
+        "properties": {
+          "class": {
+            "const": "Satellite",
+            "title": "Class",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "graphics2d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Graphics2DSat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "graphics3d": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Graphics3DSat"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "norad": {
+            "exclusiveMinimum": 0,
+            "title": "Norad",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "class",
+          "name",
+          "norad"
+        ],
+        "title": "SatelliteObj",
+        "type": "object"
+      },
+      "ScenarioDoc": {
+        "additionalProperties": true,
+        "properties": {
+          "accesses": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AccessDef"
+            },
+            "title": "Accesses",
+            "type": "array"
+          },
+          "analysis_period": {
+            "$ref": "#/components/schemas/AnalysisPeriod"
+          },
+          "animation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Animation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "daily": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DailyInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "format": {
+            "const": "gnss-studio-scenario/1",
+            "title": "Format",
+            "type": "string"
+          },
+          "graphics2d_global": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Graphics2DGlobal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "ionosphere": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ionosphere"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "objects": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "Constellation": "#/components/schemas/ConstellationObj",
+                  "Facility": "#/components/schemas/FacilityObj",
+                  "Satellite": "#/components/schemas/SatelliteObj",
+                  "Sensor": "#/components/schemas/SensorObj"
+                },
+                "propertyName": "class"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FacilityObj"
+                },
+                {
+                  "$ref": "#/components/schemas/SatelliteObj"
+                },
+                {
+                  "$ref": "#/components/schemas/ConstellationObj"
+                },
+                {
+                  "$ref": "#/components/schemas/SensorObj"
+                }
+              ]
+            },
+            "title": "Objects",
+            "type": "array"
+          },
+          "orbit_snapshot": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Orbit Snapshot",
+            "type": "string"
+          },
+          "satellite_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SatelliteFilter"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "step_s": {
+            "default": 30,
+            "maximum": 3600,
+            "minimum": 1,
+            "title": "Step S",
+            "type": "integer"
+          },
+          "styles": {
+            "default": [],
+            "items": {},
+            "title": "Styles",
+            "type": "array"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Units"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "format",
+          "name",
+          "analysis_period",
+          "orbit_snapshot",
+          "objects"
+        ],
+        "title": "ScenarioDoc",
+        "type": "object"
+      },
+      "SectionOut": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOut"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "object": {
+            "title": "Object",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticOut"
+            },
+            "title": "Summary",
+            "type": "array"
+          },
+          "summary_only": {
+            "title": "Summary Only",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "title",
+          "columns",
+          "rows",
+          "summary",
+          "summary_only"
+        ],
+        "title": "SectionOut",
+        "type": "object"
+      },
+      "SelectBody": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "description": "รายการ path ของดาวหรือ Constellation หรือ \"all\"",
+            "title": "To"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "SelectBody",
+        "type": "object"
+      },
+      "SensorDefinition": {
+        "additionalProperties": true,
+        "description": "Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา\nแกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)\nRectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ",
+        "properties": {
+          "cone_half_angle": {
+            "default": 45.0,
+            "exclusiveMinimum": 0,
+            "maximum": 90,
+            "title": "Cone Half Angle",
+            "type": "number"
+          },
+          "horizontal_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Horizontal Half Angle"
+          },
+          "type": {
+            "default": "Simple Conic",
+            "enum": [
+              "Simple Conic",
+              "Rectangular"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "vertical_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vertical Half Angle"
+          }
+        },
+        "title": "SensorDefinition",
+        "type": "object"
+      },
+      "SensorDefinitionOut": {
+        "description": "Sensor หลักของ preset: Simple Conic ใช้ cone_half_angle, Rectangular ใช้ vertical/horizontal (ช่องของอีกชนิดเป็น null)",
+        "properties": {
+          "cone_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cone Half Angle"
+          },
+          "horizontal_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizontal Half Angle"
+          },
+          "type": {
+            "enum": [
+              "Simple Conic",
+              "Rectangular"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "vertical_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Half Angle"
+          }
+        },
+        "required": [
+          "type",
+          "cone_half_angle",
+          "vertical_half_angle",
+          "horizontal_half_angle"
+        ],
+        "title": "SensorDefinitionOut",
+        "type": "object"
+      },
+      "SensorObj": {
+        "additionalProperties": true,
+        "description": "Sensor ของดาว: เก็บเป็น object แบบแบนใน `objects` เหมือน class อื่น `parent` คือดาวที่ติดตั้ง (ต้องมีอยู่จริง ตรวจใน `validate_scenario`)\nengine ไม่ใช้ class นี้",
+        "properties": {
+          "class": {
+            "const": "Sensor",
+            "title": "Class",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SensorDefinition"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "graphics2d": {
+            "$ref": "#/components/schemas/Graphics2DSensor"
+          },
+          "graphics3d": {
+            "$ref": "#/components/schemas/Graphics3DSensor"
+          },
+          "long_description": {
+            "default": "",
+            "title": "Long Description",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "pattern": "^\\*/Satellite/[A-Za-z0-9_-]{1,32}$",
+            "title": "Parent",
+            "type": "string"
+          },
+          "pointing": {
+            "$ref": "#/components/schemas/SensorPointing"
+          }
+        },
+        "required": [
+          "class",
+          "name",
+          "parent",
+          "definition",
+          "pointing",
+          "graphics2d",
+          "graphics3d"
+        ],
+        "title": "SensorObj",
+        "type": "object"
+      },
+      "SensorPointing": {
+        "additionalProperties": true,
+        "description": "Basic - Pointing ของ STK: v1 มีเฉพาะ Fixed แบบ Az-El (Azimuth จาก +X ไป +Y ของกรอบตัวดาว, Elevation ไปทาง +Z) และ About Boresight = Rotate",
+        "properties": {
+          "about_boresight": {
+            "const": "Rotate",
+            "title": "About Boresight",
+            "type": "string"
+          },
+          "azimuth": {
+            "default": 0.0,
+            "exclusiveMaximum": 360,
+            "minimum": 0,
+            "title": "Azimuth",
+            "type": "number"
+          },
+          "elevation": {
+            "default": 90.0,
+            "maximum": 90,
+            "minimum": -90,
+            "title": "Elevation",
+            "type": "number"
+          },
+          "orientation": {
+            "const": "Az-El",
+            "title": "Orientation",
+            "type": "string"
+          },
+          "type": {
+            "const": "Fixed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "orientation",
+          "about_boresight"
+        ],
+        "title": "SensorPointing",
+        "type": "object"
+      },
+      "SettingsIn": {
+        "additionalProperties": false,
+        "description": "body ของ PUT /api/settings (ใช้ `Settings.model_validate(body.model_dump())` ก่อนบันทึก)",
+        "properties": {
+          "cesium_ion_token": {
+            "default": "",
+            "title": "Cesium Ion Token",
+            "type": "string"
+          },
+          "daily": {
+            "$ref": "#/components/schemas/DailyIn"
+          },
+          "online_imagery": {
+            "$ref": "#/components/schemas/OnlineImageryIn"
+          }
+        },
+        "title": "SettingsIn",
+        "type": "object"
+      },
+      "SourcesOut": {
+        "properties": {
+          "eox": {
+            "title": "Eox",
+            "type": "boolean"
+          },
+          "gibs": {
+            "title": "Gibs",
+            "type": "boolean"
+          },
+          "ion": {
+            "title": "Ion",
+            "type": "boolean"
+          },
+          "osm": {
+            "title": "Osm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gibs",
+          "eox",
+          "osm",
+          "ion"
+        ],
+        "title": "SourcesOut",
+        "type": "object"
+      },
+      "StatisticOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "StatisticOut",
+        "type": "object"
+      },
+      "StylesOut": {
+        "properties": {
+          "installed": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Installed",
+            "type": "array"
+          },
+          "my": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "My",
+            "type": "array"
+          },
+          "scenario": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Scenario",
+            "type": "array"
+          }
+        },
+        "required": [
+          "installed",
+          "my",
+          "scenario"
+        ],
+        "title": "StylesOut",
+        "type": "object"
+      },
+      "SwathSettings": {
+        "additionalProperties": true,
+        "properties": {
+          "elevation_deg": {
+            "default": 10.0,
+            "maximum": 90,
+            "minimum": 0,
+            "title": "Elevation Deg",
+            "type": "number"
+          },
+          "options": {
+            "default": "No Graphics",
+            "enum": [
+              "No Graphics",
+              "Edge Limits",
+              "Filled Limits"
+            ],
+            "title": "Options",
+            "type": "string"
+          },
+          "type": {
+            "const": "Ground Elevation",
+            "default": "Ground Elevation",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "SwathSettings",
+        "type": "object"
+      },
+      "Units": {
+        "additionalProperties": true,
+        "properties": {
+          "angle": {
+            "const": "deg",
+            "default": "deg",
+            "title": "Angle",
+            "type": "string"
+          },
+          "date_format": {
+            "default": "UTCG",
+            "enum": [
+              "UTCG",
+              "LTZG"
+            ],
+            "title": "Date Format",
+            "type": "string"
+          },
+          "distance": {
+            "const": "km",
+            "default": "km",
+            "title": "Distance",
+            "type": "string"
+          },
+          "ltz_offset": {
+            "default": "+07:00",
+            "pattern": "^[+-]\\d{2}:\\d{2}$",
+            "title": "Ltz Offset",
+            "type": "string"
+          }
+        },
+        "title": "Units",
+        "type": "object"
+      },
+      "ValidateBody": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "sp3": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sp3"
+          }
+        },
+        "required": [
+          "day"
+        ],
+        "title": "ValidateBody",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "GNSS Studio",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/catalog": {
+      "get": {
+        "description": "snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)\nsystem ต้องเป็น G R E C หรือ X (ดาวถ่ายภาพ; ไม่ระบุ = ทุกระบบ) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD, ชื่อ CelesTrak และชื่อที่แสดง",
+        "operationId": "get_catalog_api_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "snapshot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Snapshot"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stop"
+            }
+          },
+          {
+            "in": "query",
+            "name": "system",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "System"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Catalog Api Catalog Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Catalog"
+      }
+    },
+    "/api/daily/run": {
+      "post": {
+        "operationId": "run_daily_api_daily_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DailyRunBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Daily Api Daily Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Daily"
+      }
+    },
+    "/api/events": {
+      "get": {
+        "operationId": "events_api_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Events"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/imagery/layers": {
+      "get": {
+        "operationId": "get_layers_api_imagery_layers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Layers"
+      }
+    },
+    "/api/imagery/tiles/{layer}/{time}/{z}/{y}/{x}": {
+      "get": {
+        "operationId": "get_tile_api_imagery_tiles__layer___time___z___y___x__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "layer",
+            "required": true,
+            "schema": {
+              "title": "Layer",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "time",
+            "required": true,
+            "schema": {
+              "title": "Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "z",
+            "required": true,
+            "schema": {
+              "title": "Z",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "y",
+            "required": true,
+            "schema": {
+              "title": "Y",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "x",
+            "required": true,
+            "schema": {
+              "title": "X",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "ภาพ JPEG หรือ PNG ของชิ้นภาพ"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tile"
+      }
+    },
+    "/api/imaging/presets": {
+      "get": {
+        "description": "preset X01…X08 ตามลำดับ (ตารางเดียวของ engine: gnss_predict.imaging) เว็บรู้ว่าดาวใดเป็นดาวถ่ายภาพจาก NORAD",
+        "operationId": "imaging_presets_api_imaging_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImagingPresetOut"
+                  },
+                  "title": "Response Imaging Presets Api Imaging Presets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Imaging Presets"
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "description": "ใหม่ก่อน state ผิด -> 422 ที่ field state",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "succeeded",
+                    "failed",
+                    "cancelled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Jobs Api Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Jobs"
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Job Api Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job"
+      }
+    },
+    "/api/jobs/{job_id}/cancel": {
+      "post": {
+        "description": "ที่ยังรอ: cancelled ทันที ที่กำลังรัน: ฆ่า GMAT และ process ลูกแล้วตอบเมื่อบันทึกเป็น cancelled ที่จบแล้ว: คืนตามเดิม",
+        "operationId": "cancel_job_api_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Job Api Jobs  Job Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job"
+      }
+    },
+    "/api/messages": {
+      "get": {
+        "description": "since: เวลา UTC ลงท้าย Z (ค่า `time` ของข้อความที่เคยได้) ผิดรูปแบบ -> 422 ที่ field since",
+        "operationId": "messages_api_messages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Messages Api Messages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Messages"
+      }
+    },
+    "/api/orbits": {
+      "get": {
+        "operationId": "list_orbits_api_orbits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Orbits Api Orbits Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Orbits"
+      }
+    },
+    "/api/orbits/fetch": {
+      "post": {
+        "description": "ตัวอักษรระบบผิด -> 422 ที่ field systems (ตรวจโดยคิว job)",
+        "operationId": "fetch_orbits_api_orbits_fetch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/FetchRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fetch Orbits Api Orbits Fetch Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fetch Orbits"
+      }
+    },
+    "/api/orbits/fetch-status": {
+      "get": {
+        "description": "ต่อกลุ่ม CelesTrak: เวลาคำขอล่าสุด และเวลาที่ส่งได้อีกครั้ง (= คำขอล่าสุด + CELESTRAK_MIN_INTERVAL_S) null = ไม่เคยส่งหรืออ่านไม่ได้\nไฟล์หายหรือเสียก็ตอบ 200 (ทุกกลุ่ม null) หน้า Fetch Orbit Data ใช้บอกเวลาที่กด Fetch Now ได้ ตัว server ไม่ดึงเอง",
+        "operationId": "fetch_status_api_orbits_fetch_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fetch Status Api Orbits Fetch Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fetch Status"
+      }
+    },
+    "/api/scenarios": {
+      "get": {
+        "operationId": "list_scenarios_api_scenarios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Scenarios Api Scenarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scenarios"
+      },
+      "post": {
+        "operationId": "create_scenario_api_scenarios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewScenario"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scenario"
+      }
+    },
+    "/api/scenarios/{sc}": {
+      "delete": {
+        "description": "มี job ของ scenario นี้ที่ยังรอหรือกำลังรัน -> 409 JOB_RUNNING (ยกเลิก job ก่อนจึงลบได้)",
+        "operationId": "delete_scenario_api_scenarios__sc__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scenario"
+      },
+      "get": {
+        "operationId": "get_scenario_api_scenarios__sc__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scenario"
+      },
+      "put": {
+        "description": "คำตอบคือเอกสารที่บันทึกตรงตัว ไม่เพิ่มช่องใด; results_stale อยู่ใน header X-Results-Stale",
+        "operationId": "put_scenario_api_scenarios__sc__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Doc",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Scenario"
+      }
+    },
+    "/api/scenarios/{sc}/access": {
+      "get": {
+        "operationId": "list_accesses_api_scenarios__sc__access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Accesses"
+      }
+    },
+    "/api/scenarios/{sc}/access/clear": {
+      "post": {
+        "operationId": "clear_accesses_api_scenarios__sc__access_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Accesses"
+      }
+    },
+    "/api/scenarios/{sc}/access/compute": {
+      "post": {
+        "operationId": "compute_api_scenarios__sc__access_compute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComputeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compute"
+      }
+    },
+    "/api/scenarios/{sc}/access/intervals": {
+      "get": {
+        "operationId": "get_intervals_api_scenarios__sc__access_intervals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "To",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {},
+                    "type": "array"
+                  },
+                  "title": "Response Get Intervals Api Scenarios  Sc  Access Intervals Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Intervals"
+      }
+    },
+    "/api/scenarios/{sc}/access/remove": {
+      "post": {
+        "operationId": "remove_accesses_api_scenarios__sc__access_remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Accesses"
+      }
+    },
+    "/api/scenarios/{sc}/access/{facility}/{hash}/{file}": {
+      "get": {
+        "operationId": "get_access_file_api_scenarios__sc__access__facility___hash___file__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "facility",
+            "required": true,
+            "schema": {
+              "title": "Facility",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "title": "Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "title": "File",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Access File"
+      }
+    },
+    "/api/scenarios/{sc}/copy": {
+      "post": {
+        "operationId": "copy_scenario_api_scenarios__sc__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyScenario"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Scenario"
+      }
+    },
+    "/api/scenarios/{sc}/data": {
+      "get": {
+        "operationId": "get_data_api_scenarios__sc__data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object",
+            "required": true,
+            "schema": {
+              "title": "Object",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "elements",
+            "required": true,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Elements",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stop"
+            }
+          },
+          {
+            "in": "query",
+            "name": "step",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Step"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Data"
+      }
+    },
+    "/api/scenarios/{sc}/dataproviders": {
+      "get": {
+        "operationId": "get_dataproviders_api_scenarios__sc__dataproviders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "class",
+            "required": true,
+            "schema": {
+              "title": "Class",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderOut"
+                  },
+                  "title": "Response Get Dataproviders Api Scenarios  Sc  Dataproviders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dataproviders"
+      }
+    },
+    "/api/scenarios/{sc}/ephem/{hash}/{file}": {
+      "get": {
+        "operationId": "get_ephem_file_api_scenarios__sc__ephem__hash___file__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "title": "Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "title": "File",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Ephem File"
+      }
+    },
+    "/api/scenarios/{sc}/groups": {
+      "post": {
+        "operationId": "set_group_api_scenarios__sc__groups_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Group"
+      }
+    },
+    "/api/scenarios/{sc}/objects": {
+      "get": {
+        "operationId": "get_tree_api_scenarios__sc__objects_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tree"
+      },
+      "post": {
+        "operationId": "insert_object_api_scenarios__sc__objects_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Insert Object"
+      }
+    },
+    "/api/scenarios/{sc}/objects/{cls}/{name}": {
+      "delete": {
+        "operationId": "delete_object_api_scenarios__sc__objects__cls___name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cls",
+            "required": true,
+            "schema": {
+              "title": "Cls",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Object"
+      },
+      "get": {
+        "operationId": "get_object_api_scenarios__sc__objects__cls___name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cls",
+            "required": true,
+            "schema": {
+              "title": "Cls",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Object"
+      },
+      "patch": {
+        "operationId": "patch_object_api_scenarios__sc__objects__cls___name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cls",
+            "required": true,
+            "schema": {
+              "title": "Cls",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Patch",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Object"
+      }
+    },
+    "/api/scenarios/{sc}/objects/{cls}/{name}/rename": {
+      "post": {
+        "operationId": "rename_object_api_scenarios__sc__objects__cls___name__rename_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cls",
+            "required": true,
+            "schema": {
+              "title": "Cls",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Object"
+      }
+    },
+    "/api/scenarios/{sc}/propagate": {
+      "post": {
+        "operationId": "propagate_api_scenarios__sc__propagate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Propagate Api Scenarios  Sc  Propagate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propagate"
+      }
+    },
+    "/api/scenarios/{sc}/reports": {
+      "post": {
+        "operationId": "create_report_api_scenarios__sc__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "format json: ตารางของรายงาน; txt/csv: ไฟล์แนบ"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Report"
+      }
+    },
+    "/api/scenarios/{sc}/results": {
+      "get": {
+        "operationId": "get_results_api_scenarios__sc__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Results Api Scenarios  Sc  Results Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Results"
+      }
+    },
+    "/api/scenarios/{sc}/validate": {
+      "post": {
+        "operationId": "validate_api_scenarios__sc__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Api Scenarios  Sc  Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate"
+      }
+    },
+    "/api/scenarios/{sc}/workbook": {
+      "get": {
+        "operationId": "get_workbook_api_scenarios__sc__workbook_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workbook"
+      },
+      "put": {
+        "operationId": "put_workbook_api_scenarios__sc__workbook_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Doc",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Workbook"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "get_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Settings Api Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings"
+      },
+      "put": {
+        "operationId": "put_settings_api_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Settings Api Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Settings"
+      }
+    },
+    "/api/styles": {
+      "get": {
+        "operationId": "get_styles_api_styles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "object_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StylesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Styles"
+      }
+    },
+    "/api/styles/{name}": {
+      "delete": {
+        "operationId": "delete_style_api_styles__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Style"
+      },
+      "post": {
+        "operationId": "create_style_api_styles__name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Style Api Styles  Name  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Style"
+      },
+      "put": {
+        "operationId": "put_style_api_styles__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Style Api Styles  Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Style"
+      }
+    },
+    "/api/validation/history": {
+      "get": {
+        "operationId": "history_api_validation_history_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response History Api Validation History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "History"
+      }
+    },
+    "/api/validation/pending": {
+      "get": {
+        "description": "วันที่ยังไม่มีผลตรวจและสถานะ (pending พร้อมเวลาลองครั้งถัดไป หรือ gave_up) เรียงตามวันแล้วชื่อ scenario อ่านอย่างเดียว",
+        "operationId": "pending_api_validation_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingDay"
+                  },
+                  "title": "Response Pending Api Validation Pending Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pending"
+      }
+    },
+    "/api/validation/{sc}/{day}": {
+      "get": {
+        "operationId": "get_day_api_validation__sc___day__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sc",
+            "required": true,
+            "schema": {
+              "title": "Sc",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "day",
+            "required": true,
+            "schema": {
+              "title": "Day",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Day Api Validation  Sc   Day  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Day"
+      }
+    }
+  }
+}

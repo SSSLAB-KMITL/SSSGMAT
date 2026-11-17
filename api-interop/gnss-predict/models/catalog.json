@@ -1,0 +1,287 @@
+{
+  "version": 1,
+  "frame": "+Z nadir antenna, +Y array axis, metres, glTF Y-up export",
+  "models": [
+    {
+      "id": "galileo-foc",
+      "glb": "galileo-foc/galileo_foc.glb",
+      "blocks": ["GAL-2"],
+      "size_m": [2.651, 14.67, 1.43],
+      "triangles": 12472,
+      "wing_nodes": ["solar_wing_+Y", "solar_wing_-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "gps-iif",
+      "glb": "gps-iif/gps-iif.glb",
+      "blocks": ["GPS-IIF"],
+      "size_m": [2.3, 13.11, 2.889],
+      "triangles": 3538,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "gps-iii",
+      "glb": "gps-iii/gps-iii.glb",
+      "blocks": ["GPS-III", "GPS-IIIA", "GPS-III-1"],
+      "size_m": [2.508, 14.63, 4.11],
+      "triangles": 4070,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds3-meo-cast",
+      "glb": "bds3-meo-cast/bds3-meo-cast.glb",
+      "blocks": ["BDS-3M-CAST", "BDS-3SM-CAST"],
+      "size_m": [1.97, 13.998, 1.955],
+      "triangles": 3350,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "glonass-m",
+      "glb": "glonass-m/glonass-m.glb",
+      "blocks": ["GLO-M", "GLO-M+"],
+      "size_m": [2.4, 16.0, 3.9],
+      "triangles": 4646,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds3-meo-secm",
+      "glb": "bds3-meo-secm/bds3-meo-secm.glb",
+      "blocks": ["BDS-3M-SECM-A", "BDS-3M-SECM-B", "BDS-3SM-SECM"],
+      "size_m": [2.21, 11.36, 1.444],
+      "triangles": 4432,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "gps-iir",
+      "glb": "gps-iir/gps-iir.glb",
+      "blocks": ["GPS-IIR-A", "GPS-IIR-B", "GPS-IIR-M"],
+      "size_m": [2.04, 11.81, 2.72],
+      "triangles": 3146,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "glonass-k1",
+      "glb": "glonass-k1/glonass-k1.glb",
+      "blocks": ["GLO-K1", "GLO-K1+", "GLO-K1A", "GLO-K1B"],
+      "size_m": [1.673, 11.29, 3.01],
+      "triangles": 3976,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "galileo-iov",
+      "glb": "galileo-iov/galileo-iov.glb",
+      "blocks": ["GAL-1"],
+      "size_m": [2.669, 14.5, 1.439],
+      "triangles": 2722,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds3-geo",
+      "glb": "bds3-geo/bds3-geo.glb",
+      "blocks": ["BDS-3G"],
+      "size_m": [6.36, 19.04, 3.95],
+      "triangles": 7990,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds3-igso",
+      "glb": "bds3-igso/bds3-igso.glb",
+      "blocks": ["BDS-3I"],
+      "size_m": [2.359, 18.04, 4.452],
+      "triangles": 6378,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "glonass-k2",
+      "glb": "glonass-k2/glonass-k2.glb",
+      "blocks": ["GLO-K2"],
+      "size_m": [2.482, 17.74, 3.46],
+      "triangles": 4990,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds2-igso",
+      "glb": "bds2-igso/bds2-igso.glb",
+      "blocks": ["BDS-2I", "BDS-2M"],
+      "size_m": [2.05, 16.24, 2.92],
+      "triangles": 5244,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "bds2-geo",
+      "glb": "bds2-geo/bds2-geo.glb",
+      "blocks": ["BDS-2G"],
+      "size_m": [3.975, 16.24, 2.92],
+      "triangles": 6072,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "qzss-igso",
+      "glb": "qzss-igso/qzss-igso.glb",
+      "blocks": ["QZS-2A", "QZS-2I"],
+      "size_m": [2.854, 18.92, 6.205],
+      "triangles": 5170,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "qzss-qzs1",
+      "glb": "qzss-qzs1/qzss-qzs1.glb",
+      "blocks": ["QZS-1"],
+      "size_m": [2.854, 25.3, 6.205],
+      "triangles": 5302,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "qzss-geo",
+      "glb": "qzss-geo/qzss-geo.glb",
+      "blocks": ["QZS-2G", "QZS-3G"],
+      "size_m": [6.569, 18.92, 5.921],
+      "triangles": 3352,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "navic-irnss1",
+      "glb": "navic-irnss1/navic-irnss1.glb",
+      "blocks": ["IRS-1G", "IRS-1I"],
+      "size_m": [1.814, 6.92, 2.25],
+      "triangles": 3426,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "navic-nvs",
+      "glb": "navic-nvs/navic-nvs.glb",
+      "blocks": ["IRS-2G", "IRS-2I"],
+      "size_m": [1.916, 9.5, 3.316],
+      "triangles": 2820,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "terra",
+      "glb": "terra/terra.glb",
+      "blocks": [],
+      "norad_ids": [25994],
+      "size_m": [6.811, 13.027, 5.142],
+      "triangles": 13397,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-Z",
+      "status": "done"
+    },
+    {
+      "id": "aqua",
+      "glb": "aqua/aqua.glb",
+      "blocks": [],
+      "norad_ids": [27424],
+      "size_m": [8.828, 16.701, 4.772],
+      "triangles": 12977,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "+X",
+      "status": "done"
+    },
+    {
+      "id": "suomi-npp",
+      "glb": "suomi-npp/suomi-npp.glb",
+      "blocks": [],
+      "norad_ids": [37849, 43013],
+      "size_m": [4.183, 8.959, 2.569],
+      "triangles": 4024,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "noaa-21",
+      "glb": "noaa-21/noaa-21.glb",
+      "blocks": [],
+      "norad_ids": [54234],
+      "size_m": [4.3, 10.71, 3.118],
+      "triangles": 1982,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "goes",
+      "glb": "goes/goes.glb",
+      "blocks": [],
+      "norad_ids": [41866, 43226, 51850, 60133],
+      "size_m": [11.14, 13.444, 12.197],
+      "triangles": 14799,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "+Z",
+      "status": "done"
+    },
+    {
+      "id": "himawari-9",
+      "glb": "himawari-9/himawari-9.glb",
+      "blocks": [],
+      "norad_ids": [41836, 40267],
+      "size_m": [5.218, 8.037, 5.3],
+      "triangles": 2496,
+      "wing_nodes": ["wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "generic",
+      "glb": "generic/generic.glb",
+      "blocks": [],
+      "size_m": [2.0, 12.0, 2.44],
+      "triangles": 1916,
+      "wing_nodes": ["wing+Y", "wing-Y"],
+      "cell_normal": "-X",
+      "status": "done"
+    }
+  ],
+  "overrides": {
+    "2026-252A": "glonass-k1"
+  },
+  "fallback": "generic",
+  "fallback_blocks": [
+    "BDS-3S",
+    "BDS-3SI-CAST",
+    "BDS-3SI-SECM",
+    "GAL-0A",
+    "GAL-0B",
+    "GLO",
+    "GPS-I",
+    "GPS-II",
+    "GPS-IIA"
+  ]
+}

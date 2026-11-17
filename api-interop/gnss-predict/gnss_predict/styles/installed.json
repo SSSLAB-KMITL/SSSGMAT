@@ -1,0 +1,484 @@
+[
+  {
+    "name": "Access",
+    "kind": "report",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "Access Data",
+        "group": null,
+        "elements": [
+          "Access Number",
+          "Start Time",
+          "Stop Time",
+          "Duration"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [
+        "Min Duration",
+        "Max Duration",
+        "Mean Duration",
+        "Total Duration"
+      ],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": false,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "AccessSummary",
+    "kind": "report",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "Access Data",
+        "group": null,
+        "elements": [
+          "Duration"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [
+        "Number of Accesses",
+        "Min Duration",
+        "Max Duration",
+        "Mean Duration",
+        "Total Duration"
+      ],
+      "global_statistics": [],
+      "summary_only": true
+    },
+    "graph": null,
+    "dynamic": false,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "AER",
+    "kind": "report",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "AER Data",
+        "group": "Default",
+        "elements": [
+          "Time",
+          "Azimuth",
+          "Elevation",
+          "Range"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "Gaps",
+    "kind": "report",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "Access Data",
+        "group": null,
+        "elements": [
+          "Start Time",
+          "Stop Time",
+          "Duration"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": false,
+    "derive": "gaps",
+    "ours": false
+  },
+  {
+    "name": "IPP Data",
+    "kind": "report",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "IPP Data",
+        "group": null,
+        "elements": [
+          "Time",
+          "IPP Lat",
+          "IPP Lon",
+          "MF",
+          "Elevation"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": true,
+    "derive": null,
+    "ours": true
+  },
+  {
+    "name": "Access",
+    "kind": "graph",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "Access Data",
+        "group": null,
+        "elements": [
+          "Start Time",
+          "Stop Time"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "interval",
+      "y1": [],
+      "y2": [],
+      "stack": false
+    },
+    "dynamic": false,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "AER",
+    "kind": "graph",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "AER Data",
+        "group": "Default",
+        "elements": [
+          "Time",
+          "Azimuth",
+          "Elevation",
+          "Range"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "time_xy",
+      "y1": [
+        "Azimuth",
+        "Elevation"
+      ],
+      "y2": [
+        "Range"
+      ],
+      "stack": false
+    },
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "Elevation Angle",
+    "kind": "graph",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "AER Data",
+        "group": "Default",
+        "elements": [
+          "Time",
+          "Elevation"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "time_xy",
+      "y1": [
+        "Elevation"
+      ],
+      "y2": [],
+      "stack": false
+    },
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "Az El Polar",
+    "kind": "graph",
+    "object_type": "Access",
+    "content": [
+      {
+        "provider": "AER Data",
+        "group": "Default",
+        "elements": [
+          "Time",
+          "Azimuth",
+          "Elevation"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "polar90",
+      "y1": [],
+      "y2": [],
+      "stack": false
+    },
+    "dynamic": false,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "LLA Position",
+    "kind": "report",
+    "object_type": "Satellite",
+    "content": [
+      {
+        "provider": "LLA State",
+        "group": "Fixed",
+        "elements": [
+          "Time",
+          "Lat",
+          "Lon",
+          "Alt",
+          "Lat Rate",
+          "Lon Rate",
+          "Alt Rate"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "All DOPs",
+    "kind": "report",
+    "object_type": "Facility",
+    "content": [
+      {
+        "provider": "Dilution of Precision",
+        "group": "All Systems",
+        "elements": [
+          "Time",
+          "GDOP",
+          "PDOP",
+          "HDOP",
+          "VDOP",
+          "TDOP"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "All DOPs",
+    "kind": "graph",
+    "object_type": "Facility",
+    "content": [
+      {
+        "provider": "Dilution of Precision",
+        "group": "All Systems",
+        "elements": [
+          "Time",
+          "GDOP",
+          "PDOP",
+          "HDOP",
+          "VDOP",
+          "TDOP"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "time_xy",
+      "y1": [
+        "GDOP",
+        "PDOP",
+        "HDOP",
+        "VDOP",
+        "TDOP"
+      ],
+      "y2": [],
+      "stack": false
+    },
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "N Asset Coverage",
+    "kind": "report",
+    "object_type": "Facility",
+    "content": [
+      {
+        "provider": "N Asset Coverage",
+        "group": null,
+        "elements": [
+          "Time",
+          "Total",
+          "GPS",
+          "GLONASS",
+          "Galileo",
+          "BeiDou"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": null,
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  },
+  {
+    "name": "N Asset Coverage",
+    "kind": "graph",
+    "object_type": "Facility",
+    "content": [
+      {
+        "provider": "N Asset Coverage",
+        "group": null,
+        "elements": [
+          "Time",
+          "Total",
+          "GPS",
+          "GLONASS",
+          "Galileo",
+          "BeiDou"
+        ]
+      }
+    ],
+    "time": {
+      "mode": "object_period",
+      "step_s": null
+    },
+    "summary": {
+      "per_object": [],
+      "global_statistics": [],
+      "summary_only": false
+    },
+    "graph": {
+      "type": "time_xy",
+      "y1": [
+        "GPS",
+        "GLONASS",
+        "Galileo",
+        "BeiDou"
+      ],
+      "y2": [],
+      "stack": true
+    },
+    "dynamic": true,
+    "derive": null,
+    "ours": false
+  }
+]

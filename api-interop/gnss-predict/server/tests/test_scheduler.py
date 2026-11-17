@@ -1,0 +1,1241 @@
+"""งานประจำวัน (หัวข้อ 9 ของ spec server; ข้อ P7): `Scheduler.tick(now)` ด้วยนาฬิกาจำลอง และ `daily.run_daily`
+
+- ไม่ใช้เน็ตเด็ดขาด: `studio.fetch_snapshot` และ `studio.run_validate` ถูกแทนในทุก test (fixture `no_network`)
+  fetch ปลอมคัดลอก snapshot ของ test ไปเป็น snapshot ใหม่ GMAT เป็นของปลอม (`fake_gmat` ของ conftest)
+- JobManager ใช้ InlineRunner และนาฬิกาเดียวกับตัวตั้งเวลา job ที่ tick สั่งรันใน thread ของคิว test รอจนจบเอง (มีขอบเวลา)
+- ไม่เริ่ม thread ของตัวตั้งเวลาจริง ยกเว้น test ของ thread เองที่ใช้คาบสั้นและนาฬิกาจำลอง
+"""
+
+import json
+import logging
+import os
+import re
+import shutil
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from conftest import SNAPSHOT_ID, SNAPSHOT_SRC
+from gnss_predict import studio
+from gnss_predict.errors import (GmatRunError, GnssPredictError, Message, OrbitUnavailableError, Sp3UnavailableError,
+                                 TleUnavailableError)
+
+from gnss_studio_server import daily as daily_module
+from gnss_studio_server import scheduler as scheduler_module
+from gnss_studio_server.events import EventBus
+from gnss_studio_server.jobs import InlineRunner, JobManager
+from gnss_studio_server.scheduler import Scheduler
+from gnss_studio_server.settings import Daily, Settings, save as save_settings
+from gnss_studio_server.store import ScenarioStore
+from gnss_studio_server.templates import new_scenario
+
+TIMEOUT = 10.0
+FINISHED = ("succeeded", "failed", "cancelled")
+ISO_Z_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+
+
+def T(text: str) -> datetime:
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
+# ---------- เครื่องมือ ----------
+
+class FakeClock:
+    def __init__(self, t: datetime):
+        self.t = t
+
+    def __call__(self) -> datetime:
+        return self.t
+
+
+class RecordingBus(EventBus):
+    """EventBus ที่จำทุก event (ไม่ต้องมี event loop)"""
+
+    def __init__(self):
+        super().__init__()
+        self.events: list[tuple[str, dict]] = []
+        self._rec_lock = threading.Lock()
+
+    def publish(self, event: str, data: dict) -> None:
+        with self._rec_lock:
+            self.events.append((event, data))
+        super().publish(event, data)
+
+    def of(self, event: str) -> list[dict]:
+        with self._rec_lock:
+            return [d for e, d in self.events if e == event]
+
+    def messages(self, code: str) -> list[dict]:
+        return [m for m in self.of("message") if m["code"] == code]
+
+
+class FakeFetch:
+    """แทน studio.fetch_snapshot: คัดลอก snapshot ของ test ไปที่ data/orbits/<now:%Y%m%dT%H%MZ> (ไม่ใช้เน็ต)
+
+    empty=True: สร้าง snapshot เปล่า (ไม่มีไฟล์ OMM) raises: raise แทน"""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+        self.raises: BaseException | None = None
+        self.empty = False
+
+    def __call__(self, data_dir, now, systems="GREC", progress=None, **kw):
+        self.calls.append({"now": now, "systems": systems})
+        if self.raises is not None:
+            raise self.raises
+        report = progress or (lambda stage, fraction: None)
+        report("omm", 0.0)
+        dest = Path(data_dir) / "orbits" / now.astimezone(timezone.utc).strftime("%Y%m%dT%H%MZ")
+        if self.empty:
+            dest.mkdir(parents=True, exist_ok=True)
+        else:
+            shutil.copytree(SNAPSHOT_SRC, dest, dirs_exist_ok=True)
+        report("done", 1.0)
+        return dest, [Message("OMM_FROM_CACHE", "info", "ใช้ข้อมูลวงโคจรจาก cache (test)")]
+
+
+class FakeValidate:
+    """แทน studio.run_validate: mode "truth" = ยังไม่มี SP3 จริง (TRUTH_UNAVAILABLE) mode "ok" = เขียน validation_<day>.json
+    ลง ephem bundle ที่ current (hash จาก plan_propagate) mode เป็น exception = raise ตัวนั้น"""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+        self.mode = "truth"
+
+    def __call__(self, scenario_dir, day, data_dir, sp3=None, facility=None, console=None, progress=None,
+                 on_gmat_start=None):
+        self.calls.append((Path(scenario_dir).name, day.isoformat()))
+        if self.mode == "truth":
+            raise Sp3UnavailableError(f"ยังไม่มี SP3 ของ MGEX สำหรับวันที่ {day.isoformat()} (test)")
+        if isinstance(self.mode, BaseException):
+            raise self.mode
+        bundle = Path(scenario_dir) / "ephem" / studio.plan_propagate(scenario_dir, data_dir).hash
+        bundle.mkdir(parents=True, exist_ok=True)
+        (bundle / f"validation_{day.isoformat()}.json").write_text("{}")
+        return bundle, []
+
+
+class FakeDaily:
+    """แทน daily.run_daily ใน test กติกาของ tick: ไม่ fetch ไม่ propagate คืนผลตามรูปแบบจริง
+    block=True รอ release (มีขอบเวลา) ก่อนจบ raises: raise แทน"""
+
+    def __init__(self, block: bool = False):
+        self.calls: list[date] = []
+        self.raises: BaseException | None = None
+        self.release = threading.Event()
+        self.entered = threading.Event()
+        if not block:
+            self.release.set()
+
+    def __call__(self, data_dir, for_date, settings, now, progress=None, *, console=None, on_gmat_start=None):
+        self.calls.append(for_date)
+        self.entered.set()
+        assert self.release.wait(TIMEOUT), "test ไม่ปล่อย FakeDaily"
+        if self.raises is not None:
+            raise self.raises
+        return {"path": Path(data_dir) / "daily" / f"thbk_gnss_pred_{for_date:%Y%m%d}_24h.csv",
+                "scenario": f"daily_{for_date:%Y%m%d}", "messages": []}
+
+
+def _raise(exc):
+    def fn(*args, **kw):
+        raise exc
+    return fn
+
+
+def wait_until(pred, timeout: float = TIMEOUT, what: str = "เงื่อนไข"):
+    deadline = time.monotonic() + timeout
+    while not pred():
+        assert time.monotonic() < deadline, f"รอ {what} เกิน {timeout} วินาที"
+        time.sleep(0.005)
+
+
+def wait_done(jobs: JobManager, job_id: str):
+    wait_until(lambda: jobs.get(job_id).state in FINISHED, what=f"job {job_id} จบ")
+    return jobs.get(job_id)
+
+
+def write_job(data_dir: Path, **fields) -> dict:
+    """บันทึก job บนดิสก์เหมือนที่ server รุ่นก่อนทิ้งไว้ (อ่านเข้าด้วย jobs.recover())"""
+    rec = {"id": "j-20261111T210000-0001", "kind": "daily", "scenario": None, "params": {}, "state": "succeeded",
+           "progress": None, "messages": [], "result": None, "error": None, "created_utc": "2026-11-11T21:00:00.000Z",
+           "started_utc": None, "finished_utc": None, "origin": "scheduler", "gmat_pgid": None, **fields}
+    path = data_dir / "jobs" / f"{rec['id']}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rec))
+    return rec
+
+
+def make_scenario(data_dir: Path, name: str, day: str, daily: bool = True, description: str = "") -> Path:
+    """scenario จากแม่แบบ thbk-gnss ช่วง 24 ชม. ของ day (snapshot ของ test) daily=True ใส่ช่อง daily แบบงานประจำวัน"""
+    d = date.fromisoformat(day)
+    doc = new_scenario(name, f"{day}T00:00:00Z", f"{d + timedelta(days=1)}T00:00:00Z", "thbk-gnss", SNAPSHOT_ID, data_dir)
+    doc["description"] = description
+    if daily:
+        doc["daily"] = {"for_date": day, "created_utc": f"{d - timedelta(days=1)}T21:00:00Z"}
+    ScenarioStore(data_dir).create(name, doc)
+    return data_dir / "scenarios" / name
+
+
+def make_daily(data_dir: Path, day: str, **kw) -> Path:
+    return make_scenario(data_dir, f"daily_{date.fromisoformat(day):%Y%m%d}", day, **kw)
+
+
+def state_file(data_dir: Path) -> Path:
+    return data_dir / "daily" / "state.json"
+
+
+def write_state(data_dir: Path, last_attempt: str | None, given_up=()) -> None:
+    path = state_file(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"last_validation_attempt_utc": last_attempt,
+                                "given_up": [{"scenario": s, "day": d} for s, d in given_up]}))
+
+
+def disable(data_dir: Path) -> None:
+    save_settings(data_dir, Settings(daily=Daily(enabled=False)))
+
+
+# ---------- fixture ----------
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """ทุก test ในไฟล์นี้: ห้ามดึงข้อมูลจริง (fetch และ validate ถูกแทนด้วยของปลอม)"""
+    fetch, validate = FakeFetch(), FakeValidate()
+    monkeypatch.setattr(studio, "fetch_snapshot", fetch)
+    monkeypatch.setattr(studio, "run_validate", validate)
+    monkeypatch.setattr(studio, "propagate", _raise(AssertionError("ห้ามรัน GMAT จริงใน test (ใช้ fake_gmat)")))
+    return fetch, validate
+
+
+@pytest.fixture
+def fetch(no_network) -> FakeFetch:
+    return no_network[0]
+
+
+@pytest.fixture
+def validate(no_network) -> FakeValidate:
+    return no_network[1]
+
+
+@pytest.fixture
+def clock():
+    return FakeClock(T("2026-11-11T12:00Z"))
+
+
+@pytest.fixture
+def bus():
+    return RecordingBus()
+
+
+@pytest.fixture
+def jobs(data_dir, bus, clock):
+    mgr = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
+    mgr.start()
+    yield mgr
+    mgr.stop()
+
+
+@pytest.fixture
+def sched(data_dir, jobs, bus, clock):
+    return Scheduler(data_dir, jobs, bus=bus, clock=clock)
+
+
+@pytest.fixture
+def at(sched, jobs, clock):
+    """ตั้งนาฬิกาแล้ว tick คืน id ที่สั่ง และรอให้ job พวกนั้นจบ (wait=False ไม่รอ)"""
+    def tick(text: str, wait: bool = True) -> list[str]:
+        clock.t = T(text)
+        ids = sched.tick(clock.t)
+        if wait:
+            for job_id in ids:
+                wait_done(jobs, job_id)
+        return ids
+    return tick
+
+
+@pytest.fixture
+def quick_daily(monkeypatch) -> FakeDaily:
+    fake = FakeDaily()
+    monkeypatch.setattr(daily_module, "run_daily", fake)
+    return fake
+
+
+# ---------- พยากรณ์: เวลาและกติกาการสั่ง ----------
+
+def test_runs_at_2100(sched, at, jobs, quick_daily):
+    assert sched.tick(T("2026-11-11T20:59Z")) == []
+    ids = at("2026-11-11T21:00Z")
+    assert len(ids) == 1
+    j = jobs.get(ids[0])
+    assert (j.kind, j.scenario, j.params, j.origin) == ("daily", None, {"for_date": "2026-11-12"}, "scheduler")
+    assert j.state == "succeeded"
+    assert j.result == {"path": "daily/thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112"}
+    assert quick_daily.calls == [date(2026, 11, 12)]
+
+
+def test_no_second_run_same_day(at, jobs, quick_daily):
+    assert len(at("2026-11-11T21:00Z")) == 1
+    assert at("2026-11-11T21:05Z") == []
+    assert at("2026-11-11T23:59Z") == []
+    assert at("2026-11-12T20:59Z") == []
+    nxt = at("2026-11-12T21:00Z")                                  # วันถัดไป: D เลื่อนเป็น 13
+    assert len(nxt) == 1 and jobs.get(nxt[0]).params == {"for_date": "2026-11-13"}
+    assert quick_daily.calls == [date(2026, 11, 12), date(2026, 11, 13)]
+
+
+def test_missed_run_after_interrupted_daily(sched, data_dir, jobs, quick_daily):          # Review Focus 4
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-12"}, state="running",
+              started_utc="2026-11-11T21:00:01.000Z")
+    jobs.recover()
+    old = jobs.get("j-20261111T210000-0001")
+    assert old.state == "failed" and old.error["code"] == "INTERRUPTED"
+    ids = sched.tick(T("2026-11-11T23:30Z"))
+    assert len(ids) == 1
+    new = wait_done(jobs, ids[0])
+    assert new.params == {"for_date": "2026-11-12"} and new.state == "succeeded" and new.origin == "scheduler"
+    assert sched.tick(T("2026-11-11T23:31Z")) == []                # สำเร็จแล้ว: ไม่รันซ้ำ
+
+
+def test_restart_after_successful_daily_does_not_rerun(sched, data_dir, jobs, quick_daily):  # Review Focus 4
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-12"}, state="succeeded",
+              started_utc="2026-11-11T21:00:01.000Z", finished_utc="2026-11-11T21:04:00.000Z",
+              result={"path": "daily/thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112"})
+    jobs.recover()
+    assert sched.tick(T("2026-11-11T23:30Z")) == []
+    assert quick_daily.calls == []
+
+
+def test_missed_run_runs_when_server_starts_late(at, jobs, quick_daily):
+    ids = at("2026-11-11T23:45Z")                                  # เปิด server หลัง 21:00 โดยไม่เคยรันของ D
+    assert len(ids) == 1 and jobs.get(ids[0]).params == {"for_date": "2026-11-12"}
+
+
+def test_failed_daily_is_not_resubmitted(at, jobs, bus, quick_daily):
+    quick_daily.raises = GmatRunError("GMAT ทำงานไม่สำเร็จ (test)")
+    ids = at("2026-11-11T21:00Z")
+    j = jobs.get(ids[0])
+    assert j.state == "failed" and j.error["code"] == "GMAT_FAILED"
+    errors = [m for m in bus.messages("GMAT_FAILED") if m["level"] == "error"]
+    assert errors, "ความล้มเหลวของงานประจำวันต้องมีข้อความระดับ error"
+    assert at("2026-11-11T21:01Z") == []                           # รอรอบวันถัดไป ไม่สั่งซ้ำทุกนาที
+    assert at("2026-11-11T23:59Z") == []
+    assert quick_daily.calls == [date(2026, 11, 12)]
+    quick_daily.raises = None
+    nxt = at("2026-11-12T21:00Z")
+    assert len(nxt) == 1 and jobs.get(nxt[0]).params == {"for_date": "2026-11-13"}
+
+
+def test_existing_csv_skips_forecast(at, data_dir, quick_daily):
+    out = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    out.parent.mkdir(parents=True)
+    out.write_text("ทำไว้แล้ว\n")
+    assert at("2026-11-11T21:00Z") == []
+    assert quick_daily.calls == []
+
+
+def test_queued_daily_is_not_duplicated(data_dir, bus, clock):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)        # ไม่เริ่มคิว: job ค้าง queued
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    first = sched.tick(T("2026-11-11T21:00Z"))
+    assert len(first) == 1 and idle.get(first[0]).state == "queued"
+    assert sched.tick(T("2026-11-11T21:01Z")) == []
+    assert len(idle.list()) == 1
+
+
+def test_cancelled_daily_is_not_resubmitted(data_dir, bus, clock):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    (job_id,) = sched.tick(T("2026-11-11T21:00Z"))
+    assert idle.cancel(job_id).state == "cancelled"                 # Stop บนแถบสถานะ: ผู้ใช้ไม่ต้องการรอบนี้
+    assert sched.tick(T("2026-11-11T21:01Z")) == []
+
+
+def test_run_at_and_enabled_are_reread_every_tick(at, data_dir, jobs, quick_daily):
+    disable(data_dir)
+    assert at("2026-11-11T21:00Z") == []
+    save_settings(data_dir, Settings(daily=Daily(enabled=True, run_at_utc="22:30")))
+    assert at("2026-11-11T22:29Z") == []
+    ids = at("2026-11-11T22:30Z")
+    assert len(ids) == 1 and jobs.get(ids[0]).params == {"for_date": "2026-11-12"}
+
+
+# ---------- สั่งงานประจำวันเอง: POST /api/daily/run ----------
+
+@pytest.fixture
+def idle_app(data_dir, no_web_dist, clock):
+    """แอปที่ไม่เริ่มคิวและตัวตั้งเวลา (job ค้าง queued ไม่ดึงข้อมูลจริง) คิวและตัวตั้งเวลาใช้นาฬิกาจำลองตัวเดียวกัน"""
+    from conftest import make_client
+    from gnss_studio_server.app import create_app
+    from gnss_studio_server.config import Config
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
+    app.state.jobs.clock = clock
+    app.state.scheduler.clock = clock
+    return make_client(app)
+
+
+def run_daily_by_hand(client, body=None):
+    return client.post("/api/daily/run", json=body) if body is not None else client.post("/api/daily/run")
+
+
+def test_interrupted_daily_after_midnight_is_not_caught_up_but_can_be_run_by_hand(idle_app, data_dir, clock):
+    """พฤติกรรมปัจจุบันของตัวตั้งเวลา (ไม่ขยายช่วงไล่ทันอัตโนมัติ: จะเริ่มดาวน์โหลดในเวลาใหม่ ต้องให้ผู้ใช้ยินยอมก่อน):
+    งานของ D ที่ถูกขัดจังหวะ แล้วเปิด server ใหม่ตอน 01:00 UTC ของวัน D ไม่ถูกสั่งเอง ผู้ใช้สั่งเองได้ด้วย POST /api/daily/run"""
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-12"}, state="running",
+              started_utc="2026-11-11T21:00:01.000Z")
+    jobs, sched = idle_app.app.state.jobs, idle_app.app.state.scheduler
+    jobs.recover()
+    assert jobs.get("j-20261111T210000-0001").error["code"] == "INTERRUPTED"
+    clock.t = T("2026-11-12T01:00Z")
+    assert sched.tick(clock.t) == []                               # D = 2026-11-13 ยังไม่ถึง run_at_utc, 2026-11-12 ไม่ไล่ทัน
+    assert sched.tick(T("2026-11-12T20:59Z")) == []
+    assert [r.id for r in jobs.list()] == ["j-20261111T210000-0001"]
+
+    r = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert r.status_code == 202, r.text
+    j = jobs.get(r.json()["job"])
+    assert (j.kind, j.scenario, j.params, j.origin, j.state) == ("daily", None, {"for_date": "2026-11-12"}, "user", "queued")
+
+
+def test_daily_run_defaults_to_the_next_utc_day(idle_app, clock):
+    clock.t = T("2026-11-11T23:59Z")
+    r = run_daily_by_hand(idle_app)
+    assert r.status_code == 202 and set(r.json()) == {"job"}
+    assert idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": "2026-11-12"}
+    clock.t = T("2026-11-12T00:00Z")
+    r = run_daily_by_hand(idle_app, {})
+    assert idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": "2026-11-13"}
+
+
+@pytest.mark.parametrize("day", ["2026-11-10", "2026-11-11", "2026-11-12"])
+def test_daily_run_accepts_yesterday_today_and_tomorrow(idle_app, day):
+    r = run_daily_by_hand(idle_app, {"for_date": day})
+    assert r.status_code == 202 and idle_app.app.state.jobs.get(r.json()["job"]).params == {"for_date": day}
+
+
+@pytest.mark.parametrize("day", ["2026-11-09", "2026-11-13", "2027-11-12", "20261112", "2026-02-30", "2026-11-12 ", "",
+                                 "tomorrow", 20261112, None])
+def test_daily_run_rejects_dates_outside_the_window(idle_app, data_dir, day):
+    r = run_daily_by_hand(idle_app, {"for_date": day})
+    assert r.status_code == 422, r.text
+    j = r.json()
+    assert j["code"] == "SCENARIO_INVALID" and j["field"] == "for_date" and re.search("[\u0e00-\u0e7f]", j["text"])
+    assert idle_app.app.state.jobs.list() == [] and not (data_dir / "jobs").exists()
+
+
+def test_daily_run_rejects_unknown_fields(idle_app):
+    r = run_daily_by_hand(idle_app, {"for_date": "2026-11-12", "force": True})
+    assert r.status_code == 422 and r.json()["field"] == "force"
+    assert idle_app.app.state.jobs.list() == []
+
+
+def test_daily_run_conflicts_with_a_queued_daily_for_that_date(idle_app):
+    jobs = idle_app.app.state.jobs
+    first = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert first.status_code == 202
+    again = run_daily_by_hand(idle_app, {"for_date": "2026-11-12"})
+    assert again.status_code == 409
+    j = again.json()
+    assert j["code"] == "JOB_RUNNING" and j["detail"] == first.json()["job"] and re.search("[\u0e00-\u0e7f]", j["text"])
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-11"}).status_code == 202          # วันอื่นสั่งได้
+    assert len(jobs.list()) == 2
+
+
+def test_daily_run_conflicts_with_the_schedulers_queued_job(idle_app, clock):
+    clock.t = T("2026-11-11T21:00Z")
+    (auto,) = idle_app.app.state.scheduler.tick(clock.t)
+    r = run_daily_by_hand(idle_app)
+    assert r.status_code == 409 and r.json()["code"] == "JOB_RUNNING" and r.json()["detail"] == auto
+
+
+def test_daily_run_reruns_failed_cancelled_and_published_days(idle_app, data_dir):
+    jobs = idle_app.app.state.jobs
+    write_job(data_dir, kind="daily", params={"for_date": "2026-11-10"}, state="failed",
+              error={"code": "GMAT_FAILED", "text": "GMAT ล้มเหลว", "detail": None})
+    jobs.recover()
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-10"}).status_code == 202           # ล้มเหลว
+    cancelled = run_daily_by_hand(idle_app, {"for_date": "2026-11-11"}).json()["job"]
+    assert jobs.cancel(cancelled).state == "cancelled"
+    again = run_daily_by_hand(idle_app, {"for_date": "2026-11-11"})                              # ถูกยกเลิก
+    assert again.status_code == 202 and again.json()["job"] != cancelled
+    out = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    out.parent.mkdir(parents=True)
+    out.write_text("ของเดิม\n")
+    assert run_daily_by_hand(idle_app, {"for_date": "2026-11-12"}).status_code == 202           # มี CSV แล้วก็สั่งซ้ำได้
+
+
+def test_daily_run_by_hand_overwrites_the_days_csv(data_dir, no_web_dist, clock, fetch, fake_gmat):
+    """รันจริงในคิว (InlineRunner, fetch และ GMAT ปลอม) CSV ของวันนั้นที่มีอยู่แล้วถูกเขียนทับเมื่อสำเร็จ"""
+    from conftest import make_client
+    from gnss_studio_server.app import create_app
+    from gnss_studio_server.config import Config
+    app = create_app(Config(data_dir=data_dir, web_dist=no_web_dist), start_background=False)
+    app.state.jobs = JobManager(data_dir, app.state.bus, runner=InlineRunner(), clock=clock, logger=app.state.logger)
+    out = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    out.parent.mkdir(parents=True)
+    out.write_text("ของเดิม\n")
+    app.state.jobs.start()
+    try:
+        r = run_daily_by_hand(make_client(app), {"for_date": "2026-11-12"})
+        assert r.status_code == 202
+        j = wait_done(app.state.jobs, r.json()["job"])
+    finally:
+        app.state.jobs.stop()
+    assert j.state == "succeeded" and j.origin == "user", j.error
+    legacy = _legacy_csv(data_dir, "daily_20261112").read_bytes()
+    assert out.read_bytes() == legacy and (data_dir / "daily" / "latest.csv").read_bytes() == legacy
+    assert len(fetch.calls) == 1
+
+
+# ---------- ปิดงานประจำวัน ----------
+
+@pytest.mark.parametrize("settings_bytes", [None, b"{not json", b'{"daily": {}}'])
+def test_disabled_does_nothing(sched, at, data_dir, jobs, quick_daily, validate, snapshot, settings_bytes):
+    if settings_bytes is None:
+        disable(data_dir)
+    else:                                                          # ไฟล์ค่าตั้งเสียหรือไม่ยืนยัน enabled = fail safe ปิด
+        (data_dir / "settings.json").write_bytes(settings_bytes)
+    sc = make_daily(data_dir, "2026-11-12")                       # ทั้งรอตรวจย้อนหลังและเก่าพอให้ลบผลได้
+    _bundle(sc, "ephem/abc123", {"predicted.sp3": "x"})
+    for when in ("2026-11-11T21:00Z", "2026-11-13T06:00Z", "2026-11-30T21:00Z", "2027-01-30T21:00Z"):
+        assert at(when) == []
+    assert jobs.list() == [] and quick_daily.calls == [] and validate.calls == []
+    assert (sc / "ephem" / "abc123" / "predicted.sp3").is_file()
+    assert not (data_dir / "daily").exists() and not (data_dir / "validation").exists()
+
+
+# ---------- run_daily ----------
+
+def _legacy_csv(data_dir: Path, scenario: str, facility: str = "THBK") -> Path:
+    sc = data_dir / "scenarios" / scenario
+    return sc / "access" / facility / studio.plan_analyze(sc, facility, data_dir) / "legacy_gps.csv"
+
+
+def test_daily_outputs(sched, at, data_dir, jobs, bus, fetch, fake_gmat):
+    ids = at("2026-11-11T21:00Z")
+    j = jobs.get(ids[0])
+    assert j.state == "succeeded", j.error
+    assert j.result == {"path": "daily/thbk_gnss_pred_20261112_24h.csv", "scenario": "daily_20261112"}
+    assert len(fetch.calls) == 1 and fetch.calls[0]["systems"] == "GREC"
+
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    assert doc["daily"]["for_date"] == "2026-11-12" and ISO_Z_RE.match(doc["daily"]["created_utc"])
+    assert doc["analysis_period"] == {"start": "2026-11-12T00:00:00Z", "stop": "2026-11-13T00:00:00Z"}
+    snapshots = sorted(p.name for p in (data_dir / "orbits").iterdir())
+    assert doc["orbit_snapshot"] in snapshots                     # snapshot ที่เพิ่งดึง
+    assert [o["name"] for o in doc["objects"] if o["class"] == "Facility"] == ["THBK"]
+
+    legacy = _legacy_csv(data_dir, "daily_20261112").read_bytes()
+    assert legacy.startswith(b"DAY,Time,PRN,Az,El") and legacy.count(b"\n") > 1      # มีแถวข้อมูลจริง
+    assert (data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv").read_bytes() == legacy
+    assert (data_dir / "daily" / "latest.csv").read_bytes() == legacy
+    assert not list((data_dir / "daily").glob("*.tmp*")), "ไฟล์ชั่วคราวต้องไม่ค้าง"
+
+    codes = [m["code"] for m in j.messages]
+    assert "OMM_FROM_CACHE" in codes and codes[-1] == "DAILY_PUBLISHED"     # ข้อความของ engine ส่งผ่าน + ข้อความผลลัพธ์
+    assert bus.messages("DAILY_PUBLISHED")[0]["level"] == "info"
+    assert j.progress == {"stage": "done", "fraction": 1.0}
+    assert at("2026-11-11T21:05Z") == []
+
+
+def test_daily_overwrites_existing_scenario(at, data_dir, jobs, snapshot, fake_gmat):
+    make_daily(data_dir, "2026-11-12", description="ของเก่า")
+    (job_id,) = at("2026-11-11T21:00Z")
+    assert jobs.get(job_id).state == "succeeded"
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    assert doc["description"] == "" and doc["orbit_snapshot"] != SNAPSHOT_ID
+    assert doc["daily"]["created_utc"] != "2026-11-11T21:00:00Z"
+
+
+def test_daily_refuses_to_overwrite_a_user_scenario(at, data_dir, jobs, fetch, snapshot, fake_gmat):
+    """scenario ชื่อ daily_<D> ที่ไม่มีช่อง daily เป็นของผู้ใช้: งานประจำวันต้องไม่เขียนทับ ไม่ดึงข้อมูล และไม่มี CSV"""
+    sc = make_daily(data_dir, "2026-11-12", daily=False, description="ของผู้ใช้")
+    before = (sc / "scenario.json").read_bytes()
+    with pytest.raises(GnssPredictError) as e:
+        daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    assert e.value.code == "SCENARIO_INVALID" and "daily_20261112" in str(e.value) and "ผู้ใช้" in str(e.value)
+    (job_id,) = at("2026-11-11T21:00Z")
+    j = jobs.get(job_id)
+    assert j.state == "failed" and j.error["code"] == "SCENARIO_INVALID" and "ผู้ใช้" in j.error["text"]
+    assert (sc / "scenario.json").read_bytes() == before
+    assert fetch.calls == [] and not (data_dir / "daily").exists()
+
+
+def test_daily_marks_the_facility_access_computed(data_dir, fetch, fake_gmat):
+    daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    thbk = [a for a in doc["accesses"] if a["from"] == "*/Facility/THBK"]
+    assert thbk and all(a["computed"] is True for a in thbk)
+    assert doc["daily"]["for_date"] == "2026-11-12"
+    sc = data_dir / "scenarios" / "daily_20261112"
+    assert studio.plan_analyze(sc, "THBK", data_dir) == _legacy_csv(data_dir, "daily_20261112").parent.name   # ผลยัง current
+
+
+def test_daily_leaves_access_not_computed_when_analyze_fails(data_dir, fetch, fake_gmat, monkeypatch):
+    monkeypatch.setattr(studio, "run_analyze", _raise(GmatRunError("GMAT ล้มเหลว (test)")))
+    with pytest.raises(GnssPredictError):
+        daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00Z"), None)
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    assert all(a["computed"] is False for a in doc["accesses"])
+
+
+def test_run_daily_reports_stages_and_uses_settings(data_dir, fetch, fake_gmat, monkeypatch):
+    seen = []
+    real_analyze = studio.run_analyze
+
+    def spy_analyze(scenario_dir, facility, *args, **kw):
+        seen.append(facility)
+        return real_analyze(scenario_dir, facility, *args, **kw)
+
+    monkeypatch.setattr(studio, "run_analyze", spy_analyze)
+    stages: list[tuple[str, float]] = []
+    out = daily_module.run_daily(data_dir, date(2026, 11, 12), Settings(), T("2026-11-11T21:00:41Z"),
+                                 lambda stage, fraction: stages.append((stage, fraction)))
+    assert out["path"] == data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv" and out["path"].is_file()
+    assert out["scenario"] == "daily_20261112"
+    assert all(isinstance(m, Message) for m in out["messages"])
+    assert seen == ["THBK"]
+    assert fetch.calls[0]["now"] == T("2026-11-11T21:00:41Z")
+    doc, _ = ScenarioStore(data_dir).read("daily_20261112")
+    assert doc["daily"] == {"for_date": "2026-11-12", "created_utc": "2026-11-11T21:00:41Z"}
+    assert doc["orbit_snapshot"] == "20261111T2100Z"
+
+    order = []
+    for stage, _ in stages:
+        head = stage.split(".")[0]
+        if not order or order[-1] != head:
+            order.append(head)
+    assert order == ["fetch", "scenario", "propagate", "analyze", "publish", "done"]
+    fractions = [f for _, f in stages]
+    assert fractions == sorted(fractions) and stages[-1] == ("done", 1.0)
+    assert any(stage.endswith(".gmat") for stage, _ in stages)                  # worker รู้ว่า GMAT ทำงานอยู่ (ยกเลิกได้)
+
+
+@pytest.mark.parametrize("case, code", [
+    ("fetch", "ORBIT_SOURCE_UNAVAILABLE"),
+    ("empty_snapshot", "ORBIT_SOURCE_UNAVAILABLE"),                # ApiError ของแม่แบบ: คงรหัสไว้ ไม่ใช่ INTERNAL
+    ("gmat", "GMAT_FAILED"),
+    ("facility", "SCENARIO_INVALID"),
+])
+def test_run_daily_fails_with_the_step_code(data_dir, fetch, fake_gmat, monkeypatch, case, code):
+    settings = Settings()
+    if case == "fetch":
+        fetch.raises = TleUnavailableError("ดึง OMM ไม่ได้ (test)")
+    elif case == "empty_snapshot":
+        fetch.empty = True
+    elif case == "gmat":
+        monkeypatch.setattr(studio, "propagate", _raise(GmatRunError("GMAT ล้มเหลว (test)")))
+    else:
+        settings = Settings(daily=Daily(facility="NOPE"))
+    with pytest.raises(GnssPredictError) as e:
+        daily_module.run_daily(data_dir, date(2026, 11, 12), settings, T("2026-11-11T21:00Z"), None)
+    assert e.value.code == code and str(e.value)
+    assert not (data_dir / "daily").exists(), "ล้มเหลวแล้วต้องไม่มีไฟล์ CSV"
+    if case in ("fetch", "empty_snapshot"):
+        assert not (data_dir / "scenarios" / "daily_20261112").exists()
+
+
+def test_daily_job_failure_keeps_engine_code(at, jobs, fetch, fake_gmat):
+    fetch.empty = True
+    (job_id,) = at("2026-11-11T21:00Z")
+    j = jobs.get(job_id)
+    assert j.state == "failed" and j.error["code"] == "ORBIT_SOURCE_UNAVAILABLE" and j.error["text"]
+
+
+# ---------- ตรวจย้อนหลัง ----------
+
+def test_validation_retry_then_give_up(at, data_dir, jobs, bus, clock, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert at("2026-11-12T06:00Z") == []                           # ยังไม่ผ่านไปหนึ่งวัน
+    (first,) = at("2026-11-13T06:00Z")
+    j = jobs.get(first)
+    assert (j.kind, j.scenario, j.params, j.origin) == ("validate", "daily_20261112", {"day": "2026-11-12"}, "scheduler")
+    assert j.state == "failed" and j.error["code"] == "TRUTH_UNAVAILABLE"
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-13T06:00:00Z"
+    assert at("2026-11-13T07:00Z") == []
+    assert at("2026-11-13T08:59Z") == []                           # ยังไม่ครบ 3 ชม. จากครั้งก่อน
+    assert len(at("2026-11-13T09:00Z")) == 1
+    # เส้นตาย: 14 วันหลังวันนั้นจบ = 2026-11-13T00:00Z + 14 วัน = 2026-11-27T00:00Z
+    assert len(at("2026-11-26T20:00Z")) == 1
+    assert len(at("2026-11-27T00:00Z")) == 1                       # ตรงเส้นตายพอดี: ยังไม่เลย ลองต่อ
+    assert bus.messages("VALIDATION_GAVE_UP") == []
+
+    assert at("2026-11-27T03:00Z") == []                           # เลยเส้นตายแล้ว และมีครั้งที่ไม่สำเร็จ
+    (gave_up,) = bus.messages("VALIDATION_GAVE_UP")
+    assert gave_up["level"] == "warning" and gave_up["object"] == "scenarios/daily_20261112"
+    assert "2026-11-12" in gave_up["text"] and "TRUTH_UNAVAILABLE" in gave_up["text"]
+    state = json.loads(state_file(data_dir).read_text())
+    assert {"scenario": "daily_20261112", "day": "2026-11-12"} in state["given_up"]
+    calls = len(validate.calls)
+    assert at("2026-11-27T06:00Z") == [] and at("2026-12-01T06:00Z") == []
+    assert len(validate.calls) == calls and len(bus.messages("VALIDATION_GAVE_UP")) == 1
+
+    restarted = Scheduler(data_dir, jobs, bus=bus, clock=clock)    # เปิด server ใหม่: การเลิกยังอยู่ใน state.json
+    assert restarted.tick(T("2026-12-02T06:00Z")) == []
+    assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and len(validate.calls) == calls
+
+
+@pytest.mark.parametrize("exc, code", [
+    (GmatRunError("GMAT ล้มเหลว (test)"), "GMAT_FAILED"),
+    (OrbitUnavailableError("snapshot ถูกลบ (test)"), "ORBIT_SOURCE_UNAVAILABLE"),
+    (RuntimeError("bug (test)"), "INTERNAL"),
+])
+def test_validation_gives_up_on_any_failure_after_deadline(at, data_dir, jobs, bus, validate, snapshot, exc, code):
+    make_daily(data_dir, "2026-11-12")
+    validate.mode = exc
+    (first,) = at("2026-11-13T06:00Z")
+    assert jobs.get(first).error["code"] == code
+    assert len(at("2026-11-26T20:00Z")) == 1                       # ก่อนเส้นตาย: ลองใหม่ตามรอบ
+    assert at("2026-11-27T03:00Z") == []                           # เลยเส้นตาย: เลิกไม่ว่ารหัสอะไร
+    (gave_up,) = bus.messages("VALIDATION_GAVE_UP")
+    assert gave_up["level"] == "warning" and code in gave_up["text"]
+    assert at("2026-11-28T06:00Z") == [] and at("2026-12-05T06:00Z") == []
+    assert len(validate.calls) == 2 and len(bus.messages("VALIDATION_GAVE_UP")) == 1
+
+
+def test_validation_gives_up_after_interrupted_attempt(at, data_dir, jobs, bus, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    write_job(data_dir, id="j-20261126T060000-0001", kind="validate", scenario="daily_20261112",
+              params={"day": "2026-11-12"}, state="running", created_utc="2026-11-26T06:00:00.000Z")
+    jobs.recover()                                                 # server ปิดระหว่างตรวจ: failed INTERRUPTED
+    assert at("2026-11-28T06:00Z") == []
+    assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and validate.calls == []
+
+
+def test_validation_past_deadline_tries_once_before_giving_up(at, data_dir, bus, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert len(at("2026-12-10T06:00Z")) == 1                       # เลยเส้นตายแต่ยังไม่เคยลอง: ลองหนึ่งครั้งก่อน
+    assert bus.messages("VALIDATION_GAVE_UP") == []
+    assert at("2026-12-10T09:00Z") == []
+    assert len(bus.messages("VALIDATION_GAVE_UP")) == 1 and len(validate.calls) == 1
+
+
+def test_validation_starts_when_a_day_becomes_eligible(at, data_dir, jobs, validate, snapshot, quick_daily):
+    make_daily(data_dir, "2026-11-12")
+    at("2026-11-12T23:00Z")                                        # รอบนี้ไม่มีวันที่ตรวจได้: ไม่นับเป็นการลอง
+    assert not state_file(data_dir).exists()
+    ids = at("2026-11-13T00:30Z")                                  # ผ่านเที่ยงคืน: ตรวจทันที ไม่ต้องรอ 3 ชม. จากรอบที่ว่าง
+    assert [jobs.get(i).kind for i in ids] == ["validate"]
+    assert validate.calls == [("daily_20261112", "2026-11-12")]
+
+
+def test_validation_interval_survives_restart(at, data_dir, jobs, bus, clock, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert len(at("2026-11-13T06:00Z")) == 1
+    restarted = Scheduler(data_dir, jobs, bus=bus, clock=clock)
+    assert restarted.tick(T("2026-11-13T07:00Z")) == []
+    assert len(restarted.tick(T("2026-11-13T09:00Z"))) == 1
+
+
+def test_validation_stops_once_the_file_exists(at, data_dir, jobs, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    validate.mode = "ok"
+    (job_id,) = at("2026-11-13T06:00Z")
+    assert jobs.get(job_id).state == "succeeded"
+    assert at("2026-11-13T09:00Z") == [] and at("2026-11-14T09:00Z") == []
+    assert validate.calls == [("daily_20261112", "2026-11-12")]
+
+
+def test_validation_counts_archived_file_and_skips_other_scenarios(at, data_dir, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    archived = data_dir / "validation" / "daily_20261112" / "validation_2026-11-12.json"
+    archived.parent.mkdir(parents=True)
+    archived.write_text("{}")
+    make_scenario(data_dir, "S1", "2026-11-12", daily=False)       # ไม่ใช่ scenario รายวัน: ไม่ตรวจเอง
+    make_daily(data_dir, "2026-11-13")                             # for_date ยังไม่ผ่านไปหนึ่งวัน
+    assert at("2026-11-13T20:00Z") == []
+    assert validate.calls == []
+
+
+def test_validation_steady_state_builds_no_catalogs(at, data_dir, validate, snapshot, monkeypatch):
+    for i, day in enumerate(["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"]):
+        sc = make_daily(data_dir, day)
+        if i % 2:                                                  # บางวันย้ายไปเก็บแล้ว บางวันยังอยู่ใน ephem bundle
+            archived = data_dir / "validation" / sc.name / f"validation_{day}.json"
+            archived.parent.mkdir(parents=True)
+            archived.write_text("{}")
+        else:
+            _bundle(sc, "ephem/abc123", {f"validation_{day}.json": "{}"}, when="2026-11-09T00:00Z")
+    plans = []
+    real_plan = studio.plan_propagate
+    monkeypatch.setattr(studio, "plan_propagate", lambda *a, **kw: plans.append(a) or real_plan(*a, **kw))
+    for minute in range(5):                                        # ทุกวันตรวจแล้ว: tick ทุกนาทีต้องถูก
+        assert at(f"2026-11-10T06:0{minute}Z") == []
+    assert at("2026-11-10T12:00Z") == []
+    assert plans == [] and validate.calls == []
+
+
+def test_validation_waits_for_active_job(data_dir, bus, clock, snapshot):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    make_daily(data_dir, "2026-11-12")
+    (job_id,) = sched.tick(T("2026-11-13T06:00Z"))
+    assert idle.get(job_id).state == "queued"
+    assert sched.tick(T("2026-11-13T09:30Z")) == []                # ครบรอบแล้วแต่ job ของวันนั้นยังรออยู่
+    assert len(idle.list()) == 1
+
+
+def test_validation_submit_error_still_counts_as_attempt(at, data_dir, jobs, validate, snapshot, monkeypatch, caplog):
+    make_daily(data_dir, "2026-11-12")
+    make_daily(data_dir, "2026-11-13")
+    real_submit = jobs.submit
+    seen = []
+
+    def flaky(kind, scenario, params, origin="user"):
+        seen.append(scenario)
+        if len(seen) == 2:                                         # scenario ที่สองของรอบ: ดิสก์เต็ม
+            raise OSError("No space left on device (test)")
+        return real_submit(kind, scenario, params, origin=origin)
+
+    monkeypatch.setattr(jobs, "submit", flaky)
+    with caplog.at_level(logging.ERROR):
+        ids = at("2026-11-14T06:00Z")
+    assert [jobs.get(i).scenario for i in ids] == ["daily_20261112"]
+    assert seen == ["daily_20261112", "daily_20261113"] and "No space left on device" in caplog.text
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-14T06:00:00Z"
+    assert at("2026-11-14T06:01Z") == [] and at("2026-11-14T08:59Z") == []     # ไม่ลองซ้ำทุกนาทีระหว่างดิสก์เต็ม
+    assert len(seen) == 2
+    assert len(at("2026-11-14T09:00Z")) == 2
+
+
+def test_validation_records_attempt_even_if_every_submit_fails(at, data_dir, jobs, validate, snapshot, monkeypatch):
+    make_daily(data_dir, "2026-11-12")
+    monkeypatch.setattr(jobs, "submit", _raise(OSError("disk full (test)")))
+    assert at("2026-11-13T06:00Z") == []
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-13T06:00:00Z"
+    assert at("2026-11-13T06:01Z") == []
+
+
+def test_corrupt_state_file_is_treated_as_empty(at, data_dir, validate, snapshot, caplog):
+    make_daily(data_dir, "2026-11-12")
+    state_file(data_dir).parent.mkdir(parents=True)
+    state_file(data_dir).write_bytes(b"{not json")
+    with caplog.at_level(logging.WARNING):
+        assert len(at("2026-11-13T06:00Z")) == 1
+    assert "state.json" in caplog.text
+    assert json.loads(state_file(data_dir).read_text())["last_validation_attempt_utc"] == "2026-11-13T06:00:00Z"
+
+
+# ---------- Pending / Gave up (Scheduler.pending: อ่านอย่างเดียว) ----------
+
+def pending_item(scenario: str, day: str, state: str, next_attempt_utc: str | None) -> dict:
+    return {"scenario": scenario, "day": day, "state": state, "next_attempt_utc": next_attempt_utc}
+
+
+def test_pending_states(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")                             # ยังไม่ตรวจ: ลองครั้งถัดไป = 03:00 + 3 ชม.
+    make_daily(data_dir, "2026-11-09")                             # เลิกแล้ว
+    make_daily(data_dir, "2026-11-08")                             # ตรวจแล้ว: ไม่อยู่ในรายการ
+    make_daily(data_dir, "2026-11-12")                             # วันนี้: ยังไม่ถึงเวลาตรวจ
+    make_scenario(data_dir, "S1", "2026-11-10", daily=False)       # ไม่ใช่ scenario รายวัน
+    write_state(data_dir, "2026-11-12T03:00:00Z", given_up=[("daily_20261109", "2026-11-09")])
+    done = data_dir / "validation" / "daily_20261108" / "validation_2026-11-08.json"
+    done.parent.mkdir(parents=True)
+    done.write_text("{}")
+    assert sched.pending(T("2026-11-12T04:00Z")) == [
+        pending_item("daily_20261109", "2026-11-09", "gave_up", None),
+        pending_item("daily_20261110", "2026-11-10", "pending", "2026-11-12T06:00:00Z")]
+
+
+def test_pending_does_not_submit(sched, jobs, data_dir, snapshot, validate):
+    make_daily(data_dir, "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    assert len(sched.pending(T("2026-11-12T04:00Z"))) == 2
+    assert jobs.list() == [] and validate.calls == []
+    assert not state_file(data_dir).exists() and not (data_dir / "daily").exists()      # ไม่เขียน state
+    assert not (data_dir / "validation").exists()
+
+
+def test_pending_next_attempt_follows_the_retry_rule(data_dir, bus, clock, snapshot):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)         # ไม่เริ่มคิว: job ที่ส่งค้าง queued
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    make_daily(data_dir, "2026-11-09")
+    make_daily(data_dir, "2026-11-10")
+    now = T("2026-11-12T04:00Z")
+    only = lambda: {i["day"]: i["next_attempt_utc"] for i in sched.pending(now)}
+    assert only() == {"2026-11-09": "2026-11-12T04:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}   # ไม่เคยลอง = ตอนนี้
+    write_state(data_dir, "2026-11-12T03:00:00Z")
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)                      # state อ่านครั้งแรกที่ใช้
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T06:00:00Z"}
+    idle.submit("validate", "daily_20261110", {"day": "2026-11-10"}, origin="scheduler")       # รอ/รันอยู่ = ตอนนี้
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}
+    idle.submit("validate", "daily_20261109", {"day": "2026-11-08"})             # day ไม่ตรง: ไม่นับ
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T04:00:00Z"}
+    now = T("2026-11-12T06:00Z")                                                 # ถึงเวลาลองแล้ว: ไม่ย้อนอดีต
+    assert only() == {"2026-11-09": "2026-11-12T06:00:00Z", "2026-11-10": "2026-11-12T06:00:00Z"}
+    now = T("2026-11-12T09:30Z")
+    assert only() == {"2026-11-09": "2026-11-12T09:30:00Z", "2026-11-10": "2026-11-12T09:30:00Z"}
+
+
+def test_pending_uses_the_current_retry_hours_and_utc(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    write_state(data_dir, "2026-11-12T03:00:00Z")
+    save_settings(data_dir, Settings(daily=Daily(validation_retry_hours=12)))
+    other_zone = datetime(2026, 11, 12, 11, 0, tzinfo=timezone(timedelta(hours=7)))      # = 04:00Z
+    (item,) = sched.pending(other_zone)
+    assert item["next_attempt_utc"] == "2026-11-12T15:00:00Z"
+
+
+def test_pending_when_daily_job_is_disabled(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    write_state(data_dir, "2026-11-12T03:00:00Z", given_up=[("daily_20261109", "2026-11-09")])
+    disable(data_dir)
+    assert sched.pending(T("2026-11-12T04:00Z")) == [
+        pending_item("daily_20261109", "2026-11-09", "gave_up", None),
+        pending_item("daily_20261110", "2026-11-10", "pending", None)]            # ปิดอยู่: ไม่มีรอบถัดไป
+
+
+def test_pending_sorted_by_day_then_scenario_and_counts_every_validation_location(sched, data_dir, snapshot):
+    make_scenario(data_dir, "Zed", "2026-11-10")
+    make_scenario(data_dir, "Alpha", "2026-11-10")
+    make_daily(data_dir, "2026-11-09")
+    make_daily(data_dir, "2026-11-07")
+    kept = make_scenario(data_dir, "Kept", "2026-11-10")
+    in_bundle = make_scenario(data_dir, "InBundle", "2026-11-10")
+    _bundle(kept, "ephem/old", {"validation_2026-11-10.json": "{}"}, when="2026-11-09T00:00Z")
+    (data_dir / "validation" / "InBundle").mkdir(parents=True)
+    (data_dir / "validation" / "InBundle" / "validation_2026-11-10.json").write_text("{}")
+    _bundle(in_bundle, "ephem/x", {"validation_2026-11-09.json": "{}"})                 # วันอื่น: ไม่ใช่ของวันนี้
+    got = sched.pending(T("2026-11-12T04:00Z"))
+    assert [(i["day"], i["scenario"]) for i in got] == [
+        ("2026-11-07", "daily_20261107"), ("2026-11-09", "daily_20261109"), ("2026-11-10", "Alpha"), ("2026-11-10", "Zed")]
+
+
+def test_pending_given_up_day_with_a_file_is_not_listed(sched, data_dir, snapshot):
+    make_daily(data_dir, "2026-11-10")
+    write_state(data_dir, None, given_up=[("daily_20261110", "2026-11-10")])
+    assert [i["state"] for i in sched.pending(T("2026-11-12T04:00Z"))] == ["gave_up"]
+    done = data_dir / "validation" / "daily_20261110" / "validation_2026-11-10.json"
+    done.parent.mkdir(parents=True)
+    done.write_text("{}")                                          # ผู้ใช้สั่งตรวจเองสำเร็จภายหลัง
+    assert sched.pending(T("2026-11-12T04:00Z")) == []
+
+
+def test_pending_follows_the_real_ticks(at, sched, data_dir, validate, snapshot):
+    make_daily(data_dir, "2026-11-12")
+    assert sched.pending(T("2026-11-12T23:00Z")) == []             # วันนี้ยังไม่ถึงเวลา
+    assert sched.pending(T("2026-11-13T00:30Z")) == [pending_item("daily_20261112", "2026-11-12", "pending", "2026-11-13T00:30:00Z")]
+    at("2026-11-13T06:00Z")                                        # ลองแล้ว TRUTH_UNAVAILABLE
+    assert sched.pending(T("2026-11-13T06:30Z")) == [pending_item("daily_20261112", "2026-11-12", "pending", "2026-11-13T09:00:00Z")]
+    at("2026-11-27T03:00Z")                                        # เลยเส้นตาย: เลิก
+    assert sched.pending(T("2026-11-27T03:30Z")) == [pending_item("daily_20261112", "2026-11-12", "gave_up", None)]
+    state_before = state_file(data_dir).read_bytes()
+    validate.mode = "ok"
+    sched.pending(T("2026-11-27T04:00Z"))
+    assert state_file(data_dir).read_bytes() == state_before
+
+
+def test_pending_past_the_give_up_deadline_has_no_next_attempt(at, sched, data_dir, validate, jobs, snapshot):
+    """เลยเส้นตายและมี job ที่ไม่สำเร็จ: tick ถัดไปจะเลิก (`_validation`) ไม่ลองอีก จึงไม่มีเวลาลองครั้งถัดไป (ไม่ใช่ `now`)"""
+    make_daily(data_dir, "2026-11-12")
+    at("2026-11-13T06:00Z")                                        # ลองแล้ว TRUTH_UNAVAILABLE (failed)
+    assert len(at("2026-11-26T20:00Z")) == 1                       # ก่อนเส้นตาย: ยังลองต่อ
+    shown = lambda now: [(i["state"], i["next_attempt_utc"]) for i in sched.pending(T(now))]
+    assert shown("2026-11-26T21:00Z") == [("pending", "2026-11-26T23:00:00Z")]       # ลองครั้งก่อน 20:00 + 3 ชม.
+    assert shown("2026-11-27T00:00Z") == [("pending", "2026-11-27T00:00:00Z")]       # ตรงเส้นตายพอดี: ยังไม่เลย (now > deadline เท่านั้น)
+    for now in ("2026-11-27T00:00:01Z", "2026-11-27T04:00Z", "2026-12-05T12:00Z"):
+        assert shown(now) == [("pending", None)], now                                 # เลยเส้นตาย + มี job ที่ไม่สำเร็จ: tick ถัดไปเลิก
+    calls, jobs_before = len(validate.calls), len(jobs.list())
+    assert at("2026-11-27T03:00Z") == []                           # tick จริงเลิกตามที่ pending บอก
+    assert [(i["state"], i["next_attempt_utc"]) for i in sched.pending(T("2026-11-27T03:30Z"))] == [("gave_up", None)]
+    assert len(validate.calls) == calls and len(jobs.list()) == jobs_before
+
+
+def test_pending_past_the_deadline_without_a_failed_job_still_tries(sched, data_dir, snapshot):
+    """เลยเส้นตายแต่ยังไม่เคยมี job ที่ไม่สำเร็จ: `_validation` สั่งตรวจต่อ (เลิกเฉพาะเมื่อมีครั้งที่ไม่สำเร็จ)"""
+    make_daily(data_dir, "2026-11-12")
+    (item,) = sched.pending(T("2026-12-05T12:00Z"))
+    assert (item["state"], item["next_attempt_utc"]) == ("pending", "2026-12-05T12:00:00Z")
+
+
+def test_pending_with_no_daily_scenarios_is_empty(sched, data_dir):
+    assert sched.pending(T("2026-11-12T04:00Z")) == []
+
+
+# ---------- เก็บรักษา ----------
+
+OLD = "2026-11-13T00:00Z"            # mtime ตั้งต้นของ bundle: เก่ากว่าเกณฑ์เมื่อ now = 2026-12-20 และเก็บ 30 วัน
+
+
+def _bundle(sc: Path, rel: str, files: dict[str, str], when: str = OLD) -> Path:
+    """โฟลเดอร์ผลลัพธ์พร้อมไฟล์ mtime ของไฟล์และโฟลเดอร์ตั้งเป็นเวลา when ของนาฬิกาจำลอง (ไม่ขึ้นกับวันที่จริงของเครื่อง)"""
+    folder = sc / rel
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = T(when).timestamp()
+    for name, text in files.items():
+        (folder / name).write_text(text)
+        os.utime(folder / name, (stamp, stamp))
+    os.utime(folder, (stamp, stamp))
+    return folder
+
+
+def test_retention_keeps_validation(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    recent = make_daily(data_dir, "2026-11-25")
+    plain = make_scenario(data_dir, "S1", "2026-11-12", daily=False)
+    _bundle(old, "ephem/aaa111", {"predicted.sp3": "sp3", "manifest.json": "{}",
+                                  "validation_2026-11-12.json": '{"v": "new"}', "validation_2026-11-12.md": "# new",
+                                  "validation_2026-11-12.json.tmp-99": "partial"}, when="2026-11-14T00:00Z")
+    _bundle(old, "ephem/bbb222", {"validation_2026-11-12.json": '{"v": "older"}'}, when="2026-11-13T00:00Z")
+    _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "x"})
+    for sc in (recent, plain):
+        _bundle(sc, "ephem/ddd444", {"predicted.sp3": "sp3"})
+        _bundle(sc, "access/THBK/eee555", {"legacy_gps.csv": "x"})
+    published = data_dir / "daily" / "thbk_gnss_pred_20261112_24h.csv"
+    published.parent.mkdir(parents=True)
+    published.write_text("csv")
+    write_state(data_dir, "2026-12-20T05:00:00Z")                 # ตรวจย้อนหลังยังไม่ถึงรอบ (test นี้ดูแค่การเก็บรักษา)
+
+    assert at("2026-12-20T06:00Z") == []                           # เก่ากว่า 30 วัน: 2026-11-12 < 2026-11-20
+    assert not (old / "ephem").exists() and not (old / "access").exists()
+    assert (old / "scenario.json").is_file()
+    kept = data_dir / "validation" / "daily_20261112"
+    assert json.loads((kept / "validation_2026-11-12.json").read_text()) == {"v": "new"}
+    assert (kept / "validation_2026-11-12.md").read_text() == "# new"
+    assert json.loads((kept / "bbb222" / "validation_2026-11-12.json").read_text()) == {"v": "older"}  # ไม่ทับกัน
+    assert not list(kept.rglob("*.tmp*"))
+    assert published.read_text() == "csv"
+    for sc in (recent, plain):                                     # ยังไม่เก่า / ไม่ใช่ scenario รายวัน: ไม่แตะ
+        assert (sc / "ephem" / "ddd444" / "predicted.sp3").is_file()
+        assert (sc / "access" / "THBK" / "eee555" / "legacy_gps.csv").is_file()
+
+
+def test_retention_does_not_overwrite_archived_file(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"validation_2026-11-12.json": '{"v": "bundle"}'})
+    kept = data_dir / "validation" / "daily_20261112"
+    kept.mkdir(parents=True)
+    (kept / "validation_2026-11-12.json").write_text('{"v": "archived"}')
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert json.loads((kept / "validation_2026-11-12.json").read_text()) == {"v": "archived"}
+    assert json.loads((kept / "aaa111" / "validation_2026-11-12.json").read_text()) == {"v": "bundle"}
+    assert not (old / "ephem").exists()
+
+
+def test_retention_never_loses_a_validation_file(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"validation_2026-11-12.json": '{"v": "bundle"}'})
+    kept = data_dir / "validation" / "daily_20261112"
+    (kept / "aaa111").mkdir(parents=True)
+    (kept / "validation_2026-11-12.json").write_text('{"v": "top"}')
+    (kept / "aaa111" / "validation_2026-11-12.json").write_text('{"v": "same-hash"}')   # เคยเก็บจาก bundle hash เดียวกันแล้ว
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert json.loads((kept / "validation_2026-11-12.json").read_text()) == {"v": "top"}
+    assert json.loads((kept / "aaa111" / "validation_2026-11-12.json").read_text()) == {"v": "same-hash"}
+    assert json.loads((kept / "aaa111" / "validation_2026-11-12.2.json").read_text()) == {"v": "bundle"}
+    assert not (old / "ephem").exists()
+
+
+def test_retention_keeps_bundle_when_archiving_fails(at, data_dir, snapshot, caplog):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"validation_2026-11-12.json": '{"v": "bundle"}', "predicted.sp3": "sp3"})
+    _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "x"})
+    blocker = data_dir / "validation" / "daily_20261112"
+    blocker.parent.mkdir(parents=True)
+    blocker.write_text("ไม่ใช่โฟลเดอร์")                             # ที่เก็บใช้ไม่ได้: ย้ายไฟล์ validation ไม่ได้
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    with caplog.at_level(logging.ERROR):
+        assert at("2026-12-20T06:00Z") == []
+    assert json.loads((old / "ephem" / "aaa111" / "validation_2026-11-12.json").read_text()) == {"v": "bundle"}
+    assert (old / "ephem" / "aaa111" / "predicted.sp3").is_file()
+    assert not (old / "access").exists()                           # bundle ที่ไม่มีไฟล์ validation ลบได้ตามปกติ
+    assert "aaa111" in caplog.text
+
+
+def test_retention_keeps_fresh_bundles_on_old_daily_scenario(at, data_dir, snapshot):
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"predicted.sp3": "old"})
+    _bundle(old, "access/THBK/ccc333", {"legacy_gps.csv": "old"})
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert not (old / "ephem").exists() and not (old / "access").exists()
+    # ผู้ใช้เปิด scenario รายวันที่เก่าแล้วคำนวณใหม่: ผลที่เพิ่งสร้างต้องอยู่รอด tick ถัดไป
+    fresh = "2026-12-20T06:00Z"
+    _bundle(old, "ephem/fff666", {"predicted.sp3": "fresh", "validation_2026-11-12.json": "{}"}, when=fresh)
+    _bundle(old, "access/THBK/ggg777", {"legacy_gps.csv": "fresh"}, when=fresh)
+    assert at("2026-12-20T06:01Z") == [] and at("2026-12-21T06:00Z") == []
+    assert (old / "ephem" / "fff666" / "predicted.sp3").read_text() == "fresh"
+    assert (old / "ephem" / "fff666" / "validation_2026-11-12.json").is_file()   # ไม่ย้ายออกจาก bundle ที่ยังเก็บไว้
+    assert (old / "access" / "THBK" / "ggg777" / "legacy_gps.csv").read_text() == "fresh"
+    assert at("2027-01-20T06:01Z") == []                           # เก่าเกิน 30 วันแล้วจึงลบ (ย้ายไฟล์ validation ไปเก็บก่อน)
+    assert not (old / "ephem").exists() and not (old / "access").exists()
+    assert (data_dir / "validation" / "daily_20261112" / "validation_2026-11-12.json").is_file()
+
+
+def test_retention_skips_scenario_with_active_job(data_dir, bus, clock, snapshot, caplog):
+    idle = JobManager(data_dir, bus, runner=InlineRunner(), clock=clock)
+    sched = Scheduler(data_dir, idle, bus=bus, clock=clock)
+    old = make_daily(data_dir, "2026-11-12")
+    _bundle(old, "ephem/aaa111", {"predicted.sp3": "sp3"})
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    job = idle.submit("propagate", "daily_20261112", {})
+    with caplog.at_level(logging.INFO):
+        assert sched.tick(T("2026-12-20T06:00Z")) == []
+    assert (old / "ephem" / "aaa111" / "predicted.sp3").is_file()
+    assert "daily_20261112" in caplog.text
+    idle.cancel(job.id)
+    assert sched.tick(T("2026-12-20T06:01Z")) == []
+    assert not (old / "ephem").exists()
+
+
+def test_retention_never_follows_symlinks(at, data_dir, tmp_path, snapshot):
+    outside = tmp_path / "outside"
+    _bundle(outside, "bundle", {"validation_2026-11-12.json": "{}", "keep.txt": "x"})
+    linked = make_daily(data_dir, "2026-11-12")
+    (linked / "ephem").symlink_to(outside, target_is_directory=True)            # ephem/ ทั้งโฟลเดอร์ชี้ออกนอก data/
+    inner = make_daily(data_dir, "2026-11-13")
+    bundle = _bundle(inner, "ephem/aaa111", {"predicted.sp3": "sp3"})
+    (bundle / "validation_2026-11-13.json").symlink_to(outside / "bundle" / "validation_2026-11-12.json")  # ไฟล์ชี้ออกนอก
+    os.utime(bundle, (T(OLD).timestamp(), T(OLD).timestamp()))
+    (inner / "ephem" / "bbb222").symlink_to(outside / "bundle", target_is_directory=True)   # bundle ที่ชี้ออกนอก
+    write_state(data_dir, "2026-12-20T05:00:00Z")
+    assert at("2026-12-20T06:00Z") == []
+    assert (outside / "bundle" / "validation_2026-11-12.json").is_file() and (outside / "bundle" / "keep.txt").is_file()
+    assert (linked / "ephem").is_symlink()                         # ไม่ลบผ่าน symlink
+    assert not (inner / "ephem" / "aaa111").exists()               # bundle จริงลบได้ (symlink ข้างในหายแค่ตัว link)
+    assert (inner / "ephem" / "bbb222").is_symlink()               # bundle ที่เป็น symlink ไม่แตะ
+    assert not (data_dir / "validation").exists()                  # ไม่ย้ายไฟล์ผ่าน symlink
+
+
+# ---------- prune, สถานะ และ health ----------
+
+def test_prune_runs_once_per_utc_day(at, jobs, monkeypatch):
+    calls = []
+    monkeypatch.setattr(jobs, "prune", lambda now: calls.append(now))
+    disable(jobs.data_dir)                                         # prune เป็นงานของคิว job ทำแม้ปิดงานประจำวัน
+    at("2026-11-11T06:00Z")
+    at("2026-11-11T07:00Z")
+    at("2026-11-11T23:59Z")
+    at("2026-11-12T00:00Z")
+    assert calls == [T("2026-11-11T06:00Z"), T("2026-11-12T00:00Z")]
+
+
+def test_daily_status_event_follows_latest_daily_job(sched, jobs, bus, clock, monkeypatch):
+    fake = FakeDaily(block=True)
+    monkeypatch.setattr(daily_module, "run_daily", fake)
+    clock.t = T("2026-11-11T20:00Z")
+    assert sched.tick(clock.t) == []
+    assert bus.of("daily") == [{"state": "idle", "last_run_utc": None, "next_run_utc": "2026-11-11T21:00:00Z",
+                                "for_date": None}]
+    sched.tick(T("2026-11-11T20:30Z"))
+    assert len(bus.of("daily")) == 1                              # สถานะไม่เปลี่ยน: ไม่ส่งซ้ำ
+
+    clock.t = T("2026-11-11T21:00Z")
+    (job_id,) = sched.tick(clock.t)
+    running = bus.of("daily")[-1]
+    assert running["state"] == "running" and running["for_date"] == "2026-11-12"
+    assert running["next_run_utc"] == "2026-11-12T21:00:00Z"
+    fake.release.set()
+    j = wait_done(jobs, job_id)
+    clock.t = T("2026-11-11T21:01Z")
+    sched.tick(clock.t)
+    assert bus.of("daily")[-1] == {"state": "ok", "last_run_utc": j.started_utc,
+                                   "next_run_utc": "2026-11-12T21:00:00Z", "for_date": "2026-11-12"}
+    assert sched.status(T("2026-11-11T21:01Z")) == bus.of("daily")[-1]
+
+
+def test_daily_status_failed(sched, at, bus, quick_daily):
+    quick_daily.raises = GmatRunError("GMAT ล้มเหลว (test)")
+    at("2026-11-11T21:00Z")
+    at("2026-11-11T21:01Z")
+    assert bus.of("daily")[-1]["state"] == "failed"
+
+
+def test_health_reports_daily_status(client, data_dir):
+    daily = client.get("/api/health").json()["daily"]
+    assert set(daily) == {"state", "last_run_utc", "next_run_utc", "for_date"}
+    assert daily["state"] == "idle" and daily["last_run_utc"] is None and daily["for_date"] is None
+    nxt = T(daily["next_run_utc"])
+    now = datetime.now(timezone.utc)
+    assert ISO_Z_RE.match(daily["next_run_utc"]) and now - timedelta(minutes=1) < nxt <= now + timedelta(days=1)
+    assert (nxt.hour, nxt.minute) == (21, 0)
+
+    job = client.app.state.jobs.submit("daily", None, {"for_date": "2026-11-12"})       # คิวไม่ได้เริ่ม: ค้าง queued
+    daily = client.get("/api/health").json()["daily"]
+    assert daily["state"] == "running" and daily["for_date"] == "2026-11-12"
+    assert daily["last_run_utc"] == job.created_utc
+    disable(data_dir)
+    assert client.get("/api/health").json()["daily"]["next_run_utc"] is None
+
+
+def test_app_wires_scheduler_without_starting_it(client):
+    app = client.app
+    assert isinstance(app.state.scheduler, Scheduler)
+    assert app.state.settings_on_change == app.state.scheduler.wake
+    assert not any(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+
+# ---------- thread ----------
+
+def test_thread_ticks_survives_exceptions_and_stops_promptly(data_dir, jobs, bus, clock, caplog):
+    calls = []
+
+    def flaky(now):
+        calls.append(now)
+        if len(calls) == 1:
+            raise RuntimeError("boom in tick")
+        return []
+
+    sched = Scheduler(data_dir, jobs, bus=bus, clock=clock, interval_s=0.01)
+    sched.tick = flaky
+    with caplog.at_level(logging.ERROR):
+        sched.start()
+        sched.start()                                              # เรียกซ้ำไม่มีผล
+        wait_until(lambda: len(calls) >= 3, what="tick หลัง exception")
+        sched.stop()
+    assert "boom in tick" in caplog.text
+    assert all(c == clock.t for c in calls)
+    assert not any(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+    slow_calls = []
+    slow = Scheduler(data_dir, jobs, bus=bus, clock=clock, interval_s=60)
+    slow.tick = lambda now: slow_calls.append(now) or []
+    slow.start()
+    try:
+        wait_until(lambda: len(slow_calls) == 1, what="tick แรกทันทีที่เริ่ม")
+        slow.wake()                                                # ค่าตั้งเปลี่ยน: ปลุกก่อนครบ 60 วินาที
+        wait_until(lambda: len(slow_calls) == 2, what="tick หลัง wake")
+    finally:
+        t0 = time.monotonic()
+        slow.stop()
+        assert time.monotonic() - t0 < 1.0, "stop ต้องไม่รอครบคาบ 60 วินาที"
+    assert not any(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+
+def test_stop_timeout_keeps_thread_and_refuses_a_second_loop(data_dir, jobs, bus, clock, caplog):
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_tick(now):
+        entered.set()
+        assert release.wait(TIMEOUT), "test ไม่ปล่อย tick"
+        return []
+
+    def loops() -> int:
+        return sum(t.name == scheduler_module.THREAD_NAME for t in threading.enumerate())
+
+    sched = Scheduler(data_dir, jobs, bus=bus, clock=clock, interval_s=60)
+    sched.tick = slow_tick
+    sched.start()
+    try:
+        assert entered.wait(TIMEOUT)
+        with caplog.at_level(logging.WARNING):
+            sched.stop(timeout=0.05)                               # tick ยังไม่จบ: join หมดเวลา thread ยังอยู่
+        sched.start()                                              # ห้ามเริ่ม loop ที่สองซ้อนกับตัวที่ยังไม่จบ
+        assert loops() == 1
+    finally:
+        release.set()
+        sched.stop()
+    assert loops() == 0
+    entered.clear()
+    sched.start()                                                  # thread เก่าจบแล้ว: เริ่มใหม่ได้
+    try:
+        assert entered.wait(TIMEOUT) and loops() == 1
+    finally:
+        sched.stop()
+    assert loops() == 0

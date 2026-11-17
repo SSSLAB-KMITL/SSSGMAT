@@ -1,0 +1,2709 @@
+/* สีและขนาดทั้งหมดของหน้าเว็บอยู่ที่นี่ที่เดียว (โทนสว่างแบบโปรแกรมเดสก์ท็อป ตัวอักษร system UI 12 px)
+   ไฟล์อื่นใช้ผ่าน var(--...) เท่านั้น ห้ามใส่ค่าสีตรง ๆ
+   คู่ข้อความ/พื้นที่ tests/unit/theme.test.ts ตรวจ contrast WCAG AA (>= 4.5:1) ต้องเป็นสี hex ตรง ๆ ไม่ใช่ var() */
+:root {
+  color-scheme: light;
+
+  /* พื้นผิว */
+  --bg: #f0f0f0;
+  --panel: #ffffff;
+  --border: #8f8f8f;
+
+  /* ข้อความ */
+  --text: #1b1b1b;
+  --text-muted: #555555;
+
+  /* เมนูบาร์ */
+  --menu-bg: #ececec;
+  --menu-text: #1b1b1b;
+
+  /* แถบชื่อหน้าต่าง */
+  --titlebar-bg: #d6dbe3;
+  --titlebar-active-bg: #1f4e8c;
+  --titlebar-active-text: #ffffff;
+
+  /* แถวที่เลือก */
+  --selected-bg: #2563b0;
+  --selected-text: #ffffff;
+
+  /* สถานะ (ใช้เป็นสีข้อความหรือเส้นบนพื้น --panel ได้) */
+  --danger: #b3261e;
+  --warning: #8a5300;
+  /* แถบสถานะขาดการติดต่อ server (พื้นแดง ตัวอักษรขาว) และแถบเตือนดิสก์ด้านบน */
+  --danger-bg: #b3261e;
+  --danger-text: #ffffff;
+  --banner-bg: #fff3cd;
+  --banner-text: #5c3b00;
+
+  /* คำอธิบายเมื่อชี้ (tooltip) */
+  --tip-bg: #2b2b2b;
+  --tip-text: #ffffff;
+
+  /* ตัวอักษร: system UI และ monospace สำหรับตัวเลขและเวลา ไม่โหลดฟอนต์จากเครือข่าย */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", Thonburi, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-size: 12px;
+  /* ความสูงของหัวตารางแบบ sticky ในพื้นที่เลื่อน (Validation, Satellite Catalog): ใช้เป็น scroll-padding-top ของพื้นที่เลื่อนด้วย
+     แถวที่ได้โฟกัสจากคีย์บอร์ดจึงไม่ถูกหัวตารางบัง */
+  --sticky-head-h: 22px;
+
+  /* ชั้นซ้อน: ฉากหลังกล่องโต้ตอบ เงาของหน้าต่างลอยและกล่องโต้ตอบ แถบบอกที่วางตอนลากหน้าต่าง สีตอนชี้ปุ่ม */
+  --overlay: rgba(0, 0, 0, 0.35);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --drop-hint: rgba(37, 99, 176, 0.25);
+  --hover-bg: rgba(0, 0, 0, 0.12);
+
+  /* สีของระบบดาวเทียมและวัตถุในฉาก (spec §14) */
+  --color-gps: #ffd23f;
+  --color-glonass: #ff6b6b;
+  --color-galileo: #4fd47e;
+  --color-beidou: #45c8ff;
+  --color-facility: #ff79e6;
+  --color-access: #9dff6b;
+  --color-other: #c8c8c8; /* ดาวที่รู้ระบบไม่ได้ (ไม่มี PRN และไม่อยู่ใน Constellation ที่ระบุระบบ) */
+
+  /* ข้อความที่วางบนภาพ 3D/2D (เวลาบนภาพ กรอบ Zoom In) และพื้นหลังของภาพก่อน Cesium วาด */
+  --scene-bg: #000000;
+  --scene-overlay-bg: #000000b3;
+  --scene-overlay-text: #ffffff;
+  /* สิ่งที่วาดในภาพ 3D/2D (src/cesium/graphics.ts sceneStyle อ่านครั้งเดียว): ป้ายชื่อใช้ตระกูลตัวอักษร --font-ui */
+  --scene-label-font-size: 12px;
+  --scene-label-outline: #000000;
+  --scene-point-outline: #000000;
+  --scene-access-width: 1.5px;
+  --scene-grid-line: #ffffff66;
+  /* หน้าต่าง 2D: Swath (Filled Limits ใช้สีของดาวที่ความทึบนี้), เส้นแบ่งกลางวันกลางคืน (Show Outline), จุดและเส้นทาง IPP
+     (Shading ใช้แสงของ globe ของ Cesium ไม่มีสีของตัวเอง) */
+  --scene-swath-fill-opacity: 0.25;
+  --scene-swath-edge-width: 1.5px;
+  --scene-terminator-line: #fff3c4d9;
+  --scene-terminator-width: 1.5px;
+  --scene-ipp-point-size: 6px;
+  --scene-ipp-track-width: 2px;
+
+  /* Timeline View (canvas): พื้นเข้มแบบ STK เพื่อให้สีของ access (เหลือง เขียวอ่อน) ยังเห็นชัด ตัวชี้เวลาใน Global Time Bar เป็นสีขาว
+     ข้อความบนพื้นเหล่านี้ผ่าน WCAG AA (tests/unit/theme.test.ts) */
+  --timeline-bg: #1c222c;
+  --timeline-row-alt: #232b37;
+  --timeline-bar-bg: #38414f;
+  --timeline-viewport-fill: #ffffff26;
+  --timeline-viewport-line: #8fb8f0;
+  --timeline-grid: #ffffff2e;
+  --timeline-text: #e6eaf0;
+  --timeline-text-muted: #aeb8c6;
+  --timeline-pointer: #ffffff;
+  --timeline-now: #ff8a5c;
+  --timeline-hatch: #ffffff40;
+  --timeline-bar-outline: #000000;
+
+  /* หน้าต่างกราฟ (ECharts, src/windows/Graph/options.ts readGraphTheme อ่านตอนเปิดหน้าต่าง): พื้นเข้มแบบ Timeline View เพื่อให้สีของ object
+     และสีของระบบ (เหลือง เขียวอ่อน) ยังเห็นชัด เส้นเวลา animation สีเดียวกับเวลาปัจจุบันของ Timeline ข้อความผ่าน WCAG AA (tests/unit/theme.test.ts) */
+  --graph-bg: #1c222c;
+  --graph-text: #e6eaf0;
+  --graph-text-muted: #aeb8c6;
+  --graph-grid: #ffffff26;
+  --graph-axis: #8a94a3;
+  --graph-now: #ff8a5c;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--font-size);
+}
+
+/* ---------- พื้นที่ทำงาน (src/Workspace.tsx) ---------- */
+/* header = เมนูบาร์และแถบเครื่องมือ, body = dockview, footer = แถบสถานะ */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.workspace-header,
+.workspace-footer {
+  flex: none;
+}
+
+.workspace-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* หน้าต่างที่ยังไม่ได้ทำ (ตัวแทนชั่วคราวใน src/layout/panels.ts) */
+.panel-placeholder {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px;
+  background: var(--panel);
+  color: var(--text);
+  overflow: auto;
+}
+
+.panel-placeholder-title {
+  font-weight: 600;
+}
+
+.panel-placeholder-note {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+/* ส่วนที่โยน exception ตอนวาด (src/chrome/ErrorBoundary.tsx): ข้อความไทยแทนเนื้อของหน้าต่าง หรือแทนแถบเมนู/แถบสถานะ/กล่องโต้ตอบ */
+.crashed {
+  box-sizing: border-box;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.crashed-panel {
+  height: 100%;
+  padding: 12px;
+  overflow: auto;
+}
+
+.crashed-text {
+  margin: 0 0 8px;
+}
+
+.crashed-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.crashed-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.crashed-chrome .crashed-text {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.crashed-dialogs {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 32px;
+  z-index: 1000;
+}
+
+/* ---------- ธีม dockview (ใช้กับ <DockviewReact theme>) ----------
+   ชื่อหน้าต่างแบบเดสก์ท็อป: แถบชื่อสีอ่อน หน้าต่างที่ active สีน้ำเงินเข้มตัวอักษรขาว ทุกค่าอ้างโทเค็นด้านบน (ไม่ใส่สี hex ตรงนี้)
+   tests/unit/theme.test.ts ตรวจว่าตัวแปรครบและคู่ข้อความ/พื้นผ่าน WCAG AA */
+.dockview-theme-gnss {
+  color-scheme: light;
+  --dv-group-view-background-color: var(--panel);
+  --dv-tabs-and-actions-container-background-color: var(--titlebar-bg);
+  --dv-tabs-and-actions-container-font-size: var(--font-size);
+  --dv-tabs-and-actions-container-height: 24px;
+  --dv-tab-font-size: inherit;
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--titlebar-active-bg);
+  --dv-activegroup-visiblepanel-tab-color: var(--titlebar-active-text);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--titlebar-bg);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--titlebar-bg);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-muted);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-paneview-active-outline-color: var(--selected-bg);
+  --dv-icon-hover-background-color: var(--hover-bg);
+  --dv-drag-over-background-color: var(--drop-hint);
+  --dv-drag-over-border-color: transparent;
+  --dv-drag-over-border: none;
+  --dv-edge-dock-indicator-color: var(--selected-bg);
+  --dv-edge-drop-strip-size: 8px;
+  --dv-tabs-container-scrollbar-color: var(--border);
+  --dv-scrollbar-background-color: var(--border);
+  --dv-floating-box-shadow: var(--shadow);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-group-border: none;
+  --dv-floating-group-dragging-opacity: 0.5;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--titlebar-bg);
+  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);
+  --dv-overlay-z-index: 999;
+  --dv-border-radius: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: 0px;
+  --dv-tab-margin: 0;
+  --dv-spacing-padding: 0px;
+  --dv-tab-close-icon-size: inherit;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--selected-bg);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.5s;
+  --dv-context-menu-background-color: var(--menu-bg);
+  --dv-context-menu-color: var(--menu-text);
+}
+
+/* ---------- กล่องโต้ตอบ (Radix Dialog) ---------- */
+.dlg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--overlay);
+}
+
+.dlg {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  min-width: 420px;
+  max-width: 90vw;
+  max-height: 85vh;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font: inherit;
+}
+
+.dlg-title {
+  margin: 0;
+  padding: 3px 8px;
+  background: var(--titlebar-active-bg);
+  color: var(--titlebar-active-text);
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.btn {
+  padding: 2px 14px;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border: 1px solid var(--border);
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn:focus-visible,
+.windows-table tbody tr:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: 1px;
+}
+
+/* Window → Windows... */
+.windows-dialog-body {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.windows-table {
+  flex: 1 1 auto;
+  min-width: 300px;
+  border-collapse: collapse;
+}
+
+.windows-table th,
+.windows-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.windows-table th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+}
+
+.windows-table tbody tr {
+  cursor: default;
+}
+
+.windows-table tbody tr[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.windows-buttons {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.windows-ok {
+  margin-top: auto;
+}
+
+/* ---------- เมนูบาร์ แถบเครื่องมือ แถบสถานะ (src/chrome) ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.menubar {
+  display: flex;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border-bottom: 1px solid var(--border);
+}
+
+.menubar-trigger {
+  padding: 2px 10px;
+  background: none;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: default;
+}
+
+.menubar-trigger[data-highlighted],
+.menubar-trigger[data-state="open"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.menubar-trigger:focus-visible,
+.tool-btn:focus-visible,
+.status-button:focus-visible,
+.field:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.menu-content {
+  z-index: 1100;
+  min-width: 200px;
+  padding: 2px 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 6px;
+  cursor: default;
+  outline: none;
+  user-select: none;
+}
+
+.menu-item[data-highlighted],
+.menu-item[data-state="open"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.menu-item[aria-disabled="true"] {
+  color: var(--text-muted);
+}
+
+.menu-item[aria-disabled="true"][data-highlighted] {
+  background: var(--hover-bg);
+  color: var(--text-muted);
+}
+
+.menu-indicator {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+}
+
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-muted);
+}
+
+.menu-item[data-highlighted]:not([aria-disabled="true"]) .menu-shortcut {
+  color: inherit;
+}
+
+.menu-chevron {
+  margin-left: auto;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--border);
+}
+
+.tip {
+  z-index: 1200;
+  max-width: 320px;
+  white-space: pre-line;
+  padding: 3px 8px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  font-size: var(--font-size);
+}
+
+.toolbars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 2px 4px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 3px;
+  background: var(--border);
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  color: var(--menu-text);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.tool-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--border);
+}
+
+.tool-btn[aria-pressed="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+  border-color: var(--border);
+}
+
+.tool-btn[aria-disabled="true"] {
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.tool-btn[aria-disabled="true"]:hover {
+  background: none;
+  border-color: transparent;
+}
+
+.icon-mirror {
+  transform: scaleX(-1);
+}
+
+.field {
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 4px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--font-size);
+}
+
+.field-time {
+  width: 230px;
+}
+
+.field-step {
+  width: 90px;
+  background: var(--menu-bg);
+}
+
+.field-multiplier {
+  width: 70px;
+}
+
+.field-invalid {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border-top: 1px solid var(--border);
+}
+
+.status-field {
+  display: inline-flex;
+  flex: none;
+  align-self: stretch;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.status-field:first-child {
+  border-left: 0;
+}
+
+.status-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-mono {
+  font-family: var(--font-mono);
+}
+
+.status-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 2px;
+  background: none;
+  color: inherit;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-button[aria-disabled="true"] {
+  cursor: default;
+}
+
+.status-count {
+  font-family: var(--font-mono);
+}
+
+.status-count-unread {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.status-warn {
+  color: var(--warning);
+}
+
+.progress {
+  display: inline-block;
+  width: 90px;
+  height: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--selected-bg);
+}
+
+.progress-fill[data-indeterminate] {
+  width: 100%;
+  opacity: 0.4;
+}
+
+.status-disconnected {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.health-banner {
+  padding: 3px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+/* กล่องข้อความ (412, job ล้มเหลว, confirm) */
+.dlg-message {
+  min-width: 360px;
+  max-width: 520px;
+}
+
+.dlg-text {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.dlg-detail {
+  max-height: 40vh;
+  margin: 0 12px;
+  padding: 6px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.dlg-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+/* ---------- ฟอร์ม (New Scenario Wizard, Save As) ---------- */
+.form {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.dlg-form {
+  min-width: 380px;
+  max-width: 520px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.form-label {
+  padding-top: 3px;
+}
+
+.form-control {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.form-input {
+  width: 100%;
+}
+
+.form-input[readonly] {
+  background: var(--menu-bg);
+  color: var(--text-muted);
+}
+
+.form-input:disabled {
+  background: var(--menu-bg);
+  color: var(--text-muted);
+}
+
+.form-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.form-general {
+  padding: 2px 0;
+}
+
+.form-hint {
+  color: var(--text-muted);
+}
+
+.form .dlg-buttons {
+  margin-top: auto;
+  padding: 8px 0 0;
+}
+
+/* ---------- Welcome ---------- */
+.welcome {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.welcome-heading {
+  margin: 0 0 4px;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.welcome-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.welcome-recent {
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+}
+
+.link-btn {
+  padding: 1px 2px;
+  background: none;
+  color: var(--selected-bg);
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.link-btn:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: 1px;
+}
+
+.welcome-table,
+.stkref-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.welcome-table th,
+.welcome-table td,
+.stkref-table th,
+.stkref-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.welcome-table th,
+.stkref-table th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+}
+
+.welcome-table th {
+  white-space: nowrap;
+}
+
+.welcome-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.welcome-daily {
+  text-align: center;
+}
+
+/* ---------- About ---------- */
+.about {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.about-versions {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.about-versions dt {
+  font-weight: 600;
+}
+
+.about-versions dd {
+  margin: 0;
+}
+
+.about-value {
+  font-family: var(--font-mono);
+}
+
+.about-note {
+  margin: 10px 0;
+}
+
+.about-heading {
+  margin: 0 0 4px;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.about-ours {
+  columns: 3 160px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+/* ---------- Help → STK UI Reference ---------- */
+.stkref {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.stkref-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stkref-filter {
+  flex: 0 1 260px;
+  font-family: var(--font-ui);
+}
+
+.stkref-count {
+  color: var(--text-muted);
+}
+
+.stkref-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.stkref-table thead th {
+  position: sticky;
+  top: 0;
+}
+
+.stkref-none {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-muted);
+}
+
+/* ---------- Object Browser (src/windows/ObjectBrowser) ---------- */
+.ob {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.ob-toolbar {
+  flex: none;
+  flex-wrap: wrap;
+  padding: 2px 4px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.ob-filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-bottom: 1px solid var(--border);
+}
+
+.ob-filter .tool-btn {
+  color: var(--banner-text);
+}
+
+.ob-filter-text {
+  flex: 1 1 auto;
+}
+
+.ob-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ob-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.ob-tree {
+  position: relative;
+  min-width: 100%;
+}
+
+.ob-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-muted);
+}
+
+.ob-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.ob-row:hover {
+  background: var(--hover-bg);
+}
+
+.ob-row[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.ob-row:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.ob-row[aria-selected="true"]:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+/* ดาวที่ตัวกรองของ scenario ซ่อน (W9): เอียงและจาง ติ๊ก Show ไม่ได้ */
+.ob-hidden {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.ob-arrow {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 100%;
+}
+
+.ob-check {
+  flex: none;
+  margin: 0;
+}
+
+.ob-color {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.ob-swatch {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--border);
+}
+
+/* ตัวเลือกสีของ browser ซ่อนอยู่เหนือกล่องสี เปิดด้วยการดับเบิลคลิก */
+.ob-color-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ob-icon {
+  flex: none;
+}
+
+.ob-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ob-warn {
+  flex: none;
+  color: var(--warning);
+}
+
+.ob-row[aria-selected="true"] .ob-warn {
+  color: var(--selected-text);
+}
+
+/* Find: กล่องเล็กลอยมุมขวาบนของต้นไม้ */
+.ob-find {
+  position: absolute;
+  top: 4px;
+  right: 18px;
+  z-index: 5;
+  padding: 4px;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.ob-find-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ob-find-input {
+  width: 150px;
+  font-family: var(--font-ui);
+}
+
+.ob-find-miss {
+  padding: 3px 2px 0;
+  color: var(--danger);
+}
+
+/* ---------- Properties Browser ---------- */
+/* ซ้ายเป็นรายการหน้า "กลุ่ม - หน้า" ขวาเป็นเนื้อหา ล่างเป็นปุ่ม OK / Cancel / Apply / Help */
+.props {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.props-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.props-tabs {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 200px;
+  overflow: auto;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+
+.props-tab {
+  padding: 3px 8px;
+  background: none;
+  color: var(--text);
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.props-tab[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.props-tab:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.props-page {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.props-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* ป้ายของ Properties ยาวกว่าของกล่องเล็ก ("X Real Time Multiplier", "Inherit from Scenario") */
+.props-fields .form-row {
+  grid-template-columns: 170px minmax(0, 1fr);
+}
+
+.props-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.props-group legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.props-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.props-conflict {
+  padding: 4px 12px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-top: 1px solid var(--border);
+}
+
+.props-general {
+  margin: 0;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.props-buttons {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.props-flags {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.form-textarea {
+  height: auto;
+  font-family: var(--font-ui);
+  resize: vertical;
+}
+
+.form-check {
+  align-self: flex-start;
+  margin: 3px 0 0;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-input {
+  width: 48px;
+  height: 22px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.color-text {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* รายการเลือก: Active constraints, Select Constraints to Add, Available / Assigned Objects */
+.pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pick-list {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-height: 66px;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-ui);
+}
+
+.pick-item {
+  padding: 1px 4px;
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.pick-buttons {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.definition {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.definition-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.definition-lists {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.definition-list {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ---------- Insert STK Objects, Search Satellite Catalog, Fetch Orbit Data, Daily Forecast Settings (src/windows) ---------- */
+.insert,
+.catalog,
+.fetch,
+.daily {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 10px 12px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.insert-choices {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+}
+
+.insert-group,
+.catalog-sources {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.insert-group legend,
+.catalog-sources legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.insert-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.insert-note,
+.catalog-note,
+.catalog-hint,
+.fetch-note,
+.daily-note {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.form-error.insert-note,
+.form-error.catalog-note,
+.form-error.fetch-note,
+.form-error.daily-note {
+  color: var(--danger);
+}
+
+.insert-buttons,
+.fetch-buttons,
+.daily-buttons {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ชื่อ-ค่า (snapshot ล่าสุด, สถานะงานประจำวัน) */
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.kv dt {
+  font-weight: 600;
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kv-mono {
+  font-family: var(--font-mono);
+}
+
+/* Search Satellite Catalog */
+.catalog-bar {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+.catalog-sources {
+  flex: 0 0 auto;
+}
+
+.catalog-filters {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.catalog-scroll {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
+  border: 1px solid var(--border);
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.catalog-table th {
+  position: sticky;
+  top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
+  padding: 2px 6px;
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 600;
+}
+
+.catalog-table td {
+  padding: 1px 6px;
+}
+
+.catalog-row {
+  cursor: default;
+  user-select: none;
+}
+
+.catalog-row:hover {
+  background: var(--hover-bg);
+}
+
+.catalog-row[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.catalog-row:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.catalog-row[aria-selected="true"]:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+/* ดาวที่อยู่ใน scenario แล้ว: เอียงและจาง เลือกไม่ได้ */
+.catalog-present {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.catalog-num {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.catalog-footer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.catalog-constellation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.catalog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.catalog-count {
+  margin-right: auto;
+  color: var(--text-muted);
+}
+
+/* Fetch Orbit Data */
+.fetch-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fetch-table th,
+.fetch-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.fetch-table th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fetch-num {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.fetch-time {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.fetch-buttons {
+  margin-top: auto;
+}
+
+/* Daily Forecast Settings */
+.daily {
+  padding: 0;
+  gap: 0;
+}
+
+.daily-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.daily-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ป้ายของหน้านี้ยาวกว่าของกล่องเล็ก ("Validation Give Up After") */
+.daily-form .form-row {
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.daily-warning {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--border);
+}
+
+.daily-status {
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+}
+
+.daily-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.daily-hint {
+  color: var(--text-muted);
+}
+
+.daily-buttons {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* เนื้อของหน้าต่างลอยทุกบาน (QA-05): หน้าต่างที่สูงเกินจอถูกจำกัดความสูงตอนเปิด (layout/placement.ts floatingHeight) ส่วนที่เหลือเลื่อนดูในหน้าต่าง */
+.dv-resize-container .dv-content-container {
+  overflow: auto;
+}
+
+/* Globe Manager (src/windows/GlobeManager): ภาพฐาน + สี่กลุ่มตามแหล่ง (สวิตช์ + ตารางชั้นภาพ; กลุ่ม Cesium ion มีช่อง token และตัวเลือก asset) */
+.globe {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.globe-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.globe-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.globe-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.globe-switch .form-check {
+  align-self: center;
+  margin: 0;
+}
+
+.globe-hint {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--border);
+}
+
+.globe-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.globe-table th,
+.globe-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.globe-table thead th {
+  background: var(--titlebar-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.globe-table tbody th {
+  font-weight: 400;
+}
+
+.globe-table td .form-check {
+  align-self: auto;
+  margin: 0;
+}
+
+.globe-num {
+  box-sizing: border-box;
+  width: 5em;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* ข้อความท้ายชื่อแถวที่ถูกซ่อนเพราะเปิด Cesium ion อยู่ */
+.globe-note {
+  display: block;
+  color: var(--warning);
+  font-size: 0.9em;
+}
+
+.globe-field-hint {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.globe-token {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.globe-token .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.globe-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.globe-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.globe-radio input[type="radio"] {
+  margin: 0;
+}
+
+.globe-id {
+  box-sizing: border-box;
+  width: 12em;
+  font-family: var(--font-mono);
+}
+
+/* ---------- หน้าต่าง 3D / 2D Graphics (src/windows/graphics: ส่วนร่วม, Graphics3D, Graphics2D) ---------- */
+.gfx {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* แถบ 3D Graphics, 3D Window Defaults และ 2D Window Defaults บนหน้าต่าง */
+.gfx-toolbars {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 2px 4px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* แถบเหนือภาพเมื่อผลลัพธ์ไม่ตรงหรือยังไม่มี (spec §9.1) */
+.gfx-banner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.gfx-banner-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gfx-banner-error,
+.gfx-banner-note {
+  font-weight: 400;
+}
+
+.gfx-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--scene-bg);
+}
+
+.gfx-view {
+  position: absolute;
+  inset: 0;
+}
+
+.gfx-zoom-mode canvas {
+  cursor: crosshair;
+}
+
+.gfx-zoombox {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  border: 1px dashed var(--scene-overlay-text);
+  pointer-events: none;
+}
+
+/* ไม่มี WebGL: ข้อความแทนภาพ */
+.gfx-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: center;
+}
+
+/* Annotation → Show Time */
+.g3d-time {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  background: var(--scene-overlay-bg);
+  color: var(--scene-overlay-text);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+/* Sensor View (sensor spec §5.4): แถบ Up (North / Velocity) ของหน้าต่าง ข้อความบนภาพ และวงขอบกรวย
+   วงขอบกรวยเป็น SVG ที่ viewBox [-1, 1] พอดีด้านสั้นของภาพ (preserveAspectRatio meet) สีเส้นเป็นสีของ sensor ที่หน้าต่างส่งมา */
+.sensor-view-up {
+  gap: 4px;
+}
+
+.sensor-view-up-label {
+  color: var(--menu-text);
+}
+
+.sensor-view-up-btn {
+  width: auto;
+  padding: 0 6px;
+}
+
+/* ค่าซูมข้างปุ่ม Zoom In / Zoom Out ("×8") */
+.sensor-view-zoom-value {
+  min-width: 3.5em;
+  color: var(--menu-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ช่อง Width ข้างค่าซูม (ความกว้างพื้นที่ที่จุดใต้ดาว "1.50 km") และคำแนะนำเมื่อพิมพ์ผิด */
+.sensor-view-width-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+
+.sensor-view-width {
+  width: 7em;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* คำแนะนำของช่อง Width (QA-03): แถวของตัวเองใต้แถบเครื่องมือ (.gfx-toolbars ตัดแถว) กว้างเต็มและตัดบรรทัดได้ ข้อความยาวจึงเห็นครบ */
+.sensor-view-width-hint {
+  flex: 1 0 100%;
+  min-width: 0;
+  color: var(--menu-text);
+  font-style: italic;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* คำแนะนำ Globe Manager ใน HUD (โหมด Camera ซูมลึกโดยไม่มีภาพออนไลน์) */
+.sensor-view-hint {
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
+.sensor-view-hud {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  background: var(--scene-overlay-bg);
+  color: var(--scene-overlay-text);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.sensor-view-cone {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sensor-view-cone circle {
+  fill: none;
+  stroke: var(--scene-overlay-text);
+  stroke-width: var(--scene-swath-edge-width);
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* View From/To */
+.vft .form-row {
+  grid-template-columns: 120px minmax(0, 1fr);
+}
+
+/* ---------- หน้าต่างรายงาน (src/windows/Report) ---------- */
+/* หน้าต่างรายงาน (spec §6.1): แถบเครื่องมือ แถบเตือน และตารางแบบ virtual (แถวสูงคงที่ 20px ตาม ROW_HEIGHT ใน Report.tsx) */
+.rpt {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  color: var(--text);
+  outline: none;
+}
+
+.rpt-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.rpt-menubar {
+  display: flex;
+}
+
+.rpt-busy,
+.rpt-note {
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.rpt-note {
+  margin: 12px;
+}
+
+.rpt-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rpt-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.rpt-scroll:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.rpt-table {
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+
+/* ทุกแถวสูง ROW_HEIGHT (20px) พอดี ไม่มี padding/border แนวตั้ง: virtualizer คำนวณตำแหน่งจากความสูงคงที่ จึงไม่กระตุกเวลาเลื่อน
+   padding แนวนอน 8px + 8px ต้องตรงกับ CELL_PADDING_PX ใน Report.tsx */
+.rpt-table td,
+.rpt-table th {
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+.rpt-spacer td {
+  padding: 0;
+}
+
+.rpt-title th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.rpt-head th {
+  text-align: right;
+  font-weight: 600;
+  background: var(--titlebar-bg);
+  box-shadow: inset 0 -1px 0 var(--border); /* เส้นใต้หัวคอลัมน์โดยไม่เพิ่มความสูงของแถว */
+}
+
+.rpt-head th:first-child {
+  text-align: left;
+}
+
+.rpt-num {
+  text-align: right;
+}
+
+.rpt-time {
+  text-align: left;
+  cursor: context-menu;
+}
+
+.rpt-row:hover {
+  background: var(--hover-bg);
+}
+
+.rpt-nodata td {
+  font-style: italic;
+}
+
+/* ---------- หน้าต่างกราฟ (src/windows/Graph/Graph.tsx) ---------- */
+/* แถบเครื่องมือและกรอบใช้ของหน้าต่างรายงาน (.rpt) พื้นที่ ECharts เต็ม .rpt-body; ข้อความแทนกราฟ (กำลังโหลด ผลลัพธ์ไม่ตรง) ซ้อนอยู่ด้านบน */
+.graph-chart {
+  position: absolute;
+  inset: 0;
+  background: var(--graph-bg);
+}
+
+.graph-note {
+  position: absolute;
+  inset: 0 0 auto 0;
+}
+
+.graph-toggle[aria-pressed="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.graph-alert {
+  flex: none;
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* ---------- Timeline View (src/windows/TimelineView) ---------- */
+/* canvas วาดทั้งหมด (draw.ts) ที่นี่เหลือแค่กรอบ ส่วนที่เป็น DOM ซ้อนบน canvas (โฟกัสของ Time Display แถบเลื่อน หมายเหตุเมื่อชี้) */
+.tl {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--timeline-bg);
+  color: var(--timeline-text);
+}
+
+.tl-stage {
+  position: relative;
+  user-select: none;
+}
+
+/* ลากบน canvas คือการตั้งเวลา/เลื่อน View Port ไม่ใช่การเลื่อนหน้า */
+.tl-canvas {
+  display: block;
+  touch-action: none;
+}
+
+/* ส่วนที่รับโฟกัสคีย์บอร์ดของ Time Display: โปร่งใส ไม่รับเมาส์ (เมาส์ไปที่ canvas) */
+.tl-display {
+  position: absolute;
+  pointer-events: none;
+}
+
+.tl-display:focus-visible {
+  outline: 2px solid var(--timeline-viewport-line);
+  outline-offset: -2px;
+}
+
+.tl-vscroll {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.tl-empty {
+  position: absolute;
+  margin: 0;
+  padding: 8px;
+  color: var(--timeline-text-muted);
+  pointer-events: none;
+}
+
+.tl-note {
+  position: absolute;
+  z-index: 5;
+  max-width: 280px;
+  padding: 3px 6px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* ---------- Message Viewer (src/windows/MessageViewer) ---------- */
+.mv {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.mv-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px 4px 0;
+  background: var(--menu-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.mv-tab {
+  padding: 2px 10px;
+  background: var(--menu-bg);
+  color: var(--menu-text);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  font: inherit;
+  cursor: default;
+}
+
+.mv-tab[aria-selected="true"] {
+  background: var(--panel);
+  font-weight: 600;
+}
+
+.mv-tab:focus-visible,
+.mv-body:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.mv-panel {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.mv-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.mv-body {
+  position: relative;
+  min-width: 760px;
+}
+
+.mv-row {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 230px 80px 150px 130px minmax(200px, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 6px;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.mv-body > .mv-row:not(.mv-head) {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.mv-row:not(.mv-head):hover {
+  background: var(--hover-bg);
+}
+
+.mv-row[aria-selected="true"] {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.mv-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 22px;
+  background: var(--titlebar-bg);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.mv-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mv-time,
+.mv-code,
+.mv-object {
+  font-family: var(--font-mono);
+}
+
+.mv-level {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mv-level-error svg {
+  color: var(--danger);
+}
+
+.mv-level-warning svg {
+  color: var(--warning);
+}
+
+.mv-row[aria-selected="true"] .mv-level svg {
+  color: var(--selected-text);
+}
+
+.mv-empty {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  margin: 0;
+  padding: 8px;
+  color: var(--text-muted);
+}
+
+.mv-buttons {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--menu-bg);
+  border-top: 1px solid var(--border);
+}
+
+.mv-spacer {
+  flex: 1 1 auto;
+}
+
+.mv-dialog {
+  width: 560px;
+}
+
+.mv-dialog-body {
+  padding: 8px;
+  overflow: auto;
+}
+
+.mv-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0 0 8px;
+}
+
+.mv-fields dt {
+  color: var(--text-muted);
+}
+
+.mv-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mv-mono {
+  font-family: var(--font-mono);
+}
+
+.mv-full {
+  white-space: pre-wrap;
+}
+
+.mv-nodetail {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* ---------- Access tool (spec §4) ---------- */
+.access-tool {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.access-for {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.access-for .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.access-main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 160px;
+}
+
+.access-assoc {
+  flex: 1 1 auto;
+}
+
+.access-tree {
+  flex: 1 1 auto;
+  min-height: 120px;
+  padding: 2px 4px;
+  overflow: auto;
+  border: 1px solid var(--border);
+}
+
+.access-row.access-child {
+  padding-left: 18px;
+}
+
+.access-computed {
+  font-weight: 700;
+}
+
+.access-buttons,
+.access-other,
+.access-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.access-buttons {
+  width: 110px;
+}
+
+.access-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.access-columns > * {
+  flex: 1 1 0;
+}
+
+.access-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.access-times {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+/* ---------- Report & Graph Manager และหน้าต่างแก้ style (spec §5, §5.1) ---------- */
+.rgm {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.rgm-top,
+.rgm-bottom,
+.rgm-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rgm-bottom {
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.rgm-main {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 200px;
+}
+
+.rgm-objects,
+.rgm-styles {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rgm-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  padding: 2px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  user-select: none;
+}
+
+.rgm-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 6px;
+  cursor: default;
+}
+
+.rgm-style,
+.rgm-leaf {
+  padding-left: 18px;
+}
+
+.rgm-group,
+.rgm-group + [role="group"] .rgm-leaf {
+  padding-left: 30px;
+}
+
+.rgm-selected {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+.rgm-item:focus-visible,
+.rgm-list:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.rgm-selected:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+.rgm-disabled {
+  color: var(--text-muted);
+}
+
+.rgm-tier {
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+.rgm-kind {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.rgm-filters,
+.rgm-buttons,
+.rgm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rgm-as {
+  display: flex;
+  gap: 10px;
+}
+
+.rgm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rgm-tabpanel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rgm-step {
+  width: 7em;
+}
+
+.rgm-time-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+
+.rgm-time .dlg-buttons {
+  padding: 8px 10px;
+}
+
+/* ---------- หน้า Validation (src/windows/Validation, spec §7) ---------- */
+/* ใช้แถบเครื่องมือและกรอบของหน้าต่างรายงาน (.rpt) เนื้อหาเลื่อนทั้งหน้า: ตารางรายวัน ตารางรายดวง และสองกราฟ (ECharts เต็ม .val-chartbox) */
+.val-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: auto;
+}
+
+.val-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.val-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.val-h {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.val-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.val-scroll {
+  overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.val-daily {
+  max-height: 220px;
+}
+
+.val-sats {
+  max-height: 260px;
+}
+
+.val-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.val-table th,
+.val-table td {
+  padding: 2px 8px;
+  text-align: left;
+}
+
+.val-table th {
+  position: sticky;
+  top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
+  background: var(--titlebar-bg);
+  box-shadow: inset 0 -1px 0 var(--border);
+  font-weight: 600;
+}
+
+.val-table td.val-num,
+.val-table th.val-num {
+  text-align: right;
+}
+
+/* ชื่อไฟล์ SP3 ยาว: ตัดด้วย ... (ชื่อเต็มอยู่ใน title) ไม่ให้ดันคอลัมน์ผลออกนอกจอ */
+.val-table td.val-truth {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* เฉพาะแถวของวันที่เปิดได้ (Pass / Fail) ไฮไลต์ตอนชี้และเป็นปุ่มกดได้ แถว Pending / Gave up และตารางรายดวงไม่ไฮไลต์ */
+.val-open {
+  cursor: pointer;
+}
+
+.val-open:hover {
+  background: var(--hover-bg);
+}
+
+.val-selected,
+.val-selected:hover {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+/* จุดหยุดของแถวรายวัน (roving tabindex) และพื้นที่เลื่อนที่โฟกัสด้วยคีย์บอร์ดได้ */
+.val-row:focus-visible,
+.val-scroll:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.val-selected:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+.val-sub {
+  margin: 0 0 2px;
+  color: var(--text-muted);
+}
+
+.val-table td.val-fail,
+.val-table td.val-bad {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.val-table td.val-pending,
+.val-table td.val-gave_up,
+.val-table td.val-insufficient_data,
+.val-table td.val-unverified {
+  color: var(--warning);
+}
+
+.val-selected td.val-fail,
+.val-selected td.val-bad,
+.val-selected td.val-pending,
+.val-selected td.val-gave_up {
+  color: inherit;
+}
+
+.val-next {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.val-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 8px;
+}
+
+.val-chartbox {
+  position: relative;
+  height: 260px;
+  background: var(--graph-bg);
+}
+
+.val-chart {
+  position: absolute;
+  inset: 0;
+}

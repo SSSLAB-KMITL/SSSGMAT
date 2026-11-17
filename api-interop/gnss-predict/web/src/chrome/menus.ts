@@ -1,0 +1,171 @@
+// รายการของแต่ละเมนูเป็นข้อมูล (spec §5.1): อาร์เรย์ของ {command} หรือตัวคั่น แล้ว menuItems.tsx วาดทั้งเมนูบาร์และเมนูคลิกขวา
+// ชื่อรายการมาจากทะเบียนคำสั่ง (commands.ts) ไม่เขียนข้อความที่นี่
+
+import type { CommandId } from "../commands";
+import type { LabelKey } from "../labels/labels";
+import type { RowClass } from "../windows/ObjectBrowser/tree";
+
+export type MenuEntry =
+  /**
+   * optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน)
+   * label: ชื่อของรายการในเมนูนี้แทนชื่อของคำสั่ง (คำสั่งเดียวกันที่ STK เรียกต่างกันตามเมนู เช่น Close ของ File = Close Scenario ของเมนู Scenario)
+   */
+  | { command: CommandId; optional?: boolean; label?: LabelKey }
+  | { separator: true }
+  /** เมนูย่อย (View → Toolbars ▸) */
+  | { submenu: LabelKey; items: readonly MenuEntry[] }
+  /** รายชื่อหน้าต่างที่เปิดอยู่ของเมนู Window (ไม่ใช่คำสั่ง: เลือกแล้วโฟกัสหน้าต่างนั้น) */
+  | { windowList: true };
+
+const cmd = (command: CommandId): MenuEntry => ({ command });
+const optional = (command: CommandId): MenuEntry => ({ command, optional: true });
+export const SEPARATOR: MenuEntry = { separator: true };
+
+export const FILE_MENU: readonly MenuEntry[] = [
+  cmd("file.new"), cmd("file.open"), cmd("file.save"), cmd("file.saveAs"), cmd("file.close"),
+  SEPARATOR,
+  optional("file.recent.1"), optional("file.recent.2"), optional("file.recent.3"), optional("file.recent.4"),
+  SEPARATOR,
+  cmd("file.exit"),
+];
+
+export const EDIT_MENU: readonly MenuEntry[] = [
+  cmd("edit.cut"), cmd("edit.copy"), cmd("edit.paste"),
+  SEPARATOR,
+  cmd("edit.delete"), cmd("edit.find"),
+];
+
+export const VIEW_MENU: readonly MenuEntry[] = [
+  cmd("view.objectBrowser"), cmd("view.timelineView"), cmd("view.messageViewer"),
+  SEPARATOR,
+  cmd("view.new3d"), cmd("view.new2d"),
+  SEPARATOR,
+  cmd("view.globeManager"),
+  SEPARATOR,
+  {
+    submenu: "menu.view.toolbars",
+    items: [
+      cmd("view.toolbar.default"), cmd("view.toolbar.animation"), cmd("view.toolbar.graphics3d"),
+      cmd("view.toolbar.defaults3d"), cmd("view.toolbar.defaults2d"),
+    ],
+  },
+  SEPARATOR,
+  cmd("view.fullScreen"),
+];
+
+export const INSERT_MENU: readonly MenuEntry[] = [
+  cmd("insert.new"), cmd("insert.facility"), cmd("insert.satellite"), cmd("insert.sensor"), cmd("insert.constellation"),
+];
+
+export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];
+
+/** เมนูของ object ชนิดทั่วไป (Facility, Constellation) */
+export const OBJECT_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.access"), cmd("object.reportGraphManager"),
+  SEPARATOR,
+  cmd("object.zoomTo"),
+  SEPARATOR,
+  cmd("object.rename"), cmd("object.delete"),
+];
+
+/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties แล้ว Show Imagery (ข2 Ruling o: ใช้ได้เฉพาะดาวที่มี preset) */
+export const SATELLITE_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.access"), cmd("object.reportGraphManager"),
+  SEPARATOR,
+  cmd("object.zoomTo"),
+  SEPARATOR,
+  cmd("object.rename"), cmd("object.delete"),
+];
+
+/** เมนูของ Sensor: Sensor View (เพิ่มเอง) ต่อจาก Properties ไม่มี Report & Graph Manager; Zoom To ไปที่ดาวแม่ (commands3d.ts) */
+export const SENSOR_MENU: readonly MenuEntry[] = [
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.access"),
+  SEPARATOR,
+  cmd("object.zoomTo"),
+  SEPARATOR,
+  cmd("object.rename"), cmd("object.delete"),
+];
+
+/**
+ * เมนูของ Scenario (โหนดรากของ Object Browser, QA-02): ตามเมนูคลิกขวาของ Scenario ของ STK (docs/2026-11-17-stk-terms-context-menus.md §1.1)
+ * เฉพาะที่แอปทำได้ ตามลำดับ Properties, Report & Graph Manager... (All Types), Insert..., Save, Save As..., Close Scenario
+ * ไม่มี Set as Default Scenario (ไม่รองรับ) และไม่มี Access..., Zoom To, Rename, Delete ของ object
+ * Properties และ Report & Graph Manager... เป็นคำสั่ง scenario.* ที่ทำกับ scenario ที่เปิดอยู่ ใช้ได้เมื่อเปิด scenario ไม่ขึ้นกับการเลือก
+ */
+export const SCENARIO_MENU: readonly MenuEntry[] = [
+  cmd("scenario.properties"), cmd("scenario.reportGraphManager"),
+  SEPARATOR,
+  { command: "insert.new", label: "menu.scenario.insert" },
+  SEPARATOR,
+  cmd("file.save"), cmd("file.saveAs"),
+  SEPARATOR,
+  { command: "file.close", label: "menu.scenario.closeScenario" },
+];
+
+/**
+ * เมนูตามชนิดของ object ที่เลือก: แถบเมนู (ชื่อเมนูที่ 6) และเมนูคลิกขวาของ Object Browser ใช้ชุดเดียวกันตามชนิดนี้
+ * Scenario ใช้ SCENARIO_MENU ชนิดที่ไม่มีเมนูของตัวเอง (และไม่ระบุชนิด) ใช้ OBJECT_MENU
+ */
+export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
+  if (cls === "Scenario") return SCENARIO_MENU;
+  if (cls === "Sensor") return SENSOR_MENU;
+  return cls === "Satellite" ? SATELLITE_MENU : OBJECT_MENU;
+}
+
+/** เมนูคลิกขวาบนดาวในหน้าต่าง 3D (sensor spec §5.5): คำสั่งชุดเดียวกับเมนูของ object ทำกับดาวที่ชี้ (คลิกขวาเลือกดาวก่อน) */
+export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.zoomTo")];
+
+/** เมนูคลิกขวาบน Facility ในหน้าต่าง 3D */
+export const SCENE_FACILITY_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.zoomTo")];
+
+/**
+ * เมนูคลิกขวาของหน้าต่าง 3D และ 2D เอง (คลิกขวาที่ไม่ชี้ object โดยไม่ลาก, task 13c: windows/graphics/sceneMenu.ts)
+ * รายการติ๊กถูกที่ซ่อนเส้นวงโคจร / ground track ทุกดวงของหน้าต่างนั้น (ตัวเลือกเดียวกับปุ่มบนแถบ Window Defaults และช่องใน Window Properties)
+ */
+export const SCENE_WINDOW_3D_MENU: readonly MenuEntry[] = [cmd("g3d.showOrbits")];
+export const SCENE_WINDOW_2D_MENU: readonly MenuEntry[] = [cmd("g2d.showGroundTracks")];
+
+const NO_MENU: readonly MenuEntry[] = [];
+
+/** เมนูคลิกขวาบน object ที่ path ในหน้าต่าง 3D: ดาวและ Facility มีเมนู อย่างอื่น (ไม่ได้ชี้ object) = ไม่มีเมนู (อาร์เรย์ว่างตัวเดียวกันเสมอ) */
+export function sceneMenuFor(path: string | null): readonly MenuEntry[] {
+  const cls = objectClassOf(path);
+  if (cls === "Satellite") return SCENE_SATELLITE_MENU;
+  return cls === "Facility" ? SCENE_FACILITY_MENU : NO_MENU;
+}
+
+export const UTILITIES_MENU: readonly MenuEntry[] = [cmd("utilities.fetchOrbitData"), cmd("utilities.dailyForecastSettings")];
+
+export const WINDOW_MENU: readonly MenuEntry[] = [
+  cmd("window.windows"), cmd("window.cascade"), cmd("window.tileHorizontally"), cmd("window.tileVertically"),
+  SEPARATOR,
+  { windowList: true },
+];
+
+export const HELP_MENU: readonly MenuEntry[] = [cmd("help.welcome"), cmd("help.stkReference"), cmd("help.about")];
+
+/** ข้อความคีย์ลัดทางขวาของรายการ */
+export const SHORTCUT_LABELS: Partial<Record<CommandId, LabelKey>> = {
+  "file.save": "menu.shortcut.save",
+  "edit.delete": "menu.shortcut.delete",
+  "edit.find": "menu.shortcut.find",
+};
+
+const CLASS_LABELS: Record<RowClass, LabelKey> = {
+  Scenario: "ob.class.scenario",
+  Facility: "ob.class.facility",
+  Satellite: "ob.class.satellite",
+  Constellation: "ob.class.constellation",
+  Sensor: "ob.class.sensor",
+};
+
+/** ชนิดของ object จาก path ("*\/Satellite/G01" -> Satellite) ไม่เลือก, ราก หรือไม่ใช่ object (โฟลเดอร์, path เพี้ยน) = undefined */
+export function objectClassOf(activePath: string | null): RowClass | undefined {
+  const cls = activePath === null ? "" : (activePath.split("/")[1] ?? "");
+  return Object.hasOwn(CLASS_LABELS, cls) ? (cls as RowClass) : undefined;
+}
+
+// ชื่อเมนูที่ 6: ชนิดของ object ที่เลือก ไม่เลือกหรือไม่ใช่ object = Scenario
+export function objectClassLabel(activePath: string | null): LabelKey {
+  return CLASS_LABELS[objectClassOf(activePath) ?? "Scenario"];
+}

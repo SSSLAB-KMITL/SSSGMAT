@@ -1,0 +1,17 @@
+Test_Scen    15 Nov 2026 00:00:00.000 UTCG
+
+THBK-To-G01:  AccessSummary
+
+Number of Accesses           3
+Min Duration          1206.666
+Max Duration          6006.666
+Mean Duration         3206.666
+Total Duration        9619.998
+
+THBK-To-E11:  AccessSummary
+
+Number of Accesses            1
+Min Duration          15625.714
+Max Duration          15625.714
+Mean Duration         15625.714
+Total Duration        15625.714
