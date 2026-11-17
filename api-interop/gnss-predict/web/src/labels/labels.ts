@@ -494,6 +494,7 @@ const LABELS = {
   "option.lineStyle.shortDashed": ours("Short Dashed"),
   // Sensor (STK ref §G) ค่าที่เก็บ = คำที่แสดง (ENUMS.SensorDefinitionType / SensorPointingType / SensorOrientation / SensorAboutBoresight)
   "option.sensorType.simpleConic": stk("Simple Conic", "G"),
+  "option.sensorType.rectangular": stk("Rectangular", "G"),
   "option.pointingType.fixed": stk("Fixed", "G"),
   "option.orientation.azEl": stk("Az-El", "G"),
   "option.aboutBoresight.rotate": stk("Rotate", "G"),
@@ -838,7 +839,7 @@ const OPTION_KEYS = {
   orbit_system: {
     "Fixed by Window": "option.orbitSystem.fixedByWindow", "Inertial by Window": "option.orbitSystem.inertialByWindow",
   } satisfies Record<Code<"OrbitSystem">, LabelKey>,
-  sensor_type: { "Simple Conic": "option.sensorType.simpleConic" } satisfies Record<Code<"SensorDefinitionType">, LabelKey>,
+  sensor_type: { "Simple Conic": "option.sensorType.simpleConic", Rectangular: "option.sensorType.rectangular" } satisfies Record<Code<"SensorDefinitionType">, LabelKey>,
   pointing_type: { Fixed: "option.pointingType.fixed" } satisfies Record<Code<"SensorPointingType">, LabelKey>,
   orientation: { "Az-El": "option.orientation.azEl" } satisfies Record<Code<"SensorOrientation">, LabelKey>,
   about_boresight: { Rotate: "option.aboutBoresight.rotate" } satisfies Record<Code<"SensorAboutBoresight">, LabelKey>,

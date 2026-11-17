@@ -395,6 +395,7 @@ describe("sensor labels", () => {
     ["field.showRadialLines", "Show Radial Lines"],
     ["field.showBoresightMarker", "Show Boresight Marker"],
     ["option.sensorType.simpleConic", "Simple Conic"],
+    ["option.sensorType.rectangular", "Rectangular"],
     ["option.pointingType.fixed", "Fixed"],
     ["option.orientation.azEl", "Az-El"],
     ["option.aboutBoresight.rotate", "Rotate"],
