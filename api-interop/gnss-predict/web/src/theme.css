@@ -2717,3 +2717,9 @@ body {
 .workspace-mode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; }
 .workspace-mode-bar select, .workspace-mode-bar button { min-height: 26px; }
 .workspace-mode-hint { color: var(--text-muted); margin-left: 6px; }
+
+.priority-scroll { max-height: 270px; overflow: auto; margin: 6px 0; border: 1px solid var(--border); }
+.priority-scroll th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.priority-scroll td { vertical-align: top; white-space: normal; }
+.priority-note { color: var(--text-muted); font-size: 11px; margin-top: 3px; max-width: 340px; }
+.priority-satellites button { margin: 4px 5px 4px 0; }

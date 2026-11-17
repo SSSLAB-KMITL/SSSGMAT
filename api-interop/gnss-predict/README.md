@@ -1763,3 +1763,43 @@ fixture `tests/fixtures/custom/iss.tle` ใช้ทดสอบกลไกน�
 
 API อ่านกลุ่มใช้ `GET /api/gpredict/groups` (อ่านเฉพาะฐานข้อมูลที่ server เชื่อมไว้ ไม่ดึงเครือข่าย)
 `POST /api/scenarios/{name}/objects` แบบ `gpredict_local` เพิ่ม `group`, `batch` (เริ่มที่ 0), `batch_size` (1–999), `replace_unselected` (boolean ตั้งต้น false) ได้
+
+## 13. ดาวไทยและรายการสำคัญ
+
+หน้าหลักพอร์ต 8000 มีปุ่ม **ดาวไทย / รายการสำคัญ** เปิดทะเบียนใน Satellite Catalog ได้ทันที อ่านทะเบียนได้แม้ยังไม่ได้เปิด Scenario
+เลือกกลุ่ม ค้นด้วยชื่อไทย/ชื่ออื่น/NORAD แล้วติ๊กดาวและกด **นำเข้าดาวที่เลือก** ระบบใช้คิวเขียน/If-Match และ snapshot เดิมของงานนำเข้า ไม่แก้ชื่อ Object ที่ผู้ใช้มีอยู่แล้ว
+
+ทะเบียนแบ่งเป็น 5 กลุ่ม:
+
+- **ดาวไทย**: THAICOM 6/7/8, THEOS-1/2/2A, NAPA-1/2
+- **เชิงพาณิชย์**: IKONOS, GeoEye-1, WorldView-1/2/3/4 และ WorldView Legion 1–6
+- **Landsat**: รุ่น 1–9 พร้อมแยกสถานะภารกิจเก่า/นำส่งไม่สำเร็จ/กลับเข้าสู่บรรยากาศแล้ว
+- **COSMO-SkyMed อิตาลี**: CSK 1–4 และ CSG 1–3
+- **COSMOS / Kosmos รัสเซีย**: รายชื่อซีรีส์จากฐานข้อมูลสาธารณะปัจจุบัน แยกจากกลุ่มอิตาลีและไม่รวมชื่อ debris/rocket body
+
+ชื่ออื่นจับคู่ด้วย NORAD: THAICOM 7 = ASIASAT 6 (40141), THEOS-1 = THEOS/ไทยโชต/TEOS (33396), ECONOS → IKONOS (25919)
+EYEVIEW แสดงคำอธิบายให้เลือกกลุ่ม GeoEye / WorldView โดยไม่สร้างดาวเทียมหรือ NORAD สมมติ
+
+**สถานะที่ตรวจวันที่ 17 พ.ย. 2026** แยกจากการมี TLE:
+
+- [GISTDA แถลง THEOS-2A](https://gistda.or.th/th/news/แถลงการณ์-ผลการนำส่งดา/): นำส่งไม่สำเร็จ 12 ม.ค. 2569 ไม่มีวงโคจรปัจจุบัน
+- CelesTrak SATCAT ระบุ NAPA-1 (46320) decay 2026-11-02 และ NAPA-2 (48963) decay 2026-07-05: ยังมีชื่อในทะเบียน แต่เลือกคำนวณปัจจุบันไม่ได้
+- WorldView-4/GeoEye-2 (41848) decay 2021-11-30; Landsat 4 (13367) decay 2025-10-08: ปิดการนำเข้าวงโคจรปัจจุบันเช่นเดียวกัน
+- IKONOS และ Landsat 1/2/3/5/7 ยุติภารกิจถ่ายภาพแล้ว แต่ยังติดตามวัตถุได้เมื่อมี TLE ปัจจุบัน ไม่ได้แสดงว่าเครื่องมือถ่ายภาพยังปฏิบัติการ
+- Landsat 6 นำส่งไม่สำเร็จ: มีแถวอ้างอิง ไม่มี NORAD/วงโคจรสมมติ
+
+แหล่ง [SATCAT NAPA](https://celestrak.org/satcat/records.php?NAME=NAPA&FORMAT=JSON), [SATCAT Landsat](https://celestrak.org/satcat/records.php?NAME=LANDSAT&FORMAT=JSON),
+[IKONOS/BELSPO](https://eo.belspo.be/nl/satellites-and-sensors/ikonos-2), [Landsat 7/USGS](https://www.usgs.gov/landsat-missions/landsat-7), [COSMO-SkyMed/ASI](https://www.asi.it/en/earth-science/cosmo-skymed/)
+TLE สำหรับ IKONOS และกลุ่ม Landsat เพิ่มเป็น source ใน Gpredict แล้ว จึงอยู่ในรอบอัปเดตเดิม ไม่ต้องใช้ไฟล์เก่ามาแทนข้อมูลปัจจุบัน
+
+การมี TLE ไม่ใช่หลักฐานว่าภารกิจหรือเครื่องมือยังทำงาน และไม่ได้ยืนยันความแม่นยำจากแหล่งอิสระ ฟีเจอร์นี้เพิ่มการเลือกวงโคจร/Access; แหล่งภาพถ่ายใน Globe Manager และ Sensor preset เดิมยังแยกกัน
+รายการที่ไม่มี TLE ในเครื่องแสดงพร้อมสถานะ ไม่หายจากทะเบียนและไม่เปิดให้คำนวณจนกว่าจะมีข้อมูลที่ถูกต้อง
+
+API: `GET /api/satellite-collections` อ่านทะเบียนและสถานะ TLE ในฐานข้อมูล Gpredict ที่เชื่อมไว้ (ไม่ดึงเครือข่าย)
+นำเข้าด้วย `POST /api/scenarios/{name}/objects` พร้อม `If-Match` และ body:
+
+```json
+{"class":"Satellite","method":"Import Orbits","format":"priority","norads":[39500,40141,41552,33396,58016]}
+```
+
+Backend ตรวจสิทธิ์เลือกตามสถานะทะเบียนอีกครั้ง แม้มี TLE เก่าของดาวที่กลับเข้าสู่บรรยากาศในฐานข้อมูล ก็ไม่ยอมให้ format นี้สร้างวงโคจรปัจจุบันของดาวนั้น

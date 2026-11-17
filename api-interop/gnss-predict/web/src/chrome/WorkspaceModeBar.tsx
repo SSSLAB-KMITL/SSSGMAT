@@ -27,6 +27,7 @@ export function WorkspaceModeBar() {
     <button type="button" disabled={!mounted || !scenarioOpen} onClick={chooseSatellites}>
       {general ? "เลือกดาว / นำเข้าจาก Gpredict" : "เลือกดาว GNSS"}
     </button>
+    <button type="button" disabled={!mounted} onClick={() => useLayout.getState().openPanel("satelliteCatalog", { catalogMode: "satellites", priorityOpen: true, requestId: ++requestId })}>ดาวไทย / รายการสำคัญ</button>
     <span className="workspace-mode-hint">{general ? "วงโคจร · Access · นำเข้าดาวสูงสุด 999 ดวง" : "GPS · GLONASS · Galileo · BeiDou · DOP / IPP"}</span>
   </div>;
 }

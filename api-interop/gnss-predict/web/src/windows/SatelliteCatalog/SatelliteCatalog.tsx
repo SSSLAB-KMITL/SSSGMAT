@@ -1,4 +1,5 @@
 import { ImportSatellites } from "./ImportSatellites";
+import { PrioritySatellites } from "./PrioritySatellites";
 // Search Satellite Catalog (spec §11, STK ref §B "Search Standard Object Data"): เลือกดาวจาก snapshot ที่ scenario ใช้แล้ว Insert ด้วยคำขอเดียว
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
@@ -252,6 +253,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog", params = {} }: 
 
   return (
     <div className="catalog">
+      <PrioritySatellites key={`priority-${params.requestId ?? "default"}`} initiallyOpen={params.priorityOpen === true} />
       <ImportSatellites key={params.requestId ?? "default"} initialFormat={params.importFormat === "gpredict_local" ? "gpredict_local" : "norad"} initiallyOpen={params.expandImport === true} />
       <div className="catalog-bar">
         <fieldset className="catalog-sources">

@@ -13,14 +13,14 @@ from gnss_predict import custom_satellites as custom
 from gnss_predict.config import CELESTRAK_STATE_FILE
 from gnss_predict.omm import fetch_group
 from gnss_predict.sp3 import MAX_SATELLITES as MAX_SCENARIO_SATELLITES
-from . import gpredict_catalog, objects, templates
+from . import gpredict_catalog, objects, priority_satellites, templates
 from .errors import ApiError
 
 _LOOKUP_LOCK = threading.Lock()
 
 
 def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=None):
-    allowed = {'class', 'method', 'format', 'text', 'norad', 'group', 'batch', 'batch_size', 'replace_unselected', 'add_to_scenario'}
+    allowed = {'class', 'method', 'format', 'text', 'norad', 'norads', 'group', 'batch', 'batch_size', 'replace_unselected', 'add_to_scenario'}
     if set(body) - allowed:
         raise ApiError(422, 'ORBIT_IMPORT_INVALID', 'มีช่องนำเข้าที่ไม่รู้จัก')
     now = now or datetime.now(timezone.utc)
@@ -53,6 +53,9 @@ def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=Non
         elif import_format == 'gpredict_local':
             text = gpredict_catalog.import_text(gpredict_data, body.get('group'), body.get('batch'), body.get('batch_size', custom.MAX_SATELLITES))
             records = custom.parse_import(text, 'gpredict')
+        elif import_format == 'priority':
+            text = priority_satellites.import_text(gpredict_data, body.get('norads'))
+            records = custom.parse_import(text, 'gpredict', 'priority_catalog')
         else:
             records = custom.parse_import(body.get('text'), import_format)
         present = {o['norad'] for o in doc['objects'] if o['class'] == 'Satellite'}
@@ -68,7 +71,7 @@ def import_objects(doc, body, data_dir, opener=None, now=None, gpredict_data=Non
             existing_rows = [r for r in existing_rows if r['norad'] in keep]
         payload, _skipped = custom.merged_registry(existing_rows, records, native)
     except ValueError as exc:
-        field = {'norad': 'norad', 'group': 'group', 'gpredict_local': 'format'}.get(import_format, 'text')
+        field = {'norad': 'norad', 'group': 'group', 'gpredict_local': 'format', 'priority': 'norads'}.get(import_format, 'text')
         raise ApiError(422, 'ORBIT_IMPORT_INVALID', str(exc), field) from exc
     raw = (json.dumps(payload, ensure_ascii=False, indent=2) + '\n').encode()
     existing = source / custom.FILE

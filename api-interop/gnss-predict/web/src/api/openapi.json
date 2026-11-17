@@ -3055,6 +3055,26 @@
         "summary": "Fetch Status"
       }
     },
+    "/api/satellite-collections": {
+      "get": {
+        "operationId": "satellite_collections_api_satellite_collections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Satellite Collections Api Satellite Collections Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Satellite Collections"
+      }
+    },
     "/api/scenarios": {
       "get": {
         "operationId": "list_scenarios_api_scenarios_get",
