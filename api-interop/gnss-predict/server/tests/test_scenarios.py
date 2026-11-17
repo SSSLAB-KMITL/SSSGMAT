@@ -746,3 +746,19 @@ def test_scenario_routes_in_openapi(client):
     assert set(paths["/api/scenarios/{sc}"]) == {"get", "put", "delete"}
     assert set(paths["/api/scenarios/{sc}/copy"]) == {"post"}
     assert set(paths["/api/scenarios/{sc}/workbook"]) == {"get", "put"}
+
+
+def test_thbk_gnss_template_ignores_imaging_files(client, snapshot, data_dir):
+    """snapshot ที่มีไฟล์กลุ่มดาวถ่ายภาพ (weather/science/visual) ได้แม่แบบ thbk-gnss เหมือนเดิมทุก object, group และ access (ไม่มีดาว X)"""
+    plain = make(client); assert plain.status_code == 201
+    plain_doc = plain.json()
+    from conftest import SNAPSHOT_SRC                                          # OMM ปลอมของดาวถ่ายภาพอยู่ข้าง snapshot ของ engine
+    for path in sorted((SNAPSHOT_SRC.parent / "imaging").glob("*.json")):
+        shutil.copyfile(path, snapshot / path.name)
+    assert {"weather.json", "science.json", "visual.json"} <= {p.name for p in snapshot.iterdir()}
+    with_imaging = make(client, name="S2"); assert with_imaging.status_code == 201
+    doc = with_imaging.json()
+    assert doc["objects"] == plain_doc["objects"]
+    assert doc["groups"] == plain_doc["groups"]
+    assert doc["accesses"] == plain_doc["accesses"]
+    assert not any(o.get("name", "").startswith("X") for o in doc["objects"])

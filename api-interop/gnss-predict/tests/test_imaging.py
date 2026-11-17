@@ -14,6 +14,7 @@ from gnss_predict.imaging import (GEO_AGE_OK_DAYS, GEO_AGE_SHOWN_MAX_DAYS, GEO_M
 FXS = Path(__file__).parent / "fixtures" / "studio"
 SNAP = FXS / "snapshot"
 IMG = FXS / "imaging"
+DEEP_JSON = "[" * 200_000 + "]" * 200_000        # ไฟล์ร้าย: json.loads ให้ RecursionError
 
 
 def T(*a):
@@ -173,6 +174,15 @@ class TestImagingCatalog(TempSnapshot):
         self.assertEqual(len(codes(c, "IMAGING_GROUP_UNREADABLE")), 1)
         self.assertEqual([s.prn for s in c.satellites], ["X04", "X05"])
 
+    def test_deeply_nested_group_is_unreadable_group(self):
+        # JSON ซ้อนลึกจน json.loads ให้ RecursionError: ต้องเป็นกลุ่มที่อ่านไม่ได้ (ข้ามกลุ่ม) ไม่หลุดเป็น 500 ของ server
+        (self.snap / "weather.json").write_text(DEEP_JSON)
+        c = build_imaging_catalog(self.snap, PERIOD)
+        (msg,) = codes(c, "IMAGING_GROUP_UNREADABLE")
+        self.assertEqual(msg.level, "warning")
+        self.assertIn("weather", msg.text)
+        self.assertEqual([s.prn for s in c.satellites], ["X04", "X05"])
+
     def test_age_boundaries(self):
         # (MEAN_MOTION, อายุเป็นวัน, ธงที่คาด) เกณฑ์ใช้ ">" จึงอายุเท่ากับเกณฑ์พอดียังไม่ตั้งธงนั้น
         cases = [
@@ -214,6 +224,17 @@ class TestGnssPath(unittest.TestCase):
             snap = Path(tmp) / "snapshot"
             shutil.copytree(SNAP, snap)
             (snap / "galileo.json").write_text('[{"NORAD_CAT_ID": Infinity, "EPOCH": "2026-11-09T00:00:00"}]')
+            with self.assertRaises(OrbitUnavailableError) as cm:
+                build_catalog(snap, (T(2026, 11, 10), T(2026, 11, 11)), set("GREC"))
+            self.assertIn("galileo", str(cm.exception))
+
+
+    def test_gnss_deeply_nested_group_is_orbit_unavailable(self):
+        # ทาง GNSS: RecursionError จาก JSON ซ้อนลึกต้องเป็น OrbitUnavailableError ของกลุ่มนั้น (server ตอบ 422 ไม่ใช่ 500)
+        with tempfile.TemporaryDirectory() as tmp:
+            snap = Path(tmp) / "snapshot"
+            shutil.copytree(SNAP, snap)
+            (snap / "galileo.json").write_text(DEEP_JSON)
             with self.assertRaises(OrbitUnavailableError) as cm:
                 build_catalog(snap, (T(2026, 11, 10), T(2026, 11, 11)), set("GREC"))
             self.assertIn("galileo", str(cm.exception))

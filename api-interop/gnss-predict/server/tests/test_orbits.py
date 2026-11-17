@@ -521,3 +521,25 @@ def test_catalog_system_x_filter(client, snapshot):
     assert all(e["system"] == "X" and e["category"] == "imaging" for e in r.json())
     assert prns(catalog(client, system="G")) == ["G01", "G22"]
     assert_error(catalog(client, system="Q"), 422, "SCENARIO_INVALID", "system")
+
+
+def test_catalog_system_x_without_imaging_files_is_empty(client, snapshot):
+    r = catalog(client, system="X")
+    assert r.status_code == 200 and r.json() == []
+
+
+DEEP_JSON = "[" * 200_000 + "]" * 200_000                # ไฟล์ร้าย: json.loads ให้ RecursionError
+
+
+def test_catalog_deeply_nested_imaging_file_skips_that_group(client, snapshot):
+    add_imaging_files(snapshot)
+    (snapshot / "weather.json").write_text(DEEP_JSON)
+    r = catalog(client)
+    assert r.status_code == 200, r.text
+    assert [e["prn"] for e in r.json()] == ALL_PRNS + ["X04", "X05"]   # weather ถูกข้าม science/visual ยังอยู่
+
+
+def test_catalog_deeply_nested_gnss_file_is_orbit_source_unavailable(client, snapshot):
+    (snapshot / "galileo.json").write_text(DEEP_JSON)
+    j = assert_error(catalog(client), 422, "ORBIT_SOURCE_UNAVAILABLE")
+    assert "galileo" in j["text"]

@@ -48,7 +48,10 @@ def _parse_epoch(text: str) -> datetime:
 
 
 def _parse_records(text: str) -> list[OmmRecord]:
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except RecursionError as exc:                   # JSON ซ้อนลึกเกินที่ json อ่านได้: ถือว่าไม่ใช่ OMM เหมือน JSON เสีย
+        raise ValueError("ข้อมูล JSON ซ้อนลึกเกินไป ไม่ใช่ OMM") from exc
     if not isinstance(data, list):
         raise ValueError("ข้อมูลไม่ใช่ JSON array ของ OMM")
     records = []

@@ -340,6 +340,8 @@ const GIBS_TITLES = [
   "Himawari-9 Clean Infrared",
   "GOES-East GeoColor",
   "GOES-West GeoColor",
+  "MODIS Aqua True Color",
+  "VIIRS NOAA-21 True Color",
 ];
 
 const EOX_TITLE = "Sentinel-2 cloudless 2024";
@@ -389,8 +391,8 @@ test.describe("Globe Manager", () => {
     };
     expect(layers.enabled).toBe(false);
     expect(layers.sources).toEqual({ gibs: false, eox: false, osm: false, ion: false });
-    // server ส่ง 9 ชั้น (GIBS 8 + EOX 1) ; OpenStreetMap และ Cesium ion ไม่มีใน catalog ของ server (browser ดึงตรง)
-    expect(layers.layers).toHaveLength(9);
+    // server ส่ง 11 ชั้น (GIBS 10 + EOX 1) ; OpenStreetMap และ Cesium ion ไม่มีใน catalog ของ server (browser ดึงตรง)
+    expect(layers.layers).toHaveLength(11);
     expect(layers.layers.filter((l) => l.source === "gibs").map((l) => l.title)).toEqual(GIBS_TITLES);
     expect(layers.layers.filter((l) => l.source === "eox").map((l) => l.title)).toEqual([EOX_TITLE]);
 
@@ -403,8 +405,8 @@ test.describe("Globe Manager", () => {
       await expect(globeGroups(page).nth(i)).toHaveAttribute("aria-label", source.label);
       await expect(globeGroups(page).nth(i).getByRole("checkbox", { name: source.label, exact: true })).not.toBeChecked();
     }
-    // 11 แถว: Natural Earth II (ฐาน ปิดไม่ได้ อยู่นอกกลุ่ม) + 8 ชั้น GIBS + Sentinel-2 cloudless + OpenStreetMap ตามลำดับของกลุ่ม; กลุ่ม Cesium ion ไม่มีตาราง
-    await expect(globeRows(page)).toHaveCount(11);
+    // 13 แถว: Natural Earth II (ฐาน ปิดไม่ได้ อยู่นอกกลุ่ม) + 10 ชั้น GIBS + Sentinel-2 cloudless + OpenStreetMap ตามลำดับของกลุ่ม; กลุ่ม Cesium ion ไม่มีตาราง
+    await expect(globeRows(page)).toHaveCount(13);
     await expect(page.locator(".globe-table tbody th[scope=row]")).toHaveText(["Natural Earth II", ...GIBS_TITLES, EOX_TITLE, OSM_TITLE]);
     await expect(globeGroups(page).nth(0).locator("tbody th[scope=row]")).toHaveText(GIBS_TITLES);
     await expect(globeGroups(page).nth(1).locator("tbody th[scope=row]")).toHaveText([EOX_TITLE]);
