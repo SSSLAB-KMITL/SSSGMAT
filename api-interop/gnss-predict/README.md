@@ -890,7 +890,8 @@ npm run gen:api:check    # ตรวจว่า type ที่ commit ตรง
   ช่อง Width "1.5 km" ได้พื้นที่กว้าง 1.5 km คลาดไม่เกิน 3%,
   สลับ Camera/Sensor, ล้อเมาส์ซูมทีละ ×√2, Globe Manager แสดง 4 กลุ่มแหล่ง (13 แถว) และติ๊กสวิตช์ของแต่ละแหล่งแล้วกด Cancel/Esc ไม่เปลี่ยนค่าตั้ง; หัวข้อ 9.10), `models` (ดาวที่แสดงในหน้าต่าง 3D เป็นโมเดลทุกดวง `catalog.json` ถูกขอครั้งเดียว glb ไม่เกินครั้งเดียวต่อไฟล์, ปิด Satellite Models แล้วจุดกลับมาและเปิดใหม่ไม่ fetch ซ้ำ, +Z ของดาวชี้ลงโลกคลาดไม่เกิน 0.5° และตามเวลา; หัวข้อ 9.11), `imaging` (Insert X04 จาก Catalog ด้วยตัวกรอง Imaging ได้ Sensor MODIS ลูกของดาวพร้อม Rectangular 55/0.41, X04 ใน 3D ที่ความสูง 690–720 km และรอย MODIS 73 จุดทั้ง 3D และ 2D,
   Show Imagery ที่ GIBS ปิดขึ้นกล่องยืนยันแล้ว Cancel ไม่มี `PUT /api/settings` ไม่มี Sensor View, ดาวที่ไม่มี Sensor ไม่มี `POST .../objects` และกล้องบินไปเหนือจุดใต้ดาว
-  (test นี้ตอบ `/api/imagery/layers` และชิ้นภาพด้วย `page.route` ในเบราว์เซอร์ ไม่มีคำขอถึง GIBS หรือ server; หัวข้อ 9.13), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
+  (test นี้แก้คำตอบของ `/api/imagery/layers` ด้วย `page.route` ซึ่งขอของจริงจาก server ของ e2e ในเครื่องด้วย `route.fetch()` แล้วตั้ง GIBS เป็นเปิด
+  และตอบชิ้นภาพ `/api/imagery/tiles` เองในเบราว์เซอร์ ไม่มีชิ้นภาพใดถึง server และไม่มีคำขอถึง GIBS; test นี้ปิด Satellite Models และมี `test.fixme` แบบเปิดโมเดลรอการแก้ `terra.glb`; หัวข้อ 9.13), `perf` (ข้ามเว้นแต่ตั้ง `GNSS_E2E_PERF_URL`, ดูหัวข้อ 9.6)
 - ทุก spec ฟัง `pageerror` ของหน้า ถ้ามี exception ที่ไม่ถูกจับ test ล้มเหลว และบันทึกทุก request ของ browser (`tests/e2e/fixtures.ts`):
   ถ้ามี URL ที่ไม่ใช่ `http://127.0.0.1:8766/...`, `data:` หรือ `blob:` test ล้มเหลวพร้อมรายการ URL นั้น (ยืนยันว่าหน้าเว็บไม่ต่อเน็ตนอกเครื่อง)
   เมื่อตั้ง `GNSS_E2E_PERF_URL` (หัวข้อ 9.6) ตัวตรวจอนุญาต origin ของ URL นั้นเพิ่มอีกหนึ่ง origin ตรงตัว (เช่น `http://127.0.0.1:8767/`) ไม่กว้างกว่านั้น (ตรรกะอยู่ใน `tests/e2e/localRequest.ts`)
@@ -1418,7 +1419,9 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
   ช่อง **Imaging satellites** (ป้ายของเรา ตั้งต้นไม่ติ๊ก) ติ๊ก = ส่ง `systems: "GRECX"` ดึงกลุ่ม `weather`, `science` และ `visual` ของ CelesTrak เพิ่ม
   ภายใต้กติกาเดิม (1 ครั้งต่อกลุ่มต่อ 2 ชม., ไม่ลองซ้ำหลัง 403) คำอธิบายภาษาไทยใต้ช่องบอกชื่อสามกลุ่มนี้ ไม่ติ๊ก = คำขอเดิมทุกตัวอักษร (ดึงเฉพาะ GNSS)
   CLI: `python3 -m gnss_predict.studio fetch --systems GRECX` ; `X` อย่างเดียวไม่ได้ (ต้องมีระบบ GNSS อย่างน้อยหนึ่งตัว: CLI ตัวเลือกผิด exit 2, server 422)
-- ทุกการ fetch (ติ๊กหรือไม่ก็ตาม) คัดลอกไฟล์ล่าสุดใน cache `<group>_*.json` ของสามกลุ่มนี้ลง snapshot ใหม่เป็น `<group>.json` โดยไม่ส่งคำขอ และรวมใน `SHA256SUMS`
+- fetch ที่ **ไม่ติ๊ก** Imaging satellites (ไม่มี X) คัดลอกไฟล์ล่าสุดใน cache `<group>_*.json` ของสามกลุ่มนี้ลง snapshot ใหม่เป็น `<group>.json` **โดยไม่ส่งคำขอ**
+  ; fetch ที่ **ติ๊ก** (มี X) ส่งแต่ละกลุ่มผ่าน `fetch_group` ซึ่ง**อาจต่อเน็ตไป CelesTrak** ตามกติกา rate limit (กลุ่มที่เพิ่งดึงภายใน 2 ชม. หรือดึงไม่สำเร็จใช้ไฟล์ใน cache)
+  ทั้งสองแบบรวมไฟล์ที่ได้ใน `SHA256SUMS`
   snapshot ที่สร้างก่อนงานนี้ไม่มีไฟล์เหล่านี้ และไม่มีทางอ่าน `_cache` ตอนสร้าง catalog (ผลจึงทำซ้ำได้จาก snapshot เสมอ)
 - **อายุของไฟล์ใน cache**: คัดลอกเฉพาะไฟล์ที่เวลาในชื่อไฟล์ (`<group>_YYYYMMDDTHHMMZ.json`) ห่างจากตอน fetch ไม่เกิน **14 วัน** (เกณฑ์ซ่อนดาว GEO; ชื่อที่อ่านเวลาไม่ได้นับว่าเก่าเกิน)
   ไฟล์ที่เก่ากว่าไม่ถูกใส่ และมีข้อความ `IMAGING_CACHE_TOO_OLD` (fetch ที่ไม่มี X = info หนึ่งข้อความรวมทุกกลุ่ม, fetch ที่มี X = warning ต่อกลุ่ม)
@@ -1426,15 +1429,19 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - จับคู่ด้วย `NORAD_CAT_ID` เท่านั้น (ไม่ใช้ชื่อ: `ROBUSTA-3A` มีคำว่า TERRA) ดวงเดียวกันอยู่หลายกลุ่ม = ใช้ record ที่ EPOCH ใหม่สุด (record นั้นแปลงเป็น TLE ไม่ได้ = `TLE_UNAVAILABLE` ไม่ย้อนไปใช้ record เก่า)
   ไม่พบใน snapshot = อยู่ใน `unmapped` เหตุผล `TLE_UNAVAILABLE` ; ไฟล์กลุ่มที่อ่านไม่ได้ = ข้ามกลุ่มนั้นพร้อม `IMAGING_GROUP_UNREADABLE` (warning)
 - **ธงอายุ**: LEO ใช้เกณฑ์เดิม (stale > 2 วัน, too_old ซ่อน > 7 วัน) ส่วน **GEO** (mean motion < 1.1 รอบ/วัน: X01–X03) stale > 7 วัน และ too_old (ซ่อน) > 14 วัน
-  ดาวระบบ X ไม่มีธง `no_broadcast`, `unhealthy`, `prn_changed` และ `name_mismatch` ไม่ fetch นานเกิน 14 วัน = ดาว GEO ถูกซ่อน (คอลัมน์ Status ของ Satellite Catalog แสดงธง; engine ไม่ส่ง `SAT_FLAGGED` ของดาว X)
+  ดาวระบบ X ไม่มีธง `no_broadcast`, `unhealthy`, `prn_changed` และ `name_mismatch` ไม่ fetch นานเกิน 14 วัน = ดาว GEO ถูกซ่อน
+  ดาวที่มีธงได้คำเตือน `SAT_FLAGGED` ดวงละหนึ่งข้อความเหมือน GNSS (เช่น "เก่าเกิน 14 วัน" ของ GEO) ใน Message Viewer เมื่อ propagate ฉากที่มีดาวนั้น
+  ส่วน `GET /api/catalog` ไม่ส่งข้อความ กล่อง Insert จึงเห็นเฉพาะธงในคอลัมน์ Status
 - ฉากที่ไม่มีดาวระบบ X ได้ hash และผลลัพธ์เดิมทุกไบต์แม้ snapshot มีไฟล์กลุ่มดาวถ่ายภาพ (ไฟล์เหล่านี้เข้า hash เฉพาะฉากที่มี NORAD ของดาวถ่ายภาพ) ephemeris เดิมจึงไม่หมดอายุ
 
 **DOP, Validation และรายงาน**
 
 - **DOP** นับเฉพาะ `G`, `R`, `E`, `C` ดาว X ไม่อยู่ใน `ALL` และไม่มีแถวของตัวเองใน `dop.csv`
 - **Validation** ข้ามดาว X ทั้งหมด (ไม่มีแถว `unverified` ไม่มีคีย์ใหม่ใน JSON) และเพิ่มข้อความ info `IMAGING_SKIPPED` "ข้ามดาวถ่ายภาพ n ดวง (ไม่มีข้อมูลอ้างอิง)"
-  ใน messages และหนึ่งบรรทัดใน `validation_<วัน>.md` (เฉพาะเมื่อ n > 0) หน้าต่าง Validation แสดงวันที่ไม่มีระบบ GNSS ใดเป็น **No GNSS** แทน Fail
-  (รวมวันของฉาก GNSS ที่ไม่มีระบบใดตัดสินได้ ซึ่ง markdown ของ engine เรียกว่า "ตัดสินไม่ได้")
+  ใน messages และหนึ่งบรรทัดใน `validation_<วัน>.md` (เฉพาะเมื่อ n > 0)
+  หน้าต่าง Validation ตัดสินผลของวันจากบรรทัดของ `history.jsonl`: `systems` มีอักษรระบบ GNSS (G/R/E/C) = Pass หรือ Fail ตาม `pass` ;
+  ไม่มี แต่ `failing` ไม่ว่าง หรือไม่มีช่อง `systems` เลย = Fail ; นอกนั้น = **Undecided** (คำอธิบายไทย "ตัดสินไม่ได้ — …")
+  วัน Undecided แสดงเป็น **No GNSS** เมื่อโหลดผลรายวันของวันนั้นแล้วพบว่า `satellites` ว่าง (ฉากที่มีแต่ดาวถ่ายภาพ) ซึ่งเกิดหลังกราฟอายุโหลดวันนั้น (180 วันล่าสุด) หรือหลังคลิกวันนั้น
 - **Access/AER** คำนวณให้ดาว X ด้วย แต่ IPP และ MF ของดาว X ว่าง (ไม่ใช่สัญญาณ L-band): `aer.csv` เป็นช่องว่าง, IPP Data ในรายงาน .txt เป็น `N/A`, .csv เป็นช่องว่าง, JSON เป็น `null`
   ชั้น IPP ในหน้าต่าง 3D/2D ข้ามดาว X ; `legacy_gps.csv` มีเฉพาะ GPS เหมือนเดิม
 - **ความต่างของ CLI**: `fetch` รับ `--systems GRECX` ; `validate` พิมพ์ `info: ข้ามดาวถ่ายภาพ n ดวง (ไม่มีข้อมูลอ้างอิง)` เมื่อฉากมีดาว X ;
@@ -1465,7 +1472,8 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - ใช้ได้เฉพาะดาวที่ NORAD มี preset (ดาว GNSS เห็นเป็นสีเทา)
 - สวิตช์ GIBS ปิด = กล่องยืนยันเดียวกับสวิตช์ GIBS ใน Globe Manager ทุกตัวอักษร **Cancel หรือ Esc = ไม่ทำอะไรเลย** (ไม่มี `PUT /api/settings` ไม่แตะชั้นภาพ ไม่เปิดหน้าต่าง ไม่มีคำขอออกนอกเครื่อง)
 - ยืนยันแล้ว (หรือ GIBS เปิดอยู่แล้ว) = ติ๊ก Show ของชั้นภาพของดาวนั้น (% Translucency คงเดิม) และ **ซ่อนชั้นทึบที่วาดทับอยู่** (EOX, OpenStreetMap หรือชั้น GIBS ภาพคงที่ที่ทึบ
-  ซึ่งแหล่งเปิดและ Show ติ๊กอยู่: ปิด Show ของแถวใน workbook ไม่แตะสวิตช์แหล่ง) และ Cesium ion ที่แสดงแทนทุกชั้น (asset = None สวิตช์ ion คงเปิด) พร้อมข้อความไทยหนึ่งข้อความบอกชื่อชั้นที่ซ่อน
+  ซึ่งแหล่งเปิดและ Show ติ๊กอยู่: ปิด Show ของแถวใน workbook ไม่แตะสวิตช์แหล่ง) ชั้น GIBS ของดาวถ่ายภาพดวงอื่นที่แสดงอยู่เหนือชั้นที่เลือก (เช่น GOES-West GeoColor เหนือ MODIS Terra)
+  และ Cesium ion ที่แสดงแทนทุกชั้น (asset = None สวิตช์ ion คงเปิด) พร้อมข้อความไทยหนึ่งข้อความบอกชื่อทุกชั้นที่ซ่อน
 - ดาวมี Sensor ลูก = เปิด Sensor View ของ Sensor ตัวแรกในต้นไม้ ; **ไม่มี Sensor** = กล้องของหน้าต่าง 3D ที่ active บินไปเหนือจุดใต้ดาว ณ เวลาปัจจุบัน
   ที่ความสูง max(ความสูงของดาว, 3,000 km) **ไม่สร้าง object ใด** ; ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว = ข้อความไทย ไม่ย้ายกล้อง
 - ภาพ GIBS ของ **VIIRS Suomi NPP** ล่าช้า: ตอนตรวจ (research §6) ภาพล่าสุดของชั้นนี้เป็นของ 2026-11-02 Show Imagery ยังเปิดชั้นได้ วันที่ยังไม่มีภาพ HUD ของ Sensor View บอก "ไม่มีภาพเวลานี้" ตามเดิม
@@ -1475,6 +1483,9 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
 - ไม่มีแถบสแกนสะสม (swath corridor) บนแผนที่ 2D ใช้รอยของ Sensor ณ เวลาปัจจุบัน ; ไม่สลับชั้นกลางคืน/IR ให้เอง (เปลี่ยนเองใน Globe Manager)
 - ไม่ fetch กลุ่ม `resource`, `goes`, `noaa` ; Aqua อยู่เฉพาะกลุ่ม `visual` (100 ดวงที่สว่างสุด) ซึ่งอาจหลุดจากกลุ่มได้
 - ดาวถ่ายภาพมีเฉพาะ 8 ดวงนี้ (เพิ่มได้ที่ตาราง preset ที่เดียว)
+- **โมเดล Terra (`models/terra/terra.glb`) ทำให้หน้าต่าง 3D หยุดวาด**: แผง `wing-Y` ใช้วัสดุที่มีภาพแต่ไม่มีพิกัดภาพ (`TEXCOORD_0`) shader ของ Cesium คอมไพล์ไม่ผ่าน
+  เมื่อเปิด Satellite Models และกล้องอยู่ห่าง Terra (X04) ไม่เกิน Model Detail Threshold (ตั้งต้น 30,000 km) หน้าต่าง 3D นั้นค้าง
+  จนกว่าจะแก้ glb หรือมีตัวกันในเว็บ ; ทางเลี่ยง: ปิด Satellite Models (3D Graphics Window Properties → Details) หรือลด Model Detail Threshold
 - e2e ใช้ snapshot ปลอม: `E2E_IMG` (THBK + X04 + MODIS) ถูก "propagate" ด้วยวงโคจรปลอมของ `build_fixture.py` เพราะ server ของ e2e ไม่มี GMAT (`web/tests/e2e/imaging.spec.ts`)
 
 ## 10. Docker (GNSS Studio ใน container)

@@ -356,10 +356,17 @@
   - `isOpaqueLayer` และลำดับวาดของแหล่งย้าย (ไม่แก้) จาก `cesium/imageryLayers.ts` ไป `stores/imagery.ts` — คำสั่งใน bundle หลักไม่ดึง Cesium — ไม่มี
   - การติ๊กแถว OSM และ preset แรกของ ion อยู่ใน `enableSourceWithConsent` — ทุกผู้เรียกได้พฤติกรรมเดียวกัน — ย้ายสองบรรทัดกลับ
   - Fetch Orbit Data ไม่มีตัวเลือกระบบ GNSS จึงไม่มีกรณี "ติ๊กแต่ Imaging" (ติ๊ก = GREC + X เสมอ) บันทึกเหตุผลในคอมเมนต์ — ถ้าเพิ่มช่องระบบ GNSS ภายหลังต้องเพิ่มตัวกันและคำอธิบาย
-  - `no_gnss` ของ Validation ตัดสินจาก `systems` ของบรรทัดประวัติ (ไม่มี G/R/E/C = กลาง) ครอบคลุมวัน GNSS ที่ไม่มีระบบใดตัดสินได้ด้วย (เดิมแสดง Fail; engine เรียกว่า "ตัดสินไม่ได้") — แม่นกว่า Fail — ต้องอ่านไฟล์วันเพิ่ม
+  - (แทนกฎ `no_gnss` จาก `systems` ของรอบแรก ซึ่งถูกปฏิเสธในการตรวจ) ผลของวันใน Validation (`rows.ts` `resultOf`/`shownResult`): `systems` มีอักษร GNSS = Pass/Fail ตาม `pass` ; ไม่มี แต่ `failing` ไม่ว่าง หรือไม่มี `systems` = Fail ; นอกนั้น = Undecided (`validation.undecided` "ตัดสินไม่ได้ — …") ; No GNSS แสดงเฉพาะเมื่อโหลดผลรายวันแล้ว `satellites == {}` — ไม่เดาว่า "ไม่มีระบบ" แปลว่าไม่มีดาว GNSS (วัน GNSS ที่ไม่มีระบบใดตัดสินได้เป็น Undecided ตรงกับ engine) — วัน Undecided เก่ากว่า 180 วันแสดง Undecided จนกว่าจะคลิก
   - `CatalogEntry.category` และ `display_name` เป็น optional — แถว cache เก่าและ fixture ไม่มี — บังคับแล้วแก้ helper สามตัว
   - ช่อง Add Primary Sensor ใช้ได้เสมอแม้ไม่ได้เลือกดาว X — ไม่มีผลกับ Insert GNSS — ปิดใช้เมื่อไม่มีแถว X
   - test "Insert G01" ของ brief ใช้ G22 เพราะ fixture มี G01 อยู่แล้ว — ไม่มี
+- งาน 7 รอบแก้ 1 (dadd09a):
+  - No GNSS ไม่ดึงอะไรเพิ่ม ใช้ผลรายวันที่กราฟอายุโหลดอยู่แล้ว (180 วันล่าสุด) และวันที่คลิก — ไม่มีคำขอเพิ่ม — วัน Undecided ที่เก่ากว่านั้นแสดง Undecided จนกว่าจะคลิก
+  - `useImagery.updateSettings` บันทึกทีละครั้ง (promise chain) — กล่องยินยอมของ Show Imagery อยู่นอกตัวล็อกของ Globe Manager การบันทึกซ้อนกันอาจเปิดแหล่งที่ผู้ใช้เพิ่งปิดกลับมา — ถ้า PUT ค้าง การบันทึกถัดไปค้างจน reload
+  - Show Imagery ซ่อนชั้น GIBS ของดาวถ่ายภาพดวงอื่น (`gibs_layer` ของ preset) ที่แสดงอยู่เหนือชั้นที่เลือกด้วย รวมชั้น GEO เต็มจานที่ผูกเวลา (เช่น GOES-West เหนือ Terra) และบอกชื่อในข้อความเดียวกัน — ผู้ใช้ต้องการ "ดูภาพของดาวดวงนี้" — จำกัดเฉพาะชั้น LEO รายวัน
+  - ion ที่ถูกซ่อนมีข้อความเฉพาะ (`showImagery.uncoveredIon`) บอกวิธีเลือก asset กลับ — ion ไม่มีช่อง Show จึงคืนต่างจากชั้นอื่น — ไม่มี
+  - 409 ที่ `primary_sensors` แสดงคำแนะนำไทย (`catalog.primaryClash`) ให้เอาติ๊ก Add Primary Sensor ออกเพื่อ Insert เฉพาะดาว — ผู้ใช้รู้ทางออก — ไม่มี
+  - คำอธิบายใต้ช่อง Imaging satellites ผูกด้วย `aria-describedby` — โปรแกรมอ่านจออ่านคำอธิบายพร้อมช่อง — ไม่มี
 - งาน 8:
   - `E2E_IMG` สร้างจากแม่แบบ `empty` + THBK + `X04` (สี `DEFAULT_COLOR` เหมือน Insert ของ server) + `MODIS` จาก `preset_by_norad(25994).sensor.definition()` (ไม่พิมพ์ค่าซ้ำ) วงโคจรปลอม X รัศมี 7076 km เอียง 98.2°
     — ค่า preset มาจากที่เดียว — ฉาก GNSS ของ e2e ได้ hash เดิม (`E2E` ac0b3324dc02, `E2E_DATELINE` e3c54e56e5dd ตรวจกับ builder ก่อนแก้) — ไม่มี
@@ -367,14 +374,20 @@
     ถ้ายืนยันจริงจะ `PUT /api/settings` และ server ของ e2e จะเปิด GIBS ; route ทำให้ไม่มีคำขอถึง server หรือ GIBS (server สวิตช์ปิดตอบ 403 โดยไม่ต่อเน็ตอยู่แล้ว) — test ผูกกับรูปของ payload `/imagery/layers`
   - test เดียวกันปิด Satellite Models ก่อน Show Imagery — ข้อบกพร่องของ `terra.glb` (ด้านล่าง) ทำให้ render loop ของหน้าต่าง 3D หยุดเมื่อกล้องเข้าใกล้ Terra กล้องค้างกลางทาง test นี้ตรวจคำสั่ง ไม่ใช่โมเดล — โมเดล Terra ยังไม่มี e2e จนกว่าจะแก้ glb
   - README รวมเรื่องของ ข2 ไว้ที่หัวข้อ 9.13 พร้อมตัวชี้ใน 7.1, 7.2, 8.4 และแก้จำนวนชั้น GIBS (10 ชั้น, Globe Manager 13 แถว) ใน 8.8 และ 9.10 — ผู้ใช้อ่านที่เดียว — ย้ายย่อหน้า
-  - README เขียนพฤติกรรมจริง: ดาว GEO ที่ too_old ถูกซ่อนโดยไม่มีข้อความ `SAT_FLAGGED` (engine ไม่ส่งของดาว X; เห็นธงในคอลัมน์ Status ของ Catalog) ขณะที่ spec §7 บอกว่า "มีข้อความบอก" — ไม่เขียนสิ่งที่ไม่มี — ดูข้อเลื่อนไว้
+  - README บอกว่าดาวถ่ายภาพที่มีธง (รวม GEO "เก่าเกิน 14 วัน") ได้ `SAT_FLAGGED` เหมือน GNSS (`build_imaging_catalog` คืน `messages + flagged`, `test_imaging.py` ตรวจ X03) ตรงกับ spec §7
+    และบอกว่า `GET /api/catalog` ไม่ส่งข้อความ กล่อง Insert จึงเห็นเฉพาะธงในคอลัมน์ Status — (รอบแรกเขียนผิดว่าไม่มีข้อความ แก้ในรอบแก้ 1) — ไม่มี
 
 ### ข้อบกพร่องที่ e2e ของงาน 8 พบ
 
 - **`models/terra/terra.glb`**: primitive `wing-Y` สองชิ้นใช้วัสดุ 10 และ 11 (`Main Solar Panels.001`, `Main Solar Panels Back`) ที่มี `baseColorTexture` แต่ไม่มี `TEXCOORD_0`
   shader ของ Cesium คอมไพล์ไม่ผ่าน (`'v_texCoord_0' : undeclared identifier` เป็นข้อผิดพลาดของ GLSL จึงเกิดกับทุก GPU ไม่ใช่เฉพาะ SwiftShader) เมื่อ Terra กลายเป็นโมเดล
   (กล้องอยู่ใน Model Detail Threshold 30,000 km) แล้ว render loop ของหน้าต่าง 3D หยุด (frameCount ค้าง กล้องที่กำลังบินค้างกลางทาง) โมเดลอื่นทั้ง 25 ตัวใน `dist/models` ไม่มีปัญหานี้
-  แก้ที่ `models/terra/scripts/build.py` (ใส่ UV ให้แผงหรือใช้วัสดุไม่มีภาพ) อยู่นอกขอบเขตงาน 8 จึงไม่ได้แก้
+  (ผู้ตรวจยืนยัน: primitive 1, 2 ของ mesh `wing-Y` มีแค่ NORMAL/POSITION ข้อบกพร่องมีก่อน 225020ef)
+- Ruling สองส่วน:
+  1. แก้โมเดลบน branch `feature/gnss-studio-models`: `models/terra/scripts/build.py` ใส่ UV ให้แผง หรือใช้วัสดุไม่มีภาพ — โมเดลเป็นของงานโมเดล — ส่งต่อให้ agent ของงานโมเดล
+  2. ตัวกันในเว็บ วางแผนไว้ในรอบสุดท้ายของ ข2: render error บน viewer ที่เปิดโมเดลอยู่ = ปิดโมเดลดาวของ viewer นั้น (กลับเป็นจุด) พร้อมข้อความไทย
+     แทนการเริ่ม render loop ใหม่แล้วตายซ้ำ — glb ที่เสียตัวใดก็ไม่ทำให้หน้าต่างค้าง — ถ้าไม่ทำ หน้าต่าง 3D ค้างเมื่อเข้าใกล้ Terra จนกว่าจะแก้ glb
+- e2e มี `test.fixme` "Show Imagery on Terra with Satellite Models on" ใน `imaging.spec.ts` ไว้ติดตามช่องว่างนี้
 
 ### ข้อเล็กที่เลื่อนไว้
 
@@ -382,9 +395,9 @@
 - **รอผู้ใช้ตัดสิน**: เพิ่ม `docs/2026-11-15-stk-terms-rectangular-sensor.md` เป็นเอกสารหลักฐาน stkHelp ตัวที่สาม (เฉพาะคำที่ยกมาตรงตัว) ให้ Vertical/Horizontal Half Angle เป็น `stkHelp` แทน "Added by GNSS Studio"
   หรือเพิ่มสองคำนี้ใน STK reference §G (Ruling d)
 - **การ normalise เมื่อสลับชนิด Sensor**: Rectangular → Simple Conic เก็บ V/H เดิมและไม่มี cone ; ถ้ามี UI สลับชนิดภายหลัง ให้ normalise ที่ `_normalise_sensor_definition` ในจุด merge ของ `objects.py` เท่านั้น (ไม่ใช่ schema หรือ PUT)
-- ต้องตัดสิน: `intervals.json` global_statistics รวมดาว X กับ GNSS ในฉากผสม ; ฉากที่มีแต่ดาวถ่ายภาพบันทึก validation `pass: false` (หน้าต่างแสดง No GNSS แล้ว แต่ JSON ยังเป็น false)
-- ดาว GEO ที่ถูกซ่อนเพราะ too_old ไม่มีข้อความบอก (spec §7)
-- Show Imagery ถามยินยอมนอกตัวล็อกของ Globe Manager: กด Globe Manager กับ Show Imagery ซ้อนกันได้ `PUT /api/settings` ทับกัน (รายงานงาน 7)
+- ต้องตัดสิน: `intervals.json` global_statistics รวมดาว X กับ GNSS ในฉากผสม ; ฉากที่มีแต่ดาวถ่ายภาพบันทึก validation `pass: false` (หน้าต่างแสดง Undecided หรือ No GNSS เมื่อโหลดผลรายวันแล้ว แต่ JSON ยังเป็น false)
+- งาน 7: คิวบันทึกค่าตั้งไม่มี timeout (PUT ที่ไม่ตอบทำให้การบันทึกถัดไปค้างจน reload) ; No GNSS ขึ้นหลังโหลดผลรายวันแล้วเท่านั้น (วันเก่าแสดง Undecided จนกว่าจะคลิก) ;
+  EOX ที่โปร่งไม่ถูกซ่อน (M3) ; `drawnLayers` และอักษร X ซ้ำหลายที่ (M6) ; Show Imagery ใช้ได้แม้ layout ไม่มี API ของ globe (M8)
 - งาน 2: `fetch_group` เลือกไฟล์ตามชื่อ (lexicographic) ขณะที่ `_latest_cached` เลือกตามเวลาที่ parse ได้ และกิ่งชื่อที่ parse ไม่ได้ยังไม่มี test ; snapshot ชนกันเมื่อ fetch GREC แล้ว GRECX ภายในนาทีเดียว (ได้ snapshot แรก) ; ตัวคั่นในข้อความ `IMAGING_GROUP_UNAVAILABLE`
 - งาน 3: ไฟล์ cache ที่เวลาในชื่ออยู่ในอนาคตบังไฟล์เก่าที่ใช้ได้ของกลุ่มเดียวกัน ; `_optional` ของ IPP/MF ใช้กับทุก PRN (จำกัดเฉพาะ X ได้) ; test GMAT ของ X01 ไม่ดูกรอบ (ควรตรวจกล่อง ECEF ตลอด 6 ชม.) ;
   ไม่มี test DOP ที่ X ทำให้ n < 4 กลายเป็น ≥ 4 ; ตัวช่วย ENU→ECEF มีสำเนาที่ 4 ; คอมเมนต์/บรรทัดว่างผิดที่ใน test_studio_validate/test_dop

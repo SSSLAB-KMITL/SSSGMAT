@@ -5,10 +5,11 @@
 // - snapshot ของ e2e มีไฟล์กลุ่ม weather/science/visual จาก tests/fixtures/studio/imaging (เขียนเอง ไม่ใช่ข้อมูลที่ดาวน์โหลด)
 // - ไม่มี request ใดออกนอก 127.0.0.1: ตัวกันของ fixtures.ts ทำงานทุก test และทุก test ตรวจเพิ่มว่า browser ไม่ส่งอะไรถึง /api/imagery/tiles ของ server
 //   (สวิตช์ภาพออนไลน์ทุกแหล่งปิดใน settings.json ของ e2e) test ที่ไม่มี sensor ให้หน้าเว็บเห็น GIBS เป็น "เปิด" ด้วย page.route ของ /api/imagery/layers
-//   แล้วตอบชิ้นภาพ /api/imagery/tiles เองในเบราว์เซอร์ (ไม่ถึง server จึงไม่มีอะไรไป GIBS: และ server ที่สวิตช์ปิดตอบ 403 โดยไม่ต่อเน็ตอยู่แล้ว)
+//   (route.fetch() ขอของจริงจาก server ของ e2e ในเครื่อง แล้วแก้ sources.gibs ในคำตอบ) และตอบชิ้นภาพ /api/imagery/tiles เองในเบราว์เซอร์
+//   (ชิ้นภาพไม่ถึง server จึงไม่มีอะไรไป GIBS: และ server ที่สวิตช์ปิดตอบ 403 โดยไม่ต่อเน็ตอยู่แล้ว)
 // - spec นี้แก้ E2E_NORES (Insert) และ E2E_IMG (ลบ sensor) แล้วคืนเอกสารเดิมทุก test
 
-import type { Page, Request } from "@playwright/test";
+import type { APIRequestContext, Page, Request } from "@playwright/test";
 import { expect, openObjectProperties, openScenario, propertiesWindow, saveScenario, test, treeRow, waitForScene, WRITE_HEADERS } from "./fixtures";
 import { msg } from "../../src/labels/messages.th";
 
@@ -198,7 +199,8 @@ test.describe("Imaging satellites", () => {
     expect(seen.tiles, "browser requests to /api/imagery/tiles").toEqual([]);
   });
 
-  test("Show Imagery on a satellite without a sensor creates nothing and flies over it", async ({ page, request }) => {
+  /** Show Imagery ของ X04 ที่ไม่มี Sensor (amendment z) satelliteModels = false: ปิด Satellite Models ก่อน (ดูข้อบกพร่องของ terra.glb ข้างล่าง) */
+  async function showImageryWithoutSensor(page: Page, request: APIRequestContext, satelliteModels: boolean): Promise<void> {
     // ลบ MODIS ออกจาก E2E_IMG (afterEach คืนเอกสารเดิม) sensor ไม่อยู่ในข้อมูลตั้งต้นของ ephem จึงยังมีผลลัพธ์อยู่
     const reply = await request.get(`/api/scenarios/${SCENARIO}`);
     const doc = await reply.json();
@@ -221,10 +223,7 @@ test.describe("Imaging satellites", () => {
     await openScenario(page, SCENARIO);
     await waitForScene(page);
     await expect(treeRow(page, `*/Sensor/${SENSOR}`)).toHaveCount(0);
-    // Satellite Models ปิด: โมเดล terra.glb มี primitive (wing-Y) ที่ใช้วัสดุมีภาพแต่ไม่มี TEXCOORD_0 shader คอมไพล์ไม่ผ่าน
-    // เมื่อกล้องเข้าใกล้ Terra ภายใน Model Detail Threshold แล้ว render loop ของหน้าต่าง 3D หยุด (กล้องค้างกลางทาง) แยกเป็นข้อบกพร่องของโมเดล
-    // test นี้ตรวจคำสั่ง Show Imagery จึงใช้จุดของดาวแทนโมเดล
-    await satelliteModelsOff(page);
+    if (!satelliteModels) await satelliteModelsOff(page);
     const satellite = (await hooks.position(page, TERRA.prn))!;
     expect(satellite).not.toBeNull();
 
@@ -256,7 +255,34 @@ test.describe("Imaging satellites", () => {
     expect((await scenarioDoc(page, SCENARIO)).objects.filter((o) => o.class === "Sensor")).toEqual([]);
     expect(seen.settingsPuts, "PUT /api/settings").toEqual([]);
     expect((await onlineImagery(page)).enabled, "GIBS switch on the server").toBe(false);
-    // ทุกชิ้นภาพที่หน้าเว็บขอถูกตอบในเบราว์เซอร์ (ไม่มีชิ้นใดถึง server)
-    expect(seen.tiles.length, "tile requests seen by the browser").toBe(answered.length);
+    // ทุกชิ้นภาพที่หน้าเว็บขอถูกตอบในเบราว์เซอร์ (ไม่มีชิ้นใดถึง server): request event มาก่อน handler ของ route จึงรอจนนับตรงกัน
+    await expect
+      .poll(() => ({ unanswered: seen.tiles.length - answered.length, unknown: seen.tiles.filter((t) => !answered.includes(t)) }), {
+        message: "every tile the browser asked for was answered by the route",
+      })
+      .toEqual({ unanswered: 0, unknown: [] });
+  }
+
+  test("Show Imagery on a satellite without a sensor creates nothing and flies over it", async ({ page, request }) => {
+    // Satellite Models ปิด: โมเดล terra.glb มี primitive (wing-Y) ที่ใช้วัสดุมีภาพแต่ไม่มี TEXCOORD_0 shader คอมไพล์ไม่ผ่าน
+    // เมื่อกล้องเข้าใกล้ Terra ภายใน Model Detail Threshold แล้ว render loop ของหน้าต่าง 3D หยุด (กล้องค้างกลางทาง) แยกเป็นข้อบกพร่องของโมเดล
+    // test นี้ตรวจคำสั่ง Show Imagery จึงใช้จุดของดาวแทนโมเดล
+    await showImageryWithoutSensor(page, request, false);
   });
+
+  // ช่องว่างที่ติดตามไว้: เปิด test นี้เมื่อแก้ terra.glb (feature/gnss-studio-models) หรือเมื่อตัวกันในเว็บ (render error = ปิดโมเดลของ viewer นั้น) เข้ามา
+  test.fixme(
+    "Show Imagery on Terra with Satellite Models on",
+    {
+      annotation: {
+        type: "issue",
+        description:
+          "models/terra/terra.glb: mesh wing-Y uses textured materials 10/11 without TEXCOORD_0; Cesium's shader fails ('v_texCoord_0' undeclared) " +
+          "and the 3D render loop stops once Terra becomes a model (camera within 30,000 km). See docs/2026-11-14-gnss-studio-imagery-decisions.md, ข2.",
+      },
+    },
+    async ({ page, request }) => {
+      await showImageryWithoutSensor(page, request, true);
+    },
+  );
 });
