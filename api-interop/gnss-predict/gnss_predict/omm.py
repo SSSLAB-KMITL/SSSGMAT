@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S
+from .config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S, OMM_MAX_BYTES
 from .errors import Message, OrbitUnavailableError
 
 _UTC = timezone.utc
@@ -27,6 +27,10 @@ _OBJECT_ID_RE = re.compile(r"^(\d{4})-(\d{3})([A-Z]{0,3})$")
 _FRACTION_RE = re.compile(r"\.(\d+)")
 _ALPHA5 = "ABCDEFGHJKLMNPQRSTUVWXYZ"       # A–Z ข้าม I และ O แทน 10–33
 _STATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+class _ResponseTooLargeError(Exception):
+    """คำตอบใหญ่เกิน OMM_MAX_BYTES: ถือเป็นดาวน์โหลดไม่สำเร็จ (ไม่ใช่ ValueError เพื่อให้ข้อความไม่ปนกับ "ไม่ใช่ OMM")"""
 
 
 @dataclass(frozen=True)
@@ -186,9 +190,9 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
 
     คืน (ไฟล์ล่าสุดของกลุ่ม, ข้อความ) ไฟล์ล่าสุดคือชื่อที่เรียงแล้วมากที่สุดของ <group>_*.json
     - ส่ง request ไปไม่ถึง CELESTRAK_MIN_INTERVAL_S จาก last_request: ไม่ส่ง ใช้ไฟล์เดิม + ORBIT_RATE_LIMITED_LOCAL (info)
-    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM, timeout หรืออ่านไม่จบหลังส่ง request) หรือต่อเน็ตไม่ได้:
-      ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning) บันทึก last_request ทุกกรณี ยกเว้นที่ server ไม่ได้รับ
-      request เลย (URLError: DNS, connect รวมถึง connect timeout)
+    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM, ใหญ่เกิน OMM_MAX_BYTES, timeout หรืออ่านไม่จบหลังส่ง request)
+      หรือต่อเน็ตไม่ได้: ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning) บันทึก last_request ทุกกรณี
+      ยกเว้นที่ server ไม่ได้รับ request เลย (URLError: DNS, connect รวมถึง connect timeout)
     - ไม่มีไฟล์ให้ใช้: OrbitUnavailableError
     url: ใช้แทน URL ของ CelesTrak (เช่น file:// ใน CLI เดิมและ test)
     """
@@ -211,13 +215,17 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
     server_replied = True
     try:
         with opener(request, timeout=timeout_s) as resp:
-            data = resp.read()
+            data = resp.read(OMM_MAX_BYTES + 1)         # อ่านเกินเพดานแค่ 1 ไบต์พอรู้ว่าใหญ่เกิน ไม่อ่านต่อจนกินหน่วยความจำ
+        if len(data) > OMM_MAX_BYTES:
+            raise _ResponseTooLargeError
         if not _parse_records(data.decode("utf-8")):
             raise ValueError("ไม่มีรายการ OMM")
     except HTTPError as exc:
         reason = f"HTTP {exc.code}"
     except HTTPException as exc:           # อ่านคำตอบไม่จบ (IncompleteRead) ไม่ใช่ OSError
         reason = f"อ่านคำตอบไม่จบ: {exc}"
+    except _ResponseTooLargeError:         # server ตอบแล้ว: บันทึก last_request เหมือนคำตอบที่ใช้ไม่ได้อื่น ๆ
+        reason = f"คำตอบใหญ่เกิน {OMM_MAX_BYTES // 2**20} MB"
     except ValueError as exc:              # เนื้อหาไม่ใช่ JSON ของ OMM (UnicodeDecodeError และ JSONDecodeError เป็น ValueError)
         reason = f"คำตอบไม่ใช่ OMM: {exc}"
     except URLError as exc:                # DNS, connect (รวม connect timeout): urlopen ห่อเฉพาะความล้มเหลวก่อนส่ง request

@@ -1423,6 +1423,10 @@ Design: [docs/2026-11-14-gnss-studio-models-integration-design.md](docs/2026-11-
   ; fetch ที่ **ติ๊ก** (มี X) ส่งแต่ละกลุ่มผ่าน `fetch_group` ซึ่ง**อาจต่อเน็ตไป CelesTrak** ตามกติกา rate limit (กลุ่มที่เพิ่งดึงภายใน 2 ชม. หรือดึงไม่สำเร็จใช้ไฟล์ใน cache)
   ทั้งสองแบบรวมไฟล์ที่ได้ใน `SHA256SUMS`
   snapshot ที่สร้างก่อนงานนี้ไม่มีไฟล์เหล่านี้ และไม่มีทางอ่าน `_cache` ตอนสร้าง catalog (ผลจึงทำซ้ำได้จาก snapshot เสมอ)
+- **fetch สองครั้งในนาทีเดียวกัน** (เช่น GREC แล้ว GRECX): ชื่อ snapshot คือเวลา `YYYYMMDDTHHMMZ` และ snapshot ที่มีอยู่แล้วไม่ถูกแก้ไข (immutable)
+  ถ้า `SHA256SUMS` ที่ประกอบได้ครั้งหลังต่างจากของเดิม (เช่นมีกลุ่ม imaging เพิ่ม) fetch คืนข้อความ `SNAPSHOT_SAME_MINUTE` (warning) ว่าข้อมูลเข้า cache แล้ว
+  ให้กด Fetch Now อีกครั้งในนาทีถัดไป (ครั้งนั้นใช้ cache ไม่ส่งคำขอใหม่ไปยัง CelesTrak) ; ข้อมูลเหมือนเดิมทุกไบต์ไม่มีข้อความ
+- คำตอบ OMM ของแต่ละกลุ่มอ่านได้ไม่เกิน **32 MB** (`OMM_MAX_BYTES`) ใหญ่กว่านี้นับเป็นดาวน์โหลดไม่สำเร็จ (`ORBIT_DOWNLOAD_FAILED`, บันทึก last_request ตามกติกาเดิม ใช้ไฟล์เดิมใน cache)
 - **อายุของไฟล์ใน cache**: คัดลอกเฉพาะไฟล์ที่เวลาในชื่อไฟล์ (`<group>_YYYYMMDDTHHMMZ.json`) ห่างจากตอน fetch ไม่เกิน **14 วัน** (เกณฑ์ซ่อนดาว GEO; ชื่อที่อ่านเวลาไม่ได้นับว่าเก่าเกิน)
   ไฟล์ที่เก่ากว่าไม่ถูกใส่ และมีข้อความ `IMAGING_CACHE_TOO_OLD` (fetch ที่ไม่มี X = info หนึ่งข้อความรวมทุกกลุ่ม, fetch ที่มี X = warning ต่อกลุ่ม)
   กฎเดียวกันใช้กับไฟล์ cache ที่ `fetch_group` คืนมาเมื่อดึงไม่สำเร็จ ; ดึงกลุ่มไม่ได้และไม่มี cache = `IMAGING_GROUP_UNAVAILABLE` (warning) snapshot ของ GNSS ยังเขียนได้ตามปกติ

@@ -41,6 +41,7 @@ TEMPLATE_PATH = PKG_ROOT / "templates" / "thbk_visibility.script.tmpl"
 CELESTRAK_GP_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=json"
 GNSS_GROUPS = {"G": "gps-ops", "R": "glo-ops", "E": "galileo", "C": "beidou"}
 CELESTRAK_MIN_INTERVAL_S = 7200       # ส่ง request ได้ไม่เกิน 1 ครั้งต่อกลุ่มต่อรอบอัปเดต 2 ชม.
+OMM_MAX_BYTES = 32 * 1024 * 1024       # เพดานขนาดคำตอบ OMM หนึ่งกลุ่ม (กลุ่มใหญ่สุดจริงยังไม่ถึง 1 MB) เกินนี้ถือว่าดาวน์โหลดไม่สำเร็จ
 
 IGS_META_URL = "https://files.igs.org/pub/station/general/igs_satellite_metadata.snx"
 IGS_META_MAX_AGE_S = 86400             # ไฟล์ IGS metadata อายุเกินนี้ถึงดึงใหม่ (24 ชม.)

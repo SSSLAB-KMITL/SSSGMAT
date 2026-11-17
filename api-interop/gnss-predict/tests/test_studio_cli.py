@@ -351,6 +351,47 @@ class TestFetchSnapshot(unittest.TestCase):
         self.assertEqual((snap2 / "visual.json").read_bytes(), (IMG / "visual.json").read_bytes())
         self.assertEqual(sum(m.code == "ORBIT_RATE_LIMITED_LOCAL" for m in msgs2), 7)
 
+    def test_same_minute_second_fetch_with_imaging_warns_and_keeps_snapshot(self):
+        # I2: GREC แล้ว GRECX ในนาทีเดียวกัน: โฟลเดอร์ snapshot ของนาทีนั้นมีอยู่แล้ว (ไม่แก้: immutable)
+        # กลุ่ม imaging จึงไม่เข้า snapshot ต้องมี warning SNAPSHOT_SAME_MINUTE บอกให้กด Fetch Now อีกครั้งในนาทีถัดไป
+        snap1, msgs1 = fetch_snapshot(self.data, NOW, systems="GREC", opener=fixture_opener(),
+                                      brdc_fetcher=self.failing_brdc)
+        before = {n: (snap1 / n).read_bytes() for n in files_in(snap1)}
+        self.assertFalse([m for m in msgs1 if m.code == "SNAPSHOT_SAME_MINUTE"])
+
+        opener = fixture_opener()
+        snap2, msgs2 = fetch_snapshot(self.data, NOW + timedelta(seconds=10), systems="GRECX", opener=opener,
+                                      brdc_fetcher=self.failing_brdc)
+        self.assertEqual(snap2, snap1)
+        self.assertEqual({n: (snap1 / n).read_bytes() for n in files_in(snap1)}, before)      # snapshot เดิมไม่เปลี่ยน
+        same = [m for m in msgs2 if m.code == "SNAPSHOT_SAME_MINUTE"]
+        self.assertEqual([m.level for m in same], ["warning"])
+        for part in ("cache", "Fetch Now", "นาทีถัดไป", "20261110T0605Z", "ไม่ส่งคำขอใหม่"):
+            self.assertIn(part, same[0].text)
+        cache = self.data / "orbits" / "_cache"
+        for group in ("weather", "science", "visual"):                                         # ข้อมูลเข้า cache แล้วจริง
+            self.assertEqual(len(list(cache.glob(f"{group}_*.json"))), 1, group)
+            self.assertEqual(sum(f"GROUP={group}&" in u for u in opener.urls), 1, group)
+
+        # นาทีถัดไป: กด Fetch Now อีกครั้งสร้าง snapshot ที่มี imaging จาก cache โดยไม่ส่งคำขอ CelesTrak ใหม่ และไม่เตือนซ้ำ
+        again = fixture_opener()
+        snap3, msgs3 = fetch_snapshot(self.data, NOW + timedelta(minutes=1), systems="GRECX", opener=again,
+                                      brdc_fetcher=self.failing_brdc)
+        self.assertEqual(snap3, self.data / "orbits" / "20261110T0606Z")
+        self.assertFalse([u for u in again.urls if "GROUP=" in u], again.urls)
+        for group in ("weather", "science", "visual"):
+            self.assertEqual((snap3 / f"{group}.json").read_bytes(), (IMG / f"{group}.json").read_bytes())
+        self.assertFalse([m for m in msgs3 if m.code == "SNAPSHOT_SAME_MINUTE"])
+
+    def test_same_minute_identical_fetch_does_not_warn(self):
+        # ข้อมูลเหมือนเดิม (SHA256SUMS ตรงกัน) ไม่มีอะไรหายไป จึงไม่เตือน
+        snap1, _ = fetch_snapshot(self.data, NOW, systems="GRECX", opener=fixture_opener(),
+                                  brdc_fetcher=self.failing_brdc)
+        snap2, msgs2 = fetch_snapshot(self.data, NOW + timedelta(seconds=10), systems="GRECX",
+                                      opener=fixture_opener(), brdc_fetcher=self.failing_brdc)
+        self.assertEqual(snap2, snap1)
+        self.assertFalse([m for m in msgs2 if m.code == "SNAPSHOT_SAME_MINUTE"], msgs2)
+
     def test_systems_x_failed_imaging_group_is_left_out(self):
         # ดึงกลุ่ม imaging ไม่ได้และไม่มี cache: snapshot ยังสร้างได้โดยไม่มีกลุ่มนั้น + ข้อความเตือน
         # ดึงไม่ได้แต่ cache เก่าเกิน 14 วัน: ไม่คัดลอกไฟล์เก่าเหมือนกรณีไม่ได้สั่ง X
@@ -377,6 +418,9 @@ class TestFetchSnapshot(unittest.TestCase):
     def test_systems_validation(self):
         self.assertEqual(studio._system_letters("GRECX"), ["G", "R", "E", "C", "X"])
         self.assertEqual(studio._system_letters("xcg"), ["G", "C", "X"])
+        for spelling in ("GRECX", "XGREC", "xgrec", "CEXRG", "GGRRECCXX"):                  # ลำดับและตัวซ้ำไม่มีผล
+            self.assertEqual(studio._system_letters(spelling), ["G", "R", "E", "C", "X"], spelling)
+        self.assertEqual(studio._system_letters("GGGGX"), ["G", "X"])
         for bad in ("GRECZ", "", "X", "xx"):
             with self.assertRaises(ValueError, msg=bad):
                 studio._system_letters(bad)

@@ -257,6 +257,20 @@ def test_submit_accepts_valid_params(mgr_idle, s1):
     assert mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}).params == {"for_date": "2026-11-12"}
 
 
+def test_fetch_systems_are_canonical_order_and_dedupe(mgr_idle):
+    # ลำดับตัวอักษรและตัวซ้ำไม่ทำให้เป็นคนละ job: params เก็บเป็นลำดับ GREC แล้วตามด้วย X เหมือน studio._system_letters
+    first = mgr_idle.submit("fetch", None, {"systems": "GRECX"})
+    assert first.params == {"systems": "GRECX"}
+    for spelling in ("XGREC", "xgrec", "CEXRG", "GGRRECCXX"):
+        again = mgr_idle.submit("fetch", None, {"systems": spelling})
+        assert (again.id, again.params) == (first.id, {"systems": "GRECX"}), spelling
+    for spelling, canonical in (("GGGGX", "GX"), ("XG", "GX"), ("eg", "GE"), ("CRG", "GRC")):
+        assert mgr_idle.submit("fetch", None, {"systems": spelling}).params == {"systems": canonical}, spelling
+    gx = mgr_idle.submit("fetch", None, {"systems": "GX"})
+    assert mgr_idle.submit("fetch", None, {"systems": "XGGGG"}).id == gx.id
+    assert len(mgr_idle.list()) == 4                    # GRECX, GX, GE, GRC (ที่เหลือซ้ำกับของเดิม)
+
+
 # ---------- คิวเดียว ----------
 
 def test_jobs_run_one_at_a_time(mgr_inline, s1, monkeypatch):

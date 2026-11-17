@@ -249,6 +249,17 @@ def _sha256sums(files: dict[str, bytes]) -> bytes:
                    for name, data in sorted(files.items())).encode("utf-8")
 
 
+def _differs_from_existing(final_dir: Path, sums: bytes) -> bool:
+    """snapshot ของนาทีนี้มีอยู่แล้วและ SHA256SUMS ต่างจากที่เพิ่งประกอบ (อ่าน SHA256SUMS เดิมไม่ได้นับว่าต่าง)
+    write_bundle จะคงโฟลเดอร์เดิมไว้ ข้อมูลที่เพิ่งดึง (เช่นกลุ่ม imaging ของ fetch รอบหลัง) จึงไม่เข้า snapshot นี้"""
+    if not final_dir.exists():
+        return False
+    try:
+        return (final_dir / SHA256SUMS).read_bytes() != sums
+    except OSError:
+        return True
+
+
 def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=urlopen,
                    brdc_fetcher=brdc.fetch_brdc, progress: Progress | None = None) -> tuple[Path, list[Message]]:
     """ดึง OMM ของทุกกลุ่มใน systems, IGS metadata และ broadcast ลง cache แล้วรวมเป็น snapshot
@@ -262,6 +273,9 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
     - ไม่มี X: คัดลอกไฟล์ล่าสุดใน cache โดยไม่ส่ง request (ไม่มีไฟล์: ไม่มีกลุ่มนั้นและไม่มีข้อความ)
     - ทั้งสองกรณีใส่เฉพาะไฟล์ที่ |อายุ| ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS วัน ที่เกินได้ IMAGING_CACHE_TOO_OLD:
       มี X เป็น warning ต่อกลุ่ม ไม่มี X (เช่นงานรายวัน) เป็น info ข้อความเดียวที่บอกทุกกลุ่มที่ไม่ใส่
+
+    snapshot ที่มีอยู่แล้วไม่ถูกแก้ไข: ถ้า fetch อีกครั้งในนาทีเดียวกัน (โฟลเดอร์ชื่อเดียวกัน) แล้ว SHA256SUMS ต่างจากของเดิม
+    (เช่น GREC แล้ว GRECX กลุ่ม imaging จึงไม่เข้า snapshot) ได้ warning SNAPSHOT_SAME_MINUTE ข้อมูลที่ดึงอยู่ใน cache แล้ว
     """
     report = _reporter(progress)
     letters = _system_letters(systems)
@@ -312,7 +326,13 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
     messages += msgs
     report("write", 0.9)
     files[SHA256SUMS] = _sha256sums(files)
-    snapshot = write_bundle(orbits / now.strftime(SNAPSHOT_TIME_FMT), files)
+    final_dir = orbits / now.strftime(SNAPSHOT_TIME_FMT)
+    if _differs_from_existing(final_dir, files[SHA256SUMS]):
+        messages.append(Message("SNAPSHOT_SAME_MINUTE", "warning",
+                                f"ข้อมูลที่ดึงครั้งนี้เข้า cache แล้ว แต่ snapshot ของนาทีนี้ ({final_dir.name}) มีอยู่แล้วจึงไม่ถูกแก้ไข "
+                                "ให้กด Fetch Now อีกครั้งในนาทีถัดไปเพื่อสร้าง snapshot ใหม่จากข้อมูลใน cache "
+                                "(ครั้งนั้นจะไม่ส่งคำขอใหม่ไปยัง CelesTrak)"))
+    snapshot = write_bundle(final_dir, files)           # โฟลเดอร์ที่มีอยู่แล้วคงเดิม (snapshot immutable)
     report("done", 1.0)
     return snapshot, messages
 

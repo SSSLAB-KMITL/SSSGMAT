@@ -392,7 +392,7 @@ class JobManager:
             if not set(letters) & set(GNSS_LETTERS) or set(letters) - set(SYSTEM_LETTERS):
                 raise _invalid(name, f"ระบบดาวเทียมต้องเป็นตัวอักษร {GNSS_LETTERS} อย่างน้อยหนึ่งตัว "
                                      f"(เพิ่ม {IMAGING_LETTER} เพื่อดึงกลุ่มดาวถ่ายภาพ)")
-            return letters
+            return "".join(l for l in SYSTEM_LETTERS if l in letters)    # ลำดับ GREC แล้ว X ไม่ซ้ำ: GRECX, XGREC, xgrec เป็น job เดียวกัน
         raise _invalid(name, f"ไม่รู้จักค่า {name}")
 
     def _check_params(self, kind: str, params) -> dict:
