@@ -1,12 +1,14 @@
 // Search Satellite Catalog (spec §11, STK ref §B "Search Standard Object Data"): เลือกดาวจาก snapshot ที่ scenario ใช้แล้ว Insert ด้วยคำขอเดียว
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
-//   System (ทั้งหมด / G / R / E / C) และคำค้น (ไม่สนตัวพิมพ์ ค้น PRN SVN NORAD Block และชื่อ CelesTrak)
-// - ตาราง PRN, SVN, NORAD, Block, Name (ชื่อ CelesTrak), Age, Status (ธง; ดาวที่อยู่ใน scenario แล้ว = "มีแล้ว") เลือกหลายแถว: คลิก, Ctrl/Cmd-คลิก (เพิ่ม/เอาออก),
+//   System (ทั้งหมด / G / R / E / C / Imaging = X) และคำค้น (ไม่สนตัวพิมพ์ ค้น PRN SVN NORAD Block ชื่อ CelesTrak และชื่อที่แสดง)
+// - ตาราง PRN, SVN, NORAD, Block, Name (display_name: ดาวถ่ายภาพ = ชื่อ preset เช่น Terra, GNSS = ชื่อ CelesTrak), Age, Status (ธง; ดาวที่อยู่ใน scenario แล้ว = "มีแล้ว") เลือกหลายแถว: คลิก, Ctrl/Cmd-คลิก (เพิ่ม/เอาออก),
 //   Shift-คลิก (ช่วงจากแถวที่คลิกล่าสุด; Ctrl+Shift เพิ่มช่วง) คีย์บอร์ด: ลูกศรเลื่อน (Shift ขยายช่วง) Space สลับ Ctrl/Cmd+A เลือกทั้งหมดที่เห็น
 //   แถวที่มี NORAD ตรงกับดาวใน scenario เลือกไม่ได้ ตัวกรองที่ซ่อนแถวที่เลือกไว้ = เอาแถวนั้นออกจากที่เลือก (Insert ส่งเฉพาะที่เห็นอยู่)
 // - Create Constellation from Selected + ชื่อ (กติกาชื่อเดียวกับ server และไม่ซ้ำ object ใน scenario) Insert = POST /objects ครั้งเดียวพร้อม norads ทั้งหมด
 //   (ตามลำดับในตาราง) สำเร็จ = เลือก object แรกที่สร้างและปิดหน้าต่าง; 409/422 ขึ้นที่ช่องชื่อ (create_constellation) หรือเหนือปุ่ม (norads)
+// - Add Primary Sensor (ข2 Ruling m, ติ๊กเป็นค่าตั้งต้น): ส่ง primary_sensors: true เฉพาะเมื่อติ๊กและที่เลือกมีดาวถ่ายภาพ (X) อย่างน้อยหนึ่งดวง
+//   ไม่งั้นไม่มีช่องนี้ (Insert ของ GNSS ล้วนส่งเหมือนเดิมทุกไบต์)
 // - ตารางนี้ไม่ใช้ virtual list: catalog สี่ระบบมีราว 130 ดาว (ราว 1,000 เซลล์) ซึ่ง DOM จัดการได้สบาย
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -32,7 +34,11 @@ const SYSTEM_OPTIONS = [
   { value: "R", label: "option.system.glonass" },
   { value: "E", label: "option.system.galileo" },
   { value: "C", label: "option.system.beidou" },
+  { value: "X", label: "option.system.imaging" },
 ] as const;
+
+/** อักษรระบบของดาวถ่ายภาพ (IMAGING_LETTER ของ engine) */
+const IMAGING = "X";
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
@@ -54,8 +60,14 @@ function toEntry(x: unknown): CatalogEntry | null {
     omm_epoch: text(x.omm_epoch),
     age_days: typeof x.age_days === "number" ? x.age_days : Number.NaN,
     flags: Array.isArray(x.flags) ? x.flags.filter((f): f is string => typeof f === "string") : [],
+    // server ก่อน ข2 ไม่ส่งสองช่องนี้: แยกชนิดจากอักษรระบบ ชื่อที่แสดง = ชื่อ CelesTrak
+    category: typeof x.category === "string" ? x.category : x.system === IMAGING ? "imaging" : "gnss",
+    display_name: typeof x.display_name === "string" && x.display_name !== "" ? x.display_name : text(x.celestrak_name),
   };
 }
+
+const displayName = (entry: CatalogEntry): string => entry.display_name ?? entry.celestrak_name;
+const isImaging = (entry: CatalogEntry): boolean => entry.category === "imaging" || entry.system === IMAGING;
 
 /** ISO ที่ server รับ: เหมือน store (Date.toISOString()) อ่านไม่ได้ก็ส่งตามที่เก็บไว้ ให้ server เป็นคนปฏิเสธ */
 const isoOf = (text: string): string => parseIsoUtc(text)?.toISOString() ?? text;
@@ -65,7 +77,7 @@ function queryOf(snapshot: string, start: string, stop: string): string {
 }
 
 function matches(entry: CatalogEntry, needle: string): boolean {
-  return [entry.prn, entry.svn, String(entry.norad), entry.block, entry.celestrak_name].some((field) => field.toLowerCase().includes(needle));
+  return [entry.prn, entry.svn, String(entry.norad), entry.block, entry.celestrak_name, displayName(entry)].some((field) => field.toLowerCase().includes(needle));
 }
 
 const ageText = (days: number): string => (Number.isFinite(days) ? `${days.toFixed(1)} d` : "—");
@@ -85,6 +97,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
   const [focused, setFocused] = useState<number | null>(null);
   const [makeConstellation, setMakeConstellation] = useState(false);
   const [constellationName, setConstellationName] = useState("");
+  const [primarySensors, setPrimarySensors] = useState(true);
   const [nameError, setNameError] = useState<string | null>(null);
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -208,6 +221,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
         method: "From Satellite Catalog",
         norads: chosen.map((e) => e.norad),
         ...(makeConstellation ? { create_constellation: constellationName } : {}),
+        ...(primarySensors && chosen.some(isImaging) ? { primary_sensors: true } : {}),
       });
       close();
     } catch (e) {
@@ -302,7 +316,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
                     <td>{e.svn}</td>
                     <td className="catalog-num">{e.norad}</td>
                     <td>{e.block}</td>
-                    <td>{e.celestrak_name}</td>
+                    <td>{displayName(e)}</td>
                     <td className="catalog-num">{ageText(e.age_days)}</td>
                     <td title={e.flags.length === 0 ? undefined : e.flags.map(flagLine).join("\n")}>
                       {there ? msg("catalog.inScenario") : e.flags.map(flagName).join(", ")}
@@ -347,6 +361,10 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
             )}
           </FormField>
         </div>
+        <label className="catalog-check">
+          <input type="checkbox" checked={primarySensors} disabled={busy} onChange={(e) => setPrimarySensors(e.target.checked)} />
+          {t("dialog.catalog.addPrimarySensor")}
+        </label>
         {general !== null && (
           <p className="form-error catalog-note" role="alert">
             {general}

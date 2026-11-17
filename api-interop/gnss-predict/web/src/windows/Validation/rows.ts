@@ -5,6 +5,8 @@
 //   ตัวเลขที่ไม่ใช่จำนวนจำกัด = null, ช่องที่ไม่รู้จักไม่ถูกแตะ
 // - วัน + scenario เดียวกันที่ตรวจซ้ำ (หลายบรรทัดในไฟล์) แสดงบรรทัดที่ใหม่สุด (created_utc แล้วลำดับในไฟล์); วันที่มีผลแล้วไม่แสดงซ้ำเป็น Pending
 // - Result ของวัน: pass | fail (จากช่อง pass ของ history) | pending | gave_up (จาก /validation/pending) เรียงวันใหม่สุดก่อน
+//   no_gnss (ข2): บรรทัดที่ systems ไม่มีระบบ GNSS (G R E C) เลย เช่น scenario ที่มีแต่ดาวถ่ายภาพ (engine ข้าม X ทั้งหมด pass จึงเป็น false)
+//   = กลาง ๆ ไม่ใช่ Fail
 // - Trend: ค่า P99 ต่อระบบต่อวัน (หนึ่งจุดต่อวัน: บรรทัดที่ใหม่สุดของวันนั้นถ้ามีหลาย scenario) เส้นเกณฑ์เท่ากับ EL_P99_MAX / AZ_P99_MAX ของ engine (0.2° / 0.5°)
 
 import type { components } from "../../api/types.gen";
@@ -153,7 +155,16 @@ function latestPerDay(history: readonly HistoryRecord[]): Map<string, HistoryRec
 
 // ---------- ตารางรายวัน ----------
 
-export type DayResult = "pass" | "fail" | "pending" | "gave_up";
+export type DayResult = "pass" | "fail" | "pending" | "gave_up" | "no_gnss";
+
+/** อักษรของระบบ GNSS (GNSS_GROUPS ของ engine) */
+const GNSS_LETTERS = new Set(SYSTEM_ORDER);
+
+/** ผลของวันที่ตรวจแล้ว: ไม่มีระบบ GNSS ใดใน systems = no_gnss ไม่งั้นตามช่อง pass */
+function resultOf(rec: HistoryRecord): DayResult {
+  if (!Object.keys(rec.systems ?? {}).some((letter) => GNSS_LETTERS.has(letter))) return "no_gnss";
+  return rec.pass === true ? "pass" : "fail";
+}
 
 /** ค่ากลางกับ P99 ของหนึ่งระบบในวันหนึ่ง (ตาม Metric ที่เลือก) */
 export interface SystemCell {
@@ -204,7 +215,7 @@ export function dailyRows(history: readonly HistoryRecord[], pending: readonly P
     scenario: rec.scenario,
     truth: rec.truth_file ?? null,
     systems: systemCells(rec, metric),
-    result: rec.pass === true ? "pass" : "fail",
+    result: resultOf(rec),
     failing: strings(rec.failing),
     nextAttempt: null,
     created: rec.created_utc ?? null,

@@ -52,7 +52,9 @@ import {
   Credit, ImageryLayer, IonImageryProvider, NeverTileDiscardPolicy, RuntimeError, UrlTemplateImageryProvider, WebMercatorTilingScheme, type Viewer,
 } from "cesium";
 import { msg } from "../labels/messages.th";
-import { OSM_LAYER, OSM_URL, useImagery, type ImageryLayerInfo, type ImagerySourceId, type LayerSourceId } from "../stores/imagery";
+import {
+  isOpaqueLayer, LAYER_SOURCE_ORDER, OSM_LAYER, OSM_URL, useImagery, type ImageryLayerInfo, type ImagerySourceId,
+} from "../stores/imagery";
 import { useLayout } from "../stores/layout";
 import { report } from "../stores/messages";
 import { useSettings } from "../stores/settings";
@@ -209,21 +211,13 @@ function noteOsmFailing(): void {
 
 // ---------- ชั้นของ catalog และ OpenStreetMap ----------
 
-/** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) ภายในแหล่งเดียวกันตามลำดับ catalog */
-const SOURCE_ORDER: Readonly<Record<LayerSourceId, number>> = { gibs: 0, eox: 1, osm: 2 };
+/** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) และ isOpaqueLayer อยู่ที่ stores/imagery.ts (Show Imagery ใช้ด้วยโดยไม่ลาก Cesium เข้ามา) */
+const SOURCE_ORDER = LAYER_SOURCE_ORDER;
 
 const alphaOf = (id: string): number => {
   const t = useLayout.getState().globe.layers[id]?.translucency ?? 0;
   return 1 - t / 100;
 };
-
-/**
- * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลกเสมอ: translucency 0 และภาพทึบที่มีทุกชิ้นทุกเวลา = jpg ภาพคงที่ (Blue Marble, EOX) หรือ OpenStreetMap (png แต่ทึบ)
- * ชั้นที่ผูกเวลา (daily: VIIRS, MODIS ; 10min: Himawari, GOES) ไม่นับว่าทึบ แม้เป็น jpg: เวลาที่ยังไม่มีภาพ (scenario พยากรณ์ล่วงหน้า) server ตอบ 404
- * ชิ้นนั้นโปร่งใส ชั้นข้างใต้ (Blue Marble) ต้องยังอยู่ให้เห็น และ GOES/Himawari เห็นแค่จานโลกของดาวค้างฟ้า png ของ GIBS (Himawari) ไม่ทึบอยู่แล้ว
- */
-export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
-  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period === "static"));
 
 /**
  * ชั้นที่ควรวาด (ion shown = ไม่มีเลย) ตามลำดับวาด: ชั้นที่แสดงอยู่ตั้งแต่ชั้นทึบบนสุด (isOpaqueLayer) ขึ้นไป

@@ -48,6 +48,11 @@ export interface Scene3DHandle {
   homeView(): void;
   /** Zoom To: กล้องตามไปที่ object (path) คืน false ถ้าไม่มี entity ของ object นั้นในภาพ */
   zoomTo(path: string): boolean;
+  /**
+   * Show Imagery (ข2 amendment z): ปล่อยกล้องจากการตาม object แล้วบินไปเหนือจุด (lonDeg, latDeg) ที่ความสูง heightM มองลงตรง ๆ (ทิศเหนืออยู่บน)
+   * ภาพปลอมของ test ไม่ต้องมี
+   */
+  flyOver?(lonDeg: number, latDeg: number, heightM: number): boolean;
   /** View From/To: กล้องอยู่ที่ from มองไปที่ to (ตามไปเมื่อเวลาเดิน) */
   viewFromTo(req: ViewFromToRequest): ViewFromToResult;
   /** โหลดผลลัพธ์เข้าภาพไม่สำเร็จ แสดงเฉพาะ Facility อยู่ (จะลองใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป) */

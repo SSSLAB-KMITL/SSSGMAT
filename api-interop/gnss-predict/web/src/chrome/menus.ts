@@ -68,9 +68,9 @@ export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.rename"), cmd("object.delete"),
 ];
 
-/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties */
+/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties แล้ว Show Imagery (ข2 Ruling o: ใช้ได้เฉพาะดาวที่มี preset) */
 export const SATELLITE_MENU: readonly MenuEntry[] = [
-  cmd("object.properties"), cmd("object.sensorView"), cmd("object.access"), cmd("object.reportGraphManager"),
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
   cmd("object.zoomTo"),
   SEPARATOR,
@@ -113,7 +113,7 @@ export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
 }
 
 /** เมนูคลิกขวาบนดาวในหน้าต่าง 3D (sensor spec §5.5): คำสั่งชุดเดียวกับเมนูของ object ทำกับดาวที่ชี้ (คลิกขวาเลือกดาวก่อน) */
-export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.zoomTo")];
+export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.zoomTo")];
 
 /** เมนูคลิกขวาบน Facility ในหน้าต่าง 3D */
 export const SCENE_FACILITY_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.zoomTo")];

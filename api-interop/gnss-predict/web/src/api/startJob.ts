@@ -8,11 +8,12 @@ import { useJobs, type JobKind } from "../stores/jobs";
 import { apiSend } from "./client";
 
 /**
- * POST path (ไม่มี body) แล้วคืน id ของ job; ผิดพลาดโยน ApiError ตามปกติของ client, คำตอบที่ไม่มี id โยน RangeError
+ * POST path แล้วคืน id ของ job; ผิดพลาดโยน ApiError ตามปกติของ client, คำตอบที่ไม่มี id โยน RangeError
  * scenario = ชื่อ scenario ของงาน (record queued ต้องมี เพื่อให้ activeFor(scenario) เห็นงานทันที) งานที่ไม่ผูกกับ scenario = null
+ * body ไม่ระบุ = ไม่มี body (ทุกงานเดิม) ; Fetch Orbit Data ที่ติ๊ก Imaging satellites ส่ง { systems } (ข2)
  */
-export async function startJob(path: string, kind: JobKind, scenario: string | null = null): Promise<string> {
-  const { data } = await apiSend<{ job?: unknown }>("POST", path);
+export async function startJob(path: string, kind: JobKind, scenario: string | null = null, body?: unknown): Promise<string> {
+  const { data } = await apiSend<{ job?: unknown }>("POST", path, body);
   const id = typeof data?.job === "string" ? data.job : null;
   if (id === null) throw new RangeError("the server did not return a job id");
   recordQueuedJob(id, kind, scenario);

@@ -727,13 +727,13 @@ describe("Properties", () => {
 });
 
 describe("context menu", () => {
-  test("right-click selects the row and lists Properties, Sensor View, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
+  test("right-click selects the row and lists Properties, Sensor View, Show Imagery, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
     loadObjects();
     renderOb();
     await user.pointer({ keys: "[MouseRight]", target: row("G01") });
     const menu = await screen.findByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
     expect(selected()).toEqual(["G01"]);
     expect(item(menu, "Properties").getAttribute("aria-disabled")).toBeNull();
@@ -763,7 +763,7 @@ describe("context menu", () => {
       return got;
     };
     const SENSOR = ["Properties", "Sensor View", "Access...", "Zoom To", "Rename", "Delete"];
-    const SATELLITE = ["Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
+    const SATELLITE = ["Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
     const OTHER = ["Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
     expect(await labels("Sensor1")).toEqual(SENSOR);
     expect(await labels("G01")).toEqual(SATELLITE);

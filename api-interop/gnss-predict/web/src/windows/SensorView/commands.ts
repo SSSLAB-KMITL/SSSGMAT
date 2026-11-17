@@ -49,8 +49,8 @@ function treeNode(nodes: readonly TreeNode[], path: string): TreeObject | undefi
   return undefined;
 }
 
-/** sensor ตัวแรกของดาวในต้นไม้ ไม่มี = null */
-function firstSensorOf(satellitePath: string): string | null {
+/** sensor ตัวแรกของดาวในต้นไม้ ไม่มี = null (Show Imagery ใช้ตัวเดียวกัน: ข2 Ruling n) */
+export function firstSensorOf(satellitePath: string): string | null {
   const tree = useScenario.getState().tree;
   const node = tree === null ? undefined : treeNode(tree.children, satellitePath);
   return node?.children?.find((c) => c.class === "Sensor")?.path ?? null;
@@ -114,16 +114,18 @@ async function createAndOpen(satellitePath: string): Promise<void> {
   openSensorView(path);
 }
 
+/** Sensor View ของดาว: sensor ตัวแรกในต้นไม้ ไม่มี = สร้าง Sensor<n> แบบ Simple Conic แล้วเปิด (ข2 Ruling n) */
+export async function openSensorViewForSatellite(satellitePath: string): Promise<void> {
+  const first = firstSensorOf(satellitePath);
+  if (first !== null) openSensorView(first);
+  else await createAndOpen(satellitePath);
+}
+
 async function run(): Promise<void> {
   const path = target();
   if (path === null) return;
-  if (SENSOR.test(path)) {
-    openSensorView(path);
-    return;
-  }
-  const first = firstSensorOf(path);
-  if (first !== null) openSensorView(first);
-  else await createAndOpen(path);
+  if (SENSOR.test(path)) openSensorView(path);
+  else await openSensorViewForSatellite(path);
 }
 
 export function registerSensorViewCommands(): () => void {

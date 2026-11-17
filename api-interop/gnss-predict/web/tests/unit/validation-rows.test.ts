@@ -84,6 +84,30 @@ describe("daily rows", () => {
   });
 });
 
+// ข2: scenario ที่มีแต่ดาวถ่ายภาพ engine ข้าม X ทั้งหมด (Ruling u) ผลจึงไม่มีระบบ GNSS ใดใน systems และ pass เป็น false
+describe("a validated day with no GNSS system", () => {
+  test("an imaging-only day (systems has no GNSS letter) is neutral no_gnss, not Fail", () => {
+    const rec: HistoryRecord = { ...REC_10, day: "2026-11-11", pass: false, systems: {}, failing: [] };
+    const row = dailyRows([rec], [], "el")[0];
+    expect(row.result).toBe("no_gnss");
+    expect(row.systems).toEqual([]);
+  });
+
+  test("a day with any GNSS system keeps Pass / Fail from the pass flag", () => {
+    expect(dailyRows([REC_09], [], "el")[0].result).toBe("pass");
+    expect(dailyRows([REC_10], [], "el")[0].result).toBe("fail");
+    expect(dailyRows([{ ...REC_10, systems: { C: stats(0.5, 0.9, 0.5, 0.9, false) } }], [], "el")[0].result).toBe("fail");
+  });
+
+  test("a parsed history line whose systems is empty or missing is no_gnss", () => {
+    const rows = dailyRows(parseHistory([
+      { day: "2026-11-05", scenario: "IMG", pass: false, systems: {}, failing: [] },
+      { day: "2026-11-06", scenario: "IMG", pass: false },
+    ]), [], "el");
+    expect(rows.map((r) => r.result)).toEqual(["no_gnss", "no_gnss"]);
+  });
+});
+
 describe("tolerant parsing of what the server passes through", () => {
   test("parseHistory drops records without a day and scenario, and non-finite numbers become null", () => {
     const parsed = parseHistory([

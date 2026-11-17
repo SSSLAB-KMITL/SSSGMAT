@@ -5,7 +5,8 @@
 //   งาน 6: view.* window.* anim.* (chrome/coreCommands.ts), งาน 7: file.* help.*, งาน 8: edit.* object.properties/rename/delete ob.*,
 //   งาน 10: insert.* utilities.*, งาน 11: g3d.* object.zoomTo, งาน 12: g2d.*, งานย่อยที่ 4: analysis.* object.access object.reportGraphManager
 //   (analysis.access และ object.access: windows/AccessTool/commands.ts; analysis.reportGraphManager และ object.reportGraphManager:
-//   windows/ReportGraphManager/commands.ts; analysis.validation: windows/Validation/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts)
+//   windows/ReportGraphManager/commands.ts; analysis.validation: windows/Validation/commands.ts), งานเสริม Sensor: object.sensorView (windows/SensorView/commands.ts),
+//   ข2: object.showImagery (windows/GlobeManager/showImagery.ts)
 // - ทะเบียนเป็น observable: registerCommand / invalidateCommands แจ้งผู้ฟัง (subscribeCommands) เพื่อให้เมนูและแถบเครื่องมือวาดสถานะ enabled ใหม่
 //   คำสั่งที่ enabled() ขึ้นกับ store ต้องเรียก invalidateCommands() เองเมื่อค่านั้นเปลี่ยน (เช่น ฟัง store แล้วเรียก) เพราะทะเบียนไม่รู้ว่าอ่านอะไร
 // - ไฟล์นี้ไม่รู้จัก React และ store ใด ๆ
@@ -57,6 +58,7 @@ export const COMMAND_LABELS = {
 
   "object.properties": "menu.object.properties",
   "object.sensorView": "menu.object.sensorView",
+  "object.showImagery": "menu.object.showImagery",
   "object.access": "menu.object.access",
   "object.reportGraphManager": "menu.object.reportGraphManager",
   "object.zoomTo": "menu.object.zoomTo",

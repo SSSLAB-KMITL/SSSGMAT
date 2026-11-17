@@ -257,11 +257,12 @@ describe("filters", () => {
     expect(f.calls.filter((c) => c.path === "/api/catalog")).toHaveLength(1);
   });
 
-  test("the System list offers All Systems, GPS, GLONASS, Galileo and BeiDou", async () => {
+  test("the System list offers All Systems, GPS, GLONASS, Galileo, BeiDou and Imaging (ข2)", async () => {
     server();
     await mount();
     expect(Array.from(systemSelect().options).map((o) => [o.value, o.text])).toEqual([
       ["", t("option.system.all")], ["G", t("option.system.gps")], ["R", t("option.system.glonass")], ["E", t("option.system.galileo")], ["C", t("option.system.beidou")],
+      ["X", t("option.system.imaging")],
     ]);
   });
 
@@ -416,6 +417,88 @@ describe("Insert", () => {
     await user.click(screen.getByRole("button", { name: t("dialog.cancel") }));
     expect(flow.closePanel).toHaveBeenCalledWith("satelliteCatalog");
     expect(posts(f)).toHaveLength(0);
+  });
+});
+
+// ข2 Task 7: ดาวถ่ายภาพ (X) ใน catalog เดียวกัน ตัวกรอง Imaging ชื่อจาก display_name และ Add Primary Sensor (Ruling m)
+describe("imaging satellites", () => {
+  const TERRA = { ...sat("X04", 25994, "TERRA", { svn: "", block: "EOS AM-1" }), category: "imaging", display_name: "Terra" } as CatalogEntry;
+  const AQUA = { ...sat("X05", 27424, "AQUA", { svn: "", block: "EOS PM-1" }), category: "imaging", display_name: "Aqua" } as CatalogEntry;
+  const WITH_X = [...CATALOG.map((e) => ({ ...e, category: "gnss", display_name: e.celestrak_name }) as CatalogEntry), TERRA, AQUA];
+  const imagingServer = (over: Record<string, Handler> = {}) =>
+    server({ "GET /api/catalog": { json: WITH_X }, [POST_OBJECTS]: CREATED("*/Satellite/X04", "*/Sensor/MODIS"), ...over });
+  const primaryBox = () => screen.getByRole("checkbox", { name: t("dialog.catalog.addPrimarySensor") }) as HTMLInputElement;
+
+  test("the System select has an option Imaging (value X); choosing it shows only the X rows, X04 named Terra", async () => {
+    imagingServer();
+    await mount();
+    const option = Array.from(systemSelect().options).find((o) => o.value === "X");
+    expect(option?.text).toBe(t("option.system.imaging"));
+    expect(Array.from(systemSelect().options).map((o) => o.value)).toEqual(["", "G", "R", "E", "C", "X"]);
+    await user.selectOptions(systemSelect(), "X");
+    expect(prns()).toEqual(["X04", "X05"]);
+    expect(cellsOf(rowOf("X04"))[4]).toBe("Terra");
+    expect(cellsOf(rowOf("X04"))).toEqual(["X04", "", "25994", "EOS AM-1", "Terra", "1.3 d", ""]);
+  });
+
+  test("a GNSS row keeps its CelesTrak name, and a row without display_name (an older server) falls back to it", async () => {
+    server(); // CATALOG ไม่มี category / display_name
+    await mount();
+    expect(cellsOf(rowOf("E11"))[4]).toBe("GALILEO 5 (26)");
+  });
+
+  test("the search finds an imaging satellite by the name shown", async () => {
+    imagingServer();
+    await mount();
+    await user.type(searchBox(), "terra");
+    expect(prns()).toEqual(["X04"]);
+  });
+
+  test("Add Primary Sensor is checked by default", async () => {
+    imagingServer();
+    await mount();
+    expect(primaryBox().checked).toBe(true);
+  });
+
+  test("Insert of X04 posts primary_sensors: true", async () => {
+    const f = imagingServer();
+    await mount();
+    click("X04");
+    await user.click(insertButton());
+    await waitFor(() => expect(posts(f)).toHaveLength(1));
+    expect(posts(f)[0].body).toEqual({ class: "Satellite", method: "From Satellite Catalog", norads: [25994], primary_sensors: true });
+  });
+
+  test("Insert of a GNSS row only posts no primary_sensors key, even with the box ticked", async () => {
+    const f = imagingServer({ [POST_OBJECTS]: CREATED("*/Satellite/G22") });
+    await mount();
+    click("G22");
+    expect(primaryBox().checked).toBe(true);
+    await user.click(insertButton());
+    await waitFor(() => expect(posts(f)).toHaveLength(1));
+    expect(posts(f)[0].body).toEqual({ class: "Satellite", method: "From Satellite Catalog", norads: [NORAD.G22] });
+  });
+
+  test("unticking Add Primary Sensor gives no primary_sensors key", async () => {
+    const f = imagingServer();
+    await mount();
+    click("X04");
+    await user.click(primaryBox());
+    expect(primaryBox().checked).toBe(false);
+    await user.click(insertButton());
+    await waitFor(() => expect(posts(f)).toHaveLength(1));
+    expect(posts(f)[0].body).toEqual({ class: "Satellite", method: "From Satellite Catalog", norads: [25994] });
+    expect(Object.hasOwn(posts(f)[0].body as object, "primary_sensors")).toBe(false);
+  });
+
+  test("a mixed GNSS + imaging selection sends primary_sensors: true", async () => {
+    const f = imagingServer();
+    await mount();
+    click("E11");
+    click("X05", { ctrlKey: true });
+    await user.click(insertButton());
+    await waitFor(() => expect(posts(f)).toHaveLength(1));
+    expect(posts(f)[0].body).toEqual({ class: "Satellite", method: "From Satellite Catalog", norads: [NORAD.E11, 27424], primary_sensors: true });
   });
 });
 

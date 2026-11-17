@@ -18,6 +18,7 @@ import { OSM_LAYER, useImagery, type ImageryLayerInfo, type ImagerySourceId } fr
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useSettings, type Settings } from "../../src/stores/settings";
+import { CONSENT_KEYS, enableSourceWithConsent } from "../../src/windows/GlobeManager/consent";
 import { GlobeManager, registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
 import { registerCoreCommands } from "../../src/chrome/coreCommands";
 import { resetAll } from "./helpers/chrome";
@@ -611,6 +612,71 @@ describe.each(SOURCES)("turning on $id", ({ id, field, consent }) => {
     await waitFor(() => expect(sourceSwitch(id).disabled).toBe(false));
     expect(puts(f)).toHaveLength(1);
   });
+});
+
+// ข2 Ruling (f): ขั้นถามแล้วเปิดของ switchTo อยู่ใน consent.ts ตัวเดียวกับที่ Show Imagery ใช้ (กล่องและผลเหมือนกันทุกตัวอักษร)
+describe.each(SOURCES)("enableSourceWithConsent($id), shared with Show Imagery", ({ id, field, consent }) => {
+  function host() {
+    return render(<Dialogs />);
+  }
+
+  test("CONSENT_KEYS holds the same confirmation the Globe Manager switch shows", () => {
+    expect(CONSENT_KEYS[id]).toBe(consent);
+  });
+
+  test("asks with that source's confirmation; Cancel resolves false with no PUT /api/settings and no layer change", async () => {
+    const f = server();
+    host();
+    const globe = useLayout.getState().globe;
+    const result = enableSourceWithConsent(id);
+    expect(await screen.findByText(msg(consent))).toBeDefined();
+    await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
+    expect(await result).toBe(false);
+    expect(puts(f)).toHaveLength(0);
+    expect(f.calls).toEqual([]);
+    expect(useLayout.getState().globe).toBe(globe);
+    expect(useImagery.getState().sources[id]).toBe(false);
+  });
+
+  test("Confirm saves the flag and resolves true", async () => {
+    const f = server();
+    host();
+    const result = enableSourceWithConsent(id);
+    await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+    expect(await result).toBe(true);
+    expect(puts(f)).toHaveLength(1);
+    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: { ...IMAGERY_OFF, [field]: true } });
+  });
+
+  test("a failed save resolves false", async () => {
+    server({ [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } });
+    host();
+    const result = enableSourceWithConsent(id);
+    await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+    expect(await result).toBe(false);
+  });
+
+  test("a source that is already on resolves true with no question and no request", async () => {
+    const f = server();
+    host();
+    useImagery.setState({ sources: { ...SOURCES_OFF, [id]: true } });
+    expect(await enableSourceWithConsent(id)).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.calls).toEqual([]);
+  });
+});
+
+test("enableSourceWithConsent('osm') ticks the OpenStreetMap row after a successful save (task 13c), Cancel leaves it unticked", async () => {
+  server();
+  render(<Dialogs />);
+  const cancelled = enableSourceWithConsent("osm");
+  await user.click(await screen.findByRole("button", { name: t("dialog.cancel") }));
+  await cancelled;
+  expect(useLayout.getState().globe.layers.osm?.show ?? false).toBe(false);
+  const ok = enableSourceWithConsent("osm");
+  await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+  expect(await ok).toBe(true);
+  expect(useLayout.getState().globe.layers.osm.show).toBe(true);
 });
 
 describe("Cesium ion: switching on", () => {

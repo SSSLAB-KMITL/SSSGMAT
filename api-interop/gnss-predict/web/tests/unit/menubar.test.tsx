@@ -70,13 +70,13 @@ describe("top-level menus", () => {
 });
 
 describe("menu contents", () => {
-  test("the Satellite menu lists Properties, Sensor View, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
+  test("the Satellite menu lists Properties, Sensor View, Show Imagery, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
     act(() => useSelection.getState().select("*/Satellite/G01"));
     const menu = await openMenu(user, "Satellite");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
   });
 
@@ -151,7 +151,7 @@ describe("menu contents", () => {
     act(() => useSelection.getState().select("*/Satellite/G01"));
     const menu = await openMenu(user, "Satellite");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
   });
 
@@ -161,7 +161,7 @@ describe("menu contents", () => {
     expect(commands("Sensor")).toEqual(["object.properties", "object.sensorView", "object.access", "object.zoomTo", "object.rename", "object.delete"]);
     expect(objectMenuFor("Satellite")).toBe(SATELLITE_MENU);
     expect(commands("Satellite")).toEqual([
-      "object.properties", "object.sensorView", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
+      "object.properties", "object.sensorView", "object.showImagery", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
     ]);
     for (const cls of ["Facility", "Constellation", undefined] as const) {
       expect(objectMenuFor(cls), String(cls)).toBe(OBJECT_MENU);
@@ -178,10 +178,19 @@ describe("menu contents", () => {
   test("sceneMenuFor (right-click in a 3D window) is short: a satellite and a facility have one, nothing else does", () => {
     const commands = (path: string | null) => sceneMenuFor(path).map((e) => ("command" in e ? e.command : ""));
     expect(sceneMenuFor("*/Satellite/G01")).toBe(SCENE_SATELLITE_MENU);
-    expect(commands("*/Satellite/G01")).toEqual(["object.properties", "object.sensorView", "object.zoomTo"]);
+    expect(commands("*/Satellite/G01")).toEqual(["object.properties", "object.sensorView", "object.showImagery", "object.zoomTo"]);
     expect(sceneMenuFor("*/Facility/THBK")).toBe(SCENE_FACILITY_MENU);
     expect(commands("*/Facility/THBK")).toEqual(["object.properties", "object.zoomTo"]);
     for (const path of [null, "*", "*/Sensor/S1", "*/Constellation/GPS", "not a path"]) expect(sceneMenuFor(path), String(path)).toEqual([]);
+  });
+
+  test("SATELLITE_MENU and SCENE_SATELLITE_MENU hold object.showImagery right after object.sensorView (ข2 Ruling o); the Sensor menu does not", () => {
+    for (const menu of [SATELLITE_MENU, SCENE_SATELLITE_MENU]) {
+      const ids = menu.map((e) => ("command" in e ? e.command : ""));
+      expect(ids[ids.indexOf("object.sensorView") + 1]).toBe("object.showImagery");
+    }
+    expect(SENSOR_MENU.some((e) => "command" in e && e.command === "object.showImagery")).toBe(false);
+    expect(OBJECT_MENU.some((e) => "command" in e && e.command === "object.showImagery")).toBe(false);
   });
 
   test("each of the other menus lists its items in the spec order", async () => {

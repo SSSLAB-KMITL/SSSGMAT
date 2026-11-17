@@ -303,8 +303,10 @@ test.describe("Sensor and Sensor View", () => {
     const at = await settledPoint(page, "R05");
     await threeDCanvas(page).click({ position: at, button: "right" });
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem")).toHaveCount(3);
-    for (const name of ["Properties", "Sensor View", "Zoom To"]) await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem")).toHaveCount(4);
+    for (const name of ["Properties", "Sensor View", "Show Imagery", "Zoom To"]) await expect(menu.getByRole("menuitem", { name, exact: true })).toBeVisible();
+    // ข2 Ruling o: Show Imagery อยู่ในเมนูเสมอ แต่ใช้ได้เฉพาะดาวที่มี preset (R05 เป็น GNSS จึงเป็นสีเทา)
+    await expect(menu.getByRole("menuitem", { name: "Show Imagery", exact: true })).toHaveAttribute("aria-disabled", "true");
     // คลิกขวาเลือกดาวใต้เมาส์ด้วย
     await expect(treeRow(page, "*/Satellite/R05")).toHaveAttribute("aria-selected", "true");
 

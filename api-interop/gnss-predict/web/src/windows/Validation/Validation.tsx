@@ -50,6 +50,7 @@ const systemName = (letter: string): string => (Object.hasOwn(SYSTEM_LABELS, let
 
 const DAY_RESULT_LABELS: Record<DayResult, LabelKey> = {
   pass: "validation.result.pass", fail: "validation.result.fail", pending: "validation.result.pending", gave_up: "validation.result.gaveUp",
+  no_gnss: "validation.result.noGnss",
 };
 const SAT_RESULT_LABELS: Record<string, LabelKey> = {
   pass: "validation.result.pass", fail: "validation.result.fail",
@@ -57,6 +58,8 @@ const SAT_RESULT_LABELS: Record<string, LabelKey> = {
 };
 /** ค่าของตัวกรองผลรายดวงตามลำดับที่แสดง */
 const SAT_RESULTS = ["pass", "fail", "insufficient_data", "unverified"] as const;
+/** วันที่ตรวจแล้ว (มีไฟล์ผลรายดวงให้เปิด): Pass, Fail และ No GNSS (ข2) */
+const opensDetail = (row: DailyRow): boolean => row.result === "pass" || row.result === "fail" || row.result === "no_gnss";
 const satResultName = (result: string | null): string =>
   result === null ? DASH : Object.hasOwn(SAT_RESULT_LABELS, result) ? t(SAT_RESULT_LABELS[result]) : result;
 
@@ -225,7 +228,7 @@ export function Validation({ panelId }: PanelProps) {
   };
   /** คลิกหรือ Enter / Space: เปิดเฉพาะวันที่ตรวจแล้ว (Pending / Gave up ไม่มีผลให้เปิด) */
   const openRow = (row: DailyRow): void => {
-    if (row.result === "pass" || row.result === "fail") select(row);
+    if (opensDetail(row)) select(row);
   };
 
   // ---------- คีย์บอร์ดของตารางรายวัน (roving tabindex แบบเดียวกับ Satellite Catalog) ----------
@@ -418,7 +421,7 @@ export function Validation({ panelId }: PanelProps) {
                   </thead>
                   <tbody>
                     {rows.map((row, index) => {
-                      const open = row.result === "pass" || row.result === "fail";
+                      const open = opensDetail(row);
                       return (
                         <tr
                           key={row.key}
@@ -440,6 +443,7 @@ export function Validation({ panelId }: PanelProps) {
                             {t(DAY_RESULT_LABELS[row.result])}
                             {row.result === "pending" && <span className="val-next"> {nextAttemptText(row.nextAttempt)}</span>}
                             {row.result === "gave_up" && <span className="val-next"> {msg("validation.gaveUpShort")}</span>}
+                            {row.result === "no_gnss" && <span className="val-next"> {msg("validation.noGnss")}</span>}
                           </td>
                           <td>{row.failing.join(", ")}</td>
                           <td className="val-truth" title={row.truth ?? undefined}>{row.truth ?? ""}</td>

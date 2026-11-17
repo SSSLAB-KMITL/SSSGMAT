@@ -91,6 +91,8 @@ const LABELS = {
   "menu.object.delete": stk("Delete", "B"),
   // STK ไม่มีคำสั่งมองผ่าน sensor (§G "View through a sensor" = NF; ใกล้สุดคือ Obscuration...) จึงเป็น ours
   "menu.object.sensorView": ours("Sensor View"),
+  // ข2 Ruling (d), (o): ดาวถ่ายภาพ เปิดชั้น GIBS ของดาวแล้วดูภาพจาก sensor หลัก (ไม่มีใน STK)
+  "menu.object.showImagery": ours("Show Imagery"),
   // เมนูของ Scenario (โหนดราก, docs/2026-11-17-stk-terms-context-menus.md §1.1): ชื่อของคำสั่งเดิม (insert.new, file.close) ในเมนูนี้
   "menu.scenario.insert": stkHelp("Insert..."),
   "menu.scenario.closeScenario": stkHelp("Close Scenario"),
@@ -214,6 +216,8 @@ const LABELS = {
   "dialog.clear": ours("Clear"),
   "dialog.selectColor": stk("Select color", "B"),
   "dialog.fetchNow": ours("Fetch Now"),
+  // ข2 amendment (ab): ดึงกลุ่มดาวถ่ายภาพของ CelesTrak ด้วย (weather, science, visual)
+  "dialog.fetch.imagingSatellites": ours("Imaging satellites"),
   "dialog.runNow": ours("Run Now"),
 
   "dialog.windows.window": ours("Window"),
@@ -239,6 +243,8 @@ const LABELS = {
   "dialog.catalog.sourceOnline": ours("Online CelesTrak"),
   "dialog.catalog.search": ours("Search"),
   "dialog.catalog.createConstellation": stk("Create Constellation from Selected", "B"),
+  // ข2 Ruling (m): Insert ดาวถ่ายภาพพร้อม sensor หลักของมัน (ไม่มีใน STK)
+  "dialog.catalog.addPrimarySensor": ours("Add Primary Sensor"),
   "dialog.catalog.insert": ours("Insert"),
 
   // ---------- หน้า Properties (spec §8, STK ref §C) "กลุ่ม - หน้า" ----------
@@ -518,6 +524,8 @@ const LABELS = {
   "option.system.glonass": ours("GLONASS"),
   "option.system.galileo": ours("Galileo"),
   "option.system.beidou": ours("BeiDou"),
+  // ข2: ดาวถ่ายภาพ (PRN X01…X08) ในตัวกรอง System ของ Search Satellite Catalog
+  "option.system.imaging": ours("Imaging"),
   // ธงของดาว (ชื่อที่แสดง; คำอธิบายไทยอยู่ใน messages.th.ts เป็น flag.*)
   "option.flag.stale": ours("Stale"),
   "option.flag.tooOld": ours("Too Old"),
@@ -744,6 +752,8 @@ const LABELS = {
   "validation.result.gaveUp": ours("Gave up"),
   "validation.result.insufficientData": ours("Insufficient Data"),
   "validation.result.unverified": ours("Unverified"),
+  // ข2: วันที่ตรวจแล้วแต่ไม่มีระบบ GNSS ในผล (scenario ที่มีแต่ดาวถ่ายภาพ) ไม่ใช่ Fail
+  "validation.result.noGnss": ours("No GNSS"),
   "validation.filter.system": ours("System"),
   "validation.filter.result": ours("Result"),
   "validation.filter.all": ours("All"),

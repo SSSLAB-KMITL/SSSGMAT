@@ -60,13 +60,20 @@ function DescriptionPage() {
   );
 }
 
+/** Fill และ % Translucency เฉพาะ Simple Conic: 2D ไม่ระบายพื้นของ Rectangular (ข2 Ruling k) แถวที่ไม่มีผลจึงไม่แสดง (fields ของหน้าคงเดิม) */
 function Attributes2dPage() {
+  const { base } = useEditorApi();
+  const fillable = storedText(base, "basic.definition.type", ENUMS.SensorDefinitionType[0]) !== "Rectangular";
   return (
     <>
       <CheckRow k="graphics2d.show" label={t("ob.show")} />
       <ColorRow k="graphics2d.color" label={t("field.color")} clearable={false} />
-      <CheckRow k="graphics2d.fill" label={t("field.fill")} />
-      <NumberRow k="graphics2d.fill_translucency" label={t("field.translucency")} />
+      {fillable && (
+        <>
+          <CheckRow k="graphics2d.fill" label={t("field.fill")} />
+          <NumberRow k="graphics2d.fill_translucency" label={t("field.translucency")} />
+        </>
+      )}
     </>
   );
 }

@@ -6,6 +6,9 @@
 //   ข้อจำกัดความถี่ของ CelesTrak server เป็นผู้บังคับ (ดึงก่อนเวลาจะใช้ข้อมูลเดิม) หน้านี้แค่บอก ไม่ได้กันปุ่ม
 // - job fetch (หรือ daily ซึ่งดึง snapshot ด้วย) ที่เคยเห็นว่ารอหรือกำลังรันแล้วสำเร็จ = อ่านรายการและสถานะใหม่ (ไม่ว่าใครสั่ง)
 //   Fetch Now ปิดไว้ขณะมี job fetch ที่รอหรือรันอยู่ (server จะคืน job เดิมอยู่แล้ว)
+// - Imaging satellites (ข2 amendment ab, ปิดเป็นค่าตั้งต้น): ติ๊ก = body { systems: GREC + "X" } server จึงดึงกลุ่ม weather, science และ visual
+//   ของ CelesTrak ด้วยภายใต้ข้อจำกัดความถี่เดิม ไม่ติ๊ก = คำขอเดิมทุกไบต์ (ไม่มี body) ; ระบบ GNSS ในหน้านี้เลือกไม่ได้ (ทั้งสี่เสมอ)
+//   จึงไม่มีกรณีส่ง X อย่างเดียว (server ตอบ 422 ถ้าไม่มีอักษร GNSS)
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, errorText } from "../../api/client";
@@ -42,6 +45,10 @@ const SYSTEMS: readonly { letter: string; group: string; label: LabelKey }[] = [
   { letter: "E", group: "galileo", label: "option.system.galileo" },
   { letter: "C", group: "beidou", label: "option.system.beidou" },
 ];
+
+/** อักษรของกลุ่มดาวถ่ายภาพ (IMAGING_LETTER ของ engine) ต่อท้ายระบบ GNSS ทั้งสี่ */
+const IMAGING_LETTER = "X";
+const IMAGING_SYSTEMS = SYSTEMS.map((s) => s.letter).join("") + IMAGING_LETTER;
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 const stringOrNull = (x: unknown): string | null => (typeof x === "string" ? x : null);
@@ -87,6 +94,7 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
   const [asking, setAsking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [imaging, setImaging] = useState(false);
   const fetching = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "fetch" && isActiveJob(j)));
   const now = useNow(30_000);
   const control = useRef<AbortController | null>(null);
@@ -129,7 +137,7 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
     setFailure(null);
     try {
       if (!(await confirm(msg("fetch.confirm")))) return;
-      const job = await startJob("/orbits/fetch", "fetch");
+      const job = await startJob("/orbits/fetch", "fetch", null, imaging ? { systems: IMAGING_SYSTEMS } : undefined);
       const text = msg("fetch.queued", { job });
       report("info", "FETCH_QUEUED", text);
       setNotice(text);
@@ -222,6 +230,12 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
           {failure}
         </p>
       )}
+
+      <label className="insert-choice">
+        <input type="checkbox" className="form-check" checked={imaging} disabled={asking} onChange={(e) => setImaging(e.target.checked)} />
+        {t("dialog.fetch.imagingSatellites")}
+      </label>
+      <p className="fetch-note">{msg("fetch.imagingHint")}</p>
 
       <div className="fetch-buttons">
         <button type="button" className="btn" disabled={asking || fetching} onClick={() => void fetchNow()}>

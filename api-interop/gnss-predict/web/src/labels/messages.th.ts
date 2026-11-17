@@ -140,6 +140,8 @@ const MESSAGES = {
   "fetch.failed": "สั่งดึงข้อมูลวงโคจรไม่สำเร็จ: {message}",
   "fetch.yes": "มี",
   "fetch.no": "ไม่มี",
+  // ข2 amendment (ab): ช่อง Imaging satellites บอกกลุ่มของ CelesTrak ที่ดึงเพิ่ม
+  "fetch.imagingHint": "ติ๊ก Imaging satellites เพื่อดึงกลุ่มดาวถ่ายภาพจาก CelesTrak ด้วย (กลุ่ม weather, science และ visual) ภายใต้ข้อจำกัดความถี่เดิมของ CelesTrak ไม่ติ๊ก = ดึงเฉพาะดาว GNSS ตามเดิม",
 
   // Daily Forecast Settings (spec §11, server §9)
   "daily.timeInvalid": "ต้องเป็นเวลา UTC รูปแบบ HH:MM เช่น 21:00 (00:00 ถึง 23:59)",
@@ -196,6 +198,13 @@ const MESSAGES = {
   "globe.ionNoAsset": "ยังไม่ได้เลือก asset จึงยังไม่แสดงภาพ Cesium ion (เลือก asset ด้านล่าง)",
   "globe.ionNoToken": "ยังไม่มี Cesium ion token จึงยังไม่แสดงภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ในช่องด้านบนแล้วกด Apply",
   "globe.ionRejected": "Cesium ion ไม่รับ asset หรือ token นี้ จึงถอดภาพ Cesium ion ออกและแสดงชั้นภาพอื่นตามเดิม (ดูเหตุผลที่ Message Viewer) เลือก asset อื่นหรือเปลี่ยน token เพื่อลองใหม่",
+
+  // ดาวถ่ายภาพ (ข2 Task 7): preset จาก GET /api/imaging/presets และคำสั่ง Show Imagery
+  "imaging.presetsFailed": "อ่านรายการดาวถ่ายภาพ (preset) จาก server ไม่สำเร็จ ({message}) จึงใช้ Show Imagery ไม่ได้",
+  "showImagery.noLayer": "ชั้นภาพ {layer} ไม่มีในรายการของ server",
+  // {layers} = ชื่อชั้นทึบที่บังอยู่ คั่นด้วย ", " ; {layer} = ชื่อชั้นภาพของดาว
+  "showImagery.uncovered": "ซ่อนชั้นภาพ {layers} ที่บังภาพ {layer} อยู่ (ติ๊ก Show กลับได้ที่ Globe Manager)",
+  "showImagery.noView": "ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว {satellite} ณ เวลานี้ จึงไม่ได้ย้ายกล้อง (เปิดชั้นภาพ {layer} แล้ว)",
 
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
   "fetch.confirm": `ดึงข้อมูลวงโคจรตอนนี้หรือไม่? โปรแกรมอาจเชื่อมต่ออินเทอร์เน็ตเพื่อดาวน์โหลดจาก ${SOURCES} (ข้อมูลวงโคจรจาก CelesTrak, ข้อมูลดาวเทียมจาก IGS, broadcast ephemeris จาก CDDIS) CelesTrak จำกัดความถี่ในการดึงและ IGS ดึงไม่เกินวันละครั้ง ส่วนที่ยังไม่ถึงเวลา server จะใช้ไฟล์เดิมแทน แต่แหล่งอื่นในรายการนี้ยังอาจถูกดาวน์โหลด`,
@@ -440,6 +449,7 @@ const MESSAGES = {
   // {time} = เวลาที่ตัวตั้งเวลาจะลองตรวจครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี scenario = UTCG)
   "validation.nextAttempt": "ลองครั้งถัดไป {time}",
   "validation.gaveUpShort": "เลิกตรวจแล้ว ไม่ลองอีก",
+  "validation.noGnss": "ไม่มีดาว GNSS ให้ตรวจ",
   "validation.noRetry": "ไม่มีรอบลองถัดไป",
   "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
   "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",

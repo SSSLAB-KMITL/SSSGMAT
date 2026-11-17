@@ -144,7 +144,7 @@ describe("command ids", () => {
       ...TOOLBAR_NAMES.map((n) => `view.toolbar.${n}`), "view.fullScreen",
       "insert.new", "insert.facility", "insert.satellite", "insert.sensor", "insert.constellation",
       "analysis.access", "analysis.reportGraphManager", "analysis.validation",
-      "object.properties", "object.sensorView", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
+      "object.properties", "object.sensorView", "object.showImagery", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
       "scenario.properties", "scenario.reportGraphManager",
       "utilities.fetchOrbitData", "utilities.dailyForecastSettings",
       "window.windows", "window.cascade", "window.tileHorizontally", "window.tileVertically",

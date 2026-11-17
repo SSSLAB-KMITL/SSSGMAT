@@ -351,12 +351,12 @@ describe("right-click menu on a satellite or a facility", () => {
   }
   const menuTexts = async () => within(await screen.findByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent);
 
-  test("right-click on a satellite shows Properties, Sensor View, Zoom To, and selects the satellite first", async () => {
+  test("right-click on a satellite shows Properties, Sensor View, Show Imagery, Zoom To, and selects the satellite first", async () => {
     const { pathAt } = await mountPicking(G01);
     const view = screen.getByTestId("g3d-view");
     vi.spyOn(view, "getBoundingClientRect").mockReturnValue({ left: 30, top: 20, x: 30, y: 20, width: 400, height: 300, right: 430, bottom: 320, toJSON: () => ({}) });
     fireEvent.contextMenu(view, { clientX: 120, clientY: 80 });
-    expect(await menuTexts()).toEqual(["Properties", "Sensor View", "Zoom To"]);
+    expect(await menuTexts()).toEqual(["Properties", "Sensor View", "Show Imagery", "Zoom To"]);
     expect(pathAt).toHaveBeenCalledWith(90, 60); // พิกัดในภาพ ไม่ใช่ของหน้าจอ
     expect(useSelection.getState().activePath).toBe(G01); // คำสั่งในเมนูทำกับ object ที่ชี้
   });
@@ -476,7 +476,7 @@ describe("Show Orbits (task 13c)", () => {
     fireEvent.pointerUp(view, { button: 2, clientX: 10, clientY: 10 });
     const menu = await screen.findByRole("menu");
     expect(within(menu).queryByRole("menuitemcheckbox")).toBeNull(); // เมนูของดาว ไม่ใช่ของหน้าต่าง
-    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Sensor View", "Zoom To"]);
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Properties", "Sensor View", "Show Imagery", "Zoom To"]);
   });
 });
 

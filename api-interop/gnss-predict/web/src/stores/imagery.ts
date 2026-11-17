@@ -52,6 +52,17 @@ export const OSM_LAYER: Readonly<ImageryLayerInfo> = Object.freeze({
   id: "osm", title: "OpenStreetMap", period: "static", max_level: 19, format: "png", credit: "© OpenStreetMap contributors", source: "osm",
 });
 
+/** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) ภายในแหล่งเดียวกันตามลำดับ catalog ; ใช้ร่วมกับ cesium/imageryLayers.ts และ Show Imagery (ที่นี่ไม่ import Cesium) */
+export const LAYER_SOURCE_ORDER: Readonly<Record<LayerSourceId, number>> = { gibs: 0, eox: 1, osm: 2 };
+
+/**
+ * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลกเสมอ: translucency 0 และภาพทึบที่มีทุกชิ้นทุกเวลา = jpg ภาพคงที่ (Blue Marble, EOX) หรือ OpenStreetMap (png แต่ทึบ)
+ * ชั้นที่ผูกเวลา (daily: VIIRS, MODIS ; 10min: Himawari, GOES) ไม่นับว่าทึบ แม้เป็น jpg: เวลาที่ยังไม่มีภาพ (scenario พยากรณ์ล่วงหน้า) server ตอบ 404
+ * ชิ้นนั้นโปร่งใส ชั้นข้างใต้ (Blue Marble) ต้องยังอยู่ให้เห็น และ GOES/Himawari เห็นแค่จานโลกของดาวค้างฟ้า png ของ GIBS (Himawari) ไม่ทึบอยู่แล้ว
+ */
+export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
+  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period === "static"));
+
 export type ImagerySources = Record<ImagerySourceId, boolean>;
 
 const SOURCES_OFF: Readonly<ImagerySources> = Object.freeze({ gibs: false, eox: false, osm: false, ion: false });

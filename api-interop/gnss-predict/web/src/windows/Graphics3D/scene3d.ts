@@ -107,6 +107,8 @@ type FacilityObj = components["schemas"]["FacilityObj"];
 const EARTH_RADIUS_M = 6_378_137;
 /** Home View: กล้องสูง 4.5 รัศมีโลกเหนือพื้นผิว (ห่างศูนย์กลาง 5.5 รัศมี อยู่นอกวงโคจร MEO ของทุกระบบ) มองลงศูนย์กลางโลก */
 export const HOME_ALTITUDE_M = 4.5 * EARTH_RADIUS_M;
+/** เวลาบินของกล้องไปเหนือจุดใต้ดาว (Show Imagery) วินาที */
+const FLY_OVER_SECONDS = 1.5;
 /**
  * Zoom To: ตำแหน่งกล้องเทียบกับ object ในกรอบ east-north-up ของมัน (ตั้ง trackingReferenceFrame = ENU เอง: ค่าตั้งต้น AUTODETECT ของ Cesium
  * ใช้กรอบ "north-up" ที่แกน x ชี้ลงโลกกับดาววงโคจรสูง ทำให้ offset เดียวกันมีความหมายต่างกันตามวงโคจร)
@@ -772,6 +774,17 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     this.release();
     this.view = { kind: "track", path };
     this.track(entity, path);
+    return true;
+  }
+
+  flyOver(lonDeg: number, latDeg: number, heightM: number): boolean {
+    if (this.destroyed || !Number.isFinite(lonDeg) || !Number.isFinite(latDeg) || !(heightM > 0)) return false;
+    this.release();
+    const camera = this.viewer.camera;
+    camera.cancelFlight();
+    // destination แบบ Cartesian3 โดยไม่ระบุ orientation: Cesium บินไปมองลงตรง ๆ (pitch −90°, heading 0 = ทิศเหนืออยู่บน)
+    camera.flyTo({ destination: Cartesian3.fromDegrees(lonDeg, latDeg, heightM), duration: FLY_OVER_SECONDS });
+    this.viewer.scene.requestRender();
     return true;
   }
 

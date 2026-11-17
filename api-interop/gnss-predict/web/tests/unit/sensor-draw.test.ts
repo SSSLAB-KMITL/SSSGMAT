@@ -318,9 +318,11 @@ test("Simple Conic output is unchanged by the Rectangular work (values recorded 
   const cone = (az: number, el: number) => sensorDrawState(sensor("S", { pointing: pointing(az, el) }), P, PREV, NEXT)!;
   const close = (got: number[], want: number[]) => got.forEach((g, i) => expect(g).toBeCloseTo(want[i], 9));
   const nadir = cone(0, 90);
-  expect(nadir.centralAngleRad).toBeCloseTo(0.6345783828239923, 12);
-  close(nadir.footprint.ring[0], [0, 36.54258210871501]);
-  close(nadir.footprint.ring[9], [27.498647518464963, 24.93086550763998]);
+  // เลขชุดเดียวกันจากเลขคณิตเดิม: บางค่าตรึงแบบตรงตัว (toBe) เพื่อจับการเปลี่ยนแม้หลักท้าย
+  expect(nadir.centralAngleRad).toBe(0.6345783828239923);
+  expect(nadir.footprint.ring[0]).toEqual([0, 36.54258210871501]);
+  expect(nadir.footprint.ring[9][0]).toBe(27.498647518464963);
+  expect(nadir.footprint.ring[9][1]).toBe(24.93086550763998);
   close(nadir.footprint.ring[40], [-14.132099853013415, -34.03275125215621]);
   const r1 = radialLineEnds(nadir)[1];
   close([r1.x, r1.y, r1.z], [5133413.345010551, 2672131.8332672487, 2672131.833267247]);

@@ -448,6 +448,23 @@ describe("sensor labels", () => {
     expect(t("window.sensorView")).toBe("Sensor View - {sensor} ({satellite})");
   });
 
+  test("ข2 Task 7 imaging labels are ours (Ruling d), absent from the STK reference", () => {
+    for (const [k, text] of [["menu.object.showImagery", "Show Imagery"], ["option.system.imaging", "Imaging"],
+        ["dialog.catalog.addPrimarySensor", "Add Primary Sensor"], ["dialog.fetch.imagingSatellites", "Imaging satellites"],
+        ["validation.result.noGnss", "No GNSS"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "ours" });
+    }
+    for (const text of ["Show Imagery", "Add Primary Sensor"]) expect(ref.includes(text), text).toBe(false);
+  });
+
+  test("ข2 Task 7 Thai messages: the agreed texts", () => {
+    expect(msg("showImagery.noLayer", { layer: "MODIS_Terra_CorrectedReflectance_TrueColor" })).toBe("ชั้นภาพ MODIS_Terra_CorrectedReflectance_TrueColor ไม่มีในรายการของ server");
+    expect(msg("validation.noGnss")).toBe("ไม่มีดาว GNSS ให้ตรวจ");
+    // ข้อความของช่อง Imaging satellites บอกชื่อกลุ่มของ CelesTrak ทั้งสาม
+    for (const group of ["weather", "science", "visual"]) expect(msg("fetch.imagingHint"), group).toContain(group);
+    expect(msg("fetch.imagingHint")).toMatch(/CelesTrak/);
+  });
+
   test("texts the sensor tasks reuse are not duplicated under new keys", () => {
     for (const text of ["Color", "Show", "Basic - Description"]) {
       const sensorKeys = Object.entries(labels).filter(([k, l]) => l.text === text && /sensor/i.test(k)).map(([k]) => k);

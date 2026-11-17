@@ -12,6 +12,7 @@ import { Toolbars } from "./chrome/Toolbars";
 import { installTestHooks, testModeRequested } from "./cesium/testHooks";
 import { startWorkspaceFlow } from "./scenarioFiles";
 import { useImagery } from "./stores/imagery";
+import { useImagingPresets } from "./stores/imagingPresets";
 import { installShortcuts } from "./shortcuts";
 import { startClock } from "./time/clock";
 import { registerAccessToolPanel } from "./windows/AccessTool/AccessTool";
@@ -21,6 +22,7 @@ import { registerDailyForecastSettingsPanel } from "./windows/DailyForecastSetti
 import { registerFetchOrbitDataPanel } from "./windows/FetchOrbitData/FetchOrbitData";
 import { registerFilePanels } from "./windows/filePanels";
 import { registerGlobeManagerPanel } from "./windows/GlobeManager/GlobeManager";
+import { registerShowImageryCommand } from "./windows/GlobeManager/showImagery";
 import { registerGraphPanel } from "./windows/Graph/Graph";
 import { registerGraphics2DCommands } from "./windows/Graphics2D/commands2d";
 import { registerGraphics2DPanel } from "./windows/Graphics2D/Graphics2D";
@@ -55,6 +57,7 @@ export function App() {
   // หน้าต่าง 3D + View From/To + 3D Graphics Window Properties (คำสั่ง g3d.* และ object.zoomTo ระดับแอป ทำกับหน้าต่าง 3D ที่ active),
   // หน้าต่าง 2D + 2D Graphics Window Properties (คำสั่ง g2d.* ระดับแอป ทำกับหน้าต่าง 2D ที่ active), Timeline View และ Message Viewer,
   // Sensor View (คำสั่ง object.sensorView ระดับแอป และการตามต้นไม้ของ scenario: ปิด/ตั้งชื่อหน้าต่างใหม่เมื่อ sensor หรือดาวแม่ถูกลบหรือเปลี่ยนชื่อ),
+  // Show Imagery ของดาวถ่ายภาพ (คำสั่ง object.showImagery ระดับแอป, ข2),
   // หน้าต่างรายงานและหน้าต่างกราฟ (เปิดด้วย openReport ของ windows/Report/Report.tsx: style ชนิด graph ไปหน้าต่างกราฟ),
   // Access tool (คำสั่ง analysis.access / object.access ระดับแอป: เปิดหน้าต่างนี้),
   // Report & Graph Manager และหน้าต่างแก้ style (คำสั่ง analysis.reportGraphManager / object.reportGraphManager ระดับแอป),
@@ -71,6 +74,7 @@ export function App() {
     const unregisterGraphics3DCommands = registerGraphics3DCommands();
     const unregisterGraphics2DCommands = registerGraphics2DCommands();
     const unregisterSensorViewCommands = registerSensorViewCommands();
+    const unregisterShowImageryCommand = registerShowImageryCommand();
     const unregisterAccessCommands = registerAccessCommands();
     const unregisterReportGraphManagerCommands = registerReportGraphManagerCommands();
     const unregisterValidationCommands = registerValidationCommands();
@@ -102,6 +106,8 @@ export function App() {
     const stopFlow = startWorkspaceFlow();
     // สวิตช์และรายการภาพพื้นโลกออนไลน์ (GIBS) ไม่ผูก scenario: อ่านครั้งเดียว ล้มเหลว = ปิดไว้พร้อมคำเตือนไทย (stores/imagery.ts)
     void useImagery.getState().load();
+    // preset ของดาวถ่ายภาพ (ข2 Ruling p: ตารางคงที่ ไม่ผูก scenario) อ่านครั้งเดียวคู่กัน ล้มเหลว = คำเตือนไทยและ Show Imagery ปิดใช้
+    void useImagingPresets.getState().load();
     return () => {
       stopFlow();
       stopShortcuts();
@@ -109,6 +115,7 @@ export function App() {
       unregisterValidationCommands();
       unregisterReportGraphManagerCommands();
       unregisterAccessCommands();
+      unregisterShowImageryCommand();
       unregisterSensorViewCommands();
       unregisterGraphics2DCommands();
       unregisterGraphics3DCommands();

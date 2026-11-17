@@ -2083,6 +2083,23 @@ describe("Sensor pages", () => {
     expect(errorOf(input(t("field.verticalHalfAngle")))).toBe("Rectangular ต้องมี vertical_half_angle และ horizontal_half_angle");
   });
 
+  test("2D Graphics - Attributes hides Fill and % Translucency for a Rectangular sensor (2D never fills it, Ruling k) and shows them for Simple Conic", async () => {
+    pages = RECT_PAGES();
+    server();
+    const { unmount } = await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    expect(screen.queryByLabelText(t("field.fill"))).toBeNull();
+    expect(screen.queryByLabelText(t("field.translucency"))).toBeNull();
+    expect(input(t("field.color")).value).toBe("#e8c547");
+    unmount();
+    pages = structuredClone(SENSOR1_PAGES);
+    server();
+    await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    expect(screen.getByLabelText(t("field.fill"))).toBeDefined();
+    expect(input(t("field.translucency")).value).toBe("50");
+  });
+
   test("a Simple Conic sensor's Apply body has no vertical or horizontal half angle keys", async () => {
     const f = server();
     await mountSensor();

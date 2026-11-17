@@ -230,6 +230,16 @@ describe("daily table", () => {
     expect(gaveUp.getAttribute("title")).toBe(msg("validation.gaveUp"));
   });
 
+  test("an imaging-only day (no GNSS system in its history line) shows the neutral No GNSS text, not Fail (ข2)", async () => {
+    const img = { day: "2026-11-11", scenario: "IMG", ephem_hash: "i", truth_file: "T.SP3", pass: false, systems: {}, failing: [], created_utc: "2026-11-14T03:00:00Z" };
+    server({ [HISTORY_ROUTE]: { json: [...HISTORY, img] } });
+    mount();
+    const table = await daily();
+    const row = rowOf(table, "IMG");
+    expect(cells(row)[2]).toBe(`${t("validation.result.noGnss")} ${msg("validation.noGnss")}`);
+    expect(cells(row)[2]).not.toContain(t("validation.result.fail"));
+  });
+
   test("without a scenario the next attempt is in UTCG", async () => {
     server();
     mount();
