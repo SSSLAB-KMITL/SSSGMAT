@@ -491,6 +491,21 @@ describe("imaging satellites", () => {
     expect(Object.hasOwn(posts(f)[0].body as object, "primary_sensors")).toBe(false);
   });
 
+  test("a 409 NAME_EXISTS on primary_sensors shows above Insert with a Thai hint to untick Add Primary Sensor; the window stays (M5)", async () => {
+    const text = "มี object ชื่อ \"MODIS_X04\" อยู่แล้ว";
+    imagingServer({ [POST_OBJECTS]: { status: 409, json: { code: "NAME_EXISTS", text, field: "primary_sensors", detail: "MODIS_X04" } } });
+    await mount();
+    click("X04");
+    await user.click(insertButton());
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(msg("catalog.primaryClash", { message: text }));
+    expect(alert.textContent).toContain(t("dialog.catalog.addPrimarySensor"));
+    expect(alert.textContent).toContain(text);
+    expect(selected()).toEqual(["X04"]);
+    expect(flow.closePanel).not.toHaveBeenCalled();
+    expect(useMessages.getState().items).toEqual([]);
+  });
+
   test("a mixed GNSS + imaging selection sends primary_sensors: true", async () => {
     const f = imagingServer();
     await mount();

@@ -32,8 +32,8 @@ import { readGraphTheme } from "../Graph/options";
 import { VALIDATION_KIND } from "./commands";
 import { ageOption, trendOption, type ChartCtx } from "./options";
 import {
-  AGE_DAYS_LIMIT, ageScatter, ageSummary, dailyRows, docSystems, fixed, pairText, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries,
-  type DailyRow, type DayResult, type HistoryRecord, type Metric, type PendingDay, type ValidationDoc,
+  AGE_DAYS_LIMIT, ageScatter, ageSummary, dailyRows, docSystems, fixed, pairText, parseDay, parseHistory, parsePending, satelliteRows, shownResult, systemLetters,
+  trendSeries, type DailyRow, type DayResult, type HistoryRecord, type Metric, type PendingDay, type ValidationDoc,
 } from "./rows";
 
 /** คำขอผลรายวันที่ค้างพร้อมกันได้ไม่เกินนี้ (กราฟอายุ) */
@@ -50,7 +50,7 @@ const systemName = (letter: string): string => (Object.hasOwn(SYSTEM_LABELS, let
 
 const DAY_RESULT_LABELS: Record<DayResult, LabelKey> = {
   pass: "validation.result.pass", fail: "validation.result.fail", pending: "validation.result.pending", gave_up: "validation.result.gaveUp",
-  no_gnss: "validation.result.noGnss",
+  undecided: "validation.result.undecided", no_gnss: "validation.result.noGnss",
 };
 const SAT_RESULT_LABELS: Record<string, LabelKey> = {
   pass: "validation.result.pass", fail: "validation.result.fail",
@@ -58,8 +58,10 @@ const SAT_RESULT_LABELS: Record<string, LabelKey> = {
 };
 /** ค่าของตัวกรองผลรายดวงตามลำดับที่แสดง */
 const SAT_RESULTS = ["pass", "fail", "insufficient_data", "unverified"] as const;
-/** วันที่ตรวจแล้ว (มีไฟล์ผลรายดวงให้เปิด): Pass, Fail และ No GNSS (ข2) */
-const opensDetail = (row: DailyRow): boolean => row.result === "pass" || row.result === "fail" || row.result === "no_gnss";
+/** วันที่ตรวจแล้ว (มีไฟล์ผลรายดวงให้เปิด): ทุกแถวจาก history (Pass, Fail, Undecided ; ข2) ไม่ใช่ Pending / Gave up */
+const opensDetail = (row: DailyRow): boolean => row.result !== "pending" && row.result !== "gave_up";
+/** ผลรายวันที่ไม่มีดาวเลย (แทนเอกสารจริงของวันที่จำไว้ใน emptyDays) */
+const EMPTY_DAY: ValidationDoc = { day: "", satellites: {} };
 const satResultName = (result: string | null): string =>
   result === null ? DASH : Object.hasOwn(SAT_RESULT_LABELS, result) ? t(SAT_RESULT_LABELS[result]) : result;
 
@@ -152,6 +154,8 @@ export function Validation({ panelId }: PanelProps) {
 
   // ---------- ผลรายวัน (ที่เก็บร่วมของตารางรายดวงกับกราฟอายุ) ----------
   const docs = useRef(new Map<string, Promise<ValidationDoc>>());
+  /** docKey ของวัน Undecided ที่ผลรายวันโหลดแล้วมี satellites ว่าง (แสดงเป็น No GNSS) */
+  const [emptyDays, setEmptyDays] = useState<ReadonlySet<string>>(() => new Set());
   /** วันที่ดึงแล้วล้ม (กุญแจ docKey) ตัวโหลดของกราฟข้ามวันเหล่านี้ตลอดที่หน้าต่างเปิดอยู่; Refresh ล้างทิ้ง; การคลิกวันนั้นเองลองใหม่เสมอ */
   const failed = useRef(new Set<string>());
   /** ตัวยกเลิกของหน้าต่างนี้ทั้งหน้า: ปิดหน้าต่าง = ยกเลิกคำขอผลรายวันที่ค้างทั้งหมด (ต้องประกาศก่อน effect อื่นที่เรียก loadDoc) */
@@ -175,6 +179,8 @@ export function Validation({ panelId }: PanelProps) {
       const p = apiGet<unknown>(`/validation/${encodeURIComponent(row.scenario)}/${row.day}`, { signal: mountAbort.current?.signal }).then((r) => {
         const doc = parseDay(r.data);
         if (doc === null) throw new Error(msg("validation.dayInvalid"));
+        // ข2: วัน Undecided ที่ผลรายวันไม่มีดาวเลย = No GNSS (shownResult) จำเฉพาะวันแบบนี้ ตารางจึงไม่วาดใหม่ทุกครั้งที่กราฟอายุโหลดวันอื่น
+        if (row.result === "undecided" && Object.keys(doc.satellites).length === 0) setEmptyDays((prev) => new Set(prev).add(key));
         return doc;
       });
       p.catch((e: unknown) => {
@@ -422,6 +428,7 @@ export function Validation({ panelId }: PanelProps) {
                   <tbody>
                     {rows.map((row, index) => {
                       const open = opensDetail(row);
+                      const shown = shownResult(row, emptyDays.has(docKey(row)) ? EMPTY_DAY : null);
                       return (
                         <tr
                           key={row.key}
@@ -439,11 +446,12 @@ export function Validation({ panelId }: PanelProps) {
                         >
                           <td>{row.day}</td>
                           <td>{row.scenario}</td>
-                          <td className={`val-result val-${row.result}`}>
-                            {t(DAY_RESULT_LABELS[row.result])}
+                          <td className={`val-result val-${shown}`}>
+                            {t(DAY_RESULT_LABELS[shown])}
                             {row.result === "pending" && <span className="val-next"> {nextAttemptText(row.nextAttempt)}</span>}
                             {row.result === "gave_up" && <span className="val-next"> {msg("validation.gaveUpShort")}</span>}
-                            {row.result === "no_gnss" && <span className="val-next"> {msg("validation.noGnss")}</span>}
+                            {shown === "undecided" && <span className="val-next"> {msg("validation.undecided")}</span>}
+                            {shown === "no_gnss" && <span className="val-next"> {msg("validation.noGnss")}</span>}
                           </td>
                           <td>{row.failing.join(", ")}</td>
                           <td className="val-truth" title={row.truth ?? undefined}>{row.truth ?? ""}</td>

@@ -10,7 +10,7 @@
 //   ของ CelesTrak ด้วยภายใต้ข้อจำกัดความถี่เดิม ไม่ติ๊ก = คำขอเดิมทุกไบต์ (ไม่มี body) ; ระบบ GNSS ในหน้านี้เลือกไม่ได้ (ทั้งสี่เสมอ)
 //   จึงไม่มีกรณีส่ง X อย่างเดียว (server ตอบ 422 ถ้าไม่มีอักษร GNSS)
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { apiGet, errorText } from "../../api/client";
 import { startJob } from "../../api/startJob";
 import { reportWriteError } from "../../api/writes";
@@ -95,6 +95,7 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [imaging, setImaging] = useState(false);
+  const imagingHintId = useId();
   const fetching = useJobs((s) => Object.values(s.jobs).some((j) => j.kind === "fetch" && isActiveJob(j)));
   const now = useNow(30_000);
   const control = useRef<AbortController | null>(null);
@@ -232,10 +233,19 @@ export function FetchOrbitData(_props: Partial<PanelProps>) {
       )}
 
       <label className="insert-choice">
-        <input type="checkbox" className="form-check" checked={imaging} disabled={asking} onChange={(e) => setImaging(e.target.checked)} />
+        <input
+          type="checkbox"
+          className="form-check"
+          checked={imaging}
+          disabled={asking}
+          aria-describedby={imagingHintId}
+          onChange={(e) => setImaging(e.target.checked)}
+        />
         {t("dialog.fetch.imagingSatellites")}
       </label>
-      <p className="fetch-note">{msg("fetch.imagingHint")}</p>
+      <p className="fetch-note" id={imagingHintId}>
+        {msg("fetch.imagingHint")}
+      </p>
 
       <div className="fetch-buttons">
         <button type="button" className="btn" disabled={asking || fetching} onClick={() => void fetchNow()}>

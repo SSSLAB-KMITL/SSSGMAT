@@ -5,8 +5,10 @@
 //   ตัวเลขที่ไม่ใช่จำนวนจำกัด = null, ช่องที่ไม่รู้จักไม่ถูกแตะ
 // - วัน + scenario เดียวกันที่ตรวจซ้ำ (หลายบรรทัดในไฟล์) แสดงบรรทัดที่ใหม่สุด (created_utc แล้วลำดับในไฟล์); วันที่มีผลแล้วไม่แสดงซ้ำเป็น Pending
 // - Result ของวัน: pass | fail (จากช่อง pass ของ history) | pending | gave_up (จาก /validation/pending) เรียงวันใหม่สุดก่อน
-//   no_gnss (ข2): บรรทัดที่ systems ไม่มีระบบ GNSS (G R E C) เลย เช่น scenario ที่มีแต่ดาวถ่ายภาพ (engine ข้าม X ทั้งหมด pass จึงเป็น false)
-//   = กลาง ๆ ไม่ใช่ Fail
+//   ข2: systems ของ history มีเฉพาะระบบที่มีดาวค่าจริง SP3 อายุ ≤ 2 วันอย่างน้อยหนึ่งดวง จึงว่างได้ทั้งวันที่มีแต่ดาวถ่ายภาพ (engine ข้าม X)
+//   และวัน GNSS ที่ทุกดวงเก่าหรือมีแต่ broadcast: ไม่มีระบบ GNSS ใน systems + มีดวงไม่ผ่าน = fail ; ไม่มี systems (หรือไม่ใช่ object) = fail ตามเดิม ;
+//   นอกนั้น = undecided (ตัดสินไม่ได้ กลาง ๆ) แล้ว shownResult เปลี่ยนเป็น no_gnss เมื่อผลรายวันของวันนั้นโหลดมาแล้วมี satellites ว่าง
+//   (validate ใส่ทุก PRN ที่ไม่ใช่ X ไว้ที่นั่น ว่าง = ไม่มีดาว GNSS ในวันนั้นเลย)
 // - Trend: ค่า P99 ต่อระบบต่อวัน (หนึ่งจุดต่อวัน: บรรทัดที่ใหม่สุดของวันนั้นถ้ามีหลาย scenario) เส้นเกณฑ์เท่ากับ EL_P99_MAX / AZ_P99_MAX ของ engine (0.2° / 0.5°)
 
 import type { components } from "../../api/types.gen";
@@ -101,7 +103,8 @@ export function parseHistory(raw: unknown): HistoryRecord[] {
       ephem_hash: str(item.ephem_hash) ?? undefined,
       truth_file: str(item.truth_file),
       pass: item.pass === true,
-      systems: objectsOf<SystemStats>(item.systems),
+      // ไม่มีหรือไม่ใช่ object = ไม่มีช่อง (ผลของวันเป็น Fail ตามเดิม) ต่างจาก {} ที่ engine เขียนเมื่อไม่มีระบบใดตัดสินได้
+      systems: isObject(item.systems) ? objectsOf<SystemStats>(item.systems) : undefined,
       failing: strings(item.failing),
       created_utc: str(item.created_utc),
     });
@@ -155,15 +158,21 @@ function latestPerDay(history: readonly HistoryRecord[]): Map<string, HistoryRec
 
 // ---------- ตารางรายวัน ----------
 
-export type DayResult = "pass" | "fail" | "pending" | "gave_up" | "no_gnss";
+export type DayResult = "pass" | "fail" | "pending" | "gave_up" | "undecided" | "no_gnss";
 
 /** อักษรของระบบ GNSS (GNSS_GROUPS ของ engine) */
 const GNSS_LETTERS = new Set(SYSTEM_ORDER);
 
-/** ผลของวันที่ตรวจแล้ว: ไม่มีระบบ GNSS ใดใน systems = no_gnss ไม่งั้นตามช่อง pass */
+/** ผลของวันที่ตรวจแล้วจากบรรทัดของ history (กติกาที่หัวไฟล์) */
 function resultOf(rec: HistoryRecord): DayResult {
-  if (!Object.keys(rec.systems ?? {}).some((letter) => GNSS_LETTERS.has(letter))) return "no_gnss";
-  return rec.pass === true ? "pass" : "fail";
+  if (Object.keys(rec.systems ?? {}).some((letter) => GNSS_LETTERS.has(letter))) return rec.pass === true ? "pass" : "fail";
+  if (strings(rec.failing).length > 0 || rec.systems === undefined) return "fail";
+  return "undecided";
+}
+
+/** ผลที่แสดงของแถว: undecided ที่ผลรายวัน (doc ที่โหลดแล้ว) มี satellites ว่าง = no_gnss ; doc ยังไม่มา (null) หรือแถวอื่น = ผลของแถวเอง */
+export function shownResult(row: Pick<DailyRow, "result">, doc: ValidationDoc | null): DayResult {
+  return row.result === "undecided" && doc !== null && Object.keys(doc.satellites).length === 0 ? "no_gnss" : row.result;
 }
 
 /** ค่ากลางกับ P99 ของหนึ่งระบบในวันหนึ่ง (ตาม Metric ที่เลือก) */

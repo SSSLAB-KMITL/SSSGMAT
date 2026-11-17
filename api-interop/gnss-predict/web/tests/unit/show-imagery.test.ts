@@ -28,11 +28,13 @@ vi.mock("../../src/chrome/Dialogs", async (importOriginal) => ({
 
 const GIBS = "NASA GIBS / EOSDIS";
 const MODIS_TERRA = "MODIS_Terra_CorrectedReflectance_TrueColor";
+const MODIS_AQUA = "MODIS_Aqua_CorrectedReflectance_TrueColor";
 const LAYERS: ImageryLayerInfo[] = [
   { id: "BlueMarble_NextGeneration", title: "Blue Marble", period: "static", max_level: 8, format: "jpg", credit: GIBS, source: "gibs" },
   { id: "VIIRS_NOAA20_CorrectedReflectance_TrueColor", title: "VIIRS NOAA-20 True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
   { id: MODIS_TERRA, title: "MODIS Terra True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
   { id: "GOES-West_ABI_GeoColor", title: "GOES-West GeoColor", period: "10min", max_level: 7, format: "jpg", credit: `${GIBS}, NOAA`, source: "gibs" },
+  { id: MODIS_AQUA, title: "MODIS Aqua True Color", period: "daily", max_level: 9, format: "jpg", credit: GIBS, source: "gibs" },
   { id: "s2cloudless-2024_3857", title: "Sentinel-2 cloudless 2024", period: "static", max_level: 15, format: "jpg", credit: "EOX", source: "eox" },
 ];
 const EOX_TITLE = "Sentinel-2 cloudless 2024";
@@ -40,6 +42,10 @@ const EOX_TITLE = "Sentinel-2 cloudless 2024";
 /** preset X04 ตามที่ GET /api/imaging/presets ส่ง (task 4 rows[3]) */
 const X04: ImagingPresetOut = {
   prn: "X04", norad: 25994, name: "Terra", camera: "MODIS", gibs_layer: MODIS_TERRA,
+  sensor: { type: "Rectangular", cone_half_angle: null, vertical_half_angle: 55.0, horizontal_half_angle: 0.41 },
+};
+const X05: ImagingPresetOut = {
+  prn: "X05", norad: 27424, name: "Aqua", camera: "MODIS", gibs_layer: MODIS_AQUA,
   sensor: { type: "Rectangular", cone_half_angle: null, vertical_half_angle: 55.0, horizontal_half_angle: 0.41 },
 };
 const X01: ImagingPresetOut = {
@@ -116,7 +122,7 @@ beforeEach(() => {
   useImagery.setState(useImagery.getInitialState(), true);
   useImagery.setState({ loaded: true, layers: LAYERS, sources: SOURCES_OFF });
   useSettings.setState({ settings: SETTINGS });
-  useImagingPresets.setState({ presets: [X01, X04], loaded: true });
+  useImagingPresets.setState({ presets: [X01, X04, X05], loaded: true });
   loadScene();
 });
 afterEach(() => {
@@ -247,16 +253,52 @@ describe("opaque layers above the satellite's layer (amendment x, R-03)", () => 
     expect(messages("SHOW_IMAGERY_UNCOVERED")).toEqual([]);
   });
 
-  test("Cesium ion shown (exclusive) is put back to None in the Globe Manager state, its switch stays on, and the message names it", async () => {
+  test("Cesium ion shown (exclusive) is put back to None in the Globe Manager state, its switch stays on, and the message says to pick the asset again (M4)", async () => {
     server();
     sources({ gibs: true, ion: true });
     useLayout.getState().setGlobeIon(2);
     await showImagery(satPath("X04"));
     expect(useLayout.getState().globe.ion?.assetId ?? null).toBeNull();
     expect(useImagery.getState().sources.ion).toBe(true);
+    const text = msg("showImagery.uncoveredIon", { layer: "MODIS Terra True Color" });
+    expect(messages("SHOW_IMAGERY_UNCOVERED").map((m) => m.text)).toEqual([text]);
+    expect(text).toContain("asset");
+    expect(text).not.toContain("ติ๊ก Show");
+  });
+
+  test("ion together with OSM: still one message, the layer part then the ion part", async () => {
+    server();
+    sources({ gibs: true, osm: true, ion: true });
+    useLayout.getState().setGlobeLayer("osm", { show: true });
+    useLayout.getState().setGlobeIon(2);
+    await showImagery(satPath("X04"));
     expect(messages("SHOW_IMAGERY_UNCOVERED").map((m) => m.text)).toEqual([
-      msg("showImagery.uncovered", { layers: "Cesium ion", layer: "MODIS Terra True Color" }),
+      `${msg("showImagery.uncovered", { layers: "OpenStreetMap", layer: "MODIS Terra True Color" })} ${msg("showImagery.uncoveredIon", { layer: "MODIS Terra True Color" })}`,
     ]);
+  });
+
+  test("another imaging satellite's GIBS layer drawn above (Aqua's daily composite) is hidden, and Terra becomes the top shown layer (M2)", async () => {
+    server();
+    sources({ gibs: true });
+    useLayout.getState().setGlobeLayer(MODIS_AQUA, { show: true });
+    await showImagery(satPath("X04"));
+    expect(useLayout.getState().globe.layers[MODIS_AQUA].show).toBe(false);
+    expect(drawnLayers().at(-1)).toBe(MODIS_TERRA);
+    expect(messages("SHOW_IMAGERY_UNCOVERED").map((m) => m.text)).toEqual([
+      msg("showImagery.uncovered", { layers: "MODIS Aqua True Color", layer: "MODIS Terra True Color" }),
+    ]);
+  });
+
+  test("an imaging layer below the chosen one stays (Show Imagery for X05 leaves Terra shown)", async () => {
+    server();
+    sources({ gibs: true });
+    useLayout.getState().setGlobeLayer(MODIS_TERRA, { show: true });
+    const doc = useScenario.getState().doc!;
+    useScenario.setState({ doc: { ...doc, objects: [...doc.objects, { class: "Satellite", name: "X05", norad: 27424 }] } as ScenarioDoc });
+    await showImagery(satPath("X05"));
+    expect(useLayout.getState().globe.layers[MODIS_TERRA].show).toBe(true);
+    expect(drawnLayers().at(-1)).toBe(MODIS_AQUA);
+    expect(messages("SHOW_IMAGERY_UNCOVERED")).toEqual([]);
   });
 });
 

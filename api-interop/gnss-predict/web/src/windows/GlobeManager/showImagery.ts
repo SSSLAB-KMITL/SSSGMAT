@@ -5,8 +5,9 @@
 //   1. preset ตาม NORAD ของดาว
 //   2. สวิตช์ GIBS ปิด = enableSourceWithConsent("gibs") (กล่องเดียวกับ Globe Manager: Ruling f) ยกเลิกหรือบันทึกไม่สำเร็จ = จบ ไม่แตะอะไร
 //   3. ชั้น GIBS ของดาวอยู่ในรายการของ server = ติ๊ก Show (% Translucency คงเดิม) ไม่อยู่ = คำเตือนไทย showImagery.noLayer
-//      ชั้นทึบที่วาดอยู่เหนือมัน (EOX, OpenStreetMap หรือ GIBS ภาพคงที่: isOpaqueLayer) และ Cesium ion ที่แสดงแทนทุกชั้น ถูกซ่อน
-//      (amendment x: Show ของแถวใน workbook / asset ของ ion = None ไม่แตะสวิตช์แหล่ง) พร้อมข้อความไทยหนึ่งข้อความที่บอกชื่อชั้นเหล่านั้น
+//      ชั้นทึบที่วาดอยู่เหนือมัน (EOX, OpenStreetMap หรือ GIBS ภาพคงที่: isOpaqueLayer), ชั้น GIBS ของดาวถ่ายภาพดวงอื่นที่อยู่เหนือมัน
+//      และ Cesium ion ที่แสดงแทนทุกชั้น ถูกซ่อน (amendment x: Show ของแถวใน workbook / asset ของ ion = None ไม่แตะสวิตช์แหล่ง)
+//      พร้อมข้อความไทยหนึ่งข้อความที่บอกชื่อชั้นเหล่านั้น (ion บอกวิธีคืนของมันเอง)
 //   4. ดาวมี sensor ลูก = เปิด Sensor View ของ sensor ตัวแรกในต้นไม้ (Ruling n)
 //      ไม่มี = กล้องของหน้าต่าง 3D ที่ active บินไปเหนือจุดใต้ดาว ณ เวลาปัจจุบัน ไม่สร้าง object ใด (amendment z)
 //      ความสูงของกล้อง = ความสูงของดาว แต่ไม่ต่ำกว่า FLY_OVER_MIN_KM ; ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว = ข้อความไทย ไม่ย้ายกล้อง
@@ -17,7 +18,7 @@ import { ionPlan } from "../../cesium/ionState";
 import { subSatellite } from "../../cesium/swath";
 import { COMMAND_LABELS, invalidateCommands, registerCommand } from "../../commands";
 import { msg } from "../../labels/messages.th";
-import { isOpaqueLayer, LAYER_SOURCE_ORDER, OSM_LAYER, SOURCE_NAMES, useImagery, type ImageryLayerInfo } from "../../stores/imagery";
+import { isOpaqueLayer, LAYER_SOURCE_ORDER, OSM_LAYER, useImagery, type ImageryLayerInfo } from "../../stores/imagery";
 import { presetOfNorad, useImagingPresets, type ImagingPresetOut } from "../../stores/imagingPresets";
 import { useLayout } from "../../stores/layout";
 import { report } from "../../stores/messages";
@@ -65,25 +66,32 @@ function drawnLayers(): ImageryLayerInfo[] {
     .sort((a, b) => LAYER_SOURCE_ORDER[a.source] - LAYER_SOURCE_ORDER[b.source]);
 }
 
-/** ซ่อนชั้นทึบที่วาดอยู่เหนือ layer และ ion ที่แสดงแทนทุกชั้น (amendment x) แล้วบอกชื่อในข้อความไทยหนึ่งข้อความ */
+/**
+ * ซ่อนสิ่งที่บัง layer (amendment x และ fix round 1 M2, M4) แล้วบอกในข้อความไทยหนึ่งข้อความ:
+ * - ชั้นที่วาดอยู่เหนือ layer ที่ทึบ (isOpaqueLayer) หรือเป็นชั้น GIBS ของดาวถ่ายภาพดวงอื่น (gibs_layer ของ preset เช่นภาพรายวันของ Aqua เหนือ Terra)
+ *   = Show ของแถวใน workbook ปิด (สวิตช์แหล่งไม่แตะ)
+ * - Cesium ion ที่แสดงแทนทุกชั้น (หรือรออ่าน token) = asset เป็น None สวิตช์ ion คงเปิด ข้อความบอกวิธีคืนของ ion เอง (เลือก asset กลับ)
+ */
 function uncover(layer: ImageryLayerInfo): void {
   const layout = useLayout.getState();
   const drawn = drawnLayers();
   const above = drawn.slice(drawn.findIndex((l) => l.id === layer.id) + 1);
+  const imaging = new Set(useImagingPresets.getState().presets.map((p) => p.gibs_layer));
   const hidden: string[] = [];
   for (const l of above) {
     const translucency = layout.globe.layers[l.id]?.translucency ?? 0;
-    if (!isOpaqueLayer(l, 1 - translucency / 100)) continue;
+    if (!isOpaqueLayer(l, 1 - translucency / 100) && !imaging.has(l.id)) continue;
     layout.setGlobeLayer(l.id, { show: false });
     hidden.push(l.title);
   }
-  // ion แสดงอยู่ (หรือรออ่าน token) = ชั้นอื่นทั้งหมดถูกซ่อน: asset = None เหมือนเลือก None ใน Globe Manager สวิตช์ ion คงเปิด
+  const parts: string[] = [];
+  if (hidden.length > 0) parts.push(msg("showImagery.uncovered", { layers: hidden.join(", "), layer: layer.title }));
   const ion = ionPlan().kind;
   if (ion === "shown" || ion === "waiting") {
     layout.setGlobeIon(null);
-    hidden.push(SOURCE_NAMES.ion);
+    parts.push(msg("showImagery.uncoveredIon", { layer: layer.title }));
   }
-  if (hidden.length > 0) report("info", "SHOW_IMAGERY_UNCOVERED", msg("showImagery.uncovered", { layers: hidden.join(", "), layer: layer.title }));
+  if (parts.length > 0) report("info", "SHOW_IMAGERY_UNCOVERED", parts.join(" "));
 }
 
 /** กล้อง 3D ไปเหนือจุดใต้ดาว ณ เวลาปัจจุบัน (ไม่มีหน้าต่าง 3D หรือตำแหน่ง = ข้อความไทย) */

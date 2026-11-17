@@ -127,6 +127,8 @@ const MESSAGES = {
   "catalog.selected": "เลือกแล้ว {n} ดวง",
   "catalog.nameTaken": "มี object ชื่อ \"{name}\" อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่)",
   "catalog.onlineHint": "Online CelesTrak เปิดหน้า Fetch Orbit Data ให้ หน้านี้ไม่ดาวน์โหลดเอง",
+  // ข2: 409 ที่ primary_sensors = ชื่อ sensor หลักทั้งสองแบบถูกใช้แล้ว {message} = ข้อความของ server
+  "catalog.primaryClash": "ชื่อ sensor หลักของดาวถ่ายภาพซ้ำกับ object ที่มีอยู่ (เอาติ๊ก Add Primary Sensor ออกเพื่อ Insert เฉพาะดาว): {message}",
 
   // Fetch Orbit Data (spec §11)
   "fetch.loading": "กำลังอ่านข้อมูลวงโคจรจาก server...",
@@ -204,6 +206,8 @@ const MESSAGES = {
   "showImagery.noLayer": "ชั้นภาพ {layer} ไม่มีในรายการของ server",
   // {layers} = ชื่อชั้นทึบที่บังอยู่ คั่นด้วย ", " ; {layer} = ชื่อชั้นภาพของดาว
   "showImagery.uncovered": "ซ่อนชั้นภาพ {layers} ที่บังภาพ {layer} อยู่ (ติ๊ก Show กลับได้ที่ Globe Manager)",
+  // ion ไม่มีช่อง Show: ซ่อนด้วยการเปลี่ยน asset เป็น None จึงบอกวิธีคืนต่างจากชั้นอื่น
+  "showImagery.uncoveredIon": "ซ่อนภาพ Cesium ion ที่บังภาพ {layer} อยู่โดยเปลี่ยน asset เป็น None (สวิตช์ Cesium ion ยังเปิดอยู่ เลือก asset กลับได้ที่กลุ่ม Cesium ion ใน Globe Manager)",
   "showImagery.noView": "ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว {satellite} ณ เวลานี้ จึงไม่ได้ย้ายกล้อง (เปิดชั้นภาพ {layer} แล้ว)",
 
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
@@ -450,6 +454,7 @@ const MESSAGES = {
   "validation.nextAttempt": "ลองครั้งถัดไป {time}",
   "validation.gaveUpShort": "เลิกตรวจแล้ว ไม่ลองอีก",
   "validation.noGnss": "ไม่มีดาว GNSS ให้ตรวจ",
+  "validation.undecided": "ตัดสินไม่ได้ — ไม่มีระบบใดมีคู่ SP3 ที่อายุข้อมูล ≤ 2 วัน",
   "validation.noRetry": "ไม่มีรอบลองถัดไป",
   "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
   "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",

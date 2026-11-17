@@ -752,7 +752,8 @@ const LABELS = {
   "validation.result.gaveUp": ours("Gave up"),
   "validation.result.insufficientData": ours("Insufficient Data"),
   "validation.result.unverified": ours("Unverified"),
-  // ข2: วันที่ตรวจแล้วแต่ไม่มีระบบ GNSS ในผล (scenario ที่มีแต่ดาวถ่ายภาพ) ไม่ใช่ Fail
+  // ข2: วันที่ตรวจแล้วแต่ไม่มีระบบใดตัดสินได้ (Undecided) และวันที่ไม่มีดาว GNSS เลย (No GNSS: scenario ที่มีแต่ดาวถ่ายภาพ) ไม่ใช่ Fail
+  "validation.result.undecided": ours("Undecided"),
   "validation.result.noGnss": ours("No GNSS"),
   "validation.filter.system": ours("System"),
   "validation.filter.result": ours("Result"),

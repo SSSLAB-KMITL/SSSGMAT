@@ -230,14 +230,31 @@ describe("daily table", () => {
     expect(gaveUp.getAttribute("title")).toBe(msg("validation.gaveUp"));
   });
 
-  test("an imaging-only day (no GNSS system in its history line) shows the neutral No GNSS text, not Fail (ข2)", async () => {
-    const img = { day: "2026-11-11", scenario: "IMG", ephem_hash: "i", truth_file: "T.SP3", pass: false, systems: {}, failing: [], created_utc: "2026-11-14T03:00:00Z" };
-    server({ [HISTORY_ROUTE]: { json: [...HISTORY, img] } });
+  // ข2 fix round 1: systems ว่างและไม่มีดวงไม่ผ่าน = Undecided จนกว่าผลรายวันของวันนั้นจะโหลดมาแล้วมี satellites ว่าง = No GNSS
+  const undecidedLine = (scenario: string) =>
+    ({ day: "2026-11-11", scenario, ephem_hash: "i", truth_file: "T.SP3", pass: false, systems: {}, failing: [], created_utc: "2026-11-14T03:00:00Z" });
+
+  test("a day whose history line has no GNSS system and nothing failing shows Undecided, then No GNSS once its day doc (satellites {}) has loaded", async () => {
+    const gate = deferred<{ json: unknown }>();
+    server({ [HISTORY_ROUTE]: { json: [...HISTORY, undecidedLine("IMG")] }, "GET /api/validation/IMG/2026-11-11": () => gate.promise });
     mount();
     const table = await daily();
-    const row = rowOf(table, "IMG");
-    expect(cells(row)[2]).toBe(`${t("validation.result.noGnss")} ${msg("validation.noGnss")}`);
-    expect(cells(row)[2]).not.toContain(t("validation.result.fail"));
+    expect(cells(rowOf(table, "IMG"))[2]).toBe(`${t("validation.result.undecided")} ${msg("validation.undecided")}`);
+    gate.resolve({ json: { day: "2026-11-11", scenario: "IMG", satellites: {} } });
+    await waitFor(() => expect(cells(rowOf(table, "IMG"))[2]).toBe(`${t("validation.result.noGnss")} ${msg("validation.noGnss")}`));
+    expect(cells(rowOf(table, "IMG"))[2]).not.toContain(t("validation.result.fail"));
+  });
+
+  test("an Undecided GNSS day (its day doc lists GNSS satellites) stays Undecided, never No GNSS", async () => {
+    const f = server({
+      [HISTORY_ROUTE]: { json: [...HISTORY, undecidedLine("OLD")] },
+      "GET /api/validation/OLD/2026-11-11": { json: { day: "2026-11-11", scenario: "OLD", satellites: { G05: { truth: "brdc", pairs: 300, result: "pass" } } } },
+    });
+    mount();
+    const table = await daily();
+    await waitFor(() => expect(f.count("GET /api/validation/OLD/2026-11-11")).toBe(1));
+    await act(async () => undefined);
+    expect(cells(rowOf(table, "OLD"))[2]).toBe(`${t("validation.result.undecided")} ${msg("validation.undecided")}`);
   });
 
   test("without a scenario the next attempt is in UTCG", async () => {

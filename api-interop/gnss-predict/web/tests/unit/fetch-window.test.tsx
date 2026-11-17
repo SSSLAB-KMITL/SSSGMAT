@@ -393,6 +393,14 @@ describe("Imaging satellites", () => {
     expect(screen.getByText(msg("fetch.imagingHint"))).toBeDefined();
   });
 
+  test("the hint describes the checkbox (aria-describedby) (M7)", async () => {
+    server();
+    await mounted();
+    const id = imagingBox().getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id!)?.textContent).toBe(msg("fetch.imagingHint"));
+  });
+
   test("unticked sends the old request unchanged (no body: the server's default GREC)", async () => {
     const f = server();
     await mounted();

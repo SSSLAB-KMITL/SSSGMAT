@@ -227,6 +227,8 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
     } catch (e) {
       if (isFieldError(e) && e.field === "create_constellation") {
         setNameError(e.text);
+      } else if (isFieldError(e) && e.field === "primary_sensors") {
+        setGeneral(msg("catalog.primaryClash", { message: e.text })); // ชื่อ sensor หลักทั้งสองแบบถูกใช้แล้ว: บอกทางออก (Insert โดยไม่สร้าง sensor)
       } else if (isFieldError(e)) {
         setGeneral(e.text); // norads: NORAD ที่ไม่มีใน catalog หรือชื่อดาว (PRN) ซ้ำ
       } else {

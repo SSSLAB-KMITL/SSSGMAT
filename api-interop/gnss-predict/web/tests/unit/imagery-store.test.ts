@@ -189,3 +189,52 @@ describe("useImagery.updateSettings", () => {
     expect(f.count("PUT /api/settings")).toBe(0);
   });
 });
+
+// ข2 fix round 1 (M1): การบันทึกทั้งเอกสาร (GET แล้ว PUT) ทำทีละครั้งทั่วแอป Show Imagery กับ Globe Manager จึงไม่เขียนทับกัน
+describe("useImagery.updateSettings is serialized", () => {
+  test("a second setSource reads the settings only after the first PUT has answered, and its PUT keeps the first change", async () => {
+    let current: Settings = SETTINGS;
+    let held: ((v: void) => void) | null = null;
+    const firstPutHeld = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    let putCount = 0;
+    const order: string[] = [];
+    const f = stubFetch({
+      "GET /api/settings": () => {
+        order.push("GET");
+        return { json: current };
+      },
+      "PUT /api/settings": async (call) => {
+        putCount++;
+        order.push(`PUT${putCount}`);
+        if (putCount === 1) await firstPutHeld;
+        current = call.body as Settings;
+        return { json: current };
+      },
+    });
+    const first = useImagery.getState().setSource("gibs", true);
+    await vi.waitFor(() => expect(order).toEqual(["GET", "PUT1"]));
+    const second = useImagery.getState().setSource("eox", true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(order).toEqual(["GET", "PUT1"]); // GET ที่สองยังไม่ออกระหว่างที่ PUT แรกค้าง
+    held!();
+    await first;
+    await second;
+    expect(order).toEqual(["GET", "PUT1", "GET", "PUT2"]);
+    const puts = f.calls.filter((c) => c.method === "PUT");
+    expect((puts[1].body as Settings).online_imagery).toEqual({ ...IMAGERY_OFF, enabled: true, eox: true });
+    expect(useImagery.getState().sources).toEqual({ ...SOURCES_OFF, gibs: true, eox: true });
+  });
+
+  test("a failed save does not block the next one", async () => {
+    let n = 0;
+    stubFetch({
+      "GET /api/settings": { json: SETTINGS },
+      "PUT /api/settings": (call) => (++n === 1 ? { status: 500, json: { code: "INTERNAL", text: "พัง" } } : { json: call.body }),
+    });
+    await expect(useImagery.getState().updateSettings((s) => s)).rejects.toBeTruthy();
+    await useImagery.getState().setSource("osm", true);
+    expect(useImagery.getState().sources.osm).toBe(true);
+  });
+});

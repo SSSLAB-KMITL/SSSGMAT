@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  ageScatter, ageSummary, AGE_DAYS_LIMIT, comparePrn, dailyRows, parseDay, parseHistory, parsePending, satelliteRows, systemLetters, trendSeries, TREND_LIMITS,
+  ageScatter, ageSummary, AGE_DAYS_LIMIT, comparePrn, dailyRows, parseDay, parseHistory, parsePending, satelliteRows, shownResult, systemLetters, trendSeries, TREND_LIMITS,
   type HistoryRecord, type PendingDay,
 } from "../../src/windows/Validation/rows";
 
@@ -84,27 +84,41 @@ describe("daily rows", () => {
   });
 });
 
-// ข2: scenario ที่มีแต่ดาวถ่ายภาพ engine ข้าม X ทั้งหมด (Ruling u) ผลจึงไม่มีระบบ GNSS ใดใน systems และ pass เป็น false
-describe("a validated day with no GNSS system", () => {
-  test("an imaging-only day (systems has no GNSS letter) is neutral no_gnss, not Fail", () => {
-    const rec: HistoryRecord = { ...REC_10, day: "2026-11-11", pass: false, systems: {}, failing: [] };
-    const row = dailyRows([rec], [], "el")[0];
-    expect(row.result).toBe("no_gnss");
-    expect(row.systems).toEqual([]);
+// ข2 fix round 1: systems ของ history มีเฉพาะระบบที่มีดาวค่าจริง SP3 อายุ ≤ 2 วันอย่างน้อยหนึ่งดวง จึงว่างได้ทั้งวันที่มีแต่ดาวถ่ายภาพ
+// และวัน GNSS ที่ทุกดวงเก่าหรือมีแต่ broadcast: ว่าง + มีดวงไม่ผ่าน = Fail, ว่าง + ไม่มีดวงไม่ผ่าน = Undecided,
+// ไม่มี systems (หรือไม่ใช่ object) = Fail ตามเดิม ; No GNSS เฉพาะเมื่อผลรายวันที่โหลดแล้วมี satellites ว่าง (validate ใส่ทุก PRN ที่ไม่ใช่ X)
+describe("a validated day with no GNSS system in its history line", () => {
+  const day = (over: Record<string, unknown>) => dailyRows(parseHistory([{ day: "2026-11-11", scenario: "S", pass: false, created_utc: "c", ...over }]), [], "el")[0];
+
+  test("systems {} with a non-empty failing list is Fail", () => {
+    expect(day({ systems: {}, failing: ["G22"] }).result).toBe("fail");
+  });
+
+  test("systems {} with an empty failing list is Undecided", () => {
+    expect(day({ systems: {}, failing: [] }).result).toBe("undecided");
+    expect(day({ systems: {} }).result).toBe("undecided");
+  });
+
+  test("missing systems, or systems that is not an object, is Fail as before", () => {
+    expect(day({ failing: [] }).result).toBe("fail");
+    expect(day({ systems: "x", failing: [] }).result).toBe("fail");
+    expect(day({ systems: ["G"], failing: [] }).result).toBe("fail");
   });
 
   test("a day with any GNSS system keeps Pass / Fail from the pass flag", () => {
     expect(dailyRows([REC_09], [], "el")[0].result).toBe("pass");
     expect(dailyRows([REC_10], [], "el")[0].result).toBe("fail");
-    expect(dailyRows([{ ...REC_10, systems: { C: stats(0.5, 0.9, 0.5, 0.9, false) } }], [], "el")[0].result).toBe("fail");
+    expect(day({ systems: { C: stats(0.5, 0.9, 0.5, 0.9, false) }, failing: [] }).result).toBe("fail");
   });
 
-  test("a parsed history line whose systems is empty or missing is no_gnss", () => {
-    const rows = dailyRows(parseHistory([
-      { day: "2026-11-05", scenario: "IMG", pass: false, systems: {}, failing: [] },
-      { day: "2026-11-06", scenario: "IMG", pass: false },
-    ]), [], "el");
-    expect(rows.map((r) => r.result)).toEqual(["no_gnss", "no_gnss"]);
+  test("shownResult: an Undecided day whose loaded day doc has satellites {} is No GNSS; otherwise the row's own result", () => {
+    const undecided = day({ systems: {}, failing: [] });
+    expect(shownResult(undecided, { day: "2026-11-11", satellites: {} })).toBe("no_gnss");
+    expect(shownResult(undecided, { day: "2026-11-11", satellites: { G05: { truth: "brdc", result: "pass" } } })).toBe("undecided");
+    expect(shownResult(undecided, null)).toBe("undecided");
+    const fail = day({ systems: {}, failing: ["G22"] });
+    expect(shownResult(fail, { day: "2026-11-11", satellites: {} })).toBe("fail");
+    expect(shownResult(dailyRows([REC_09], [], "el")[0], { day: "2026-11-09", satellites: {} })).toBe("pass");
   });
 });
 
