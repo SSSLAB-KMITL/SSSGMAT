@@ -1,3 +1,4 @@
+import { ImportSatellites } from "./ImportSatellites";
 // Search Satellite Catalog (spec §11, STK ref §B "Search Standard Object Data"): เลือกดาวจาก snapshot ที่ scenario ใช้แล้ว Insert ด้วยคำขอเดียว
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
@@ -36,6 +37,7 @@ const SYSTEM_OPTIONS = [
   { value: "E", label: "option.system.galileo" },
   { value: "C", label: "option.system.beidou" },
   { value: "X", label: "option.system.imaging" },
+  { value: "U", label: "option.system.custom" },
 ] as const;
 
 /** อักษรระบบของดาวถ่ายภาพ (IMAGING_LETTER ของ engine) */
@@ -247,6 +249,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
 
   return (
     <div className="catalog">
+      <ImportSatellites />
       <div className="catalog-bar">
         <fieldset className="catalog-sources">
           <legend>{t("dialog.catalog.dataSources")}</legend>

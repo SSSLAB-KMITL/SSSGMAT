@@ -525,6 +525,7 @@ const LABELS = {
   "option.system.galileo": ours("Galileo"),
   "option.system.beidou": ours("BeiDou"),
   // ข2: ดาวถ่ายภาพ (PRN X01…X08) ในตัวกรอง System ของ Search Satellite Catalog
+  "option.system.custom": ours("Imported satellites"),
   "option.system.imaging": ours("Imaging"),
   // ธงของดาว (ชื่อที่แสดง; คำอธิบายไทยอยู่ใน messages.th.ts เป็น flag.*)
   "option.flag.stale": ours("Stale"),

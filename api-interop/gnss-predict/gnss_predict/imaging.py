@@ -153,14 +153,18 @@ def build_imaging_catalog(snapshot_dir: Path, ref: tuple[datetime, datetime]) ->
 
 
 def scenario_catalog(snapshot_dir: Path, period: tuple[datetime, datetime], systems: set[str],
-                     with_imaging: bool) -> Catalog:
-    """catalog รวมของฉาก: ผลของ build_catalog เดิมทุกตัว แล้วต่อท้ายด้วยดาวถ่ายภาพ (X01…X08) unmapped และข้อความของมัน
+                     with_imaging: bool, with_custom: bool = True) -> Catalog:
+    """catalog รวมของฉาก: GNSS เดิม ตามด้วยดาวถ่ายภาพ X และดาวที่นำเข้า U ตามที่ขอ
 
-    with_imaging เป็น False: คืนผลของ build_catalog ตรง ๆ ไม่อ่านไฟล์กลุ่ม imaging เลย (ฉาก GNSS ล้วนได้ผลเดิมทุกไบต์)
+    ไม่อ่านกลุ่ม imaging เมื่อ with_imaging เป็น False และไม่อ่าน registry เมื่อ with_custom เป็น False
+    snapshot ที่ไม่มีดาวนำเข้าคืน catalog เดิมโดยไม่มีการเปลี่ยนข้อมูล GNSS
     """
     gnss = build_catalog(snapshot_dir, period, systems)
-    if not with_imaging:
-        return gnss
-    imaging = build_imaging_catalog(snapshot_dir, period)
-    return Catalog(gnss.satellites + imaging.satellites, gnss.unmapped + imaging.unmapped,
-                   gnss.messages + imaging.messages)
+    if with_imaging:
+        imaging = build_imaging_catalog(snapshot_dir, period)
+        gnss = Catalog(gnss.satellites + imaging.satellites, gnss.unmapped + imaging.unmapped,
+                       gnss.messages + imaging.messages)
+    if with_custom:
+        from .custom_satellites import extend_catalog
+        return extend_catalog(gnss, snapshot_dir, period)
+    return gnss

@@ -49,6 +49,9 @@ def get_tree(sc: str, store: ScenarioStore = Depends(get_store)) -> JSONResponse
 def insert_object(sc: str, request: Request, body: dict[str, Any], if_match: str | None = Header(None),
                   store: ScenarioStore = Depends(get_store), bus: EventBus = Depends(get_bus)) -> JSONResponse:
     def change(doc: dict) -> list[str]:
+        if body.get("class") == "Satellite" and body.get("method") == "Import Orbits":
+            from ..custom_orbits import import_objects
+            return import_objects(doc, body, store.data_dir)
         return objects.insert(doc, body, lambda: objects.scenario_catalog(doc, store.data_dir))
     created, tag, stale = _edit(request, store, bus, sc, if_match, change)
     return _saved(tag, stale, 201, created=created)

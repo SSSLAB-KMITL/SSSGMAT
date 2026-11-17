@@ -20,7 +20,7 @@ from .errors import ApiError
 from .schema import FORMAT, NAME_RE
 
 ORBITS_DIR = "orbits"
-SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z", re.ASCII)
+SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z(?:_[0-9a-f]{8})?", re.ASCII)
 
 FACILITY_COLOR = "#ff79e6"
 THBK = {"name": "THBK", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4, "elevation_angle_min_deg": 10.0}
@@ -79,7 +79,7 @@ def snapshot_time(name: str) -> datetime | None:
 
 
 def snapshot_names(data_dir: Path) -> list[str]:
-    """ชื่อ snapshot ใต้ `<data>/orbits/` เรียงใหม่สุดก่อน นับเฉพาะโฟลเดอร์ที่ชื่อเป็น `YYYYMMDDTHHMMZ` ของวันเวลาที่มีจริง
+    """ชื่อ snapshot เรียงใหม่สุดก่อน: `YYYYMMDDTHHMMZ` หรือมีส่วนต่อท้าย `_hash8` ของการนำเข้า
     (`_cache` และชื่ออื่นไม่นับ) ไม่มีโฟลเดอร์ orbits หรืออ่านไม่ได้ = รายการว่าง"""
     try:
         names = [p.name for p in (Path(data_dir) / ORBITS_DIR).iterdir() if snapshot_time(p.name) is not None and p.is_dir()]

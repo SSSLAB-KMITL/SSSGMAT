@@ -39,7 +39,7 @@ MIN_FETCH_INTERVAL = timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
 DEFAULT_FETCH_SYSTEMS = "".join(GNSS_GROUPS)
 
 
-CATALOG_SYSTEMS = (*GNSS_GROUPS, IMAGING_LETTER)
+CATALOG_SYSTEMS = (*GNSS_GROUPS, IMAGING_LETTER, "U")
 
 
 class FetchRequest(BaseModel):
@@ -80,6 +80,10 @@ def _snapshot_entry(folder: Path) -> dict:
         count = _group_count(folder / f"{group}.json")
         if count is not None:
             groups[system] = count
+    from gnss_predict.custom_satellites import read_registry
+    custom_count = len(read_registry(folder))
+    if custom_count:
+        groups["U"] = custom_count
     return {"name": folder.name, "time_utc": iso_utc(snapshot_time(folder.name)), "groups": groups,
             "has_brdc": broadcast_file(folder) is not None}
 
@@ -174,6 +178,6 @@ def get_catalog(snapshot: str | None = None, start: str | None = None, stop: str
             continue
         rows.append({"prn": sat.prn, "system": sat.system, "svn": sat.svn, "norad": sat.norad, "block": sat.block,
                      "celestrak_name": sat.celestrak_name, "omm_epoch": iso_ms(sat.omm_epoch), "age_days": round(sat.age_days, 3),
-                     "flags": sorted(sat.flags), "category": "imaging" if sat.system == IMAGING_LETTER else "gnss",
+                     "flags": sorted(sat.flags), "category": "custom" if sat.system == "U" else "imaging" if sat.system == IMAGING_LETTER else "gnss",
                      "display_name": display_name})
     return rows

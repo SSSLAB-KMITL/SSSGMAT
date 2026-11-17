@@ -257,12 +257,12 @@ describe("filters", () => {
     expect(f.calls.filter((c) => c.path === "/api/catalog")).toHaveLength(1);
   });
 
-  test("the System list offers All Systems, GPS, GLONASS, Galileo, BeiDou and Imaging (ข2)", async () => {
+  test("the System list offers GNSS systems, Imaging and Imported satellites", async () => {
     server();
     await mount();
     expect(Array.from(systemSelect().options).map((o) => [o.value, o.text])).toEqual([
       ["", t("option.system.all")], ["G", t("option.system.gps")], ["R", t("option.system.glonass")], ["E", t("option.system.galileo")], ["C", t("option.system.beidou")],
-      ["X", t("option.system.imaging")],
+      ["X", t("option.system.imaging")], ["U", t("option.system.custom")],
     ]);
   });
 
@@ -434,7 +434,7 @@ describe("imaging satellites", () => {
     await mount();
     const option = Array.from(systemSelect().options).find((o) => o.value === "X");
     expect(option?.text).toBe(t("option.system.imaging"));
-    expect(Array.from(systemSelect().options).map((o) => o.value)).toEqual(["", "G", "R", "E", "C", "X"]);
+    expect(Array.from(systemSelect().options).map((o) => o.value)).toEqual(["", "G", "R", "E", "C", "X", "U"]);
     await user.selectOptions(systemSelect(), "X");
     expect(prns()).toEqual(["X04", "X05"]);
     expect(cellsOf(rowOf("X04"))[4]).toBe("Terra");
