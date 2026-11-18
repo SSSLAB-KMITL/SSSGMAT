@@ -60,7 +60,7 @@ from .predict import HEADER as LEGACY_HEADER
 from .propagate import ephemeris_from_sp3, propagate
 from .run_gmat import find_gmat_console, gmat_version
 from .scenario import EngineScenario, Facility, load_scenario
-from .sp3 import fetch_mgx_sp3, write_sp3
+from .sp3 import MAX_SATELLITES as MAX_PROPAGATED_SATELLITES, fetch_mgx_sp3, write_sp3
 from .studio_validate import imaging_skipped_text, validate_ephemeris, validation_markdown
 
 Progress = Callable[[str, float], None]
@@ -436,13 +436,19 @@ def _plan(scenario_dir: Path, data_dir: Path, report: Progress | None = None) ->
         report("catalog", 0.05)
     # อ่านไฟล์กลุ่ม imaging และรวมเข้า hash เฉพาะฉากที่มีดาวถ่ายภาพ (Ruling a) ฉาก GNSS ล้วนจึงได้ hash เดิม
     with_imaging = not {n for _, n in sc.satellites}.isdisjoint(IMAGING_NORADS)
-    catalog = imaging.scenario_catalog(snapshot_dir, (sc.start, sc.stop), systems, with_imaging)
+    from . import custom_satellites as custom
+    with_custom = custom.selected(snapshot_dir, {n for _, n in sc.satellites})
+    catalog = imaging.scenario_catalog(snapshot_dir, (sc.start, sc.stop), systems, with_imaging, with_custom)
     sel = _select(sc, catalog)
     if not sel.selected:
         raise _no_satellites(sel)
+    if len(sel.selected) > MAX_PROPAGATED_SATELLITES:
+        raise ScenarioError(f"เลือกคำนวณได้สูงสุด {MAX_PROPAGATED_SATELLITES} ดวงต่อ Scenario ให้ลดดาวที่เลือกก่อนคำนวณ", "objects")
 
-    files_sha256 = _files_sha256(snapshot_dir, systems,
-                                 imaging.imaging_group_files(snapshot_dir) if with_imaging else ())
+    extra_files = imaging.imaging_group_files(snapshot_dir) if with_imaging else []
+    if with_custom:
+        extra_files.append(custom.FILE)
+    files_sha256 = _files_sha256(snapshot_dir, systems, extra_files)
     prn_of = {s.norad: s.prn for s in catalog.satellites}
     digest = input_hash({
         "engine_version": ENGINE_VERSION,

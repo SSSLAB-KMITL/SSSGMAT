@@ -39,7 +39,7 @@ MIN_FETCH_INTERVAL = timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
 DEFAULT_FETCH_SYSTEMS = "".join(GNSS_GROUPS)
 
 
-CATALOG_SYSTEMS = (*GNSS_GROUPS, IMAGING_LETTER)
+CATALOG_SYSTEMS = (*GNSS_GROUPS, IMAGING_LETTER, "U")
 
 
 class FetchRequest(BaseModel):
@@ -80,6 +80,10 @@ def _snapshot_entry(folder: Path) -> dict:
         count = _group_count(folder / f"{group}.json")
         if count is not None:
             groups[system] = count
+    from gnss_predict.custom_satellites import read_registry
+    custom_count = len(read_registry(folder))
+    if custom_count:
+        groups["U"] = custom_count
     return {"name": folder.name, "time_utc": iso_utc(snapshot_time(folder.name)), "groups": groups,
             "has_brdc": broadcast_file(folder) is not None}
 
@@ -87,6 +91,21 @@ def _snapshot_entry(folder: Path) -> dict:
 @router.get("/orbits")
 def list_orbits(config: Config = Depends(get_config)) -> list[dict]:
     return [_snapshot_entry(config.data_dir / ORBITS_DIR / name) for name in snapshot_names(config.data_dir)]
+
+
+@router.get("/gpredict/groups")
+def gpredict_groups(config: Config = Depends(get_config)) -> dict:
+    from ..gpredict_catalog import group_summary
+    try:
+        return group_summary(config.gpredict_data)
+    except ValueError as exc:
+        raise ApiError(422, "ORBIT_IMPORT_INVALID", str(exc), "format") from exc
+
+
+@router.get("/satellite-collections")
+def satellite_collections(config: Config = Depends(get_config)) -> dict:
+    from ..priority_satellites import catalog
+    return catalog(config.gpredict_data)
 
 
 @router.post("/orbits/fetch", status_code=202)
@@ -174,6 +193,6 @@ def get_catalog(snapshot: str | None = None, start: str | None = None, stop: str
             continue
         rows.append({"prn": sat.prn, "system": sat.system, "svn": sat.svn, "norad": sat.norad, "block": sat.block,
                      "celestrak_name": sat.celestrak_name, "omm_epoch": iso_ms(sat.omm_epoch), "age_days": round(sat.age_days, 3),
-                     "flags": sorted(sat.flags), "category": "imaging" if sat.system == IMAGING_LETTER else "gnss",
+                     "flags": sorted(sat.flags), "category": "custom" if sat.system == "U" else "imaging" if sat.system == IMAGING_LETTER else "gnss",
                      "display_name": display_name})
     return rows

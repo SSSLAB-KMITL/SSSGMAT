@@ -13,6 +13,7 @@
 
 import csv
 import math
+from time import monotonic
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import GPS_UTC_OFFSET_S
-from .errors import Message, ReportError, Sp3FormatError
+from .errors import GmatRunError, Message, ReportError, Sp3FormatError
 from .gmat_time import format_gmat_epoch, parse_gmat_epoch
 from .run_gmat import run_script
 from .sp3 import read_sp3_all
@@ -29,6 +30,7 @@ TLE_NAME = "all.tle"
 SCRIPT_NAME = "ecef.script"
 REPORT_NAME = "ecef_report.txt"
 LOG_NAME = "gmat.log"
+GMAT_BATCH_SIZE = 64
 
 Position = tuple[float, float, float]
 
@@ -199,6 +201,23 @@ def propagate(sats: list[TleSatellite], start: datetime, stop: datetime, step_s:
     _grid(start, stop, step_s)                      # ตรวจก่อนเสียเวลารัน GMAT
     work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
+    if len(sats) > GMAT_BATCH_SIZE:
+        # Bound GMAT script/report width; all batches share the exact same UTC grid.
+        positions, messages = {}, []
+        grid = _grid(start, stop, step_s)
+        deadline = monotonic() + timeout_s
+        for offset in range(0, len(sats), GMAT_BATCH_SIZE):
+            remaining_s = deadline - monotonic()
+            if remaining_s <= 0:
+                raise GmatRunError("หมดเวลาคำนวณ GMAT ของดาวหลายชุด")
+            batch_dir = work_dir / f"batch-{offset // GMAT_BATCH_SIZE + 1:03d}"
+            eph, batch_messages = propagate(sats[offset:offset + GMAT_BATCH_SIZE], start, stop, step_s,
+                                            batch_dir, console, remaining_s, on_gmat_start)
+            if eph.times_utc != grid or positions.keys() & eph.positions_km.keys():
+                raise ReportError("ผล GMAT แต่ละชุดมีเวลาไม่ตรงกันหรือรหัสดาวซ้ำ")
+            positions.update(eph.positions_km)
+            messages.extend(batch_messages)
+        return Ephemeris(grid, positions), messages
     tle_path = work_dir / TLE_NAME
     script_path = work_dir / SCRIPT_NAME
     report_path = work_dir / REPORT_NAME

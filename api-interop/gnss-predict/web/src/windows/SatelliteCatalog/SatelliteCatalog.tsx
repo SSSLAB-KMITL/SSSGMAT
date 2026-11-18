@@ -1,3 +1,5 @@
+import { ImportSatellites } from "./ImportSatellites";
+import { PrioritySatellites } from "./PrioritySatellites";
 // Search Satellite Catalog (spec §11, STK ref §B "Search Standard Object Data"): เลือกดาวจาก snapshot ที่ scenario ใช้แล้ว Insert ด้วยคำขอเดียว
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
@@ -36,6 +38,7 @@ const SYSTEM_OPTIONS = [
   { value: "E", label: "option.system.galileo" },
   { value: "C", label: "option.system.beidou" },
   { value: "X", label: "option.system.imaging" },
+  { value: "U", label: "option.system.custom" },
 ] as const;
 
 /** อักษรระบบของดาวถ่ายภาพ (IMAGING_LETTER ของ engine) */
@@ -83,7 +86,7 @@ function matches(entry: CatalogEntry, needle: string): boolean {
 
 const ageText = (days: number): string => (Number.isFinite(days) ? `${days.toFixed(1)} d` : "—");
 
-export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<PanelProps>) {
+export function SatelliteCatalog({ panelId = "satelliteCatalog", params = {} }: Partial<PanelProps>) {
   const doc = useScenario((s) => s.doc);
   const snapshot = doc?.orbit_snapshot;
   const start = doc?.analysis_period.start;
@@ -91,7 +94,10 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
   const query = snapshot === undefined || start === undefined || stop === undefined ? null : queryOf(snapshot, start, stop);
 
   const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [system, setSystem] = useState("");
+  const [system, setSystem] = useState(params.catalogMode === "gnss" ? "gnss" : "");
+  useEffect(() => {
+    if (params.requestId !== undefined) setSystem(params.catalogMode === "gnss" ? "gnss" : "");
+  }, [params.requestId, params.catalogMode]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -128,7 +134,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
   const entries = load.status === "ready" ? load.entries : null;
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (entries ?? []).filter((e) => (system === "" || e.system === system) && (needle === "" || matches(e, needle)));
+    return (entries ?? []).filter((e) => (system === "" || (system === "gnss" ? ["G", "R", "E", "C"].includes(e.system) : e.system === system)) && (needle === "" || matches(e, needle)));
   }, [entries, system, search]);
   const selectable = useMemo(() => visible.filter((e) => !present.has(e.norad)), [visible, present]);
   // System = Imaging แต่ snapshot ของ scenario ไม่มีดาวถ่ายภาพเลย: บอกทาง (Fetch ใหม่แล้วสร้าง scenario ใหม่) แทน "ไม่พบดาว"
@@ -247,6 +253,8 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
 
   return (
     <div className="catalog">
+      <PrioritySatellites key={`priority-${params.requestId ?? "default"}`} initiallyOpen={params.priorityOpen === true} />
+      <ImportSatellites key={params.requestId ?? "default"} initialFormat={params.importFormat === "gpredict_local" ? "gpredict_local" : "norad"} initiallyOpen={params.expandImport === true} />
       <div className="catalog-bar">
         <fieldset className="catalog-sources">
           <legend>{t("dialog.catalog.dataSources")}</legend>
@@ -263,6 +271,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
           <FormField label={t("field.system")}>
             {(control) => (
               <select {...control} value={system} onChange={(e) => setSystem(e.target.value)}>
+                {(params.catalogMode === "gnss" || system === "gnss") && <option value="gnss">GNSS ทั้ง 4 ระบบ</option>}
                 {SYSTEM_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {t(o.label)}

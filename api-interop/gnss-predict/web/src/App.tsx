@@ -9,6 +9,7 @@ import { MenuBar } from "./chrome/MenuBar";
 import { SaveAsDialog } from "./chrome/SaveAsDialog";
 import { StatusBar } from "./chrome/StatusBar";
 import { Toolbars } from "./chrome/Toolbars";
+import { WorkspaceModeBar } from "./chrome/WorkspaceModeBar";
 import { installTestHooks, testModeRequested } from "./cesium/testHooks";
 import { startWorkspaceFlow } from "./scenarioFiles";
 import { useImagery } from "./stores/imagery";
@@ -139,6 +140,7 @@ export function App() {
             <HealthBanner />
             <MenuBar />
             <Toolbars />
+            <WorkspaceModeBar />
           </ChromeBoundary>
         }
         footer={

@@ -407,3 +407,37 @@ class TestPropagate(TempDirCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestBulkPropagation(TempDirCase):
+    def test_batches_merge_by_time_and_keep_cancellation_hook(self):
+        from gnss_predict.propagate import GMAT_BATCH_SIZE
+        from gnss_predict.custom_satellites import CODES
+        sats=[make_sat(code,20000+i,TLE_G) for i,code in enumerate(CODES[:906])]
+        stop=START+timedelta(minutes=1)
+        seen=[]
+        hook=mock.Mock()
+        def parse(path,prns,start,end,step):
+            seen.append((path,prns))
+            return Ephemeris([START,stop],{p:[(7000.,1.,2.),(7001.,2.,3.)] for p in prns}),[]
+        with mock.patch('gnss_predict.propagate.run_script') as run, mock.patch('gnss_predict.propagate.parse_ecef_report',side_effect=parse):
+            result,messages=propagate(sats,START,stop,60,self.dir,Path('/GMAT'),on_gmat_start=hook)
+        self.assertEqual(len(result.positions_km),906)
+        self.assertEqual(run.call_count,(906+GMAT_BATCH_SIZE-1)//GMAT_BATCH_SIZE)
+        self.assertTrue(all(len(prns)<=GMAT_BATCH_SIZE for _,prns in seen))
+        self.assertTrue(all(call.kwargs['on_start'] is hook for call in run.call_args_list))
+        self.assertEqual(len({path.parent for path,_ in seen}),run.call_count)
+        self.assertEqual(messages,[])
+
+    def test_real_gmat_crosses_import_identifier_boundary(self):
+        import os
+        from gnss_predict.run_gmat import find_gmat_console
+        from gnss_predict.errors import GmatNotFoundError
+        from gnss_predict.custom_satellites import CODES
+        try:console=find_gmat_console()
+        except GmatNotFoundError:self.skipTest('GMAT not built')
+        sats=[make_sat(code,26407,TLE_G) for code in CODES[:105]]
+        eph,messages=propagate(sats,START,START+timedelta(minutes=2),60,self.dir,console)
+        self.assertEqual(len(eph.positions_km),105)
+        self.assertEqual(eph.positions_km['U99'],eph.positions_km['V01'])
+        self.assertEqual(eph.positions_km['U01'],eph.positions_km['V06'])
+        self.assertEqual(messages,[])

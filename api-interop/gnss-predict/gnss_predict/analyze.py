@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from .geometry import ecef_to_aer, ecef_to_az_el, geodetic_to_ecef, ipp, mapping_factor
-from .imaging import IMAGING_LETTER
+from .config import GNSS_GROUPS
 from .propagate import Ephemeris
 from .scenario import Facility
 
@@ -45,7 +45,7 @@ def aer_rows(eph: Ephemeris, fac: Facility, shell_km: float) -> list[AerRow]:
             az, el, rng = ecef_to_aer(eph.positions_km[prn][i], sta, fac.lat_deg, fac.lon_deg)
             if el < 0.0:
                 continue
-            if prn[:1] == IMAGING_LETTER:
+            if prn[:1] not in GNSS_GROUPS:
                 rows.append(AerRow(time_utc, prn, az, el, rng, None, None, None))
                 continue
             lat, lon = ipp(fac.lat_deg, fac.lon_deg, az, el, shell_km=shell_km)
