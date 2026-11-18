@@ -9,7 +9,7 @@
 #     https://<GPREDICT_PUBLIC_HOST> → http://caddy:18740
 #     https://<EO_PUBLIC_HOST>       → http://caddy:18018
 # - แอปทั้งสามและ volume ข้อมูลอยู่ใน compose.apps.yaml (ใช้ร่วมกับ compose.yaml)
-# - deploy โค้ดใหม่โดยเว็บไม่ล่ม: autodeploy.sh (README หัวข้อ 11)
+# - deploy โค้ดใหม่โดยเว็บไม่ล่ม: deploy.sh (README หัวข้อ 11)
 name: sss-apps
 
 include:

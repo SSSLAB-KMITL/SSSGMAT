@@ -36,7 +36,7 @@ build() {
   commit="$(git rev-parse --verify "$tree^{commit}" 2>/dev/null || git rev-parse --verify "${tree%%:*}^{commit}")"
   short="$(git rev-parse --short=12 "$commit")"
   # hash ของไฟล์ที่ส่งเข้า build: commit ที่ไม่แตะไฟล์ของแอปนี้ได้ค่าเดิม จึงติด tag ให้ image เดิมแทนการ build ใหม่
-  # (autodeploy.sh เห็น image เดิมและไม่ restart แอป) REBUILD=1 บังคับ build ใหม่ เช่น ต้องการ base image / package รุ่นใหม่
+  # (deploy.sh เห็น image เดิมและไม่ restart แอป) REBUILD=1 บังคับ build ใหม่ เช่น ต้องการ base image / package รุ่นใหม่
   content="$(git ls-tree "$tree" "$@" | git hash-object --stdin)"
   existing="$(docker image ls -q --filter "label=sss-apps.content=$content" "$image" | head -n 1)"
   if [ -n "$existing" ] && [ "${REBUILD:-0}" != 1 ]; then

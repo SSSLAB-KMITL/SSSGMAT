@@ -215,29 +215,26 @@ Internet ──HTTPS──▶ Cloudflare ══tunnel══▶ cloudflared ─�
 2. ใส่ `GNSS_PUBLIC_HOST`, `GPREDICT_PUBLIC_HOST`, `EO_PUBLIC_HOST`, `CLOUDFLARE_TUNNEL_TOKEN` ใน `.env` (ดู `.env.example`)
 3. `docker compose -f compose.tunnel.yaml up -d` แล้ว `docker compose -f compose.tunnel.yaml ps` ต้องเห็นแอปเป็น healthy
 
-## 11. deploy อัตโนมัติเมื่อ push (เว็บไม่ล่ม)
+## 11. deploy โค้ดใหม่โดยเว็บไม่ล่ม
 
-`autodeploy.sh` (ใช้กับ `compose.tunnel.yaml`) ตรวจ GitHub ทุก 2 นาที เมื่อ branch ที่ใช้ deploy มี commit ใหม่:
+push ขึ้น GitHub แล้วรันบนเครื่อง production (ใช้กับ `compose.tunnel.yaml`):
 
-1. build image ใหม่ด้วย `build.sh` ระหว่างที่ตัวเดิมยังให้บริการ commit ที่ไม่แตะไฟล์ของแอปใดได้ image เดิม แอปนั้นไม่ถูก restart
+```bash
+cd api-interop/deploy
+./deploy.sh                  # ทั้งสามแอป
+./deploy.sh gpredict-web     # เฉพาะตัวที่ระบุ
+```
+
+1. `git fetch` แล้ว build image ใหม่ด้วย `build.sh` ระหว่างที่ตัวเดิมยังให้บริการ แอปที่ไฟล์ไม่เปลี่ยนได้ image เดิมและไม่ถูก restart
 2. สลับทีละแอป (`docker compose up --no-deps --wait`) ช่วงสลับไม่กี่วินาที caddy พักคำขอไว้แล้วส่งต่อเมื่อตัวใหม่พร้อม
    (`lb_try_duration 60s`) ผู้ใช้ไม่เห็นหน้า error WebSocket / SSE ที่เปิดค้างหลุดแล้วหน้าเว็บต่อใหม่
-3. ตัวใหม่ไม่ healthy ใน 5 นาที: กลับไปใช้ image เดิมเอง
+3. ตัวใหม่ไม่ healthy ใน 5 นาที (`DEPLOY_WAIT`): กลับไปใช้ image เดิมเอง แล้วจบด้วย exit 1
 
-| แอป | branch ที่ติดตาม (ตั้งเองด้วย `GNSS_REF`, `GPREDICT_REF`, `EO_REF`) |
+| แอป | branch ที่ใช้ (ตั้งเองด้วย `GNSS_REF`, `GPREDICT_REF`, `EO_REF`) |
 |---|---|
 | GNSS Studio, Earth Observation Studio | `origin/feature/production-docker` |
 | Gpredict Web | `origin/feature/gpredict-web-docker` |
 
-ติดตั้ง (บนเครื่อง production, user ที่อยู่กลุ่ม `docker` และ `git fetch` ได้):
-
-```bash
-mkdir -p ~/.local/state/sss-apps
-( crontab -l 2>/dev/null; echo "*/2 * * * * $PWD/autodeploy.sh >> \$HOME/.local/state/sss-apps/autodeploy.log 2>&1" ) | crontab -
-tail -f ~/.local/state/sss-apps/autodeploy.log
-```
-
-- build หรือ deploy ของ commit ไหนล้ม จะไม่ลองซ้ำจนกว่าจะมี commit ใหม่ (ลองซ้ำเอง: ลบ `~/.local/state/sss-apps/<แอป>.seen`)
 - ไม่ deploy `compose*.yaml` / `Caddyfile.tunnel` ให้: `git pull` แล้ว
   `docker compose -f compose.tunnel.yaml exec caddy caddy reload --config /etc/caddy/Caddyfile` (แก้ Caddyfile, ไม่ล่ม)
   หรือ `docker compose -f compose.tunnel.yaml up -d` (แก้ compose, container ที่ค่าเปลี่ยนถูกสร้างใหม่)
