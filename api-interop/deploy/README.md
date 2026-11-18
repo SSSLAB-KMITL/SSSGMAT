@@ -195,3 +195,50 @@ volume ทดสอบ seed ด้วย `seed-volume.sh` จากสำเน�
 ทำให้ขอซ้ำภายใน 2 ชั่วโมงได้ โอกาสต่ำ (งานประจำวันของ GNSS Studio ปิดไว้ตั้งต้น Gpredict Web ดึงเมื่อผู้ใช้สั่ง) แก้ถาวรด้วย `flock` ใน engine
 
 ยังไม่ได้ทดสอบ: การขอใบรับรองจริงจาก Let's Encrypt (ต้องมีโดเมนจริง) และการรันบนเครื่อง x86_64 จริง (ความเร็ว GMAT/YOLO บนเครื่องจริงควรเร็วกว่าตัวเลขข้างบนที่ผ่าน emulation)
+
+## 10. เปิดผ่าน Cloudflare Tunnel (แทน Let's Encrypt + basic auth)
+
+ใช้ `compose.tunnel.yaml` + `Caddyfile.tunnel` แทน `compose.yaml` + `Caddyfile` เมื่อเครื่องไม่มี IP สาธารณะหรือไม่อยากเปิด port:
+ไม่ publish port ใดบนเครื่อง `cloudflared` ต่อออกไปหา Cloudflare เอง HTTPS อยู่ที่ Cloudflare **ไม่มี basic auth** (ใครมีลิงก์เข้าได้)
+caddy ยังเขียน Host/Origin ตามหัวข้อ 5 โดยเทียบ Origin กับ `*_PUBLIC_HOST`
+
+```text
+Internet ──HTTPS──▶ Cloudflare ══tunnel══▶ cloudflared ─▶ caddy ─┬─:18000─▶ gnss-studio:8000
+                                                                  ├─:18740─▶ gpredict-web:8740
+                                                                  └─:18018─▶ eo-studio:8018
+```
+
+1. สร้าง tunnel แบบ remotely-managed (Zero Trust → Networks → Tunnels หรือ API ด้วย token ที่มีสิทธิ์
+   `Account · Cloudflare Tunnel · Edit` และ `Zone · DNS · Edit`) แล้วตั้ง public hostname:
+   `<GNSS_PUBLIC_HOST>` → `http://caddy:18000`, `<GPREDICT_PUBLIC_HOST>` → `http://caddy:18740`, `<EO_PUBLIC_HOST>` → `http://caddy:18018`
+   DNS เป็น CNAME (proxied) ไปที่ `<tunnel-id>.cfargotunnel.com` ใช้ชื่อชั้นเดียวใต้โดเมน (Universal SSL ครอบแค่ `*.<โดเมน>`)
+2. ใส่ `GNSS_PUBLIC_HOST`, `GPREDICT_PUBLIC_HOST`, `EO_PUBLIC_HOST`, `CLOUDFLARE_TUNNEL_TOKEN` ใน `.env` (ดู `.env.example`)
+3. `docker compose -f compose.tunnel.yaml up -d` แล้ว `docker compose -f compose.tunnel.yaml ps` ต้องเห็นแอปเป็น healthy
+
+## 11. deploy อัตโนมัติเมื่อ push (เว็บไม่ล่ม)
+
+`autodeploy.sh` (ใช้กับ `compose.tunnel.yaml`) ตรวจ GitHub ทุก 2 นาที เมื่อ branch ที่ใช้ deploy มี commit ใหม่:
+
+1. build image ใหม่ด้วย `build.sh` ระหว่างที่ตัวเดิมยังให้บริการ commit ที่ไม่แตะไฟล์ของแอปใดได้ image เดิม แอปนั้นไม่ถูก restart
+2. สลับทีละแอป (`docker compose up --no-deps --wait`) ช่วงสลับไม่กี่วินาที caddy พักคำขอไว้แล้วส่งต่อเมื่อตัวใหม่พร้อม
+   (`lb_try_duration 60s`) ผู้ใช้ไม่เห็นหน้า error WebSocket / SSE ที่เปิดค้างหลุดแล้วหน้าเว็บต่อใหม่
+3. ตัวใหม่ไม่ healthy ใน 5 นาที: กลับไปใช้ image เดิมเอง
+
+| แอป | branch ที่ติดตาม (ตั้งเองด้วย `GNSS_REF`, `GPREDICT_REF`, `EO_REF`) |
+|---|---|
+| GNSS Studio, Earth Observation Studio | `origin/feature/production-docker` |
+| Gpredict Web | `origin/feature/gpredict-web-docker` |
+
+ติดตั้ง (บนเครื่อง production, user ที่อยู่กลุ่ม `docker` และ `git fetch` ได้):
+
+```bash
+mkdir -p ~/.local/state/sss-apps
+( crontab -l 2>/dev/null; echo "*/2 * * * * $PWD/autodeploy.sh >> \$HOME/.local/state/sss-apps/autodeploy.log 2>&1" ) | crontab -
+tail -f ~/.local/state/sss-apps/autodeploy.log
+```
+
+- build หรือ deploy ของ commit ไหนล้ม จะไม่ลองซ้ำจนกว่าจะมี commit ใหม่ (ลองซ้ำเอง: ลบ `~/.local/state/sss-apps/<แอป>.seen`)
+- ไม่ deploy `compose*.yaml` / `Caddyfile.tunnel` ให้: `git pull` แล้ว
+  `docker compose -f compose.tunnel.yaml exec caddy caddy reload --config /etc/caddy/Caddyfile` (แก้ Caddyfile, ไม่ล่ม)
+  หรือ `docker compose -f compose.tunnel.yaml up -d` (แก้ compose, container ที่ค่าเปลี่ยนถูกสร้างใหม่)
+- rollback ด้วยมือ: `docker tag <แอป>:<commit เดิม> <แอป>:prod && docker compose -f compose.tunnel.yaml up -d --no-deps --wait <แอป>`

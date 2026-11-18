@@ -1,0 +1,65 @@
+# Caddy หลัง Cloudflare Tunnel (compose.tunnel.yaml): HTTPS อยู่ที่ Cloudflare, cloudflared ส่ง HTTP เข้ามาทาง network ภายในของ compose
+# หนึ่ง port ต่อหนึ่งแอป ไม่มี basic_auth ค่าโดเมนมาจาก .env (*_PUBLIC_HOST)
+#
+# แอปทั้งสามไม่มี login และกันคำขอข้ามเว็บไซต์ด้วย Host/Origin ที่ต้องเป็น 127.0.0.1:<port> ของตัวเอง proxy จึง:
+#   1. เขียน Host เป็น 127.0.0.1:<port> ของแอป
+#   2. เขียน Origin เป็น http://127.0.0.1:<port> เฉพาะเมื่อ Origin คือหน้าเว็บสาธารณะของแอปนั้น (https://<*_PUBLIC_HOST>)
+#      Origin อื่นทุกค่าเปลี่ยนเป็น "null" ตัวกันในแอปจึงปฏิเสธ (403 / WebSocket 403)
+#   3. ระหว่างแอปถูกสลับเป็นตัวใหม่ (autodeploy.sh) พักคำขอไว้สูงสุด 60 วินาทีแล้วส่งต่อเมื่อแอปกลับมา ผู้ใช้จึงไม่เห็นหน้า error
+# ไม่บีบอัด /api/* และ /ws/* (SSE ของ GNSS Studio และ WebSocket ของ Gpredict Web ต้องส่งทันที)
+{
+	auto_https off
+}
+
+(protected) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	@static not path /api/* /ws/*
+	encode @static zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+# args: <port ของแอป> <ชื่อ service ใน compose> <public host ที่ผู้ใช้เปิด>
+(app) {
+	# ลำดับสำคัญ: request_header ทำตามลำดับในไฟล์และ matcher ของบรรทัดหลังเห็นค่าที่บรรทัดก่อนเขียนแล้ว
+	@own_origin expression `{http.request.header.Origin} == "https://{args[2]}"`
+	@foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://{args[2]}"`
+	request_header @foreign_origin Origin null
+	request_header @own_origin Origin http://127.0.0.1:{args[0]}
+
+	reverse_proxy {args[1]}:{args[0]} {
+		# container ใหม่ยังไม่รับ connection (ต่อไม่ติด): ลองใหม่ทุกครึ่งวินาทีจนครบ 60 วินาที ใช้ได้กับทุก method เพราะคำขอยังไม่ถึงแอป
+		lb_try_duration 60s
+		lb_try_interval 500ms
+		header_up Host 127.0.0.1:{args[0]}
+		# redirect ของแอป (trailing slash, โฟลเดอร์ static) สร้าง Location จาก Host ที่ถูกเขียนเป็น 127.0.0.1 แก้กลับเป็นโดเมนสาธารณะ
+		header_down Location ^https?://127\.0\.0\.1:{args[0]} https://{args[2]}
+	}
+}
+
+http://:18000 {
+	import protected
+	import app 8000 gnss-studio {$GNSS_PUBLIC_HOST}
+}
+
+http://:18740 {
+	import protected
+	# File → Quit ของ Gpredict Web หยุด server: ใน production ไม่ให้สั่งผ่านเว็บ (container ถูก restart อยู่แล้ว)
+	respond /api/quit 403
+	import app 8740 gpredict-web {$GPREDICT_PUBLIC_HOST}
+}
+
+http://:18018 {
+	import protected
+	import app 8018 eo-studio {$EO_PUBLIC_HOST}
+}

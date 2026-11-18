@@ -1,0 +1,63 @@
+# Production หลัง Cloudflare Tunnel: GNSS Studio + Gpredict Web + Earth Observation Studio — README.md หัวข้อ 10
+#
+#   ./build.sh
+#   docker compose -f compose.tunnel.yaml up -d
+#
+# - ไม่ publish port ใดบนเครื่อง: cloudflared ต่อออกไปหา Cloudflare เอง แล้วส่งคำขอเข้า caddy ทาง network ภายในของ compose
+#   ingress (hostname → service) ตั้งที่ Cloudflare (remotely-managed tunnel):
+#     https://<GNSS_PUBLIC_HOST>     → http://caddy:18000
+#     https://<GPREDICT_PUBLIC_HOST> → http://caddy:18740
+#     https://<EO_PUBLIC_HOST>       → http://caddy:18018
+# - แอปทั้งสามและ volume ข้อมูลอยู่ใน compose.apps.yaml (ใช้ร่วมกับ compose.yaml)
+# - deploy โค้ดใหม่โดยเว็บไม่ล่ม: autodeploy.sh (README หัวข้อ 11)
+name: sss-apps
+
+include:
+  - compose.apps.yaml
+
+x-hardening: &hardening
+  security_opt:
+    - "no-new-privileges:true"
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  caddy:
+    <<: *hardening
+    image: ${CADDY_IMAGE:-caddy:2.11.9}
+    environment:
+      GNSS_PUBLIC_HOST: ${GNSS_PUBLIC_HOST:?ตั้ง GNSS_PUBLIC_HOST ใน .env}
+      GPREDICT_PUBLIC_HOST: ${GPREDICT_PUBLIC_HOST:?ตั้ง GPREDICT_PUBLIC_HOST ใน .env}
+      EO_PUBLIC_HOST: ${EO_PUBLIC_HOST:?ตั้ง EO_PUBLIC_HOST ใน .env}
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      gnss-studio:
+        condition: service_started
+      gpredict-web:
+        condition: service_started
+      eo-studio:
+        condition: service_started
+
+  cloudflared:
+    <<: *hardening
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.7}
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?ตั้ง CLOUDFLARE_TUNNEL_TOKEN ใน .env}
+    read_only: true
+    depends_on:
+      caddy:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:
