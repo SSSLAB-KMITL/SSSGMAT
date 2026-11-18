@@ -46,6 +46,8 @@ python3 -I tests/fixtures/studio/extract_fixtures.py \
 | `snapshot/brdc/BRDC00IGS_R_20263130000_01D_MN.rnx` | `spike-acc/data/nav/BRDC00IGS_R_20263130000_01D_MN.rnx.gz` (RINEX 3.04 รวมทุกระบบ ของวันที่ 2026-11-09) | `ftp://gdc.cddis.eosdis.nasa.gov/gnss/data/daily/2026/brdc/BRDC00IGS_R_20263130000_01D_MN.rnx.gz` | header เดิมทั้งหมด (ถึง `END OF HEADER`) + ทุก record ของ G01, R05, R13, C01, C09, C19, C38, C40 + record ของ E11 และ E14 ที่ epoch ≤ 2026-11-09 04:00:00 ไม่มี G22 และ R10 โดยตั้งใจ (ใช้ทดสอบดาวที่ไม่มี broadcast) record G/E/C/J/I มี 8 บรรทัด, R/S มี 4 บรรทัด คงลำดับเดิมในไฟล์ |
 | `mgx_sample.sp3` | `spike-acc/data/sp3/GFZ0MGXRAP_20263130000_01D_05M_ORB.SP3.gz` (SP3-d ทุก 5 นาที) | `ftp://gdc.cddis.eosdis.nasa.gov/gnss/products/2444/GFZ0MGXRAP_20263130000_01D_05M_ORB.SP3.gz` | header เดิมของ GFZ ทั้งหมด (ไม่ปรับจำนวน epoch หรือรายชื่อดาวใน header) + epoch 2026-11-09 00:00 ถึง 03:00 GPST (37 epoch) เฉพาะบรรทัด `P` ของ C19, C38, E11, G01, R05 + บรรทัด `EOF` |
 
+- `imaging/{weather,science,visual}.json` เป็น OMM สังเคราะห์ที่เขียนเองด้วยมือ (ไม่ได้ตัดจากไฟล์ที่ดาวน์โหลด): ชื่อช่องตามรูปแบบ OMM JSON สาธารณะของ CelesTrak, NORAD/OBJECT_ID ตามดาวจริง 8 ดวง แต่ EPOCH และค่าวงโคจรตั้งขึ้นสำหรับ test (epoch นับถอยหลังจาก 2026-11-10T03:00Z) มีดาวหลอก ROBUSTA-3A (60243) และ TERRA FAKE (99001)
+
 ภาพรวมของแหล่งข้อมูลอยู่ในหัวข้อ 7.4 ของ `docs/2026-11-11-gnss-studio-design.md`
 
 ## ข้อควรระวัง

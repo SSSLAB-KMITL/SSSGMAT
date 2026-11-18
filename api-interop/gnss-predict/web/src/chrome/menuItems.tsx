@@ -7,7 +7,7 @@ import * as Menubar from "@radix-ui/react-menubar";
 import { Check, ChevronRight } from "lucide-react";
 import { useMemo, type ComponentType } from "react";
 import { commandText, commandTooltip, isCheckable, isChecked, isEnabled, isRegistered, runCommand, type CommandId } from "../commands";
-import { t } from "../labels/labels";
+import { t, type LabelKey } from "../labels/labels";
 import { useLayout } from "../stores/layout";
 import { SHORTCUT_LABELS, type MenuEntry } from "./menus";
 import { Tip } from "./Tip";
@@ -52,13 +52,13 @@ const SELECT_GUARD = (enabled: boolean, run: () => void) => (event: Event) => {
   else run();
 };
 
-function CommandItem({ id, kit }: { id: CommandId; kit: MenuKit }) {
+function CommandItem({ id, kit, label }: { id: CommandId; kit: MenuKit; label?: LabelKey }) {
   const enabled = isEnabled(id);
   const disabledProps = enabled ? {} : { "aria-disabled": true, "data-disabled": "" };
   const shortcut = SHORTCUT_LABELS[id];
   const body = (
     <>
-      <span className="menu-label">{commandText(id)}</span>
+      <span className="menu-label">{label === undefined ? commandText(id) : t(label)}</span>
       {shortcut !== undefined && <span className="menu-shortcut">{t(shortcut)}</span>}
     </>
   );
@@ -123,7 +123,7 @@ export function MenuEntries({ entries, kit }: { entries: readonly MenuEntry[]; k
             </kit.Sub>
           );
         }
-        return <CommandItem key={entry.command} id={entry.command} kit={kit} />;
+        return <CommandItem key={entry.command} id={entry.command} kit={kit} label={entry.label} />;
       })}
     </>
   );

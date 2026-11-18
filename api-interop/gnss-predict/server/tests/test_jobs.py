@@ -210,7 +210,10 @@ def test_get_unknown_is_404(mgr_idle):
     ("validate", "S1", {"day": "2026-11-10", "sp3": 5}, "sp3"),
     ("validate", "S1", {"day": "2026-11-10", "facility": ""}, "facility"),
     ("fetch", "S1", {}, "scenario"),
-    ("fetch", None, {"systems": "GX"}, "systems"),
+    ("fetch", None, {"systems": "GZ"}, "systems"),
+    ("fetch", None, {"systems": "GRECZ"}, "systems"),
+    ("fetch", None, {"systems": "X"}, "systems"),
+    ("fetch", None, {"systems": "xx"}, "systems"),
     ("fetch", None, {"systems": ""}, "systems"),
     ("fetch", None, {"systems": ["G"]}, "systems"),
     ("daily", "S1", {"for_date": "2026-11-12"}, "scenario"),
@@ -240,11 +243,32 @@ def test_submit_missing_scenario_is_404(mgr_idle, s1):
     assert (e.value.status, e.value.code) == (404, "NOT_FOUND")
 
 
+def test_fetch_systems_error_text_names_imaging_rule(mgr_idle):
+    with pytest.raises(ApiError) as e:
+        mgr_idle.submit("fetch", None, {"systems": "X"})
+    assert e.value.field == "systems" and "X" in e.value.text and "GREC" in e.value.text
+
+
 def test_submit_accepts_valid_params(mgr_idle, s1):
     assert mgr_idle.submit("validate", "S1", {"day": "2026-11-10", "sp3": "truth/x.sp3", "facility": "THBK"}).state == "queued"
     assert mgr_idle.submit("fetch", None, {"systems": "ge"}).params == {"systems": "GE"}
+    assert mgr_idle.submit("fetch", None, {"systems": "GRECX"}).params == {"systems": "GRECX"}   # X = ดาวถ่ายภาพ ต้องมี GNSS ด้วย
     assert mgr_idle.submit("fetch", None, {}).scenario is None
     assert mgr_idle.submit("daily", None, {"for_date": "2026-11-12"}).params == {"for_date": "2026-11-12"}
+
+
+def test_fetch_systems_are_canonical_order_and_dedupe(mgr_idle):
+    # ลำดับตัวอักษรและตัวซ้ำไม่ทำให้เป็นคนละ job: params เก็บเป็นลำดับ GREC แล้วตามด้วย X เหมือน studio._system_letters
+    first = mgr_idle.submit("fetch", None, {"systems": "GRECX"})
+    assert first.params == {"systems": "GRECX"}
+    for spelling in ("XGREC", "xgrec", "CEXRG", "GGRRECCXX"):
+        again = mgr_idle.submit("fetch", None, {"systems": spelling})
+        assert (again.id, again.params) == (first.id, {"systems": "GRECX"}), spelling
+    for spelling, canonical in (("GGGGX", "GX"), ("XG", "GX"), ("eg", "GE"), ("CRG", "GRC")):
+        assert mgr_idle.submit("fetch", None, {"systems": spelling}).params == {"systems": canonical}, spelling
+    gx = mgr_idle.submit("fetch", None, {"systems": "GX"})
+    assert mgr_idle.submit("fetch", None, {"systems": "XGGGG"}).id == gx.id
+    assert len(mgr_idle.list()) == 4                    # GRECX, GX, GE, GRC (ที่เหลือซ้ำกับของเดิม)
 
 
 # ---------- คิวเดียว ----------

@@ -110,8 +110,9 @@ export type Spec =
   /**
    * gt = มากกว่า (ไม่รวมค่านั้น), lt = น้อยกว่า (ไม่รวมค่านั้น; ใช้คู่กับ min), min/max = รวมค่านั้น; fallback = ค่าที่ server ใช้เมื่อไม่มีช่องนี้ (null = ว่างได้);
    * notBelow = key ของช่องตัวเลขอีกช่องที่ช่องนี้ต้องไม่น้อยกว่า (Max ไม่ต่ำกว่า Min) ข้ามเมื่อช่องนี้ว่าง; integer = ต้องเป็นจำนวนเต็ม (ใช้คู่กับ min/max)
+   * required = ว่างไม่ได้แม้ไม่มี fallback (ช่องที่ server ไม่มีค่าตั้งต้นแต่บังคับเมื่อใช้ เช่น Half Angle ของ Rectangular)
    */
-  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean }
+  | { kind: "number"; key: string; fallback: number | null; min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean; required?: boolean }
   /** fallback null = ว่างได้ (null) และแสดงเป็นข้อความว่าง */
   | { kind: "choice"; key: string; options: readonly string[]; fallback: string | null }
   | { kind: "bool"; key: string; fallback: boolean }
@@ -123,7 +124,7 @@ export type Spec =
   | { kind: "offset"; key: string; fallback: string };
 
 const text = (key: string, fallback = ""): Spec => ({ kind: "text", key, fallback });
-const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
+const num = (key: string, fallback: number | null, bounds: { min?: number; max?: number; gt?: number; lt?: number; notBelow?: string; integer?: boolean; required?: boolean } = {}): Spec => ({ kind: "number", key, fallback, ...bounds });
 const choice = (key: string, options: readonly string[], fallback: string | null): Spec => ({ kind: "choice", key, options, fallback });
 const bool = (key: string, fallback: boolean): Spec => ({ kind: "bool", key, fallback });
 const color = (key: string, fallback?: string): Spec => ({ kind: "color", key, ...(fallback === undefined ? {} : { fallback }) });
@@ -167,9 +168,14 @@ export const OBJECT_SPECS: Record<ObjectClass, readonly Spec[]> = {
   ],
   Constellation: [...DESCRIPTION, color("basic.color"), { kind: "list", key: "basic.assigned_objects" }],
   // Sensor: ไม่มีช่องของ parent, type, orientation และ about_boresight (อ่านอย่างเดียว: หน้าแสดงด้วย ReadOnlyRow ไม่ส่งกลับ)
+  // หน้า Basic - Definition แสดงเฉพาะช่องของชนิดที่เก็บไว้ (SensorPages.tsx) ช่องที่ไม่แสดงแก้ไม่ได้จึงไม่ถูกส่ง:
+  // Rectangular ไม่ส่ง cone_half_angle (ข2 Ruling v) และ Simple Conic ไม่ส่ง vertical/horizontal_half_angle
+  // Half Angle ของ Rectangular: 0 < มุม ≤ 89 (schema.py SensorDefinition) server ไม่มีค่าตั้งต้น ว่างไม่ได้
   Sensor: [
     ...DESCRIPTION,
     num("basic.definition.cone_half_angle", 45, { gt: 0, max: 90 }),
+    num("basic.definition.vertical_half_angle", null, { gt: 0, max: 89, required: true }),
+    num("basic.definition.horizontal_half_angle", null, { gt: 0, max: 89, required: true }),
     num("basic.pointing.azimuth", 0, { min: 0, lt: 360 }),
     num("basic.pointing.elevation", 90, { min: -90, max: 90 }),
     bool("graphics2d.show", true),
@@ -278,7 +284,7 @@ type Parsed = FieldParsed<unknown>;
 
 function parseNumber(spec: Extract<Spec, { kind: "number" }>, input: string): Parsed {
   const trimmed = input.trim();
-  if (trimmed === "") return spec.fallback === null ? pass(null) : fail(msg("props.notNumber"));
+  if (trimmed === "") return spec.fallback === null && spec.required !== true ? pass(null) : fail(msg("props.notNumber"));
   if (spec.integer === true) return parseInteger(trimmed, { min: spec.min ?? Number.MIN_SAFE_INTEGER, max: spec.max }, msg("form.notInteger"));
   return parseDecimal(trimmed, { gt: spec.gt, lt: spec.lt, min: spec.min, max: spec.max });
 }

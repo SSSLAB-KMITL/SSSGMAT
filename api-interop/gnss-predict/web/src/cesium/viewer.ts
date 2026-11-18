@@ -17,8 +17,8 @@
 
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import {
-  buildModuleUrl, Color, GeographicProjection, GridImageryProvider, ImageryLayer, Ion, RequestScheduler, SceneMode, TileMapServiceImageryProvider,
-  Viewer, WebMercatorProjection,
+  buildModuleUrl, Color, GeographicProjection, GridImageryProvider, ImageryLayer, Ion, RequestScheduler, SceneMode, ScreenSpaceEventType,
+  TileMapServiceImageryProvider, Viewer, WebMercatorProjection, type ScreenSpaceEventHandler,
 } from "cesium";
 
 Ion.defaultAccessToken = "";
@@ -85,14 +85,39 @@ export function createViewer(el: HTMLElement, mode: "3d" | "2d", opts: { project
 }
 
 
-/** เหตุที่ภาพหยุด: ข้อผิดพลาดตอนวาด (scene.renderError) หรือ browser ทิ้ง WebGL context ของหน้าต่างนี้ (webglcontextlost) */
-export type RenderFailure = "renderError" | "contextLost";
+/**
+ * เหตุที่ภาพหยุด: ข้อผิดพลาดตอนวาด (scene.renderError), render loop ของ Cesium หยุดเงียบ ๆ (loopStopped: useDefaultRenderLoop กลายเป็น false)
+ * หรือ browser ทิ้ง WebGL context ของหน้าต่างนี้ (webglcontextlost)
+ */
+export type RenderFailure = "renderError" | "loopStopped" | "contextLost";
 
-/** ส่วนของ Viewer ที่สองฟังก์ชันด้านล่างใช้ (Scene.context เป็นของภายในของ Cesium ไม่อยู่ใน type) test ส่งตัวปลอมได้ */
+/** ตรวจว่า render loop ยังวิ่งอยู่ทุกช่วงนี้ (ms) */
+export const RENDER_LOOP_POLL_MS = 1000;
+/** หยุดอีกภายในช่วงนี้ (ms) หลังเริ่มใหม่ = เลิกเริ่มใหม่ */
+export const RENDER_RETRY_WINDOW_MS = 5000;
+
+/** ส่วนของ Viewer ที่ฟังก์ชันด้านล่างใช้ (Scene.context เป็นของภายในของ Cesium ไม่อยู่ใน type) test ส่งตัวปลอมได้ */
 interface ViewerParts {
-  scene: { renderError: Viewer["scene"]["renderError"]; canvas: HTMLCanvasElement };
+  scene: { renderError: Viewer["scene"]["renderError"]; canvas: HTMLCanvasElement; requestRender(): void };
+  /** viewer ปลอมของ test อาจไม่มี: ไม่มี = ไม่นับว่า loop หยุด */
+  useDefaultRenderLoop?: boolean;
   destroy(): void;
 }
+
+/** เวลาและตัวตั้งเวลาที่ watchRenderFailure ใช้ (test ส่งตัวปลอมได้) */
+export interface RenderWatchEnv {
+  now(): number;
+  /** เรียก cb ทุก ms คืนตัวเลิก */
+  every(ms: number, cb: () => void): () => void;
+}
+
+const BROWSER_ENV: RenderWatchEnv = {
+  now: () => performance.now(),
+  every: (ms, cb) => {
+    const id = setInterval(cb, ms);
+    return () => clearInterval(id);
+  },
+};
 type LoseContext = { loseContext(): void };
 type SceneInternals = { context?: { _gl?: { getExtension(name: string): unknown } | null } | null };
 
@@ -108,22 +133,60 @@ export function destroyViewer(viewer: ViewerParts): void {
 }
 
 /**
- * ฟังข้อผิดพลาดตอนวาดและ context ที่หาย แจ้ง onFailure ครั้งเดียว (ภาพหยุดแล้วทั้งสองแบบ) คืนฟังก์ชันถอดตัวฟังทั้งสอง
- * ต้องถอดก่อน destroyViewer: loseContext ที่ตั้งใจทำตอนปิดหน้าต่างก็ยิง webglcontextlost
+ * เฝ้าภาพที่หยุด (QA-01, follow-up 13b-2) คืนฟังก์ชันเลิกเฝ้า (ต้องเรียกก่อน destroyViewer: loseContext ที่ตั้งใจทำตอนปิดหน้าต่างก็ยิง webglcontextlost)
+ * - ข้อผิดพลาดตอนวาด (scene.renderError) หรือ render loop หยุด: Cesium จับข้อผิดพลาดนอก Scene.render (resize, initializeFrame, clock.tick
+ *   ซึ่งรวม dataSourceDisplay.update) แล้วตั้ง useDefaultRenderLoop = false เงียบ ๆ (showRenderLoopErrors = false ไม่ยิง renderError)
+ *   ตรวจทุก RENDER_LOOP_POLL_MS ภาพค้างที่เฟรมสุดท้าย และดำทันทีที่ canvas เปลี่ยนขนาด
+ *   ครั้งแรก = เริ่มใหม่หนึ่งครั้ง (useDefaultRenderLoop = true แล้ว requestRender) แจ้ง onFailure(เหตุ, error, true)
+ *   หยุดอีกภายใน RENDER_RETRY_WINDOW_MS หลังเริ่มใหม่ = เลิก (ไม่วนเริ่มใหม่) แจ้ง onFailure(เหตุ, error, false) ครั้งเดียว
+ *   หยุดหลังจากนั้นนานกว่านั้น = นับเป็นครั้งใหม่ (เริ่มใหม่อีกหนึ่งครั้ง)
+ * - context หาย = เลิกทันที แจ้ง false (เริ่ม loop ใหม่ไม่ช่วย)
  */
-export function watchRenderFailure(viewer: ViewerParts, onFailure: (reason: RenderFailure, error?: unknown) => void): () => void {
-  let told = false;
+export function watchRenderFailure(
+  viewer: ViewerParts,
+  onFailure: (reason: RenderFailure, error: unknown, recovering: boolean) => void,
+  env: RenderWatchEnv = BROWSER_ENV,
+): () => void {
+  let gaveUp = false;
+  let restartedAt: number | null = null;
   const fail = (reason: RenderFailure, error?: unknown): void => {
-    if (told) return;
-    told = true;
-    onFailure(reason, error);
+    if (gaveUp) return;
+    const now = env.now();
+    if (reason !== "contextLost" && (restartedAt === null || now - restartedAt > RENDER_RETRY_WINDOW_MS)) {
+      restartedAt = now;
+      try {
+        viewer.useDefaultRenderLoop = true; // setter ของ Cesium เริ่ม render loop ใหม่เมื่อมันไม่วิ่งอยู่
+        viewer.scene.requestRender();
+      } catch {
+        // viewer เสียจนเริ่มใหม่ไม่ได้: ครั้งต่อไปที่ตรวจเจอจะเลิกเอง
+      }
+      onFailure(reason, error, true);
+      return;
+    }
+    gaveUp = true;
+    onFailure(reason, error, false);
   };
   const offRender = viewer.scene.renderError.addEventListener((_scene: unknown, error: unknown) => fail("renderError", error));
   const canvas = viewer.scene.canvas;
   const lost = (): void => fail("contextLost", undefined);
   canvas.addEventListener("webglcontextlost", lost);
+  const stopPolling = env.every(RENDER_LOOP_POLL_MS, () => {
+    if (viewer.useDefaultRenderLoop === false) fail("loopStopped", undefined);
+  });
   return () => {
     offRender();
     canvas.removeEventListener("webglcontextlost", lost);
+    stopPolling();
   };
+}
+
+/**
+ * ถอดคลิกซ้าย (เลือก entity) และดับเบิลคลิก (pickAndTrackObject: ตาม entity หรือ zoomTo บินไปหา) ที่ Viewer ของ Cesium ใส่ไว้ใน handler ของมันเอง
+ * (screenSpaceCameraController.enableInputs = false ไม่ได้ปิดสองอย่างนี้) ใช้กับ Sensor View และหน้าต่าง 2D:
+ * ใน 2D คลิกซ้ายของ Viewer เรียก pickImageryLayerFeatures ซึ่งโยน DeveloperError "Ray intersections are only supported in 3D mode" ทุกครั้ง
+ * หน้าต่าง 2D เลือก object เองด้วย pick.ts แบบหน้าต่าง 3D
+ */
+export function removeViewerPicking(viewer: { readonly screenSpaceEventHandler: ScreenSpaceEventHandler }): void {
+  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_CLICK);
+  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 }

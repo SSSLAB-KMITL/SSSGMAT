@@ -1,0 +1,18 @@
+# เวอร์ชันของ dependency ทั้งหมดที่ server ใช้ตอนรัน (รวมตัวที่ fastapi/uvicorn ดึงมาทางอ้อม)
+# ชุดเดียวกับ api-interop/gnss-predict/server/constraints.txt (fastapi 0.162.4 + uvicorn 0.54.0 ที่ทดสอบแล้ว) บวก websockets ของ /ws/*
+# ไม่รวมเครื่องมือทดสอบ (pytest, httpx2) ใช้คู่กับคำสั่ง pip install ใน Dockerfile
+annotated-doc==0.0.6
+annotated-types==0.8.0
+anyio==4.16.0
+click==8.5.1
+fastapi==0.162.4
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.2
+pydantic==2.14.3
+pydantic_core==2.50.4
+starlette==1.10.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+uvicorn==0.54.0
+websockets==17.3

@@ -4,7 +4,7 @@
 //    "globe": {"layers": {<id ชั้นภาพ>: {"show": bool, "translucency": 0-100}}, "ion": {"assetId": <จำนวนเต็ม > 0> | null}}}
 // globe (Globe Manager, spec imagery §5.1, spec ภาพละเอียด §4) ไม่บังคับ: workbook เก่าที่ไม่มีช่องนี้ใช้ได้ ช่องที่รูปร่างผิดถูกทิ้งทั้งช่อง รายการชั้นที่ค่าผิดถูกทิ้งเป็นรายการ
 // id ที่ catalog ไม่รู้จักเก็บไว้ตามเดิม (ข้ามตอนวาด) ; id ของ catalog ของ server (GIBS, EOX) และ "osm" (OpenStreetMap ที่ browser ดึงตรง)
-// ion = asset ของ Cesium ion ที่แสดง (เลือกได้ชั้นเดียว) ไม่มี / ไม่ใช่จำนวนเต็ม > 0 = null (ไม่แสดง ion) ไม่ทำให้ globe ใช้ไม่ได้
+// ion = asset ของ Cesium ion ที่แสดง (เลือกได้ชั้นเดียว) ไม่มี / ไม่ใช่จำนวนเต็ม > 0 = null ไม่ทำให้ globe ใช้ไม่ได้ (ตอนเปิด scenario globeAtOpen เปลี่ยน null เป็น Google Maps Satellite)
 // ไม่เกิน 1,048,576 ไบต์ (server ตอบ 422 ถ้าเกิน)
 //
 // workbook เก็บเฉพาะหน้าต่างของพื้นที่ทำงาน (PanelDef.persist) withoutPanels ตัดหน้าต่างอื่นออกจาก JSON ของ dockview ก่อนบันทึก
@@ -44,19 +44,42 @@ export interface GlobeSettings {
 export const isIonAssetId = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 
 /**
- * ค่าตั้งต้นเมื่อ workbook ไม่มี globe (spec imagery §5.1, spec ภาพละเอียด §4): Blue Marble + VIIRS NOAA-20 True Color,
- * Sentinel-2 cloudless และ OpenStreetMap แสดง (แต่ละชั้นมีผลเมื่อเปิดสวิตช์ของแหล่งนั้นแล้วเท่านั้น: เปิดสวิตช์แล้วเห็นภาพทันที) ชั้นอื่นซ่อน
- * ไม่เลือก asset ของ Cesium ion
+ * asset ของ Cesium ion ตั้งต้น: Google Maps Satellite (preset แรกของ cesium/ionAssets.ts, ยืนยันจากต้นฉบับ CesiumJS 1.147)
+ * มีผลเฉพาะเมื่อสวิตช์ ion เปิดและมี token แล้วเท่านั้น (ionState.ts) สวิตช์ปิดหรือไม่มี token = ไม่มีคำขอไป ion ชั้นอื่นแสดงตามเดิม
+ */
+export const DEFAULT_ION_ASSET_ID = 3830182;
+
+/**
+ * ค่าตั้งต้นเมื่อ workbook ไม่มี globe (spec imagery §5.1, spec ภาพละเอียด §4): Blue Marble + VIIRS NOAA-20 True Color และ
+ * Sentinel-2 cloudless แสดง (แต่ละชั้นมีผลเมื่อเปิดสวิตช์ของแหล่งนั้นแล้วเท่านั้น: เปิดสวิตช์แล้วเห็นภาพทันที) ชั้นอื่นซ่อน
+ * OpenStreetMap ซ่อน (task 13c: แผนที่ถนนทึบสีอ่อนทับภาพถ่าย โลกตอนเปิดโปรแกรมจึงขาวซีด ดู globeAtOpen)
+ * asset ของ Cesium ion = Google Maps Satellite (DEFAULT_ION_ASSET_ID: แสดงเมื่อเปิด ion และมี token เท่านั้น และแสดงแทนชั้นอื่นทั้งหมด)
  */
 export const DEFAULT_GLOBE: Readonly<GlobeSettings> = Object.freeze({
   layers: Object.freeze({
     BlueMarble_NextGeneration: Object.freeze({ show: true, translucency: 0 }),
     VIIRS_NOAA20_CorrectedReflectance_TrueColor: Object.freeze({ show: true, translucency: 0 }),
     "s2cloudless-2024_3857": Object.freeze({ show: true, translucency: 0 }),
-    osm: Object.freeze({ show: true, translucency: 0 }),
+    osm: Object.freeze({ show: false, translucency: 0 }),
   }),
-  ion: Object.freeze({ assetId: null }),
+  ion: Object.freeze({ assetId: DEFAULT_ION_ASSET_ID }),
 });
+
+/**
+ * globe ที่ใช้ตอนเปิด scenario (task 13c): OpenStreetMap ซ่อนเสมอไม่ว่า workbook จะเก็บอะไรไว้ (% Translucency คงเดิม) ชั้นอื่นตามที่เก็บไว้
+ * ผู้ใช้ติ๊กแสดงเองได้ในการใช้งานครั้งนั้นและ Save เก็บได้ แต่การเปิดครั้งถัดไปเริ่มแบบซ่อนอีก ไม่แตะสวิตช์แหล่ง OSM ใน settings.json
+ * asset ของ ion ที่ไม่มีหรือเป็น null = Google Maps Satellite (DEFAULT_ION_ASSET_ID) ; preset อื่นหรือ Asset ID ที่กรอกเอง = ผู้ใช้เลือกไว้ คงเดิม
+ * (Ruling: None ที่บันทึกไว้แยกไม่ออกจาก "ไม่เลือก" ซึ่งเคยเป็นค่าตั้งต้น จึงเปิดเป็น Google Maps Satellite ด้วย ; เลือก None ได้ในการใช้งานครั้งนั้น
+ *  และ Show Imagery ยังตั้ง None เพื่อเปิดภาพ GIBS ให้เห็น) ไม่แตะ settings.json
+ * ไม่มีอะไรต้องเปลี่ยน = คืนตัวเดิม ไม่แก้ตัวที่รับมา
+ */
+export function globeAtOpen(globe: GlobeSettings): GlobeSettings {
+  let out = globe;
+  if (!isIonAssetId(globe.ion?.assetId)) out = { ...out, ion: { assetId: DEFAULT_ION_ASSET_ID } };
+  const osm = globe.layers.osm;
+  if (osm !== undefined && osm.show) out = { ...out, layers: { ...globe.layers, osm: { ...osm, show: false } } };
+  return out;
+}
 
 export interface WorkbookPanel {
   kind: string;

@@ -7,6 +7,7 @@
 //          ไม่นับเศษของชื่อที่ยาวกว่า) และ reference ใช้คำนี้เรียกสิ่งเดียวกัน (คำสั่ง หน้าต่าง หน้า ช่อง หรือตัวเลือกเดียวกัน แม้จะอยู่คนละเมนู)
 //          ชื่อที่ reference เขียนกลางประโยคมีข้อความอ้างตรงตัวใน test (PROSE_EVIDENCE)
 //   stkHelp = ข้อความนี้ยืนยันตรงตัวบน help.agi.com ใน docs/2026-11-15-stk-terms-access-reports.md (ข้อความอ้างในเครื่องหมายคำพูดของแถวที่ไม่ใช่ "ไม่พบ")
+//          หรือใน docs/2026-11-17-stk-terms-context-menus.md (คำใน `...` ของหัวข้อ "ยืนยันตรงตัว" เท่านั้น ไม่นับหัวข้อ "อนุมาน")
 //          ใช้กับคำของ Report & Graph Manager / Style Properties / หน้าต่างรายงานและกราฟที่ reference §F ไม่มี (test ตรวจกับไฟล์นั้น HELP_EVIDENCE)
 //   ours = ที่เหลือทั้งหมด แม้ฟังดูเหมือน STK (เช่น "Save", "Basic - Description") เพราะ reference ไม่ได้ยืนยัน
 //          UI "Help → STK UI Reference" แสดงทั้งสองกลุ่ม และ About ติดป้าย "Added by GNSS Studio" ที่รายการ ours
@@ -90,6 +91,11 @@ const LABELS = {
   "menu.object.delete": stk("Delete", "B"),
   // STK ไม่มีคำสั่งมองผ่าน sensor (§G "View through a sensor" = NF; ใกล้สุดคือ Obscuration...) จึงเป็น ours
   "menu.object.sensorView": ours("Sensor View"),
+  // ข2 Ruling (d), (o): ดาวถ่ายภาพ เปิดชั้น GIBS ของดาวแล้วดูภาพจาก sensor หลัก (ไม่มีใน STK)
+  "menu.object.showImagery": ours("Show Imagery"),
+  // เมนูของ Scenario (โหนดราก, docs/2026-11-17-stk-terms-context-menus.md §1.1): ชื่อของคำสั่งเดิม (insert.new, file.close) ในเมนูนี้
+  "menu.scenario.insert": stkHelp("Insert..."),
+  "menu.scenario.closeScenario": stkHelp("Close Scenario"),
 
   "menu.utilities.fetchOrbitData": ours("Fetch Orbit Data..."),
   "menu.utilities.dailyForecastSettings": ours("Daily Forecast Settings..."),
@@ -184,6 +190,8 @@ const LABELS = {
   "window.reportGraphManager": stk("Report & Graph Manager", "F"),
   "window.styleEditor": ours("Style Properties"),
   "window.styleEditorFor": ours("{name} Style Properties"),
+  // หน้า Validation (spec §7, เพิ่มเอง): ไม่มีใน STK
+  "window.validation": ours("Validation"),
 
   "window.mode.dockable": stk("Dockable", "A"),
   "window.mode.floating": stk("Floating", "A"),
@@ -208,6 +216,8 @@ const LABELS = {
   "dialog.clear": ours("Clear"),
   "dialog.selectColor": stk("Select color", "B"),
   "dialog.fetchNow": ours("Fetch Now"),
+  // ข2 amendment (ab): ดึงกลุ่มดาวถ่ายภาพของ CelesTrak ด้วย (weather, science, visual)
+  "dialog.fetch.imagingSatellites": ours("Imaging satellites"),
   "dialog.runNow": ours("Run Now"),
 
   "dialog.windows.window": ours("Window"),
@@ -233,6 +243,8 @@ const LABELS = {
   "dialog.catalog.sourceOnline": ours("Online CelesTrak"),
   "dialog.catalog.search": ours("Search"),
   "dialog.catalog.createConstellation": stk("Create Constellation from Selected", "B"),
+  // ข2 Ruling (m): Insert ดาวถ่ายภาพพร้อม sensor หลักของมัน (ไม่มีใน STK)
+  "dialog.catalog.addPrimarySensor": ours("Add Primary Sensor"),
   "dialog.catalog.insert": ours("Insert"),
 
   // ---------- หน้า Properties (spec §8, STK ref §C) "กลุ่ม - หน้า" ----------
@@ -353,6 +365,9 @@ const LABELS = {
   "field.parentObject": ours("Parent"),
   "field.sensorType": stk("Sensor Type", "G"),
   "field.coneHalfAngle": stk("Cone Half Angle", "G"),
+  // Rectangular (ข2 Ruling d): ยืนยันบน help.agi.com ใน STK terms §2 แต่ไม่อยู่ใน reference และไม่ใช่ไฟล์หลักฐานของ stkHelp จึงเป็น ours
+  "field.verticalHalfAngle": ours("Vertical Half Angle"),
+  "field.horizontalHalfAngle": ours("Horizontal Half Angle"),
   "field.pointingType": stk("Pointing Type", "G"),
   "field.orientationMethod": stk("Orientation Method", "G"),
   "field.azimuth": stk("Azimuth", "G"),
@@ -379,12 +394,15 @@ const LABELS = {
   "field.satelliteModels": ours("Satellite Models"),
   "field.modelPixelSize": ours("Model Pixel Size"),
   "field.modelDetailThreshold": ours("Model Detail Threshold"), // STK reference ไม่มีคำว่า detail threshold
+  // ตัวเลือกของหน้าต่างที่ซ่อนเส้นวงโคจรทุกดวง (task 13c: ไม่มีใน STK reference และผลตรวจคำของ help.agi.com) ใช้เป็นชื่อช่อง ปุ่ม และรายการเมนูคลิกขวา
+  "field.showOrbits": ours("Show Orbits"),
   // 2D Graphics Window Properties
   "field.projection": stk("Projection", "E"),
   "field.displayCoordinateFrame": stk("Display Coordinate Frame", "E"),
   "field.showOutline": stk("Show Outline", "E"),
   "field.shading": stk("Shading", "E"),
   "field.showIpp": ours("Show IPP"),
+  "field.showGroundTracks": ours("Show Ground Tracks"),
   // New Scenario Wizard, Fetch Orbit Data, Daily Forecast Settings
   "field.location": ours("Location"),
   "field.template": ours("Template"),
@@ -485,6 +503,7 @@ const LABELS = {
   "option.lineStyle.shortDashed": ours("Short Dashed"),
   // Sensor (STK ref §G) ค่าที่เก็บ = คำที่แสดง (ENUMS.SensorDefinitionType / SensorPointingType / SensorOrientation / SensorAboutBoresight)
   "option.sensorType.simpleConic": stk("Simple Conic", "G"),
+  "option.sensorType.rectangular": stk("Rectangular", "G"),
   "option.pointingType.fixed": stk("Fixed", "G"),
   "option.orientation.azEl": stk("Az-El", "G"),
   "option.aboutBoresight.rotate": stk("Rotate", "G"),
@@ -505,6 +524,9 @@ const LABELS = {
   "option.system.glonass": ours("GLONASS"),
   "option.system.galileo": ours("Galileo"),
   "option.system.beidou": ours("BeiDou"),
+  // ข2: ดาวถ่ายภาพ (PRN X01…X08) ในตัวกรอง System ของ Search Satellite Catalog
+  "option.system.custom": ours("Imported satellites"),
+  "option.system.imaging": ours("Imaging"),
   // ธงของดาว (ชื่อที่แสดง; คำอธิบายไทยอยู่ใน messages.th.ts เป็น flag.*)
   "option.flag.stale": ours("Stale"),
   "option.flag.tooOld": ours("Too Old"),
@@ -585,18 +607,20 @@ const LABELS = {
   // §F: "Toggle Animation Timeline button; right-click Show Animation Time Line, Set Animation Time" (Refresh และ Set Animation Time ใช้ report.*)
   "graph.toggleAnimationTimeline": stk("Toggle Animation Timeline", "F"),
   "graph.showAnimationTimeLine": stk("Show Animation Time Line", "F"),
-  // ปุ่มอื่นของแถบเครื่องมือและเมนูคลิกขวาของกราฟ reference ไม่ยืนยัน จึงเป็น ours
-  "graph.save": ours("Save"),
-  "graph.copyToClipboard": ours("Copy to Clipboard"),
-  "graph.zoomOut": ours("Zoom Out"),
-  "graph.crosshairCursor": ours("Crosshair Cursor"),
+  // ปุ่มแถบเครื่องมือของกราฟ: ยืนยันบน help.agi.com (WorkingWithGraphs.htm, ผลตรวจคำ 2026-11-15)
+  "graph.save": stkHelp("Save"),
+  "graph.copyToClipboard": stkHelp("Copy to Clipboard"),
+  "graph.zoomOut": stkHelp("Zoom Out"),
+  "graph.crosshairCursor": stkHelp("Crosshair Cursor"),
   // help.agi.com: "display the Export Dialog by choosing the Export option from a graph's pop-up menu" เมนูชื่อ Export
   "graph.export": stkHelp("Export"),
 
   // ---------- Access tool (spec §4, STK ref §F) ----------
   // ชื่อหน้าต่างใช้ toolbar.access; ช่อง Show ของกราฟิกใช้ ob.show, Color ใช้ field.color, Start/Stop ใช้ field.analysisStart/Stop
   // ปุ่ม Report & Graph Manager... ใช้ menu.analysis.reportGraphManager (คำสั่งเดียวกัน)
-  "access.accessFor": stk("Access For", "F"),
+  // ช่องของ Access tool ใช้คำของ help.agi.com ตรงตัว (ตัว f เล็กและมี ":") หัวรายการของ Select Object... ไม่มี ":" (ours)
+  "access.accessFor": stkHelp("Access for:"),
+  "access.accessForList": ours("Access For"),
   "access.selectObject": stk("Select Object...", "F"),
   "access.associatedObjects": stk("Associated Objects", "F"),
   "access.compute": stk("Compute", "F"),
@@ -618,18 +642,19 @@ const LABELS = {
   "access.showAnimateLine": stk("Show Animate Line", "F"),
   "access.useObjectColors": stk("Use Object Colors", "F"),
   "access.useCustomColor": stk("Use Custom Color", "F"),
-  // reference ไม่มีชื่อกลุ่มและตัวเลือกเหล่านี้ (spec §4 ใช้คำเหล่านี้เอง) จึงเป็น ours
+  // reference ไม่มีชื่อกลุ่มและตัวเลือกเหล่านี้: สองตัวที่ผลตรวจ help.agi.com (2026-11-15) อ้างตรงตัวเป็น stkHelp ที่เหลือเป็น ours
+  "access.animationGraphics": stkHelp("Animation Graphics"),
+  "access.inheritSettings": stkHelp("Inherit Settings from Scenario"),
   "access.timePeriod": ours("Time Period"),
-  "access.animationGraphics": ours("Animation Graphics"),
-  "access.inheritSettings": ours("Inherit Settings from Scenario"),
   "access.selectAll": ours("Select All"),
 
   // ---------- Report & Graph Manager (spec §5, STK ref §F, help.agi.com) ----------
-  // ชื่อชนิด object ใน Object Type: Facility / Satellite ใช้ ob.class.*, Access เป็น ours แบบ toolbar.access
-  // คำที่ help.agi.com ไม่พบ (Constellation ในรายการ Object Type, คลิกขวา Generate as .txt/.csv, Copy to My Styles, Delete) เป็นฟีเจอร์ตาม spec แต่เป็น ours
+  // ชื่อชนิด object ใน Object Type: Facility / Satellite ใช้ ob.class.*, Access ยืนยันในรายการ Object Types ของ help.agi.com
+  // คำที่ help.agi.com ไม่พบ (All Types, Constellation ในรายการ Object Type, คลิกขวา Generate as .txt/.csv, Copy to My Styles, Delete)
+  // เป็นฟีเจอร์ตาม spec แต่เป็น ours
   "rgm.objectType": stk("Object Type", "F"),
-  "rgm.allTypes": stk("All Types", "F"),
-  "rgm.typeAccess": ours("Access"),
+  "rgm.allTypes": ours("All Types"),
+  "rgm.typeAccess": stkHelp("Access"),
   "rgm.constellation": ours("Constellation"),
   "rgm.objects": ours("Objects"),
   "rgm.styles": ours("Styles"),
@@ -670,7 +695,8 @@ const LABELS = {
   "rgm.reportContents": stkHelp("Report Contents"),
   "rgm.graphContents": stkHelp("Graph Contents"),
   "rgm.add": ours("Add"),
-  "rgm.remove": ours("Remove"),
+  // help.agi.com ยืนยัน "Remove" ของ Report/Graph Contents เท่านั้น (Add / Up / Down ไม่พบ)
+  "rgm.remove": stkHelp("Remove"),
   "rgm.up": ours("Up"),
   "rgm.down": ours("Down"),
   "rgm.saveTo": ours("Save To"),
@@ -692,6 +718,47 @@ const LABELS = {
   "rgm.yAxis2": stkHelp("Y2 Axis (Y2)"),
   "rgm.axisNone": ours("Not Plotted"),
   "rgm.stack": ours("Stack by System"),
+
+  // ---------- หน้า Validation (spec §7, เพิ่มเอง: ไม่มีใน STK ทุกคำเป็น ours) ----------
+  "validation.dailyTable": ours("Daily Results"),
+  "validation.satTable": ours("Satellite Results"),
+  "validation.satellitesOf": ours("Satellites: {scenario} {day}"),
+  "validation.trendTitleEl": ours("P99 |ΔEl| by Day (deg)"),
+  "validation.trendTitleAz": ours("P99 |ΔAz| by Day (deg)"),
+  "validation.ageTitle": ours("3D Error vs Orbit Data Age"),
+  "validation.ageX": ours("Age (days)"),
+  "validation.ageY": ours("3D Median (km)"),
+  "validation.agePoint": ours("{age} d · {d3} km"),
+  "validation.ageSummary": ours("{points} satellites from {days} days, median age {age} d"),
+  "validation.ageLimit": ours("Up to the most recent {n} days"),
+  "validation.ageLimited": ours("Most recent {n} of {total} days"),
+  "validation.failed": ours("Failed"),
+  "validation.metric.el": ours("ΔEl"),
+  "validation.metric.az": ours("ΔAz"),
+  "validation.col.day": ours("Day"),
+  "validation.col.scenario": ours("Scenario"),
+  "validation.col.truth": ours("Truth"),
+  "validation.col.systemStats": ours("{system} {metric} med/P99"),
+  "validation.col.failing": ours("Failing"),
+  "validation.col.result": ours("Result"),
+  "validation.col.prn": ours("PRN"),
+  "validation.col.pairs": ours("Pairs"),
+  "validation.col.elStats": ours("ΔEl med/P99"),
+  "validation.col.azStats": ours("ΔAz med/P99"),
+  "validation.col.d3": ours("3D med/max (km)"),
+  "validation.col.age": ours("Age"),
+  "validation.result.pass": ours("Pass"),
+  "validation.result.fail": ours("Fail"),
+  "validation.result.pending": ours("Pending"),
+  "validation.result.gaveUp": ours("Gave up"),
+  "validation.result.insufficientData": ours("Insufficient Data"),
+  "validation.result.unverified": ours("Unverified"),
+  // ข2: วันที่ตรวจแล้วแต่ไม่มีระบบใดตัดสินได้ (Undecided) และวันที่ไม่มีดาว GNSS เลย (No GNSS: scenario ที่มีแต่ดาวถ่ายภาพ) ไม่ใช่ Fail
+  "validation.result.undecided": ours("Undecided"),
+  "validation.result.noGnss": ours("No GNSS"),
+  "validation.filter.system": ours("System"),
+  "validation.filter.result": ours("Result"),
+  "validation.filter.all": ours("All"),
 
   // ---------- Message Viewer (spec §11, STK ref §A) ----------
   "mv.tab.all": stk("All Messages", "A"),
@@ -787,7 +854,7 @@ const OPTION_KEYS = {
   orbit_system: {
     "Fixed by Window": "option.orbitSystem.fixedByWindow", "Inertial by Window": "option.orbitSystem.inertialByWindow",
   } satisfies Record<Code<"OrbitSystem">, LabelKey>,
-  sensor_type: { "Simple Conic": "option.sensorType.simpleConic" } satisfies Record<Code<"SensorDefinitionType">, LabelKey>,
+  sensor_type: { "Simple Conic": "option.sensorType.simpleConic", Rectangular: "option.sensorType.rectangular" } satisfies Record<Code<"SensorDefinitionType">, LabelKey>,
   pointing_type: { Fixed: "option.pointingType.fixed" } satisfies Record<Code<"SensorPointingType">, LabelKey>,
   orientation: { "Az-El": "option.orientation.azEl" } satisfies Record<Code<"SensorOrientation">, LabelKey>,
   about_boresight: { Rotate: "option.aboutBoresight.rotate" } satisfies Record<Code<"SensorAboutBoresight">, LabelKey>,

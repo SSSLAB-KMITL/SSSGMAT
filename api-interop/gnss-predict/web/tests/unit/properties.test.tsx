@@ -2012,6 +2012,106 @@ describe("Sensor pages", () => {
     expect(input(t("field.color")).value).toBe("#e8c547");
   });
 
+  // ข2 (Ruling g, h, v): Rectangular มี Vertical / Horizontal Half Angle แทน Cone Half Angle และไม่ส่ง cone_half_angle
+  const RECT_PAGES = () => {
+    const p = structuredClone(SENSOR1_PAGES);
+    p.basic.definition = { type: "Rectangular", vertical_half_angle: 55, horizontal_half_angle: 0.41 } as never;
+    return p;
+  };
+
+  test("a Rectangular sensor's Definition page: Sensor Type Rectangular (read only), Vertical and Horizontal Half Angle editable, no Cone Half Angle", async () => {
+    pages = RECT_PAGES();
+    server();
+    await mountSensor();
+    await screen.findByRole("tab", { name: "Basic - Definition" });
+    expect(input(t("field.sensorType")).value).toBe("Rectangular");
+    expect(input(t("field.sensorType")).readOnly).toBe(true);
+    expect(input(t("field.verticalHalfAngle")).value).toBe("55");
+    expect(input(t("field.verticalHalfAngle")).readOnly).toBe(false);
+    expect(input(t("field.horizontalHalfAngle")).value).toBe("0.41");
+    expect(input(t("field.horizontalHalfAngle")).readOnly).toBe(false);
+    expect(screen.queryByLabelText(t("field.coneHalfAngle"))).toBeNull();
+    expect(screen.getAllByText(t("field.unit.deg"))).toHaveLength(2);
+  });
+
+  test("Apply of a Rectangular sensor sends only the edited half angles, never cone_half_angle", async () => {
+    pages = RECT_PAGES();
+    const f = server();
+    await mountSensor();
+    await type(t("field.verticalHalfAngle"), "56.28");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { definition: { vertical_half_angle: 56.28 } } });
+    await type(t("field.verticalHalfAngle"), "50");
+    await type(t("field.horizontalHalfAngle"), "0.42");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(2));
+    const body = sensorPatches(f)[1].body as { basic: { definition: Record<string, unknown> } };
+    expect(body).toEqual({ basic: { definition: { vertical_half_angle: 50, horizontal_half_angle: 0.42 } } });
+    expect(Object.keys(body.basic.definition).sort()).toEqual(["horizontal_half_angle", "vertical_half_angle"]);
+  });
+
+  test("Rectangular half angles must be above 0 and at most 89, and cannot be left empty", async () => {
+    pages = RECT_PAGES();
+    const f = server();
+    await mountSensor();
+    for (const [label, text] of [[t("field.verticalHalfAngle"), "89.5"], [t("field.horizontalHalfAngle"), "0"]] as const) {
+      await type(label, text);
+      await user.click(button(t("dialog.apply")));
+      expect(input(label).getAttribute("aria-invalid")).toBe("true");
+      expect(errorOf(input(label))).toBe(msg("props.rangeOverUpTo", { min: 0, max: 89 }));
+    }
+    await type(t("field.verticalHalfAngle"), "");
+    await user.click(button(t("dialog.apply")));
+    expect(errorOf(input(t("field.verticalHalfAngle")))).toBe(msg("props.notNumber"));
+    expect(sensorPatches(f)).toHaveLength(0);
+    await type(t("field.verticalHalfAngle"), "89");
+    await type(t("field.horizontalHalfAngle"), "89");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    expect(sensorPatches(f)[0].body).toEqual({ basic: { definition: { vertical_half_angle: 89, horizontal_half_angle: 89 } } });
+  });
+
+  test("a server 422 on the whole Rectangular definition lands on the Vertical Half Angle field", async () => {
+    pages = RECT_PAGES();
+    server({ [`PATCH ${API}/objects/Sensor/Sensor1`]: rejected("basic.definition", "Rectangular ต้องมี vertical_half_angle และ horizontal_half_angle") });
+    await mountSensor();
+    await type(t("field.horizontalHalfAngle"), "1");
+    await openPage("3D Graphics - Attributes");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(tab("Basic - Definition").getAttribute("aria-selected")).toBe("true"));
+    expect(errorOf(input(t("field.verticalHalfAngle")))).toBe("Rectangular ต้องมี vertical_half_angle และ horizontal_half_angle");
+  });
+
+  test("2D Graphics - Attributes hides Fill and % Translucency for a Rectangular sensor (2D never fills it, Ruling k) and shows them for Simple Conic", async () => {
+    pages = RECT_PAGES();
+    server();
+    const { unmount } = await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    expect(screen.queryByLabelText(t("field.fill"))).toBeNull();
+    expect(screen.queryByLabelText(t("field.translucency"))).toBeNull();
+    expect(input(t("field.color")).value).toBe("#e8c547");
+    unmount();
+    pages = structuredClone(SENSOR1_PAGES);
+    server();
+    await mountSensor();
+    await openPage("2D Graphics - Attributes");
+    expect(screen.getByLabelText(t("field.fill"))).toBeDefined();
+    expect(input(t("field.translucency")).value).toBe("50");
+  });
+
+  test("a Simple Conic sensor's Apply body has no vertical or horizontal half angle keys", async () => {
+    const f = server();
+    await mountSensor();
+    expect(screen.queryByLabelText(t("field.verticalHalfAngle"))).toBeNull();
+    expect(screen.queryByLabelText(t("field.horizontalHalfAngle"))).toBeNull();
+    await type(t("field.coneHalfAngle"), "20");
+    await user.click(button(t("dialog.apply")));
+    await waitFor(() => expect(sensorPatches(f)).toHaveLength(1));
+    const definition = (sensorPatches(f)[0].body as { basic: { definition: Record<string, unknown> } }).basic.definition;
+    expect(Object.keys(definition)).toEqual(["cone_half_angle"]);
+  });
+
   test("a sensor path opens the pages instead of the unknown object error", async () => {
     server();
     await mountSensor();

@@ -13,7 +13,8 @@ from collections.abc import Callable
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, ValidationInfo, field_validator
+from pydantic import (AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, ValidationInfo, field_validator,
+                      model_validator)
 
 from .errors import ApiError
 
@@ -198,10 +199,30 @@ class ConstellationObj(_Model):
     assigned_objects: list[ObjectPath] = []
 
 
+RECTANGULAR_TEXT = "Rectangular ต้องมี vertical_half_angle และ horizontal_half_angle"
+
+
 class SensorDefinition(_Model):
-    """Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา"""
-    type: Literal["Simple Conic"] = "Simple Conic"
+    """Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา
+    แกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)
+    Rectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ"""
+    type: Literal["Simple Conic", "Rectangular"] = "Simple Conic"
     cone_half_angle: float = Field(45.0, gt=0, le=90, allow_inf_nan=False)
+    vertical_half_angle: float | None = Field(None, gt=0, le=89, allow_inf_nan=False)
+    horizontal_half_angle: float | None = Field(None, gt=0, le=89, allow_inf_nan=False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _rectangular_has_no_cone(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("type") == "Rectangular" and "cone_half_angle" in data:
+            return {k: v for k, v in data.items() if k != "cone_half_angle"}
+        return data
+
+    @model_validator(mode="after")
+    def _rectangular_needs_both_angles(self) -> "SensorDefinition":
+        if self.type == "Rectangular" and (self.vertical_half_angle is None or self.horizontal_half_angle is None):
+            raise ValueError(RECTANGULAR_TEXT)
+        return self
 
 
 class SensorPointing(_Model):

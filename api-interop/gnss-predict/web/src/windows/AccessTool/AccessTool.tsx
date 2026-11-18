@@ -2,6 +2,7 @@
 //
 // - Associated Objects: ต้นไม้จาก state.ts ติ๊กได้ทั้งกลุ่มและรายดวง ตัวหนา = access ที่ computed และผลของ Facility current
 //   คลิกขวา: Select All; เปลี่ยน Access For = ล้างที่ติ๊ก
+//   คีย์บอร์ดแบบรายการของ Report & Graph Manager (roving tabindex): ทั้งรายการเป็นจุดหยุด Tab เดียว ลูกศรขึ้นลง / Home / End ย้าย Space ติ๊ก
 // - Compute / Clear / Clear All / Remove / Remove All: POST /access/compute|clear|remove พร้อม If-Match (server §6.6)
 //   Access For เป็นดาว = หนึ่งคำขอต่อ Facility ทุกคำขอผ่าน postAccess (api/access.ts: คิวการเขียนของ useScenario, ETag ต่อกัน,
 //   ดึง doc ใหม่ครั้งเดียวหลังเขียน) ปุ่มปลดเมื่อทั้งหมดเสร็จ
@@ -21,7 +22,7 @@
 //   Report & Graph Manager... เปิด Manager ที่ Object Type = Access และเลือกคู่ที่ติ๊กไว้ (ใช้ได้ตามสถานะของคำสั่ง analysis.reportGraphManager)
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { postAccess } from "../../api/access";
 import { ApiError, errorText } from "../../api/client";
 import { useCommands, useTimeFormatter } from "../../chrome/hooks";
@@ -37,6 +38,7 @@ import { parseIsoUtc, parseTime } from "../../time/parse";
 import { SelectObjectDialog } from "../InsertObjects/SelectObjectDialog";
 import { openReport } from "../Report/Report";
 import { openReportGraphManager } from "../ReportGraphManager/commands";
+import { moveIndex } from "../ReportGraphManager/ReportGraphManager";
 import { ACCESS_TOOL_KIND, openAccessTool } from "./commands";
 import {
   accessForClass, allSelections, associatedTree, computedSatellites, DEFAULT_GRAPHICS, leavesOf, pairOf, reportObjects, selections, storedSettings,
@@ -46,6 +48,8 @@ import {
 type Action = "compute" | "clear" | "remove";
 
 const EMPTY: ReadonlySet<string> = new Set();
+/** กุญแจของแถวใน Associated Objects (ดาวตัวเดียวกันอยู่ได้ทั้งเป็นลูกของ Constellation และเป็นแถวเดี่ยวในต้นไม้ต่างชุด) */
+const rowKey = (node: AssocNode, child: boolean): string => `${child ? "c" : "n"}:${node.path}`;
 /** สีที่ช่อง Color แสดงเมื่อยังไม่มีสีที่เก็บไว้หรือเลือกไว้ (ส่งเมื่อเลือก Use Custom Color แล้วไม่ได้เลือกสี) */
 const FALLBACK_COLOR = "#ffff00";
 
@@ -190,22 +194,45 @@ export function AccessTool({ params }: PanelProps) {
   const isBold = (leaf: string): boolean => from !== null && bold.has(pairOf(from, leaf));
   const rgmEnabled = isEnabled("analysis.reportGraphManager");
 
+  // roving tabindex: แถวที่รับ Tab = แถวที่โฟกัสล่าสุด (ยังอยู่ในรายการ) ไม่งั้นแถวแรกที่ติ๊กได้
+  const rowKeys = tree.flatMap((node) => [
+    ...(node.cls !== "Constellation" || (node.children ?? []).length > 0 ? [rowKey(node, false)] : []),
+    ...(node.children ?? []).map((c) => rowKey(c, true)),
+  ]);
+  const [focusRow, setFocusRow] = useState<string | null>(null);
+  const tabRow = focusRow !== null && rowKeys.includes(focusRow) ? focusRow : (rowKeys[0] ?? null);
+  const rowRefs = useRef(new Map<string, HTMLInputElement>());
+  const onRowKeyDown = (e: ReactKeyboardEvent, key: string): void => {
+    const to = moveIndex(e.key, rowKeys.indexOf(key), rowKeys.length);
+    if (to === null) return; // Space = ติ๊กของ checkbox เอง
+    e.preventDefault();
+    setFocusRow(rowKeys[to]);
+    rowRefs.current.get(rowKeys[to])?.focus();
+  };
+
   const row = (node: AssocNode, child: boolean) => {
     const members = node.cls === "Constellation" ? (node.children ?? []).map((c) => c.path) : [node.path];
     const on = members.filter((p) => checked.has(p)).length;
     const all = members.length > 0 && on === members.length;
     const strong = members.length > 0 && members.every(isBold);
+    const key = rowKey(node, child);
     return (
-      <div key={`${child ? "c" : "n"}:${node.path}`} className={child ? "access-row access-child" : "access-row"} data-computed={strong ? "true" : "false"}>
+      <div key={key} className={child ? "access-row access-child" : "access-row"} data-computed={strong ? "true" : "false"}>
         <label className="access-choice">
           <input
             type="checkbox"
             aria-label={node.name}
             checked={all}
             disabled={members.length === 0}
+            tabIndex={key === tabRow ? 0 : -1}
             ref={(el) => {
-              if (el !== null) el.indeterminate = on > 0 && !all;
+              if (el !== null) {
+                el.indeterminate = on > 0 && !all;
+                rowRefs.current.set(key, el);
+              } else rowRefs.current.delete(key);
             }}
+            onFocus={() => setFocusRow(key)}
+            onKeyDown={(e) => onRowKeyDown(e, key)}
             onChange={() => toggle(members, !all)}
           />
           <span className={strong ? "access-name access-computed" : "access-name"}>{node.name}</span>
@@ -392,7 +419,7 @@ export function AccessTool({ params }: PanelProps) {
         <SelectObjectDialog
           choices={accessForChoices(doc)}
           initial={from}
-          listLabel={t("access.accessFor")}
+          listLabel={t("access.accessForList")}
           emptyNote={msg("viewFromTo.noObjects")}
           onClose={(path) => {
             setPicking(false);

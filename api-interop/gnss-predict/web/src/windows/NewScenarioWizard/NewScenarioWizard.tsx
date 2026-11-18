@@ -6,6 +6,7 @@
 // - สำเร็จ: เปิด scenario → ปิด wizard → เปิด Insert STK Objects (ตาม STK) ลำดับนี้สำคัญ เพราะการเปิด scenario แทนที่ทุกหน้าต่างด้วย workbook ของมัน
 
 import { useEffect, useState, type FormEvent } from "react";
+import { useWorkspaceMode } from "../../stores/workspaceMode";
 import { ApiError, apiGet, apiSend, errorText } from "../../api/client";
 import { FormField } from "../../chrome/FormField";
 import { t } from "../../labels/labels";
@@ -42,7 +43,7 @@ export function NewScenarioWizard({ panelId = "newScenarioWizard" }: Partial<Pan
   const [name, setName] = useState("");
   const [start, setStart] = useState(() => show(initial.start));
   const [stop, setStop] = useState(() => show(initial.stop));
-  const [template, setTemplate] = useState<Template>("thbk-gnss");
+  const [template, setTemplate] = useState<Template>(() => useWorkspaceMode.getState().mode === "satellites" ? "empty" : "thbk-gnss");
   const [snapshot, setSnapshot] = useState("");
   const [orbits, setOrbits] = useState<Orbits>({ status: "loading" });
   const [errors, setErrors] = useState<Errors>({});

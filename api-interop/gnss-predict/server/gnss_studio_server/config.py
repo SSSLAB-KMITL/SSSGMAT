@@ -31,14 +31,17 @@ class Config:
     gmat_bin: str | None = None
     cesium_ion_token: str = ""
     web_dist: Path = DEFAULT_WEB_DIST
+    gpredict_data: Path | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> "Config":
         data = environ.get("GNSS_STUDIO_DATA")
+        gpredict_data = environ.get("GNSS_STUDIO_GPREDICT_DATA")
         return cls(
             data_dir=Path(os.path.abspath(os.path.expanduser(data))) if data else DEFAULT_DATA_DIR,
             host=environ.get("GNSS_STUDIO_HOST") or DEFAULT_HOST,
             port=_parse_port(environ["GNSS_STUDIO_PORT"]) if environ.get("GNSS_STUDIO_PORT") else DEFAULT_PORT,
             gmat_bin=environ.get("GMAT_BIN") or None,
             cesium_ion_token=environ.get("CESIUM_ION_TOKEN", ""),
+            gpredict_data=Path(os.path.abspath(os.path.expanduser(gpredict_data))) if gpredict_data else None,
         )

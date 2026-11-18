@@ -10,14 +10,17 @@
 //   boresight ไม่โดนโลกเลย (spec §3.3): ไม่วาดรอยและ marker วาดกรวยอย่างเดียว = Radial Lines ตามทิศของเส้นขอบกรวยจริง (coneRays เส้นเดียวกับจุด 0, 9, …)
 //   ยาวเท่าระยะถึงขอบฟ้า √(|p|² − Re²) (จุดสัมผัสขอบฟ้าของวงอยู่คนละทิศกับกรวย ลากไปที่นั่นจะดูเหมือนกรวยชี้ลงโลก)
 // - Sensor View (sensorViewPose, spec §5.4): กล้องที่ตำแหน่งดาว ทิศ boresight ด้านบน North / Velocity (cameraOrientation) fov จากกรวยและสัดส่วนภาพ
+// - Rectangular (ข2 Ruling e, g, j, k): รอยจากพีระมิดสี่เหลี่ยมในกรอบ sensor (sensorFrame) 4 ด้าน × 18 จุด บนทรงกลมเดียวกับกรวย
+//   Radial Lines 4 เส้นไปที่มุม (จุด 0, 18, 36, 54) ไม่มีมุมศูนย์กลางของรอย (centralAngleRad = null: หน้าต่าง 2D ไม่เติม Fill)
+//   Sensor View ใช้ครึ่งมุม viewHalfAngleOf = max(Vertical, Horizontal) แทน Cone Half Angle
 // - สี: หน้าต่าง 3D ใช้ graphics3d.color หน้าต่าง 2D ใช้ graphics2d.color ไม่มี = SENSOR_COLOR, ความทึบของ Fill = 1 − % Translucency / 100 (ไม่มี = 50%)
 //   ช่องที่ไม่มีใช้ค่าตั้งต้นของ server: Cone Half Angle 45°, Azimuth 0°, Elevation 90°
 
 import type { components } from "../api/types.gen";
 import { SENSOR_COLOR } from "./colors";
 import {
-  bodyFrame, boresightOf, cameraOrientation, coneRays, isNadir, nadirCentralAngleRad, sensorFootprint, sensorViewFovDeg, type BodyFrame,
-  type SensorFootprint, type Vec3,
+  bodyFrame, boresightOf, cameraOrientation, coneRays, isNadir, nadirCentralAngleRad, rectangleFootprint, rectangleRays, sensorFootprint, sensorFrame,
+  sensorViewFovDeg, type BodyFrame, type SensorFootprint, type Vec3,
 } from "./sensorGeometry";
 import { EARTH_RADIUS_KM, subSatellite, WGS84_E2 } from "./swath";
 
@@ -32,6 +35,8 @@ const DEFAULT_ELEVATION_DEG = 90;
 const DEFAULT_FILL_TRANSLUCENCY = 50;
 /** จำนวน Radial Lines (P6) */
 const RADIAL_LINES = 8;
+/** จำนวนจุดต่อด้านของรอย Rectangular (4 ด้าน = 72 จุดเท่าวงของกรวย) */
+const RECT_PER_SIDE = 18;
 /** รัศมีตามแนวศูนย์สูตรของทรงรี WGS 84 (เมตร) ทรงรีเดียวกับ globe ของ Cesium */
 const WGS84_A = 6_378_137;
 const RAD = Math.PI / 180;
@@ -41,17 +46,46 @@ export interface SensorDrawState {
   /** ตำแหน่งของดาวแม่ ณ t (Earth-fixed, เมตร) */
   pos: Vec3;
   frame: BodyFrame;
+  /** กรอบของ sensor (sensorFrame ตาม Az-El ของหน้า Basic - Pointing): +Z = boresight */
+  sensorFrame: BodyFrame;
   /** ทิศหนึ่งหน่วยของ boresight ในกรอบ Earth-fixed */
   boresight: Vec3;
   footprint: SensorFootprint;
   /** boresight ชี้ลงศูนย์กลางโลก */
   nadir: boolean;
-  /** มุมศูนย์กลาง (เรเดียน) จากจุดใต้ดาวถึงขอบรอย เฉพาะ boresight ที่ชี้ลงศูนย์กลางโลก ไม่งั้น null */
+  /** มุมศูนย์กลาง (เรเดียน) จากจุดใต้ดาวถึงขอบรอย เฉพาะกรวย (Simple Conic) ที่ boresight ชี้ลงศูนย์กลางโลก ไม่งั้น null (Rectangular = null เสมอ) */
   centralAngleRad: number | null;
 }
 
-/** Cone Half Angle (องศา) ของ sensor */
+/** Cone Half Angle (องศา) ของ sensor แบบ Simple Conic */
 export const coneHalfAngleOf = (sensor: SensorObj): number => sensor.definition?.cone_half_angle ?? DEFAULT_CONE_HALF_ANGLE_DEG;
+
+/** sensor แบบ Rectangular (ไม่มี type = Simple Conic ตามค่าตั้งต้นของ server) */
+export const isRectangular = (sensor: SensorObj): boolean => sensor.definition?.type === "Rectangular";
+
+/** Vertical / Horizontal Half Angle (องศา) ของ Rectangular (server บังคับทั้งสองช่อง ค่าที่ขาดใช้ Cone Half Angle ตั้งต้น 45° แทน) */
+function rectHalfAngles(sensor: SensorObj): { vertical: number; horizontal: number } {
+  return {
+    vertical: sensor.definition?.vertical_half_angle ?? DEFAULT_CONE_HALF_ANGLE_DEG,
+    horizontal: sensor.definition?.horizontal_half_angle ?? DEFAULT_CONE_HALF_ANGLE_DEG,
+  };
+}
+
+/** ครึ่งมุมของภาพ Sensor View (ข2 Ruling e): Simple Conic = Cone Half Angle, Rectangular = max(Vertical, Horizontal) */
+export function viewHalfAngleOf(sensor: SensorObj): number {
+  if (!isRectangular(sensor)) return coneHalfAngleOf(sensor);
+  const { vertical, horizontal } = rectHalfAngles(sensor);
+  return Math.max(vertical, horizontal);
+}
+
+/** รูปของ sensor สำหรับข้อความบน Sensor View: ชนิด, Vertical / Horizontal Half Angle (Rectangular) และครึ่งมุมของภาพ (viewHalfAngleOf) */
+export function sensorHudShape(sensor: SensorObj): {
+  shape: "Simple Conic" | "Rectangular"; halfAngles: { vertical: number; horizontal: number } | null; coneHalfAngle: number;
+} {
+  return isRectangular(sensor)
+    ? { shape: "Rectangular", halfAngles: rectHalfAngles(sensor), coneHalfAngle: viewHalfAngleOf(sensor) }
+    : { shape: "Simple Conic", halfAngles: null, coneHalfAngle: coneHalfAngleOf(sensor) };
+}
 
 function rate(a: Vec3, b: Vec3, seconds: number, result: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
   result.x = (a.x - b.x) / seconds;
@@ -83,13 +117,24 @@ export function sensorDrawState(sensor: SensorObj, p: Vec3 | null, pPrev: Vec3 |
   const v = velocityOf(p, pPrev, pNext);
   const frame = v === null ? null : bodyFrame(p, v);
   if (frame === null) return null;
-  const halfAngle = coneHalfAngleOf(sensor);
-  const boresight = boresightOf(frame, sensor.pointing?.azimuth ?? DEFAULT_AZIMUTH_DEG, sensor.pointing?.elevation ?? DEFAULT_ELEVATION_DEG);
+  const az = sensor.pointing?.azimuth ?? DEFAULT_AZIMUTH_DEG;
+  const el = sensor.pointing?.elevation ?? DEFAULT_ELEVATION_DEG;
+  const sf = sensorFrame(frame, az, el);
+  // boresight คำนวณแบบเดิม (ไม่ใช้ sf.z ที่เท่ากันทางคณิตศาสตร์) ให้ผลของ Simple Conic เหมือนเดิมทุกบิต
+  const boresight = boresightOf(frame, az, el);
   const nadir = isNadir(p, boresight);
+  if (isRectangular(sensor)) {
+    const { vertical, horizontal } = rectHalfAngles(sensor);
+    return {
+      sensor, pos: p, frame, sensorFrame: sf, boresight, footprint: rectangleFootprint(p, sf, vertical, horizontal, RECT_PER_SIDE), nadir, centralAngleRad: null,
+    };
+  }
+  const halfAngle = coneHalfAngleOf(sensor);
   return {
     sensor,
     pos: p,
     frame,
+    sensorFrame: sf,
     boresight,
     footprint: sensorFootprint(p, boresight, halfAngle),
     nadir,
@@ -137,15 +182,23 @@ export function groundPointEcef([lon, lat]: [number, number]): Vec3 {
 }
 
 /**
- * ปลายของ Radial Lines 8 เส้น (Earth-fixed, เมตร; เส้นเริ่มที่ตำแหน่งดาว): boresight โดนโลก = จุด 0, 9, 18, … ของวงรอยบนผิวทรงรี (P6)
+ * ปลายของ Radial Lines (Earth-fixed, เมตร; เส้นเริ่มที่ตำแหน่งดาว): boresight โดนโลก = จุด 0, 9, 18, … ของวงรอยบนผิวทรงรี (P6)
  * ไม่โดนโลก (ไม่มีรอย) = ตามทิศของเส้นขอบกรวยเส้นเดียวกัน ยาวเท่าระยะถึงขอบฟ้า
+ * Rectangular: 4 เส้นไปที่มุม (จุด 0, 18, 36, 54 ของวง) ไม่โดนโลก = ตามทิศของเส้นมุม (rectangleRays ด้านละ 1 เส้น) ยาวเท่าระยะถึงขอบฟ้า
  */
 export function radialLineEnds(st: SensorDrawState): Vec3[] {
-  if (st.footprint.boresightHit !== null) return radialLinePoints(st.footprint).map(groundPointEcef);
+  const rect = isRectangular(st.sensor);
+  if (st.footprint.boresightHit !== null) {
+    if (!rect) return radialLinePoints(st.footprint).map(groundPointEcef);
+    const perSide = st.footprint.horizon.length / 4;
+    return [0, 1, 2, 3].map((k) => groundPointEcef(st.footprint.ring[k * perSide]));
+  }
   const p = st.pos;
   const re = EARTH_RADIUS_KM * 1000;
   const length = Math.sqrt(Math.max(0, p.x * p.x + p.y * p.y + p.z * p.z - re * re));
-  return coneRays(st.boresight, coneHalfAngleOf(st.sensor), RADIAL_LINES).map((d) => ({ x: p.x + d.x * length, y: p.y + d.y * length, z: p.z + d.z * length }));
+  const { vertical, horizontal } = rectHalfAngles(st.sensor);
+  const rays = rect ? rectangleRays(st.sensorFrame, vertical, horizontal, 1) : coneRays(st.boresight, coneHalfAngleOf(st.sensor), RADIAL_LINES);
+  return rays.map((d) => ({ x: p.x + d.x * length, y: p.y + d.y * length, z: p.z + d.z * length }));
 }
 
 /** สิ่งที่หน้าต่าง 3D วาดของ sensor หนึ่งตัว (วงและ marker เป็น [lon, lat] geodetic องศาบนพื้นโลก) */
@@ -183,11 +236,11 @@ export interface SensorViewPose {
 
 /**
  * กล้องของ Sensor View (spec §5.4) จากสถานะของ sensor: ตำแหน่ง = ตำแหน่งดาว, ทิศ = boresight, ด้านบน = up (cameraOrientation)
- * fov ด้านสั้น = min(2α × 1.05, 120°) / zoom (imagery spec §5.3) แปลงเป็นด้านยาวตาม aspect = กว้าง / สูง (sensorViewFovDeg)
+ * fov ด้านสั้น = min(2α × 1.05, 120°) / zoom (imagery spec §5.3) α = viewHalfAngleOf แปลงเป็นด้านยาวตาม aspect = กว้าง / สูง (sensorViewFovDeg)
  * zoom ไม่เปลี่ยนตำแหน่งและทิศ
  */
 export function sensorViewPose(st: SensorDrawState, up: "north" | "velocity", aspect: number, zoom = 1): SensorViewPose {
   const o = cameraOrientation(st.pos, st.boresight, st.frame, up);
   const sized = Number.isFinite(aspect) && aspect > 0;
-  return { position: st.pos, direction: o.direction, up: o.up, fovDeg: sized ? sensorViewFovDeg(coneHalfAngleOf(st.sensor), aspect, zoom) : null };
+  return { position: st.pos, direction: o.direction, up: o.up, fovDeg: sized ? sensorViewFovDeg(viewHalfAngleOf(st.sensor), aspect, zoom) : null };
 }

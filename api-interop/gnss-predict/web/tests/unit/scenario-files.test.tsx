@@ -418,6 +418,24 @@ describe("startWorkspaceFlow", () => {
     expect(window.location.search).toBe("?test");
   });
 
+  test("opening another scenario over an open one closes the old one's scenario-bound windows, without Welcome", async () => {
+    await mount();
+    stop = startWorkspaceFlow();
+    await waitFor(() => expect(kinds()).toContain("welcome"));
+    useLayout.getState().closePanel("welcome");
+    act(() => void openFakeScenario());
+    const layout = useLayout.getState();
+    layout.openPanel("insertObjects");
+    layout.openPanel("propertiesBrowser", { path: "*/Satellite/G01" });
+    layout.openPanel("about"); // ไม่ผูก scenario
+    act(() => useScenario.setState({ name: "Second" }));
+    expect(kinds().sort()).toEqual([...DEFAULT_IDS, "about"].sort());
+    // เปิดชื่อเดิมซ้ำ (name ไม่เปลี่ยน) ไม่ปิดอะไร
+    layout.openPanel("insertObjects");
+    act(() => useScenario.setState({ name: "Second", etag: '"e2"' }));
+    expect(kinds()).toContain("insertObjects");
+  });
+
   test("a scenario that is opened does not bring Welcome", async () => {
     await mount();
     stop = startWorkspaceFlow();

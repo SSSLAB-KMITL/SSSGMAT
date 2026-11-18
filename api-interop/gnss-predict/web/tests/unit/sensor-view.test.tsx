@@ -62,7 +62,12 @@ function fakeView(panelId: string): Fake {
 }
 
 const HUD: SensorHud = {
-  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1, imagery: null, shortSidePx: 600,
+  sensor: "Sensor1", satellite: "G01", lat: 13.456, lon: -100.004, altKm: 20180.6, shape: "Simple Conic", halfAngles: null, coneHalfAngle: 14.38, fovDeg: 30.198, zoom: 1,
+  imagery: null, shortSidePx: 600,
+};
+/** MODIS บน Terra (ข2 Ruling e, g): Rectangular V 55.0 / H 0.41 ครึ่งมุมของภาพ = max(V, H) */
+const HUD_RECT: SensorHud = {
+  ...HUD, sensor: "MODIS", satellite: "X04", altKm: 705, shape: "Rectangular", halfAngles: { vertical: 55.0, horizontal: 0.41 }, coneHalfAngle: 55, fovDeg: 115.5,
 };
 
 /** handle ที่หน้าต่างแต่ละบานได้ ตาม panelId; nextHud = ข้อความบนภาพของบานที่จะเปิดถัดไป */
@@ -219,6 +224,22 @@ describe("the window", () => {
     await waitFor(() => expect(Number(circle()?.getAttribute("r"))).toBeCloseTo(coneCircleRadius(14.38, Math.SQRT2)!, 9));
   });
 
+  test("a Rectangular sensor: no cone circle in Sensor display, and the HUD shows both half angles instead of the cone", async () => {
+    const user = userEvent.setup();
+    nextHud = HUD_RECT;
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    const hud = await screen.findByTestId("sensor-view-hud");
+    await user.click(screen.getByRole("button", { name: t("sensorView.display.sensor") }));
+    await waitFor(() => expect(views()[0].params).toMatchObject({ display: "sensor" }));
+    expect(document.querySelector(".sensor-view-cone")).toBeNull();
+    const lines = within(hud).getAllByText(/.+/).map((el) => el.textContent);
+    expect(lines).toContain(msg("sensorView.hudRect", { v: "55.0", h: "0.4" }));
+    expect(hud.textContent).toContain("Vertical 55.0° × Horizontal 0.4°");
+    expect(hud.textContent).not.toContain("Cone Half Angle");
+    expect(lines).toContain(msg("sensorView.hudFov", { fov: "115.5", zoom: 1 }));
+  });
+
   test("Display: new windows start in Camera; Sensor and back are stored in the params and sent to the scene", async () => {
     const user = userEvent.setup();
     await mount({ G01: ["Sensor1"] });
@@ -270,6 +291,34 @@ describe("the window", () => {
     await user.click(zoomOut());
     await user.click(zoomOut());
     expect(views()[0].params?.zoom).toBe(131072);
+  });
+
+  // QA-03: คำแนะนำของช่อง Width ยาวกว่าแถบ (1280 px ก็ไม่พอ) ต้องเห็นครบ: แถวของตัวเองใต้แถบเครื่องมือ ตัดบรรทัดได้ ไม่อยู่ในแถบที่ไม่ตัดบรรทัด
+  test("the Width hint is shown in full: a wrapping row of its own under the toolbar row, not clipped inside the zoom group", async () => {
+    const user = userEvent.setup();
+    await mount({ G01: ["Sensor1"] });
+    await open("Sensor1");
+    await screen.findByTestId("sensor-view-hud");
+    const bar = screen.getByRole("group", { name: t("sensorView.zoom") });
+    const box = within(bar).getByRole("textbox", { name: t("sensorView.width") }) as HTMLInputElement;
+    await user.clear(box);
+    await user.type(box, "abc{Enter}");
+    const hint = screen.getByText(msg("sensorView.widthInvalid"));
+    expect(hint.textContent).toBe(msg("sensorView.widthInvalid")); // ข้อความเต็มอยู่ใน DOM
+    expect(hint.getAttribute("role")).toBe("status");
+    expect(hint.closest(".toolbar")).toBeNull(); // ไม่อยู่ในแถบ (flex แถวเดียว) ของ Zoom/Width
+    expect(hint.parentElement?.classList.contains("gfx-toolbars")).toBe(true); // แถบเครื่องมือของหน้าต่างตัดแถวได้ (flex-wrap)
+    expect(hint.getAttribute("style")).toBeNull();
+    // กฎ CSS ของคำแนะนำ: ไม่มี nowrap / overflow hidden / ellipsis และกินเต็มความกว้าง (ขึ้นแถวใหม่ใต้แถบ)
+    const css = readFileSync(resolve(__dirname, "../../src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel]) => sel.split(",").some((s) => s.trim() === ".sensor-view-width-hint"));
+    expect(rules.length).toBeGreaterThan(0);
+    const body = rules.map(([, , b]) => b).join(";");
+    expect(body).not.toMatch(/white-space:\s*nowrap/);
+    expect(body).not.toMatch(/overflow:\s*hidden/);
+    expect(body).not.toMatch(/text-overflow/);
+    expect(body).toMatch(/white-space:\s*normal/);
+    expect(body).toMatch(/flex:\s*1 0 100%/);
   });
 
   test("the Width box shows the ground width now; Enter sets the zoom that gives the typed width at the sub-point; bad input reverts with a Thai hint", async () => {
@@ -896,4 +945,15 @@ test("the Sensor View window, its commands, track.ts and the test hooks load no 
   }
   expect([...seen].some((f) => f.endsWith("Graphics3D/scene3d.ts"))).toBe(false);
   expect(seen.size).toBeGreaterThan(10);
+});
+
+// ข2 final minor: ทางของดาว (sensor ตัวแรกหรือสร้าง Sensor<n>) เป็นของคำสั่ง Sensor View เท่านั้น Show Imagery ไม่ใช้ (amendment z) จึงไม่ export
+test("the satellite branch of the Sensor View command is internal to SensorView/commands.ts", async () => {
+  const commands = await import("../../src/windows/SensorView/commands");
+  expect(Object.keys(commands)).not.toContain("openSensorViewForSatellite");
+  const source = readFileSync(resolve(import.meta.dirname, "../../src/windows/SensorView/commands.ts"), "utf8");
+  // doc comment ของมันอ้าง amendment z (Ruling n ใช้กับ firstSensorOf ของ Show Imagery เท่านั้น)
+  const doc = /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*async function openSensorViewForSatellite\b/.exec(source)?.[1] ?? "";
+  expect(doc).toContain("amendment z");
+  expect(doc).not.toMatch(/Ruling n\b/);
 });

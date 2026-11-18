@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from gnss_predict.catalog import Catalog
+from gnss_predict.imaging import preset_by_norad
 
 from . import templates
 from .errors import ApiError
@@ -57,7 +58,7 @@ _OBJECT_KEYS = {
     "Constellation": frozenset({"name", "system", "description", "long_description", "color", "assigned_objects"}),
     "Sensor": frozenset({"name", "parent", "description", "long_description", "definition", "pointing", "graphics2d", "graphics3d"}),
 }
-_CATALOG_KEYS = frozenset({"norads", "create_constellation"})
+_CATALOG_KEYS = frozenset({"norads", "create_constellation", "primary_sensors"})
 _SATELLITE_PATH_RE = re.compile(SATELLITE_PATH_PATTERN)
 _INVALID = "SCENARIO_INVALID"
 
@@ -94,6 +95,13 @@ def _deep_merge(base: dict, patch: dict) -> dict:
     return base
 
 
+def _drop_cone_of_rectangular(obj: dict) -> None:
+    """Ruling (v): definition ของ Rectangular ไม่มี cone_half_angle (ค่าเดิมจากแม่แบบหรือจาก Simple Conic ก่อนเปลี่ยนชนิดถูกลบ)"""
+    definition = obj.get("definition")
+    if isinstance(definition, dict) and definition.get("type") == "Rectangular":
+        definition.pop("cone_half_angle", None)
+
+
 class _Names:
     """ชื่อที่ถูกใช้แล้วใน scenario (ไม่แยกตัวพิมพ์เล็กใหญ่ ทุก class) พร้อมจองชื่อใหม่ระหว่างสร้างทีละหลายตัว"""
 
@@ -105,6 +113,15 @@ class _Names:
         if existing is not None:
             raise ApiError(409, "NAME_EXISTS", f"มี object ชื่อ {existing} อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่)", field, existing)
         self.taken[name.casefold()] = name
+
+    def first_free_of(self, candidates: list[str], field: str) -> str:
+        """ชื่อแรกใน candidates ที่ยังว่าง (จองไว้เลย) ทุกชื่อถูกใช้แล้ว -> 409 ที่ field โดย detail คือชื่อเดิมของตัวสุดท้าย"""
+        for name in candidates[:-1]:
+            if name.casefold() not in self.taken:
+                self.claim(name, field)
+                return name
+        self.claim(candidates[-1], field)
+        return candidates[-1]
 
     def first_free(self, prefix: str) -> str:
         n = 1
@@ -222,6 +239,8 @@ def apply_pages(doc: dict, cls: str, name: str, patch: dict) -> dict:
                         raise _invalid(text, f"basic.{key}")
                     values = {k: v for k, v in values.items() if k != key}
             _deep_merge(merged, values)
+            if cls == "Sensor":
+                _drop_cone_of_rectangular(merged)
         elif group in PAGE_SECTIONS[cls]:
             merged[group] = _deep_merge(merged.get(group) or {}, values)
         elif values:
@@ -243,7 +262,7 @@ def scenario_catalog(doc: dict, data_dir: Path) -> Catalog:
 
 
 def insert(doc: dict, body: dict, catalog: Callable[[], Catalog]) -> list[str]:
-    """สร้าง object ตาม `body` = {class, method, ...} ใส่ท้าย doc["objects"] คืน path ที่สร้าง (ดาวก่อน แล้ว Constellation)
+    """สร้าง object ตาม `body` = {class, method, ...} ใส่ท้าย doc["objects"] คืน path ที่สร้าง (ดาวก่อน แล้ว Constellation แล้ว Sensor)
     `catalog` คือฟังก์ชันสร้าง catalog ที่เรียกเฉพาะ From Satellite Catalog (สร้างแพง)
     ชื่อซ้ำกับ object ใดก็ตาม (ไม่สนตัวพิมพ์เล็กใหญ่) -> 409 และไม่สร้างอะไรเลย"""
     cls, method = body.get("class"), body.get("method")
@@ -284,6 +303,7 @@ def _define(doc: dict, names: _Names, cls: str, body: dict) -> list[dict]:
     elif cls == "Sensor":
         _require_existing(doc, [props["parent"]], "parent", satellites_only=True)       # ตรวจก่อน เพื่อบอกว่าไม่ใช่ดาวแทนที่จะบอกแค่รูปแบบผิด
         obj = _deep_merge(templates.sensor(name, props["parent"]), props)
+        _drop_cone_of_rectangular(obj)
     else:
         system = props.get("system")
         color = SYSTEM_COLORS.get(system, DEFAULT_COLOR) if isinstance(system, str) else DEFAULT_COLOR
@@ -321,6 +341,9 @@ def _from_catalog(names: _Names, cls: str, body: dict, catalog: Callable[[], Cat
     group_name = body.get("create_constellation")
     if group_name is not None and (not isinstance(group_name, str) or not NAME_RE.fullmatch(group_name)):
         raise _invalid("ชื่อ Constellation ต้องเป็นตัวอักษร A-Z a-z ตัวเลข _ หรือ - ยาว 1 ถึง 32 ตัว", "create_constellation")
+    primary_sensors = body.get("primary_sensors", False)
+    if type(primary_sensors) is not bool:
+        raise _invalid("primary_sensors ต้องเป็น true หรือ false", "primary_sensors")
     by_norad = {sat.norad: sat for sat in catalog().satellites}
     missing = [n for n in dict.fromkeys(norads) if n not in by_norad]
     if missing:
@@ -336,6 +359,13 @@ def _from_catalog(names: _Names, cls: str, body: dict, catalog: Callable[[], Cat
         system = systems.pop() if len(systems) == 1 and picked[0].system in SYSTEM_COLORS else None
         created.append(templates.constellation(group_name, system, SYSTEM_COLORS.get(system, DEFAULT_COLOR),
                                                [path_of(o) for o in created]))
+    if primary_sensors:                                       # Sensor หลักของดาวถ่ายภาพ ต่อท้าย ไม่เป็นสมาชิก Constellation
+        for sat in picked:
+            preset = preset_by_norad(sat.norad)
+            if preset is None:
+                continue
+            name = names.first_free_of([preset.camera, f"{preset.camera}_{sat.prn}"], "primary_sensors")
+            created.append(templates.imaging_sensor(name, f"*/Satellite/{sat.prn}", preset.sensor.definition()))
     return created
 
 

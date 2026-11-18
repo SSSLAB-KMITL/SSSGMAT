@@ -15,10 +15,11 @@ from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
 
 from .. import objects
+from ..config import Config
 from ..events import EventBus
 from ..store import ScenarioStore, check_etag
 from ..tracking import etag_header, write_tracked
-from . import get_bus, get_store
+from . import get_bus, get_config, get_store
 
 router = APIRouter()
 
@@ -47,8 +48,12 @@ def get_tree(sc: str, store: ScenarioStore = Depends(get_store)) -> JSONResponse
 
 @router.post("/scenarios/{sc}/objects")
 def insert_object(sc: str, request: Request, body: dict[str, Any], if_match: str | None = Header(None),
-                  store: ScenarioStore = Depends(get_store), bus: EventBus = Depends(get_bus)) -> JSONResponse:
+                  store: ScenarioStore = Depends(get_store), bus: EventBus = Depends(get_bus),
+                  config: Config = Depends(get_config)) -> JSONResponse:
     def change(doc: dict) -> list[str]:
+        if body.get("class") == "Satellite" and body.get("method") == "Import Orbits":
+            from ..custom_orbits import import_objects
+            return import_objects(doc, body, store.data_dir, gpredict_data=config.gpredict_data)
         return objects.insert(doc, body, lambda: objects.scenario_catalog(doc, store.data_dir))
     created, tag, stale = _edit(request, store, bus, sc, if_match, change)
     return _saved(tag, stale, 201, created=created)

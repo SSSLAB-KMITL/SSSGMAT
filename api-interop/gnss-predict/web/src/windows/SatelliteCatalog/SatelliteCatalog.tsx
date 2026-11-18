@@ -1,12 +1,17 @@
+import { ImportSatellites } from "./ImportSatellites";
+import { PrioritySatellites } from "./PrioritySatellites";
 // Search Satellite Catalog (spec §11, STK ref §B "Search Standard Object Data"): เลือกดาวจาก snapshot ที่ scenario ใช้แล้ว Insert ด้วยคำขอเดียว
 // - Data Sources: Local snapshot (ตั้งต้น) / Online CelesTrak ซึ่งแค่เปิด Fetch Orbit Data (การดึงจริงอยู่ที่ปุ่ม Fetch Now ของหน้านั้นที่ถามยืนยันก่อน) แล้วคืนตัวเลือกเป็น Local snapshot
 // - ดึง GET /catalog?snapshot&start&stop ครั้งเดียวต่อการเปิดหน้าต่าง (ซ้ำเฉพาะเมื่อ snapshot หรือช่วงวิเคราะห์ของ scenario เปลี่ยน) แล้วกรองในหน้าเว็บ:
-//   System (ทั้งหมด / G / R / E / C) และคำค้น (ไม่สนตัวพิมพ์ ค้น PRN SVN NORAD Block และชื่อ CelesTrak)
-// - ตาราง PRN, SVN, NORAD, Block, Name (ชื่อ CelesTrak), Age, Status (ธง; ดาวที่อยู่ใน scenario แล้ว = "มีแล้ว") เลือกหลายแถว: คลิก, Ctrl/Cmd-คลิก (เพิ่ม/เอาออก),
+//   System (ทั้งหมด / G / R / E / C / Imaging = X) และคำค้น (ไม่สนตัวพิมพ์ ค้น PRN SVN NORAD Block ชื่อ CelesTrak และชื่อที่แสดง)
+//   Imaging กับ snapshot ที่ไม่มีดาวถ่ายภาพเลย (orbit_snapshot ตั้งตอนสร้าง scenario: Fetch ใหม่ไม่เติมให้ scenario เดิม) = ข้อความบอกทางแทน "ไม่พบดาว"
+// - ตาราง PRN, SVN, NORAD, Block, Name (display_name: ดาวถ่ายภาพ = ชื่อ preset เช่น Terra, GNSS = ชื่อ CelesTrak), Age, Status (ธง; ดาวที่อยู่ใน scenario แล้ว = "มีแล้ว") เลือกหลายแถว: คลิก, Ctrl/Cmd-คลิก (เพิ่ม/เอาออก),
 //   Shift-คลิก (ช่วงจากแถวที่คลิกล่าสุด; Ctrl+Shift เพิ่มช่วง) คีย์บอร์ด: ลูกศรเลื่อน (Shift ขยายช่วง) Space สลับ Ctrl/Cmd+A เลือกทั้งหมดที่เห็น
 //   แถวที่มี NORAD ตรงกับดาวใน scenario เลือกไม่ได้ ตัวกรองที่ซ่อนแถวที่เลือกไว้ = เอาแถวนั้นออกจากที่เลือก (Insert ส่งเฉพาะที่เห็นอยู่)
 // - Create Constellation from Selected + ชื่อ (กติกาชื่อเดียวกับ server และไม่ซ้ำ object ใน scenario) Insert = POST /objects ครั้งเดียวพร้อม norads ทั้งหมด
 //   (ตามลำดับในตาราง) สำเร็จ = เลือก object แรกที่สร้างและปิดหน้าต่าง; 409/422 ขึ้นที่ช่องชื่อ (create_constellation) หรือเหนือปุ่ม (norads)
+// - Add Primary Sensor (ข2 Ruling m, ติ๊กเป็นค่าตั้งต้น): ส่ง primary_sensors: true เฉพาะเมื่อติ๊กและที่เลือกมีดาวถ่ายภาพ (X) อย่างน้อยหนึ่งดวง
+//   ไม่งั้นไม่มีช่องนี้ (Insert ของ GNSS ล้วนส่งเหมือนเดิมทุกไบต์)
 // - ตารางนี้ไม่ใช้ virtual list: catalog สี่ระบบมีราว 130 ดาว (ราว 1,000 เซลล์) ซึ่ง DOM จัดการได้สบาย
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
@@ -32,7 +37,12 @@ const SYSTEM_OPTIONS = [
   { value: "R", label: "option.system.glonass" },
   { value: "E", label: "option.system.galileo" },
   { value: "C", label: "option.system.beidou" },
+  { value: "X", label: "option.system.imaging" },
+  { value: "U", label: "option.system.custom" },
 ] as const;
+
+/** อักษรระบบของดาวถ่ายภาพ (IMAGING_LETTER ของ engine) */
+const IMAGING = "X";
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
@@ -54,8 +64,14 @@ function toEntry(x: unknown): CatalogEntry | null {
     omm_epoch: text(x.omm_epoch),
     age_days: typeof x.age_days === "number" ? x.age_days : Number.NaN,
     flags: Array.isArray(x.flags) ? x.flags.filter((f): f is string => typeof f === "string") : [],
+    // server ก่อน ข2 ไม่ส่งสองช่องนี้: แยกชนิดจากอักษรระบบ ชื่อที่แสดง = ชื่อ CelesTrak
+    category: typeof x.category === "string" ? x.category : x.system === IMAGING ? "imaging" : "gnss",
+    display_name: typeof x.display_name === "string" && x.display_name !== "" ? x.display_name : text(x.celestrak_name),
   };
 }
+
+const displayName = (entry: CatalogEntry): string => entry.display_name ?? entry.celestrak_name;
+const isImaging = (entry: CatalogEntry): boolean => entry.category === "imaging" || entry.system === IMAGING;
 
 /** ISO ที่ server รับ: เหมือน store (Date.toISOString()) อ่านไม่ได้ก็ส่งตามที่เก็บไว้ ให้ server เป็นคนปฏิเสธ */
 const isoOf = (text: string): string => parseIsoUtc(text)?.toISOString() ?? text;
@@ -65,12 +81,12 @@ function queryOf(snapshot: string, start: string, stop: string): string {
 }
 
 function matches(entry: CatalogEntry, needle: string): boolean {
-  return [entry.prn, entry.svn, String(entry.norad), entry.block, entry.celestrak_name].some((field) => field.toLowerCase().includes(needle));
+  return [entry.prn, entry.svn, String(entry.norad), entry.block, entry.celestrak_name, displayName(entry)].some((field) => field.toLowerCase().includes(needle));
 }
 
 const ageText = (days: number): string => (Number.isFinite(days) ? `${days.toFixed(1)} d` : "—");
 
-export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<PanelProps>) {
+export function SatelliteCatalog({ panelId = "satelliteCatalog", params = {} }: Partial<PanelProps>) {
   const doc = useScenario((s) => s.doc);
   const snapshot = doc?.orbit_snapshot;
   const start = doc?.analysis_period.start;
@@ -78,13 +94,17 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
   const query = snapshot === undefined || start === undefined || stop === undefined ? null : queryOf(snapshot, start, stop);
 
   const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [system, setSystem] = useState("");
+  const [system, setSystem] = useState(params.catalogMode === "gnss" ? "gnss" : "");
+  useEffect(() => {
+    if (params.requestId !== undefined) setSystem(params.catalogMode === "gnss" ? "gnss" : "");
+  }, [params.requestId, params.catalogMode]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
   const [anchor, setAnchor] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [makeConstellation, setMakeConstellation] = useState(false);
   const [constellationName, setConstellationName] = useState("");
+  const [primarySensors, setPrimarySensors] = useState(true);
   const [nameError, setNameError] = useState<string | null>(null);
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -114,9 +134,11 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
   const entries = load.status === "ready" ? load.entries : null;
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (entries ?? []).filter((e) => (system === "" || e.system === system) && (needle === "" || matches(e, needle)));
+    return (entries ?? []).filter((e) => (system === "" || (system === "gnss" ? ["G", "R", "E", "C"].includes(e.system) : e.system === system)) && (needle === "" || matches(e, needle)));
   }, [entries, system, search]);
   const selectable = useMemo(() => visible.filter((e) => !present.has(e.norad)), [visible, present]);
+  // System = Imaging แต่ snapshot ของ scenario ไม่มีดาวถ่ายภาพเลย: บอกทาง (Fetch ใหม่แล้วสร้าง scenario ใหม่) แทน "ไม่พบดาว"
+  const noImaging = system === IMAGING && entries !== null && !entries.some((e) => e.category === "imaging");
 
   // ตัวกรองซ่อนแถวที่เลือกไว้ = เอาออกจากที่เลือก (กลับมาแสดงแล้วไม่กลับมาเลือกเอง)
   useEffect(() => {
@@ -208,11 +230,14 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
         method: "From Satellite Catalog",
         norads: chosen.map((e) => e.norad),
         ...(makeConstellation ? { create_constellation: constellationName } : {}),
+        ...(primarySensors && chosen.some(isImaging) ? { primary_sensors: true } : {}),
       });
       close();
     } catch (e) {
       if (isFieldError(e) && e.field === "create_constellation") {
         setNameError(e.text);
+      } else if (isFieldError(e) && e.field === "primary_sensors") {
+        setGeneral(msg("catalog.primaryClash", { message: e.text })); // ชื่อ sensor หลักทั้งสองแบบถูกใช้แล้ว: บอกทางออก (Insert โดยไม่สร้าง sensor)
       } else if (isFieldError(e)) {
         setGeneral(e.text); // norads: NORAD ที่ไม่มีใน catalog หรือชื่อดาว (PRN) ซ้ำ
       } else {
@@ -228,6 +253,8 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
 
   return (
     <div className="catalog">
+      <PrioritySatellites key={`priority-${params.requestId ?? "default"}`} initiallyOpen={params.priorityOpen === true} />
+      <ImportSatellites key={params.requestId ?? "default"} initialFormat={params.importFormat === "gpredict_local" ? "gpredict_local" : "norad"} initiallyOpen={params.expandImport === true} />
       <div className="catalog-bar">
         <fieldset className="catalog-sources">
           <legend>{t("dialog.catalog.dataSources")}</legend>
@@ -244,6 +271,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
           <FormField label={t("field.system")}>
             {(control) => (
               <select {...control} value={system} onChange={(e) => setSystem(e.target.value)}>
+                {(params.catalogMode === "gnss" || system === "gnss") && <option value="gnss">GNSS ทั้ง 4 ระบบ</option>}
                 {SYSTEM_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {t(o.label)}
@@ -302,7 +330,7 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
                     <td>{e.svn}</td>
                     <td className="catalog-num">{e.norad}</td>
                     <td>{e.block}</td>
-                    <td>{e.celestrak_name}</td>
+                    <td>{displayName(e)}</td>
                     <td className="catalog-num">{ageText(e.age_days)}</td>
                     <td title={e.flags.length === 0 ? undefined : e.flags.map(flagLine).join("\n")}>
                       {there ? msg("catalog.inScenario") : e.flags.map(flagName).join(", ")}
@@ -313,7 +341,11 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
             </tbody>
           </table>
         )}
-        {doc !== null && load.status === "ready" && visible.length === 0 && <p className="catalog-note">{msg("catalog.noMatch")}</p>}
+        {doc !== null && load.status === "ready" && visible.length === 0 && (
+          <p className="catalog-note">
+            {noImaging ? msg("catalog.noImaging", { snapshot: snapshot ?? "" }) : msg("catalog.noMatch")}
+          </p>
+        )}
       </div>
 
       <div className="catalog-footer">
@@ -347,6 +379,10 @@ export function SatelliteCatalog({ panelId = "satelliteCatalog" }: Partial<Panel
             )}
           </FormField>
         </div>
+        <label className="catalog-check">
+          <input type="checkbox" checked={primarySensors} disabled={busy} onChange={(e) => setPrimarySensors(e.target.checked)} />
+          {t("dialog.catalog.addPrimarySensor")}
+        </label>
         {general !== null && (
           <p className="form-error catalog-note" role="alert">
             {general}

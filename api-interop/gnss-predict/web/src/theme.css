@@ -43,6 +43,9 @@
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans Thai", Thonburi, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --font-size: 12px;
+  /* ความสูงของหัวตารางแบบ sticky ในพื้นที่เลื่อน (Validation, Satellite Catalog): ใช้เป็น scroll-padding-top ของพื้นที่เลื่อนด้วย
+     แถวที่ได้โฟกัสจากคีย์บอร์ดจึงไม่ถูกหัวตารางบัง */
+  --sticky-head-h: 22px;
 
   /* ชั้นซ้อน: ฉากหลังกล่องโต้ตอบ เงาของหน้าต่างลอยและกล่องโต้ตอบ แถบบอกที่วางตอนลากหน้าต่าง สีตอนชี้ปุ่ม */
   --overlay: rgba(0, 0, 0, 0.35);
@@ -1439,6 +1442,7 @@ body {
   flex: 1 1 auto;
   min-height: 120px;
   overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
   border: 1px solid var(--border);
 }
 
@@ -1451,6 +1455,8 @@ body {
 .catalog-table th {
   position: sticky;
   top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
   padding: 2px 6px;
   background: var(--titlebar-bg);
   border-bottom: 1px solid var(--border);
@@ -1614,6 +1620,11 @@ body {
 .daily-buttons {
   padding: 8px 12px;
   border-top: 1px solid var(--border);
+}
+
+/* เนื้อของหน้าต่างลอยทุกบาน (QA-05): หน้าต่างที่สูงเกินจอถูกจำกัดความสูงตอนเปิด (layout/placement.ts floatingHeight) ส่วนที่เหลือเลื่อนดูในหน้าต่าง */
+.dv-resize-container .dv-content-container {
+  overflow: auto;
 }
 
 /* Globe Manager (src/windows/GlobeManager): ภาพฐาน + สี่กลุ่มตามแหล่ง (สวิตช์ + ตารางชั้นภาพ; กลุ่ม Cesium ion มีช่อง token และตัวเลือก asset) */
@@ -1877,11 +1888,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* คำแนะนำของช่อง Width (QA-03): แถวของตัวเองใต้แถบเครื่องมือ (.gfx-toolbars ตัดแถว) กว้างเต็มและตัดบรรทัดได้ ข้อความยาวจึงเห็นครบ */
 .sensor-view-width-hint {
-  margin-left: 6px;
+  flex: 1 0 100%;
+  min-width: 0;
   color: var(--menu-text);
   font-style: italic;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* คำแนะนำ Globe Manager ใน HUD (โหมด Camera ซูมลึกโดยไม่มีภาพออนไลน์) */
@@ -2468,6 +2482,16 @@ body {
   color: var(--selected-text);
 }
 
+.rgm-item:focus-visible,
+.rgm-list:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.rgm-selected:focus-visible {
+  outline-color: var(--selected-text);
+}
+
 .rgm-disabled {
   color: var(--text-muted);
 }
@@ -2522,3 +2546,180 @@ body {
 .rgm-time .dlg-buttons {
   padding: 8px 10px;
 }
+
+/* ---------- หน้า Validation (src/windows/Validation, spec §7) ---------- */
+/* ใช้แถบเครื่องมือและกรอบของหน้าต่างรายงาน (.rpt) เนื้อหาเลื่อนทั้งหน้า: ตารางรายวัน ตารางรายดวง และสองกราฟ (ECharts เต็ม .val-chartbox) */
+.val-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: auto;
+}
+
+.val-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.val-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.val-h {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.val-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.val-scroll {
+  overflow: auto;
+  scroll-padding-top: var(--sticky-head-h);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.val-daily {
+  max-height: 220px;
+}
+
+.val-sats {
+  max-height: 260px;
+}
+
+.val-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.val-table th,
+.val-table td {
+  padding: 2px 8px;
+  text-align: left;
+}
+
+.val-table th {
+  position: sticky;
+  top: 0;
+  height: var(--sticky-head-h);
+  box-sizing: border-box;
+  background: var(--titlebar-bg);
+  box-shadow: inset 0 -1px 0 var(--border);
+  font-weight: 600;
+}
+
+.val-table td.val-num,
+.val-table th.val-num {
+  text-align: right;
+}
+
+/* ชื่อไฟล์ SP3 ยาว: ตัดด้วย ... (ชื่อเต็มอยู่ใน title) ไม่ให้ดันคอลัมน์ผลออกนอกจอ */
+.val-table td.val-truth {
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* เฉพาะแถวของวันที่เปิดได้ (Pass / Fail) ไฮไลต์ตอนชี้และเป็นปุ่มกดได้ แถว Pending / Gave up และตารางรายดวงไม่ไฮไลต์ */
+.val-open {
+  cursor: pointer;
+}
+
+.val-open:hover {
+  background: var(--hover-bg);
+}
+
+.val-selected,
+.val-selected:hover {
+  background: var(--selected-bg);
+  color: var(--selected-text);
+}
+
+/* จุดหยุดของแถวรายวัน (roving tabindex) และพื้นที่เลื่อนที่โฟกัสด้วยคีย์บอร์ดได้ */
+.val-row:focus-visible,
+.val-scroll:focus-visible {
+  outline: 2px solid var(--selected-bg);
+  outline-offset: -2px;
+}
+
+.val-selected:focus-visible {
+  outline-color: var(--selected-text);
+}
+
+.val-sub {
+  margin: 0 0 2px;
+  color: var(--text-muted);
+}
+
+.val-table td.val-fail,
+.val-table td.val-bad {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.val-table td.val-pending,
+.val-table td.val-gave_up,
+.val-table td.val-insufficient_data,
+.val-table td.val-unverified {
+  color: var(--warning);
+}
+
+.val-selected td.val-fail,
+.val-selected td.val-bad,
+.val-selected td.val-pending,
+.val-selected td.val-gave_up {
+  color: inherit;
+}
+
+.val-next {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.val-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 8px;
+}
+
+.val-chartbox {
+  position: relative;
+  height: 260px;
+  background: var(--graph-bg);
+}
+
+.val-chart {
+  position: absolute;
+  inset: 0;
+}
+
+.custom-orbit-import { padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
+.custom-orbit-import summary { cursor: pointer; font-weight: 600; }
+.custom-orbit-import p { margin: 7px 0; line-height: 1.5; }
+.custom-orbit-import textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; font-family: monospace; }
+.custom-orbit-import input, .custom-orbit-import select { margin: 5px; }
+
+.workspace-mode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12px; }
+.workspace-mode-bar select, .workspace-mode-bar button { min-height: 26px; }
+.workspace-mode-hint { color: var(--text-muted); margin-left: 6px; }
+
+.priority-scroll { max-height: 270px; overflow: auto; margin: 6px 0; border: 1px solid var(--border); }
+.priority-scroll th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.priority-scroll td { vertical-align: top; white-space: normal; }
+.priority-note { color: var(--text-muted); font-size: 11px; margin-top: 3px; max-width: 340px; }
+.priority-satellites button { margin: 4px 5px 4px 0; }

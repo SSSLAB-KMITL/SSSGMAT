@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   COMMAND_LABELS, commandText, commandTooltip, invalidateCommands, isEnabled, isRegistered, registerCommand, resetCommands, runCommand,
-  subscribeCommands, commandsVersion, type CommandId,
+  subscribeCommands, commandsVersion, unregisterCommand, type CommandId,
 } from "../../src/commands";
 import { labels, t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -113,13 +113,15 @@ describe("command registry", () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
-  test("the tooltip is the registered one, and the pending ones are Thai and only while unregistered", () => {
+  test("the tooltip is the registered one; a command nobody registered has none (every command of sub-project 4 is built, no placeholder note is left)", () => {
     expect(commandTooltip("file.save")).toBeUndefined();
-    expect(commandTooltip("analysis.validation")).toBe(msg("tooltip.subtask4"));
-    // Access tool (Task 11) and Report & Graph Manager (Task 13) are built: no "not yet" note, even before their commands.ts registers them
-    for (const id of ["analysis.access", "object.access", "analysis.reportGraphManager", "object.reportGraphManager"] as const) expect(commandTooltip(id), id).toBeUndefined();
-    registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn() });
-    expect(commandTooltip("analysis.validation")).toBeUndefined(); // registered: no more "not yet" note
+    // Access tool, Report & Graph Manager and Validation are built: an unregistered command says nothing, whichever it is
+    for (const id of Object.keys(COMMAND_LABELS) as CommandId[]) expect(commandTooltip(id), id).toBeUndefined();
+    // คำสั่งปลอมที่ลงทะเบียนเอง (ไม่ใช่ของแอป): tooltip มาจากผู้ลงทะเบียนเท่านั้น
+    registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผลสมมติ" });
+    expect(commandTooltip("analysis.validation")).toBe("เหตุผลสมมติ");
+    unregisterCommand("analysis.validation");
+    expect(commandTooltip("analysis.validation")).toBeUndefined();
     registerCommand("file.save", { label: "menu.file.save", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผล" });
     expect(commandTooltip("file.save")).toBe("เหตุผล");
   });
@@ -142,7 +144,8 @@ describe("command ids", () => {
       ...TOOLBAR_NAMES.map((n) => `view.toolbar.${n}`), "view.fullScreen",
       "insert.new", "insert.facility", "insert.satellite", "insert.sensor", "insert.constellation",
       "analysis.access", "analysis.reportGraphManager", "analysis.validation",
-      "object.properties", "object.sensorView", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
+      "object.properties", "object.sensorView", "object.showImagery", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
+      "scenario.properties", "scenario.reportGraphManager",
       "utilities.fetchOrbitData", "utilities.dailyForecastSettings",
       "window.windows", "window.cascade", "window.tileHorizontally", "window.tileVertically",
       "help.welcome", "help.stkReference", "help.about",
@@ -150,6 +153,7 @@ describe("command ids", () => {
       "anim.normal", "anim.realtime", "anim.xrealtime",
       "g3d.homeView", "g3d.viewFromTo", "g3d.properties", "g3d.grabGlobe", "g3d.zoomIn",
       "g2d.properties", "g2d.zoomIn", "g2d.zoomOut",
+      "g3d.showOrbits", "g2d.showGroundTracks", // task 13c: ตัวเลือกของหน้าต่างที่ซ่อนเส้นวงโคจรทุกดวง (เพิ่มเอง)
       "ob.newGroup", "ob.expandAll", "ob.collapseAll", "ob.colorSelectors", "ob.onOffToggles", "ob.showFlagged",
     ];
     expect([...ids].sort()).toEqual([...expected].sort());

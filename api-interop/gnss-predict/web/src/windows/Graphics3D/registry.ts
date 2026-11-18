@@ -48,6 +48,11 @@ export interface Scene3DHandle {
   homeView(): void;
   /** Zoom To: กล้องตามไปที่ object (path) คืน false ถ้าไม่มี entity ของ object นั้นในภาพ */
   zoomTo(path: string): boolean;
+  /**
+   * Show Imagery (ข2 amendment z): ปล่อยกล้องจากการตาม object แล้วบินไปเหนือจุด (lonDeg, latDeg) ที่ความสูง heightM มองลงตรง ๆ (ทิศเหนืออยู่บน)
+   * ภาพปลอมของ test ไม่ต้องมี
+   */
+  flyOver?(lonDeg: number, latDeg: number, heightM: number): boolean;
   /** View From/To: กล้องอยู่ที่ from มองไปที่ to (ตามไปเมื่อเวลาเดิน) */
   viewFromTo(req: ViewFromToRequest): ViewFromToResult;
   /** โหลดผลลัพธ์เข้าภาพไม่สำเร็จ แสดงเฉพาะ Facility อยู่ (จะลองใหม่เมื่อดึงสถานะผลลัพธ์ครั้งถัดไป) */
@@ -64,6 +69,14 @@ export interface Scene3DHandle {
   entityColor(name: string): string | null;
   labelShown(name: string): boolean | null;
   frameCount(): number;
+  /** ทำให้ render loop หยุดหนึ่งครั้ง (window.__gnssStudioTest) ภาพปลอมของ test ไม่ต้องมี */
+  breakRenderLoopOnce?(): void;
+  /** จำนวนเส้นวงโคจรที่วาดอยู่ (path ของ Cesium + เส้น Inertial by Window, window.__gnssStudioTest.pathCount) ภาพปลอมของ test ไม่ต้องมี */
+  pathCount?(): number;
+  /** ตำแหน่งกล้อง (ECEF เมตร, window.__gnssStudioTest.cameraPosition) ภาพปลอมของ test ไม่ต้องมี */
+  cameraPosition?(): [number, number, number] | null;
+  /** จำนวนเส้น access ที่เปิดอยู่ (window.__gnssStudioTest.accessLines("3d")) ภาพปลอมของ test ไม่ต้องมี */
+  accessLineCount?(): number;
   /** จำนวนจุดของวงรอยของ sensor ชื่อ name ที่วาดอยู่ ไม่ได้วาด = null */
   sensorFootprintPoints(name: string): number | null;
   /** จำนวนดาวที่แสดงเป็นโมเดล 3 มิติอยู่ (entity ดาวที่แสดงและมีโมเดลที่ไม่ได้ซ่อน) */

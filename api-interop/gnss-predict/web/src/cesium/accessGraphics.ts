@@ -12,23 +12,34 @@ import { constellations } from "../windows/AccessTool/state";
 
 type AccessDef = components["schemas"]["AccessDef"];
 
-/** หน้าตาของ access หนึ่งตัว: line = Show Animate Line, custom = สีที่ผู้ใช้เลือก (#rrggbb ตัวเล็ก) null = สีตั้งต้นของที่วาด (เส้น: --color-access, highlight: สีของดาว) */
+/**
+ * หน้าตาของ access หนึ่งตัว: line = Show Animate Line, custom = สีที่ผู้ใช้เลือก (#rrggbb ตัวเล็ก) null = สีตั้งต้นของที่วาด
+ * (เส้นและแถว Timeline: accessColor, highlight: สีของดาว) objectColors = Use Object Colors ของ graphics ของ access เอง (ไม่ inherit)
+ */
 export interface AccessLook {
   show: boolean;
   line: boolean;
   staticHighlight: boolean;
   animateHighlight: boolean;
   custom: string | null;
+  objectColors: boolean;
 }
 
-/** ค่าตั้งต้นของ scenario (ตรงกับค่าตั้งต้นของ AccessGraphics ใน server) */
-export const SCENARIO_ACCESS_DEFAULTS: AccessLook = { show: true, line: true, staticHighlight: false, animateHighlight: false, custom: null };
+/** ค่าตั้งต้นของ scenario (ตรงกับค่าตั้งต้นของ AccessGraphics ใน server): เส้นสี --color-access แช่แข็งไว้เพราะทุก access ที่ inherit ได้ตัวเดียวกัน */
+export const SCENARIO_ACCESS_DEFAULTS: Readonly<AccessLook> = Object.freeze({
+  show: true,
+  line: true,
+  staticHighlight: false,
+  animateHighlight: false,
+  custom: null,
+  objectColors: false,
+});
 
 /** รูปแบบสีของ server (`Color` ใน schema.py) */
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 /** หน้าตาของ access: ไม่มี access หรือไม่ computed = null, inherit (หรือไม่มี graphics) = SCENARIO_ACCESS_DEFAULTS ไม่งั้นตามที่ตั้งไว้ */
-export function resolveAccessGraphics(a: AccessDef | undefined): AccessLook | null {
+export function resolveAccessGraphics(a: AccessDef | undefined): Readonly<AccessLook> | null {
   if (a?.computed !== true) return null;
   const g = a.graphics;
   if (g === null || g === undefined || g.inherit !== false) return SCENARIO_ACCESS_DEFAULTS;
@@ -39,7 +50,16 @@ export function resolveAccessGraphics(a: AccessDef | undefined): AccessLook | nu
     staticHighlight: g.static_highlight === true,
     animateHighlight: g.animate_highlight === true,
     custom,
+    objectColors: g.color_mode !== "custom",
   };
+}
+
+/**
+ * สีเส้น access และแถว Timeline ของคู่ (access, ดาว) กฎเดียวกันทั้งสองที่: สีที่ผู้ใช้เลือก > สีของดาว (Use Object Colors ของ access เอง)
+ * > --color-access objectColor = สีที่ใช้จริงของดาว (colors.ts effectiveColor) ไม่รู้ = undefined
+ */
+export function accessColor(look: Readonly<AccessLook>, objectColor: string | null | undefined, tokens: { access: string }): string {
+  return look.custom ?? (look.objectColors && typeof objectColor === "string" ? objectColor : tokens.access);
 }
 
 const FACILITY = "*/Facility/";

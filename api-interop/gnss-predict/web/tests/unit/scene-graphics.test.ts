@@ -6,7 +6,7 @@ import {
 } from "cesium";
 import { describe, expect, test } from "vitest";
 import { ensureFacilities, loadScene } from "../../src/cesium/czml";
-import { applyGraphics, pathForEntityId, sceneStyleFrom, sensorStatesAt, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
+import { applyGraphics, pathForEntityId, sceneStyleFrom, sensorStatesAt, shownAccessLines, type ColorTokens, type SceneObject, type SceneStyle } from "../../src/cesium/graphics";
 import { orbitPeriodS } from "../../src/cesium/passes";
 import { bodyFrame, type Vec3 } from "../../src/cesium/sensorGeometry";
 import type { ScenarioDoc } from "../../src/stores/scenario";
@@ -137,16 +137,29 @@ describe("applyGraphics", () => {
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
   });
 
+  test("own graphics with Use Object Colors draw the line in the satellite's colour; inherited graphics keep --color-access", async () => {
+    const ds = await scene();
+    const objects = [fac("THBK"), sat("G01", 62339, { graphics2d: { inherit: false, color: "#3366cc" } }), sat("E05", 40128)];
+    const color = (id: string) => hex(value(byId(ds, id).polyline?.material)?.color as Color | undefined);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: false, color_mode: "object" } })] }), baseCtx);
+    expect(color("access/THBK/G01")).toBe("#3366cc");
+    expect(color("access/THBK/E05")).toBe(TOKENS.galileo);
+    applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ graphics: { inherit: true, color_mode: "object" } })] }), baseCtx);
+    expect(color("access/THBK/G01")).toBe(TOKENS.access);
+  });
+
   test("an access that is not computed draws no line; once computed it draws one (only for the satellites it covers)", async () => {
     const ds = await scene();
     const objects = [fac("THBK"), sat("G01", 62339), sat("E05", 40128)];
     applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"], computed: false })] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
+    expect(shownAccessLines(ds.entities)).toBe(0); // test hook accessLines
     applyGraphics(ds, docOf(objects), baseCtx); // ไม่มี access เลย
     expect(byId(ds, "access/THBK/G01").show).toBe(false);
     applyGraphics(ds, docOf(objects, { accesses: [computedAccess({ to: ["*/Satellite/G01"] })] }), baseCtx);
     expect(byId(ds, "access/THBK/G01").show).toBe(true);
     expect(byId(ds, "access/THBK/E05").show).toBe(false); // ไม่อยู่ใน to
+    expect(shownAccessLines(ds.entities)).toBe(1);
   });
 
   test("lines are looked up per (facility, satellite): facility B's line takes B's colour when A and B both cover the satellite", async () => {
@@ -183,6 +196,37 @@ describe("applyGraphics", () => {
     expect(color("access/THBK/E05")).toBe("#aa0000");
     expect(color("access/THBK/G01")).toBe("#00cc00");
     expect(byId(ds, "access/HOME/G01").show).toBe(false); // HOME ไม่มี access ที่ Compute แล้ว
+  });
+
+  describe("the window's orbit-line toggle (task 13c: Show Orbits in 3D, Show Ground Tracks in 2D)", () => {
+    const analysis = { start: JulianDate.fromIso8601(T0), stop: JulianDate.fromIso8601("2026-11-12T00:00:00Z") };
+    const objects = () => [
+      fac("THBK"), sat("G01", 62339), sat("E05", 40128, { graphics3d: { show: true, orbit_system: "Inertial by Window" } }),
+      sat("R07", 37868, { graphics3d: { show: false }, graphics2d: { show: false } }),
+    ];
+    const pathShown = (ds: CzmlDataSource, id: string) => value(byId(ds, id).path?.show) === true;
+
+    test.each(["3d", "2d"] as const)("off in the %s window: no satellite path at all; points, labels and access lines stay; on again = the per-object settings", async (mode) => {
+      const ds = await scene();
+      const doc = docOf(objects(), { accesses: [computedAccess()] });
+      const before = JSON.stringify(doc);
+      const ctx = { ...baseCtx, mode, analysis };
+      applyGraphics(ds, doc, { ...ctx, showOrbits: false });
+      for (const id of ["sat/G01", "sat/E05", "sat/R07"]) expect(pathShown(ds, id), id).toBe(false);
+      const g01 = byId(ds, "sat/G01");
+      expect(g01.show).toBe(true);
+      expect(value(g01.point?.pixelSize)).toBeGreaterThan(0);
+      expect(value(g01.label?.show)).toBe(true);
+      expect(byId(ds, "access/THBK/G01").show).toBe(true);
+      expect(JSON.stringify(doc)).toBe(before); // ไม่แตะค่า Pass/กราฟิกของ object
+
+      applyGraphics(ds, doc, { ...ctx, showOrbits: true });
+      expect(pathShown(ds, "sat/G01")).toBe(true);
+      expect(pathShown(ds, "sat/E05")).toBe(mode === "2d"); // 3D: Inertial by Window วาดเส้นเอง (ไม่ใช่ path ของ Cesium)
+      expect(byId(ds, "sat/R07").show).toBe(false); // ซ่อนตามธงของ object เหมือนเดิม
+      applyGraphics(ds, doc, ctx); // ไม่ระบุ = เปิด
+      expect(pathShown(ds, "sat/G01")).toBe(true);
+    });
   });
 
   describe("2D ground track (Pass page)", () => {

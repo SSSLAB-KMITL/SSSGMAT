@@ -30,8 +30,8 @@ test("the remaining enums carry the STK wording of the server schema", () => {
   expect(ENUMS.DateFormat).toEqual(["UTCG", "LTZG"]);
 });
 
-test("the Sensor enums carry the single v1 value of the STK wording", () => {
-  expect(ENUMS.SensorDefinitionType).toEqual(["Simple Conic"]);
+test("the Sensor enums carry the STK wording: two sensor types (Simple Conic, Rectangular), one value for the rest", () => {
+  expect(ENUMS.SensorDefinitionType).toEqual(["Simple Conic", "Rectangular"]);
   expect(ENUMS.SensorPointingType).toEqual(["Fixed"]);
   expect(ENUMS.SensorOrientation).toEqual(["Az-El"]);
   expect(ENUMS.SensorAboutBoresight).toEqual(["Rotate"]);

@@ -16,6 +16,7 @@
 //   2D: จุดและป้ายชื่อเหมือนกัน + ground track เป็น path ของ Cesium ที่ lead/trail ตามหน้า 2D Graphics - Pass (passes.ts leadTrailProperties,
 //   ต้องมีช่วงวิเคราะห์ใน ctx.analysis) Visible Sides วาดแบบ Both เสมอ (W20) Show Pass/Path Labels ยังไม่วาด (เก็บค่าไว้เท่านั้น)
 //   และคง `show` ตามช่วงเวลาใน CZML ไว้ (ซ่อนทั้งเส้นด้วย entity.show เมื่อดาวหรือ Facility ปลายทางถูกซ่อน)
+// - ctx.showOrbits = false (Show Orbits / Show Ground Tracks ของหน้าต่าง, task 13c): ไม่มี path ของดาวดวงใด (3D และ 2D) ค่าของ object ไม่ถูกแตะ
 // - Sensor (sensor spec §5.3): ไม่มี entity ใน CZML sensorStatesAt หา sensor ที่วาด (sensorDraw.ts drawableSensors) และสถานะของมันจากตำแหน่ง Earth-fixed
 //   ของ entity ดาวแม่ ณ t และ t ± 1 s (P9) ดาวแม่ "แสดงอยู่" = object ดาวแสดงตามธงของตัวเองในหน้าต่างชนิดนั้น (graphicsFor) และ entity ของมันอยู่ในภาพและแสดงอยู่
 
@@ -24,7 +25,7 @@ import {
   PointGraphics, PolylineDashMaterialProperty, ReferenceFrame, VerticalOrigin, type Entity, type EntityCollection, type MaterialProperty,
 } from "cesium";
 import type { components } from "../api/types.gen";
-import { accessFor, resolveAccessGraphics } from "./accessGraphics";
+import { accessColor, accessFor, resolveAccessGraphics } from "./accessGraphics";
 import { effectiveColor, objectPath, readCssVar, themeTokens, type ColorTokens, type SceneObject } from "./colors";
 import { entityOrbit, leadTrailProperties, type PassLike } from "./passes";
 import { applySatelliteModel, type SatModelSpec } from "./satModelGraphics";
@@ -227,6 +228,11 @@ export interface ApplyCtx {
   analysis?: { start: JulianDate; stop: JulianDate };
   /** โมเดล 3 มิติของดาว (หน้าต่าง 3D ที่เปิด Satellite Models) ไม่ระบุ = ดาวเป็นจุดทุกดวง */
   models?: SatelliteModels;
+  /**
+   * ตัวเลือกของหน้าต่าง Show Orbits (3D) / Show Ground Tracks (2D) (task 13c): false = ไม่มีเส้นวงโคจร/ground track ของดาวดวงใดในหน้าต่างนี้
+   * (ค่าของ object ไม่ถูกแตะ จุด ป้าย โมเดล เส้น access คงเดิม) ไม่ระบุ = true: เส้นตามค่าของแต่ละ object
+   */
+  showOrbits?: boolean;
 }
 
 /** โมเดลของดาวในหน้าต่าง 3D (models integration spec §4) */
@@ -338,12 +344,12 @@ export function entityLooks(doc: ScenarioDoc, ctx: ApplyCtx): Map<string, Entity
 }
 
 /**
- * เส้น access ของคู่ (Facility, ดาว): access ที่ Compute แล้วของคู่นั้น (accessFor) ที่เปิด Show และ Show Animate Line สี = สีที่ผู้ใช้เลือก
- * ไม่งั้น --color-access ไม่มี access ที่ Compute แล้ว = ไม่วาด (show false)
+ * เส้น access ของคู่ (Facility, ดาว): access ที่ Compute แล้วของคู่นั้น (accessFor) ที่เปิด Show และ Show Animate Line
+ * สีตาม accessColor (ตัวเดียวกับแถว Timeline) satColor = สีที่ใช้จริงของดาว ไม่มี access ที่ Compute แล้ว = ไม่วาด (show false)
  */
-function accessStyle(doc: ScenarioDoc, facility: string, satName: string | undefined, tokens: ColorTokens): { show: boolean; color: string } {
-  const look = satName === undefined ? null : resolveAccessGraphics(accessFor(doc, facility, satName));
-  return { show: look !== null && look.show && look.line, color: look?.custom ?? tokens.access };
+function accessStyle(doc: ScenarioDoc, facility: string, sat: { name: string; color: string } | undefined, tokens: ColorTokens): { show: boolean; color: string } {
+  const look = sat === undefined ? null : resolveAccessGraphics(accessFor(doc, facility, sat.name));
+  return { show: look !== null && look.show && look.line, color: look === null ? tokens.access : accessColor(look, sat?.color, tokens) };
 }
 
 /** ground track ของดาวในหน้าต่าง 2D: path ที่ lead/trail ตามหน้า Pass (ไม่มีช่วงวิเคราะห์หรือตัวอย่างตำแหน่ง = ซ่อน) */
@@ -364,6 +370,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
   const style = ctx.style ?? sceneStyle();
   const looks = doc === null ? new Map<string, EntityLook>() : entityLooks(doc, { ...ctx, tokens });
   const entities = ds.entities;
+  const orbits = ctx.showOrbits ?? true;
   const shown = new Set<string>();
   entities.suspendEvents();
   try {
@@ -391,7 +398,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         const period = entityPeriod(entity);
         const inertial = graphics3dOf(obj).orbit_system === INERTIAL_BY_WINDOW;
         entity.path =
-          period === null || inertial
+          period === null || inertial || !orbits
             ? new PathGraphics({ show: false })
             : new PathGraphics({
                 show: true,
@@ -402,7 +409,7 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
                 material: lineMaterial(color, g.lineStyle),
               });
       }
-      if (obj.class === "Satellite" && ctx.mode === "2d") entity.path = groundTrack(entity, obj, g, color, ctx.analysis);
+      if (obj.class === "Satellite" && ctx.mode === "2d") entity.path = orbits ? groundTrack(entity, obj, g, color, ctx.analysis) : new PathGraphics({ show: false });
     }
     for (const entity of entities.values) {
       const parts = entity.id.split("/");
@@ -412,7 +419,8 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
         continue;
       }
       const [, facility, prn] = parts;
-      const look = accessStyle(doc, facility, looks.get(`sat/${prn}`)?.obj.name, tokens);
+      const satLook = looks.get(`sat/${prn}`);
+      const look = accessStyle(doc, facility, satLook === undefined ? undefined : { name: satLook.obj.name, color: satLook.g.color }, tokens);
       entity.show = look.show && shown.has(`fac/${facility}`) && shown.has(`sat/${prn}`);
       if (entity.polyline !== undefined) {
         entity.polyline.material = new ColorMaterialProperty(cssColor(look.color));
@@ -423,6 +431,13 @@ export function applyGraphics(ds: { entities: EntityCollection }, doc: ScenarioD
     entities.resumeEvents();
   }
   return looks;
+}
+
+/** จำนวนเส้น access (access/<fac>/<PRN>) ที่ applyGraphics เปิดไว้ (test hook accessLines: access ที่ไม่ได้ Compute ต้องเป็น 0) */
+export function shownAccessLines(entities: EntityCollection): number {
+  let n = 0;
+  for (const e of entities.values) if (e.id.startsWith("access/") && e.show) n++;
+  return n;
 }
 
 // ---------- Sensor (sensor spec §5.3) ----------

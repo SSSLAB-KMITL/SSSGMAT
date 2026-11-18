@@ -6,19 +6,21 @@
 - `snapshot` ที่ไม่ระบุใช้โฟลเดอร์ใต้ `<data>/orbits/` ที่ใหม่ที่สุด (ชื่อ `YYYYMMDDTHHMMZ`; `_cache` ไม่นับ)
 """
 
+import copy
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from gnss_predict.catalog import Catalog, build_catalog
+from gnss_predict import imaging
+from gnss_predict.catalog import Catalog
 from gnss_predict.config import GNSS_GROUPS, SHELL_KM, STEP_S
 
 from .errors import ApiError
 from .schema import FORMAT, NAME_RE
 
 ORBITS_DIR = "orbits"
-SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z", re.ASCII)
+SNAPSHOT_RE = re.compile(r"\d{8}T\d{4}Z(?:_[0-9a-f]{8})?", re.ASCII)
 
 FACILITY_COLOR = "#ff79e6"
 THBK = {"name": "THBK", "lat_deg": 13.729779, "lon_deg": 100.781151, "alt_m": 6.4, "elevation_angle_min_deg": 10.0}
@@ -77,7 +79,7 @@ def snapshot_time(name: str) -> datetime | None:
 
 
 def snapshot_names(data_dir: Path) -> list[str]:
-    """ชื่อ snapshot ใต้ `<data>/orbits/` เรียงใหม่สุดก่อน นับเฉพาะโฟลเดอร์ที่ชื่อเป็น `YYYYMMDDTHHMMZ` ของวันเวลาที่มีจริง
+    """ชื่อ snapshot เรียงใหม่สุดก่อน: `YYYYMMDDTHHMMZ` หรือมีส่วนต่อท้าย `_hash8` ของการนำเข้า
     (`_cache` และชื่ออื่นไม่นับ) ไม่มีโฟลเดอร์ orbits หรืออ่านไม่ได้ = รายการว่าง"""
     try:
         names = [p.name for p in (Path(data_dir) / ORBITS_DIR).iterdir() if snapshot_time(p.name) is not None and p.is_dir()]
@@ -137,6 +139,11 @@ def sensor(name: str, parent: str, cone_half_angle: float = SENSOR_CONE_HALF_ANG
             "graphics3d": {"show": True, "color": SENSOR_COLOR, "show_radial_lines": True, "show_boresight_marker": False}}
 
 
+def imaging_sensor(name: str, parent: str, definition: dict) -> dict:
+    """primary sensor ของดาวถ่ายภาพ: เหมือน `sensor` (ชี้ Az 0 El 90) แต่ definition มาจาก preset (สำเนา)"""
+    return {**sensor(name, parent), "definition": copy.deepcopy(definition)}
+
+
 def constellation(name: str, system: str | None, color: str, assigned_objects: list[str]) -> dict:
     """Constellation ของเรา system เป็น None เมื่อสมาชิกมาจากหลายระบบหรือยังไม่มีสมาชิก"""
     return {"class": "Constellation", "name": name, "system": system, "description": "", "color": color,
@@ -150,13 +157,14 @@ def access_graphics() -> dict:
 
 
 def load_catalog(data_dir: Path, snapshot: str, start: datetime, stop: datetime, field: str = "snapshot") -> Catalog:
-    """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) ไม่มี snapshot หรือไม่มีไฟล์ OMM เลย
-    -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
+    """catalog ของทุกระบบที่มีไฟล์ OMM ใน snapshot (ช่วงเวลากำหนด PRN ที่ใช้ ณ ต้นช่วง) แล้วต่อท้ายด้วยดาวถ่ายภาพ X01…X08
+    ที่มีในไฟล์กลุ่ม weather/science/visual ของ snapshot (ไม่มีไฟล์กลุ่มเหล่านี้ = ไม่มีดาว X) ไม่มี snapshot หรือไม่มีไฟล์ OMM
+    ของ GNSS เลย -> ApiError 422 ORBIT_SOURCE_UNAVAILABLE ที่ field นั้น"""
     snapshot_dir = Path(data_dir) / ORBITS_DIR / snapshot
     systems = {system for system, group in GNSS_GROUPS.items() if (snapshot_dir / f"{group}.json").is_file()}
     if not systems:
         raise ApiError(422, "ORBIT_SOURCE_UNAVAILABLE", f"snapshot {snapshot} ไม่มีอยู่หรือไม่มีไฟล์ข้อมูลวงโคจร (OMM) ของระบบใดเลย", field)
-    return build_catalog(snapshot_dir, (start, stop), systems)
+    return imaging.scenario_catalog(snapshot_dir, (start, stop), systems, with_imaging=True)
 
 
 def _thbk_gnss_content(data_dir: Path, snapshot: str, start: datetime,

@@ -44,12 +44,20 @@
 //   SatModelSource หาโมเดลของดาวแต่ละดวง (catalog + glb ระดับหน้าเว็บ) applyGraphics ตั้ง entity.model แทนจุด ท่าทางและมุมแผง (updateModelAttitudes)
 //   คำนวณใหม่ตามรอบ throttle 250 ms แบบเดียวกับ sensor (ทันทีใน restyle) เฉพาะดาวที่แสดงอยู่ โหลด catalog/glb เสร็จ = restyle (รวบเป็นชุดละ 100 ms: SatModelSource)
 //   Cesium โหลดโมเดลไม่สำเร็จ (errorEvent ของ primitive: watchModelErrors) = โมเดลนั้นล้มเหลวทั้งหน้าเว็บ ดาวกลับเป็นจุด + ข้อความไทยครั้งเดียวต่อโมเดล
+//   วาดไม่ได้ (ข2 final C1: renderError ขณะมีโมเดลในภาพ เช่น glb ที่ shader คอมไพล์ไม่ผ่าน) = ตัวกัน onRenderError: ปิดโมเดลของหน้าต่างนี้ในหน่วยความจำ
+//   (modelsSuppressed ไม่เขียนลง workbook ทุกที่ที่อ่าน satelliteModels ถือว่าปิด) ดาวเป็นจุด วาดต่อ (watchRenderFailure เริ่ม loop ใหม่แล้ว) ข้อความไทยครั้งเดียว
+//   ต่อ viewer ไม่ส่งต่อให้ onRenderStopped; ครั้งต่อไป (หรือไม่มีโมเดลในภาพ) ส่งต่อตามเดิม ล้างเมื่อผู้ใช้ปิดแล้วเปิด Satellite Models ของหน้าต่างนี้
+//   (Sensor View ไม่มี Properties ของตัวเอง: ล้างเมื่อปิดแล้วเปิดหน้าต่างใหม่)
 //   เลือกดาว (useSelection) = ขอบหนาขึ้นรอบโมเดลของดาวนั้น (setModelSelection ไม่ restyle) ดาวที่กล้องอยู่ในตัว (ดาวแม่ของ Sensor View หรือดาว From ของ
 //   View From/To: cameraSatellite) ถูกซ่อนทั้งโมเดล จุด และป้าย (วัสดุเป็น doubleSided กล้องในโมเดลเห็นแต่ผนังด้านใน) เข้าและออกจาก View From/To = restyle
 //   Model Detail Threshold (3D Graphics Window Properties → Details): ทุกรอบ throttle เดียวกับท่าทาง ดาวที่ห่างกล้องน้อยกว่าค่านี้เป็นโมเดล ไกลกว่าเป็นจุด
 //   (applyModelDetail: model.show = false ไม่มี draw call) กล้องขยับเกิน 5% (camera.changed, percentageChanged = 0.05) ขอรอบ throttle ด้วย
 // - ภาพพื้นโลกออนไลน์ NASA GIBS (imagery spec §5.2, ทั้งหน้าต่าง 3D และ Sensor View): cesium/imageryLayers.ts ต่อหลัง applyProps
 //   (ภาพฐาน index 0 และเส้น Lat/Lon มีแล้ว: ชั้น GIBS แทรกระหว่างสองอย่างนี้) ถอดใน destroy ก่อนทำลาย viewer
+// - ลูกโลกที่ดูเหมือนจริง (task 13c): globe.showGroundAtmosphere = false ทั้งหน้าต่าง 3D และ Sensor View (หมอกบรรยากาศบนพื้นโลกของ Cesium
+//   ทำให้ภาพโลกซีดเป็นสีขาว) ขอบฟ้าบรรยากาศ (scene.skyAtmosphere) และแสงคงเดิม
+// - Show Orbits (3D Graphics Window Properties → Details, ปุ่มบนแถบ 3D Window Defaults, เมนูคลิกขวาของหน้าต่าง: task 13c): ปิด = applyGraphics
+//   ไม่วาด path ของดาวดวงใด และไม่วาดเส้น Inertial by Window (inertialTargets ว่าง) ค่าของ object ไม่ถูกแตะ test hook pathCount นับเส้นที่วาดอยู่
 
 import {
   ArcType, Cartesian2, Cartesian3, Color, ColorMaterialProperty, ConstantPositionProperty, ConstantProperty, EllipsoidalOccluder, JulianDate,
@@ -57,6 +65,7 @@ import {
   SceneTransforms, ScreenSpaceEventHandler, ScreenSpaceEventType, TimeInterval, TrackingReferenceFrame, Transforms, type Camera, type Entity, type ImageryLayer,
   type Viewer,
 } from "cesium";
+import { errorText } from "../../api/client";
 import type { components } from "../../api/types.gen";
 import { bindClock } from "../../cesium/clockSync";
 import { ensureFacilities } from "../../cesium/czml";
@@ -67,15 +76,18 @@ import {
 } from "../../cesium/satModelGraphics";
 import {
   applyGraphics, cssColor, dashFor, entityIdFor, entityIdForName, entityPeriod, fixedPositionAt, graphicsFor, objectPath, pathForEntityId, sceneStyle,
-  sensorStateAt, sensorStatesAt, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
+  sensorStateAt, sensorStatesAt, shownAccessLines, type SatelliteModels, type SceneObject, type SceneStyle, type SensorCtx,
 } from "../../cesium/graphics";
 import { skipIdleDisplayUpdates } from "../../cesium/idleUpdates";
 import { toInertial } from "../../cesium/inertial";
-import { coneHalfAngleOf, sensor3dParts, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
+import { watchResize } from "../../cesium/resizeWatch";
+import { sensor3dParts, sensorHudShape, sensorViewPose, type SensorDrawState, type SensorObj, type SensorViewPose } from "../../cesium/sensorDraw";
 import { sensorViewShortFovDeg, type Vec3 } from "../../cesium/sensorGeometry";
 import { subSatellite } from "../../cesium/swath";
-import { createViewer, destroyViewer, latLonGrid, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
+import { createViewer, destroyViewer, latLonGrid, removeViewerPicking, watchRenderFailure, type RenderFailure } from "../../cesium/viewer";
 import { satelliteInfo } from "../../data/catalog";
+import { msg } from "../../labels/messages.th";
+import { report } from "../../stores/messages";
 import { useLayout } from "../../stores/layout";
 import { useResults } from "../../stores/results";
 import { useScenario } from "../../stores/scenario";
@@ -102,6 +114,8 @@ type FacilityObj = components["schemas"]["FacilityObj"];
 const EARTH_RADIUS_M = 6_378_137;
 /** Home View: กล้องสูง 4.5 รัศมีโลกเหนือพื้นผิว (ห่างศูนย์กลาง 5.5 รัศมี อยู่นอกวงโคจร MEO ของทุกระบบ) มองลงศูนย์กลางโลก */
 export const HOME_ALTITUDE_M = 4.5 * EARTH_RADIUS_M;
+/** เวลาบินของกล้องไปเหนือจุดใต้ดาว (Show Imagery) วินาที */
+const FLY_OVER_SECONDS = 1.5;
 /**
  * Zoom To: ตำแหน่งกล้องเทียบกับ object ในกรอบ east-north-up ของมัน (ตั้ง trackingReferenceFrame = ENU เอง: ค่าตั้งต้น AUTODETECT ของ Cesium
  * ใช้กรอบ "north-up" ที่แกน x ชี้ลงโลกกับดาววงโคจรสูง ทำให้ offset เดียวกันมีความหมายต่างกันตามวงโคจร)
@@ -207,9 +221,10 @@ export function fromToResult(from: Entity | undefined, to: Entity | undefined): 
 
 /**
  * สร้าง viewer ใน el แล้วเริ่มภาพของหน้าต่าง panelId ไม่มี WebGL = โยน (ผู้เรียกแสดงข้อความไทยแทน)
- * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาดหรือ WebGL context หาย) เรียกครั้งเดียว ผู้เรียกแสดงข้อความไทยแทนภาพ
+ * onRenderStopped: ภาพหยุด (ข้อผิดพลาดตอนวาด render loop หยุด หรือ WebGL context หาย: cesium/viewer.ts watchRenderFailure)
+ *   recovering = true: เริ่มวาดใหม่แล้ว ภาพยังแสดง; false = เลิก ผู้เรียกแสดงข้อความไทยแทนภาพ
  */
-export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): Scene3DHandle {
+export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void): Scene3DHandle {
   return mount(panelId, el, onRenderStopped, { notify: notifyScenes, pick: true }, releaseContextMenu);
 }
 
@@ -217,7 +232,7 @@ export function mountScene3D(panelId: string, el: HTMLElement, onRenderStopped?:
  * viewer ของหน้าต่าง Sensor View (sensor spec §5.4): scene เดียวกับหน้าต่าง 3D แสงกลางวัน/กลางคืนเปิดเสมอ ไม่อ่าน windowProps
  * แจ้งทะเบียนของ Sensor View (P3) กล้องตาม sensor เมื่อหน้าต่างเรียก viewFromSensor ไม่มี WebGL = โยน
  */
-export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown) => void): SensorViewHandle {
+export function mountSensorView(panelId: string, el: HTMLElement, onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void): SensorViewHandle {
   return mount(panelId, el, onRenderStopped, { notify: notifySensorViews, props: SENSOR_VIEW_PROPS }, removeViewerPicking);
 }
 
@@ -225,7 +240,7 @@ export function mountSensorView(panelId: string, el: HTMLElement, onRenderStoppe
 function mount(
   panelId: string,
   el: HTMLElement,
-  onRenderStopped: ((reason: RenderFailure, error?: unknown) => void) | undefined,
+  onRenderStopped: ((reason: RenderFailure, error?: unknown, recovering?: boolean) => void) | undefined,
   opts: SceneOptions,
   prepare?: (viewer: Viewer) => void,
 ): Scene3D {
@@ -249,14 +264,10 @@ export function releaseContextMenu(viewer: { readonly scene: { readonly canvas: 
 }
 
 /**
- * Sensor View: ถอดคลิกซ้าย (เลือก entity) และดับเบิลคลิก (pickAndTrackObject: ตั้ง trackedEntity หรือ zoomTo บินไปหา entity) ที่ Viewer ของ Cesium
- * ใส่ไว้ใน handler ของมันเอง screenSpaceCameraController.enableInputs = false ไม่ได้ปิดสองอย่างนี้ ดับเบิลคลิกจึงพากล้องหลุดจาก sensor
- * ใช้กับ viewer ของ Sensor View เท่านั้น (หน้าต่าง 3D ยังดับเบิลคลิกตาม object ได้ตามเดิม)
+ * Sensor View: ถอดคลิกซ้ายและดับเบิลคลิกของ Viewer (cesium/viewer.ts removeViewerPicking) ดับเบิลคลิกพากล้องหลุดจาก sensor
+ * หน้าต่าง 3D หลักยังดับเบิลคลิกตาม object ได้ตามเดิม (หน้าต่าง 2D ก็ถอด: scene2d.ts)
  */
-export function removeViewerPicking(viewer: { readonly screenSpaceEventHandler: ScreenSpaceEventHandler }): void {
-  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_CLICK);
-  viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-}
+export { removeViewerPicking };
 
 /**
  * วางกล้องของ Sensor View ที่ pose (Earth-fixed): เลิกตาม entity ยกเลิกการบินที่ค้าง และคืน transform เป็น identity ก่อนเสมอ
@@ -320,17 +331,22 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   private sensorCameraSet = false;
   /** Sensor View: fov และ near ของ frustum ก่อนเข้าโหมด sensor (คืนตอนออก) */
   private savedFrustum: { fov: number | undefined; near: number } | null = null;
+  /** โมเดลของดาววาดไม่ได้ในหน้าต่างนี้ (onRenderError) = ถือว่า Satellite Models ปิด ในหน่วยความจำเท่านั้น ไม่เขียนลง windowProps / workbook */
+  private modelsSuppressed = false;
+  /** แจ้ง SCENE_MODELS_DISABLED ของ viewer นี้แล้ว (ครั้งเดียวต่อ viewer) */
+  private modelsDisabledReported = false;
 
   constructor(
     readonly panelId: string,
     private readonly el: HTMLElement,
     private readonly viewer: Viewer,
     private readonly opts: SceneOptions,
-    onRenderStopped?: (reason: RenderFailure, error?: unknown) => void,
+    onRenderStopped?: (reason: RenderFailure, error?: unknown, recovering?: boolean) => void,
   ) {
     const scene = viewer.scene;
     scene.globe.baseColor = Color.BLACK; // ด้านกลางคืนที่ภาพโลกจางลง (Ambient Level) จางเป็นดำ ไม่ใช่สีน้ำเงินตั้งต้นของ Cesium
     scene.globe.tileCacheSize = GLOBE_TILE_CACHE_SIZE;
+    scene.globe.showGroundAtmosphere = false; // หมอกบรรยากาศบนพื้นโลกทำให้ภาพโลกซีด (task 13c) ขอบฟ้าบรรยากาศ (skyAtmosphere) ยังอยู่
     const idle = skipIdleDisplayUpdates(viewer);
     this.offs.push(() => idle.dispose()); // คืน update เดิมของ dataSourceDisplay ก่อน viewer ถูกทำลาย
     this.czml = new CzmlScene(viewer, { window: "3D", adopted: (_ds, fromScene) => this.adopted(fromScene), changed: opts.notify });
@@ -377,9 +393,11 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
         const before = this.props;
         this.props = props3d(s.windowProps[panelId]);
         this.applyProps();
+        if (!before.satelliteModels && this.props.satelliteModels) this.modelsSuppressed = false; // ผู้ใช้ปิดแล้วเปิด Satellite Models = ลองวาดโมเดลใหม่
         if (
           before.labelDeclutter !== this.props.labelDeclutter || before.satelliteModels !== this.props.satelliteModels
           || before.modelPixelSize !== this.props.modelPixelSize || before.modelDetailThreshold !== this.props.modelDetailThreshold
+          || before.showOrbits !== this.props.showOrbits
         ) this.restyle();
       }),
     );
@@ -390,8 +408,37 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     );
     this.homeView();
     this.refreshScene();
+    // ขนาดจริงของ element เปลี่ยน = resize, fov ของ Sensor View ตามสัดส่วนใหม่ แล้ววาดใหม่ (QA-01: ไม่พึ่งขนาดจาก Dockview อย่างเดียว)
+    this.offs.push(watchResize(el, viewer, () => this.updateSensorCamera()));
     // ฟังท้ายสุด: constructor ที่โยนก่อนถึงตรงนี้ไม่ทิ้งตัวฟังไว้ให้ loseContext ของ destroyViewer ใน mountScene3D ยิงใส่ (ถอดใน destroy() ก่อน destroyViewer)
-    this.offs.push(watchRenderFailure(viewer, (reason, error) => onRenderStopped?.(reason, error)));
+    this.offs.push(watchRenderFailure(viewer, (reason, error, recovering) => {
+      if (!this.onRenderError(reason, error, recovering)) onRenderStopped?.(reason, error, recovering);
+    }));
+  }
+
+  /**
+   * ตัวกันของภาพที่หยุดเพราะโมเดล (ข2 final C1): renderError ที่ watchRenderFailure เริ่ม loop ใหม่แล้ว (recovering) ขณะ Satellite Models เปิด
+   * และมีโมเดลในภาพ = ปิดโมเดลของหน้าต่างนี้ (ดาวเป็นจุด) วาดใหม่ แจ้งครั้งเดียวต่อ viewer แล้วคืน true (ไม่ส่งต่อ onRenderStopped)
+   * กรณีอื่นทั้งหมด (ปิดไปแล้วรอบหนึ่ง ไม่มีโมเดล loop หยุด context หาย หรือเลิกเริ่มใหม่) คืน false: ผู้เรียกส่งต่อตามเดิม
+   */
+  private onRenderError(reason: RenderFailure, error: unknown, recovering: boolean): boolean {
+    if (this.destroyed || reason !== "renderError" || !recovering || !this.props.satelliteModels || this.modelsSuppressed || this.modelCount() === 0) return false;
+    this.modelsSuppressed = true;
+    this.restyle();
+    this.viewer.scene.requestRender();
+    if (!this.modelsDisabledReported) {
+      this.modelsDisabledReported = true;
+      const sensorView = this.opts.props !== undefined;
+      const title = useLayout.getState().listWindows().find((w) => w.id === this.panelId)?.title ?? (sensorView ? "Sensor View" : "3D");
+      const text = msg(sensorView ? "scene.modelsDisabledSensorView" : "scene.modelsDisabled", { window: title, message: errorText(error) });
+      report("warning", "SCENE_MODELS_DISABLED", text);
+    }
+    return true;
+  }
+
+  /** Satellite Models ที่ใช้จริง: ค่าของหน้าต่างและโมเดลยังวาดได้ (modelsSuppressed = ปิด) */
+  private modelsOn(): boolean {
+    return this.props.satelliteModels && !this.modelsSuppressed;
   }
 
   // ---------- data source ----------
@@ -444,7 +491,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (ds === null || this.destroyed) return;
     const { doc } = useScenario.getState();
     ensureFacilities(ds.entities, doc);
-    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter, models: this.modelCtx() });
+    applyGraphics(ds, doc, { ...this.sceneCtx(), declutter: this.props.labelDeclutter, models: this.modelCtx(), showOrbits: this.props.showOrbits });
     this.hideCameraSatellite();
     this.updateInertial(true);
     this.updateSensors(true);
@@ -467,7 +514,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   /** โมเดลของดาวสำหรับ applyGraphics (ปิด Satellite Models = ไม่มี: ดาวเป็นจุด) block จาก catalog ของ snapshot */
   private modelCtx(): SatelliteModels | undefined {
-    if (!this.props.satelliteModels) return undefined;
+    if (!this.modelsOn()) return undefined;
     return {
       pixelSize: this.props.modelPixelSize,
       specFor: (norad) => this.models.specFor({ block: satelliteInfo(norad)?.block ?? null, norad }),
@@ -477,12 +524,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   /** catalog หรือ glb ชุดหนึ่งโหลดเสร็จ (SatModelSource รวบเป็นชุดละ MODEL_BATCH_MS แล้ว): วาดใหม่ครั้งเดียวต่อชุด */
   private modelsChanged(): void {
-    if (!this.destroyed && this.props.satelliteModels) this.restyle();
+    if (!this.destroyed && this.modelsOn()) this.restyle();
   }
 
   private outlineSelected(): void {
     const ds = this.ds;
-    if (ds === null || this.destroyed || !this.props.satelliteModels) return;
+    if (ds === null || this.destroyed || !this.modelsOn()) return;
     setModelSelection(ds.entities, this.selectedEntityId());
     this.viewer.scene.requestRender();
   }
@@ -500,7 +547,7 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     if (ds === null || this.destroyed) return;
     const time = this.viewer.clock.currentTime;
     const thresholdM = this.props.modelDetailThreshold * 1000;
-    const switched = this.props.satelliteModels ? applyModelDetail(ds.entities, this.viewer.camera.positionWC, thresholdM, time, this.cameraSatellite()) : 0;
+    const switched = this.modelsOn() ? applyModelDetail(ds.entities, this.viewer.camera.positionWC, thresholdM, time, this.cameraSatellite()) : 0;
     if (updateModelAttitudes(ds.entities, time) > 0 || switched > 0) this.viewer.scene.requestRender();
   }
 
@@ -551,12 +598,12 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
 
   // ---------- Inertial by Window ----------
 
-  /** ดาวที่ตั้ง Inertial by Window และแสดงอยู่ → entity + object ของมัน */
+  /** ดาวที่ตั้ง Inertial by Window และแสดงอยู่ → entity + object ของมัน (Show Orbits ของหน้าต่างปิด = ไม่มี) */
   private inertialTargets(): Map<string, { entity: Entity; obj: SceneObject }> {
     const out = new Map<string, { entity: Entity; obj: SceneObject }>();
     const ds = this.ds;
     const doc = useScenario.getState().doc;
-    if (ds === null || doc === null) return out;
+    if (ds === null || doc === null || !this.props.showOrbits) return out;
     const prnByNorad = useResults.getState().prnByNorad;
     for (const obj of doc.objects) {
       if (obj.class !== "Satellite") continue;
@@ -769,6 +816,17 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     return true;
   }
 
+  flyOver(lonDeg: number, latDeg: number, heightM: number): boolean {
+    if (this.destroyed || !Number.isFinite(lonDeg) || !Number.isFinite(latDeg) || !(heightM > 0)) return false;
+    this.release();
+    const camera = this.viewer.camera;
+    camera.cancelFlight();
+    // destination แบบ Cartesian3 โดยไม่ระบุ orientation: Cesium บินไปมองลงตรง ๆ (pitch −90°, heading 0 = ทิศเหนืออยู่บน)
+    camera.flyTo({ destination: Cartesian3.fromDegrees(lonDeg, latDeg, heightM), duration: FLY_OVER_SECONDS });
+    this.viewer.scene.requestRender();
+    return true;
+  }
+
   private track(entity: Entity, path: string): void {
     entity.viewFrom = new ConstantProperty(path.startsWith("*/Facility/") ? FACILITY_VIEW_FROM : SATELLITE_VIEW_FROM);
     entity.trackingReferenceFrame = TrackingReferenceFrame.ENU;
@@ -936,12 +994,13 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
     const target = this.sensorTarget();
     if (target === null) return null;
     const sub = subSatellite(target.state.pos);
-    const coneHalfAngle = coneHalfAngleOf(target.sensor);
+    // Rectangular: ครึ่งมุมของภาพ = max(V, H) และ HUD แสดงทั้งสองมุม (ข2 Ruling e)
+    const { shape, halfAngles, coneHalfAngle } = sensorHudShape(target.sensor);
     const zoom = this.view.kind === "sensor" ? this.view.zoom : 1;
     const top = imageryStatus(this.viewer).topLayer;
     const { clientWidth: width, clientHeight: height } = this.viewer.scene.canvas;
     return {
-      sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, coneHalfAngle,
+      sensor: target.sensor.name, satellite: target.satellite, lat: sub.lat, lon: sub.lon, altKm: sub.altKm, shape, halfAngles, coneHalfAngle,
       fovDeg: sensorViewShortFovDeg(coneHalfAngle, zoom), zoom,
       imagery: top === null ? null : {
         title: top.title, label: top.label, missing: top.missingRatio > IMAGERY_MISSING_RATIO, source: top.source, maxLevel: top.max_level,
@@ -1157,6 +1216,41 @@ class Scene3D implements Scene3DHandle, SensorViewHandle {
   frameCount(): number {
     return this.frames;
   }
+
+  /** ตำแหน่งกล้อง (ECEF เมตร) ปิดหน้าต่างแล้ว = null */
+  cameraPosition(): [number, number, number] | null {
+    return this.destroyed ? null : tuple(this.viewer.camera.positionWC);
+  }
+
+  /** เส้น access ที่แสดงอยู่ในภาพ */
+  accessLineCount(): number {
+    return this.destroyed || this.ds === null ? 0 : shownAccessLines(this.ds.entities);
+  }
+
+  /** เส้นวงโคจรที่วาดอยู่: entity ที่แสดงอยู่และ path แสดง ณ เวลาปัจจุบัน + เส้น Inertial by Window ที่แสดงอยู่ */
+  pathCount(): number {
+    if (this.destroyed) return 0;
+    const time = this.viewer.clock.currentTime;
+    let n = 0;
+    for (const e of this.ds?.entities.values ?? []) if (e.isShowing && e.path?.show?.getValue(time) === true) n++;
+    for (const e of this.inertialPaths.values()) if (e.isShowing) n++;
+    return n;
+  }
+
+  /**
+   * test (window.__gnssStudioTest.breakRenderLoop): เฟรมถัดไปโยนข้อผิดพลาดใน clock.tick ซึ่ง render loop ของ Cesium เรียกนอก Scene.render
+   * Cesium จับแล้วหยุด loop เงียบ ๆ (useDefaultRenderLoop = false ไม่ยิง renderError) แบบที่สงสัยว่าเกิดใน QA-01 โยนครั้งเดียวแล้วคืน tick เดิม
+   */
+  breakRenderLoopOnce(): void {
+    if (this.destroyed) return;
+    const clock = this.viewer.clock as { tick(): JulianDate };
+    clock.tick = () => {
+      delete (clock as { tick?: unknown }).tick; // กลับไปใช้ tick ของ prototype
+      throw new Error("test: render loop broken on purpose");
+    };
+    this.viewer.scene.requestRender();
+  }
+
 
   sensorFootprintPoints(name: string): number | null {
     const ring = this.sensorEntities.get(`sensor/${name}/ring`);

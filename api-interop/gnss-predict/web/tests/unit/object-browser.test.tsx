@@ -727,13 +727,13 @@ describe("Properties", () => {
 });
 
 describe("context menu", () => {
-  test("right-click selects the row and lists Properties, Sensor View, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
+  test("right-click selects the row and lists Properties, Sensor View, Show Imagery, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
     loadObjects();
     renderOb();
     await user.pointer({ keys: "[MouseRight]", target: row("G01") });
     const menu = await screen.findByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
     expect(selected()).toEqual(["G01"]);
     expect(item(menu, "Properties").getAttribute("aria-disabled")).toBeNull();
@@ -763,7 +763,7 @@ describe("context menu", () => {
       return got;
     };
     const SENSOR = ["Properties", "Sensor View", "Access...", "Zoom To", "Rename", "Delete"];
-    const SATELLITE = ["Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
+    const SATELLITE = ["Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
     const OTHER = ["Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"];
     expect(await labels("Sensor1")).toEqual(SENSOR);
     expect(await labels("G01")).toEqual(SATELLITE);
@@ -805,6 +805,40 @@ describe("context menu", () => {
     await user.pointer({ keys: "[MouseRight]", target: row("G02") });
     await user.click(item(await screen.findByRole("menu"), "Properties"));
     expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: satPath("G02"), name: "G02" });
+  });
+
+  // QA-02 (docs/2026-11-17-stk-terms-context-menus.md §1.1): the Scenario root has STK's Scenario menu, minus Set as Default Scenario (not supported)
+  test("the Scenario root lists Properties, Report & Graph Manager..., Insert..., Save, Save As..., Close Scenario; no Access, Zoom To, Rename or Delete", async () => {
+    loadObjects();
+    renderOb();
+    await user.pointer({ keys: "[MouseRight]", target: row("S1") });
+    const menu = await screen.findByRole("menu");
+    // ชื่อของรายการ (ไม่รวมคีย์ลัด Ctrl+S ทางขวาของ Save)
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.querySelector(".menu-label")?.textContent)).toEqual([
+      "Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario",
+    ]);
+    expect(selected()).toEqual(["S1"]);
+    for (const name of ["Access...", "Zoom To", "Rename", "Delete"]) expect(within(menu).queryByRole("menuitem", { name }), name).toBeNull();
+    // Delete ไม่ถึงรากทางอื่นด้วย (Edit → Delete / ปุ่ม Del)
+    expect(isEnabled("edit.delete")).toBe(false);
+    expect(isEnabled("object.delete")).toBe(false);
+    await user.click(item(menu, "Properties"));
+    expect(openPanel).toHaveBeenCalledWith("propertiesBrowser", { path: "*", name: "S1" });
+  });
+
+  test("the root's menu does not leak onto object rows: right-click root, then THBK, then root", async () => {
+    loadObjects();
+    renderOb();
+    const labels = async (target: string) => {
+      await user.pointer({ keys: "[MouseRight]", target: row(target) });
+      const got = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((m) => m.querySelector(".menu-label")?.textContent);
+      await user.keyboard("{Escape}");
+      return got;
+    };
+    const SCENARIO = ["Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario"];
+    expect(await labels("S1")).toEqual(SCENARIO);
+    expect(await labels("THBK")).toEqual(["Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete"]);
+    expect(await labels("S1")).toEqual(SCENARIO);
   });
 
   test("on a folder, Properties, Rename and Delete are disabled", async () => {

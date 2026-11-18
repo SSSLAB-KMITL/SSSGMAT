@@ -1,6 +1,6 @@
 """GNSS Studio engine: ดึงข้อมูลวงโคจร, propagate, analyze และ validate (หัวข้อ 5.13 ของ spec engine)
 
-    python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC]
+    python3 -m gnss_predict.studio fetch     [--data DIR] [--systems GREC[X]]
     python3 -m gnss_predict.studio propagate --scenario DIR [--data DIR]
     python3 -m gnss_predict.studio analyze   --scenario DIR --facility NAME [--data DIR]
     python3 -m gnss_predict.studio validate  --scenario DIR --day YYYY-MM-DD [--sp3 FILE] [--facility NAME] [--data DIR]
@@ -25,6 +25,8 @@
   พิมพ์ตัวรายงาน (.txt หรือ .csv) ลง stdout ไม่พิมพ์ path: style หาจาก Scenario Styles (`styles` ใน scenario.json)
   แล้ว Installed Styles, DateFormat จาก `units` ของ scenario.json, `--object` ซ้ำได้ (Access = คู่ path ในข้อเดียว)
   start/stop เป็นเวลา ISO ที่ระบุเขตเวลา ไม่ส่ง = ช่วงวิเคราะห์ของ scenario ไม่ส่ง --step = ทุกจุดของ scenario
+  ต่างจากรายงานของ server/หน้าเว็บ: CLI ไม่อ่าน `time` ของ style, ช่วงเวลาที่เก็บไว้ของ access (Use Object Time Period) และ My Styles
+  ช่วงเวลาและ step มาจาก --start/--stop/--step เท่านั้น
 """
 
 import argparse
@@ -35,30 +37,31 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import urlopen
 
-from . import brdc
+from . import brdc, imaging
 from .analyze import AerRow, Interval, access_intervals, aer_rows, global_statistics, legacy_rows
 from .brdc import Nav, brdc_file_name, fetch_brdc, read_nav
 from .bundle import build_manifest, file_sha256, input_hash, write_bundle
-from .catalog import BRDC_DIR, IGS_METADATA_FILE, Catalog, CatalogSatellite, broadcast_file, build_catalog, is_shown
+from .catalog import BRDC_DIR, IGS_METADATA_FILE, Catalog, CatalogSatellite, broadcast_file, is_shown
 from .config import BRDC_DAYS_BACK, CELESTRAK_STATE_FILE, DATA_DIR, ENGINE_VERSION, GNSS_GROUPS
 from .czml import access_czml, satellites_czml
 from .dop import dop_series
 from .errors import (BrdcUnavailableError, GnssPredictError, Message, NoSatellitesError, OrbitUnavailableError,
                      ResultCorruptError, ScenarioError, Sp3FormatError, Sp3UnavailableError)
 from .igs_meta import fetch_metadata
+from .imaging import GEO_AGE_SHOWN_MAX_DAYS, IMAGING_GROUPS, IMAGING_LETTER, IMAGING_NORADS
 from .omm import fetch_group
 from .predict import HEADER as LEGACY_HEADER
 from .propagate import ephemeris_from_sp3, propagate
 from .run_gmat import find_gmat_console, gmat_version
 from .scenario import EngineScenario, Facility, load_scenario
-from .sp3 import fetch_mgx_sp3, write_sp3
-from .studio_validate import validate_ephemeris, validation_markdown
+from .sp3 import MAX_SATELLITES as MAX_PROPAGATED_SATELLITES, fetch_mgx_sp3, write_sp3
+from .studio_validate import imaging_skipped_text, validate_ephemeris, validation_markdown
 
 Progress = Callable[[str, float], None]
 
@@ -179,12 +182,14 @@ def _read_manifest(bundle_dir: Path) -> _StoredManifest:
 # ---------- fetch ----------
 
 def _system_letters(systems: str) -> list[str]:
-    """ตัวอักษรระบบเรียงตาม GNSS_GROUPS ไม่ว่างและไม่มีตัวที่ไม่รู้จัก ไม่งั้น ValueError"""
+    """ตัวอักษรระบบ GNSS เรียงตาม GNSS_GROUPS แล้วตามด้วย X (กลุ่มดาวถ่ายภาพ) ถ้ามี
+    ต้องมีระบบ GNSS อย่างน้อยหนึ่งตัวและไม่มีตัวที่ไม่รู้จัก ไม่งั้น ValueError (snapshot ที่ไม่มี OMM ของ GNSS ใช้ propagate ไม่ได้)"""
     letters = systems.upper() if isinstance(systems, str) else ""
-    unknown = sorted(set(letters) - set(GNSS_GROUPS))
-    if not letters or unknown:
-        raise ValueError(f"ระบบดาวเทียมต้องเป็นตัวอักษร {''.join(GNSS_GROUPS)} อย่างน้อยหนึ่งตัว ได้ {systems!r}")
-    return [s for s in GNSS_GROUPS if s in letters]
+    gnss = [s for s in GNSS_GROUPS if s in letters]
+    if not gnss or set(letters) - set(GNSS_GROUPS) - {IMAGING_LETTER}:
+        raise ValueError(f"ระบบดาวเทียมต้องเป็นตัวอักษร {''.join(GNSS_GROUPS)} อย่างน้อยหนึ่งตัว "
+                         f"(เพิ่ม {IMAGING_LETTER} เพื่อดึงกลุ่มดาวถ่ายภาพ) ได้ {systems!r}")
+    return gnss + ([IMAGING_LETTER] if IMAGING_LETTER in letters else [])
 
 
 def _fetch_latest_brdc(today: date, cache: Path, fetcher) -> tuple[Path | None, list[Message]]:
@@ -200,10 +205,59 @@ def _fetch_latest_brdc(today: date, cache: Path, fetcher) -> tuple[Path | None, 
                           "และจะไม่ตรวจธง no_broadcast และ unhealthy")]
 
 
+def _cache_time(group: str, path: Path) -> datetime | None:
+    """เวลาที่ดาวน์โหลดจากชื่อไฟล์ <group>_<YYYYMMDDTHHMMZ>.json ใน cache (ชื่อผิดรูป: None)"""
+    try:
+        return datetime.strptime(path.stem[len(group) + 1:], SNAPSHOT_TIME_FMT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _latest_cached(cache: Path, group: str) -> Path | None:
+    """ไฟล์ <group>_*.json ใน cache ที่ดาวน์โหลดล่าสุด (เฉพาะชื่อที่อ่านเวลาได้) ไม่มี: None"""
+    dated = [(t, p) for p in cache.glob(f"{group}_*.json") if (t := _cache_time(group, p)) is not None]
+    return max(dated)[1] if dated else None
+
+
+def _imaging_file_problem(group: str, path: Path, now: datetime) -> str | None:
+    """ไฟล์กลุ่ม imaging จาก cache ใส่ใน snapshot ได้เมื่อ |อายุ| (จากเวลาในชื่อไฟล์) ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS
+    (Ruling y: ไฟล์ที่เก่ากว่านี้ทำให้ดาว GEO ถูกซ่อนอยู่แล้ว เวลาในอนาคตคือนาฬิกาเพี้ยน จึงเทียบค่าสัมบูรณ์เหมือน catalog)
+    ใช้ได้: None ใช้ไม่ได้: เหตุผลภาษาไทยที่มีชื่อไฟล์"""
+    fetched = _cache_time(group, path)
+    if fetched is None:
+        return f"{path.name} อ่านเวลาที่ดาวน์โหลดจากชื่อไฟล์ไม่ได้"
+    age_days = (now - fetched).total_seconds() / 86400
+    if abs(age_days) <= GEO_AGE_SHOWN_MAX_DAYS:
+        return None
+    if age_days < 0:
+        return f"{path.name} เวลาในชื่อไฟล์เลยเวลาปัจจุบันไป {-age_days:.1f} วัน"
+    return f"{path.name} อายุ {age_days:.1f} วัน เกิน {GEO_AGE_SHOWN_MAX_DAYS:g} วัน"
+
+
+def _imaging_too_old(level: str, dropped: list[tuple[str, str]]) -> Message:
+    """ข้อความเดียวของทุกกลุ่ม imaging ที่ไม่ใส่ใน snapshot: dropped = [(กลุ่ม, เหตุผล)]"""
+    groups = ", ".join(group for group, _ in dropped)
+    reasons = "; ".join(reason for _, reason in dropped)
+    return Message("IMAGING_CACHE_TOO_OLD", level,
+                   f"ไม่ใส่ข้อมูลวงโคจรกลุ่ม {groups} ของดาวถ่ายภาพใน snapshot นี้: ไฟล์ล่าสุดใน cache ({reasons}) "
+                   f"ให้ดึงข้อมูลวงโคจรพร้อมดาวถ่ายภาพ (ระบบ {IMAGING_LETTER}) ใหม่")
+
+
 def _sha256sums(files: dict[str, bytes]) -> bytes:
     """บรรทัด `<sha256>  <path สัมพัทธ์>` เรียงตาม path แบบเดียวกับ sha256sum"""
     return "".join(f"{hashlib.sha256(data).hexdigest()}  {name}\n"
                    for name, data in sorted(files.items())).encode("utf-8")
+
+
+def _differs_from_existing(final_dir: Path, sums: bytes) -> bool:
+    """snapshot ของนาทีนี้มีอยู่แล้วและ SHA256SUMS ต่างจากที่เพิ่งประกอบ (อ่าน SHA256SUMS เดิมไม่ได้นับว่าต่าง)
+    write_bundle จะคงโฟลเดอร์เดิมไว้ ข้อมูลที่เพิ่งดึง (เช่นกลุ่ม imaging ของ fetch รอบหลัง) จึงไม่เข้า snapshot นี้"""
+    if not final_dir.exists():
+        return False
+    try:
+        return (final_dir / SHA256SUMS).read_bytes() != sums
+    except OSError:
+        return True
 
 
 def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=urlopen,
@@ -213,6 +267,15 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
 
     กติกาการดาวน์โหลด (CelesTrak 2 ชม., IGS วันละครั้ง) อยู่ใน fetch_group และ fetch_metadata ซึ่งใช้ไฟล์ใน cache แทนเมื่อดึงไม่ได้
     broadcast ลองของเมื่อวาน (UTC) แล้วของสองวันก่อน ไม่ได้ทั้งคู่ได้ BRDC_UNAVAILABLE และ snapshot ไม่มีโฟลเดอร์ brdc
+
+    กลุ่มดาวถ่ายภาพ (IMAGING_GROUPS) อยู่ใน snapshot ทุกครั้งที่มีไฟล์ให้ใช้ (Ruling q, y):
+    - มี X ใน systems: ดึงด้วย fetch_group ตามกติกาเดิม ดึงไม่ได้และไม่มี cache ได้ IMAGING_GROUP_UNAVAILABLE (ไม่ raise)
+    - ไม่มี X: คัดลอกไฟล์ล่าสุดใน cache โดยไม่ส่ง request (ไม่มีไฟล์: ไม่มีกลุ่มนั้นและไม่มีข้อความ)
+    - ทั้งสองกรณีใส่เฉพาะไฟล์ที่ |อายุ| ไม่เกิน GEO_AGE_SHOWN_MAX_DAYS วัน ที่เกินได้ IMAGING_CACHE_TOO_OLD:
+      มี X เป็น warning ต่อกลุ่ม ไม่มี X (เช่นงานรายวัน) เป็น info ข้อความเดียวที่บอกทุกกลุ่มที่ไม่ใส่
+
+    snapshot ที่มีอยู่แล้วไม่ถูกแก้ไข: ถ้า fetch อีกครั้งในนาทีเดียวกัน (โฟลเดอร์ชื่อเดียวกัน) แล้ว SHA256SUMS ต่างจากของเดิม
+    (เช่น GREC แล้ว GRECX กลุ่ม imaging จึงไม่เข้า snapshot) ได้ warning SNAPSHOT_SAME_MINUTE ข้อมูลที่ดึงอยู่ใน cache แล้ว
     """
     report = _reporter(progress)
     letters = _system_letters(systems)
@@ -222,12 +285,37 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
     report("omm", 0.0)
     messages: list[Message] = []
     files: dict[str, bytes] = {}
-    for i, system in enumerate(letters):
-        group = GNSS_GROUPS[system]
-        path, msgs = fetch_group(group, cache, cache / CELESTRAK_STATE_FILE, now, opener=opener)
-        files[f"{group}.json"] = path.read_bytes()
+    with_imaging = IMAGING_LETTER in letters
+    groups = [GNSS_GROUPS[s] for s in letters if s in GNSS_GROUPS] + (list(IMAGING_GROUPS) if with_imaging else [])
+    for i, group in enumerate(groups):
+        if group in IMAGING_GROUPS:
+            try:
+                path, msgs = fetch_group(group, cache, cache / CELESTRAK_STATE_FILE, now, opener=opener)
+            except OrbitUnavailableError as exc:            # กลุ่ม imaging ไม่ทำให้ snapshot ของ GNSS ล้ม
+                path, msgs = None, [Message("IMAGING_GROUP_UNAVAILABLE", "warning",
+                                            f"{exc} snapshot นี้จึงไม่มีข้อมูลวงโคจรกลุ่ม {group} ของดาวถ่ายภาพ")]
+            problem = _imaging_file_problem(group, path, now) if path is not None else None
+            if problem is not None:
+                path, msgs = None, msgs + [_imaging_too_old("warning", [(group, problem)])]
+        else:
+            path, msgs = fetch_group(group, cache, cache / CELESTRAK_STATE_FILE, now, opener=opener)
+        if path is not None:
+            files[f"{group}.json"] = path.read_bytes()
         messages += msgs
-        report("omm", 0.6 * (i + 1) / len(letters))
+        report("omm", 0.6 * (i + 1) / len(groups))
+    if not with_imaging:
+        dropped: list[tuple[str, str]] = []
+        for group in IMAGING_GROUPS:
+            path = _latest_cached(cache, group)
+            if path is None:
+                continue
+            problem = _imaging_file_problem(group, path, now)
+            if problem is None:
+                files[f"{group}.json"] = path.read_bytes()
+            else:
+                dropped.append((group, problem))
+        if dropped:
+            messages.append(_imaging_too_old("info", dropped))
     path, msgs = fetch_metadata(cache, now, opener=opener)
     files[IGS_METADATA_FILE] = path.read_bytes()
     messages += msgs
@@ -238,7 +326,13 @@ def fetch_snapshot(data_dir: Path, now: datetime, systems: str = "GREC", opener=
     messages += msgs
     report("write", 0.9)
     files[SHA256SUMS] = _sha256sums(files)
-    snapshot = write_bundle(orbits / now.strftime(SNAPSHOT_TIME_FMT), files)
+    final_dir = orbits / now.strftime(SNAPSHOT_TIME_FMT)
+    if _differs_from_existing(final_dir, files[SHA256SUMS]):
+        messages.append(Message("SNAPSHOT_SAME_MINUTE", "warning",
+                                f"ข้อมูลที่ดึงครั้งนี้เข้า cache แล้ว แต่ snapshot ของนาทีนี้ ({final_dir.name}) มีอยู่แล้วจึงไม่ถูกแก้ไข "
+                                "ให้กด Fetch Now อีกครั้งในนาทีถัดไปเพื่อสร้าง snapshot ใหม่จากข้อมูลใน cache "
+                                "(ครั้งนั้นจะไม่ส่งคำขอใหม่ไปยัง CelesTrak)"))
+    snapshot = write_bundle(final_dir, files)           # โฟลเดอร์ที่มีอยู่แล้วคงเดิม (snapshot immutable)
     report("done", 1.0)
     return snapshot, messages
 
@@ -262,9 +356,11 @@ def _snapshot(data_dir: Path, sc: EngineScenario) -> tuple[Path, set[str]]:
     return snapshot_dir, systems
 
 
-def _files_sha256(snapshot_dir: Path, systems: set[str]) -> dict[str, str]:
-    """SHA-256 ของทุกไฟล์ใน snapshot ที่ build_catalog อ่าน (OMM ของระบบที่ใช้, IGS metadata, broadcast ถ้ามี)"""
-    names = [f"{group}.json" for system, group in GNSS_GROUPS.items() if system in systems] + [IGS_METADATA_FILE]
+def _files_sha256(snapshot_dir: Path, systems: set[str], imaging_files: Sequence[str] = ()) -> dict[str, str]:
+    """SHA-256 ของทุกไฟล์ใน snapshot ที่ catalog ของฉากอ่าน (OMM ของระบบที่ใช้, ไฟล์กลุ่ม imaging ที่ส่งมา,
+    IGS metadata, broadcast ถ้ามี) imaging_files ว่างเมื่อฉากไม่มีดาวถ่ายภาพ จึงได้ dict เดิมของฉาก GNSS ล้วน"""
+    names = ([f"{group}.json" for system, group in GNSS_GROUPS.items() if system in systems] + list(imaging_files)
+             + [IGS_METADATA_FILE])
     nav = broadcast_file(snapshot_dir)
     if nav is not None:
         names.append(nav.relative_to(snapshot_dir).as_posix())
@@ -338,12 +434,21 @@ def _plan(scenario_dir: Path, data_dir: Path, report: Progress | None = None) ->
     snapshot_dir, systems = _snapshot(data_dir, sc)
     if report is not None:
         report("catalog", 0.05)
-    catalog = build_catalog(snapshot_dir, (sc.start, sc.stop), systems)
+    # อ่านไฟล์กลุ่ม imaging และรวมเข้า hash เฉพาะฉากที่มีดาวถ่ายภาพ (Ruling a) ฉาก GNSS ล้วนจึงได้ hash เดิม
+    with_imaging = not {n for _, n in sc.satellites}.isdisjoint(IMAGING_NORADS)
+    from . import custom_satellites as custom
+    with_custom = custom.selected(snapshot_dir, {n for _, n in sc.satellites})
+    catalog = imaging.scenario_catalog(snapshot_dir, (sc.start, sc.stop), systems, with_imaging, with_custom)
     sel = _select(sc, catalog)
     if not sel.selected:
         raise _no_satellites(sel)
+    if len(sel.selected) > MAX_PROPAGATED_SATELLITES:
+        raise ScenarioError(f"เลือกคำนวณได้สูงสุด {MAX_PROPAGATED_SATELLITES} ดวงต่อ Scenario ให้ลดดาวที่เลือกก่อนคำนวณ", "objects")
 
-    files_sha256 = _files_sha256(snapshot_dir, systems)
+    extra_files = imaging.imaging_group_files(snapshot_dir) if with_imaging else []
+    if with_custom:
+        extra_files.append(custom.FILE)
+    files_sha256 = _files_sha256(snapshot_dir, systems, extra_files)
     prn_of = {s.norad: s.prn for s in catalog.satellites}
     digest = input_hash({
         "engine_version": ENGINE_VERSION,
@@ -371,7 +476,8 @@ def run_propagate(scenario_dir: Path, data_dir: Path = DATA_DIR, console: Path |
     """propagate ดาวใน scenario ที่แสดง (is_shown) ด้วย GMAT แล้วเขียน `<scenario_dir>/ephem/<hash>/`
     (manifest.json, predicted.sp3, scene.czml) ถ้ามีโฟลเดอร์ของ hash นี้แล้วคืนทันทีโดยไม่รัน GMAT
 
-    catalog สร้างจากทุกระบบที่มีไฟล์ OMM ใน snapshot, ดาวที่ไม่มีใน catalog ได้ SAT_NOT_IN_SNAPSHOT (D8)
+    catalog สร้างจากทุกระบบที่มีไฟล์ OMM ใน snapshot (รวมดาวถ่ายภาพเมื่อฉากมี NORAD ของดาวถ่ายภาพ)
+    ดาวที่ไม่มีใน catalog ได้ SAT_NOT_IN_SNAPSHOT (D8)
     ไม่มีดาวให้ propagate หรือ GMAT ไม่ได้ผลของดวงใดเลย: NoSatellitesError
     console เป็น None: หา GmatConsole เองเมื่อต้องรันจริงเท่านั้น
     on_gmat_start(pgid): เรียกเมื่อ GMAT เริ่มทำงาน (process group id สำหรับยกเลิกงาน) ไม่เรียกถ้าใช้ผลเดิม
@@ -591,6 +697,10 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     manifest = _read_manifest(ephem_dir)
     ages = {s["prn"]: s.get("age_days") for s in manifest.data["satellites"]}
     result = validate_ephemeris(ephem_dir / PREDICTED_SP3, truth, nav, fac, manifest.flags, ages, day)
+    # ดาวถ่ายภาพที่ propagate แล้วไม่มีค่าอ้างอิง validate_ephemeris จึงข้าม (Ruling u) บอกผู้ใช้หนึ่งข้อความ
+    skipped = sum(1 for s in manifest.data["satellites"] if s["prn"][:1] == IMAGING_LETTER and s.get("propagated"))
+    if skipped:
+        validate_messages = validate_messages + [Message("IMAGING_SKIPPED", "info", imaging_skipped_text(skipped))]
 
     report("write", 0.9)
     created = _iso_s(datetime.now(timezone.utc))
@@ -599,7 +709,7 @@ def run_validate(scenario_dir: Path, day: date, data_dir: Path = DATA_DIR, sp3: 
     _write_atomic(ephem_dir / f"validation_{day.isoformat()}.json", _json_bytes(document))
     _write_atomic(ephem_dir / f"validation_{day.isoformat()}.md",
                   validation_markdown(result, scenario=sc.name, ephem_hash=ephem_dir.name,
-                                      facility=fac.name).encode("utf-8"))
+                                      facility=fac.name, skipped_imaging=skipped).encode("utf-8"))
     history = Path(data_dir) / VALIDATION_DIR / HISTORY_FILE
     history.parent.mkdir(parents=True, exist_ok=True)
     record = {key: document[key] for key in ("day", "scenario", "ephem_hash", "truth_file", "pass", "systems",
@@ -667,7 +777,8 @@ def _parser() -> argparse.ArgumentParser:
     fetch = sub.add_parser("fetch", help="ดึง OMM, IGS metadata และ broadcast เป็น snapshot ใหม่ใน <data>/orbits/")
     fetch.add_argument("--data", type=Path, default=DATA_DIR, help=data_help)
     fetch.add_argument("--systems", type=_systems_arg, default="GREC",
-                       help="ระบบที่ดึง: G (GPS), R (GLONASS), E (Galileo), C (BeiDou) ค่าเริ่มต้น GREC")
+                       help="ระบบที่ดึง: G (GPS), R (GLONASS), E (Galileo), C (BeiDou) อย่างน้อยหนึ่งตัว "
+                            "เพิ่ม X เพื่อดึงกลุ่มดาวถ่ายภาพ (weather, science, visual) ค่าเริ่มต้น GREC")
 
     prop = sub.add_parser("propagate", help="propagate ดาวใน scenario ด้วย GMAT ได้ ephem/<hash>/")
     prop.add_argument("--scenario", type=Path, required=True, help=scenario_help)

@@ -1,11 +1,13 @@
 // Globe Manager (imagery spec §5.1, spec ภาพละเอียด §4.2-§4.3): ภาพพื้นโลกออนไลน์แบ่งเป็นสี่กลุ่มตามแหล่ง ตามลำดับ NASA GIBS, Sentinel-2 cloudless (EOX), OpenStreetMap, Cesium ion
 // - แต่ละกลุ่มมีสวิตช์ของตัวเองซึ่งเป็นของ server (settings.json) เปลี่ยนผ่าน useImagery.setSource(id, on) (GET แล้ว PUT /settings ทั้งเอกสาร ที่แก้แค่ช่องของแหล่งนั้น)
-//   เปิด = ถามยืนยันภาษาไทยก่อนทุกครั้ง (กล่องเดียวกับ confirm ของแอป) ข้อความของแต่ละแหล่งบอก host สิ่งที่ส่งออก และบอกว่า server หรือ browser เป็นผู้ติดต่อ (messages.th.ts)
+//   เปิด = ถามยืนยันภาษาไทยก่อนทุกครั้ง (consent.ts enableSourceWithConsent ที่ Show Imagery ใช้ด้วย กล่องเดียวกับ confirm ของแอป) ข้อความของแต่ละแหล่งบอก host สิ่งที่ส่งออก และบอกว่า server หรือ browser เป็นผู้ติดต่อ (messages.th.ts)
 //   ยกเลิก (หรือ Esc) = ไม่ส่งอะไรเลย ปิด = PUT ทันทีไม่ถาม ล้มเหลว = store รายงานคำเตือนไทยเอง (ระบุชื่อแหล่ง) และสวิตช์คงค่าเดิม (ที่นี่ไม่แสดงซ้ำ)
 //   การบันทึกทุกอย่างของหน้าต่างนี้ (สวิตช์ และ token) เป็น GET-แก้-PUT ทั้งเอกสาร จึงทำทีละอย่าง: ระหว่างถามและระหว่างบันทึกกดอะไรซ้ำไม่ได้ทั้งหน้าต่าง
 // - ตารางชั้นภาพของแต่ละกลุ่ม: แถว Natural Earth II (ออฟไลน์ เป็นฐานเสมอ ปิดไม่ได้ อยู่นอกกลุ่ม) แล้ว GIBS ตามลำดับที่ server ส่ง, EOX (ชั้นของ catalog source eox), OpenStreetMap (OSM_LAYER คงที่)
 //   Show และ % Translucency ของแต่ละชั้นอยู่ใน workbook (useLayout.globe: ใช้ร่วมกันทุกหน้าต่าง 3D และ Sensor View) ที่นี่ไม่เก็บค่าเอง
-//   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 + Sentinel-2 cloudless + OpenStreetMap แสดง) มาจาก DEFAULT_GLOBE: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
+//   ค่าตั้งต้น (Blue Marble + VIIRS NOAA-20 + Sentinel-2 cloudless แสดง) มาจาก DEFAULT_GLOBE: เปิดสวิตช์จึงไม่เขียนทับค่าที่ผู้ใช้เลือกไว้
+//   OpenStreetMap เริ่มแบบซ่อนทุกครั้งที่เปิด scenario (task 13c: workbook.ts globeAtOpen) ติ๊กเองได้ หรือเปิดสวิตช์ OSM (บันทึกสำเร็จ) = ติ๊ก Show ให้
+//   กลุ่มของมันบอกด้วยข้อความไทย (globe.osmStartsHidden)
 // - % Translucency ส่งเข้า setGlobeLayer เฉพาะจำนวนเต็ม 0-100 (store ไม่ตรวจเอง): พิมพ์แล้วบันทึกเมื่อออกจากช่องหรือกด Enter, ค่าไม่ถูกต้องคืนค่าเดิม, Escape ยกเลิก
 // - แถวของกลุ่มใช้ได้เมื่อสวิตช์ของแหล่งนั้นเปิด (ปิด = แถวปิดใช้พร้อมคำอธิบายของกลุ่ม) อ่านสวิตช์และรายการจาก server ไม่ได้ (loaded = false) =
 //   ทุกสวิตช์ปิดใช้พร้อมข้อความไทยหนึ่งข้อความ เหลือแต่ Natural Earth II
@@ -13,13 +15,13 @@
 //   ไม่เขียน token ลง console, Message Viewer หรือ URL; ข้อความผิดพลาดมีแต่ข้อความของ server/เครือข่าย
 //   บันทึกสำเร็จแล้วสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ (useImagery.updateSettings ตัวเดียวกับสวิตช์) ; แผนของ ion เปลี่ยน (สวิตช์, asset, token) = ionState.ts ลืมการปฏิเสธเอง
 //   asset แบบ radio (None, preset ของ ionAssets.ts, Asset ID ที่กรอกเอง จำนวนเต็ม > 0) เขียนลง useLayout.globe.ion; เปิดสวิตช์ ion ที่ยังไม่มี asset = เลือก preset แรก
+//   ค่าตั้งต้นและตอนเปิด scenario ที่ asset ไม่มี/null = Google Maps Satellite (DEFAULT_GLOBE, globeAtOpen) radio จึงเลือก Google Maps Satellite ไว้ แม้สวิตช์ ion ปิด
 //   ion แสดงอยู่ (ionState.ts: สวิตช์ ion เปิด + มี asset + มี token และ ion ไม่ปฏิเสธ) = ชั้นอื่นทั้งหมดถูกซ่อนในทุก viewer: ทุกแถวของแหล่งอื่น (รวม Natural Earth II) บอกด้วยข้อความไทย
 
 import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";
 import { errorText } from "../../api/client";
 import { ION_PRESETS } from "../../cesium/ionAssets";
 import { ionStatus, onIonStatusChange, type IonStatus } from "../../cesium/ionState";
-import { confirm } from "../../chrome/Dialogs";
 import { t, type LabelKey } from "../../labels/labels";
 import { msg, type MsgKey } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
@@ -27,6 +29,7 @@ import { isIonAssetId, type GlobeLayerSetting } from "../../layout/workbook";
 import { OSM_LAYER, useImagery, type ImageryLayerInfo, type ImagerySourceId } from "../../stores/imagery";
 import { useLayout } from "../../stores/layout";
 import { useSettings } from "../../stores/settings";
+import { enableSourceWithConsent } from "./consent";
 
 /** จำนวนเต็ม 0-100 (ตัวเลข ASCII เท่านั้น เว้นวรรคหัวท้ายได้) ไม่ใช่ = null */
 function parseTranslucency(text: string): number | null {
@@ -48,17 +51,16 @@ interface SourceDef {
   id: ImagerySourceId;
   /** ป้ายของสวิตช์ (และชื่อของกลุ่ม) */
   label: LabelKey;
-  consent: MsgKey;
   /** ข้อความของกลุ่มตอนสวิตช์ปิด */
   offHint: MsgKey;
 }
 
-/** สี่กลุ่มตามลำดับบนจอ (ลำดับเดียวกับลำดับวาด ยกเว้น ion ที่แสดงแทนทั้งหมด) */
+/** สี่กลุ่มตามลำดับบนจอ (ลำดับเดียวกับลำดับวาด ยกเว้น ion ที่แสดงแทนทั้งหมด) ข้อความขอความยินยอมอยู่ที่ consent.ts (CONSENT_KEYS) */
 const SOURCES: readonly SourceDef[] = [
-  { id: "gibs", label: "field.onlineImagery", consent: "globe.consent", offHint: "globe.offHint" },
-  { id: "eox", label: "field.onlineImageryEox", consent: "globe.consentEox", offHint: "globe.offHintEox" },
-  { id: "osm", label: "field.onlineImageryOsm", consent: "globe.consentOsm", offHint: "globe.offHintOsm" },
-  { id: "ion", label: "field.onlineImageryIon", consent: "globe.consentIon", offHint: "globe.offHintIon" },
+  { id: "gibs", label: "field.onlineImagery", offHint: "globe.offHint" },
+  { id: "eox", label: "field.onlineImageryEox", offHint: "globe.offHintEox" },
+  { id: "osm", label: "field.onlineImageryOsm", offHint: "globe.offHintOsm" },
+  { id: "ion", label: "field.onlineImageryIon", offHint: "globe.offHintIon" },
 ];
 
 /** สถานะของ ion ที่วาดซ้ำเมื่อ store ที่มันอ่านเปลี่ยน (สวิตช์, asset, token) หรือเมื่อ ion ปฏิเสธ asset + token (ไม่ได้มาจาก store) */
@@ -368,15 +370,14 @@ export function GlobeManager(_props: Partial<PanelProps>) {
     }
   };
 
-  /** เปิด = ถามก่อน (ยกเลิก = ไม่ทำอะไร) ปิด = ทำทันที */
+  /**
+   * เปิด = ถามก่อนผ่าน enableSourceWithConsent (consent.ts ตัวเดียวกับ Show Imagery: ยกเลิก = ไม่ทำอะไร, ion เลือก preset แรก, OSM ติ๊ก Show)
+   * ปิด = ทำทันที
+   */
   const switchTo = (def: SourceDef, on: boolean): Promise<void> =>
     exclusive(async () => {
-      if (on && !(await confirm(msg(def.consent)))) return;
-      await useImagery.getState().setSource(def.id, on);
-      // เปิด ion แล้ว (บันทึกสำเร็จ) แต่ยังไม่เคยเลือก asset: เลือก preset แรกให้ (ไม่มี asset = ion ไม่แสดง)
-      if (on && def.id === "ion" && useImagery.getState().sources.ion && (useLayout.getState().globe.ion?.assetId ?? null) === null) {
-        useLayout.getState().setGlobeIon(ION_PRESETS[0].id);
-      }
+      if (on) await enableSourceWithConsent(def.id);
+      else await useImagery.getState().setSource(def.id, false);
     });
 
   const rows = (source: ImagerySourceId): ImageryLayerInfo[] => {
@@ -405,11 +406,14 @@ export function GlobeManager(_props: Partial<PanelProps>) {
                 <IonSettings on={sources.ion} busy={busy} exclusive={exclusive} status={ion} />
               ) : (
                 sourceRows.length > 0 && (
-                  <LayerTable>
-                    {sourceRows.map((info) => (
-                      <LayerRow key={info.id} info={info} disabled={!sources[def.id]} hiddenByIon={hiddenByIon} />
-                    ))}
-                  </LayerTable>
+                  <>
+                    <LayerTable>
+                      {sourceRows.map((info) => (
+                        <LayerRow key={info.id} info={info} disabled={!sources[def.id]} hiddenByIon={hiddenByIon} />
+                      ))}
+                    </LayerTable>
+                    {def.id === "osm" && <p className="globe-hint">{msg("globe.osmStartsHidden")}</p>}
+                  </>
                 )
               )}
             </SourceGroup>

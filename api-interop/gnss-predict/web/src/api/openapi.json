@@ -1036,6 +1036,43 @@
         "title": "Health",
         "type": "object"
       },
+      "ImagingPresetOut": {
+        "properties": {
+          "camera": {
+            "title": "Camera",
+            "type": "string"
+          },
+          "gibs_layer": {
+            "title": "Gibs Layer",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "norad": {
+            "title": "Norad",
+            "type": "integer"
+          },
+          "prn": {
+            "title": "Prn",
+            "type": "string"
+          },
+          "sensor": {
+            "$ref": "#/components/schemas/SensorDefinitionOut"
+          }
+        },
+        "required": [
+          "prn",
+          "norad",
+          "name",
+          "camera",
+          "gibs_layer",
+          "sensor"
+        ],
+        "title": "ImagingPresetOut",
+        "type": "object"
+      },
       "Ionosphere": {
         "additionalProperties": true,
         "properties": {
@@ -1945,7 +1982,7 @@
       },
       "SensorDefinition": {
         "additionalProperties": true,
-        "description": "Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา",
+        "description": "Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา\nแกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)\nRectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ",
         "properties": {
           "cone_half_angle": {
             "default": 45.0,
@@ -1954,14 +1991,99 @@
             "title": "Cone Half Angle",
             "type": "number"
           },
+          "horizontal_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Horizontal Half Angle"
+          },
           "type": {
-            "const": "Simple Conic",
             "default": "Simple Conic",
+            "enum": [
+              "Simple Conic",
+              "Rectangular"
+            ],
             "title": "Type",
             "type": "string"
+          },
+          "vertical_half_angle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "maximum": 89,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vertical Half Angle"
           }
         },
         "title": "SensorDefinition",
+        "type": "object"
+      },
+      "SensorDefinitionOut": {
+        "description": "Sensor หลักของ preset: Simple Conic ใช้ cone_half_angle, Rectangular ใช้ vertical/horizontal (ช่องของอีกชนิดเป็น null)",
+        "properties": {
+          "cone_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cone Half Angle"
+          },
+          "horizontal_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizontal Half Angle"
+          },
+          "type": {
+            "enum": [
+              "Simple Conic",
+              "Rectangular"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "vertical_half_angle": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Half Angle"
+          }
+        },
+        "required": [
+          "type",
+          "cone_half_angle",
+          "vertical_half_angle",
+          "horizontal_half_angle"
+        ],
+        "title": "SensorDefinitionOut",
         "type": "object"
       },
       "SensorObj": {
@@ -2309,7 +2431,7 @@
   "paths": {
     "/api/catalog": {
       "get": {
-        "description": "snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)\nsystem ต้องเป็น G R E C (ไม่ระบุ = ทั้งสี่) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD และชื่อ CelesTrak",
+        "description": "snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)\nsystem ต้องเป็น G R E C หรือ X (ดาวถ่ายภาพ; ไม่ระบุ = ทุกระบบ) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD, ชื่อ CelesTrak และชื่อที่แสดง",
         "operationId": "get_catalog_api_catalog_get",
         "parameters": [
           {
@@ -2486,6 +2608,26 @@
         "summary": "Events"
       }
     },
+    "/api/gpredict/groups": {
+      "get": {
+        "operationId": "gpredict_groups_api_gpredict_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gpredict Groups Api Gpredict Groups Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Gpredict Groups"
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -2602,6 +2744,29 @@
           }
         },
         "summary": "Get Tile"
+      }
+    },
+    "/api/imaging/presets": {
+      "get": {
+        "description": "preset X01…X08 ตามลำดับ (ตารางเดียวของ engine: gnss_predict.imaging) เว็บรู้ว่าดาวใดเป็นดาวถ่ายภาพจาก NORAD",
+        "operationId": "imaging_presets_api_imaging_presets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImagingPresetOut"
+                  },
+                  "title": "Response Imaging Presets Api Imaging Presets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Imaging Presets"
       }
     },
     "/api/jobs": {
@@ -2888,6 +3053,26 @@
           }
         },
         "summary": "Fetch Status"
+      }
+    },
+    "/api/satellite-collections": {
+      "get": {
+        "operationId": "satellite_collections_api_satellite_collections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Satellite Collections Api Satellite Collections Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Satellite Collections"
       }
     },
     "/api/scenarios": {

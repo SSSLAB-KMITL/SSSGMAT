@@ -23,7 +23,7 @@ vi.mock("cesium", async (importOriginal) => {
   return { ...actual, Viewer: FakeViewer, ImageryLayer, TileMapServiceImageryProvider };
 });
 
-const { createViewer, destroyViewer, watchRenderFailure, localServerKey, LOCAL_SERVER_REQUESTS } = await import("../../src/cesium/viewer");
+const { createViewer, destroyViewer, watchRenderFailure, localServerKey, LOCAL_SERVER_REQUESTS, RENDER_LOOP_POLL_MS, RENDER_RETRY_WINDOW_MS } = await import("../../src/cesium/viewer");
 const { RequestScheduler } = await import("cesium");
 /** getServerKey ของ Cesium เป็นของภายใน (ไม่อยู่ใน type) แต่เป็นตัวที่ RequestScheduler ใช้หา requestsByServer จริง */
 const cesiumServerKey = (url: string): string => (RequestScheduler as unknown as { getServerKey(url: string): string }).getServerKey(url);
@@ -36,7 +36,8 @@ function fakeViewer(gl: unknown = undefined) {
   const loseContext = vi.fn(() => void order.push("loseContext"));
   const glContext = gl === undefined ? { getExtension: vi.fn((name: string) => (name === "WEBGL_lose_context" ? { loseContext } : null)) } : gl;
   const viewer = {
-    scene: { context: { _gl: glContext }, renderError, canvas },
+    scene: { context: { _gl: glContext }, renderError, canvas, requestRender: vi.fn() },
+    useDefaultRenderLoop: true,
     destroy: vi.fn(() => void order.push("destroy")),
   };
   return { viewer, order, loseContext, canvas, renderError };
@@ -76,41 +77,125 @@ describe("destroyViewer", () => {
   });
 });
 
+// ภาพหยุด (QA-01, follow-up 13b-2): ข้อผิดพลาดตอนวาด, render loop ของ Cesium ที่หยุดเงียบ ๆ (useDefaultRenderLoop เป็น false: Cesium จับข้อผิดพลาด
+// นอก Scene.render แล้วหยุด loop โดยไม่ยิง renderError เพราะ showRenderLoopErrors = false) หรือ WebGL context หาย
+// ครั้งแรก = เริ่ม loop ใหม่หนึ่งครั้ง (useDefaultRenderLoop = true แล้ว requestRender) และแจ้ง recovering = true; หยุดอีกภายใน 5 วินาที = เลิก แจ้ง false
+// context หาย = เลิกทันที (เริ่ม loop ใหม่ไม่ช่วย)
 describe("watchRenderFailure", () => {
-  test("a render error is passed on with its error", () => {
+  /** นาฬิกาและตัวตั้งเวลาปลอม: tick() = ผ่านไปหนึ่งรอบของการตรวจ loop */
+  function fakeEnv() {
+    let t = 0;
+    const polls: (() => void)[] = [];
+    let stopped = 0;
+    return {
+      env: {
+        now: () => t,
+        every: (_ms: number, cb: () => void) => {
+          polls.push(cb);
+          return () => void stopped++;
+        },
+      },
+      advance: (ms: number) => void (t += ms),
+      tick: () => polls.forEach((cb) => cb()),
+      polls,
+      stoppedPolls: () => stopped,
+    };
+  }
+  const RETRY = RENDER_RETRY_WINDOW_MS;
+
+  test("polls the render loop every RENDER_LOOP_POLL_MS (1 s) and retries within 5 s", () => {
+    expect(RENDER_LOOP_POLL_MS).toBe(1000);
+    expect(RETRY).toBe(5000);
+  });
+
+  test("a render error: one restart (loop on, render requested) and recovering = true", () => {
     const { viewer, renderError } = fakeViewer();
+    const f = fakeEnv();
     const onFailure = vi.fn();
-    watchRenderFailure(viewer as never, onFailure);
+    watchRenderFailure(viewer as never, onFailure, f.env);
     const error = new Error("shader failed");
     renderError.raiseEvent(viewer.scene, error);
-    expect(onFailure).toHaveBeenCalledWith("renderError", error);
+    expect(onFailure).toHaveBeenCalledWith("renderError", error, true);
+    expect(viewer.scene.requestRender).toHaveBeenCalledTimes(1);
+    expect(viewer.useDefaultRenderLoop).toBe(true);
   });
 
-  test("a lost WebGL context is passed on", () => {
-    const { viewer, canvas } = fakeViewer();
+  test("a render loop that stopped silently is found by polling, restarted once, and told as loopStopped", () => {
+    const { viewer } = fakeViewer();
+    const f = fakeEnv();
     const onFailure = vi.fn();
-    watchRenderFailure(viewer as never, onFailure);
-    canvas.dispatchEvent(new Event("webglcontextlost"));
-    expect(onFailure).toHaveBeenCalledWith("contextLost", undefined);
-  });
-
-  test("tells only once (rendering has stopped either way)", () => {
-    const { viewer, canvas, renderError } = fakeViewer();
-    const onFailure = vi.fn();
-    watchRenderFailure(viewer as never, onFailure);
-    renderError.raiseEvent(viewer.scene, new Error("a"));
-    canvas.dispatchEvent(new Event("webglcontextlost"));
-    renderError.raiseEvent(viewer.scene, new Error("b"));
+    watchRenderFailure(viewer as never, onFailure, f.env);
+    f.tick();
+    expect(onFailure).not.toHaveBeenCalled(); // loop ยังวิ่ง
+    viewer.useDefaultRenderLoop = false; // Cesium จับข้อผิดพลาดใน render loop แล้วหยุด
+    f.tick();
+    expect(onFailure).toHaveBeenCalledWith("loopStopped", undefined, true);
+    expect(viewer.useDefaultRenderLoop).toBe(true);
+    expect(viewer.scene.requestRender).toHaveBeenCalledTimes(1);
+    // loop วิ่งต่อหลังเริ่มใหม่: ไม่แจ้งอีก
+    f.advance(1000);
+    f.tick();
     expect(onFailure).toHaveBeenCalledTimes(1);
   });
 
-  test("the returned function removes both listeners (teardown, before the context is lost on purpose)", () => {
-    const { viewer, canvas, renderError } = fakeViewer();
+  test("dying again within 5 s gives up (recovering = false) and does not restart in a loop", () => {
+    const { viewer } = fakeViewer();
+    const f = fakeEnv();
     const onFailure = vi.fn();
-    const off = watchRenderFailure(viewer as never, onFailure);
+    watchRenderFailure(viewer as never, onFailure, f.env);
+    viewer.useDefaultRenderLoop = false;
+    f.tick();
+    f.advance(RETRY - 1000);
+    viewer.useDefaultRenderLoop = false;
+    f.tick();
+    expect(onFailure.mock.calls).toEqual([["loopStopped", undefined, true], ["loopStopped", undefined, false]]);
+    expect(viewer.useDefaultRenderLoop).toBe(false); // ไม่เริ่มใหม่ครั้งที่สอง
+    f.advance(10_000);
+    f.tick();
+    expect(onFailure).toHaveBeenCalledTimes(2); // เลิกแล้ว ไม่แจ้งซ้ำ
+  });
+
+  test("dying again after more than 5 s is a new stop: restarted again", () => {
+    const { viewer, renderError } = fakeViewer();
+    const f = fakeEnv();
+    const onFailure = vi.fn();
+    watchRenderFailure(viewer as never, onFailure, f.env);
+    renderError.raiseEvent(viewer.scene, new Error("a"));
+    f.advance(RETRY + 1);
+    viewer.useDefaultRenderLoop = false;
+    f.tick();
+    expect(onFailure.mock.calls.map((c) => [c[0], c[2]])).toEqual([["renderError", true], ["loopStopped", true]]);
+    expect(viewer.useDefaultRenderLoop).toBe(true);
+  });
+
+  test("a lost WebGL context gives up at once (a new loop cannot help)", () => {
+    const { viewer, canvas } = fakeViewer();
+    const onFailure = vi.fn();
+    watchRenderFailure(viewer as never, onFailure, fakeEnv().env);
+    canvas.dispatchEvent(new Event("webglcontextlost"));
+    expect(onFailure).toHaveBeenCalledWith("contextLost", undefined, false);
+    expect(viewer.scene.requestRender).not.toHaveBeenCalled();
+  });
+
+  test("a viewer without useDefaultRenderLoop (a test fake) is never taken as stopped", () => {
+    const { viewer } = fakeViewer();
+    delete (viewer as { useDefaultRenderLoop?: boolean }).useDefaultRenderLoop;
+    const f = fakeEnv();
+    const onFailure = vi.fn();
+    watchRenderFailure(viewer as never, onFailure, f.env);
+    f.tick();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  test("the returned function removes both listeners and stops polling (teardown, before the context is lost on purpose)", () => {
+    const { viewer, canvas, renderError } = fakeViewer();
+    const f = fakeEnv();
+    const onFailure = vi.fn();
+    const off = watchRenderFailure(viewer as never, onFailure, f.env);
     expect(renderError.numberOfListeners).toBe(1);
     off();
     expect(renderError.numberOfListeners).toBe(0);
+    expect(f.stoppedPolls()).toBe(1);
     canvas.dispatchEvent(new Event("webglcontextlost"));
     renderError.raiseEvent(viewer.scene, new Error("late"));
     expect(onFailure).not.toHaveBeenCalled();

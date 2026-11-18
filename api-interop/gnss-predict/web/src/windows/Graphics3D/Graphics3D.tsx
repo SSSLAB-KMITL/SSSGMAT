@@ -6,13 +6,15 @@
 //   "Graphics windows carry ... 3D Window Defaults") แสดง/ซ่อนจาก View → Toolbars ปุ่มเรียกคำสั่งผ่านทะเบียน คำสั่งทำกับหน้าต่างที่ active
 //   แตะหน้าต่างนี้ (pointerdown/focus) = หน้าต่างนี้ active ก่อนคำสั่งทำงาน
 // - คลิกขวาบนดาวหรือ Facility (sensor spec §5.5) = เลือก object ที่ชี้แล้วเปิดเมนูของมัน (sceneMenuFor) คำสั่งทำกับ object ที่เลือกและหน้าต่างที่ active
-//   คลิกขวาที่ว่าง = ไม่มีเมนู (และไม่ให้ browser เปิดเมนูของมันเอง) คลิกซ้ายเลือก object อยู่ใน scene3d.ts (pick.ts)
+//   คลิกขวาที่ว่างโดยไม่ลาก = เมนูของหน้าต่าง (SCENE_WINDOW_3D_MENU: Show Orbits, task 13c) ลากปุ่มขวา (ซูมของ Cesium) = ไม่มีเมนู
+//   ไม่มีเมนูของ browser บนภาพ (graphics/sceneMenu.ts) คลิกซ้ายเลือก object อยู่ใน scene3d.ts (pick.ts)
+// - Show Orbits (task 13c): ปุ่มบนแถบ 3D Window Defaults กดค้างตาม props.showOrbits ของหน้าต่างนี้ เรียกคำสั่ง g3d.showOrbits (commands3d.ts)
 
-import { Binoculars, Hand, House, SlidersHorizontal, ZoomIn } from "lucide-react";
-import { useRef, useState, useSyncExternalStore, type MouseEvent } from "react";
+import { Binoculars, Hand, House, Orbit, SlidersHorizontal, ZoomIn } from "lucide-react";
+import { useRef, useSyncExternalStore } from "react";
 import { CommandContextMenu } from "../../chrome/ContextMenu";
 import { useThrottledTime, useTimeFormatter } from "../../chrome/hooks";
-import { sceneMenuFor, type MenuEntry } from "../../chrome/menus";
+import { SCENE_WINDOW_3D_MENU, sceneMenuFor } from "../../chrome/menus";
 import { TipProvider } from "../../chrome/Tip";
 import { ToolButton } from "../../chrome/ToolButton";
 import { t } from "../../labels/labels";
@@ -20,7 +22,7 @@ import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels
 import { useLayout } from "../../stores/layout";
 import { useScenario } from "../../stores/scenario";
 import { ResultsBanner, SceneFailedBanner, SceneMessage, useSceneMount, useShiftWheelSteps } from "../graphics/GraphicsFrame";
-import { selectScenePath } from "./pick";
+import { useSceneMenu } from "../graphics/sceneMenu";
 import { props3d } from "./props";
 import { getScene, markActive, registerScene, registry3d, scenesVersion, subscribeScenes } from "./registry";
 
@@ -30,6 +32,7 @@ function WindowToolbars({ panelId }: { panelId: string }) {
   const showDefaults = useLayout((s) => s.toolbars.defaults3d);
   useSyncExternalStore(subscribeScenes, scenesVersion);
   const mode = getScene(panelId)?.mouseMode() ?? "grab";
+  const showOrbits = useLayout((s) => props3d(s.windowProps[panelId]).showOrbits);
   if (!showGraphics && !showDefaults) return null;
   return (
     <TipProvider>
@@ -45,6 +48,7 @@ function WindowToolbars({ panelId }: { panelId: string }) {
             <ToolButton command="g3d.properties" label="toolbar.properties" icon={SlidersHorizontal} />
             <ToolButton command="g3d.grabGlobe" label="toolbar.grabGlobe" icon={Hand} pressed={mode === "grab"} />
             <ToolButton command="g3d.zoomIn" label="toolbar.zoomIn" icon={ZoomIn} pressed={mode === "zoomIn"} />
+            <ToolButton command="g3d.showOrbits" label="field.showOrbits" icon={Orbit} pressed={showOrbits} />
           </div>
         )}
       </div>
@@ -72,22 +76,12 @@ export function Graphics3D({ panelId }: PanelProps) {
     register: registerScene,
   });
   useShiftWheelSteps(host);
-  // เมนูของ object ที่คลิกขวา (ว่าง = ไม่มีเมนู)
-  const [menu, setMenu] = useState<readonly MenuEntry[]>([]);
-
-  /** ทำก่อนที่เมนูเปิด: หา object ใต้เมาส์ (พิกัดใน canvas ซึ่งเต็มพื้นที่ของ host) เลือกมัน แล้วเลือกเมนู ไม่มี object = ไม่ให้เมนูเปิด */
-  const onContextMenuCapture = (e: MouseEvent<HTMLDivElement>): void => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const path = getScene(panelId)?.pathAt(e.clientX - rect.left, e.clientY - rect.top) ?? null;
-    const entries = sceneMenuFor(path);
-    setMenu(entries);
-    if (path === null || entries.length === 0) {
-      e.preventDefault(); // ไม่ให้ browser เปิดเมนูของมันเอง (Cesium ก็ทำแบบนี้)
-      e.stopPropagation(); // และไม่ถึง Trigger ของเมนู
-      return;
-    }
-    selectScenePath(path);
-  };
+  // เมนูคลิกขวา: object ใต้เมาส์ (พิกัดใน canvas ซึ่งเต็มพื้นที่ของ host) เลือกมันแล้วเปิดเมนูของมัน ที่ว่างโดยไม่ลาก = เมนูของหน้าต่าง
+  const menu = useSceneMenu({
+    objectAt: (x, y) => getScene(panelId)?.pathAt(x, y) ?? null,
+    objectMenu: sceneMenuFor,
+    windowMenu: SCENE_WINDOW_3D_MENU,
+  });
 
   return (
     <div className="gfx" onPointerDownCapture={() => markActive(panelId)} onFocusCapture={() => markActive(panelId)}>
@@ -95,8 +89,8 @@ export function Graphics3D({ panelId }: PanelProps) {
       <ResultsBanner />
       <SceneFailedBanner registry={registry3d} panelId={panelId} window="3D" />
       <div className="gfx-stage">
-        <CommandContextMenu entries={menu}>
-          <div className="gfx-view" ref={host} data-testid="g3d-view" onContextMenuCapture={onContextMenuCapture} />
+        <CommandContextMenu entries={menu.entries}>
+          <div className="gfx-view" ref={host} data-testid="g3d-view" {...menu.handlers} />
         </CommandContextMenu>
         <SceneMessage view={view} window="3D" />
         {view === "ready" && open && showTime && <TimeAnnotation />}

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CommandContextMenu } from "../../src/chrome/ContextMenu";
 import { MenuBar } from "../../src/chrome/MenuBar";
-import { OBJECT_MENU, SATELLITE_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
+import { OBJECT_MENU, SATELLITE_MENU, SCENARIO_MENU, SCENE_FACILITY_MENU, SCENE_SATELLITE_MENU, SENSOR_MENU, objectMenuFor, sceneMenuFor } from "../../src/chrome/menus";
 import { commandTooltip, registerCommand } from "../../src/commands";
 import { t } from "../../src/labels/labels";
 import { msg } from "../../src/labels/messages.th";
@@ -11,6 +11,7 @@ import { useLayout } from "../../src/stores/layout";
 import { useSelection } from "../../src/stores/selection";
 import { Workspace } from "../../src/Workspace";
 import { registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
+import { registerObjectBrowserCommands } from "../../src/windows/ObjectBrowser/objectCommands";
 import { registerReportGraphManagerCommands } from "../../src/windows/ReportGraphManager/commands";
 import { openScenario, resetWithCoreCommands } from "./helpers/chrome";
 
@@ -69,13 +70,13 @@ describe("top-level menus", () => {
 });
 
 describe("menu contents", () => {
-  test("the Satellite menu lists Properties, Sensor View, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
+  test("the Satellite menu lists Properties, Sensor View, Show Imagery, Access..., Report & Graph Manager..., Zoom To, Rename, Delete", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
     act(() => useSelection.getState().select("*/Satellite/G01"));
     const menu = await openMenu(user, "Satellite");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
   });
 
@@ -88,14 +89,56 @@ describe("menu contents", () => {
     expect(item(menu, "Access...").getAttribute("aria-disabled")).toBe("true");
   });
 
-  test("the Facility, Constellation and Scenario menus keep their items", async () => {
+  // follow-up 13b-2: Properties และ Report & Graph Manager... ของเมนู Scenario ทำกับ scenario ที่เปิดอยู่ ไม่ขึ้นกับการเลือกใน Object Browser
+  test("Properties and Report & Graph Manager... of the Scenario menu act on the open scenario, enabled whenever one is open, whatever is selected", async () => {
+    const user = userEvent.setup();
+    const openPanel = vi.fn(() => "x");
+    useLayout.setState({ openPanel, api: {} } as never);
+    const disposers = [registerObjectBrowserCommands(), registerReportGraphManagerCommands()];
+    try {
+      render(<MenuBar />);
+      // ไม่มี scenario: ปิดใช้
+      let menu = await openMenu(user, "Scenario");
+      for (const name of ["Properties", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
+      await user.keyboard("{Escape}");
+      const doc = openScenario();
+      for (const path of [null, "*", "*/Group/GPS"]) {
+        act(() => useSelection.getState().select(path));
+        menu = await openMenu(user, "Scenario");
+        for (const name of ["Properties", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), `${name} ${path}`).toBeNull();
+        await user.click(item(menu, "Properties"));
+        expect(openPanel).toHaveBeenLastCalledWith("propertiesBrowser", { path: "*", name: doc.name });
+        menu = await openMenu(user, "Scenario");
+        await user.click(item(menu, "Report & Graph Manager..."));
+        expect(openPanel).toHaveBeenLastCalledWith("reportGraphManager", { objectType: "All", objects: [] });
+      }
+    } finally {
+      for (const off of disposers) off();
+    }
+  });
+
+  test("the Facility and Constellation menus keep their items", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    for (const [path, label] of [["*/Facility/THBK", "Facility"], ["*/Constellation/GPS", "Constellation"], ["*", "Scenario"]] as const) {
+    for (const [path, label] of [["*/Facility/THBK", "Facility"], ["*/Constellation/GPS", "Constellation"]] as const) {
       act(() => useSelection.getState().select(path));
       const menu = await openMenu(user, label);
       expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent), label).toEqual([
         "Properties", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      ]);
+      await user.keyboard("{Escape}");
+    }
+  });
+
+  // QA-02: เมนูที่ชื่อ Scenario (ราก, ไม่เลือก, หรือ path ที่ไม่ใช่ object) คือเมนูของ Scenario ชุดเดียวกับคลิกขวาที่ราก
+  test("the Scenario menu (root, nothing or a non-object selected) is the Scenario's own menu", async () => {
+    const user = userEvent.setup();
+    render(<MenuBar />);
+    for (const path of ["*", null, "*/Group/GPS"]) {
+      act(() => useSelection.getState().select(path));
+      const menu = await openMenu(user, "Scenario");
+      expect(within(menu).getAllByRole("menuitem").map((m) => m.querySelector(".menu-label")?.textContent), String(path)).toEqual([
+        "Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario",
       ]);
       await user.keyboard("{Escape}");
     }
@@ -108,7 +151,7 @@ describe("menu contents", () => {
     act(() => useSelection.getState().select("*/Satellite/G01"));
     const menu = await openMenu(user, "Satellite");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
-      "Properties", "Sensor View", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
+      "Properties", "Sensor View", "Show Imagery", "Access...", "Report & Graph Manager...", "Zoom To", "Rename", "Delete",
     ]);
   });
 
@@ -118,21 +161,36 @@ describe("menu contents", () => {
     expect(commands("Sensor")).toEqual(["object.properties", "object.sensorView", "object.access", "object.zoomTo", "object.rename", "object.delete"]);
     expect(objectMenuFor("Satellite")).toBe(SATELLITE_MENU);
     expect(commands("Satellite")).toEqual([
-      "object.properties", "object.sensorView", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
+      "object.properties", "object.sensorView", "object.showImagery", "object.access", "object.reportGraphManager", "object.zoomTo", "object.rename", "object.delete",
     ]);
-    for (const cls of ["Facility", "Constellation", "Scenario", undefined] as const) {
+    for (const cls of ["Facility", "Constellation", undefined] as const) {
       expect(objectMenuFor(cls), String(cls)).toBe(OBJECT_MENU);
     }
     expect(commands("Facility")).not.toContain("object.sensorView");
+    // QA-02: Scenario (ราก) มีเมนูของตัวเอง: ไม่มี Access..., Zoom To, Rename, Delete; Insert... / Close Scenario เป็นคำสั่งเดิมในชื่อของเมนู Scenario ของ STK
+    expect(objectMenuFor("Scenario")).toBe(SCENARIO_MENU);
+    expect(commands("Scenario")).toEqual(["scenario.properties", "scenario.reportGraphManager", "insert.new", "file.save", "file.saveAs", "file.close"]);
+    expect(SCENARIO_MENU.flatMap((e) => ("command" in e && e.label !== undefined ? [[e.command, e.label]] : []))).toEqual([
+      ["insert.new", "menu.scenario.insert"], ["file.close", "menu.scenario.closeScenario"],
+    ]);
   });
 
   test("sceneMenuFor (right-click in a 3D window) is short: a satellite and a facility have one, nothing else does", () => {
     const commands = (path: string | null) => sceneMenuFor(path).map((e) => ("command" in e ? e.command : ""));
     expect(sceneMenuFor("*/Satellite/G01")).toBe(SCENE_SATELLITE_MENU);
-    expect(commands("*/Satellite/G01")).toEqual(["object.properties", "object.sensorView", "object.zoomTo"]);
+    expect(commands("*/Satellite/G01")).toEqual(["object.properties", "object.sensorView", "object.showImagery", "object.zoomTo"]);
     expect(sceneMenuFor("*/Facility/THBK")).toBe(SCENE_FACILITY_MENU);
     expect(commands("*/Facility/THBK")).toEqual(["object.properties", "object.zoomTo"]);
     for (const path of [null, "*", "*/Sensor/S1", "*/Constellation/GPS", "not a path"]) expect(sceneMenuFor(path), String(path)).toEqual([]);
+  });
+
+  test("SATELLITE_MENU and SCENE_SATELLITE_MENU hold object.showImagery right after object.sensorView (ข2 Ruling o); the Sensor menu does not", () => {
+    for (const menu of [SATELLITE_MENU, SCENE_SATELLITE_MENU]) {
+      const ids = menu.map((e) => ("command" in e ? e.command : ""));
+      expect(ids[ids.indexOf("object.sensorView") + 1]).toBe("object.showImagery");
+    }
+    expect(SENSOR_MENU.some((e) => "command" in e && e.command === "object.showImagery")).toBe(false);
+    expect(OBJECT_MENU.some((e) => "command" in e && e.command === "object.showImagery")).toBe(false);
   });
 
   test("each of the other menus lists its items in the spec order", async () => {
@@ -184,17 +242,23 @@ describe("disabled items", () => {
     for (const i of items) expect(i.getAttribute("aria-disabled")).toBe("true");
   });
 
-  test("hovering a disabled Analysis item shows the Thai note that it belongs to sub-project 4", async () => {
+  test("hovering a disabled Analysis item shows the reason its command gives, and nothing when no command is registered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    const menu = await openMenu(user, "Analysis");
+    let menu = await openMenu(user, "Analysis");
     await user.hover(item(menu, "Validation..."));
-    const tip = await screen.findByRole("tooltip");
-    expect(tip.textContent).toBe(msg("tooltip.subtask4"));
+    expect(screen.queryByRole("tooltip")).toBeNull(); // ไม่มีคำสั่งลงทะเบียน = ปิดใช้เฉยๆ ไม่มีข้อความ "อยู่ในงานย่อยที่ 4" อีกแล้ว
+    await user.keyboard("{Escape}");
+    // คำสั่งปลอมที่ลงทะเบียนเองใน test (ไม่ใช่ของแอป) บอกเหตุผลของมันเอง
+    act(() => registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผลสมมติ" }));
+    menu = await openMenu(user, "Analysis");
+    await user.hover(item(menu, "Validation..."));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("เหตุผลสมมติ");
   });
 
   test("a disabled item can be reached with the keyboard, and then shows its reason", async () => {
     const user = userEvent.setup();
+    registerCommand("analysis.validation", { label: "menu.analysis.validation", run: vi.fn(), enabled: () => false, tooltip: () => "เหตุผลสมมติ" });
     render(<MenuBar />);
     await openMenu(user, "Analysis");
     await user.keyboard("{ArrowDown}"); // first item (a disabled item is still reachable)
@@ -203,7 +267,7 @@ describe("disabled items", () => {
     expect(document.activeElement?.textContent).toBe("Report & Graph Manager...");
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Validation...");
-    expect((await screen.findByRole("tooltip")).textContent).toBe(msg("tooltip.subtask4"));
+    expect((await screen.findByRole("tooltip")).textContent).toBe("เหตุผลสมมติ");
   });
 
   test("choosing a disabled item does nothing and keeps the menu open", async () => {
@@ -220,7 +284,8 @@ describe("disabled items", () => {
   test("Access... and Report & Graph Manager... of the class menu (built) carry no note while unregistered, and the registered reason once registered", async () => {
     const user = userEvent.setup();
     render(<MenuBar />);
-    const menu = await openMenu(user, "Scenario");
+    act(() => useSelection.getState().select("*/Facility/THBK")); // เมนู Scenario ไม่มี Access... (QA-02) จึงดูที่เมนูของ Facility
+    const menu = await openMenu(user, "Facility");
     for (const name of ["Access...", "Report & Graph Manager..."]) expect(item(menu, name).getAttribute("aria-disabled"), name).toBe("true");
     expect(commandTooltip("object.access")).toBeUndefined();
     expect(commandTooltip("object.reportGraphManager")).toBeUndefined();

@@ -37,6 +37,7 @@ const MESSAGES = {
   // ภาพหยุดระหว่างใช้: ข้อผิดพลาดตอนวาด หรือ browser ทิ้ง WebGL context (Chrome ทิ้งตัวที่เก่าที่สุดเมื่อมี context มากเกินไป)
   "scene.renderStopped": "การแสดงผลกราฟิกหยุดทำงาน ปิดแล้วเปิดหน้าต่างนี้ใหม่ (ถ้าเปิดหน้าต่าง 3D และ 2D ไว้หลายบาน ให้ปิดบานที่ไม่ใช้ก่อน) หน้าต่างอื่นยังใช้ได้",
   "scene.renderStoppedLog": "การแสดงผลกราฟิกของหน้าต่าง {window} หยุดทำงาน ({message}) ปิดแล้วเปิดหน้าต่างนี้ใหม่",
+  "scene.renderRestartedLog": "การแสดงผลกราฟิกของหน้าต่าง {window} หยุดทำงาน ({message}) จึงเริ่มวาดใหม่ให้แล้ว ถ้าภาพยังดำหรือค้างอยู่ ให้ปิดแล้วเปิดหน้าต่างนี้ใหม่",
 
   // หน้าต่าง 3D: 3D Graphics Window Properties และ View From/To (spec §9.2)
   "g3d.lightingNote": "Ambient Level และ Sun Level มีผลเมื่อเปิด Enable Lighting",
@@ -46,6 +47,10 @@ const MESSAGES = {
   // {value} = ค่า cell_normal ใน catalog ที่ไม่ใช่ +X, -X, +Z, -Z
   "model.cellNormalInvalid": "ด้านเซลล์ของแผงโซลาร์ของโมเดล 3 มิติ {model} ใน catalog อ่านไม่ได้ (cell_normal = {value} ต้องเป็น +X, -X, +Z หรือ -Z) จึงใช้ค่าสำรองในโปรแกรมแทน",
   "model.catalogFailed": "โหลดรายการโมเดล 3 มิติของดาวไม่สำเร็จ ({message}) ดาวทุกดวงในหน้าต่าง 3D แสดงเป็นจุดแทน",
+  // ข2 final C1: โมเดลในภาพทำให้วาดไม่ได้ (renderError) หน้าต่างนั้นปิดโมเดลของตัวเองในหน่วยความจำ แจ้งครั้งเดียวต่อหน้าต่าง {window} = ชื่อหน้าต่าง
+  "scene.modelsDisabled": "หน้าต่าง {window} วาดโมเดล 3 มิติของดาวไม่ได้ ({message}) จึงปิด Satellite Models ของหน้าต่างนี้และแสดงดาวเป็นจุดแทน เปิดใหม่ได้ที่ 3D Graphics Window Properties → Details",
+  // Sensor View ไม่มี Properties ของตัวเอง: ลองใหม่ได้โดยปิดแล้วเปิดหน้าต่าง
+  "scene.modelsDisabledSensorView": "หน้าต่าง {window} วาดโมเดล 3 มิติของดาวไม่ได้ ({message}) จึงแสดงดาวเป็นจุดแทนในหน้าต่างนี้ ปิดแล้วเปิดหน้าต่างนี้ใหม่เพื่อลองวาดโมเดลอีกครั้ง",
   "g3d.noWindow": "หน้าต่าง 3D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 3D ที่ต้องการ",
   // หน้าต่าง 2D: 2D Graphics Window Properties (spec §9.3)
   "g2d.noWindow": "หน้าต่าง 2D ที่จะตั้งค่าถูกปิดไปแล้ว เปิดหน้าต่างนี้ใหม่จากหน้าต่าง 2D ที่ต้องการ",
@@ -57,8 +62,7 @@ const MESSAGES = {
   "viewFromTo.notFound": "หา object ที่เลือกในหน้าต่าง 3D ไม่เจอ (ยังไม่มีผลลัพธ์ของดาวดวงนั้น หรือ object ถูกซ่อนอยู่)",
   "viewFromTo.noObjects": "scenario นี้ยังไม่มี Facility หรือ Satellite ให้เลือก",
 
-  // คำสั่งที่รอ งานย่อยที่ 4 (W4)
-  "tooltip.subtask4": "อยู่ในงานย่อยที่ 4",
+  // เหตุผลที่คำสั่งใช้ไม่ได้
   "tooltip.noScenario": "ยังไม่ได้เปิด scenario",
 
   // แถบเครื่องมือ Animation: ปุ่ม Start/Reverse ที่กดแล้วไม่ขยับเพราะ Animation Cycle เป็น Stop at Time และเวลาอยู่ที่ปลายช่วงแล้ว (W1)
@@ -124,9 +128,13 @@ const MESSAGES = {
   "catalog.windowFailed": "โหลดรายชื่อดาวของ snapshot ไม่สำเร็จ: {message}",
   "catalog.inScenario": "มีแล้ว",
   "catalog.noMatch": "ไม่พบดาวที่ตรงกับตัวกรอง",
+  // ข2 final I1: System = Imaging แต่ snapshot ของ scenario (ตั้งตอนสร้าง) ไม่มีดาวถ่ายภาพ {snapshot} = ชื่อ snapshot
+  "catalog.noImaging": "Orbit Data ของ scenario นี้ ({snapshot}) ไม่มีข้อมูลดาวถ่ายภาพ — ติ๊ก Imaging satellites ใน Fetch Orbit Data แล้วกด Fetch Now จากนั้นสร้าง scenario ใหม่ใน New Scenario Wizard โดยเลือก Orbit Data ล่าสุด",
   "catalog.selected": "เลือกแล้ว {n} ดวง",
   "catalog.nameTaken": "มี object ชื่อ \"{name}\" อยู่แล้ว (ชื่อไม่แยกตัวพิมพ์เล็กใหญ่)",
   "catalog.onlineHint": "Online CelesTrak เปิดหน้า Fetch Orbit Data ให้ หน้านี้ไม่ดาวน์โหลดเอง",
+  // ข2: 409 ที่ primary_sensors = ชื่อ sensor หลักทั้งสองแบบถูกใช้แล้ว {message} = ข้อความของ server
+  "catalog.primaryClash": "ชื่อ sensor หลักของดาวถ่ายภาพซ้ำกับ object ที่มีอยู่ (เอาติ๊ก Add Primary Sensor ออกเพื่อ Insert เฉพาะดาว): {message}",
 
   // Fetch Orbit Data (spec §11)
   "fetch.loading": "กำลังอ่านข้อมูลวงโคจรจาก server...",
@@ -140,6 +148,8 @@ const MESSAGES = {
   "fetch.failed": "สั่งดึงข้อมูลวงโคจรไม่สำเร็จ: {message}",
   "fetch.yes": "มี",
   "fetch.no": "ไม่มี",
+  // ข2 amendment (ab): ช่อง Imaging satellites บอกกลุ่มของ CelesTrak ที่ดึงเพิ่ม
+  "fetch.imagingHint": "ติ๊ก Imaging satellites เพื่อดึงกลุ่มดาวถ่ายภาพจาก CelesTrak ด้วย (กลุ่ม weather, science และ visual) ภายใต้ข้อจำกัดความถี่เดิมของ CelesTrak ไม่ติ๊ก = ดึงเฉพาะดาว GNSS ตามเดิม",
 
   // Daily Forecast Settings (spec §11, server §9)
   "daily.timeInvalid": "ต้องเป็นเวลา UTC รูปแบบ HH:MM เช่น 21:00 (00:00 ถึง 23:59)",
@@ -186,6 +196,7 @@ const MESSAGES = {
   "globe.offHintIon": "สวิตช์ Cesium ion ปิดอยู่ จึงยังไม่ใช้ภาพจาก Cesium ion (เปิดสวิตช์ด้านบน เลือก asset และใส่ token แล้วภาพ Cesium ion จะแสดงแทนชั้นภาพอื่นทั้งหมด)",
   "globe.unavailable": "อ่านสวิตช์และรายการชั้นภาพออนไลน์จาก server ไม่ได้ จึงใช้ภาพออนไลน์ทุกแหล่งไม่ได้ในตอนนี้ แสดงเฉพาะภาพ Natural Earth II ที่มากับโปรแกรม (ลองโหลดหน้าใหม่เมื่อ server พร้อม)",
   "globe.hiddenByIon": "ถูกซ่อนเพราะเปิด Cesium ion อยู่",
+  "globe.osmStartsHidden": "แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด — เปิดสวิตช์หรือติ๊ก Show เพื่อดู",
   // Cesium ion: token (ไม่แสดงค่าบนจอ บอกแค่ว่ามีหรือไม่) และ asset
   "globe.ionTokenSet": "มี Cesium ion token แล้ว (ไม่แสดงค่าบนจอ) พิมพ์ token ใหม่แล้วกด Apply เพื่อเปลี่ยน",
   "globe.ionTokenUnset": "ยังไม่ได้ใส่ Cesium ion token ใส่ token ของบัญชี ion.cesium.com ในช่องด้านบนแล้วกด Apply",
@@ -195,6 +206,15 @@ const MESSAGES = {
   "globe.ionNoAsset": "ยังไม่ได้เลือก asset จึงยังไม่แสดงภาพ Cesium ion (เลือก asset ด้านล่าง)",
   "globe.ionNoToken": "ยังไม่มี Cesium ion token จึงยังไม่แสดงภาพ Cesium ion (ชั้นภาพอื่นแสดงตามเดิม) ใส่ token ในช่องด้านบนแล้วกด Apply",
   "globe.ionRejected": "Cesium ion ไม่รับ asset หรือ token นี้ จึงถอดภาพ Cesium ion ออกและแสดงชั้นภาพอื่นตามเดิม (ดูเหตุผลที่ Message Viewer) เลือก asset อื่นหรือเปลี่ยน token เพื่อลองใหม่",
+
+  // ดาวถ่ายภาพ (ข2 Task 7): preset จาก GET /api/imaging/presets และคำสั่ง Show Imagery
+  "imaging.presetsFailed": "อ่านรายการดาวถ่ายภาพ (preset) จาก server ไม่สำเร็จ ({message}) จึงใช้ Show Imagery ไม่ได้",
+  "showImagery.noLayer": "ชั้นภาพ {layer} ไม่มีในรายการของ server",
+  // {layers} = ชื่อชั้นทึบที่บังอยู่ คั่นด้วย ", " ; {layer} = ชื่อชั้นภาพของดาว
+  "showImagery.uncovered": "ซ่อนชั้นภาพ {layers} ที่บังภาพ {layer} อยู่ (ติ๊ก Show กลับได้ที่ Globe Manager)",
+  // ion ไม่มีช่อง Show: ซ่อนด้วยการเปลี่ยน asset เป็น None จึงบอกวิธีคืนต่างจากชั้นอื่น
+  "showImagery.uncoveredIon": "ซ่อนภาพ Cesium ion ที่บังภาพ {layer} อยู่โดยเปลี่ยน asset เป็น None (สวิตช์ Cesium ion ยังเปิดอยู่ เลือก asset กลับได้ที่กลุ่ม Cesium ion ใน Globe Manager)",
+  "showImagery.noView": "ไม่มีหน้าต่าง 3D ที่มีตำแหน่งของดาว {satellite} ณ เวลานี้ จึงไม่ได้ย้ายกล้อง (เปิดชั้นภาพ {layer} แล้ว)",
 
   // งานที่ต่ออินเทอร์เน็ต ต้องขอยืนยันก่อนทุกครั้ง
   "fetch.confirm": `ดึงข้อมูลวงโคจรตอนนี้หรือไม่? โปรแกรมอาจเชื่อมต่ออินเทอร์เน็ตเพื่อดาวน์โหลดจาก ${SOURCES} (ข้อมูลวงโคจรจาก CelesTrak, ข้อมูลดาวเทียมจาก IGS, broadcast ephemeris จาก CDDIS) CelesTrak จำกัดความถี่ในการดึงและ IGS ดึงไม่เกินวันละครั้ง ส่วนที่ยังไม่ถึงเวลา server จะใช้ไฟล์เดิมแทน แต่แหล่งอื่นในรายการนี้ยังอาจถูกดาวน์โหลด`,
@@ -295,6 +315,7 @@ const MESSAGES = {
   "graph.zoomOutHint": "ยกเลิกการซูม แสดงทั้งช่วง (หมุนล้อเมาส์บนกราฟเพื่อซูม)",
   "graph.timelineHint": "แสดง/ซ่อนเส้นเวลา animation (กราฟ polar: จุดตำแหน่งปัจจุบัน)",
   "graph.crosshairHint": "แสดงเส้นกากบาทตามเมาส์พร้อมค่าบนแกน",
+  "graph.exportHint": "ส่งออกข้อมูลของกราฟทั้งช่วงเป็นไฟล์ CSV",
 
   // Message Viewer (spec §11)
   "mv.empty": "ไม่มีข้อความในแท็บนี้",
@@ -352,6 +373,7 @@ const MESSAGES = {
   "sensorView.hudSubPoint": "จุดใต้ดาว {lat}, {lon}",
   "sensorView.hudAltitude": "ความสูง {alt} km",
   "sensorView.hudCone": "Cone Half Angle {angle}°",
+  "sensorView.hudRect": "ครึ่งมุม Vertical {v}° × Horizontal {h}°",
   // HUD ของโหมดกล้อง (imagery spec §5.3): {fov} = มุมกว้างด้านสั้น (องศา), {zoom} = ขั้นซูม, {image} = ชื่อชั้นภาพ NASA GIBS บนสุดและเวลาของภาพ
   "sensorView.hudFov": "มุมกว้าง FOV {fov}° ×{zoom}",
   "sensorView.hudImagery": "ภาพพื้นโลก: {image}",
@@ -381,7 +403,15 @@ const MESSAGES = {
   "rgm.noStyles": "ไม่มี style ของ object ชนิดนี้",
   "rgm.loadFailed": "อ่านรายการ style จาก server ไม่สำเร็จ: {message}",
   // {field} = ช่องแรกที่ผิด เช่น kind, content
-  "rgm.unusable": "ใช้ไม่ได้: ไฟล์ของ style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้ไฟล์ใน data/styles หรือ Delete แล้วสร้างใหม่",
+  // {where} = rgm.whereMy / rgm.whereScenario / rgm.whereInstalled
+  "rgm.unusable": "ใช้ไม่ได้: style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} แก้{where} หรือ Delete แล้วสร้างใหม่",
+  // Installed Styles ล็อก (ลบไม่ได้): ไม่บอกให้ Delete
+  "rgm.unusableLocked": "ใช้ไม่ได้: style นี้มีโครงไม่ครบหรือไม่ถูกต้องที่ช่อง {field} (Installed Styles ล็อกไว้ ลบไม่ได้) แก้{where}",
+  "rgm.unusableUnnamed": "ใช้ไม่ได้: รายการนี้ไม่มีชื่อ (ช่องแรกที่ผิดคือ {field}) จึงลบจากที่นี่ไม่ได้ แก้{where}เอง",
+  "rgm.whereMy": "ไฟล์ใน data/styles",
+  "rgm.whereScenario": "รายการ styles ใน scenario.json",
+  "rgm.whereInstalled": "ไฟล์ installed.json ของ engine",
+  "rgm.nothingToCompute": "ผลลัพธ์ยังไม่ตรงกับ scenario แต่ไม่มีอะไรที่คำนวณให้ได้ (เช่น scenario ยังไม่มีดาว) แก้ scenario ก่อนแล้วสร้างใหม่",
   "rgm.selectObjects": "เลือก object ทางซ้ายก่อน (กด Ctrl หรือ Shift ค้างเพื่อเลือกหลายตัว)",
   // {type} = ชนิด object ของ style
   "rgm.objectsMismatch": "style นี้ใช้กับ object ชนิด {type} เลือกเฉพาะ object ชนิดนั้น",
@@ -413,6 +443,33 @@ const MESSAGES = {
   "styleEditor.noScenario": "เปิด scenario ก่อนจึงจะบันทึกลง Scenario Styles ได้",
   "styleEditor.saved": "บันทึก style \"{name}\" ลง {tier} แล้ว",
   "styleEditor.dynamicUnsupported": "style นี้สร้างเป็น Dynamic Display/Strip Chart ไม่ได้ (ต้องใช้ Data Provider ที่ใช้กับ Dynamic Displays ไม่มี Summary Only และกราฟเป็น Time XY)",
+
+  // หน้า Validation (spec §7)
+  "validation.empty": "ยังไม่มีประวัติการตรวจสอบ ข้อมูลจะปรากฏหลังงานประจำวันรัน แล้ว SP3 จริงของวันนั้นออกและ server ตรวจเทียบเสร็จ (เปิดงานประจำวันได้ที่ Utilities → Daily Forecast Settings...)",
+  "validation.loading": "กำลังโหลดประวัติการตรวจสอบ...",
+  "validation.loadFailed": "โหลดประวัติการตรวจสอบไม่สำเร็จ: {message}",
+  "validation.pendingFailed": "โหลดรายการวันที่รอตรวจไม่สำเร็จ: {message} (แสดงเฉพาะวันที่ตรวจแล้ว)",
+  "validation.noResults": "ยังไม่มีวันที่ตรวจเสร็จ จึงยังไม่มีผลรายดวงและกราฟ (วันที่รอ SP3 แสดงเป็น Pending ในตารางด้านบน)",
+  "validation.selectDay": "คลิกวันที่ตรวจแล้ว (Pass หรือ Fail) ในตารางด้านบนเพื่อดูผลรายดวง",
+  "validation.dayLoading": "กำลังโหลดผลรายดวงของ {scenario} วันที่ {day}...",
+  "validation.dayFailed": "โหลดผลตรวจของ {scenario} วันที่ {day} ไม่สำเร็จ: {message}",
+  "validation.dayInvalid": "ไฟล์ผลตรวจอยู่ในรูปที่อ่านไม่ได้",
+  "validation.noMatch": "ไม่มีดาวที่ตรงกับตัวกรอง",
+  "validation.noSatellites": "ผลตรวจของวันนี้ไม่มีข้อมูลรายดวง",
+  // {time} = เวลาที่ตัวตั้งเวลาจะลองตรวจครั้งถัดไป ตาม DateFormat ของ scenario ที่เปิดอยู่ (ไม่มี scenario = UTCG)
+  "validation.nextAttempt": "ลองครั้งถัดไป {time}",
+  "validation.gaveUpShort": "เลิกตรวจแล้ว ไม่ลองอีก",
+  "validation.noGnss": "ไม่มีดาว GNSS ให้ตรวจ",
+  "validation.undecided": "ตัดสินไม่ได้ — ไม่มีระบบใดมีคู่ SP3 ที่อายุข้อมูล ≤ 2 วัน",
+  "validation.noRetry": "ไม่มีรอบลองถัดไป",
+  "validation.gaveUp": "ตัวตั้งเวลาเลิกตรวจวันนี้แล้วและจะไม่ลองอีก (ระยะเวลาก่อนเลิกตั้งได้ที่ Validation Give Up After ใน Daily Forecast Settings...)",
+  "validation.noTrend": "ยังไม่มีข้อมูลสำหรับกราฟนี้",
+  "validation.noAge": "ยังไม่มีดาวที่มีทั้งอายุข้อมูลและระยะคลาด 3 มิติ",
+  "validation.loadingAges": "กำลังโหลดผลรายดวงของแต่ละวันเพื่อวาดกราฟ {done}/{total}",
+  "validation.refreshHint": "โหลดประวัติและรายการวันที่รอตรวจใหม่จาก server",
+  "validation.ageHint": "อายุข้อมูลวงโคจรของดาวดวงนั้น (วัน)",
+  "validation.trendHint": "P99 ของความต่าง Az/El ระหว่างพยากรณ์กับค่าจริง ต่อระบบ เส้นประคือเกณฑ์",
+  "validation.ageChartHint": "ค่ากลางระยะคลาด 3 มิติของแต่ละดวงในทุกวันที่ตรวจแล้ว เทียบกับอายุข้อมูลวงโคจร ใช้ประกอบการปรับเกณฑ์อายุ 7 วัน",
 } as const satisfies Record<string, string>;
 
 export type MsgKey = keyof typeof MESSAGES;

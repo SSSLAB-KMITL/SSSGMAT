@@ -2,7 +2,7 @@
 // และกุญแจการดึงช่วงเวลา accessResultsKey (src/windows/TimelineView/rows.ts)
 
 import { describe, expect, test } from "vitest";
-import { accessFor, resolveAccessGraphics, SCENARIO_ACCESS_DEFAULTS } from "../../src/cesium/accessGraphics";
+import { accessColor, accessFor, resolveAccessGraphics, SCENARIO_ACCESS_DEFAULTS } from "../../src/cesium/accessGraphics";
 import type { ResultsInfo } from "../../src/stores/results";
 import type { ScenarioDoc } from "../../src/stores/scenario";
 import { accessResultsKey, type AccessDef } from "../../src/windows/TimelineView/rows";
@@ -41,12 +41,14 @@ describe("resolveAccessGraphics", () => {
   });
 
   test("inherit true, a missing inherit, null graphics or no graphics key all give the scenario defaults", () => {
-    expect(SCENARIO_ACCESS_DEFAULTS).toEqual({ show: true, line: true, staticHighlight: false, animateHighlight: false, custom: null });
+    expect(SCENARIO_ACCESS_DEFAULTS).toEqual({ show: true, line: true, staticHighlight: false, animateHighlight: false, custom: null, objectColors: false });
+    expect(Object.isFrozen(SCENARIO_ACCESS_DEFAULTS)).toBe(true);
     for (const a of [
       access({}, { inherit: true, show: false, static_highlight: true, color_mode: "custom", custom_color: "#123456" }),
       access({}, { inherit: undefined, show: false }),
       access({}, null),
-      access({}, undefined),
+      // ไม่มีกุญแจ graphics เลย (access({}, undefined) ได้ค่าตั้งต้นของพารามิเตอร์ = graphics ของตัวเอง ไม่ใช่กรณีนี้)
+      (({ graphics: _omit, ...rest }) => rest as AccessDef)(access({}, null)),
     ]) {
       expect(resolveAccessGraphics(a)).toEqual(SCENARIO_ACCESS_DEFAULTS);
     }
@@ -54,9 +56,9 @@ describe("resolveAccessGraphics", () => {
 
   test("own graphics (inherit false) give the explicit fields, with show and animate_line defaulting to on", () => {
     expect(resolveAccessGraphics(access({}, { show: false, animate_line: false, static_highlight: true, animate_highlight: true, color_mode: "custom", custom_color: "#12AB34" })))
-      .toEqual({ show: false, line: false, staticHighlight: true, animateHighlight: true, custom: "#12ab34" });
+      .toEqual({ show: false, line: false, staticHighlight: true, animateHighlight: true, custom: "#12ab34", objectColors: false });
     expect(resolveAccessGraphics(access({}, { show: undefined, animate_line: undefined, static_highlight: undefined, animate_highlight: undefined })))
-      .toEqual({ show: true, line: true, staticHighlight: false, animateHighlight: false, custom: null });
+      .toEqual({ show: true, line: true, staticHighlight: false, animateHighlight: false, custom: null, objectColors: true });
   });
 
   test("a custom colour that is not #rrggbb, or Use Object Colors, gives no custom colour", () => {
@@ -64,6 +66,17 @@ describe("resolveAccessGraphics", () => {
       expect(resolveAccessGraphics(access({}, { color_mode: "custom", custom_color }))?.custom, String(custom_color)).toBeNull();
     }
     expect(resolveAccessGraphics(access({}, { color_mode: "object", custom_color: "#12ab34" }))?.custom).toBeNull();
+  });
+});
+
+describe("accessColor: the one colour rule of the access line and its Timeline rows", () => {
+  const TOK = { access: "#9dff6b" } as never;
+  test("custom colour, else the object's colour with Use Object Colors, else --color-access", () => {
+    expect(accessColor(resolveAccessGraphics(access({}, { color_mode: "custom", custom_color: "#AA00FF" }))!, "#123456", TOK)).toBe("#aa00ff");
+    expect(accessColor(resolveAccessGraphics(access({}, { color_mode: "object" }))!, "#123456", TOK)).toBe("#123456");
+    expect(accessColor(resolveAccessGraphics(access({}, { color_mode: "object" }))!, undefined, TOK)).toBe("#9dff6b");
+    expect(accessColor(resolveAccessGraphics(access({}, { color_mode: "custom", custom_color: null }))!, "#123456", TOK)).toBe("#9dff6b");
+    expect(accessColor(SCENARIO_ACCESS_DEFAULTS, "#123456", TOK)).toBe("#9dff6b");
   });
 });
 

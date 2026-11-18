@@ -68,16 +68,21 @@ export async function openScenario(name: string): Promise<boolean> {
   return true;
 }
 
-/** หลัง scenario ถูกปิด (ไม่ว่าใครสั่ง): ถอด sc ออกจาก URL ปิดหน้าต่างที่ผูกกับ scenario (PanelDef.scenarioBound) แล้วเปิด Welcome ทำซ้ำได้ */
-function afterScenarioClosed(): void {
-  setScenarioParam(null);
+/** ปิดหน้าต่างที่ผูกกับ scenario (PanelDef.scenarioBound) พื้นที่ทำงานยังไม่ mount = ไม่ทำอะไร คืน false */
+function closeScenarioBound(): boolean {
   const layout = useLayout.getState();
   const api = layout.api;
-  if (api === null) return;
+  if (api === null) return false;
   for (const panel of [...api.panels]) {
     if (getPanelDef(panel.api.component)?.scenarioBound === true) layout.closePanel(panel.id);
   }
-  showWelcome();
+  return true;
+}
+
+/** หลัง scenario ถูกปิด (ไม่ว่าใครสั่ง): ถอด sc ออกจาก URL ปิดหน้าต่างที่ผูกกับ scenario (PanelDef.scenarioBound) แล้วเปิด Welcome ทำซ้ำได้ */
+function afterScenarioClosed(): void {
+  setScenarioParam(null);
+  if (closeScenarioBound()) showWelcome();
 }
 
 /** File → Close และ File → Exit (browser ปิดแท็บเองไม่ได้ Exit จึงเหมือน Close: กลับหน้า Welcome) */
@@ -158,8 +163,11 @@ export function startWorkspaceFlow(): () => void {
   });
   if (useLayout.getState().api !== null) run();
 
+  // เปิด scenario อื่นทับ (ชื่อเปลี่ยนจากชื่อหนึ่งเป็นอีกชื่อ): ปิดหน้าต่างที่ผูกกับตัวเก่าทันทีตอนชื่อเปลี่ยน ก่อน React วาดด้วยชื่อใหม่
+  // (หน้าต่างรายงาน/กราฟจะไม่ POST กับ scenario ใหม่) แล้ว restoreFor จัดหน้าต่างของตัวใหม่ตาม workbook ของมัน ไม่เปิด Welcome
   const offScenario = useScenario.subscribe((state, prev) => {
     if (prev.name !== null && state.name === null) afterScenarioClosed();
+    else if (prev.name !== null && state.name !== null && prev.name !== state.name) closeScenarioBound();
   });
 
   return () => {

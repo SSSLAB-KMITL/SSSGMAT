@@ -7,6 +7,7 @@
 
 import contextlib
 import gzip
+import hashlib
 import io
 import json
 import math
@@ -298,6 +299,38 @@ class TestValidateEphemeris(ValidateCase):
         self.assertEqual(res["satellites"]["G01"]["flags"], ["prn_changed", "stale"])
 
 
+
+class TestImaging(ValidateCase):
+    """ดาวถ่ายภาพ (ระบบ X) ไม่ถูกตรวจเลย: ไม่มีแถว unverified และผลเหมือนไม่มีดาวนั้น (Ruling u)"""
+
+    def test_x_skipped(self):
+        tracks = {"G01": shifted(1), "E11": shifted(0)}
+        offsets = {"G01": (0.5, 0.0, 0.0), "E11": (0.0, 0.3, 0.0)}
+        nav = read_nav(NAV_FILE)
+        without = self.validate(tracks, offsets, nav=nav)
+        write_truth(self.truth_path, tracks)
+        positions = pred_from_truth(self.truth_path, offsets)
+        positions["X04"] = [plus(p, (0.0, 0.0, 3000.0)) for p in positions["E11"]]
+        with_x = self.validate(tracks, offsets, nav=nav, pred=positions)
+        self.assertEqual(with_x, without)
+        self.assertEqual(sorted(with_x), sorted(without))
+        self.assertNotIn("X04", with_x["satellites"])
+        self.assertNotIn("X", with_x["systems"])
+
+    def test_markdown_line(self):
+        from gnss_predict.studio_validate import validation_markdown
+        res = self.validate({"G01": shifted(1)}, {"G01": (0.5, 0.0, 0.0)})
+        kw = {"scenario": "S", "ephem_hash": "abcdef123456", "facility": "THBK"}
+        today = validation_markdown(res, **kw)
+        self.assertEqual(validation_markdown(res, **kw, skipped_imaging=0), today)
+        self.assertNotIn("ดาวถ่ายภาพ", today)
+        two = validation_markdown(res, **kw, skipped_imaging=2).splitlines()
+        line = "- ข้ามดาวถ่ายภาพ 2 ดวง (ไม่มีข้อมูลอ้างอิง)"
+        self.assertEqual(two.count(line), 1)
+        two.remove(line)
+        self.assertEqual(two, today.splitlines())
+
+
 # ---------- run_validate ----------
 
 SNAP = FXS / "snapshot"
@@ -305,7 +338,10 @@ SNAPSHOT_NAME = "20261110T0000Z"
 SATELLITES = [("G01", 62339), ("G22", 26407), ("E11", 37846), ("R05", 43508), ("C01", 56564)]
 PLAN = {"G01": (0.0, 60.0), "G22": (60.0, 70.0), "E11": (120.0, 45.0), "R05": (240.0, 30.0), "C01": (300.0, 50.0)}
 SYNTH_EPOCH = datetime(2026, 11, 10, tzinfo=UTC)
-SYNTH_OFFSETS: dict[str, tuple[float, float, float]] = {}      # ความคลาดที่ fake propagate ใส่ให้ดาวแต่ละ PRN (กม.)
+SYNTH_OFFSETS: dict[str, tuple[float, float, float]] = {}
+PINNED_GNSS_VALIDATION = {"json": "81bc17640c01efe3fad6900eba2b4ba64f915a63b98a33d2508fada2f2c3f8cb",
+                          "md": "8dd110d16ebdfd3488a6c137b298a172bbf95590c2dab38064b0c37697da7f5f",
+                          "ephem": "480e22dfba8a", "codes": ["SAT_FLAGGED", "SAT_FLAGGED", "BRDC_UNAVAILABLE"]}      # ความคลาดที่ fake propagate ใส่ให้ดาวแต่ละ PRN (กม.)
 
 
 def ecef_from_az_el(az_deg: float, el_deg: float, range_km: float = 22000.0) -> tuple[float, float, float]:
@@ -433,6 +469,20 @@ class TestRunValidate(RunValidateCase):
         self.assertIn("truth.sp3", md)
         self.assertNotIn("\r", md)
         self.assertEqual(list(ephem.glob("*.tmp*")), [])
+
+    def test_gnss_only_validation_is_pinned(self):
+        # ผลตรวจของฉาก GNSS ล้วนบันทึกจากโค้ดก่อนงานที่ 3 (53e01a1) ขณะ snapshot มีไฟล์ imaging: ต้องไม่เปลี่ยนแม้แต่ไบต์เดียว
+        # JSON ตัด created_utc (เวลาที่เขียน) ออกแล้วเรียง key ก่อน hash ส่วน markdown ไม่มีเวลาที่เขียน
+        for name in ("science.json", "visual.json", "weather.json"):
+            shutil.copyfile(FXS / "imaging" / name, self.data / "orbits" / SNAPSHOT_NAME / name)
+        SYNTH_OFFSETS["G22"] = (200.0, 0.0, 0.0)
+        ephem, msgs = self.run_it()
+        doc = json.loads((ephem / "validation_2026-11-10.json").read_bytes())
+        doc.pop("created_utc")
+        digest = {"json": hashlib.sha256(json.dumps(doc, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+                  "md": hashlib.sha256((ephem / "validation_2026-11-10.md").read_bytes()).hexdigest(),
+                  "ephem": ephem.name, "codes": [m.code for m in msgs]}
+        self.assertEqual(digest, PINNED_GNSS_VALIDATION)
 
     def test_progress_runs_from_zero_to_one(self):
         calls = []

@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
-from gnss_predict.config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S
+from gnss_predict.config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S, OMM_MAX_BYTES
 from gnss_predict.errors import OrbitUnavailableError
-from gnss_predict.omm import catalog_field, fetch_group, read_omm, to_tle_lines
+from gnss_predict.omm import catalog_field, fetch_group, parse_state_time, read_omm, read_state, to_tle_lines
 from gnss_predict.tle_fetch import tle_checksum
 
 FX = Path(__file__).parent / "fixtures"
@@ -31,14 +31,22 @@ class ReadFails:
         self.exc = exc
 
 
+class Endless:
+    """ตัวแทน body ที่ไม่มีวันจบ: read(n) ได้ n ไบต์เสมอ ส่วน read() ที่ไม่จำกัดขนาดถือว่าผิด (อ่านไม่จำกัดจะกินหน่วยความจำ)"""
+
+
 class _Resp:
     def __init__(self, body):
         self._body = body
 
-    def read(self):
+    def read(self, amt=None):
         if isinstance(self._body, ReadFails):
             raise self._body.exc
-        return self._body
+        if isinstance(self._body, Endless):
+            if amt is None or amt < 0:
+                raise AssertionError("resp.read() ไม่จำกัดขนาด")
+            return b" " * amt
+        return self._body if amt is None or amt < 0 else self._body[:amt]
 
     def __enter__(self):
         return self
@@ -146,6 +154,30 @@ class TestRead(unittest.TestCase):
                 p.write_text(text, encoding="utf-8")
                 with self.subTest(label), self.assertRaises(ValueError):
                     read_omm(p)
+
+
+class TestStateHelpers(unittest.TestCase):
+    """read_state / parse_state_time: ตัวอ่าน celestrak_state.json แบบสาธารณะ (Gpredict Web แสดงเวลาดึงล่าสุดของแต่ละกลุ่ม)"""
+
+    def test_parse_state_time(self):
+        self.assertEqual(parse_state_time("2026-11-11T06:00:00Z"), datetime(2026, 11, 11, 6, 0, tzinfo=UTC))
+        for bad in (None, 12, "", "2026-11-11T06:00:00", "2026-11-11T06:00:00.000Z", "yesterday"):
+            with self.subTest(bad=bad):
+                self.assertIsNone(parse_state_time(bad))
+
+    def test_read_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "celestrak_state.json"
+            self.assertEqual(read_state(path), {})                                  # ไม่มีไฟล์
+            for text in ("{", "[1, 2]", "\"x\""):
+                path.write_text(text, encoding="utf-8")
+                with self.subTest(text=text):
+                    self.assertEqual(read_state(path), {})                          # เสียหรือไม่ใช่ object
+            path.write_bytes(b"\xff\xfe")
+            self.assertEqual(read_state(path), {})                                  # ไม่ใช่ UTF-8
+            state = {"amateur": {"last_request": "2026-11-11T06:00:00Z"}}
+            path.write_text(json.dumps(state), encoding="utf-8")
+            self.assertEqual(read_state(str(path)), state)                          # รับ str ได้
 
 
 class TestFetch(unittest.TestCase):
@@ -294,6 +326,44 @@ class TestFetch(unittest.TestCase):
         with self.assertRaises(OrbitUnavailableError):
             self.fetch(op)
         self.assertFalse(self.state.exists())
+
+    def padded_body(self, size: int) -> bytes:
+        """OMM ที่ใช้ได้ (JSON array) เติมช่องว่างท้ายให้ยาวพอดี size ไบต์"""
+        return self.body + b" " * (size - len(self.body))
+
+    def test_fetch_body_at_cap_is_accepted_and_over_cap_is_not(self):
+        # เพดานอ่านคำตอบ OMM: ยาวพอดี OMM_MAX_BYTES รับ เกิน 1 ไบต์ปฏิเสธ (เป็น OMM ที่ใช้ได้ทั้งคู่ถ้าไม่มีเพดาน)
+        self.assertEqual(OMM_MAX_BYTES, 32 * 1024 * 1024)
+        path, msgs = self.fetch(FakeOpener(self.padded_body(OMM_MAX_BYTES)))
+        self.assertEqual((msgs, path.stat().st_size), ([], OMM_MAX_BYTES))
+        self.setUp()
+        first, _ = self.fetch(FakeOpener(self.body))
+        later = T0 + timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
+        path, msgs = self.fetch(FakeOpener(self.padded_body(OMM_MAX_BYTES + 1)), now=later)
+        self.assertEqual((path, [m.code for m in msgs]), (first, ["ORBIT_DOWNLOAD_FAILED"]))
+
+    def test_fetch_endless_body_falls_back_like_a_failed_download(self):
+        # body ที่ไม่มีวันจบอ่านแค่ OMM_MAX_BYTES + 1 ไบต์ แล้วถือเป็นดาวน์โหลดไม่สำเร็จ: ใช้ไฟล์เดิม บันทึก last_request
+        later = T0 + timedelta(seconds=CELESTRAK_MIN_INTERVAL_S)
+        op = FakeOpener(self.body, Endless())
+        first, _ = self.fetch(op)
+        path, msgs = self.fetch(op, now=later)
+        self.assertEqual((path, [(m.code, m.level) for m in msgs]), (first, [("ORBIT_DOWNLOAD_FAILED", "warning")]))
+        self.assertIn("32 MB", msgs[0].text)
+        self.assertIn(first.name, msgs[0].text)
+        self.assertEqual(self.state_of(), {"last_request": "2026-11-11T08:00:00Z",
+                                           "last_success": "2026-11-11T06:00:00Z"})
+        self.assertEqual(list(self.dest.iterdir()), [first])               # ไม่เขียนไฟล์ใหม่ ไม่ทิ้งไฟล์ชั่วคราว
+        path2, msgs2 = self.fetch(op, now=later + timedelta(seconds=60))   # ต้องไม่ส่งซ้ำใน 2 ชม.
+        self.assertEqual((len(op.calls), path2, msgs2[0].code), (2, first, "ORBIT_RATE_LIMITED_LOCAL"))
+
+    def test_fetch_endless_body_without_cache_raises_and_records_request(self):
+        op = FakeOpener(Endless())
+        with self.assertRaises(OrbitUnavailableError) as cm:
+            self.fetch(op)
+        self.assertIn("32 MB", str(cm.exception))
+        self.assertEqual(self.state_of(), {"last_request": "2026-11-11T06:00:00Z"})
+        self.assertFalse(self.dest.exists() and list(self.dest.iterdir()))
 
     def test_fetch_no_cache_raises(self):
         op = FakeOpener(URLError("ต่อไม่ได้"))

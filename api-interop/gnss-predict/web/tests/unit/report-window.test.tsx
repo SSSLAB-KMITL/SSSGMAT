@@ -3,6 +3,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { installTestHooks } from "../../src/cesium/testHooks";
 import { confirm } from "../../src/chrome/Dialogs";
@@ -14,12 +15,13 @@ import { useJobs } from "../../src/stores/jobs";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useResults, type ResultsInfo } from "../../src/stores/results";
+import { useScenario } from "../../src/stores/scenario";
 import { useTime } from "../../src/stores/time";
 import { formatTime } from "../../src/time/format";
-import { openReport, primeReport, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
+import { openReport, primeReport, primeReportUnheardForTest, PRIMED_TTL_MS, recomputePlan, Report, registerReportPanel, requestOf, type ReportParams } from "../../src/windows/Report/Report";
 import { columnWidths, dynamicRows, flattenRows, prepareDynamic } from "../../src/windows/Report/table";
 import { makeDoc, openScenario, resetAll } from "./helpers/chrome";
-import { stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
+import { deferred, stubFetch, type Call, type Handler } from "./helpers/fake-fetch";
 
 // กล่องยืนยันของแอป: test ตอบเองแทนการคลิกใน <Dialogs/>
 vi.mock("../../src/chrome/Dialogs", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/chrome/Dialogs")>()), confirm: vi.fn() }));
@@ -119,6 +121,11 @@ afterEach(() => {
   delete window.__gnssStudioTest;
 });
 
+/** ฝากผลไว้โดยไม่มีหน้าต่างใดรับ (จำลองผลที่ฝากไว้ก่อนเปิดหน้าต่าง แล้วหน้าต่างไม่ได้เปิด) ใช้ etag ปัจจุบันของ store */
+function primeReportUnheard() {
+  primeReportUnheardForTest("S1", requestOf(PARAMS), accessReport());
+}
+
 function mount(params: ReportParams = PARAMS, panelId = "report") {
   return render(<Report panelId={panelId} params={params} />);
 }
@@ -176,6 +183,91 @@ describe("report table", () => {
     expect(f.count(REPORTS)).toBe(2);
   });
 
+  // ---------- fix round 1: primeReport ----------
+
+  test("in StrictMode the primed report is still used once: no POST at all", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    render(<StrictMode><Report panelId="report" params={PARAMS} /></StrictMode>);
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(0);
+  });
+
+  test("Generate on an already-open window updates it with the new result", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+    const fresh = accessReport();
+    fresh.sections[0].rows = [[9, iso(T0 + 20 * HOUR), iso(T0 + 21 * HOUR), 1234.5]];
+    act(() => primeReport("S1", requestOf(PARAMS), fresh));
+    await waitFor(() => expect(rowTexts(container)).toContainEqual(["9", formatTime(new Date(T0 + 20 * HOUR), "UTCG", "+07:00"), formatTime(new Date(T0 + 21 * HOUR), "UTCG", "+07:00"), "1234.500"]));
+    expect(f.count(REPORTS)).toBe(1);
+    // ส่งให้หน้าต่างแล้ว ไม่ค้างในช่องฝาก: Refresh ถาม server
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(2));
+  });
+
+  test("Refresh after the first load never takes a primed result", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(0);
+    // ช่องฝากของคำขอเดียวกันที่ไม่มีหน้าต่างรับ (เช่นจาก scenario ก่อนแก้) ไม่ถูกหยิบตอน Refresh
+    act(() => useScenario.setState({ etag: '"e9"' }));
+    primeReportUnheard();
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+  });
+
+  test("a recompute after the first load does not take a primed result either", async () => {
+    scenario();
+    let reports = 0;
+    const f = stubFetch({
+      [REPORTS]: () => (++reports === 1 ? { status: 409, json: { code: "RESULTS_NOT_CURRENT", text: "x", field: null, detail: null } } : { json: accessReport() }),
+      [COMPUTE]: { status: 202, json: { job: "j-p", etag: "e2" }, headers: { ETag: '"e2"' } },
+    });
+    mount({ ...PARAMS, objects: [G01] });
+    await screen.findByRole("status");
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(COMPUTE)).toBe(1));
+    // ระหว่างคำนวณมีผลของคำขอเดียวกันค้างในช่องฝาก (ไม่มีหน้าต่างรับ): การสร้างใหม่หลังคำนวณต้อง POST เอง
+    primeReportUnheardForTest("S1", requestOf({ ...PARAMS, objects: [G01] }), accessReport());
+    act(() => useJobs.getState().onJobEvent({ id: "j-p", kind: "analyze", scenario: "S1", state: "succeeded", progress: null }));
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(2);
+  });
+
+  test("an interrupted Dynamic Display load does not reuse the primed result", async () => {
+    scenario();
+    const dyn: ReportParams = { ...PARAMS, style: "AER", objects: [G01], dynamic: true };
+    const providers = deferred<{ json: unknown }>();
+    const f = stubFetch({ [REPORTS]: { json: aerReport([[iso(T0), 10, 20, 1000]]) }, [PROVIDERS]: () => providers.promise });
+    primeReport("S1", requestOf(dyn), aerReport([[iso(T0), 10, 20, 1000]]));
+    mount(dyn);
+    await waitFor(() => expect(f.count(PROVIDERS)).toBe(1)); // prep รอวิธีประมาณค่าอยู่
+    expect(f.count(REPORTS)).toBe(0);
+    // Refresh ระหว่าง prep: การโหลดครั้งแรกถูกยกเลิก ผลที่ฝากไว้ต้องไม่ถูกใช้ซ้ำ
+    await user.click(screen.getByRole("button", { name: t("report.refresh") }));
+    await waitFor(() => expect(f.count(REPORTS)).toBe(1));
+    providers.resolve({ json: AER_PROVIDERS });
+    await screen.findByText("THBK-To-G01");
+  });
+
+  test("a result primed before a scenario edit is not served after it", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() } });
+    primeReport("S1", requestOf(PARAMS), accessReport());
+    act(() => useScenario.setState({ etag: '"e2"' }));
+    mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+  });
+
   test("scrolls 200000 rows virtually", async () => {
     scenario();
     const rows = Array.from({ length: 200_000 }, (_, i) => [iso(T0 + i * 1000), 10, 20, 1000] as (string | number)[]);
@@ -213,6 +305,23 @@ describe("report table", () => {
     expect(g02.map((r) => r.kind)).toEqual(["title", "summary"]);
     expect(g02[1].cells).toEqual(["Total Duration", t("report.notAvailable")]);
     expect(flat.filter((r) => r.section === -1).map((r) => r.kind)).toEqual(["title", "global", "global", "global"]);
+  });
+});
+
+describe("another scenario opened over this one (open-to-open)", () => {
+  test("the window does not POST against the new scenario and says nothing; Refresh and F5 do not either", async () => {
+    scenario();
+    const f = stubFetch({ [REPORTS]: { json: accessReport() }, "POST /api/scenarios/S2/reports": { status: 409, json: { code: "RESULTS_NOT_CURRENT", message: "x" } } });
+    const { container } = mount();
+    await screen.findByText("THBK-To-G01");
+    expect(f.count(REPORTS)).toBe(1);
+    act(() => void openScenario(makeDoc({ name: "S2" })));
+    await new Promise((r) => setTimeout(r, 20));
+    fireEvent.keyDown(container.querySelector(".rpt")!, { key: "F5" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.count("POST /api/scenarios/S2/reports")).toBe(0);
+    expect(f.count(REPORTS)).toBe(1);
+    expect(useMessages.getState().items).toEqual([]);
   });
 });
 
@@ -413,8 +522,22 @@ describe("panel", () => {
     expect(def.scenarioBound).toBe(true);
     expect(def.title({ ...PARAMS, objects: [G01] })).toBe("THBK-To-G01: Access");
     expect(def.title(PARAMS)).toBe("Multiple Objects: Access");
-    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["Access", "report", [G01, E11], { mode: "object" }, false]));
+    expect(def.instanceKey!(PARAMS)).toBe(JSON.stringify(["Access", "report", [G01, E11], { mode: "object", step_s: null }, false]));
     expect(def.instanceKey!({ ...PARAMS, dynamic: true })).not.toBe(def.instanceKey!(PARAMS));
+  });
+
+  test("the window key normalises time: the Access tool's {mode} and the Manager's {mode, step_s: null} open the same window", () => {
+    for (const kind of ["report", "graph"] as const) {
+      const def = getPanelDef(kind)!;
+      const key = (time: unknown) => def.instanceKey!({ ...PARAMS, kind, time });
+      expect(key({ mode: "object" }), kind).toBe(key({ mode: "object", step_s: null }));
+      expect(key({ step_s: null, mode: "object" }), kind).toBe(key({ mode: "object" }));
+      const a = { mode: "specify", start: "2026-11-12T00:00:00Z", stop: "2026-11-13T00:00:00Z", step_s: 60 };
+      const b = { step_s: 60, stop: "2026-11-13T00:00:00Z", start: "2026-11-12T00:00:00Z", mode: "specify" };
+      expect(key(a), kind).toBe(key(b));
+      expect(key(a), kind).not.toBe(key({ ...a, step_s: 120 }));
+      expect(key({ mode: "object" }), kind).not.toBe(key({ mode: "object", step_s: 60 }));
+    }
   });
 
   test("openReport opens the report window with the params", () => {

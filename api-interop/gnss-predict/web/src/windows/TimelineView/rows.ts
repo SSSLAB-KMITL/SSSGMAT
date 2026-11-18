@@ -5,12 +5,14 @@
 //   server ตอบ `{ชื่อดาว: [{start, stop, duration_s, max_el_deg}]}` ต่อดาวที่ขยายแล้ว (Constellation ขยายเป็นสมาชิกที่ไม่ถูกซ่อน)
 // - ชื่อแถว `<ชื่อ object ต้นทาง>-To-<ชื่อดาว>` (THBK-To-G01) เรียงตาม access แล้วตามลำดับดาวในคำตอบ
 // - 409 RESULTS_NOT_CURRENT (ผลของ Facility ต้นทางไม่ตรงหรือยังไม่มี) = แถวว่างหนึ่งแถวต่อ access พร้อมหมายเหตุไทย (เส้นทแยงบนจอ)
-// - สีตาม graphics.color_mode: "object" = สีที่ใช้จริงของดาว (colors.ts ตัวเดียวกับภาพ 3D/2D), "custom" = custom_color,
+// - สีตามกฎเดียวกับเส้น access (accessGraphics.ts accessColor): Inherit Settings from Scenario = --color-access, ไม่ inherit:
+//   "object" = สีที่ใช้จริงของดาว (colors.ts ตัวเดียวกับภาพ 3D/2D), "custom" = custom_color,
 //   ไม่มี graphics หรืออ่านสีไม่ได้ = สี --color-access
 // - เวลาในแถวเป็นวินาทีนับจาก epoch (หน่วยเดียวกับ scale.ts) ไฟล์นี้ไม่ import Cesium
 
 import { ApiError, apiGet, errorText, isAbortError } from "../../api/client";
 import type { components } from "../../api/types.gen";
+import { accessColor, resolveAccessGraphics } from "../../cesium/accessGraphics";
 import { effectiveColor, themeTokens, type ColorCtx } from "../../cesium/colors";
 import { msg } from "../../labels/messages.th";
 import type { ResultsInfo } from "../../stores/results";
@@ -78,7 +80,6 @@ export function accessResultsKey(wanted: readonly AccessDef[], info: ResultsInfo
 /** ชื่อของ access ทั้งตัว `THBK-To-GPS` (ปลายทางหลายตัวคั่นด้วย ,) ใช้เป็นชื่อแถวที่ไม่มีช่วงเวลาและในข้อความถึงผู้ใช้ */
 export const accessLabel = (a: Pick<AccessDef, "from" | "to">): string => `${nameOf(a.from)}-To-${a.to.map(nameOf).join(",")}`;
 
-const HEX = /^#[0-9a-fA-F]{6}$/;
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
 function intervalsOf(list: readonly unknown[]): TimelineInterval[] {
@@ -97,14 +98,12 @@ function intervalsOf(list: readonly unknown[]): TimelineInterval[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
+// สีแถวด้วยกฎเดียวกับเส้น access (accessGraphics.ts accessColor): Inherit Settings from Scenario = --color-access
 function rowColor(access: AccessDef, satellite: string, doc: ScenarioDoc, ctx: ColorCtx & { tokens: NonNullable<ColorCtx["tokens"]> }): string {
-  const g = access.graphics;
-  if (g?.color_mode === "custom" && typeof g.custom_color === "string" && HEX.test(g.custom_color)) return g.custom_color.toLowerCase();
-  if (g?.color_mode === "object") {
-    const sat = doc.objects.find((o) => o.class === "Satellite" && o.name === satellite);
-    if (sat !== undefined) return effectiveColor(sat, doc, ctx);
-  }
-  return ctx.tokens.access;
+  const look = resolveAccessGraphics(access);
+  if (look === null) return ctx.tokens.access;
+  const sat = doc.objects.find((o) => o.class === "Satellite" && o.name === satellite);
+  return accessColor(look, sat === undefined ? undefined : effectiveColor(sat, doc, ctx), ctx.tokens);
 }
 
 /**

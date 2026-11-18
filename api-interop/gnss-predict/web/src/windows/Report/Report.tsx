@@ -72,20 +72,40 @@ export const requestOf = (p: ReportParams): ReportRequest => ({ style: p.style, 
 
 /** อายุของรายงานที่ Report & Graph Manager สร้างไว้ให้หน้าต่างที่เพิ่งเปิด (เกินนี้หน้าต่างสร้างใหม่เอง) */
 export const PRIMED_TTL_MS = 30_000;
-let primed: { sc: string; key: string; report: ReportJson; at: number } | null = null;
+/** ผลที่ฝากไว้หนึ่งช่อง: กุญแจ = scenario, ETag ของ doc ตอนสร้าง และคำขอ (แก้ scenario แล้ว = ใช้ไม่ได้) */
+let primed: { key: string; report: ReportJson; at: number } | null = null;
+/** หน้าต่างที่เปิดอยู่ฟังการฝาก: บานที่คำขอตรงกันรับผลไปแสดงทันที (เปิดซ้ำด้วยคำขอเดิม = โฟกัสบานเดิม จึงต้องส่งผลใหม่ให้) */
+const primeListeners = new Set<(key: string) => void>();
+
+const primeKey = (sc: string, req: ReportRequest): string => JSON.stringify([sc, useScenario.getState().etag, req]);
+
+/** เก็บผลลงช่องฝาก (ไม่แจ้งหน้าต่างที่เปิดอยู่) คืนกุญแจ */
+function storePrimed(sc: string, req: ReportRequest, report: ReportJson): string {
+  const key = primeKey(sc, req);
+  primed = { key, report, at: Date.now() };
+  return key;
+}
 
 /**
  * Report & Graph Manager สร้างรายงานก่อนเปิดหน้าต่าง (เพื่อแสดง 409/422 ในกล่องของตัวเอง) แล้วฝากผลไว้ที่นี่
- * หน้าต่างที่เปิดด้วยคำขอเดียวกันใช้ผลนี้ครั้งเดียวแทนการ POST ซ้ำ (Refresh / F5 สร้างใหม่ตามปกติ)
+ * - หน้าต่างใหม่ของคำขอเดียวกันใช้ผลนี้ในการโหลดครั้งแรกเท่านั้นแทนการ POST ซ้ำ (Refresh / F5 / คำนวณใหม่ สร้างใหม่ตามปกติ)
+ * - หน้าต่างของคำขอเดียวกันที่เปิดอยู่แล้วรับผลนี้ไปแสดงทันที
+ * - ผลที่ฝากก่อน doc เปลี่ยน (ETag ต่าง) หรือเก่ากว่า PRIMED_TTL_MS ไม่ถูกใช้
  */
 export function primeReport(sc: string, req: ReportRequest, report: ReportJson): void {
-  primed = { sc, key: JSON.stringify(req), report, at: Date.now() };
+  const key = storePrimed(sc, req, report);
+  for (const listener of [...primeListeners]) listener(key);
 }
 
-/** ผลที่ฝากไว้ของคำขอนี้ (ใช้ได้ครั้งเดียว) ไม่มีหรือเก่าเกิน PRIMED_TTL_MS = null */
+/** ใช้ใน test เท่านั้น: ฝากผลโดยไม่ส่งให้หน้าต่างที่เปิดอยู่ (จำลองผลที่ฝากไว้แล้วหน้าต่างไม่ได้รับ) */
+export function primeReportUnheardForTest(sc: string, req: ReportRequest, report: ReportJson): void {
+  storePrimed(sc, req, report);
+}
+
+/** ผลที่ฝากไว้ของคำขอนี้ (ใช้ได้ครั้งเดียว) ไม่มี ไม่ตรง (scenario / ETag / คำขอ) หรือเก่าเกิน PRIMED_TTL_MS = null */
 function takePrimed(sc: string, req: ReportRequest): ReportJson | null {
   const hit = primed;
-  if (hit === null || hit.sc !== sc || hit.key !== JSON.stringify(req)) return null;
+  if (hit === null || hit.key !== primeKey(sc, req)) return null;
   primed = null;
   return Date.now() - hit.at <= PRIMED_TTL_MS ? hit.report : null;
 }
@@ -261,7 +281,12 @@ export interface ReportLoader<T> {
  */
 export function useReportLoader<T>(p: ReportParams | null, panelId: string, prepare: PrepareReport<T>, messages: LoaderMessages): ReportLoader<T> {
   const key = p === null ? "" : JSON.stringify(requestOf(p));
-  const sc = useScenario((s) => s.name);
+  // scenario ที่หน้าต่างนี้เปิดให้ (ชื่อแรกที่ไม่ใช่ null): เปิด scenario อื่นทับ = sc เป็น null (ไม่สร้าง Refresh คำนวณใหม่ หรือ Export กับ scenario ใหม่)
+  // scenarioFiles ปิดหน้าต่างที่ผูกกับ scenario ตอนชื่อเปลี่ยนอยู่แล้ว ตัวนี้กันช่วงก่อนปิดและกรณีที่ไม่มีใครปิด
+  const current = useScenario((s) => s.name);
+  const boundSc = useRef<string | null>(null);
+  if (boundSc.current === null && current !== null) boundSc.current = current;
+  const sc = current !== null && current === boundSc.current ? current : null;
   const resultsInfo = useResults((s) => s.info);
   const [phase, setPhase] = useState<Phase>("loading");
   const [failure, setFailure] = useState<string | null>(null);
@@ -270,6 +295,27 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
   const [computing, setComputing] = useState(false);
   const latest = useRef({ p, sc, prepare, messages });
   latest.current = { p, sc, prepare, messages };
+  // ผลที่ Manager ฝากไว้: หยิบเฉพาะการโหลดครั้งแรกของหน้าต่าง (และเมื่อ Manager ส่งผลใหม่ให้บานนี้) เก็บใน ref จนใช้สำเร็จ
+  // effect ที่ถูกยกเลิกแล้วรันซ้ำ (StrictMode) ใช้ตัวเดิมได้ Refresh / คำนวณใหม่ไม่หยิบจากช่องฝาก
+  const firstLoad = useRef(true);
+  /** rev = revision ที่ผลนี้มีไว้ให้ (โหลดครั้งแรก = 0, ส่งจาก Manager = revision ใหม่) การโหลดของ revision อื่น (Refresh / คำนวณใหม่) ไม่ใช้ */
+  const pending = useRef<{ sc: string; key: string; report: ReportJson; rev: number } | null>(null);
+  const revisionRef = useRef(0);
+  revisionRef.current = revision;
+  useEffect(() => {
+    const listener = (primedFor: string): void => {
+      const { p: cur, sc: name } = latest.current;
+      if (cur === null || name === null || primedFor !== primeKey(name, requestOf(cur))) return;
+      const report = takePrimed(name, requestOf(cur));
+      if (report === null) return;
+      const rev = revisionRef.current + 1;
+      revisionRef.current = rev;
+      pending.current = { sc: name, key: JSON.stringify(requestOf(cur)), report, rev };
+      setRevision(rev);
+    };
+    primeListeners.add(listener);
+    return () => void primeListeners.delete(listener);
+  }, []);
   // โฟกัสหน้าต่างเมื่อเปิดหรือถูกเลือก (หลัง Generate F5 ใช้ได้ทันที) โฟกัสที่อยู่ในหน้าต่างแล้วไม่ย้าย
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -302,17 +348,29 @@ export function useReportLoader<T>(p: ReportParams | null, panelId: string, prep
     if (cur === null || sc === null) return;
     const ctrl = new AbortController();
     const object = cur.objects.length === 1 ? cur.objects[0] : null;
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      const report = takePrimed(sc, requestOf(cur));
+      if (report !== null) pending.current = { sc, key: JSON.stringify(requestOf(cur)), report, rev: revision };
+    }
+    // ใช้ได้เฉพาะการโหลดของ revision ที่ฝากไว้ (effect ที่ถูกยกเลิกแล้วรันซ้ำใน revision เดียวกัน = StrictMode ใช้ต่อได้)
+    // การโหลดที่ถูกยกเลิกเพราะ Refresh / คำนวณใหม่ (revision ใหม่) ไม่ใช้ และทิ้งไป
+    const held = pending.current;
+    const given = held !== null && held.sc === sc && held.key === JSON.stringify(requestOf(cur)) && held.rev === revision ? held : null;
+    if (given === null) pending.current = null;
     setPhase("loading");
     void (async () => {
       try {
-        const report = takePrimed(sc, requestOf(cur)) ?? (await fetchReport(sc, requestOf(cur), ctrl.signal));
+        const report = given?.report ?? (await fetchReport(sc, requestOf(cur), ctrl.signal));
         const extra = await prep(report, sc, ctrl.signal, object);
         if (ctrl.signal.aborted) return;
+        if (given !== null && pending.current === given) pending.current = null;
         setLoaded({ report, extra });
         setFailure(null);
         setPhase("ready");
       } catch (e) {
         if (isAbortError(e) || ctrl.signal.aborted) return;
+        if (given !== null && pending.current === given) pending.current = null; // ล้มเหลว: ไม่ใช้ผลที่ฝากซ้ำ
         setLoaded(null);
         if (e instanceof ApiError && e.code === "RESULTS_NOT_CURRENT") {
           setPhase("notCurrent");

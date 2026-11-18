@@ -6,8 +6,11 @@ import type { LabelKey } from "../labels/labels";
 import type { RowClass } from "../windows/ObjectBrowser/tree";
 
 export type MenuEntry =
-  /** optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน) */
-  | { command: CommandId; optional?: boolean }
+  /**
+   * optional: แสดงเฉพาะเมื่อคำสั่งลงทะเบียนแล้ว (File → รายการล่าสุด 1–4 ที่งาน 7 ลงทะเบียน)
+   * label: ชื่อของรายการในเมนูนี้แทนชื่อของคำสั่ง (คำสั่งเดียวกันที่ STK เรียกต่างกันตามเมนู เช่น Close ของ File = Close Scenario ของเมนู Scenario)
+   */
+  | { command: CommandId; optional?: boolean; label?: LabelKey }
   | { separator: true }
   /** เมนูย่อย (View → Toolbars ▸) */
   | { submenu: LabelKey; items: readonly MenuEntry[] }
@@ -56,7 +59,7 @@ export const INSERT_MENU: readonly MenuEntry[] = [
 
 export const ANALYSIS_MENU: readonly MenuEntry[] = [cmd("analysis.access"), cmd("analysis.reportGraphManager"), cmd("analysis.validation")];
 
-/** เมนูของ object ชนิดทั่วไป (Scenario, Facility, Constellation) */
+/** เมนูของ object ชนิดทั่วไป (Facility, Constellation) */
 export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.properties"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
@@ -65,9 +68,9 @@ export const OBJECT_MENU: readonly MenuEntry[] = [
   cmd("object.rename"), cmd("object.delete"),
 ];
 
-/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties */
+/** เมนูของ Satellite: เมนูทั่วไป + Sensor View (เพิ่มเอง, sensor spec §5.1) ต่อจาก Properties แล้ว Show Imagery (ข2 Ruling o: ใช้ได้เฉพาะดาวที่มี preset) */
 export const SATELLITE_MENU: readonly MenuEntry[] = [
-  cmd("object.properties"), cmd("object.sensorView"), cmd("object.access"), cmd("object.reportGraphManager"),
+  cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.access"), cmd("object.reportGraphManager"),
   SEPARATOR,
   cmd("object.zoomTo"),
   SEPARATOR,
@@ -84,19 +87,43 @@ export const SENSOR_MENU: readonly MenuEntry[] = [
 ];
 
 /**
+ * เมนูของ Scenario (โหนดรากของ Object Browser, QA-02): ตามเมนูคลิกขวาของ Scenario ของ STK (docs/2026-11-17-stk-terms-context-menus.md §1.1)
+ * เฉพาะที่แอปทำได้ ตามลำดับ Properties, Report & Graph Manager... (All Types), Insert..., Save, Save As..., Close Scenario
+ * ไม่มี Set as Default Scenario (ไม่รองรับ) และไม่มี Access..., Zoom To, Rename, Delete ของ object
+ * Properties และ Report & Graph Manager... เป็นคำสั่ง scenario.* ที่ทำกับ scenario ที่เปิดอยู่ ใช้ได้เมื่อเปิด scenario ไม่ขึ้นกับการเลือก
+ */
+export const SCENARIO_MENU: readonly MenuEntry[] = [
+  cmd("scenario.properties"), cmd("scenario.reportGraphManager"),
+  SEPARATOR,
+  { command: "insert.new", label: "menu.scenario.insert" },
+  SEPARATOR,
+  cmd("file.save"), cmd("file.saveAs"),
+  SEPARATOR,
+  { command: "file.close", label: "menu.scenario.closeScenario" },
+];
+
+/**
  * เมนูตามชนิดของ object ที่เลือก: แถบเมนู (ชื่อเมนูที่ 6) และเมนูคลิกขวาของ Object Browser ใช้ชุดเดียวกันตามชนิดนี้
- * ชนิดที่ไม่มีเมนูของตัวเอง (และไม่เลือกอะไร) ใช้ OBJECT_MENU
+ * Scenario ใช้ SCENARIO_MENU ชนิดที่ไม่มีเมนูของตัวเอง (และไม่ระบุชนิด) ใช้ OBJECT_MENU
  */
 export function objectMenuFor(cls: RowClass | undefined): readonly MenuEntry[] {
+  if (cls === "Scenario") return SCENARIO_MENU;
   if (cls === "Sensor") return SENSOR_MENU;
   return cls === "Satellite" ? SATELLITE_MENU : OBJECT_MENU;
 }
 
 /** เมนูคลิกขวาบนดาวในหน้าต่าง 3D (sensor spec §5.5): คำสั่งชุดเดียวกับเมนูของ object ทำกับดาวที่ชี้ (คลิกขวาเลือกดาวก่อน) */
-export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.zoomTo")];
+export const SCENE_SATELLITE_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.sensorView"), cmd("object.showImagery"), cmd("object.zoomTo")];
 
 /** เมนูคลิกขวาบน Facility ในหน้าต่าง 3D */
 export const SCENE_FACILITY_MENU: readonly MenuEntry[] = [cmd("object.properties"), cmd("object.zoomTo")];
+
+/**
+ * เมนูคลิกขวาของหน้าต่าง 3D และ 2D เอง (คลิกขวาที่ไม่ชี้ object โดยไม่ลาก, task 13c: windows/graphics/sceneMenu.ts)
+ * รายการติ๊กถูกที่ซ่อนเส้นวงโคจร / ground track ทุกดวงของหน้าต่างนั้น (ตัวเลือกเดียวกับปุ่มบนแถบ Window Defaults และช่องใน Window Properties)
+ */
+export const SCENE_WINDOW_3D_MENU: readonly MenuEntry[] = [cmd("g3d.showOrbits")];
+export const SCENE_WINDOW_2D_MENU: readonly MenuEntry[] = [cmd("g2d.showGroundTracks")];
 
 const NO_MENU: readonly MenuEntry[] = [];
 

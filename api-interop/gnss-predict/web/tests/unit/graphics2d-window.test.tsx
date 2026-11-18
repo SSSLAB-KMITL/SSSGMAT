@@ -19,6 +19,7 @@ import { DEFAULT_PROPS_2D, props2d } from "../../src/windows/Graphics2D/props2d"
 import { activeScene2D, notifyScenes2D, registerScene2D, resetScenes2D, type Scene2DHandle } from "../../src/windows/Graphics2D/registry2d";
 import { mountScene2D } from "../../src/windows/Graphics2D/scene2d";
 import { WindowProperties2D } from "../../src/windows/Graphics2D/WindowProperties2D";
+import { NATIVE_MENU_GUARD_MS } from "../../src/windows/graphics/sceneMenu";
 import type { MouseMode } from "../../src/windows/graphics/sceneRegistry";
 import { makeDoc, openScenario, resetWithCoreCommands } from "./helpers/chrome";
 import { stubFetch } from "./helpers/fake-fetch";
@@ -132,6 +133,26 @@ describe("Graphics2D", () => {
     expect(logged?.text).toBe(msg("scene.renderStoppedLog", { window: "2D", message: "WebGL context lost" }));
   });
 
+  // follow-up 13b-2: render loop ที่หยุดแล้วเริ่มใหม่ได้ = ภาพยังอยู่ ข้อความไทยหนึ่งข้อ; ตายอีก (เลิก) = ข้อความแทนภาพ แต่ไม่แจ้งซ้ำ
+  test("a picture that stopped and was restarted keeps the map and logs one Thai message; giving up later shows the message without a second log", async () => {
+    withWebGL();
+    vi.mocked(mountScene2D).mockReturnValue(fakeScene("graphics2d"));
+    render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene2D()).toBeDefined());
+    const stopped = vi.mocked(mountScene2D).mock.calls[0][3] as (reason: string, error?: unknown, recovering?: boolean) => void;
+    const before = useMessages.getState().items.length;
+    act(() => stopped("loopStopped", undefined, true));
+    expect(screen.queryByRole("alert")).toBeNull(); // ภาพยังแสดง
+    const logged = useMessages.getState().items.slice(before);
+    expect(logged.map((m) => [m.code, m.text])).toEqual([["SCENE_RENDER", msg("scene.renderRestartedLog", { window: "2D", message: "render loop stopped" })]]);
+    expect(msg("scene.renderRestartedLog", { window: "2D", message: "x" })).toMatch(/[฀-๿]/);
+    // ครั้งที่สอง (เริ่มใหม่ได้อีก) และเลิก: ไม่มีข้อความเพิ่ม เลิกแล้วข้อความแทนภาพ
+    act(() => stopped("renderError", new Error("again"), true));
+    act(() => stopped("loopStopped", undefined, false));
+    expect((await screen.findByRole("alert")).textContent).toBe(msg("scene.renderStopped"));
+    expect(useMessages.getState().items.length).toBe(before + 1);
+  });
+
   test("a map that cannot start (WebGL blocked) gets the same message", async () => {
     withWebGL();
     vi.mocked(mountScene2D).mockImplementation(() => {
@@ -204,7 +225,7 @@ describe("2D Window Defaults", () => {
     expect(screen.queryByRole("toolbar")).toBeNull(); // ตั้งต้นซ่อน (spec §4.2)
     act(() => useLayout.getState().setToolbar("defaults2d", true));
     const bar = screen.getByRole("toolbar", { name: t("toolbar.window2dDefaults") });
-    expect(within(bar).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Properties", "Zoom In", "Zoom Out"]);
+    expect(within(bar).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Properties", "Zoom In", "Zoom Out", "Show Ground Tracks"]);
     expect(within(bar).getByRole("button", { name: "Zoom In" }).getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(within(bar).getByRole("button", { name: "Zoom In" }));
     expect(scene.mouseMode()).toBe("zoomIn");
@@ -235,16 +256,167 @@ describe("2D Window Defaults", () => {
   });
 });
 
+describe("Show Ground Tracks (task 13c)", () => {
+  const fakeApi = (open: string[]) => ({ getPanel: (id: string) => (open.includes(id) ? { id } : undefined) });
+  const shown = () => props2d(useLayout.getState().windowProps.graphics2d).showGroundTracks;
+  const rightClick = (el: Element, x: number, y: number, upX = x, upY = y): void => {
+    fireEvent.pointerDown(el, { button: 2, clientX: x, clientY: y });
+    fireEvent.pointerUp(el, { button: 2, clientX: upX, clientY: upY });
+  };
+
+  test("the 2D Window Defaults button, the window's right-click menu and the Properties checkbox toggle the same window option", async () => {
+    const user = userEvent.setup();
+    withWebGL();
+    const scene = fakeScene("graphics2d");
+    vi.mocked(mountScene2D).mockReturnValue(scene);
+    useLayout.setState({ windowProps: { graphics2d: { projection: "mercator" } } });
+    render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene2D()).toBe(scene));
+    expect(shown()).toBe(true);
+
+    act(() => useLayout.getState().setToolbar("defaults2d", true));
+    const button = () => within(screen.getByRole("toolbar", { name: t("toolbar.window2dDefaults") })).getByRole("button", { name: "Show Ground Tracks" });
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button());
+    expect(shown()).toBe(false);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(useLayout.getState().windowProps.graphics2d).toMatchObject({ projection: "mercator" }); // ค่าอื่นของหน้าต่างคงเดิม
+
+    // หน้าต่าง 2D ไม่เคยมีเมนูคลิกขวา: เมนูของหน้าต่างเปิดเมื่อคลิกขวาโดยไม่ลาก
+    const view = screen.getByTestId("g2d-view");
+    rightClick(view, 10, 10, 60, 60); // ลากปุ่มขวา = ซูมของ Cesium ไม่ใช่คลิก
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(fireEvent.contextMenu(view, { clientX: 10, clientY: 10 })).toBe(false); // เมนูของ browser ไม่ขึ้น
+    expect(screen.queryByRole("menu")).toBeNull();
+    rightClick(view, 40, 30);
+    const item = await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" });
+    expect(item.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(item);
+    expect(shown()).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    useLayout.setState({ api: fakeApi(["graphics2d"]) as never });
+    render(<WindowProperties2D panelId="windowProperties2d" params={{ target: "graphics2d" }} />);
+    await user.click(screen.getByRole("tab", { name: "Details" }));
+    const box = screen.getByRole("checkbox", { name: "Show Ground Tracks" }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    await user.click(box);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(shown()).toBe(false);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("the window's right-click menu: platform order and the guard against the browser's menu", () => {
+  async function mount2D() {
+    withWebGL();
+    const scene = fakeScene("graphics2d");
+    vi.mocked(mountScene2D).mockReturnValue(scene);
+    const view = render(<Graphics2D panelId="graphics2d" params={{ n: 1 }} />);
+    await waitFor(() => expect(activeScene2D()).toBe(scene));
+    return { ...view, el: screen.getByTestId("g2d-view") };
+  }
+  const item = () => screen.queryByRole("menuitemcheckbox", { name: "Show Ground Tracks" });
+  const nativeMenuShown = (target: Element = document.documentElement) => fireEvent.contextMenu(target, { clientX: 40, clientY: 30 });
+  afterEach(() => vi.useRealTimers());
+
+  test("macOS order (button down, contextmenu, button up) on empty space opens Show Ground Tracks; the contextmenu itself is stopped", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(fireEvent.contextMenu(el, { clientX: 40, clientY: 30 })).toBe(false); // preventDefault: ไม่มีเมนูของ browser
+    expect(item()).toBeNull(); // ยังไม่รู้ว่าจะลากหรือไม่
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("macOS Ctrl+click (left button with Ctrl) on empty space counts as a right-click and opens Show Ground Tracks", async ({ onTestFinished }) => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    onTestFinished(() => platform.mockRestore());
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    expect(fireEvent.contextMenu(el, { clientX: 40, clientY: 30, ctrlKey: true })).toBe(false); // macOS ส่ง contextmenu ตอนกด
+    expect(item()).toBeNull();
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("Ctrl+click elsewhere than macOS, a plain left click, and a Ctrl+drag on macOS open nothing", async ({ onTestFinished }) => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    onTestFinished(() => platform.mockRestore());
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerDown(el, { button: 0, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, clientX: 40, clientY: 30 });
+    platform.mockReturnValue("MacIntel");
+    fireEvent.pointerDown(el, { button: 0, ctrlKey: true, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 0, ctrlKey: true, clientX: 80, clientY: 30 }); // ลาก = หมุนกล้อง
+    await new Promise((r) => setTimeout(r, 20));
+    expect(item()).toBeNull();
+  });
+
+  test("Windows order (button down, button up, contextmenu): a late contextmenu, inside or outside the picture, neither shows the browser's menu nor empties ours", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" });
+    expect(nativeMenuShown(el)).toBe(false);
+    expect(nativeMenuShown()).toBe(false);
+    expect(item()).not.toBeNull(); // เมนูของหน้าต่างยังเปิดอยู่
+  });
+
+  test("the guard lasts 500 ms after the window menu opens, then the browser's menu outside the picture is left alone", async () => {
+    const { el } = await mount2D();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    expect(nativeMenuShown()).toBe(false);
+    vi.advanceTimersByTime(NATIVE_MENU_GUARD_MS - 1);
+    expect(nativeMenuShown()).toBe(false); // ทุกตัวภายในช่วง ไม่ใช่แค่ตัวแรก
+    vi.advanceTimersByTime(1);
+    expect(nativeMenuShown()).toBe(true);
+  });
+
+  test("the guard does not swallow our own contextmenu: a second right-click within 500 ms opens the menu again", async () => {
+    const { el } = await mount2D();
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.keyDown(await screen.findByRole("menu"), { key: "Escape" });
+    await waitFor(() => expect(item()).toBeNull());
+    fireEvent.pointerDown(el, { button: 2, clientX: 50, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 50, clientY: 30 });
+    expect(await screen.findByRole("menuitemcheckbox", { name: "Show Ground Tracks" })).toBeDefined();
+  });
+
+  test("a window closed while the guard is on stops guarding", async () => {
+    const { el, unmount } = await mount2D();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(el, { button: 2, clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(el, { button: 2, clientX: 40, clientY: 30 });
+    unmount();
+    expect(nativeMenuShown()).toBe(true);
+  });
+});
+
 describe("2D Graphics Window Properties values", () => {
   test("missing or broken values fall back to the defaults", () => {
     expect(props2d(undefined)).toEqual(DEFAULT_PROPS_2D);
     expect(props2d({ projection: "Robinson", latLonLines: "yes", showIpp: 1 })).toEqual(DEFAULT_PROPS_2D);
-    expect(DEFAULT_PROPS_2D).toEqual({ projection: "equidistantCylindrical", latLonLines: true, showIpp: false, showOutline: false, shading: false });
+    expect(DEFAULT_PROPS_2D).toEqual({
+      projection: "equidistantCylindrical", latLonLines: true, showIpp: false, showOutline: false, shading: false, showGroundTracks: true,
+    });
   });
 
   test("stored values are used as they are", () => {
-    const p = { projection: "mercator", latLonLines: false, showIpp: true, showOutline: true, shading: true };
+    const p = { projection: "mercator", latLonLines: false, showIpp: true, showOutline: true, shading: true, showGroundTracks: false };
     expect(props2d(p)).toEqual(p);
+  });
+
+  test("Show Ground Tracks (task 13c) is on by default and for workbooks saved before it; a stored false comes back as false", () => {
+    expect(props2d({}).showGroundTracks).toBe(true); // workbook รุ่นก่อนมีตัวเลือกนี้
+    expect(props2d({ showGroundTracks: 0 }).showGroundTracks).toBe(true);
+    const stored = JSON.parse(JSON.stringify(props2d({ showGroundTracks: false }))) as unknown;
+    expect(props2d(stored)).toEqual({ ...DEFAULT_PROPS_2D, showGroundTracks: false });
   });
 });
 
@@ -271,7 +443,9 @@ describe("2D Graphics Window Properties", () => {
     await user.click(screen.getByLabelText("Show Outline"));
     expect(screen.getByText(msg("g2d.lightingNote"))).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    expect(useLayout.getState().windowProps.graphics2d).toEqual({ projection: "mercator", latLonLines: true, showIpp: true, showOutline: true, shading: false });
+    expect(useLayout.getState().windowProps.graphics2d).toEqual({
+      projection: "mercator", latLonLines: true, showIpp: true, showOutline: true, shading: false, showGroundTracks: true,
+    });
     expect(closePanel).not.toHaveBeenCalled();
     await user.click(screen.getByLabelText("Shading"));
     await user.click(screen.getByRole("button", { name: "OK" }));

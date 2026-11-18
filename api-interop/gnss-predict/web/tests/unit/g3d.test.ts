@@ -95,9 +95,18 @@ describe("3D Graphics Window Properties values", () => {
   test("stored values are used as they are", () => {
     const p = {
       enableLighting: true, ambientLevel: 10, sunLevel: 80, nightLightsLevel: 0, latLonLines: true, labelDeclutter: true, showTime: false,
-      satelliteModels: false, modelPixelSize: 100, modelDetailThreshold: 50_000,
+      satelliteModels: false, modelPixelSize: 100, modelDetailThreshold: 50_000, showOrbits: false,
     };
     expect(props3d(p)).toEqual(p);
+  });
+
+  test("Show Orbits (task 13c) is on by default and for workbooks saved before it; a stored false comes back as false", () => {
+    expect(DEFAULT_PROPS_3D.showOrbits).toBe(true);
+    expect(props3d({}).showOrbits).toBe(true); // workbook รุ่นก่อนมีตัวเลือกนี้
+    expect(props3d({ showOrbits: "no" }).showOrbits).toBe(true);
+    expect(props3d({ showOrbits: false }).showOrbits).toBe(false);
+    const stored = JSON.parse(JSON.stringify(props3d({ showOrbits: false }))) as unknown; // ผ่าน workbook (JSON) แล้วกลับมา
+    expect(props3d(stored)).toEqual({ ...DEFAULT_PROPS_3D, showOrbits: false });
   });
 
   test("Satellite Models is on by default at 48 px; Model Pixel Size is a whole number kept within 16 to 256", () => {
@@ -388,6 +397,24 @@ describe("window.__gnssStudioTest (W19)", () => {
     expect(hooks.labelShown("NOPE")).toBeNull();
     expect(hooks.frameCount()).toBe(7);
     expect(hooks.sceneLoadedAt()).toBe(1234);
+  });
+
+  test("pathCount: how many orbit paths the first 3D window draws; no window (or a window that cannot count) = 0", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.pathCount()).toBe(0);
+    registerScene(fakeScene("graphics3d-2", { pathCount: () => 1 }));
+    registerScene(fakeScene("graphics3d", { pathCount: () => 31 }));
+    expect(hooks.pathCount()).toBe(31);
+  });
+
+  test("cameraPosition: where the first 3D window's camera is (ECEF metres); no window (or a window that cannot tell) = null", () => {
+    installTestHooks();
+    const hooks = window.__gnssStudioTest!;
+    expect(hooks.cameraPosition()).toBeNull();
+    registerScene(fakeScene("graphics3d-2", { cameraPosition: () => [9, 9, 9] }));
+    registerScene(fakeScene("graphics3d", { cameraPosition: () => [1, 2, 3] }));
+    expect(hooks.cameraPosition()).toEqual([1, 2, 3]);
   });
 
   test("flyToSatellite asks the first 3D window to look at a satellite from rangeM away; no window = false", () => {

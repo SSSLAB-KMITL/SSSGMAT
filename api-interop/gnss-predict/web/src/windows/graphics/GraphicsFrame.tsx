@@ -31,7 +31,7 @@ export const webglAvailable = (): boolean => typeof window !== "undefined" && ty
 export type ViewState = "loading" | "ready" | "nowebgl" | "chunkFailed" | "renderStopped";
 
 /** เหตุที่ภาพหยุด (เหมือน RenderFailure ของ cesium/viewer.ts ไฟล์นี้ไม่ import ส่วน Cesium) */
-export type RenderStopReason = "renderError" | "contextLost";
+export type RenderStopReason = "renderError" | "loopStopped" | "contextLost";
 
 /** สิ่งที่ handle ของภาพ (scene3d / scene2d) ต้องมีให้ส่วนร่วมนี้ใช้ */
 export interface MountedScene {
@@ -116,7 +116,7 @@ export interface SceneMountOptions<M, H extends MountedScene> {
   /** dynamic import ของส่วน Cesium (reject = โหลดไฟล์ไม่ได้) */
   load(): Promise<M>;
   /** สร้างภาพใน el (โยน = ไม่มี WebGL หรือสร้าง viewer ไม่ได้) onRenderStopped = ส่งต่อให้ภาพเรียกเมื่อภาพหยุดระหว่างใช้ */
-  create(module: M, el: HTMLElement, onRenderStopped: (reason: RenderStopReason, error?: unknown) => void): H;
+  create(module: M, el: HTMLElement, onRenderStopped: (reason: RenderStopReason, error?: unknown, recovering?: boolean) => void): H;
   register(handle: H): () => void;
   /** ค่านี้เปลี่ยน = ทำลายภาพแล้วสร้างใหม่ (หน้าต่าง 2D: Projection) */
   remountKey?: string;
@@ -146,11 +146,18 @@ export function useSceneMount<M, H extends MountedScene>(opts: SceneMountOptions
     let handle: H | null = null;
     let unregister: (() => void) | null = null;
     const o = latest.current;
-    const stopped = (reason: RenderStopReason, error?: unknown): void => {
+    // ภาพหยุด (cesium/viewer.ts watchRenderFailure): recovering = เริ่มวาดใหม่แล้ว ภาพยังแสดง; ไม่งั้น = เลิก ข้อความไทยแทนภาพ
+    // แจ้ง Message Viewer ครั้งเดียวต่อ viewer (หยุดซ้ำ หรือเลิกหลังเริ่มใหม่ ไม่แจ้งอีก)
+    let reported = false;
+    const stopped = (reason: RenderStopReason, error?: unknown, recovering = false): void => {
       if (disposed) return;
-      const message = reason === "contextLost" ? "WebGL context lost" : errorText(error);
-      report("error", "SCENE_RENDER", msg("scene.renderStoppedLog", { window: o.window, message }), null, error instanceof Error ? (error.stack ?? null) : null);
-      setView("renderStopped");
+      if (!reported) {
+        reported = true;
+        const message = reason === "contextLost" ? "WebGL context lost" : reason === "loopStopped" ? "render loop stopped" : errorText(error);
+        const key = recovering ? "scene.renderRestartedLog" : "scene.renderStoppedLog";
+        report("error", "SCENE_RENDER", msg(key, { window: o.window, message }), null, error instanceof Error ? (error.stack ?? null) : null);
+      }
+      if (!recovering) setView("renderStopped");
     };
     o.load()
       .then((module) => {

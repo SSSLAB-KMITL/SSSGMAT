@@ -31,6 +31,9 @@ from datetime import datetime, timedelta, timezone
 from multiprocessing.connection import wait as wait_ready
 from pathlib import Path
 
+from gnss_predict.config import GNSS_GROUPS
+from gnss_predict.imaging import IMAGING_LETTER
+
 from .errors import ApiError
 from .events import EventBus, message as post_message
 from .schema import NAME_RE, check_day
@@ -44,7 +47,8 @@ STATES = ("queued", "running", "succeeded", "failed", "cancelled")
 ACTIVE = ("queued", "running")
 FINISHED = ("succeeded", "failed", "cancelled")
 TERMINAL = ("result", "error")
-SYSTEM_LETTERS = "GREC"
+GNSS_LETTERS = "".join(GNSS_GROUPS)
+SYSTEM_LETTERS = GNSS_LETTERS + IMAGING_LETTER    # X = กลุ่มดาวถ่ายภาพ (weather, science, visual) ใช้ได้เมื่อมี GNSS อย่างน้อยหนึ่งตัว
 # params ของแต่ละ kind: ชื่อ -> บังคับหรือไม่ (daily: for_date คือวัน D ที่พยากรณ์ YYYY-MM-DD)
 PARAMS = {
     "propagate": {},
@@ -383,10 +387,12 @@ class JobManager:
                 raise _invalid(name, "ไฟล์ SP3 ต้องเป็น path ของไฟล์ใต้ data/")
             return value
         if name == "systems":
+            # กติกาเดียวกับ engine (studio._system_letters): snapshot ที่ไม่มี OMM ของ GNSS ใช้ propagate ไม่ได้
             letters = value.upper() if isinstance(value, str) else ""
-            if not letters or set(letters) - set(SYSTEM_LETTERS):
-                raise _invalid(name, f"ระบบดาวเทียมต้องเป็นตัวอักษร {SYSTEM_LETTERS} อย่างน้อยหนึ่งตัว")
-            return letters
+            if not set(letters) & set(GNSS_LETTERS) or set(letters) - set(SYSTEM_LETTERS):
+                raise _invalid(name, f"ระบบดาวเทียมต้องเป็นตัวอักษร {GNSS_LETTERS} อย่างน้อยหนึ่งตัว "
+                                     f"(เพิ่ม {IMAGING_LETTER} เพื่อดึงกลุ่มดาวถ่ายภาพ)")
+            return "".join(l for l in SYSTEM_LETTERS if l in letters)    # ลำดับ GREC แล้ว X ไม่ซ้ำ: GRECX, XGREC, xgrec เป็น job เดียวกัน
         raise _invalid(name, f"ไม่รู้จักค่า {name}")
 
     def _check_params(self, kind: str, params) -> dict:

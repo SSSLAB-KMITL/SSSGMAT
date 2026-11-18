@@ -22,7 +22,8 @@ export function MenuBar() {
     { id: "view", label: "menu.view", entries: VIEW_MENU },
     { id: "insert", label: "menu.insert", entries: INSERT_MENU },
     { id: "analysis", label: "menu.analysis", entries: ANALYSIS_MENU },
-    { id: "object", label: objectClassLabel(activePath), entries: objectMenuFor(objectClassOf(activePath)) },
+    // ไม่เลือก ราก หรือ path ที่ไม่ใช่ object = เมนูชื่อ Scenario จึงเป็นเมนูของ Scenario (ชุดเดียวกับคลิกขวาที่ราก)
+    { id: "object", label: objectClassLabel(activePath), entries: objectMenuFor(objectClassOf(activePath) ?? "Scenario") },
     { id: "utilities", label: "menu.utilities", entries: UTILITIES_MENU },
     { id: "window", label: "menu.window", entries: WINDOW_MENU },
     { id: "help", label: "menu.help", entries: HELP_MENU },

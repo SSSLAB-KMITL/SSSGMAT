@@ -20,6 +20,13 @@
 //   Dynamic Display = แถวของเวลาปัจจุบัน ไม่มีหน้าต่างนั้นหรือยังไม่มีตาราง = []
 // และ graphState(panelId): สิ่งที่หน้าต่างกราฟนั้นวาดอยู่ { type, series (ชื่อเส้น/object), timeLine (เวลาของเส้นเวลา animation ไม่มี = null),
 //   currentPoint ([El, Az] ของจุดปัจจุบันในกราฟ polar) } ไม่มีหน้าต่างหรือยังไม่ได้วาด = null
+// และ entityScreenPosition2d(ชื่อ object): แบบ entityScreenPosition ในหน้าต่าง 2D ตัวแรก (follow-up 13b-2: คลิกเลือกดาวใน 2D)
+// และ pathCount(): จำนวนเส้นวงโคจรที่หน้าต่าง 3D ตัวแรกวาดอยู่ (path ของ Cesium ที่แสดง + เส้น Inertial by Window) ไม่มีหน้าต่าง = 0 (task 13c: Show Orbits)
+// และ accessLines("3d" | "2d"): จำนวนเส้น access ที่หน้าต่าง 3D หรือ 2D ตัวแรกเปิดไว้ (access ที่ไม่ได้ Compute = 0) ไม่มีหน้าต่าง = null
+// และ graphState(panelId).drawn: สิ่งที่ ECharts วาดจริง (จุดก่อน/หลัง LTTB, จุดเส้นขาด, จำนวนเส้นเวลาของ markLine) จาก windows/Graph/drawnState.ts
+// และ cameraPosition(): ตำแหน่งกล้องของหน้าต่าง 3D ตัวแรก (ECEF เมตร) ไม่มีหน้าต่าง = null (e2e: ลากปุ่มขวาซูมแล้วกล้องขยับ ไม่มีเมนู)
+// และ breakRenderLoop("3d" | "2d"): เฟรมถัดไปของหน้าต่างนั้นโยนข้อผิดพลาดนอก Scene.render ให้ render loop ของ Cesium หยุดเงียบ ๆ หนึ่งครั้ง
+//   (ตรวจการเริ่มวาดใหม่ของ cesium/viewer.ts watchRenderFailure) ไม่มีหน้าต่าง = false
 // ไฟล์นี้ไม่ import Cesium: อยู่ใน bundle หลักได้ งานที่ต้องใช้ Cesium ทำใน handle ของหน้าต่าง
 
 import { useLayout } from "../stores/layout";
@@ -50,6 +57,11 @@ export interface GnssStudioTestHooks {
   workbookRestoredAt(): number | null;
   reportRows(panelId: string): string[][];
   graphState(panelId: string): GraphState | null;
+  entityScreenPosition2d(name: string): [number, number] | null;
+  breakRenderLoop(view: "3d" | "2d"): boolean;
+  pathCount(): number;
+  cameraPosition(): [number, number, number] | null;
+  accessLines(view: "3d" | "2d"): number | null;
 }
 
 declare global {
@@ -89,5 +101,15 @@ export function installTestHooks(): void {
     workbookRestoredAt: () => useLayout.getState().restoredAt,
     reportRows: (panelId) => reportRowsOf(panelId),
     graphState: (panelId) => graphStateOf(panelId),
+    entityScreenPosition2d: (name) => firstScene2D()?.entityScreenPosition?.(name) ?? null,
+    pathCount: () => firstScene()?.pathCount?.() ?? 0,
+    cameraPosition: () => firstScene()?.cameraPosition?.() ?? null,
+    accessLines: (view) => (view === "3d" ? firstScene()?.accessLineCount?.() : firstScene2D()?.overlayCounts().accessLines) ?? null,
+    breakRenderLoop: (view) => {
+      const scene = view === "3d" ? firstScene() : firstScene2D();
+      if (scene?.breakRenderLoopOnce === undefined) return false;
+      scene.breakRenderLoopOnce();
+      return true;
+    },
   };
 }

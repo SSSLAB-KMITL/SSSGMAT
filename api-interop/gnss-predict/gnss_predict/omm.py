@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S
+from .config import CELESTRAK_GP_URL, CELESTRAK_MIN_INTERVAL_S, OMM_MAX_BYTES
 from .errors import Message, OrbitUnavailableError
 
 _UTC = timezone.utc
@@ -27,6 +27,10 @@ _OBJECT_ID_RE = re.compile(r"^(\d{4})-(\d{3})([A-Z]{0,3})$")
 _FRACTION_RE = re.compile(r"\.(\d+)")
 _ALPHA5 = "ABCDEFGHJKLMNPQRSTUVWXYZ"       # A–Z ข้าม I และ O แทน 10–33
 _STATE_TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+class _ResponseTooLargeError(Exception):
+    """คำตอบใหญ่เกิน OMM_MAX_BYTES: ถือเป็นดาวน์โหลดไม่สำเร็จ (ไม่ใช่ ValueError เพื่อให้ข้อความไม่ปนกับ "ไม่ใช่ OMM")"""
 
 
 @dataclass(frozen=True)
@@ -48,7 +52,10 @@ def _parse_epoch(text: str) -> datetime:
 
 
 def _parse_records(text: str) -> list[OmmRecord]:
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except RecursionError as exc:                   # JSON ซ้อนลึกเกินที่ json อ่านได้: ถือว่าไม่ใช่ OMM เหมือน JSON เสีย
+        raise ValueError("ข้อมูล JSON ซ้อนลึกเกินไป ไม่ใช่ OMM") from exc
     if not isinstance(data, list):
         raise ValueError("ข้อมูลไม่ใช่ JSON array ของ OMM")
     records = []
@@ -57,7 +64,7 @@ def _parse_records(text: str) -> list[OmmRecord]:
             raise ValueError(f"รายการที่ {i} ไม่ใช่ OMM (ต้องมี NORAD_CAT_ID และ EPOCH)")
         try:
             norad, epoch = int(item["NORAD_CAT_ID"]), _parse_epoch(str(item["EPOCH"]))
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:   # OverflowError: NORAD_CAT_ID เป็น Infinity
             raise ValueError(f"รายการที่ {i} มี NORAD_CAT_ID หรือ EPOCH ที่อ่านไม่ได้: {exc}") from exc
         records.append(OmmRecord(norad, str(item.get("OBJECT_NAME", "")), str(item.get("OBJECT_ID", "")), epoch, item))
     return records
@@ -145,19 +152,25 @@ def _fmt_time(t: datetime) -> str:
     return t.astimezone(_UTC).strftime(_STATE_TIME_FMT)
 
 
-def _parse_time(text) -> datetime | None:
+def parse_state_time(text) -> datetime | None:
+    """เวลาใน state file ("%Y-%m-%dT%H:%M:%SZ") เป็น datetime UTC หรือ None ถ้าไม่ใช่รูปแบบนี้"""
     try:
         return datetime.strptime(text, _STATE_TIME_FMT).replace(tzinfo=_UTC)
     except (TypeError, ValueError):
         return None
 
 
-def _read_state(path: Path) -> dict:
+def read_state(path: Path) -> dict:
+    """state file ของกติกา CelesTrak ({"<group>": {"last_request", "last_success"}}) ไม่มี อ่านไม่ได้ หรือไม่ใช่ object คืน {}"""
     try:
         state = json.loads(Path(path).read_bytes().decode("utf-8"))
     except (OSError, ValueError):
         return {}
     return state if isinstance(state, dict) else {}
+
+
+_parse_time = parse_state_time      # ชื่อเดิม (private) ก่อนเปิดเป็น API สาธารณะ
+_read_state = read_state
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -168,7 +181,7 @@ def _write_atomic(path: Path, data: bytes) -> None:
 
 
 def _record_state(state_file: Path, group: str, now: datetime, success: bool) -> None:
-    state = _read_state(state_file)
+    state = read_state(state_file)
     entry = state.get(group) if isinstance(state.get(group), dict) else {}
     entry["last_request"] = _fmt_time(now)
     if success:
@@ -183,9 +196,9 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
 
     คืน (ไฟล์ล่าสุดของกลุ่ม, ข้อความ) ไฟล์ล่าสุดคือชื่อที่เรียงแล้วมากที่สุดของ <group>_*.json
     - ส่ง request ไปไม่ถึง CELESTRAK_MIN_INTERVAL_S จาก last_request: ไม่ส่ง ใช้ไฟล์เดิม + ORBIT_RATE_LIMITED_LOCAL (info)
-    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM, timeout หรืออ่านไม่จบหลังส่ง request) หรือต่อเน็ตไม่ได้:
-      ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning) บันทึก last_request ทุกกรณี ยกเว้นที่ server ไม่ได้รับ
-      request เลย (URLError: DNS, connect รวมถึง connect timeout)
+    - ได้คำตอบที่ใช้ไม่ได้ (HTTP error, เนื้อหาไม่ใช่ OMM, ใหญ่เกิน OMM_MAX_BYTES, timeout หรืออ่านไม่จบหลังส่ง request)
+      หรือต่อเน็ตไม่ได้: ไม่ลองซ้ำ ใช้ไฟล์เดิม + ORBIT_DOWNLOAD_FAILED (warning) บันทึก last_request ทุกกรณี
+      ยกเว้นที่ server ไม่ได้รับ request เลย (URLError: DNS, connect รวมถึง connect timeout)
     - ไม่มีไฟล์ให้ใช้: OrbitUnavailableError
     url: ใช้แทน URL ของ CelesTrak (เช่น file:// ใน CLI เดิมและ test)
     """
@@ -195,8 +208,8 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
     cached = sorted(dest_dir.glob(f"{group}_*.json"))
     latest = cached[-1] if cached else None
 
-    entry = _read_state(state_file).get(group)
-    last_request = _parse_time(entry.get("last_request")) if isinstance(entry, dict) else None
+    entry = read_state(state_file).get(group)
+    last_request = parse_state_time(entry.get("last_request")) if isinstance(entry, dict) else None
     if last_request is not None and (now - last_request).total_seconds() < CELESTRAK_MIN_INTERVAL_S:
         text = (f"ข้ามการดาวน์โหลด OMM กลุ่ม {group}: ส่งคำขอครั้งก่อนเมื่อ {_fmt_time(last_request)} "
                 f"ยังไม่ครบ {CELESTRAK_MIN_INTERVAL_S // 3600} ชั่วโมง")
@@ -208,13 +221,17 @@ def fetch_group(group: str, dest_dir: Path, state_file: Path, now: datetime,
     server_replied = True
     try:
         with opener(request, timeout=timeout_s) as resp:
-            data = resp.read()
+            data = resp.read(OMM_MAX_BYTES + 1)         # อ่านเกินเพดานแค่ 1 ไบต์พอรู้ว่าใหญ่เกิน ไม่อ่านต่อจนกินหน่วยความจำ
+        if len(data) > OMM_MAX_BYTES:
+            raise _ResponseTooLargeError
         if not _parse_records(data.decode("utf-8")):
             raise ValueError("ไม่มีรายการ OMM")
     except HTTPError as exc:
         reason = f"HTTP {exc.code}"
     except HTTPException as exc:           # อ่านคำตอบไม่จบ (IncompleteRead) ไม่ใช่ OSError
         reason = f"อ่านคำตอบไม่จบ: {exc}"
+    except _ResponseTooLargeError:         # server ตอบแล้ว: บันทึก last_request เหมือนคำตอบที่ใช้ไม่ได้อื่น ๆ
+        reason = f"คำตอบใหญ่เกิน {OMM_MAX_BYTES // 2**20} MB"
     except ValueError as exc:              # เนื้อหาไม่ใช่ JSON ของ OMM (UnicodeDecodeError และ JSONDecodeError เป็น ValueError)
         reason = f"คำตอบไม่ใช่ OMM: {exc}"
     except URLError as exc:                # DNS, connect (รวม connect timeout): urlopen ห่อเฉพาะความล้มเหลวก่อนส่ง request

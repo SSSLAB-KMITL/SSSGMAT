@@ -5,6 +5,7 @@
 //   สวิตช์ที่ไม่ใช่ true ตรง ๆ = ปิด ; ชั้นที่ไม่มี source = gibs (payload ก่อนมีช่องนี้) ; source ที่ไม่รู้จักทิ้ง
 //   ion เปิดอยู่ = อ่าน /api/settings ด้วย (token อยู่ใน cesium_ion_token ของ store ค่าตั้ง) อ่านไม่ได้ = คำเตือนไทย ชั้น ion รอจนอ่านได้
 // - updateSettings(patch): GET /api/settings แล้ว PUT ทั้งเอกสาร (server ไม่รับเอกสารไม่ครบ) ที่แก้ด้วย patch ผ่าน store ของค่าตั้ง แล้วตั้งสวิตช์ทุกแหล่งตามเอกสารที่ server ตอบ
+//   ทำทีละครั้ง (คิว saving): ครั้งที่สองเริ่ม GET หลัง PUT ของครั้งแรกตอบแล้ว
 //   (ตัวช่วยเดียวสำหรับการบันทึกจาก Globe Manager: สวิตช์และ token ของ Cesium ion) ล้มเหลว = โยนต่อ ไม่รายงาน (ผู้เรียกแสดงเอง)
 // - setSource(id, on): updateSettings ที่แก้แค่สวิตช์ของแหล่งนั้น
 //   store ของค่าตั้งจึงถือค่าล่าสุด (Daily Forecast Settings ส่งค่าที่ store ถือคืนตอน Apply ไม่ทับสวิตช์กลับ) token และสวิตช์อื่นกลับไปตามที่อ่านมา
@@ -52,6 +53,17 @@ export const OSM_LAYER: Readonly<ImageryLayerInfo> = Object.freeze({
   id: "osm", title: "OpenStreetMap", period: "static", max_level: 19, format: "png", credit: "© OpenStreetMap contributors", source: "osm",
 });
 
+/** ลำดับวาดของแหล่ง (ชั้นหลังทับชั้นก่อน) ภายในแหล่งเดียวกันตามลำดับ catalog ; ใช้ร่วมกับ cesium/imageryLayers.ts และ Show Imagery (ที่นี่ไม่ import Cesium) */
+export const LAYER_SOURCE_ORDER: Readonly<Record<LayerSourceId, number>> = { gibs: 0, eox: 1, osm: 2 };
+
+/**
+ * ชั้นนี้บังทุกอย่างข้างใต้ทั้งลูกโลกเสมอ: translucency 0 และภาพทึบที่มีทุกชิ้นทุกเวลา = jpg ภาพคงที่ (Blue Marble, EOX) หรือ OpenStreetMap (png แต่ทึบ)
+ * ชั้นที่ผูกเวลา (daily: VIIRS, MODIS ; 10min: Himawari, GOES) ไม่นับว่าทึบ แม้เป็น jpg: เวลาที่ยังไม่มีภาพ (scenario พยากรณ์ล่วงหน้า) server ตอบ 404
+ * ชิ้นนั้นโปร่งใส ชั้นข้างใต้ (Blue Marble) ต้องยังอยู่ให้เห็น และ GOES/Himawari เห็นแค่จานโลกของดาวค้างฟ้า png ของ GIBS (Himawari) ไม่ทึบอยู่แล้ว
+ */
+export const isOpaqueLayer = (info: ImageryLayerInfo, alpha: number): boolean =>
+  alpha === 1 && (info.source === "osm" || (info.format === "jpg" && info.period === "static"));
+
 export type ImagerySources = Record<ImagerySourceId, boolean>;
 
 const SOURCES_OFF: Readonly<ImagerySources> = Object.freeze({ gibs: false, eox: false, osm: false, ion: false });
@@ -96,6 +108,12 @@ const fromSettings = (o: OnlineImagerySettings): ImagerySources => ({
   gibs: o.enabled === true, eox: o.eox === true, osm: o.osm === true, ion: o.ion === true,
 });
 
+/**
+ * คิวของ updateSettings (ข2 fix round 1): GET-แก้-PUT ทั้งเอกสารทำทีละครั้งทั่วแอป ครั้งถัดไปจึงอ่านเอกสารที่ครั้งก่อนบันทึกแล้ว
+ * (Show Imagery และ Globe Manager เปิดสวิตช์คนละแหล่งพร้อมกันได้ ไม่เขียนทับกัน) คิวครอบเฉพาะ GET และ PUT ไม่ครอบกล่องยืนยัน
+ */
+let saving: Promise<unknown> = Promise.resolve();
+
 export const useImagery = create<ImageryState>()((set) => ({
   sources: SOURCES_OFF,
   layers: [],
@@ -120,14 +138,18 @@ export const useImagery = create<ImageryState>()((set) => ({
     }
   },
 
-  updateSettings: async (patch) => {
-    const settings = useSettings.getState();
-    await settings.loadSettings();
-    const current = useSettings.getState().settings;
-    if (current === null) throw new Error("no settings");
-    await settings.saveSettings(patch(current));
-    const saved = useSettings.getState().settings;
-    if (saved !== null) set({ sources: fromSettings(saved.online_imagery) });
+  updateSettings: (patch) => {
+    const run = saving.then(async () => {
+      const settings = useSettings.getState();
+      await settings.loadSettings();
+      const current = useSettings.getState().settings;
+      if (current === null) throw new Error("no settings");
+      await settings.saveSettings(patch(current));
+      const saved = useSettings.getState().settings;
+      if (saved !== null) set({ sources: fromSettings(saved.online_imagery) });
+    });
+    saving = run.catch(() => undefined); // ครั้งที่ล้มไม่กันครั้งถัดไป (ผู้เรียกได้ข้อผิดพลาดจาก run เอง)
+    return run;
   },
 
   setSource: async (id, on) => {

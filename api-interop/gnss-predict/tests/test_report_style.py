@@ -15,8 +15,8 @@ from gnss_predict.config import THBK_HEIGHT_M, THBK_LAT_DEG, THBK_LON_DEG
 from gnss_predict.dataproviders import access_path, open_result_set
 from gnss_predict.errors import ScenarioError, StyleError
 from gnss_predict.geometry import geodetic_to_ecef
-from gnss_predict.report_style import (Column, Report, Section, build_report, check_style, installed_styles,
-                                       resolve_style)
+from gnss_predict.report_style import (MAX_CONTENT, MAX_STEP_S, Column, Report, Section, build_report, check_style,
+                                       installed_styles, resolve_style)
 from tests.report_fixture import build_computed_scenario, circular_ecef_km
 
 UTC = timezone.utc
@@ -188,6 +188,27 @@ class TestCheckStyle(unittest.TestCase):
         with self.assertRaises(StyleError) as cm:
             check_style([])
         self.assertEqual(cm.exception.field, "style")
+
+    def test_step_is_capped_like_the_report_request(self):
+        """style ที่ step เกิน MAX_STEP_S สร้างรายงานไม่ได้ (timedelta ล้น) จึงบันทึกเป็น style ไม่ได้ตั้งแต่ต้น"""
+        self.assertEqual(MAX_STEP_S, 999_999_999)
+        check_style(_user_style(time={"mode": "object_period", "step_s": MAX_STEP_S}))
+        for step in (MAX_STEP_S + 1, 10 ** 12):
+            for time in ({"mode": "object_period", "step_s": step},
+                         {"mode": "specify", "start": "2026-11-10T00:00:00Z", "stop": "2026-11-10T01:00:00Z", "step_s": step}):
+                with self.subTest(step=step, mode=time["mode"]):
+                    self.assertEqual(_field(self, _user_style(time=time)), "time.step_s")
+
+    def test_content_is_capped_at_16_entries(self):
+        self.assertEqual(MAX_CONTENT, 16)
+        entry = {"provider": "AER Data", "group": "Default", "elements": ["Time", "Elevation"]}
+        check_style(_user_style(content=[dict(entry) for _ in range(MAX_CONTENT)]))
+        with self.assertRaises(StyleError) as caught:
+            check_style(_user_style(content=[dict(entry) for _ in range(MAX_CONTENT + 1)]))
+        self.assertEqual(caught.exception.field, "content")
+        self.assertRegex(str(caught.exception), "[฀-๿]")                      # ข้อความเป็นภาษาไทย
+        installed = [len(s["content"]) for s in installed_styles()]
+        self.assertLessEqual(max(installed), MAX_CONTENT)
 
     def test_valid_user_styles(self):
         check_style(_user_style())
@@ -475,6 +496,28 @@ class TestGaps(_Computed):
         self.assertEqual(self.gap_rows("G01", a, b), [])
         # ช่วงนอกช่วงวิเคราะห์ทั้งหมด: ไม่มีแถว
         self.assertEqual(self.gap_rows("R05", STOP + timedelta(hours=1), STOP + timedelta(hours=2)), [])
+
+    def test_gaps_for_a_satellite_without_a_prn_have_no_rows(self):
+        """ดาวที่ไม่ได้ propagate (ไม่มี PRN) ไม่มีข้อมูลเลย: Gaps ไม่คิดว่าทั้งช่วงเป็นช่วงว่าง (ต่างจากดาวที่ propagate แล้วแต่ไม่ขึ้นเลย
+        ซึ่งได้ช่วงว่างเต็มช่วง) ปักไว้ตามที่ตัดสินใจแล้ว (`_gaps`: ไม่มี PRN = [])"""
+        manifest_path = next((self.scenario_dir / "ephem").glob("*/manifest.json"))
+        original = manifest_path.read_text(encoding="utf-8")
+        manifest = json.loads(original)
+        entry = next(s for s in manifest["satellites"] if s["prn"] == "R05")
+        entry["propagated"] = False
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        try:
+            rs = open_result_set(self.scenario_dir, self.data_dir)           # TableCache ใหม่: อ่าน manifest ที่แก้
+            self.assertIsNone(rs.prn_of("R05"))
+            style = _installed("Gaps")
+            rows = build_report(rs, style, [access_path("THBK", "R05")], None, None, None, NOW).sections[0].rows
+            self.assertEqual(rows, [])
+            self.assertEqual(build_report(rs, _installed("Access"), [access_path("THBK", "R05")], None, None, None,
+                                          NOW).sections[0].rows, [])           # Access Data ของดาวนั้นก็ไม่มีแถว
+            # ดาวที่ propagate แล้วแต่ไม่ขึ้นเลยยังได้ช่วงว่างเต็มช่วง (ปักคู่กัน)
+            self.assertEqual(self.gap_rows("R05"), [[1, START, STOP, 21600.0]])
+        finally:
+            manifest_path.write_text(original, encoding="utf-8")
 
     def test_std_deviation_population(self):
         durations = self.durations("G01")

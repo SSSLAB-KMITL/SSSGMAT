@@ -25,9 +25,14 @@ export interface Props3D {
    * ลด draw call และดาวไกลยังเห็นเป็นจุดสี) แบบ detail threshold ของ STK
    */
   modelDetailThreshold: number;
+  /**
+   * Show Orbits (ของเราเอง, task 13c): ปิด = หน้าต่างนี้ไม่วาดเส้นวงโคจรของดาวดวงใดเลย (path ของ Cesium และเส้น Inertial by Window)
+   * ไม่แตะค่าของ object เปิด = เส้นตามค่าของแต่ละ object ตามเดิม
+   */
+  showOrbits: boolean;
 }
 
-/** ค่าตั้งต้น: แสงปิด (ภาพสว่างทั้งโลกอ่านง่าย) เปิดแสงแล้วด้านกลางคืนสว่างครึ่งหนึ่ง แสงอาทิตย์เต็ม เวลาแสดงที่มุมภาพ */
+/** ค่าตั้งต้น: แสงปิด (ภาพสว่างทั้งโลกอ่านง่าย) เปิดแสงแล้วด้านกลางคืนสว่างครึ่งหนึ่ง แสงอาทิตย์เต็ม เวลาแสดงที่มุมภาพ เส้นวงโคจรแสดง */
 export const DEFAULT_PROPS_3D: Readonly<Props3D> = {
   enableLighting: false,
   ambientLevel: 50,
@@ -39,6 +44,7 @@ export const DEFAULT_PROPS_3D: Readonly<Props3D> = {
   satelliteModels: true,
   modelPixelSize: 48,
   modelDetailThreshold: 30_000,
+  showOrbits: true,
 };
 
 export const MODEL_PIXEL_SIZE_MIN = 16;
@@ -46,7 +52,7 @@ export const MODEL_PIXEL_SIZE_MAX = 256;
 export const MODEL_DETAIL_THRESHOLD_MIN_KM = 1_000;
 export const MODEL_DETAIL_THRESHOLD_MAX_KM = 200_000;
 
-const BOOLS = ["enableLighting", "latLonLines", "labelDeclutter", "showTime", "satelliteModels"] as const;
+const BOOLS = ["enableLighting", "latLonLines", "labelDeclutter", "showTime", "satelliteModels", "showOrbits"] as const;
 const LEVELS = ["ambientLevel", "sunLevel", "nightLightsLevel"] as const;
 export type LevelKey = (typeof LEVELS)[number];
 

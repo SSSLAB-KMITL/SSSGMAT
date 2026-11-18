@@ -83,16 +83,33 @@ function integratedPanels(api: DockviewApi): IDockviewPanel[] {
 
 // ---------- วางหน้าต่าง ----------
 
+/** หน้าต่างลอยสูงไม่เกินความสูงของจอลบค่านี้ (แถบเมนู แถบเครื่องมือ แถบสถานะ) QA-05 */
+export const FLOAT_SCREEN_MARGIN = 80;
+/** ความสูงต่ำสุดเมื่อถูกจำกัด (จอหรือพื้นที่เล็กมาก): ยังเห็นแถบแท็บและเนื้อบางส่วนที่เลื่อนได้ */
+const FLOAT_MIN_HEIGHT = 120;
+
+/**
+ * ความสูงตั้งต้นของหน้าต่างลอย (QA-05: Globe Manager ล้นจอเล็ก ขอบล่างถูกตัด): ตามที่ชนิดหน้าต่างกำหนด แต่ไม่เกิน
+ * ความสูงของจอ - FLOAT_SCREEN_MARGIN และไม่เกินพื้นที่ที่ลอยได้ (areaHeight > 0) เนื้อที่เหลือเลื่อนดูในหน้าต่าง (theme.css: .dv-resize-container)
+ */
+export function floatingHeight(want: number, screenHeight: number, areaHeight: number): number {
+  let height = Math.min(want, screenHeight - FLOAT_SCREEN_MARGIN);
+  if (areaHeight > 0) height = Math.min(height, areaHeight);
+  return Math.max(FLOAT_MIN_HEIGHT, Math.floor(height));
+}
+
 /**
  * กรอบของหน้าต่างลอยที่อยู่กลางพื้นที่ทำงาน: dockview วางและจำกัดหน้าต่างลอยไว้ในพื้นที่กลาง (กริด) ที่เหลือหลังหัก edge group ที่เกาะขอบอยู่
  * พิกัดจึงนับจากมุมของพื้นที่นั้น และ api.width/height คือขนาดของมันพอดี (หน้าต่างลอยลงไปทับ edge group ไม่ได้ จึงไม่มีกลางจอทั้งหมดให้อิง)
+ * ความสูงถูกจำกัดตาม floatingHeight
  */
 function centredBox(api: DockviewApi, size: PanelSize) {
+  const height = floatingHeight(size.height, typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerHeight, api.height);
   return {
     x: Math.max(0, (api.width - size.width) / 2),
-    y: Math.max(0, (api.height - size.height) / 2),
+    y: Math.max(0, (api.height - height) / 2),
     width: size.width,
-    height: size.height,
+    height,
   };
 }
 

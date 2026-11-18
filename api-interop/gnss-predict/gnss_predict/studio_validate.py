@@ -9,6 +9,7 @@
 - ผลรายดวง: คู่ ≥ VALIDATION_MIN_SAT_PAIRS ตัดสินด้วยเกณฑ์ 4 ข้อเดียวกับระดับระบบ น้อยกว่านั้นคือ insufficient_data
   และ unverified เมื่อไม่มีค่าจริงเลย ค่าสถิติที่คำนวณไม่ได้ (คู่น้อยกว่า 2) นับว่าไม่ผ่านข้อนั้นเหมือน validate.summarize เดิม
 - `pass` ของทั้งก้อนคือทุกระบบที่มีสถิติผ่าน และต้องมีอย่างน้อยหนึ่งระบบ (ไม่มีระบบใดตรวจได้ไม่ถือว่าผ่าน)
+- ดาวถ่ายภาพ (ระบบ X) ไม่มีข้อมูลอ้างอิง จึงข้ามทั้งดวง (ไม่มีแถว unverified) ผลเหมือนไม่มีดาวนั้นใน predicted.sp3
 """
 
 from bisect import bisect_left
@@ -21,6 +22,7 @@ from .brdc import Nav, position_km
 from .config import (AGE_OK_DAYS, AZ_EL_LIMIT, AZ_MEDIAN_MAX, AZ_P99_MAX, EL_MEDIAN_MAX, EL_P99_MAX, GNSS_GROUPS,
                      GPS_UTC_OFFSET_S, VALIDATION_MIN_EL, VALIDATION_MIN_SAT_PAIRS)
 from .geometry import ecef_to_aer, geodetic_to_ecef
+from .imaging import IMAGING_LETTER
 from .scenario import Facility
 from .sp3 import Position, SatSeries, lagrange_at, read_sp3_all
 from .validate import _median, _p99, az_diff     # ตัวเดียวกับ validate.py เดิม เพื่อให้ค่ากลางและ P99 คิดแบบเดียวกัน
@@ -127,6 +129,8 @@ def validate_ephemeris(pred_sp3: Path, truth_sp3: Path, nav: Nav | None, fac: Fa
     satellites: dict[str, dict] = {}
     pooled: dict[str, tuple[int, _Deltas]] = {}
     for prn in sorted(pred):
+        if prn[:1] == IMAGING_LETTER:                 # ดาวถ่ายภาพ: ไม่มีค่าอ้างอิง ข้ามทั้งดวง
+            continue
         source, truth_at = _truth_source(prn, truth, nav)
         d = _compare(pred[prn], truth_at, day, fac, sta_km) if truth_at is not None else _Deltas()
         stats, pairs, age = _stats(d), len(d.el), ages.get(prn)
@@ -137,9 +141,9 @@ def validate_ephemeris(pred_sp3: Path, truth_sp3: Path, nav: Nav | None, fac: Fa
         else:
             result = "pass" if within_limits(stats) else "fail"
         if source == "sp3" and pairs and age is not None and age <= AGE_OK_DAYS:
-            sats, total = pooled.get(prn[0], (0, _Deltas()))
+            sats, total = pooled.get(prn[:1], (0, _Deltas()))
             total.extend(d)
-            pooled[prn[0]] = (sats + 1, total)
+            pooled[prn[:1]] = (sats + 1, total)
         satellites[prn] = {
             "truth": source, "pairs": pairs, "az_pairs": len(d.az), **_rounded_stats(stats),
             "d3_median_km": _round(_median(d.d3_km), DISTANCE_DECIMALS),
@@ -161,6 +165,11 @@ def validate_ephemeris(pred_sp3: Path, truth_sp3: Path, nav: Nav | None, fac: Fa
         "failing": [prn for prn, sat in satellites.items() if sat["result"] == "fail"],
         "pass": bool(systems) and all(s["pass"] for s in systems.values()),
     }
+
+
+def imaging_skipped_text(n: int) -> str:
+    """ข้อความเดียวกันทั้งใน Message IMAGING_SKIPPED และบรรทัดในรายงาน markdown"""
+    return f"ข้ามดาวถ่ายภาพ {n} ดวง (ไม่มีข้อมูลอ้างอิง)"
 
 
 # ---------- รายงาน markdown ----------
@@ -187,8 +196,10 @@ def _exceeded(sat: dict) -> list[str]:
             for key, limit in LIMITS.items() if sat[key] is None or sat[key] > limit]
 
 
-def validation_markdown(result: dict, *, scenario: str, ephem_hash: str, facility: str) -> str:
-    """รายงานภาษาไทยของผล validate_ephemeris: ตารางต่อระบบ ดาวที่ไม่ผ่านพร้อมค่าคลาด และตารางทุกดวง"""
+def validation_markdown(result: dict, *, scenario: str, ephem_hash: str, facility: str,
+                        skipped_imaging: int = 0) -> str:
+    """รายงานภาษาไทยของผล validate_ephemeris: ตารางต่อระบบ ดาวที่ไม่ผ่านพร้อมค่าคลาด และตารางทุกดวง
+    skipped_imaging > 0: เพิ่มบรรทัดจำนวนดาวถ่ายภาพที่ข้าม (0 ได้รายงานเหมือนเดิมทุกไบต์)"""
     systems, sats = result["systems"], result["satellites"]
     verdict = "ผ่าน" if result["pass"] else "ไม่ผ่าน"
     lines = [f"# ผลตรวจความแม่นยำ {result['day']}", "", f"ผล: **{verdict}**", ""]
@@ -199,15 +210,17 @@ def validation_markdown(result: dict, *, scenario: str, ephem_hash: str, facilit
               f"- เทียบเฉพาะคู่ที่ El อ้างอิง ≥ {VALIDATION_MIN_EL:g}° (Az เฉพาะ El < {AZ_EL_LIMIT:g}°)",
               f"- สถิติระดับระบบนับเฉพาะดาวที่ค่าจริงมาจาก SP3 และอายุข้อมูลไม่เกิน {AGE_OK_DAYS:g} วัน",
               f"- ดาวที่มีคู่น้อยกว่า {VALIDATION_MIN_SAT_PAIRS} คู่ไม่ตัดสิน ดาวที่ไม่มีใน SP3 ใช้ broadcast "
-              "(GPS, Galileo, BeiDou) ส่วน GLONASS ที่ไม่มีใน SP3 ตรวจไม่ได้", "",
-              "## ระดับระบบ", "",
+              "(GPS, Galileo, BeiDou) ส่วน GLONASS ที่ไม่มีใน SP3 ตรวจไม่ได้"]
+    if skipped_imaging > 0:
+        lines.append(f"- {imaging_skipped_text(skipped_imaging)}")
+    lines += ["", "## ระดับระบบ", "",
               "| ระบบ | ดาว | คู่ El | คู่ Az " + _STAT_HEADER + " ผล |", "|---|---|---|---|---|---|---|---|---|",
               "| เกณฑ์ | | | | " + " | ".join(f"≤ {limit}" for limit in LIMITS.values()) + " | |"]
     for letter, s in systems.items():
         lines.append(f"| {_system_label(letter)} | {s['sats']} | {s['pairs']} | {s['az_pairs']} | "
                      f"{_num(s['el_median'])} | {_num(s['el_p99'])} | {_num(s['az_median'])} | {_num(s['az_p99'])} | "
                      f"{_RESULT_TH['pass' if s['pass'] else 'fail']} |")
-    missing = [letter for letter in dict.fromkeys(prn[0] for prn in sats) if letter not in systems]
+    missing = [letter for letter in dict.fromkeys(prn[:1] for prn in sats) if letter not in systems]
     if missing:
         lines += ["", "ระบบที่ไม่มีสถิติระดับระบบ (ไม่มีดาวที่ค่าจริงมาจาก SP3 อายุข้อมูลไม่เกิน "
                   f"{AGE_OK_DAYS:g} วัน และมีคู่): " + ", ".join(_system_label(letter) for letter in missing)]

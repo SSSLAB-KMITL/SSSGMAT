@@ -4,7 +4,7 @@
 import { expect, test, vi } from "vitest";
 
 vi.mock("cesium", () => {
-  throw new Error("cesium must not be imported by the Globe Manager or by ionState");
+  throw new Error("cesium must not be imported by the Globe Manager, Show Imagery or ionState");
 });
 
 test("importing the Globe Manager and the ion state does not load cesium", async () => {
@@ -12,4 +12,11 @@ test("importing the Globe Manager and the ion state does not load cesium", async
   const state = await import("../../src/cesium/ionState");
   expect(typeof manager.GlobeManager).toBe("function");
   expect(typeof state.ionStatus).toBe("function");
+});
+
+test("Show Imagery and the shared consent step (ข2, both in the main bundle) do not load cesium either", async () => {
+  const show = await import("../../src/windows/GlobeManager/showImagery");
+  const consent = await import("../../src/windows/GlobeManager/consent");
+  expect(typeof show.registerShowImageryCommand).toBe("function");
+  expect(typeof consent.enableSourceWithConsent).toBe("function");
 });

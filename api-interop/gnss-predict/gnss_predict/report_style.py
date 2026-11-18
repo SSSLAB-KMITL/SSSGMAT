@@ -35,6 +35,8 @@ ACCESS_DATA = "Access Data"
 GAPS = "gaps"
 GAP_ELEMENTS = ("Start Time", "Stop Time", "Duration")
 TIME = "Time"
+MAX_CONTENT = 16                  # Data Provider ต่อ style (style ที่แก้มือจนใหญ่เกินจริงกินเวลาและหน่วยความจำตอนสร้างรายงาน)
+MAX_STEP_S = 999_999_999          # step ของรายงานไม่เกินนี้ (9 หลักเท่ากับ /data) เกินนี้ timedelta ล้น: style ที่มี step เกินสร้างรายงานไม่ได้
 
 _KEYS = {"name", "kind", "object_type", "content", "time", "summary", "graph", "dynamic", "derive", "ours"}
 _REQUIRED = ("name", "kind", "object_type", "content")
@@ -106,6 +108,8 @@ def _check_content(content, object_type: str) -> dict[str, ElementInfo]:
     """ตรวจ content แล้วคืน element ที่ใช้ได้ทั้งหมด ชื่อ -> ElementInfo (ชื่อซ้ำข้าม provider ใช้ตัวแรก)"""
     if not isinstance(content, list) or not content:
         raise _bad("content", "ต้องมีอย่างน้อยหนึ่ง Data Provider")
+    if len(content) > MAX_CONTENT:
+        raise _bad("content", f"มี Data Provider ได้ไม่เกิน {MAX_CONTENT} รายการต่อ style (ได้ {len(content)})")
     available: dict[str, ElementInfo] = {}
     for i, entry in enumerate(content):
         at = f"content[{i}]"
@@ -166,6 +170,8 @@ def _check_time(time) -> None:
     step = time.get("step_s")
     if step is not None and (isinstance(step, bool) or not isinstance(step, int) or step <= 0):
         raise _bad("time.step_s", "ต้องเป็น null (Use default time points) หรือจำนวนเต็มบวก")
+    if step is not None and step > MAX_STEP_S:
+        raise _bad("time.step_s", f"ต้องไม่เกิน {MAX_STEP_S} วินาที (ได้ {step}) เกินนี้สร้างรายงานไม่ได้")
     if mode != "specify":
         for key in ("start", "stop"):
             if key in time:

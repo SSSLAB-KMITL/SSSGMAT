@@ -7,8 +7,9 @@
 //   ส่วนที่ตามเวลา animation (เส้นเวลา, จุดปัจจุบันของ polar, แกนของ Strip Chart) setOption แบบ merge ไม่เกินทุก GRAPH_TIME_REFRESH_MS ms ไม่เรียก server ซ้ำ
 //   ปุ่มสลับ (เส้นเวลา, Crosshair Cursor) ก็ merge: การซูมของผู้ใช้คงอยู่; Zoom Out ใช้ไม่ได้กับกราฟ polar (ไม่มีการซูมตามเวลา)
 // - Strip Chart = style ที่เปิด Dynamic Display (params.dynamic) ชนิด time_xy: แกนเวลาแสดง STRIP_CHART_DURATION_S วินาทีล่าสุดที่จบที่เวลาปัจจุบัน
-// - แถบเครื่องมือ: Save (PNG), Copy to Clipboard (PNG), Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor
-//   สองปุ่มสลับจำไว้ใน windowProps ของหน้าต่าง (อยู่ใน workbook)
+// - แถบเครื่องมือ: Save (PNG), Copy to Clipboard (PNG), Zoom Out, Refresh, Toggle Animation Timeline, Crosshair Cursor, Export
+//   (Export ตัวเดียวกับเมนูคลิกขวา ใช้จากคีย์บอร์ดได้) สองปุ่มสลับจำไว้ใน windowProps ของหน้าต่าง (อยู่ใน workbook)
+// - พื้นที่กราฟเป็นภาพ (role="img" ชื่อ = ชื่อหน้าต่าง) ที่รับโฟกัสด้วย Tab ได้
 // - คลิกขวา: Show Animation Time Line, Set Animation Time (เวลาที่ตำแหน่งคลิกบนแกนเวลา: เฉพาะ time_xy/interval ในพื้นที่กราฟ), Export (ชื่อเมนูตาม help.agi.com)
 //   (ข้อมูลของกราฟทั้งช่วงเป็นไฟล์ CSV จาก server)
 // - panel เปลี่ยนขนาด = chart.resize() ปิดหน้าต่าง = dispose
@@ -19,7 +20,7 @@ import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { ApiError, errorText } from "../../api/client";
 import { useThrottledTime, useTimeFormatter } from "../../chrome/hooks";
-import { downloadReport, type ReportJson } from "../../data/reports";
+import { downloadReport, reportTitle, type ReportJson } from "../../data/reports";
 import { t } from "../../labels/labels";
 import { msg } from "../../labels/messages.th";
 import { getPanelDef, registerPanel, type PanelProps } from "../../layout/panels";
@@ -31,6 +32,7 @@ import { useTime } from "../../stores/time";
 import { ResultsBanner } from "../graphics/GraphicsFrame";
 import { parseReportParams, requestOf, useReportLoader, type LoaderMessages, type PrepareReport } from "../Report/Report";
 import { loadECharts, type ECharts } from "./chart";
+import { drawnState } from "./drawnState";
 import {
   colorKeyOf, graphCrosshairOption, graphOption, graphState, graphTimeOption, objectColorOf, readGraphTheme, registerGraphState, STRIP_CHART_DURATION_S,
   type GraphCtx,
@@ -181,7 +183,9 @@ export function Graph({ params, panelId }: PanelProps) {
 
   useEffect(() => registerGraphState(panelId, () => {
     const { report: r, ctx: c } = latest.current;
-    return r === null || !drawn.current ? null : graphState(r, c);
+    if (r === null || !drawn.current) return null;
+    const state = graphState(r, c);
+    return state === null ? null : { ...state, drawn: chartRef.current === null ? null : drawnState(chartRef.current) };
   }), [panelId]);
 
   // ---------- คำสั่ง ----------
@@ -295,6 +299,9 @@ export function Graph({ params, panelId }: PanelProps) {
         <button type="button" className="btn graph-toggle" aria-pressed={crosshair} title={msg("graph.crosshairHint")} onClick={() => setProp("crosshair", !crosshair)}>
           {t("graph.crosshairCursor")}
         </button>
+        <button type="button" className="btn" disabled={report === null || sc === null} title={msg("graph.exportHint")} onClick={() => void exportCsv()}>
+          {t("graph.export")}
+        </button>
         {phase === "loading" && report !== null && <span className="rpt-busy">{msg("graph.loading")}</span>}
       </div>
       <ResultsBanner status={bannerStatus} onApply={recompute} />
@@ -305,6 +312,9 @@ export function Graph({ params, panelId }: PanelProps) {
             <div
               ref={chartDiv}
               className="graph-chart"
+              role="img"
+              tabIndex={0}
+              aria-label={p === null ? t("window.graph") : reportTitle(p.objects, p.style)}
               style={{ visibility: canDraw ? "visible" : "hidden" }}
               onContextMenuCapture={onContextMenuCapture}
             />

@@ -14,7 +14,7 @@ export interface paths {
         /**
          * Get Catalog
          * @description snapshot ไม่ระบุ = ใหม่สุด, start ไม่ระบุ = เวลาในชื่อ snapshot, stop ไม่ระบุ = start + 1 วัน (age_days วัดที่กลางช่วง)
-         *     system ต้องเป็น G R E C (ไม่ระบุ = ทั้งสี่) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD และชื่อ CelesTrak
+         *     system ต้องเป็น G R E C หรือ X (ดาวถ่ายภาพ; ไม่ระบุ = ทุกระบบ) q ค้นแบบไม่แยกตัวพิมพ์ใน PRN, NORAD, ชื่อ CelesTrak และชื่อที่แสดง
          */
         get: operations["get_catalog_api_catalog_get"];
         put?: never;
@@ -51,6 +51,23 @@ export interface paths {
         };
         /** Events */
         get: operations["events_api_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gpredict/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gpredict Groups */
+        get: operations["gpredict_groups_api_gpredict_groups_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -102,6 +119,26 @@ export interface paths {
         };
         /** Get Tile */
         get: operations["get_tile_api_imagery_tiles__layer___time___z___y___x__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imaging/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Imaging Presets
+         * @description preset X01…X08 ตามลำดับ (ตารางเดียวของ engine: gnss_predict.imaging) เว็บรู้ว่าดาวใดเป็นดาวถ่ายภาพจาก NORAD
+         */
+        get: operations["imaging_presets_api_imaging_presets_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -237,6 +274,23 @@ export interface paths {
          *     ไฟล์หายหรือเสียก็ตอบ 200 (ทุกกลุ่ม null) หน้า Fetch Orbit Data ใช้บอกเวลาที่กด Fetch Now ได้ ตัว server ไม่ดึงเอง
          */
         get: operations["fetch_status_api_orbits_fetch_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/satellite-collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Satellite Collections */
+        get: operations["satellite_collections_api_satellite_collections_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1249,6 +1303,20 @@ export interface components {
             /** Writable */
             writable: boolean;
         };
+        /** ImagingPresetOut */
+        ImagingPresetOut: {
+            /** Camera */
+            camera: string;
+            /** Gibs Layer */
+            gibs_layer: string;
+            /** Name */
+            name: string;
+            /** Norad */
+            norad: number;
+            /** Prn */
+            prn: string;
+            sensor: components["schemas"]["SensorDefinitionOut"];
+        };
         /** Ionosphere */
         Ionosphere: {
             /**
@@ -1616,7 +1684,9 @@ export interface components {
         };
         /**
          * SensorDefinition
-         * @description Basic - Definition ของ STK: v1 มีเฉพาะ Simple Conic ครึ่งมุมกรวย (0, 90] องศา
+         * @description Basic - Definition ของ STK: Simple Conic ครึ่งมุมกรวย (0, 90] องศา หรือ Rectangular ครึ่งมุมสองแกน (0, 89] องศา
+         *     แกนตาม STK (Ruling g): Horizontal Half Angle = ระนาบ XZ ของตัวดาว (along-track), Vertical Half Angle = ระนาบ YZ (cross-track)
+         *     Rectangular ไม่มี cone_half_angle (Ruling v): ค่าที่ส่งมาด้วยถูกทิ้งก่อนตรวจ
          */
         SensorDefinition: {
             /**
@@ -1625,13 +1695,40 @@ export interface components {
              */
             cone_half_angle?: number;
             /**
+             * Horizontal Half Angle
+             * @default null
+             */
+            horizontal_half_angle?: number | null;
+            /**
              * Type
              * @default Simple Conic
-             * @constant
+             * @enum {string}
              */
-            type?: "Simple Conic";
+            type?: "Simple Conic" | "Rectangular";
+            /**
+             * Vertical Half Angle
+             * @default null
+             */
+            vertical_half_angle?: number | null;
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * SensorDefinitionOut
+         * @description Sensor หลักของ preset: Simple Conic ใช้ cone_half_angle, Rectangular ใช้ vertical/horizontal (ช่องของอีกชนิดเป็น null)
+         */
+        SensorDefinitionOut: {
+            /** Cone Half Angle */
+            cone_half_angle: number | null;
+            /** Horizontal Half Angle */
+            horizontal_half_angle: number | null;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "Simple Conic" | "Rectangular";
+            /** Vertical Half Angle */
+            vertical_half_angle: number | null;
         };
         /**
          * SensorObj
@@ -1915,6 +2012,28 @@ export interface operations {
             };
         };
     };
+    gpredict_groups_api_gpredict_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -1987,6 +2106,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    imaging_presets_api_imaging_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImagingPresetOut"][];
                 };
             };
         };
@@ -2181,6 +2320,28 @@ export interface operations {
         };
     };
     fetch_status_api_orbits_fetch_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    satellite_collections_api_satellite_collections_get: {
         parameters: {
             query?: never;
             header?: never;

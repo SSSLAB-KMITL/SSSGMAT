@@ -18,6 +18,7 @@ import { OSM_LAYER, useImagery, type ImageryLayerInfo, type ImagerySourceId } fr
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
 import { useSettings, type Settings } from "../../src/stores/settings";
+import { CONSENT_KEYS, enableSourceWithConsent } from "../../src/windows/GlobeManager/consent";
 import { GlobeManager, registerGlobeManagerPanel } from "../../src/windows/GlobeManager/GlobeManager";
 import { registerCoreCommands } from "../../src/chrome/coreCommands";
 import { resetAll } from "./helpers/chrome";
@@ -463,6 +464,56 @@ describe("the four source groups", () => {
     for (const other of OTHERS(id)) expect(groupOf(other.id).queryByText(msg(key)), `${other.id}`).toBeNull();
   });
 
+  test("OpenStreetMap starts hidden (task 13c): its row is unticked with the switch on, and its group says so in Thai", () => {
+    useImagery.setState({ sources: { ...SOURCES_OFF, osm: true } });
+    useLayout.setState({ globe: DEFAULT_GLOBE });
+    mount();
+    expect(show(OSM_TITLE).checked).toBe(false);
+    expect(show(OSM_TITLE).disabled).toBe(false); // ติ๊กเองได้ในการใช้งานครั้งนี้
+    expect(msg("globe.osmStartsHidden")).toBe("แผนที่ถนนเริ่มแบบซ่อนทุกครั้งที่เปิด — เปิดสวิตช์หรือติ๊ก Show เพื่อดู");
+    expect(groupOf("osm").getByText(msg("globe.osmStartsHidden"))).toBeDefined();
+    for (const other of OTHERS("osm")) expect(groupOf(other.id).queryByText(msg("globe.osmStartsHidden")), other.id).toBeNull();
+  });
+
+  describe("turning OpenStreetMap on shows its row (fix round 1 of task 13c, like ion picking a preset)", () => {
+    const osmShown = () => useLayout.getState().globe.layers.osm?.show ?? false;
+    const failingPut = { [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } };
+
+    test("Confirm ticks the row once the server has the switch on; % Translucency is kept", async () => {
+      server();
+      useLayout.setState({ globe: { ...DEFAULT_GLOBE, layers: { ...DEFAULT_GLOBE.layers, osm: { show: false, translucency: 30 } } } });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
+      await waitFor(() => expect(useImagery.getState().sources.osm).toBe(true));
+      await waitFor(() => expect(osmShown()).toBe(true));
+      expect(useLayout.getState().globe.layers.osm).toEqual({ show: true, translucency: 30 });
+      expect(show(OSM_TITLE).checked).toBe(true);
+    });
+
+    test("Cancel leaves the row hidden and sends nothing", async () => {
+      const f = server();
+      useLayout.setState({ globe: DEFAULT_GLOBE });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(osmShown()).toBe(false);
+      expect(puts(f)).toHaveLength(0);
+    });
+
+    test("a failed save leaves the row hidden", async () => {
+      server(failingPut);
+      useLayout.setState({ globe: DEFAULT_GLOBE });
+      mount();
+      await user.click(sourceSwitch("osm"));
+      await user.click(within(dialog()).getByRole("button", { name: t("dialog.ok") }));
+      await waitFor(() => expect(useMessages.getState().items.filter((m) => m.level === "warning")).toHaveLength(1));
+      expect(useImagery.getState().sources.osm).toBe(false);
+      expect(osmShown()).toBe(false);
+    });
+  });
+
   test("a switch that is on loses its off hint", () => {
     useImagery.setState({ sources: { gibs: true, eox: true, osm: true, ion: true } });
     mount();
@@ -563,6 +614,71 @@ describe.each(SOURCES)("turning on $id", ({ id, field, consent }) => {
   });
 });
 
+// ข2 Ruling (f): ขั้นถามแล้วเปิดของ switchTo อยู่ใน consent.ts ตัวเดียวกับที่ Show Imagery ใช้ (กล่องและผลเหมือนกันทุกตัวอักษร)
+describe.each(SOURCES)("enableSourceWithConsent($id), shared with Show Imagery", ({ id, field, consent }) => {
+  function host() {
+    return render(<Dialogs />);
+  }
+
+  test("CONSENT_KEYS holds the same confirmation the Globe Manager switch shows", () => {
+    expect(CONSENT_KEYS[id]).toBe(consent);
+  });
+
+  test("asks with that source's confirmation; Cancel resolves false with no PUT /api/settings and no layer change", async () => {
+    const f = server();
+    host();
+    const globe = useLayout.getState().globe;
+    const result = enableSourceWithConsent(id);
+    expect(await screen.findByText(msg(consent))).toBeDefined();
+    await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
+    expect(await result).toBe(false);
+    expect(puts(f)).toHaveLength(0);
+    expect(f.calls).toEqual([]);
+    expect(useLayout.getState().globe).toBe(globe);
+    expect(useImagery.getState().sources[id]).toBe(false);
+  });
+
+  test("Confirm saves the flag and resolves true", async () => {
+    const f = server();
+    host();
+    const result = enableSourceWithConsent(id);
+    await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+    expect(await result).toBe(true);
+    expect(puts(f)).toHaveLength(1);
+    expect(puts(f)[0].body).toEqual({ ...SETTINGS, online_imagery: { ...IMAGERY_OFF, [field]: true } });
+  });
+
+  test("a failed save resolves false", async () => {
+    server({ [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } });
+    host();
+    const result = enableSourceWithConsent(id);
+    await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+    expect(await result).toBe(false);
+  });
+
+  test("a source that is already on resolves true with no question and no request", async () => {
+    const f = server();
+    host();
+    useImagery.setState({ sources: { ...SOURCES_OFF, [id]: true } });
+    expect(await enableSourceWithConsent(id)).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.calls).toEqual([]);
+  });
+});
+
+test("enableSourceWithConsent('osm') ticks the OpenStreetMap row after a successful save (task 13c), Cancel leaves it unticked", async () => {
+  server();
+  render(<Dialogs />);
+  const cancelled = enableSourceWithConsent("osm");
+  await user.click(await screen.findByRole("button", { name: t("dialog.cancel") }));
+  await cancelled;
+  expect(useLayout.getState().globe.layers.osm?.show ?? false).toBe(false);
+  const ok = enableSourceWithConsent("osm");
+  await user.click(await screen.findByRole("button", { name: t("dialog.ok") }));
+  expect(await ok).toBe(true);
+  expect(useLayout.getState().globe.layers.osm.show).toBe(true);
+});
+
 describe("Cesium ion: switching on", () => {
   const confirmOn = async () => {
     await user.click(sourceSwitch("ion"));
@@ -572,6 +688,7 @@ describe("Cesium ion: switching on", () => {
 
   test("with no asset picked it selects the first preset (and only then)", async () => {
     server();
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     mount();
     expect(useLayout.getState().globe.ion.assetId).toBeNull();
     await confirmOn();
@@ -598,6 +715,7 @@ describe("Cesium ion: switching on", () => {
 
   test("Cancel, and a failed save, leave the asset unselected", async () => {
     server({ [PUT]: { status: 500, json: { code: "INTERNAL", text: "พัง", field: null, detail: null } } });
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     mount();
     await user.click(sourceSwitch("ion"));
     await user.click(within(dialog()).getByRole("button", { name: t("dialog.cancel") }));
@@ -866,6 +984,19 @@ describe("Cesium ion: asset", () => {
     expect(ION_PRESETS.length).toBeGreaterThanOrEqual(3);
   });
 
+  test("the default layout selects Google Maps Satellite (and not None), also while the ion switch is off", () => {
+    expect(useLayout.getState().globe).toBe(DEFAULT_GLOBE);
+    const first = mount();
+    expect(radio("Google Maps Satellite").checked).toBe(true);
+    expect(radio(NONE).checked).toBe(false);
+    expect(radio(t("field.ionAssetId")).checked).toBe(false);
+    expect(assetIdBox().value).toBe("");
+    first.unmount();
+    useImagery.setState({ sources: SOURCES_OFF });
+    mount();
+    expect(radio("Google Maps Satellite").checked).toBe(true);
+  });
+
   test("shows the layout's asset: None when null, the preset, or Asset ID with the number", () => {
     useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } });
     const first = mount();
@@ -934,11 +1065,11 @@ describe("Cesium ion: asset", () => {
     await typeInto(assetIdBox(), "");
     await user.tab();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182); // ค่าตั้งต้น (Google Maps Satellite) ไม่ถูกแตะ
     await typeInto(assetIdBox(), "55");
     await user.keyboard("{Escape}");
     expect(assetIdBox().value).toBe("");
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182);
     await customBox("0");
     await customBox("55");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -949,7 +1080,8 @@ describe("Cesium ion: asset", () => {
     mount();
     await user.click(radio(t("field.ionAssetId")));
     expect(document.activeElement).toBe(assetIdBox());
-    expect(assetId()).toBeNull();
+    expect(assetId()).toBe(3830182); // ค่าตั้งต้น (Google Maps Satellite) คงเดิม
+    expect(radio("Google Maps Satellite").checked).toBe(true);
   });
 
   test("the radios and the box are disabled while the ion switch is off, the layout's choice is kept", () => {
@@ -962,6 +1094,7 @@ describe("Cesium ion: asset", () => {
   });
 
   test("tells why ion shows nothing: no asset picked, no token, or ion refused the asset and token", async () => {
+    useLayout.setState({ globe: { ...DEFAULT_GLOBE, ion: { assetId: null } } }); // None (ค่าตั้งต้นคือ Google Maps Satellite)
     const { unmount } = mount();
     expect(groupOf("ion").getByText(msg("globe.ionNoAsset"))).toBeDefined();
     unmount();

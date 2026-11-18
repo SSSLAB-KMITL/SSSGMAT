@@ -1,4 +1,4 @@
-// คำสั่งของ Object Browser ที่ลงทะเบียนระดับแอป (W3): edit.cut/copy/paste/delete/find, object.properties/rename/delete, ob.*
+// คำสั่งของ Object Browser ที่ลงทะเบียนระดับแอป (W3): edit.cut/copy/paste/delete/find, object.properties/rename/delete, scenario.properties, ob.*
 // ลงทะเบียนครั้งเดียวตอนแอปเริ่ม (เหมือน registerCoreCommands / registerFileCommands) ไม่ผูกกับหน้าต่าง: dockview ถอดแท็บที่ซ่อนอยู่หรือปิดหน้าต่างแล้ว
 // เมนู Edit, ปุ่ม Delete และปุ่ม ⚠ บนแถบสถานะต้องยังใช้ได้ คำสั่งทำกับการเลือกปัจจุบันของแอป (useSelection) และสถานะใน state.ts
 // คำสั่งที่ต้องมีหน้าจอ (Find, New Group, Rename, ตัวกรองธง) เปิดหรือโฟกัสหน้าต่าง Object Browser ให้ แล้วหน้าต่างแสดงสถานะที่ตั้งไว้
@@ -7,6 +7,7 @@
 
 import { COMMAND_LABELS, invalidateCommands, registerCommand, type CommandDef, type CommandId } from "../../commands";
 import { msg } from "../../labels/messages.th";
+import { useLayout } from "../../stores/layout";
 import { useScenario } from "../../stores/scenario";
 import { useSelection } from "../../stores/selection";
 import {
@@ -64,6 +65,15 @@ export function registerObjectBrowserCommands(): () => void {
     enabled: () => selectedRow()?.kind === "object",
     tooltip: () => (selectedRow()?.kind === "object" ? undefined : msg("ob.selectObject")),
   });
+  // เมนูของ Scenario: Properties ของ scenario ที่เปิดอยู่ (ราก "*") ไม่ขึ้นกับแถวที่เลือก
+  add("scenario.properties", {
+    run: () => {
+      const name = useScenario.getState().name;
+      if (name !== null) useLayout.getState().openPanel("propertiesBrowser", { path: "*", name });
+    },
+    enabled: () => useScenario.getState().name !== null,
+    tooltip: () => (useScenario.getState().name === null ? msg("tooltip.noScenario") : undefined),
+  });
   add("object.rename", {
     run: () => {
       const row = selectedRow();
@@ -117,7 +127,7 @@ export function registerObjectBrowserCommands(): () => void {
     }),
     useClipboard.subscribe(invalidateCommands),
     useScenario.subscribe((s, prev) => {
-      if (s.tree !== prev.tree) invalidateCommands();
+      if (s.tree !== prev.tree || s.name !== prev.name) invalidateCommands();
     }),
   ];
   invalidateCommands();

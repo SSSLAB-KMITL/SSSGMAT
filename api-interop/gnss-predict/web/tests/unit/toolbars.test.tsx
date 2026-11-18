@@ -92,7 +92,6 @@ describe("Default toolbar", () => {
       const tip = await screen.findByRole("tooltip");
       expect(tip.textContent).toContain(t("toolbar.reportGraphManager"));
       expect(tip.textContent).toContain(msg("tooltip.noScenario"));
-      expect(tip.textContent).not.toContain(msg("tooltip.subtask4"));
     } finally {
       dispose();
     }

@@ -129,8 +129,9 @@ def _unmapped(rec: OmmRecord, reason: str) -> dict:
     return {"norad": rec.norad, "celestrak_name": rec.name, "object_id": rec.object_id, "reason": reason}
 
 
-def _flagged_message(sat: CatalogSatellite) -> Message:
-    parts = [_FLAG_TEXT[f].format(ok=AGE_OK_DAYS, max=AGE_SHOWN_MAX_DAYS, age=sat.age_days, name=sat.celestrak_name)
+def _flagged_message(sat: CatalogSatellite, ok: float = AGE_OK_DAYS, max_: float = AGE_SHOWN_MAX_DAYS) -> Message:
+    """ok/max_: เกณฑ์อายุที่ใช้ตั้งธง stale/too_old ของดาวดวงนี้ (ดาว GEO ของระบบ X ใช้เกณฑ์อื่น)"""
+    parts = [_FLAG_TEXT[f].format(ok=ok, max=max_, age=sat.age_days, name=sat.celestrak_name)
              for f in _FLAG_ORDER if f in sat.flags]
     level = "warning" if sat.flags & _WARNING_FLAGS else "info"
     return Message("SAT_FLAGGED", level, f"ดาว {sat.prn} (NORAD {sat.norad}): " + "; ".join(parts), sat.prn)

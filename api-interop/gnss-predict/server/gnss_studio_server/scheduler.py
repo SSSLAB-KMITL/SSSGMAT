@@ -311,6 +311,8 @@ class Scheduler:
         - `gave_up`: อยู่ใน `given_up` (ตัวตั้งเวลาเลิกแล้ว) `next_attempt_utc` เป็น None
         - `pending`: มี job validate ของวันนั้นที่รอ/รันอยู่ = `now` ไม่งั้น max(now, ครั้งล่าสุดที่สั่ง + `validation_retry_hours`)
           (ไม่เคยสั่งเลย = `now`) งานประจำวันปิดอยู่ (`enabled: false`) = None เพราะตัวตั้งเวลาไม่สั่งเอง
+          เลยเส้นตาย (`give_up_deadline`) และมี job ของวันนั้นที่จบโดยไม่สำเร็จ = None เหมือนกฎของ `_validation`: tick ถัดไปจะเลิก
+          ไม่สั่งตรวจอีก (state ยังเป็น pending จนกว่า tick จะเลิกจริง) จึงไม่มีเวลาลองครั้งถัดไป หน้าเว็บแสดงเป็นไม่มีรอบถัดไป
 
         อ่านอย่างเดียว: ไม่สั่ง job ไม่เขียน state.json (อ่านเข้า memory เหมือน tick) เรียกจาก thread ของ route ได้ระหว่าง tick:
         `given_up` ถูกคัดลอกก่อนใช้ ส่วน job อ่านผ่าน `jobs.list()` (มีล็อกของตัวเอง)"""
@@ -319,7 +321,9 @@ class Scheduler:
         state = self._load_state()
         given_up, last_attempt = set(state.given_up), state.last_attempt
         retry_at = None if last_attempt is None else last_attempt + timedelta(hours=daily.validation_retry_hours)
-        busy = {(r.scenario, r.params.get("day")) for r in self.jobs.list() if r.kind == "validate" and r.state in ACTIVE}
+        validates = [r for r in self.jobs.list() if r.kind == "validate"]
+        busy = {(r.scenario, r.params.get("day")) for r in validates if r.state in ACTIVE}
+        failed = {(r.scenario, r.params.get("day")) for r in validates if r.state in FINISHED and r.state != "succeeded"}
         latest_day = now.date() - timedelta(days=1)
         out = []
         for name, for_date in daily_scenarios(self.data_dir):
@@ -330,7 +334,11 @@ class Scheduler:
                 label, when = "gave_up", None
             elif not daily.enabled:
                 label, when = "pending", None
-            elif (name, day) in busy or retry_at is None:
+            elif (name, day) in busy:
+                label, when = "pending", now
+            elif (name, day) in failed and now > give_up_deadline(for_date, daily):
+                label, when = "pending", None              # tick ถัดไปเลิก (`_validation`): ไม่มีรอบถัดไป
+            elif retry_at is None:
                 label, when = "pending", now
             else:
                 label, when = "pending", max(now, retry_at)

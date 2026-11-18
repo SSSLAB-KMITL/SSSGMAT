@@ -50,6 +50,10 @@ TABLE = [
      "gibs"),
     ("GOES-West_ABI_GeoColor", "GOES-West GeoColor", "10min", "GoogleMapsCompatible_Level7", 7, "png", "NASA GIBS / EOSDIS, NOAA",
      "gibs"),
+    ("MODIS_Aqua_CorrectedReflectance_TrueColor", "MODIS Aqua True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
+     "NASA GIBS / EOSDIS", "gibs"),
+    ("VIIRS_NOAA21_CorrectedReflectance_TrueColor", "VIIRS NOAA-21 True Color", "daily", "GoogleMapsCompatible_Level9", 9, "jpg",
+     "NASA GIBS / EOSDIS", "gibs"),
     ("s2cloudless-2024_3857", "Sentinel-2 cloudless 2024", "static", "g", 15, "jpg",
      "Sentinel-2 cloudless - https://s2maps.eu by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)", "eox"),
 ]
@@ -57,6 +61,7 @@ TABLE = [
 BM = "BlueMarble_NextGeneration"                         # static, ระดับสูงสุด 8, jpg
 VI = "VIIRS_NOAA20_CorrectedReflectance_TrueColor"      # daily, ระดับสูงสุด 9, jpg
 HW = "Himawari_AHI_Band3_Red_Visible_1km"               # 10min, ระดับสูงสุด 7, png
+AQ = "MODIS_Aqua_CorrectedReflectance_TrueColor"        # daily (ดาวถ่ายภาพ X05)
 EO = "s2cloudless-2024_3857"                            # EOX Sentinel-2 cloudless: static, ระดับสูงสุด 15, jpg
 DAY = "2026-11-11"
 SLOT = "2026-11-11T00:10:00Z"
@@ -272,6 +277,8 @@ def test_limits_match_global_constraints():
     (VI, "٢٠٢٦-١١-١١", False),                       # เลขอารบิก-อินเดีย: \d ของ regex รับ แต่ต้องไม่รับ
     (VI, "default", False),
     (VI, "2026-11-11T00:00:00Z", False),
+    (AQ, "2026-11-02", True),
+    (AQ, "2026-11-02T00:00:00Z", False),
     (HW, SLOT, True),
     (HW, "2026-11-11T00:00:00Z", True),
     (HW, "2026-11-11T23:50:00Z", True),

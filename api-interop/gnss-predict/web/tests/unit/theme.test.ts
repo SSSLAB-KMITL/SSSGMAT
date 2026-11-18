@@ -115,3 +115,15 @@ test("the rules of the Timeline View and the Message Viewer use tokens only", ()
   // the selected message row uses the same colours as every other selection
   expect(own.find((r) => r.selector.startsWith('.mv-row[aria-selected="true"]'))?.body).toContain("var(--selected-bg)");
 });
+
+test("scrollers with a sticky table header keep keyboard focus out from under it (scroll-padding-top = the header height)", () => {
+  const css = readFileSync(resolve(WEB_ROOT, "src/theme.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ selector: m[1].trim(), body: m[2] }));
+  const body = (selector: string) => rules.filter((r) => r.selector.split(",").map((s) => s.trim()).includes(selector)).map((r) => r.body).join(";");
+  expect(readCssVars("src/theme.css")["--sticky-head-h"]).toMatch(/^\d+px$/);
+  for (const [scroller, head] of [[".val-scroll", ".val-table th"], [".catalog-scroll", ".catalog-table th"]]) {
+    expect(body(head), head).toMatch(/position:\s*sticky/);
+    expect(body(head), head).toMatch(/height:\s*var\(--sticky-head-h\)/);
+    expect(body(scroller), scroller).toMatch(/scroll-padding-top:\s*var\(--sticky-head-h\)/);
+  }
+});

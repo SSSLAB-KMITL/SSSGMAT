@@ -3,6 +3,7 @@
 //
 // - analysis.reportGraphManager: ใช้ได้เมื่อมี scenario และพื้นที่ทำงาน mount แล้ว เปิดโดยไม่เปลี่ยน Object Type ของบานที่เปิดอยู่
 // - object.reportGraphManager: object ที่เลือกเป็น Facility / Satellite / Constellation ที่มีอยู่ใน doc = Object Type ตามชนิดนั้นและเลือก object นั้นไว้
+// - scenario.reportGraphManager (เมนูของ Scenario: QA-02): Object Type All Types ไม่เลือก object ใด ใช้ได้เมื่อมี scenario ไม่ขึ้นกับการเลือก
 // - openReportGraphManager ใช้ร่วมกับปุ่มใน Access tool (Object Type = Access และ access ที่ติ๊กอยู่)
 // - การเปลี่ยนแปลงของ My Styles (Copy / Delete / OK ของหน้าต่างแก้ style) แจ้งผ่าน useStyleRevision ให้ Manager อ่านรายการใหม่
 
@@ -67,6 +68,12 @@ export function registerReportGraphManagerCommands(): () => void {
       },
       enabled: () => ready() && selectedObject() !== null,
       tooltip: () => noScenario() ?? (selectedObject() === null ? msg("rgm.forObject") : undefined),
+    }),
+    registerCommand("scenario.reportGraphManager", {
+      label: COMMAND_LABELS["scenario.reportGraphManager"],
+      run: () => openReportGraphManager({ objectType: "All", objects: [] }),
+      enabled: ready,
+      tooltip: noScenario,
     }),
   ];
   const unsubscribe = [

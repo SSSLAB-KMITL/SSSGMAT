@@ -18,7 +18,8 @@ from gnss_predict.dataproviders import (DOP_GROUPS, PROVIDERS, AccessTables, Tab
 from gnss_predict.errors import GnssPredictError, ResultsNotCurrentError, ScenarioError, StyleError
 from gnss_predict.geometry import geodetic_to_ecef
 from gnss_predict.sp3 import read_sp3_all
-from tests.report_fixture import EARTH_MU_KM3_S2, EARTH_ROTATION_RAD_S, build_computed_scenario
+from tests.report_fixture import (EARTH_MU_KM3_S2, EARTH_ROTATION_RAD_S, IMAGING_SATELLITES, X04_WINDOW,
+                                  build_computed_scenario, imaging_ecef)
 
 UTC = timezone.utc
 START = datetime(2026, 11, 10, 0, 0, tzinfo=UTC)
@@ -107,6 +108,8 @@ class TestProviderCatalog(unittest.TestCase):
         interp = {(p.name, e.name): e.interp for p in PROVIDERS.values() for e in p.elements}
         self.assertEqual(interp[("AER Data", "Azimuth")], "angle")
         self.assertEqual(interp[("LLA State", "Lon")], "angle")
+        self.assertEqual(interp[("IPP Data", "IPP Lon")], "angle")        # ค่าอยู่ใน [-180, 180]: ประมาณเชิงเส้นข้าม ±180 จะผ่าน 0 (ผิด)
+        self.assertEqual(interp[("IPP Data", "IPP Lat")], "linear")
         self.assertEqual(interp[("AER Data", "Elevation")], "linear")
         self.assertEqual(interp[("Dilution of Precision", "N Visible")], "previous")
         self.assertEqual({e.interp for e in PROVIDERS["N Asset Coverage"].elements}, {"previous"})
@@ -302,6 +305,48 @@ class TestProviderRows(_ComputedScenario):
     def test_only_requested_elements_in_order(self):
         rows = self.rows(G01, "AER Data", ["Range", "Time"])
         self.assertEqual(list(rows[0]), ["Range", "Time"])
+
+
+class TestImaging(unittest.TestCase):
+    """ฉากที่มี X04: aer.csv มีช่อง IPP/MF ว่าง ต้องเปิดอ่านได้ (ไม่ใช่ RESULT_CORRUPT) และ IPP Data ได้ None"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.scenario_dir, cls.data_dir = build_computed_scenario(
+            Path(cls._tmp.name), satellites=IMAGING_SATELLITES, imaging=True, ecef=imaging_ecef())
+        cls.files = _Bundle(cls.scenario_dir)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
+    def rows(self, obj, provider, elements):
+        rs = open_result_set(self.scenario_dir, self.data_dir)
+        return provider_rows(rs, obj, provider, None, elements, START, STOP, None)
+
+    def test_access_tables_accept_empty_ipp(self):
+        x_rows = self.files.aer_of("X04")
+        self.assertTrue(x_rows)
+        self.assertTrue(all(r["ipp_lat_deg"] == r["ipp_lon_deg"] == r["mf"] == "" for r in x_rows))
+        rows = self.rows(access_path("THBK", "X04"), "AER Data", AER)      # ไม่ raise ResultCorruptError
+        self.assertTrue(rows)
+        self.assertTrue(self.rows(G01, "IPP Data", IPP))
+
+    def test_ipp_data_is_none_for_imaging(self):
+        rows = self.rows(access_path("THBK", "X04"), "IPP Data", IPP)
+        expected = [r for r in self.files.aer_of("X04") if self.files.in_access("X04", _t(r["time_utc"]))]
+        self.assertEqual(len(rows), len(expected))
+        self.assertEqual(len(rows), (X04_WINDOW[1] - X04_WINDOW[0]) // 60)
+        for row, r in zip(rows, expected, strict=True):
+            self.assertIsNone(row["IPP Lat"])
+            self.assertIsNone(row["IPP Lon"])
+            self.assertIsNone(row["MF"])
+            self.assertIsInstance(row["Elevation"], float)
+            self.assertEqual(row["Elevation"], float(r["el_deg"]))
+        # G01 ในฉากเดียวกันยังมี IPP/MF เป็นตัวเลข
+        g01 = self.rows(G01, "IPP Data", IPP)
+        self.assertTrue(all(isinstance(r["MF"], float) for r in g01))
 
 
 class TestMissingResults(unittest.TestCase):

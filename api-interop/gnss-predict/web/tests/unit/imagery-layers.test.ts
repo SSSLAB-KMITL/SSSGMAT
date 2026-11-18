@@ -977,6 +977,72 @@ describe("sources: OpenStreetMap straight from the browser", () => {
   });
 });
 
+describe("the default globe: Google Maps Satellite on Cesium ion (DEFAULT_GLOBE.ion)", () => {
+  /** fetch ของ test: ทุกคำขอ (รวม PUT /api/settings หรือ api.cesium.com) ถูกบันทึกและ reject ไม่มีคำขอใดออกเน็ต */
+  let fetched: string[];
+  beforeEach(() => {
+    fetched = [];
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init: RequestInit = {}) => {
+      fetched.push(`${(init.method ?? "GET").toUpperCase()} ${String(input)}`);
+      return Promise.reject(new Error("no network in tests"));
+    }));
+    useImagery.setState({ layers: [...CATALOG, EOX_LAYER] });
+    useLayout.setState({ globe: DEFAULT_GLOBE });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("the ion source off (with a token saved): no ion request, no ion layer, Natural Earth II and the GIBS/EOX layers are drawn as before, and nothing is fetched", async () => {
+    expect(useLayout.getState().globe.ion).toEqual({ assetId: 3830182 });
+    useSettings.setState({ settings: { ...SETTINGS, online_imagery: { ...SETTINGS.online_imagery, ion: false } } });
+    sources({ gibs: true });
+    const v = fakeViewer();
+    attach(v.viewer);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled();
+    expect(made.ion).toHaveLength(0);
+    expect(v.ids()).toEqual([BM, VIIRS]);
+    expect(v.list[0]).toBe(v.base);
+    expect(v.base.alpha).toBe(1);
+    sources({ gibs: true, eox: true });
+    expect(v.ids()).toEqual([EOX]); // Sentinel-2 cloudless ทึบบังชั้นข้างใต้ ตามเดิม
+    expect(v.base.alpha).toBe(1);
+    sources({});
+    expect(v.list).toEqual([v.base, v.grid]); // ทุกสวิตช์ปิด: เหลือ Natural Earth II ออฟไลน์
+    expect(v.base.alpha).toBe(1);
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled();
+    expect(fetched).toEqual([]); // ไม่มี PUT /api/settings และไม่มีคำขอไป api.cesium.com
+    expect(warnings()).toEqual([]);
+  });
+
+  test("the ion source on with no token: no ion request, the other layers stay, one Thai warning as before, nothing is fetched", async () => {
+    setToken("  ");
+    sources({ gibs: true, ion: true });
+    const v = fakeViewer();
+    attach(v.viewer);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(IonImageryProvider.fromAssetId).not.toHaveBeenCalled();
+    expect(v.ids()).toEqual([BM, VIIRS]);
+    expect(v.base.alpha).toBe(1);
+    expect(warnings().map((m) => m.code)).toEqual(["IMAGERY_ION_TOKEN"]);
+    expect(fetched).toEqual([]);
+  });
+
+  test("the ion source on with a token: Google Maps Satellite is requested with no asset picked by hand, and it is exclusive as before", async () => {
+    setToken(TOKEN);
+    sources({ gibs: true, eox: true, ion: true });
+    const v = fakeViewer();
+    attach(v.viewer);
+    expect(vi.mocked(IonImageryProvider.fromAssetId).mock.calls).toEqual([[3830182, { accessToken: TOKEN }]]);
+    expect(v.ids()).toEqual([]);
+    expect(v.base.alpha).toBe(0);
+    await resolveIon();
+    expect(v.ids()).toEqual([ION]);
+    expect(v.list).toEqual([v.base, v.gibs()[0], v.grid]);
+    expect(imageryStatus(v.viewer).topLayer).toMatchObject({ id: ION, title: "Google Maps Satellite", source: "ion" });
+    expect(fetched).toEqual([]); // fromAssetId ปลอม: ไม่มีคำขอจริง และไม่มี PUT /api/settings
+  });
+});
+
 describe("sources: Cesium ion (exclusive)", () => {
   beforeEach(() => {
     useImagery.setState({ layers: [...CATALOG, EOX_LAYER] });
@@ -986,6 +1052,7 @@ describe("sources: Cesium ion (exclusive)", () => {
   });
 
   test("ion shown with a token: fromAssetId(asset, { accessToken }) per viewer, every other layer goes and Natural Earth II alpha is 0 in every viewer", async () => {
+    ionAsset(null); // None ก่อน (ค่าตั้งต้นคือ Google Maps Satellite: มี test ของตัวเองใน "the default globe")
     const a = fakeViewer();
     const b = fakeViewer();
     attach(a.viewer);

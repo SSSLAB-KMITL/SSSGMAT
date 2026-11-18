@@ -8,11 +8,13 @@ import { MSG_KEYS, msg, type MsgKey } from "../../src/labels/messages.th";
 const ref = readFileSync(resolve(__dirname, "../../../docs/2026-11-11-gnss-studio-stk-reference.md"), "utf8");
 /** ผลตรวจคำของ help.agi.com (Access, Report & Graph Manager, Style Properties, หน้าต่างรายงาน/กราฟ) หลักฐานของ stkHelp */
 const helpTerms = readFileSync(resolve(__dirname, "../../../docs/2026-11-15-stk-terms-access-reports.md"), "utf8");
+/** ผลตรวจคำของ help.agi.com ชุดที่สอง (เมนูคลิกขวาของ Scenario/object, ปุ่ม Properties ของ 3D/2D Window Defaults) หลักฐานของ stkHelp ด้วย (QA-02) */
+const menuTerms = readFileSync(resolve(__dirname, "../../../docs/2026-11-17-stk-terms-context-menus.md"), "utf8");
 
 // ---- ตรวจกับ STK reference (ข้อ 1-4 ตามบรีฟ) ----
 
 test("every stk label appears verbatim in the STK reference", () => {
-  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !(l.ref === STK_HELP_REF ? helpTerms : ref).includes(l.text)).map(([k]) => k);
+  const missing = Object.entries(labels).filter(([, l]) => l.source === "stk" && !(l.ref === STK_HELP_REF ? helpTerms + menuTerms : ref).includes(l.text)).map(([k]) => k);
   expect(missing).toEqual([]);
 });
 
@@ -245,7 +247,8 @@ describe("stk labels are real STK terms", () => {
                         "Save", "Save As...", "Open...", "Exit", "Full Screen", "Expand All", "Collapse All", "Zoom Out",
                         "Set Animation Time to Interval Start Time", "Set Animation Time to Interval Stop Time",
                         "Access", "Group", "Windows"]) {
-      const hits = Object.entries(labels).filter(([, l]) => l.text === text);
+      // ป้ายที่ยืนยันบน help.agi.com (stkHelp) ตรวจแยกข้างบน ไม่ใช่การอ้าง reference นี้
+      const hits = Object.entries(labels).filter(([, l]) => l.text === text && l.ref !== STK_HELP_REF);
       expect(hits.length, `a label with text "${text}" must exist`).toBeGreaterThan(0);
       for (const [k, l] of hits) expect([k, l.source]).toEqual([k, "ours"]);
     }
@@ -274,7 +277,25 @@ function helpQuotes(doc: string): string[] {
   }
   return out;
 }
-const HELP_QUOTES = helpQuotes(helpTerms);
+/**
+ * คำในเครื่องหมาย `...` ของไฟล์ผลตรวจชุดที่สอง (2026-11-17) เฉพาะในหัวข้อที่ชื่อมี "ยืนยันตรงตัว" (จนถึงหัวข้อถัดไป)
+ * หัวข้อ "อนุมาน" ไม่ให้หลักฐาน; ข้อความที่มี "->" (ทางไปในเมนู เช่น View -> Toolbars) ไม่ใช่ชื่อเดียว ไม่นับ
+ */
+function verifiedTerms(doc: string): string[] {
+  const out: string[] = [];
+  let verified = false;
+  for (const line of doc.split("\n")) {
+    if (line.startsWith("#")) {
+      verified = line.includes("ยืนยันตรงตัว");
+      continue;
+    }
+    if (!verified) continue;
+    for (const m of line.matchAll(/`([^`]+)`/g)) if (!m[1].includes("->")) out.push(m[1]);
+  }
+  return out;
+}
+const MENU_QUOTES = verifiedTerms(menuTerms);
+const HELP_QUOTES = [...helpQuotes(helpTerms), ...MENU_QUOTES];
 
 /**
  * stkHelp ที่ไม่ตรงกับข้อความอ้างทั้งก้อน: อ้างส่วนหนึ่งของข้อความอ้างตรงตัว (ยาวไม่เกิน 60 ตัวอักษร และมีข้อความของ label อยู่ในนั้น)
@@ -284,6 +305,12 @@ const HELP_EVIDENCE: Partial<Record<LabelKey, string>> = {
   "report.toExcelOrCsvFormat": "Select Export > To Excel or CSV Format",
   "graph.export": "choosing the Export option",
   "rgm.propertiesItem": "and select Properties",
+  "rgm.typeAccess": "Access, AdvCAT",
+  "graph.save": "Save: Allows you to save the graph",
+  "graph.copyToClipboard": "Copy to Clipboard: Creates a copy of the graph",
+  "graph.zoomOut": "Zoom Out: Zooms out of the graph by one step",
+  "graph.crosshairCursor": "Crosshair Cursor: Displays crosshairs across",
+  "access.accessFor": "the right of the Access for: field",
 };
 
 describe("stk labels verified on help.agi.com", () => {
@@ -294,6 +321,22 @@ describe("stk labels verified on help.agi.com", () => {
     expect(HELP_QUOTES).not.toContain("Generate as .txt file...");   // แถวไม่พบ
   });
 
+  test("the second help check (2026-11-17) counts only its verified sections", () => {
+    for (const term of ["Properties", "Report & Graph Manager...", "Insert...", "Save", "Save As...", "Close Scenario", "Set as Default Scenario", "3D Window Defaults", "2D Window Defaults"]) {
+      expect(MENU_QUOTES, term).toContain(term);
+    }
+    expect(MENU_QUOTES).not.toContain("Duplicate 3D Graphics Window"); // อยู่ในหัวข้อ 2.2 อนุมาน เท่านั้น
+    expect(MENU_QUOTES).not.toContain("View -> Toolbars");
+  });
+
+  // QA-02: ชื่อใหม่ของเมนู Scenario ยืนยันในผลตรวจชุดที่สองเท่านั้น (reference 11-11 ไม่แตะ)
+  test("Insert... and Close Scenario of the Scenario menu are stkHelp, verified in the 2026-11-17 check", () => {
+    for (const [k, text] of [["menu.scenario.insert", "Insert..."], ["menu.scenario.closeScenario", "Close Scenario"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "stk", ref: STK_HELP_REF });
+      expect(MENU_QUOTES, k).toContain(text);
+    }
+  });
+
   test("each stkHelp label equals a quoted help text, or quotes a part of one (HELP_EVIDENCE)", () => {
     const bad: string[] = [];
     for (const [k, l] of Object.entries(labels)) {
@@ -301,7 +344,11 @@ describe("stk labels verified on help.agi.com", () => {
       if (l.source !== "stk") { bad.push(`${k}: ${STK_HELP_REF} on an ours label`); continue; }
       const whole = HELP_QUOTES.includes(l.text);
       const quote = HELP_EVIDENCE[k as LabelKey];
-      if (whole) { if (quote !== undefined) bad.push(`${k}: HELP_EVIDENCE not needed`); continue; }
+      // หลักฐานที่ชี้ข้อความอ้างของชุด 2026-11-15 คงไว้ได้ แม้คำเดียวกันจะมีทั้งก้อนในชุด 2026-11-17 (คนละที่ เช่น Save ของเมนู Scenario ไม่ใช่ Save ของกราฟ)
+      if (whole && (quote === undefined || !MENU_QUOTES.includes(l.text) || helpQuotes(helpTerms).includes(l.text))) {
+        if (quote !== undefined) bad.push(`${k}: HELP_EVIDENCE not needed`);
+        continue;
+      }
       if (quote === undefined) bad.push(`${k}: "${l.text}" is not a quoted help text`);
       else if (!HELP_QUOTES.some((q) => q.includes(quote))) bad.push(`${k}: ${JSON.stringify(quote)} is not part of a quoted help text`);
       else if (!quote.includes(l.text)) bad.push(`${k}: ${JSON.stringify(quote)} does not contain "${l.text}"`);
@@ -313,7 +360,7 @@ describe("stk labels verified on help.agi.com", () => {
 
   // Ruling (T13): ฟีเจอร์ที่ spec สั่งแต่ help.agi.com ไม่พบ คงไว้ แต่ป้ายเป็น ours
   test("features the help does not show stay, labelled ours", () => {
-    for (const [k, text] of [["rgm.constellation", "Constellation"], ["rgm.generateTxt", "Generate as .txt file..."], ["rgm.generateCsv", "Generate as .csv file..."],
+    for (const [k, text] of [["rgm.allTypes", "All Types"], ["rgm.constellation", "Constellation"], ["rgm.generateTxt", "Generate as .txt file..."], ["rgm.generateCsv", "Generate as .csv file..."],
         ["rgm.copyToMyStyles", "Copy to My Styles"], ["rgm.delete", "Delete"]] as const) {
       expect(labels[k], k).toEqual({ text, source: "ours" });
     }
@@ -348,6 +395,7 @@ describe("sensor labels", () => {
     ["field.showRadialLines", "Show Radial Lines"],
     ["field.showBoresightMarker", "Show Boresight Marker"],
     ["option.sensorType.simpleConic", "Simple Conic"],
+    ["option.sensorType.rectangular", "Rectangular"],
     ["option.pointingType.fixed", "Fixed"],
     ["option.orientation.azEl", "Az-El"],
     ["option.aboutBoresight.rotate", "Rotate"],
@@ -358,6 +406,19 @@ describe("sensor labels", () => {
     for (const [k, text] of G_LABELS) {
       expect(labels[k], k).toEqual({ text, source: "stk", ref: "STK ref §G" });
       expect(g.sources.some((c) => c.includes(text)), `${k}: "${text}" not in an Item/STK term cell of §G`).toBe(true);
+    }
+  });
+
+  test("Rectangular (ข2 Ruling d): the §G delimiter rule accepts the sensor type; the two half angles are ours", () => {
+    expect(hasTerm(sections.get("G")!, "Rectangular")).toBe(true);
+    expect(labels["option.sensorType.rectangular"]).toEqual({ text: "Rectangular", source: "stk", ref: "STK ref §G" });
+    expect(optionLabel("sensor_type", "Rectangular")).toBe("Rectangular");
+    // STK terms §2 ยืนยันบน help.agi.com แต่ไม่อยู่ใน reference และไม่ใช่ไฟล์หลักฐานของ stkHelp จึงเป็น ours
+    expect(labels["field.verticalHalfAngle"]).toEqual({ text: "Vertical Half Angle", source: "ours" });
+    expect(labels["field.horizontalHalfAngle"]).toEqual({ text: "Horizontal Half Angle", source: "ours" });
+    for (const text of ["Vertical Half Angle", "Horizontal Half Angle"]) {
+      expect(ref.includes(text), text).toBe(false);
+      expect((helpTerms + menuTerms).includes(text), text).toBe(false);
     }
   });
 
@@ -385,6 +446,24 @@ describe("sensor labels", () => {
     expect(t("window.sensorView", { sensor: "Sensor1", satellite: "G01" })).toBe("Sensor View - Sensor1 (G01)");
     expect(t("window.propertiesBrowserFor", { name: "G01" })).toBe("G01 Properties");
     expect(t("window.sensorView")).toBe("Sensor View - {sensor} ({satellite})");
+  });
+
+  test("ข2 Task 7 imaging labels are ours (Ruling d), absent from the STK reference", () => {
+    for (const [k, text] of [["menu.object.showImagery", "Show Imagery"], ["option.system.imaging", "Imaging"],
+        ["dialog.catalog.addPrimarySensor", "Add Primary Sensor"], ["dialog.fetch.imagingSatellites", "Imaging satellites"],
+        ["validation.result.noGnss", "No GNSS"], ["validation.result.undecided", "Undecided"]] as const) {
+      expect(labels[k], k).toEqual({ text, source: "ours" });
+    }
+    for (const text of ["Show Imagery", "Add Primary Sensor"]) expect(ref.includes(text), text).toBe(false);
+  });
+
+  test("ข2 Task 7 Thai messages: the agreed texts", () => {
+    expect(msg("showImagery.noLayer", { layer: "MODIS_Terra_CorrectedReflectance_TrueColor" })).toBe("ชั้นภาพ MODIS_Terra_CorrectedReflectance_TrueColor ไม่มีในรายการของ server");
+    expect(msg("validation.noGnss")).toBe("ไม่มีดาว GNSS ให้ตรวจ");
+    expect(msg("validation.undecided")).toBe("ตัดสินไม่ได้ — ไม่มีระบบใดมีคู่ SP3 ที่อายุข้อมูล ≤ 2 วัน");
+    // ข้อความของช่อง Imaging satellites บอกชื่อกลุ่มของ CelesTrak ทั้งสาม
+    for (const group of ["weather", "science", "visual"]) expect(msg("fetch.imagingHint"), group).toContain(group);
+    expect(msg("fetch.imagingHint")).toMatch(/CelesTrak/);
   });
 
   test("texts the sensor tasks reuse are not duplicated under new keys", () => {
@@ -517,6 +596,8 @@ const COVERAGE: [area: string, prefixes: string[], texts: string[]][] = [
   ["§11 About / Help table", ["help."], ["Engine Version", "GMAT Version", "Text", "Source", "STK ref"]],
   ["§12 status bar", ["status."], ["Active Object", "Lat/Lon", "Animation Time", "Time Step", "Stop", "Usable Satellites", "PDOP", "Max Data Age",
                                     "Flagged Satellites", "Daily Forecast", "Server Disconnected"]],
+  ["§7 Validation page", ["validation.", "window."], ["Validation", "Day", "Scenario", "Truth", "PRN", "Pairs", "Age", "Result", "Pass", "Fail", "Pending", "Gave up",
+                                                      "ΔEl", "ΔAz", "ΔEl med/P99", "ΔAz med/P99", "3D med/max (km)"]],
 ];
 
 describe("every name in spec §4-§13 has a key", () => {
@@ -527,10 +608,20 @@ describe("every name in spec §4-§13 has a key", () => {
     });
 });
 
+// หน้า Validation (spec §7) เพิ่มเอง: ไม่มีใน STK (reference และ help ไม่มี Pending, Gave up, Truth ฯลฯ) ทุกคำเป็น ours ไม่อ้าง reference
+test("every label of the Validation page is ours", () => {
+  const mine = Object.entries(labels).filter(([k]) => k.startsWith("validation.") || k === "window.validation");
+  expect(mine.length).toBeGreaterThan(30);
+  expect(mine.filter(([, l]) => l.source !== "ours").map(([k]) => k)).toEqual([]);
+  expect(labels["window.validation"]).toEqual({ text: "Validation", source: "ours" });
+  expect(labels["validation.result.pending"].text).toBe("Pending");
+  expect(labels["validation.result.gaveUp"].text).toBe("Gave up");
+});
+
 // ---- รูปทรงของตาราง ----
 
 test("keys use the agreed namespaces", () => {
-  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|rgm|mv|status|dialog|help|sensorView)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
+  const re = /^(menu|anim|toolbar|window|page|field|option|ob|timeline|report|graph|access|rgm|mv|status|dialog|help|sensorView|validation)\.[A-Za-z0-9]+(\.[A-Za-z0-9]+)*$/;
   expect(Object.keys(labels).filter((k) => !re.test(k))).toEqual([]);
 });
 
@@ -623,7 +714,10 @@ describe("Thai messages", () => {
     expect(msg("banner.missing")).toBe("ยังไม่มีผลลัพธ์ — กด Apply เพื่อคำนวณ");
   });
 
-  test("the subtask 4 tooltip", () => expect(msg("tooltip.subtask4")).toBe("อยู่ในงานย่อยที่ 4"));
+  test("the sub-project 4 placeholder tooltip is gone: every command it covered is built", () => {
+    expect(MSG_KEYS.filter((k) => k.startsWith("tooltip.") && k !== "tooltip.noScenario")).toEqual([]);
+    expect(MSG_KEYS.filter((k) => msg(k).includes("งานย่อยที่ 4"))).toEqual([]);
+  });
 
   test("each engine flag has its own explanation, with the thresholds from the engine", () => {
     const texts = ["stale", "too_old", "no_broadcast", "unhealthy", "prn_changed", "name_mismatch"].map((f) => msg(`flag.${f}` as MsgKey));
@@ -662,7 +756,7 @@ describe("Thai messages", () => {
   });
 
   test("the sensor messages are exactly the agreed text", () => {
-    const vars = { satellite: "G01", sensor: "Sensor1", angle: 45, lat: "13.7", lon: "100.5", alt: "20200" };
+    const vars = { satellite: "G01", sensor: "Sensor1", angle: 45, lat: "13.7", lon: "100.5", alt: "20200", v: "55.0", h: "0.4" };
     const expected: [MsgKey, string][] = [
       ["sensorView.noPosition", "ดาว G01 ยังไม่มีตำแหน่ง ณ เวลานี้ (ยังไม่มีผลการคำนวณวงโคจร หรือเวลาอยู่นอกช่วงวิเคราะห์)"],
       ["sensorView.limit", "เปิด Sensor View พร้อมกันได้ไม่เกิน 4 หน้าต่าง ปิดบานใดบานหนึ่งก่อน"],
@@ -673,6 +767,7 @@ describe("Thai messages", () => {
       ["sensorView.hudSubPoint", "จุดใต้ดาว 13.7, 100.5"],
       ["sensorView.hudAltitude", "ความสูง 20200 km"],
       ["sensorView.hudCone", "Cone Half Angle 45°"],
+      ["sensorView.hudRect", "ครึ่งมุม Vertical 55.0° × Horizontal 0.4°"],
     ];
     for (const [k, text] of expected) { expect(msg(k, vars), k).toBe(text); if (!NO_THAI.has(k)) expect(msg(k, vars), k).toMatch(THAI); }
     // ไม่ส่งค่า = ช่อง {var} ยังเห็นอยู่

@@ -9,6 +9,7 @@
 // - Generate...: กล่อง Time Properties (ค่าตั้งต้นจาก style.time) แล้ว POST /reports แบบ JSON ก่อนเปิดหน้าต่าง (ฝากผลให้หน้าต่างด้วย primeReport)
 //   ส่ง time เสมอ: {mode: "object" | "specify", start?, stop?, step_s}
 //   409 RESULTS_NOT_CURRENT = ถาม Yes / No ว่าจะ Compute ก่อนไหม (recomputePlan เดียวกับหน้าต่างรายงาน) Yes = รอ job เสร็จแล้วสร้างใหม่
+//   Facility ที่ยังไม่มี access = คำถาม report.needsAccess ของหน้าต่างรายงาน (ต้องสร้าง access ใหม่)
 //   422 time.* = ช่องนั้นกรอบแดงพร้อมข้อความของ server, 422 objects (Time Period ของ access ไม่เท่ากัน) = ข้อความไทยในกล่อง,
 //   422 STYLE_INVALID = Message Viewer
 // - คลิกขวาที่ style: Generate as .txt file... / .csv file... (downloadReport ด้วยเวลาของ style), Properties, Copy to My Styles, Delete
@@ -17,7 +18,7 @@
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { postAccess } from "../../api/access";
 import { ApiError, errorText, isAbortError } from "../../api/client";
 import { startJob } from "../../api/startJob";
@@ -37,7 +38,7 @@ import { parseIsoUtc, parseTime } from "../../time/parse";
 import { constellations } from "../AccessTool/state";
 import { openReport, primeReport, recomputePlan, waitForJobs } from "../Report/Report";
 import { RGM_KIND, RGM_OBJECT_TYPES, STYLE_EDITOR_KIND, useStyleRevision, type RgmObjectType } from "./commands";
-import { canDynamic } from "./styleForm";
+import { canDynamic, copyName } from "./styleForm";
 
 type Tier = keyof StyleTiers;
 type ReportTime = NonNullable<ReportRequest["time"]>;
@@ -49,9 +50,33 @@ const TYPE_LABELS: Record<RgmObjectType, LabelKey> = {
 };
 
 /** style ในต้นไม้: usable = style ที่ใช้ได้, ไม่งั้นเป็นรายการที่โครงไม่ครบ */
-type Entry = { tier: Tier; style: StyleDef; unusable?: undefined } | { tier: Tier; style?: undefined; unusable: UnusableStyle };
+type Entry = { tier: Tier; style: StyleDef; unusable?: undefined } | { tier: Tier; style?: undefined; unusable: UnusableStyle; index: number };
 const entryName = (e: Entry): string => e.style?.name ?? e.unusable?.name ?? "";
-const entryKey = (e: Entry): string => JSON.stringify([e.tier, entryName(e), e.style?.kind ?? null]);
+/** กุญแจของรายการ: style = (ชั้น, ชื่อ, ชนิด); รายการที่ใช้ไม่ได้ = ลำดับใน unusable (ชื่ออาจว่างหรือซ้ำ) */
+const entryKey = (e: Entry): string => (e.style === undefined ? JSON.stringify(["unusable", e.tier, e.index]) : JSON.stringify([e.tier, e.style.name, e.style.kind]));
+const WHERE: Record<Tier, "rgm.whereMy" | "rgm.whereScenario" | "rgm.whereInstalled"> = { installed: "rgm.whereInstalled", my: "rgm.whereMy", scenario: "rgm.whereScenario" };
+/** เหตุผลภาษาไทยของรายการที่ใช้ไม่ได้: Installed (ล็อก) = แก้ไฟล์เท่านั้น; ไม่มีชื่อ = ลบจากที่นี่ไม่ได้; ที่เหลือ = แก้หรือ Delete */
+const unusableText = (tier: Tier, u: UnusableStyle): string =>
+  msg(tier === "installed" ? "rgm.unusableLocked" : u.name === null ? "rgm.unusableUnnamed" : "rgm.unusable", { field: u.field, where: msg(WHERE[tier]) });
+
+/** ปุ่มเปิดเมนูคลิกขวาจากคีย์บอร์ด: ปุ่ม Context Menu หรือ Shift+F10 */
+export const isMenuKey = (e: ReactKeyboardEvent): boolean => e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
+
+/** เปิดเมนูคลิกขวาของ element จากคีย์บอร์ด (Radix ContextMenu เปิดจาก event contextmenu ที่มุมล่างซ้ายของ element) */
+/** ตำแหน่งใหม่ของรายการตามปุ่มลูกศร / Home / End (ไม่ใช่ปุ่มเหล่านี้ = null) */
+export function moveIndex(key: string, index: number, count: number): number | null {
+  if (count === 0) return null;
+  if (key === "ArrowDown") return Math.min(count - 1, index + 1);
+  if (key === "ArrowUp") return Math.max(0, index - 1);
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
+export function openContextMenuAt(el: HTMLElement): void {
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 4, clientY: r.bottom }));
+}
 
 /** เวลา UTC แบบที่ server รับ (UtcZ): ไม่มีเศษวินาที = ไม่เขียน .000 */
 const utcZ = (d: Date): string => d.toISOString().replace(".000Z", "Z");
@@ -100,15 +125,6 @@ export function timeOfStyle(style: StyleDef): ReportTime {
   return mode === "specify" && start !== undefined && stop !== undefined ? { mode: "specify", start, stop, step_s } : { mode: "object", step_s };
 }
 
-/** ชื่อสำเนาที่ไม่ซ้ำกับชื่อใด (ไม่สนตัวพิมพ์): "AER Copy", "AER Copy 2", ... ยาวไม่เกิน 48 ตัว (P5) */
-export function copyName(name: string, taken: Iterable<string>): string {
-  const used = new Set([...taken].map((n) => n.toLowerCase()));
-  for (let i = 1; ; i++) {
-    const suffix = i === 1 ? " Copy" : ` Copy ${i}`;
-    const candidate = `${name.slice(0, 48 - suffix.length).trimEnd()}${suffix}`;
-    if (!used.has(candidate.toLowerCase())) return candidate;
-  }
-}
 
 /** สิ่งที่จะสร้าง: style, object, Dynamic Display */
 interface Job {
@@ -142,6 +158,10 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
   const [dialog, setDialog] = useState<Job | null>(null);
   const [dialogError, setDialogError] = useState<DialogError | null>(null);
   const [busy, setBusy] = useState(false);
+  // คีย์บอร์ด (roving tabindex): แต่ละรายการเป็นจุดหยุด Tab เดียว รายการที่โฟกัสอยู่ (หรือตัวแรก) รับ Tab
+  const [focusObject, setFocusObject] = useState<string | null>(null);
+  const objectRefs = useRef(new Map<string, HTMLElement>());
+  const styleRefs = useRef(new Map<string, HTMLElement>());
 
   // params ใหม่ (เปิดซ้ำจากเมนูของ object หรือจาก Access tool) = Object Type และ object ที่เลือกตามนั้น
   const paramsKey = JSON.stringify([params?.objectType ?? null, params?.objects ?? null]);
@@ -151,6 +171,13 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
     if (Array.isArray(params?.objects)) setSelected(params.objects.filter((o: unknown): o is string => typeof o === "string"));
   }, [paramsKey]);
 
+  /** Generate ที่กล่องเวลากำลังรออยู่: Cancel / Esc ของกล่องยกเลิกเฉพาะตัวนี้ (life ยังเป็นตัวยกเลิกเมื่อหน้าต่างปิด) */
+  const generating = useRef<AbortController | null>(null);
+  const cancelDialog = (): void => {
+    generating.current?.abort();
+    generating.current = null;
+    setDialog(null);
+  };
   /** ยกเลิกการรอ job เมื่อหน้าต่างปิด */
   const life = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -190,7 +217,9 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
         if (style.kind === "report" ? !showReports : !showGraphs) continue;
         out.push({ tier, style });
       }
-      if (objectType === "All" && (showReports || showGraphs)) for (const u of list.unusable) if (u.tier === tier) out.push({ tier, unusable: u });
+      if (objectType === "All" && (showReports || showGraphs)) {
+        for (const [index, u] of list.unusable.entries()) if (u.tier === tier) out.push({ tier, unusable: u, index });
+      }
     }
     return out;
   }, [list, objectType, showReports, showGraphs]);
@@ -200,13 +229,13 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
 
   /** เหตุที่ style นี้ใช้สร้างไม่ได้ตอนนี้ (null = ได้) */
   const styleProblem = (e: Entry): string | null => {
-    if (e.style === undefined) return msg("rgm.unusable", { field: e.unusable.field });
+    if (e.style === undefined) return unusableText(e.tier, e.unusable);
     if (dynamic && !canDynamic(e.style)) return msg("rgm.notDynamic");
     return null;
   };
   /** เหตุที่สร้างจาก style นี้กับ object ที่เลือกไม่ได้ (null = ได้) */
   const generateProblem = (e: Entry | null, asDynamic: boolean): string | null => {
-    if (e === null || e.style === undefined) return e === null ? null : msg("rgm.unusable", { field: e.unusable.field });
+    if (e === null || e.style === undefined) return e === null ? null : unusableText(e.tier, e.unusable);
     if (asDynamic && !canDynamic(e.style)) return msg("rgm.notDynamic");
     if (chosen.length === 0) return msg("rgm.selectObjects");
     if (chosen.some((o) => objectTypeOf(o) !== e.style.object_type)) return msg("rgm.objectsMismatch", { type: e.style.object_type });
@@ -228,6 +257,29 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
     else setSelected([path]);
   };
 
+  /** ลูกศร / Home / End ย้ายโฟกัส (Shift = ขยายช่วงที่เลือก) Space / Enter = เลือกหรือเอาออก (แบบ Ctrl+คลิก) Ctrl+A = ทั้งหมด */
+  const onObjectKeyDown = (e: ReactKeyboardEvent, index: number): void => {
+    const path = objects[index];
+    const to = moveIndex(e.key, index, objects.length);
+    if (to !== null) {
+      e.preventDefault();
+      const next = objects[to];
+      setFocusObject(next);
+      objectRefs.current.get(next)?.focus();
+      if (e.shiftKey && anchor.current !== null && shown.has(anchor.current)) {
+        const a = objects.indexOf(anchor.current);
+        setSelected(objects.slice(Math.min(a, to), Math.max(a, to) + 1));
+      }
+    } else if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      anchor.current = path;
+      setSelected((sel) => (sel.includes(path) ? sel.filter((p) => p !== path) : [...sel, path]));
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      setSelected([...objects]);
+    }
+  };
+
   // ---------- Compute ก่อน (409) ----------
 
   /** ถามว่าจะ Compute ก่อนไหม Yes = สั่งแล้วรอ job ทั้งหมดสำเร็จ (true) ไม่งั้น false (ข้อผิดพลาดลง Message Viewer) */
@@ -237,9 +289,17 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
     const plan = recomputePlan(useScenario.getState().doc, objs);
     for (const facility of plan.unreachable) notify("error", "RGM_NO_SATELLITES", msg("report.noSatellites", { facility: nameOf(facility) }), facility);
     const computes = [...plan.computes, ...plan.needsAccess];
-    if (computes.length === 0 && !plan.propagate) return false;
+    if (computes.length === 0 && !plan.propagate) {
+      notify("error", "RGM_NOTHING_TO_COMPUTE", msg("rgm.nothingToCompute"), objs.length === 1 ? objs[0] : null);
+      return false;
+    }
     const facilities = [...new Set(computes.map((c) => nameOf(c.from)))];
-    const text = facilities.length > 0 ? msg("rgm.computeFirst", { facility: facilities.join(", ") }) : msg("rgm.propagateFirst");
+    // Facility ที่ยังไม่มี access: การสร้าง access ใหม่แก้ scenario จึงถามด้วยคำถามเดียวกับหน้าต่างรายงาน (report.needsAccess)
+    const needs = [...new Set(plan.needsAccess.map((c) => nameOf(c.from)))];
+    const text =
+      needs.length > 0
+        ? msg("report.needsAccess", { facility: needs.join(", ") })
+        : facilities.length > 0 ? msg("rgm.computeFirst", { facility: facilities.join(", ") }) : msg("rgm.propagateFirst");
     if (!(await confirm(text, { okLabel: t("dialog.yes"), cancelLabel: t("dialog.no") }))) return false;
     try {
       const jobs = computes.length === 0 ? [] : (await postAccess(sc, "compute", computes)).jobs;
@@ -261,16 +321,28 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
 
   /** POST /reports แบบ JSON แล้วเปิดหน้าต่าง; 409 = ถามว่าจะ Compute ก่อน (สร้างใหม่ครั้งเดียวเมื่อเสร็จ) ข้อผิดพลาดอื่นแสดงในกล่องเวลา */
   const generate = async (job: Job, time: ReportTime, retried = false): Promise<void> => {
-    if (sc === null) return;
+    const lifeSignal = life.current?.signal;
+    if (sc === null || lifeSignal === undefined || lifeSignal.aborted) return;
     const req = requestOf(job, time);
+    // ตัวยกเลิกของ Generate นี้: Cancel / Esc ของกล่องเวลา (cancelDialog) หรือหน้าต่างปิด (life)
+    const ctrl = new AbortController();
+    const onClose = (): void => ctrl.abort();
+    lifeSignal.addEventListener("abort", onClose, { once: true });
+    generating.current = ctrl;
+    const signal = ctrl.signal;
     setBusy(true);
     setDialogError(null);
     try {
-      const report = await fetchReport(sc, req);
-      primeReport(sc, req, report);
+      const etag = useScenario.getState().etag;
+      const report = await fetchReport(sc, req, signal);
+      // ยกเลิก หน้าต่างปิด หรือสลับ scenario ระหว่างรอ: ไม่ฝากผลและไม่เปิดหน้าต่าง
+      if (signal.aborted || useScenario.getState().name !== sc) return;
+      // scenario ถูกแก้ระหว่างรอ: ผลนี้อาจไม่ตรงแล้ว ไม่ฝาก หน้าต่างสร้างรายงานเอง (หรือแสดงแถบผลลัพธ์ไม่ตรง)
+      if (useScenario.getState().etag === etag) primeReport(sc, req, report);
       openReport({ style: req.style, kind: job.style.kind, objects: job.objects, time, dynamic: job.dynamic });
       setDialog(null);
     } catch (e) {
+      if (isAbortError(e) || signal.aborted) return;
       if (e instanceof ApiError && e.code === "RESULTS_NOT_CURRENT" && !retried) {
         setDialog(null);
         if (await computeFirst(job.objects)) await generate(job, time, true);
@@ -285,6 +357,8 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
         setDialogError({ field: null, text });
       }
     } finally {
+      lifeSignal.removeEventListener("abort", onClose);
+      if (generating.current === ctrl) generating.current = null;
       setBusy(false);
     }
   };
@@ -366,6 +440,30 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
   // ---------- วาด ----------
 
   const kindText = (s: StyleDef): string => t(s.kind === "report" ? "rgm.kindReport" : "rgm.kindGraph");
+  const objectTab = focusObject !== null && shown.has(focusObject) ? focusObject : (objects[0] ?? null);
+  const styleTab = entries.some((e) => entryKey(e) === styleKey) ? styleKey : (entries[0] === undefined ? null : entryKey(entries[0]));
+
+  /** ต้นไม้ style: ลูกศร / Home / End เลือกและย้ายโฟกัส, Enter = Generate..., Space = เลือก, ปุ่ม Context Menu / Shift+F10 = เมนูคลิกขวา */
+  const onStyleKeyDown = (e: ReactKeyboardEvent<HTMLElement>, entry: Entry): void => {
+    const index = entries.indexOf(entry);
+    const to = moveIndex(e.key, index, entries.length);
+    if (to !== null) {
+      e.preventDefault();
+      const key = entryKey(entries[to]);
+      setStyleKey(key);
+      styleRefs.current.get(key)?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      setStyleKey(entryKey(entry));
+      openDialog(entry);
+    } else if (e.key === " ") {
+      e.preventDefault();
+      setStyleKey(entryKey(entry));
+    } else if (isMenuKey(e)) {
+      e.preventDefault();
+      openContextMenuAt(e.currentTarget);
+    }
+  };
   const generateHint = generateProblem(current, dynamic) ?? undefined;
   const emptyObjects = objectType === "Access" ? msg("rgm.noAccessObjects") : msg("rgm.noObjects");
 
@@ -387,10 +485,19 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
             {objects.map((path) => (
               <div
                 key={path}
+                ref={(el) => {
+                  if (el === null) objectRefs.current.delete(path);
+                  else objectRefs.current.set(path, el);
+                }}
                 role="option"
+                tabIndex={objectTab === path ? 0 : -1}
                 aria-selected={chosen.includes(path)}
                 className={chosen.includes(path) ? "rgm-item rgm-selected" : "rgm-item"}
-                onClick={(e) => clickObject(path, e)}
+                onClick={(e) => {
+                  setFocusObject(path);
+                  clickObject(path, e);
+                }}
+                onKeyDown={(e) => onObjectKeyDown(e, objects.indexOf(path))}
               >
                 {objectLabel(path)}
               </div>
@@ -416,7 +523,12 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
                         return (
                           <div
                             key={key}
+                            ref={(el) => {
+                              if (el === null) styleRefs.current.delete(key);
+                              else styleRefs.current.set(key, el);
+                            }}
                             role="treeitem"
+                            tabIndex={styleTab === key ? 0 : -1}
                             aria-selected={styleKey === key}
                             aria-disabled={problem !== null ? true : undefined}
                             title={problem ?? undefined}
@@ -425,6 +537,7 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
                             className={["rgm-item", "rgm-style", styleKey === key ? "rgm-selected" : "", problem !== null ? "rgm-disabled" : ""].join(" ").trim()}
                             onClick={() => setStyleKey(key)}
                             onDoubleClick={() => openDialog(e)}
+                            onKeyDown={(ev) => onStyleKeyDown(ev, e)}
                             onContextMenu={() => {
                               setStyleKey(key);
                               setMenuKey(key);
@@ -516,7 +629,7 @@ export function ReportGraphManager({ params, panelId }: PanelProps) {
           busy={busy}
           error={dialogError}
           onEdit={(field) => setDialogError((err) => (err !== null && (err.field === field || err.field === null) ? null : err))}
-          onCancel={() => setDialog(null)}
+          onCancel={cancelDialog}
           onOk={(time) => void generate(dialog, time)}
         />
       )}

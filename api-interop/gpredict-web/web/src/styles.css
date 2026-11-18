@@ -1,0 +1,2191 @@
+/* Light GTK 3 (Adwaita-like) look: light grey menu bar, flat buttons, notebook-style tabs, system font (spec §8.11). */
+
+:root {
+  color-scheme: light;
+  --window: #f6f5f4;
+  --bar: #edebe9;
+  --tab: #dedbd7;
+  --border: #cdc7c2;
+  --text: #2e3436;
+  --text-dim: #6e7378;
+  --accent: #3584e4;
+  --hover: rgba(46, 52, 54, 0.1);
+  --pressed: rgba(46, 52, 54, 0.18);
+  --view: #ffffff;
+  --info-bg: #dde9f9;
+  --info-border: #99c1f1;
+  --warning-bg: #fbf0c9;
+  --warning-border: #e5a50a;
+  --error-bg: #fadcd9;
+  --error-border: #e01b24;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 1024px; /* no phone layout (spec §8.11) */
+  background: var(--window);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Thai", sans-serif;
+}
+
+#root {
+  min-width: 1024px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.button {
+  font: inherit;
+  color: inherit;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: linear-gradient(#fbfafa, #ebe9e7);
+  cursor: default;
+}
+.button:hover:not(:disabled) {
+  background: linear-gradient(#ffffff, #f2f0ef);
+}
+.button:active:not(:disabled) {
+  background: var(--pressed);
+}
+.button:disabled {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+.button.flat {
+  border-color: transparent;
+  background: transparent;
+}
+.button.flat:hover:not(:disabled) {
+  background: var(--hover);
+}
+.button.flat:active:not(:disabled) {
+  background: var(--pressed);
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 1024px;
+}
+
+/* the page of a module window (spec §8.1): no menu bar and no tabs, and as narrow as its window (the server takes 100 px) */
+body:has(.app.detached),
+body:has(.app.detached) #root,
+.app.detached {
+  min-width: 0;
+}
+/* full screen (spec §8.3): the page's root is full screen, its menu bar, tabs and restore bar are not shown, so the module fills the
+   screen and the Module menu and the windows it opens still show over it */
+.app:fullscreen {
+  background: var(--window);
+}
+.app:fullscreen > .menubar,
+.app:fullscreen > .tabs,
+.app:fullscreen > .restore-bar {
+  display: none;
+}
+
+.menubar {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px 4px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+}
+.menubar-item {
+  padding: 2px 10px;
+}
+.menubar-item.open {
+  background: var(--pressed);
+}
+
+/* ---------------------------------------------------------------- notebook tabs */
+
+.tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 4px 4px 0;
+  overflow-x: auto;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  flex: none;
+  position: relative;
+  top: 1px;
+  padding: 4px 16px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--tab);
+  color: var(--text-dim);
+  user-select: none;
+  cursor: default;
+}
+.tab:hover {
+  background: #e8e6e3;
+}
+.tab.active {
+  padding-bottom: 5px;
+  border-top: 2px solid var(--accent);
+  background: var(--window);
+  color: var(--text);
+}
+.tab.dragging {
+  opacity: 0.5;
+}
+.tab.drop-target {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* ---------------------------------------------------------------- notices and the restore bar (ของเรา) */
+
+.notices,
+.restore-bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  border-left: 4px solid;
+}
+.notice-text {
+  flex: 1;
+}
+.notice-info {
+  background: var(--info-bg);
+  border-left-color: var(--info-border);
+}
+.notice-warning {
+  background: var(--warning-bg);
+  border-left-color: var(--warning-border);
+}
+.notice-error {
+  background: var(--error-bg);
+  border-left-color: var(--error-border);
+}
+.notice-dismiss {
+  padding: 0 8px;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+/* ---------------------------------------------------------------- module */
+
+.module {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.module-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.module-time {
+  font-variant-numeric: tabular-nums;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+}
+
+.module-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- satellite filter of List/Map (ของเรา) */
+
+.sat-filter-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.sat-filter-input {
+  min-width: 0;
+  width: 220px;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.sat-filter-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.view-grid {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  gap: 1px;
+  width: 100%;
+  background: var(--border);
+}
+.view-cell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--view);
+}
+.view-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+.map-view,
+.polar-view {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.map-canvas,
+.polar-canvas {
+  display: block;
+}
+.view-error,
+.empty {
+  padding: 24px;
+  color: var(--text-dim);
+}
+.view-error {
+  color: var(--error-border);
+}
+
+/* ---------------------------------------------------------------- overlay (ของเรา) */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(246, 245, 244, 0.88);
+}
+.overlay-text {
+  font-size: 15px;
+}
+.overlay-detail {
+  max-width: 640px;
+  color: var(--text-dim);
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 4s;
+  }
+}
+
+/* ---------------------------------------------------------------- List and Event list */
+
+.table-view {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+.sat-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.sat-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 3px 10px;
+  font-weight: 400;
+  text-align: center;
+  background: linear-gradient(#fbfafa, #ebe9e7);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.sat-table th.sortable {
+  cursor: default;
+}
+.sat-table th.sortable:hover {
+  background: linear-gradient(#ffffff, #f2f0ef);
+}
+.sort-arrow {
+  margin-left: 6px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.sat-table td {
+  padding: 2px 10px;
+}
+.sat-table tr.bold td {
+  font-weight: 700;
+}
+.sat-table tr.selected td {
+  background: var(--accent);
+  color: #ffffff;
+}
+.sat-table .align-left {
+  text-align: left;
+}
+.sat-table .align-center {
+  text-align: center;
+}
+.sat-table .align-right {
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------- Single sat */
+
+.single-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.single-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+}
+.single-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.single-body {
+  flex: 1;
+  min-height: 0;
+  padding: 5px;
+  overflow: auto;
+}
+.single-table {
+  border-collapse: separate;
+  border-spacing: 5px 0;
+  font-variant-numeric: tabular-nums;
+}
+.single-title {
+  font-weight: 400;
+  text-align: right;
+  white-space: nowrap;
+}
+.single-value {
+  text-align: left;
+  white-space: pre; /* %6.2f pads with spaces */
+}
+
+/* ---------------------------------------------------------------- popup menu */
+
+.popup-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 160px;
+  padding: 4px 0;
+  overflow-y: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.popup-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 4px 16px 4px 6px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+.popup-item:hover:not(.disabled),
+.popup-item:focus-visible:not(.disabled) {
+  background: var(--accent);
+  color: #ffffff;
+  outline: none;
+}
+.popup-item.disabled {
+  color: var(--text-dim);
+}
+.popup-check {
+  flex: none;
+  width: 14px;
+  font-size: 10px;
+  text-align: center;
+}
+.popup-accel,
+.popup-arrow {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-dim);
+}
+.popup-arrow {
+  padding-left: 16px;
+  font-size: 9px;
+}
+.popup-item:hover:not(.disabled) .popup-accel,
+.popup-item:focus-visible:not(.disabled) .popup-accel,
+.popup-item:hover:not(.disabled) .popup-arrow,
+.popup-item:focus-visible:not(.disabled) .popup-arrow {
+  color: inherit;
+}
+.popup-item.open:not(:hover):not(:focus-visible) {
+  background: var(--hover);
+}
+.popup-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+/* ---------------------------------------------------------------- floating window (title bar, drag, close) */
+
+.float-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  max-width: 100vw;
+  max-height: 100vh;
+  background: var(--window);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+.float-title {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 4px 2px 32px; /* the left padding balances the close button, so the title stays centred */
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  cursor: default;
+  user-select: none;
+  touch-action: none;
+}
+.float-title-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.float-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+}
+.float-body {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+/* ---------------------------------------------------------------- spin button */
+
+.spin {
+  display: inline-flex;
+  align-items: stretch;
+}
+.spin-input {
+  width: 4.5em;
+  padding: 2px 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px 0 0 3px;
+}
+.spin-input:read-only {
+  background: var(--bar);
+}
+.spin-step {
+  min-width: 26px;
+  padding: 0 6px;
+  border-left-width: 0;
+  border-radius: 0;
+}
+.spin-step:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.spin-step[aria-disabled="true"] {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+
+/* ---------------------------------------------------------------- calendar */
+
+.calendar {
+  width: 196px;
+  font-variant-numeric: tabular-nums;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  user-select: none;
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-month {
+  flex: 1;
+  text-align: center;
+}
+.cal-year {
+  min-width: 3em;
+  text-align: center;
+}
+.cal-arrow {
+  padding: 0 5px;
+  line-height: 20px;
+}
+.cal-arrow[aria-disabled="true"] {
+  color: var(--text-dim);
+}
+.cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 2px;
+}
+.cal-dayname {
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.cal-day {
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: default;
+}
+.cal-day.other {
+  color: var(--text-dim);
+}
+.calendar:not(.read-only) .cal-day:hover:not(.selected) {
+  background: var(--hover);
+}
+.cal-day.selected {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+/* ---------------------------------------------------------------- Time Controller */
+
+.tc-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.tc-spins {
+  display: grid;
+  flex: 1;
+  grid-template-columns: auto auto;
+  gap: 4px 5px;
+  align-items: center;
+  justify-content: end;
+}
+.tc-label {
+  text-align: right;
+}
+.tc-slider {
+  display: block;
+  width: 100%;
+  margin: 10px 0 4px;
+}
+.tc-error {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+.tc-separator {
+  margin: 8px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.tc-buttons {
+  display: flex;
+  align-items: center;
+}
+.tc-state {
+  flex: 1;
+  min-width: 0;
+  margin-right: 10px;
+}
+.tc-reset {
+  margin-right: 10px;
+}
+.tc-toggles {
+  display: flex;
+}
+.tc-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 0;
+}
+.tc-toggle:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.tc-toggle:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.tc-toggle + .tc-toggle {
+  border-left-width: 0;
+}
+.tc-toggle.active {
+  background: var(--pressed);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------------------------------------------------------------- dialogs (Open module, Clone, Delete, TLE Update, Help) */
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+}
+.dialog-text {
+  margin: 0;
+  white-space: pre-line;
+}
+.dialog-error {
+  margin: 0;
+  padding: 4px 8px;
+  white-space: pre-line;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.dialog-buttons .button {
+  min-width: 72px;
+}
+.dialog-entry {
+  padding: 3px 6px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+.dialog-list {
+  height: 200px;
+  overflow-y: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  user-select: none;
+}
+.dialog-list-head {
+  position: sticky;
+  top: 0;
+  padding: 3px 10px;
+  background: linear-gradient(#fbfafa, #ebe9e7);
+  border-bottom: 1px solid var(--border);
+}
+.dialog-row {
+  padding: 3px 10px;
+}
+.dialog-row.selected {
+  background: var(--accent);
+  color: #ffffff;
+}
+.dialog-path {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  user-select: all; /* one click selects the whole path, to copy it */
+}
+/* Save Pass Details and Save Passes: a two-column grid with 10 px spacing (ref-P §8.1) */
+.save-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 400px;
+  max-width: 100%;
+}
+.save-folder {
+  color: var(--text-dim);
+}
+.license-text {
+  height: 60vh;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tle {
+  gap: 4px;
+}
+.tle-heading,
+.tle-activity {
+  text-align: center;
+}
+.tle-progress {
+  width: 100%;
+  margin: 6px 0;
+}
+.tle-stats {
+  align-self: center;
+  margin: 4px 0;
+  white-space: pre;
+  tab-size: 4;
+}
+.tle-messages {
+  max-height: 30vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.tle-messages li {
+  margin-bottom: 2px;
+  padding: 4px 8px;
+  border-left: 4px solid;
+}
+.trsp {
+  /* the TLE Update window's width: the Thai lines under "Finished" wrap inside it */
+  width: 440px;
+  max-width: 100%;
+}
+
+/* ---------------------------------------------------------------- module, properties and ground station dialogs */
+
+.spin-input.wide {
+  width: 7em;
+}
+.button[aria-disabled="true"] {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+.right {
+  text-align: right;
+}
+.dialog-buttons.split {
+  justify-content: flex-start;
+}
+.grow {
+  flex: 1;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.check-grid {
+  display: grid;
+  gap: 6px 14px;
+}
+.check-grid.three {
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+}
+.check-grid.four {
+  grid-template-columns: repeat(4, auto);
+  justify-content: start;
+}
+.props-header {
+  display: block;
+  margin-top: 2px;
+}
+.props-separator {
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Edit ground station data */
+.qth-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 6px 6px;
+  align-items: center;
+}
+.qth-wide {
+  grid-column: 2 / 5;
+}
+.qth-span2 {
+  grid-column: 2 / 4;
+}
+.qth-locator {
+  width: 7em;
+}
+
+/* Create new module / Edit module */
+.module-dialog {
+  gap: 4px;
+}
+.module-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.module-top {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.module-qth {
+  display: flex;
+  gap: 6px;
+}
+.module-qth select {
+  flex: 1;
+}
+
+.selector {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto 250px auto;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.selector > .search-box {
+  grid-area: 1 / 1;
+}
+.selector-group {
+  grid-area: 2 / 1;
+}
+.selector-hint {
+  grid-area: 1 / 3 / 3 / 4;
+  align-self: start;
+  margin: 0;
+}
+.sat-list.sel-available {
+  grid-area: 3 / 1;
+}
+.selector-buttons {
+  grid-area: 3 / 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+.sat-list.sel-chosen {
+  grid-area: 3 / 3;
+}
+.selector-notes {
+  grid-area: 4 / 1 / 5 / 4;
+  min-width: 0;
+}
+.selector-note {
+  margin: 0;
+  color: var(--text-dim);
+}
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-input {
+  flex: 1;
+  padding: 3px 24px;
+}
+.search-icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.search-clear {
+  position: absolute;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+}
+.search-clear[hidden] {
+  display: none;
+}
+.search-clear:hover {
+  background: var(--hover);
+}
+.sat-list {
+  height: 100%;
+  min-height: 0;
+}
+.sat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+.sat-row .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sat-empty {
+  padding: 8px 10px;
+  color: var(--text-dim);
+}
+
+/* Preferences → General: the notebook and its pages (Number Formats, Message Logs): a box with a border of 20 and a spacing of 10 */
+.general-panel {
+  min-height: 400px;
+}
+.general-panel[hidden] {
+  display: none;
+}
+.general-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 400px;
+  padding: 20px;
+}
+.general-body > .check {
+  align-self: flex-start; /* the tooltip belongs to the box and its label, not to the whole row */
+}
+.general-body .props-separator {
+  width: 100%;
+  margin: 0;
+}
+.format-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.format-entry {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.format-preview {
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+.format-row .button {
+  margin-left: 5px;
+}
+.logs-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logs-combo {
+  margin-left: 10px;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.general-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+/* Preferences → General → TLE Update (ref-D §4): the combo, the proxy and sources grid (label right-aligned, entry and list beside it) */
+.tle-freq-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tle-combo {
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tle-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 10px;
+}
+.tle-grid-label {
+  text-align: right;
+}
+.tle-grid-label.top {
+  align-self: start;
+  padding-top: 3px;
+}
+.hw-list.tle-list {
+  flex: none;
+  min-height: 0;
+  height: 150px; /* (the Interfaces lists are 200 px at least) a list that shows six rows; Gpredict's spans three of the five rows of its grid */
+}
+.tle-source {
+  white-space: nowrap;
+}
+.tle-source-edit {
+  width: 100%;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--text);
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+/* Edit → Update TLE data from local files (ref-D §6): "Select TLE directory:" and the folder button, 30 px around in Gpredict */
+.tle-files {
+  min-width: 420px;
+  padding: 20px;
+}
+.tle-files-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.tle-files-chooser {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tle-files-input {
+  display: none; /* the folder button opens it */
+}
+
+/* Module properties */
+.dtabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.dtab {
+  position: relative;
+  top: 1px;
+  padding: 4px 14px;
+  font: inherit;
+  color: var(--text-dim);
+  background: var(--tab);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  cursor: default;
+}
+.dtab.active {
+  color: var(--text);
+  background: var(--window);
+  border-top: 2px solid var(--accent);
+}
+.props-page {
+  height: 440px;
+  overflow-y: auto;
+}
+.props-page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  padding: 12px 14px 6px;
+}
+.props-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.layout-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.layout-thumb {
+  display: grid;
+  gap: 2px;
+  width: 200px;
+  height: 120px;
+  padding: 2px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.layout-thumb.empty {
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-dim);
+  background: var(--view);
+}
+.refresh-grid {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.props-separator.wide {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.map-pick {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.map-thumb {
+  display: block;
+  object-fit: fill; /* Gpredict scales the picture to the box (gdk_pixbuf_scale_simple), it does not crop it */
+  border: 1px solid var(--border);
+}
+/* the icon image-missing: a map the server cannot give */
+.map-missing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--view);
+  border: 1px solid var(--border);
+}
+.colour-grid {
+  display: grid;
+  grid-template-columns: repeat(3, max-content max-content);
+  gap: 4px 10px;
+  align-items: center;
+  justify-content: start;
+}
+.button.colour {
+  padding: 3px 8px;
+}
+/* a colour button and the panel under it (ColourButton) */
+.colour-cell {
+  position: relative;
+  display: inline-block;
+}
+.colour-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: max-content 120px 3ch;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--window);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+/* the third button of a row is at the right of the page: its panel opens toward the left */
+.colour-grid > .colour-cell:nth-child(6n) > .colour-panel {
+  left: auto;
+  right: 0;
+}
+.colour-input {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+.colour-alpha-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.swatch {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 14px;
+  border: 1px solid var(--border);
+  /* a chequerboard under the colour, so that a transparent colour can be seen to be one */
+  background-color: #ffffff;
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+}
+.swatch > span {
+  position: absolute;
+  inset: 0;
+}
+/* the Select Map dialog: the list of maps, the preview pane at its right, the upload button */
+.map-select {
+  width: 560px;
+  max-width: 100%;
+}
+.map-select-body {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.map-list {
+  flex: 1;
+  min-width: 0;
+  height: 260px;
+}
+.map-preview {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 170px;
+}
+.map-preview-image {
+  display: block;
+  object-fit: fill;
+  border: 1px solid var(--border);
+}
+.map-caption {
+  margin: 0;
+  text-align: center;
+  white-space: pre-line;
+}
+.map-own {
+  color: var(--text-dim);
+}
+.dialog-row.selected .map-own {
+  color: inherit;
+}
+.map-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.shadow-row {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr max-content;
+  gap: 8px;
+  align-items: center;
+}
+.shadow-slider {
+  display: flex;
+}
+.shadow-slider input {
+  flex: 1;
+}
+.inline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.radio-row {
+  display: flex;
+  gap: 24px;
+}
+
+/* ---------------------------------------------------------------- modal (above the windows 20-29 and the popup menus 30) */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(46, 52, 54, 0.4);
+}
+.modal-box {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 100%;
+  background: var(--window);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+.modal-title {
+  flex: none;
+  padding: 4px 32px;
+  font-weight: 700;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bar);
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  user-select: none;
+}
+.modal-body {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+/* ---------------------------------------------------------------- pass request boxes: waiting for GMAT (Task 13) */
+
+.pass-wait {
+  min-width: 280px;
+  max-width: 420px;
+}
+
+/* ---------------------------------------------------------------- Gpredict's message box (components/MessageBox.tsx) */
+
+.message-box {
+  min-width: 300px;
+  max-width: 480px;
+}
+.message-box-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 6px 4px 4px;
+}
+.message-box-icon {
+  flex: none;
+}
+.message-box-icon circle {
+  stroke: none;
+}
+.message-box-icon.error circle {
+  fill: var(--error-border);
+}
+.message-box-icon.info circle {
+  fill: var(--accent);
+}
+.message-box-icon path {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.message-box-icon circle.dot {
+  /* as specific as `.message-box-icon.info circle` and after it, so the dot of the "i" stays white on the disc */
+  fill: #ffffff;
+}
+.message-box-text {
+  align-self: center;
+}
+
+/* ---------------------------------------------------------------- Preferences window */
+
+.prefs {
+  width: 800px;
+  max-width: 100%;
+}
+.prefs-main {
+  display: flex;
+  gap: 10px;
+  min-height: 460px;
+}
+.prefs-groups {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.prefs-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 92px;
+  padding: 8px 6px;
+}
+.prefs-group.active {
+  background: var(--pressed);
+}
+.prefs-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.prefs-pages {
+  flex: 1;
+  min-width: 0;
+  padding-left: 10px;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+}
+.prefs-page[hidden] {
+  display: none;
+}
+
+/* Preferences → Predict: the notebook, its pages and the Reset button at the bottom right of each */
+.predict-panel {
+  min-height: 400px;
+}
+.predict-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 400px;
+  padding: 12px 14px 6px;
+}
+.predict-reset {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 10px;
+}
+.conditions-grid {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 10px 8px;
+  align-items: center;
+}
+.conditions-grid > .props-header,
+.conditions-check {
+  grid-column: 1 / -1;
+}
+.check-grid.bordered {
+  padding: 20px;
+}
+.sky-colours {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: start;
+}
+.colour-input {
+  width: 52px;
+  height: 24px;
+  padding: 1px 2px;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* Preferences → Interfaces (ref-R §8): the tables of the devices with their buttons, and the two editors */
+.hw-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 400px;
+  padding: 12px 14px 6px;
+}
+.hw-list {
+  flex: 1;
+  min-height: 200px;
+  overflow: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.hw-buttons {
+  display: flex;
+  gap: 6px;
+}
+.hw-wait {
+  padding: 12px 14px;
+}
+
+/* Preferences → General → Ground Stations (ref-D §3): the table and buttons are those of Interfaces; the Alt header has two lines ("Alt\n(m)") */
+.station-table th {
+  white-space: pre-line;
+}
+.station-table td input {
+  margin: 0;
+}
+.qth-editor {
+  min-width: 440px;
+}
+
+/* Select Location (ref-D §3, loc-tree.c): the tree of cities, in a dialog a little wider than Gpredict's 450 x 400 so that the five columns fit */
+.location-select {
+  width: 520px;
+  max-width: 100%;
+}
+.tree-list {
+  height: 340px;
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.tree-list .sat-table {
+  table-layout: fixed;
+}
+.tree-list .sat-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-list .sat-table tbody tr {
+  scroll-margin-top: 28px; /* the header sticks to the top: a row that is scrolled into view must clear it */
+}
+.tree-col-deg {
+  width: 88px;
+}
+.tree-col-alt {
+  width: 52px;
+}
+.tree-col-wx {
+  width: 60px;
+}
+.tree-list .sat-table tr.cursor td {
+  outline: 1px dotted currentColor;
+  outline-offset: -1px;
+}
+.tree-arrow {
+  display: inline-block;
+  width: 14px;
+  font-size: 10px;
+}
+.tree-wait {
+  padding: 12px 14px;
+}
+.hw-editor {
+  min-width: 440px;
+}
+.hw-grid {
+  display: grid;
+  grid-template-columns: auto auto auto 1fr;
+  gap: 6px;
+  align-items: center;
+}
+.hw-grid > .spin {
+  justify-self: start;
+}
+.hw-radio > .spin {
+  grid-column: 2 / 4; /* a spin button of the radio editor spans two columns, as in Gpredict's grid */
+}
+.hw-span2 {
+  grid-column: 2 / 4;
+}
+.hw-span3 {
+  grid-column: 2 / 5;
+}
+.hw-full {
+  grid-column: 1 / -1;
+}
+.hw-stop-label {
+  grid-column: 2 / 4;
+}
+.hw-pre {
+  white-space: pre; /* the labels of the rotator editor begin with a space */
+}
+.hw-field-error {
+  grid-column: 2 / 5;
+  margin: 0;
+  padding: 2px 8px;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-border);
+}
+
+/* ---------------------------------------------------------------- Sky at a glance (ref-P §7) */
+
+/* The chart's size is the window's: it opens at the size of skyLayout and the corner makes it bigger, never smaller (the minimum is set inline) */
+.sky-holder {
+  position: relative;
+  overflow: hidden;
+  resize: both;
+  background: var(--view);
+}
+.sky-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 16px;
+  text-align: center;
+}
+.sky-status p {
+  margin: 0;
+}
+.sky-empty {
+  margin: 0;
+  padding: 4px;
+}
+.sky-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sky-error .dialog-error {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------------- Pass details and Upcoming passes (ref-P §2, §3) */
+
+/*
+ * Gpredict gives both windows a default height of 300 px for the whole window. Upcoming passes is a list and two rows of
+ * chrome, so it is 300 px here: the 51 px are the title bar (29), the padding of .float-body (20) and its border (2).
+ * Pass details cannot be: its Az/El plot is 300 x 300 px at least, so (as in GTK, whose notebook is as big as its biggest page)
+ * the window opens taller than 300 px, and it is the tab area that is 300 px high.
+ */
+.pass-window {
+  gap: 0;
+  min-width: 280px;
+}
+.pass-window.upcoming {
+  height: calc(300px - 51px);
+}
+.pass-window .dialog-buttons {
+  margin-top: 8px;
+}
+.pass-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pass-tab-icon {
+  flex: none;
+}
+.pass-panels {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 301px; /* the 300 px of the tab area and the 1 px border below it */
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+/* the tabs lie one on top of the other, so that the window keeps its size when the tab changes */
+.pass-panel {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden; /* Gpredict's list has a vertical scroll bar only */
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.pass-panel[aria-hidden="true"] {
+  visibility: hidden;
+}
+/* the sizes Gpredict requests for the plots (ref-P §5, §6) */
+.pass-panel.polar {
+  min-width: 200px;
+  min-height: 200px;
+  overflow: hidden;
+}
+.pass-panel.azel {
+  min-width: 300px;
+  min-height: 300px;
+  overflow: hidden;
+}
+/* a plot fills its tab without making the tab bigger: it is drawn at the size the tab has */
+.pass-plot {
+  position: absolute;
+  inset: 0;
+}
+.pass-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scroll-padding-top: 26px; /* the sticky header */
+  background: var(--view);
+  border: 1px solid var(--border);
+}
+
+/* ---------------------------------------------------------------- frequency and rotator knobs (ref-R §2.3, §5.2) */
+
+/* a GtkGrid: the arrows in rows 1 and 3, the digits in row 2; a column nothing is in (the frequency knob's column 2) has no width */
+.knob {
+  display: inline-grid;
+  justify-items: center;
+  align-items: center;
+  user-select: none;
+}
+/* the digits, separators and units of both knobs: Pango's xx-large, 1.728 times the text size */
+.knob-xxl {
+  font-size: 1.728em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: pre; /* a blank digit keeps its width */
+}
+/* a digit cell is as wide as a digit, so a blank leading digit does not move the arrows above and below it */
+.knob-cell {
+  min-width: 1ch;
+  text-align: center;
+}
+.knob[aria-disabled="true"] {
+  color: var(--text-dim);
+}
+.knob-arrow {
+  min-width: 0;
+  padding: 0 3px;
+  line-height: 1.2;
+}
+
+/* ---------------------------------------------------------------- Radio Control (ref-R §2) */
+
+/* the grid of §2.1: 5 px between the frames (the 10 px border is the padding of .float-body); a column is as wide as its widest frame */
+.rc-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px;
+}
+.rc-frame {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.rc-frame > legend {
+  margin-left: 6px;
+  padding: 0 2px;
+}
+/* the label of Downlink and Uplink is bold and in the middle of the frame, with a space on both sides */
+.rc-frame > .rc-legend {
+  margin: 0 auto;
+  white-space: pre;
+}
+.rc-countdown-frame {
+  grid-column: 1 / -1;
+}
+.rc-label {
+  white-space: pre; /* Gpredict's labels begin with a space (" Range:") */
+}
+.rc-label.right {
+  text-align: right;
+}
+.rc-value {
+  font-variant-numeric: tabular-nums;
+  white-space: pre; /* "   0.00°" keeps its blanks */
+}
+.rc-frame select,
+.rc-frame input[type="search"] {
+  min-width: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: inherit;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.rc-frame select:disabled {
+  color: var(--text-dim);
+  background: var(--bar);
+}
+.rc-toggle[aria-pressed="true"] {
+  background: var(--pressed);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Downlink and Uplink: a 10 px border, the knob, a row with Doppler and LO 10 px below it, then the radio's knob */
+.rc-link {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+.rc-knob {
+  display: flex;
+  justify-content: center;
+}
+.rc-doppler {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rc-doppler .rc-lo {
+  margin-left: auto;
+}
+.rc-radio {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.rc-radio > * {
+  flex: 1;
+}
+.rc-radio-label {
+  font-size: 1.2em; /* Pango's "large" */
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Satellite: four columns; the filter and the combos take the first three */
+.rc-sat {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.rc-sat .rc-wide {
+  grid-column: 1 / 4;
+  width: 100%;
+}
+.rc-sat .rc-trsp {
+  min-width: 30ch; /* the combo is 30 characters wide (width-chars) */
+}
+.rc-tl {
+  display: flex;
+  gap: 5px;
+}
+.rc-tl > * {
+  flex: 1;
+}
+
+/* Settings: label, control and a third column for Engage and "msec" */
+.rc-settings {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.rc-settings .rc-cycle-label {
+  grid-column: 1;
+}
+.rc-settings .spin {
+  justify-self: start;
+}
+
+/* the count-down: Pango's "large" until the first AOS or LOS time, then "xx-large" (1.728 like the knobs' digits), bold, 3 px above and below */
+.rc-countdown {
+  margin: 3px 0;
+  font-weight: 700;
+  text-align: center;
+}
+.rc-countdown.large {
+  font-size: 1.2em;
+}
+.rc-countdown.xx-large {
+  font-size: 1.728em;
+}
+.rc-status {
+  margin-top: 5px;
+}
+
+/* ---------------------------------------------------------------- Antenna Control (ref-R §5) */
+
+/* the box of §5.1: the plot on the left, the grid of frames on the right, 5 px apart (the 10 px border is the padding of .float-body) */
+.ar {
+  display: flex;
+  gap: 5px;
+}
+/* the plot's frame: the plot is 200 px wide (its requested size) and as tall as the grid, at least 200 px; the plot fills it (its own size is what the canvas follows) */
+.ar-plot {
+  position: relative;
+  flex: none;
+  width: 202px; /* 200 and the border */
+  min-height: 202px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.ar-plot-fill {
+  position: absolute;
+  inset: 0;
+}
+/* homogeneous columns (§5.1) */
+.ar-grid {
+  grid-template-columns: 1fr 1fr;
+}
+/* Azimuth and Elevation: the knob over a row with "Read:" (right aligned) and what was read, 5 px border and spacing */
+.ar-knob {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.ar-knob .knob {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+/* Satellite: the filter and the combo take the first two columns and "Track" the third; Az, El and ΔT are a label and a value */
+.ar-sat {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 5px;
+  align-items: center;
+  padding: 5px;
+}
+.ar-sat .ar-wide {
+  grid-column: 1 / 3;
+  width: 100%;
+}
+.ar-sat .rc-toggle {
+  grid-column: 3;
+  grid-row: 2;
+}
+/* a value takes the rest of its row, so that the next label starts a new one */
+.ar-sat .rc-value {
+  grid-column: 2 / -1;
+}
+/* Settings: "Monitor" is in the second column of its own row, and takes the rest of it */
+.ar-settings .ar-monitor {
+  grid-column: 2 / -1;
+}
+
+/* ---------------------------------------------------------------- Satellite Info (ref-D §8) */
+
+/*
+ * The notebook of Gpredict is as big as its biggest page, so the tabs lie one on top of the other: Orbit Info takes its own room, and
+ * Transponders (a scrolled list: vertical scroll bar only) is laid over it without making it any bigger.
+ */
+.satinfo-window {
+  gap: 0;
+  min-width: 360px;
+}
+.satinfo-window .dialog-buttons {
+  margin-top: 8px;
+}
+.satinfo-panels {
+  position: relative;
+  min-height: 300px;
+  background: var(--view);
+  border: 1px solid var(--border);
+  border-top: 0;
+}
+.satinfo-panel[aria-hidden="true"] {
+  visibility: hidden;
+}
+.satinfo-panel.trsp {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.satinfo-window .dialog-error {
+  margin: 10px;
+}
+.satinfo-panel > [role="status"],
+.satinfo-none {
+  padding: 10px;
+}
+/* a grid with a border of 10 and 5 px between its columns and rows; both columns left-aligned */
+.satinfo-grid {
+  border-collapse: separate;
+  border-spacing: 5px;
+  margin: 5px;
+  text-align: left;
+}
+.satinfo-grid td {
+  padding: 0;
+  vertical-align: middle;
+  white-space: pre; /* the international designator keeps its trailing spaces */
+}
+.satinfo-separator td {
+  padding: 0;
+}
+.satinfo-window hr {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+/* a box with a border of 10 and 3 px between its lines: a blank line, the name in bold, a separator, the lines of the transponder */
+.satinfo-trsp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+}
+.satinfo-trsp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.satinfo-trsp-name {
+  overflow-wrap: anywhere;
+}
+.satinfo-trsp-item > :not(hr):not(.satinfo-trsp-name):not(.satinfo-trsp-gap) {
+  white-space: pre; /* "Baudrate: %9.2f" pads with spaces */
+}
+
+/* ---------------------------------------------------------------- Log Browser (ref-D §7.3) */
+
+/*
+ * Gpredict's window is 600 x 300 in all: the 51 px are the title bar (29), the padding of .float-body (20) and its border (2), as in
+ * Upcoming passes. A box with 10 px between the list (which takes what the window has) and the frame of the summary (which does not grow).
+ */
+.log-browser {
+  gap: 0;
+  min-width: 280px;
+  height: calc(300px - 51px);
+}
+.log-browser .dialog-error {
+  margin-bottom: 8px;
+}
+.log-browser .dialog-buttons {
+  margin-top: 8px;
+}
+.log-main {
+  display: flex;
+  flex: 1 1 0;
+  gap: 10px;
+  min-height: 0;
+}
+/* a scrolled window with a scroll bar in either direction when it is needed; the header of a column stays on top */
+.log-list {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: auto;
+  scroll-padding-top: 26px;
+  background: var(--view);
+  border: 1px solid var(--border);
+}
+.log-table th.align-left {
+  text-align: left;
+}
+/* the frame is not stretched to the height of the list; its title is in the middle, with a space on both sides */
+.log-summary {
+  flex: none;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.log-summary > legend {
+  margin: 0 auto;
+  padding: 0;
+  white-space: pre;
+}
+/* a grid with a border of 10 px, two columns of one width and six rows of one height (the line is one of them) */
+.log-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+  align-items: center;
+  min-height: 140px;
+  padding: 10px;
+}
+.log-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.log-rule {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.log-file-input {
+  display: none; /* the Open button opens it */
+}
+
+/* Orbit quality is an extension to the Gpredict workspace. */
+.quality-toolbar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #bbb; }
+.quality-toolbar .menubar { flex: 1; }
+.orbit-quality { max-height: 80vh; overflow-y: auto; font-size: 13px; }
+.orbit-quality p { margin: 9px 0; line-height: 1.55; }
+.quality-summary { display: flex; flex-wrap: wrap; gap: 24px; padding: 12px; background: #e8f1f8; border: 1px solid #bdd1df; }
+.quality-summary b { font-size: 18px; margin-left: 8px; }
+.quality-settings { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 0; padding: 10px; }
+.quality-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.quality-table { max-height: 330px; overflow: auto; border: 1px solid #aaa; }
+.quality-table table { width: 100%; border-collapse: collapse; }
+.quality-table th { position: sticky; top: 0; background: #e7e7e7; text-align: left; }
+.quality-table td, .quality-table th { padding: 7px 8px; border-bottom: 1px solid #ddd; white-space: nowrap; }
+.quality-stale { background: #fff0e4; }
+.quality-sat { border: 0; background: transparent; color: #145d86; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; }
+.quality-detail { border: 1px solid #b7cddd; padding: 10px; margin-top: 10px; background: #f3f8fc; }
+.quality-explanation { color: #4f5360; }

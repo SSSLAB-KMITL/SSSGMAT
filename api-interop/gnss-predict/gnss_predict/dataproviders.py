@@ -102,7 +102,7 @@ PROVIDERS: dict[str, ProviderInfo] = {p.name: p for p in [
         _time("previous"), *(_el(name, kind="int", interp="previous") for name in _COVERAGE),
     ], _REPORTS_DYNAMIC, False),
     ProviderInfo("IPP Data", None, "Access", [
-        _time(), _el("IPP Lat", "deg"), _el("IPP Lon", "deg"), _el("MF"), _el("Elevation", "deg"),
+        _time(), _el("IPP Lat", "deg"), _el("IPP Lon", "deg", interp="angle"), _el("MF"), _el("Elevation", "deg"),
     ], _REPORTS_DYNAMIC, True),
 ]}
 
@@ -213,8 +213,9 @@ def _load_access(bundle_dir: Path) -> AccessTables:
         path = bundle_dir / AER_FILE
         aer: dict[str, list[tuple]] = {}
         for t, prn, az, el, rng, lat, lon, mf in _rows(path, studio.AER_HEADER):
-            aer.setdefault(prn, []).append((_parse_time(t, memo), float(az), float(el), float(rng), float(lat),
-                                            float(lon), float(mf)))
+            # ดาวถ่ายภาพ (ระบบ X) ไม่มี IPP/MF: ช่องว่างอ่านเป็น None ไม่ใช่ไฟล์เสีย
+            aer.setdefault(prn, []).append((_parse_time(t, memo), float(az), float(el), float(rng), _optional(lat),
+                                            _optional(lon), _optional(mf)))
 
         path = bundle_dir / DOP_FILE
         keys = studio.DOP_HEADER[3:]

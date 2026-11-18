@@ -14,6 +14,12 @@ export interface CatalogEntry {
   omm_epoch: string;
   age_days: number;
   flags: string[];
+  /**
+   * ข2: "imaging" (PRN X01…X08) หรือ "gnss" ; display_name = ชื่อที่แสดง (preset ของดาวถ่ายภาพ เช่น Terra, GNSS = ชื่อ CelesTrak)
+   * GET /catalog ไม่มีชนิดใน OpenAPI (list[dict]) จึงเขียนเองที่นี่ ไม่มีช่องเหล่านี้ = server ก่อน ข2
+   */
+  category?: string;
+  display_name?: string;
 }
 
 /** ตัวกรองดาวของ scenario (satellite_filter) ที่ไม่มีหรือขาดช่อง = ปิด */

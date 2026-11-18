@@ -5,6 +5,7 @@
 // - ข้อความบนภาพ (P4): handle.sensorHud() อ่านใหม่ทุกครั้งที่เวลา (useThrottledTime) หรือ doc เปลี่ยน และเมื่อภาพแจ้ง (ทะเบียน Sensor View)
 //   ชื่อ sensor และดาว, เวลารูปแบบเดียวกับแถบ Animation, จุดใต้ดาว (ทศนิยม 2 ตำแหน่ง), ความสูง km (ทศนิยม 0), Cone Half Angle (ทศนิยม 1)
 //   และวงขอบกรวย (SVG ที่ viewBox [−1, 1] พอดีด้านสั้นของภาพ: รัศมี = tan α / tan(fs/2) เท่าของครึ่งด้านสั้น)
+//   Rectangular (ข2 Ruling e): บรรทัดครึ่งมุมแสดง Vertical × Horizontal (ทศนิยม 1) ไม่มีวงขอบกรวย ภาพใช้ α = max(V, H)
 // - ดาวแม่ไม่มีตำแหน่ง (sensorHud() = null: ไม่มีผลหรือนอกช่วงเวลา) = ภาพว่างพร้อมข้อความไทย (ไม่ใช่ error)
 // - Shift + ล้อเมาส์ = Step Forward / Backward แบบหน้าต่าง 3D; ลาก หมุน ซูมด้วยเมาส์ถูกปิดใน scene (กล้องล็อก)
 // - โหมดกล้อง (imagery spec §5.3): แถบ Display (Camera ตั้งต้น | Sensor) และ Zoom In / Zoom Out พร้อม "×n" เก็บใน params (display, zoom) แบบ Up
@@ -84,16 +85,27 @@ const widthWithUnit = (widthM: number): string => {
  * พิมพ์แล้ว Enter = ตั้ง zoom ให้ได้ความกว้างนั้น (parseGroundWidth: "500 m", "1.5 km", "500" = m) อ่านไม่ได้ = กลับเป็นค่าเดิมพร้อมคำแนะนำไทย
  * Escape หรือออกจากช่อง = ทิ้งที่พิมพ์ (ไม่ตั้ง)
  */
-function WidthBox({ panelId, zoom, onWidth }: { panelId: string; zoom: number; onWidth(widthM: number): WidthResult }) {
-  useThrottledTime();
-  useSyncExternalStore(sensorViewScenes.subscribe, sensorViewScenes.version);
-  const [draft, setDraft] = useState<string | null>(null);
-  /** คำแนะนำพร้อม zoom ที่มันเป็นจริงด้วย (ปลายช่วงที่ตั้งให้ หรือ zoom ตอนนี้): zoom เปลี่ยนไปจากนั้น (ปุ่ม ล้อ) = หาย */
-  const [hintState, setHintState] = useState<{ text: string; zoom: number } | null>(null);
-  const hint = hintState !== null && hintState.zoom === zoom ? hintState.text : null;
+/** คำแนะนำของช่อง Width พร้อม zoom ที่มันเป็นจริงด้วย (ปลายช่วงที่ตั้งให้ หรือ zoom ตอนนี้): zoom เปลี่ยนไปจากนั้น (ปุ่ม ล้อ) = หาย */
+type WidthHint = { text: string; zoom: number } | null;
+
+/** คำแนะนำของช่อง Width ที่ยังเป็นจริงที่ zoom นี้ (null = ไม่แสดง) และล้างเมื่อ zoom เปลี่ยนไป */
+function useWidthHint(zoom: number): [string | null, (h: WidthHint) => void] {
+  const [hintState, setHintState] = useState<WidthHint>(null);
   useEffect(() => {
     setHintState((h) => (h !== null && h.zoom !== zoom ? null : h));
   }, [zoom]);
+  return [hintState !== null && hintState.zoom === zoom ? hintState.text : null, setHintState];
+}
+
+function WidthBox({ panelId, zoom, onWidth, setHintState }: {
+  panelId: string;
+  zoom: number;
+  onWidth(widthM: number): WidthResult;
+  setHintState(h: WidthHint): void;
+}) {
+  useThrottledTime();
+  useSyncExternalStore(sensorViewScenes.subscribe, sensorViewScenes.version);
+  const [draft, setDraft] = useState<string | null>(null);
   const hud = sensorViewScenes.get(panelId)?.sensorHud() ?? null;
   const widthM = hud === null ? 0 : sensorViewGroundWidthM(hud.altKm, hud.fovDeg);
   const now = widthM > 0 ? (({ unit, width }) => `${width} ${unit}`)(groundWidthText(widthM)) : "";
@@ -115,24 +127,22 @@ function WidthBox({ panelId, zoom, onWidth }: { panelId: string; zoom: number; o
     else setHintState({ text: msg("sensorView.widthClamped", { min: widthWithUnit(result.minM), max: widthWithUnit(result.maxM) }), zoom: result.zoom });
   };
   return (
-    <>
-      <label className="sensor-view-up-label sensor-view-width-label">
-        {t("sensorView.width")}
-        <input type="text" className="sensor-view-width" aria-label={t("sensorView.width")} spellCheck={false} value={draft ?? now}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setHintState(null);
-          }}
-          onKeyDown={onKeyDown} onBlur={() => setDraft(null)} />
-      </label>
-      {hint !== null && <span className="sensor-view-width-hint" role="status">{hint}</span>}
-    </>
+    <label className="sensor-view-up-label sensor-view-width-label">
+      {t("sensorView.width")}
+      <input type="text" className="sensor-view-width" aria-label={t("sensorView.width")} spellCheck={false} value={draft ?? now}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setHintState(null);
+        }}
+        onKeyDown={onKeyDown} onBlur={() => setDraft(null)} />
+    </label>
   );
 }
 
 /**
  * แถบของหน้าต่าง: ด้านบนของภาพ North (ตั้งต้น) หรือ Velocity, Display: Camera (ตั้งต้น) หรือ Sensor,
  * Zoom In / Zoom Out (ทีละ ×√2) พร้อม "×n" และช่อง Width
+ * คำแนะนำของช่อง Width (QA-03: ยาวเกินแถบ) เป็นแถวของตัวเองใต้แถบทั้งหมด กว้างเต็มหน้าต่างและตัดบรรทัดได้ ไม่ถูกตัดที่ขอบขวา
  */
 function SensorViewBar({ panelId, params, onChange, onWidth }: {
   panelId: string;
@@ -142,6 +152,7 @@ function SensorViewBar({ panelId, params, onChange, onWidth }: {
 }) {
   const { up, display, zoom } = params;
   const zoomBy = (dir: 1 | -1): void => onChange({ zoom: nextZoom(zoom, dir) });
+  const [hint, setHintState] = useWidthHint(zoom);
   return (
     <div className="gfx-toolbars">
       <div className="toolbar sensor-view-up" role="group" aria-label={t("sensorView.up")}>
@@ -169,8 +180,9 @@ function SensorViewBar({ panelId, params, onChange, onWidth }: {
           <ZoomOut size={16} aria-hidden="true" />
         </button>
         <span className="sensor-view-zoom-value">{`×${zoomText(zoom)}`}</span>
-        <WidthBox panelId={panelId} zoom={zoom} onWidth={onWidth} />
+        <WidthBox panelId={panelId} zoom={zoom} onWidth={onWidth} setHintState={setHintState} />
       </div>
+      {hint !== null && <span className="sensor-view-width-hint" role="status">{hint}</span>}
     </div>
   );
 }
@@ -273,7 +285,8 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
     );
   }
   const sensor = doc?.objects.find((o) => o.class === "Sensor" && objectPath(o) === path) as SensorObj | undefined;
-  const radius = display === "sensor" ? coneCircleRadius(hud.coneHalfAngle, zoom) : null;
+  // Rectangular ไม่มีวงขอบกรวย (ข2 Ruling e): ขอบจริงเป็นสี่เหลี่ยม วงจะบอกขอบผิด
+  const radius = display === "sensor" && hud.halfAngles === null ? coneCircleRadius(hud.coneHalfAngle, zoom) : null;
   // ไม่มีชั้นออนไลน์บนจอจริง (สวิตช์ปิดทั้งหมด หรือเปิดแต่ไม่มีชั้นที่แสดง เช่น ion ยังไม่เลือก asset / ion ล้มเหลว / ซ่อนทุกแถว) = แนะนำ Globe Manager
   const hint = hud.imagery === null && display === "camera" && zoom >= HINT_ZOOM;
   const groundWidth = sensorViewGroundWidthM(hud.altKm, hud.fovDeg);
@@ -292,7 +305,11 @@ function Hud({ panelId, params }: { panelId: string; params: SensorViewParams })
         <div>{format(time)}</div>
         <div>{msg("sensorView.hudSubPoint", { lat: fixed(hud.lat, 2), lon: fixed(hud.lon, 2) })}</div>
         <div>{msg("sensorView.hudAltitude", { alt: fixed(hud.altKm, 0) })}</div>
-        <div>{msg("sensorView.hudCone", { angle: fixed(hud.coneHalfAngle, 1) })}</div>
+        <div>
+          {hud.halfAngles === null
+            ? msg("sensorView.hudCone", { angle: fixed(hud.coneHalfAngle, 1) })
+            : msg("sensorView.hudRect", { v: fixed(hud.halfAngles.vertical, 1), h: fixed(hud.halfAngles.horizontal, 1) })}
+        </div>
         <div>{msg("sensorView.hudFov", { fov: fovText(hud.fovDeg), zoom: zoomText(hud.zoom) })}</div>
         {groundLine !== null && <div>{groundLine}</div>}
         <div>{imageryLine(hud.imagery)}</div>

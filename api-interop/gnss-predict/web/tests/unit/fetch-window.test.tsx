@@ -378,6 +378,58 @@ describe("after the job", () => {
   });
 });
 
+// ข2 amendment (ab): ช่อง Imaging satellites (ปิดเป็นค่าตั้งต้น) ติ๊ก = systems มี X ต่อท้าย ไม่ติ๊ก = คำขอเดิมทุกไบต์ (ไม่มี body)
+describe("Imaging satellites", () => {
+  const imagingBox = () => screen.getByRole("checkbox", { name: t("dialog.fetch.imagingSatellites") }) as HTMLInputElement;
+  const confirmOk = async () => {
+    await user.click(fetchNow());
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.ok") }));
+  };
+
+  test("is off by default, with a Thai hint naming the CelesTrak groups weather, science and visual", async () => {
+    server();
+    await mounted();
+    expect(imagingBox().checked).toBe(false);
+    expect(screen.getByText(msg("fetch.imagingHint"))).toBeDefined();
+  });
+
+  test("the hint describes the checkbox (aria-describedby) (M7)", async () => {
+    server();
+    await mounted();
+    const id = imagingBox().getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id!)?.textContent).toBe(msg("fetch.imagingHint"));
+  });
+
+  test("unticked sends the old request unchanged (no body: the server's default GREC)", async () => {
+    const f = server();
+    await mounted();
+    await confirmOk();
+    await waitFor(() => expect(count(f, POST_FETCH)).toBe(1));
+    expect(f.calls.find((c) => c.method === "POST")!.body).toBeUndefined();
+  });
+
+  test("ticked sends systems GRECX (the four GNSS systems with X appended)", async () => {
+    const f = server();
+    await mounted();
+    await user.click(imagingBox());
+    expect(imagingBox().checked).toBe(true);
+    await confirmOk();
+    await waitFor(() => expect(count(f, POST_FETCH)).toBe(1));
+    expect(f.calls.find((c) => c.method === "POST")!.body).toEqual({ systems: "GRECX" });
+  });
+
+  test("Cancel with it ticked still sends nothing", async () => {
+    const f = server();
+    await mounted();
+    await user.click(imagingBox());
+    await user.click(fetchNow());
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("dialog.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(count(f, POST_FETCH)).toBe(0);
+  });
+});
+
 describe("registration", () => {
   test("registerFetchOrbitDataPanel swaps the placeholder for the window and keeps the panel's flags", () => {
     registerFetchOrbitDataPanel();

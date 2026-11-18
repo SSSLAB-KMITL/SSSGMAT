@@ -23,8 +23,8 @@ from gnss_predict.geometry import geodetic_to_ecef
 from gnss_predict.report_format import (ExportSetup, format_csv, format_time, format_txt, report_filename,
                                         report_json, time_format_of, time_unit)
 from gnss_predict.report_style import Column, Report, Section, build_report, installed_styles, resolve_style
-from tests.report_fixture import (SATELLITES, SCENARIO_NAME, SNAPSHOT_NAME, SNAPSHOT_SRC, build_computed_scenario,
-                                  scenario_doc)
+from tests.report_fixture import (IMAGING_SATELLITES, SATELLITES, SCENARIO_NAME, SNAPSHOT_NAME, SNAPSHOT_SRC,
+                                  build_computed_scenario, imaging_ecef, scenario_doc)
 
 UTC = timezone.utc
 START = datetime(2026, 11, 10, 0, 0, tzinfo=UTC)
@@ -501,6 +501,38 @@ class TestJsonAndFilename(_Computed):
         self.assertEqual(report_filename(self.report(("Access",), [G01]), ".txt"), "THBK-To-G01_Access.txt")
         hostile = Report("S", 'a/b "c"\r\n', "report", NOW, self.report(("Access",), [G01]).sections, [], None, False)
         self.assertEqual(report_filename(hostile, "txt"), "THBK-To-G01_a_b__c___.txt")
+
+
+class TestImagingIpp(unittest.TestCase):
+    """IPP Data ของดาวถ่ายภาพ (X04): ไม่มี IPP/MF จึงเป็น N/A ใน .txt และช่องว่างใน .csv ส่วน Elevation มีค่า"""
+
+    def test_ipp_report_of_imaging_satellite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scenario_dir, data_dir = build_computed_scenario(Path(tmp), satellites=IMAGING_SATELLITES, imaging=True,
+                                                             ecef=imaging_ecef())
+            rs = open_result_set(scenario_dir, data_dir)
+            style = resolve_style("IPP Data", "report", [], [])
+            report = build_report(rs, style, [access_path("THBK", "X04")], None, None, 600, NOW)
+        lines = format_txt(report, "UTCG", "+07:00").split("\n")
+        title = lines.index("THBK-To-X04:  IPP Data")
+        self.assertIn("IPP Lat (deg)", lines[title + 2])
+        data = []
+        for line in lines[title + 4:]:
+            if not line:
+                break
+            data.append(line)
+        self.assertEqual(len(data), 12)                         # X04 อยู่เหนือ THBK 01:00–03:00 step 600 s
+        for line in data:
+            fields = line.split()
+            self.assertEqual(fields[5:8], ["N/A", "N/A", "N/A"])
+            self.assertRegex(fields[8], r"^\d+\.\d{3}$")
+        rows = format_csv(report, "UTCG", "+07:00").split("\n")
+        self.assertEqual(rows[0], "Time (UTCG),IPP Lat (deg),IPP Lon (deg),MF,Elevation (deg)")
+        for row in rows[1:13]:
+            cells = row.split(",")
+            self.assertEqual(cells[1:4], ["", "", ""])
+            self.assertRegex(cells[4], r"^\d+\.\d{3}$")
+        self.assertEqual(rows[13:], [""])
 
 
 class TestGolden(_Computed):

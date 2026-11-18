@@ -7,6 +7,8 @@
 - `list` อ่านเฉพาะไฟล์ `*.json` ปกติ (ไม่ใช่โฟลเดอร์หรือ symlink) ที่ชื่อไฟล์ตรงกฎ เป็น JSON object และช่อง `name` ตรงชื่อไฟล์
   ไฟล์ที่แก้มือแล้วเสีย ข้ามพร้อมเตือนใน log (ชื่อไฟล์และเหตุผล) ไม่ทำให้ทั้งรายการล้ม
   ไฟล์ที่เป็น JSON object ถูกรูปแต่เนื้อหา style ผิด (เช่น อ้าง element ที่ไม่มี) ยังอยู่ในรายการ: ข้อผิดพลาดขึ้นตอนสร้างรายงานตาม P6
+- ขนาดไฟล์ไม่เกิน `MAX_STYLE_BYTES` (256 KB): `list` ตรวจก่อนอ่านและอ่านแค่เพดาน+1 ไบต์ ไฟล์ที่ใหญ่กว่าข้ามพร้อมเตือนใน log เหมือนไฟล์เสียอื่น
+  (แทนที่ได้ด้วย PUT) `save` ปฏิเสธ style ที่เขียนออกมาแล้วเกินเพดานด้วย StyleError field `body` ไฟล์ที่เขียนเองจึงอ่านกลับได้เสมอ
 """
 
 import json
@@ -21,6 +23,7 @@ from gnss_predict.report_style import NAME_RE
 from .store import write_atomic
 
 STYLES_DIR = "styles"
+MAX_STYLE_BYTES = 256 * 1024          # ขนาดไฟล์และ body ของ My Style
 SUFFIX = ".json"
 NAME_TEXT = "ชื่อ style ต้องขึ้นต้นด้วยตัวอักษรหรือตัวเลข ตามด้วยตัวอักษร ตัวเลข ช่องว่าง _ หรือ - ยาวไม่เกิน 48 ตัว"
 
@@ -63,8 +66,17 @@ class MyStyles:
             self._warn(file, "ชื่อไฟล์ไม่ตรงกฎชื่อ style")
             return None
         try:
-            style = json.loads(path.read_bytes())
-        except (OSError, ValueError) as exc:                    # ValueError รวม JSON เสียและ UnicodeDecodeError
+            with path.open("rb") as f:
+                raw = f.read(MAX_STYLE_BYTES + 1)               # อ่านแค่เพดาน+1: ไฟล์ใหญ่ผิดปกติไม่เข้าหน่วยความจำทั้งก้อน
+        except OSError as exc:
+            self._warn(file, f"อ่านไฟล์ไม่ได้ ({type(exc).__name__})")
+            return None
+        if len(raw) > MAX_STYLE_BYTES:
+            self._warn(file, f"ไฟล์ใหญ่เกิน {MAX_STYLE_BYTES // 1024} KB")
+            return None
+        try:
+            style = json.loads(raw)
+        except (ValueError, RecursionError) as exc:             # ValueError รวม JSON เสียและ UnicodeDecodeError RecursionError = ซ้อนลึกเกิน
             self._warn(file, f"อ่านเป็น JSON ไม่ได้ ({type(exc).__name__})")
             return None
         if not isinstance(style, dict):
@@ -87,6 +99,8 @@ class MyStyles:
         การเขียนไม่สำเร็จไม่แตะไฟล์เดิม ไม่ทิ้งไฟล์ชั่วคราว"""
         name = check_name(style.get("name") if isinstance(style, dict) else None)
         data = (json.dumps(style, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+        if len(data) > MAX_STYLE_BYTES:
+            raise StyleError(f"style ใหญ่เกิน {MAX_STYLE_BYTES // 1024} KB เมื่อเขียนเป็นไฟล์ (ได้ {len(data) // 1024 + 1} KB)", "body")
         with self._lock:
             taken = self._taken(name)
             if taken is not None and (exclusive or taken != name):

@@ -159,9 +159,14 @@ export function coneRays(b: Vec3, halfAngleDeg: number, n = 72): Vec3[] {
  */
 export function sensorFootprint(pos: Vec3, b: Vec3, halfAngleDeg: number, n = 72): SensorFootprint {
   const axis = unit(b);
+  return footprintOf(pos, axis, coneRays(axis, halfAngleDeg, n));
+}
+
+/** รอยจากเส้นขอบ rays (ทิศหนึ่งหน่วย) และ boresight หนึ่งหน่วย axis: เส้นที่ไม่โดนโลกใช้จุดสัมผัสขอบฟ้า (horizon = true) */
+function footprintOf(pos: Vec3, axis: Vec3, rays: readonly Vec3[]): SensorFootprint {
   const ring: [number, number][] = [];
   const horizon: boolean[] = [];
-  for (const d of coneRays(axis, halfAngleDeg, n)) {
+  for (const d of rays) {
     const hit = hitEarth(pos, d);
     horizon.push(hit === null);
     ring.push(lonLat(hit ?? horizonPoint(pos, d)));
@@ -169,6 +174,56 @@ export function sensorFootprint(pos: Vec3, b: Vec3, halfAngleDeg: number, n = 72
   ring.push([ring[0][0], ring[0][1]]);
   const centre = hitEarth(pos, axis);
   return { ring, horizon, boresightHit: centre === null ? null : lonLat(centre) };
+}
+
+/**
+ * กรอบของ sensor ที่ชี้แบบ Fixed Az-El (ข2 Ruling i): หมุนกรอบตัวดาวรอบ +Z เป็นมุม Az แล้วรอบ +Y ใหม่เป็นมุม θ = 90° − El
+ * +Z ของ sensor จึงเป็น boresightOf(f, az, el) และ Az 0 / El 90 ได้กรอบตัวดาวพอดี (STK sn-orientation.htm: กรอบทับกัน)
+ * การหมุนรักษาความยาวและทิศมือขวา: X_s = cos θ·X₁ − sin θ·Z, Y_s = Y₁, Z_s = sin θ·X₁ + cos θ·Z (X₁, Y₁ = แกน X, Y หลังหมุน Az)
+ */
+export function sensorFrame(f: BodyFrame, azDeg: number, elDeg: number): BodyFrame {
+  const az = azDeg * RAD;
+  const θ = (90 - elDeg) * RAD;
+  const x1 = add(scale(f.x, Math.cos(az)), scale(f.y, Math.sin(az)));
+  const y1 = add(scale(f.x, -Math.sin(az)), scale(f.y, Math.cos(az)));
+  return {
+    x: add(scale(x1, Math.cos(θ)), scale(f.z, -Math.sin(θ))),
+    y: y1,
+    z: add(scale(x1, Math.sin(θ)), scale(f.z, Math.cos(θ))),
+  };
+}
+
+/**
+ * ทิศหนึ่งหน่วยของเส้นขอบพีระมิดสี่เหลี่ยมของ sensor แบบ Rectangular ในกรอบ sensor sf (ข2 Ruling g: แกนแบบ STK Rectangular "For Comm and Radar")
+ * Horizontal Half Angle อยู่ในระนาบ XZ (±X = ตามแนวบิน), Vertical Half Angle อยู่ในระนาบ YZ (±Y = ขวางแนวบิน)
+ * 4·perSide เส้น เริ่มที่มุม (+H ทาง +X, +V ทาง +Y) ด้านแรกไปทาง −X ที่ +V แล้ววนต่อ (−X, −Y, +X): มุมอยู่ที่ 0, perSide, 2·perSide, 3·perSide
+ * จุดบนด้านเป็นเส้นตรงใน (tan H, tan V) ทิศ = (tx·X + ty·Y + Z) / |…| ทุกเส้นของด้านหนึ่งจึงอยู่บนระนาบขอบของด้านนั้น
+ */
+export function rectangleRays(sf: BodyFrame, verticalDeg: number, horizontalDeg: number, perSide = 18): Vec3[] {
+  const tv = Math.tan(verticalDeg * RAD);
+  const th = Math.tan(horizontalDeg * RAD);
+  // มุมตามลำดับ (tx, ty): ด้าน k ไปจากมุม k ถึงมุม k + 1
+  const corners: [number, number][] = [[th, tv], [-th, tv], [-th, -tv], [th, -tv]];
+  const out: Vec3[] = [];
+  for (let side = 0; side < 4; side++) {
+    const [ax, ay] = corners[side];
+    const [bx, by] = corners[(side + 1) % 4];
+    for (let j = 0; j < perSide; j++) {
+      const u = j / perSide;
+      const tx = ax + (bx - ax) * u;
+      const ty = ay + (by - ay) * u;
+      out.push(unit(add(add(scale(sf.x, tx), scale(sf.y, ty)), sf.z)));
+    }
+  }
+  return out;
+}
+
+/**
+ * รอยบนพื้นโลกของ sensor แบบ Rectangular ที่ดาวตำแหน่ง pos ในกรอบ sensor sf (ข2 Ruling j): ทรงกลมเดียวกับกรวย (hitEarth / horizonPoint)
+ * วงมี 4·perSide + 1 จุด (ปิดวง) ตามลำดับของ rectangleRays boresight = +Z ของ sf
+ */
+export function rectangleFootprint(pos: Vec3, sf: BodyFrame, verticalDeg: number, horizontalDeg: number, perSide = 18): SensorFootprint {
+  return footprintOf(pos, sf.z, rectangleRays(sf, verticalDeg, horizontalDeg, perSide));
 }
 
 /**

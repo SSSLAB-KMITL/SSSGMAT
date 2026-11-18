@@ -17,13 +17,18 @@ from unittest import mock
 
 from gnss_predict import studio
 from gnss_predict.config import THBK_HEIGHT_M, THBK_LAT_DEG, THBK_LON_DEG
+from gnss_predict.geometry import geodetic_to_ecef
 from gnss_predict.propagate import Ephemeris
 
 SNAPSHOT_SRC = Path(__file__).parent / "fixtures" / "studio" / "snapshot"
+IMAGING_SRC = Path(__file__).parent / "fixtures" / "studio" / "imaging"
+IMAGING_FILES = ("science.json", "visual.json", "weather.json")
 SNAPSHOT_NAME = "20261110T0000Z"
 SCENARIO_NAME = "Test_Scen"
 # ดาวใน scenario: (ชื่อ, NORAD) ทั้งห้าดวงมีใน snapshot fixture และไม่ถูกซ่อน (ต้อง propagate ให้ครบทั้งห้า)
 SATELLITES = [("G01", 62339), ("G22", 26407), ("E11", 37846), ("R05", 43508), ("C01", 56564)]
+# ฉากที่มีดาวถ่ายภาพ: ห้าดวงเดิมกับ Terra (X04) ที่ตั้งชื่อใน scenario ว่า X04 เหมือนดวงอื่นที่ชื่อตรง PRN
+IMAGING_SATELLITES = SATELLITES + [("X04", 25994)]
 
 EARTH_MU_KM3_S2 = 398600.4418
 EARTH_ROTATION_RAD_S = 7.2921151467e-5
@@ -73,7 +78,7 @@ def fake_propagate(sats, start, stop, step_s, work_dir, console, timeout_s=900, 
     return _propagate(sats, start, stop, step_s, None)
 
 
-def scenario_doc(start: str, stop: str, step_s: int) -> dict:
+def scenario_doc(start: str, stop: str, step_s: int, satellites=SATELLITES) -> dict:
     return {
         "format": "gnss-studio-scenario/1",
         "name": SCENARIO_NAME,
@@ -86,25 +91,32 @@ def scenario_doc(start: str, stop: str, step_s: int) -> dict:
                      "position": {"type": "Geodetic", "lat_deg": THBK_LAT_DEG, "lon_deg": THBK_LON_DEG,
                                   "alt_m": THBK_HEIGHT_M},
                      "constraints": {"elevation_angle_min_deg": 10.0}}]
-                   + [{"class": "Satellite", "name": name, "norad": norad} for name, norad in SATELLITES],
+                   + [{"class": "Satellite", "name": name, "norad": norad} for name, norad in satellites],
     }
 
 
 def build_computed_scenario(root: Path, *, start: str = "2026-11-10T00:00:00Z", stop: str = "2026-11-10T06:00:00Z",
                             step_s: int = 60,
-                            ecef: Callable[[str, float], Ecef] | None = None) -> tuple[Path, Path]:
+                            ecef: Callable[[str, float], Ecef] | None = None,
+                            satellites=SATELLITES, imaging: bool = False) -> tuple[Path, Path]:
     """สร้าง scenario `Test_Scen` ใต้ root แล้ว propagate และ analyze Facility THBK ด้วย GMAT ปลอม
 
     ecef(prn, t_s) กำหนดตำแหน่ง ECEF ของดาวเอง (t_s = วินาทีหลัง start) ไม่ใส่ = วงโคจรวงกลมของ circular_ecef_km
+    satellites คือ (ชื่อ, NORAD) ของดาวใน scenario imaging=True คัดลอกไฟล์ OMM กลุ่ม imaging เข้า snapshot ด้วย
+    (ดาวระบบ X ไม่มีวงโคจรวงกลมตั้งต้น ต้องส่ง ecef เช่น imaging_ecef())
     คืน (scenario_dir, data_dir): `<data_dir>/scenarios/Test_Scen` ที่มี ephem/ และ access/THBK/ แล้ว
     GMAT ปลอมมีผลเฉพาะในฟังก์ชันนี้ ผลที่เขียนลงดิสก์อ่านต่อได้โดยไม่ต้อง patch
     """
     root = Path(root)
     data_dir = root / "data"
     shutil.copytree(SNAPSHOT_SRC, data_dir / "orbits" / SNAPSHOT_NAME)
+    if imaging:
+        for name in IMAGING_FILES:
+            shutil.copyfile(IMAGING_SRC / name, data_dir / "orbits" / SNAPSHOT_NAME / name)
     scenario_dir = data_dir / "scenarios" / SCENARIO_NAME
     scenario_dir.mkdir(parents=True)
-    (scenario_dir / "scenario.json").write_text(json.dumps(scenario_doc(start, stop, step_s)), encoding="utf-8")
+    (scenario_dir / "scenario.json").write_text(json.dumps(scenario_doc(start, stop, step_s, satellites)),
+                                                encoding="utf-8")
 
     def propagate(sats, start_t, stop_t, step, work_dir, console, timeout_s=900, **_):
         return _propagate(sats, start_t, stop_t, step, ecef)
@@ -115,3 +127,33 @@ def build_computed_scenario(root: Path, *, start: str = "2026-11-10T00:00:00Z", 
         studio.run_propagate(scenario_dir, data_dir)
         studio.run_analyze(scenario_dir, "THBK", data_dir)
     return scenario_dir, data_dir
+
+
+# ช่วงที่ X04 อยู่เหนือ THBK (วินาทีหลังต้นช่วง) ที่ El 50° ระยะ 900 กม. นอกช่วงอยู่ใต้ขอบฟ้า (El −30°)
+X04_WINDOW = (3600, 10800)
+
+
+def imaging_ecef() -> Callable[[str, float], Ecef]:
+    """ตำแหน่งของ IMAGING_SATELLITES: ดาว GNSS ใช้วงโคจรวงกลมช่องเดียวกับ fake_propagate ส่วน X04 อยู่ที่ Az 150° + t/120 °/s
+    El 50° ระยะ 900 กม. จาก THBK ในช่วง X04_WINDOW (มี access ช่วงเดียว) นอกช่วงอยู่ใต้ขอบฟ้า"""
+    slots = {"G01": ("G", 0, 2), "G22": ("G", 1, 2), "E11": ("E", 0, 1), "R05": ("R", 0, 1), "C01": ("C", 0, 1)}
+
+    def ecef(prn: str, t_s: float) -> Ecef:
+        if prn == "X04":
+            on = X04_WINDOW[0] <= t_s < X04_WINDOW[1]
+            return _from_az_el(150.0 + t_s / 120.0, 50.0 if on else -30.0, 900.0)
+        return circular_ecef_km(*slots[prn], t_s)
+    return ecef
+
+
+def _from_az_el(az_deg: float, el_deg: float, range_km: float) -> Ecef:
+    """ตำแหน่ง ECEF (กม.) ของจุดที่ Az/El/ระยะ ที่กำหนดจาก THBK (แกน ENU ตามเส้นตั้งฉากทรงรี)"""
+    sta = geodetic_to_ecef(THBK_LAT_DEG, THBK_LON_DEG, THBK_HEIGHT_M)
+    az, el = math.radians(az_deg), math.radians(el_deg)
+    lat, lon = math.radians(THBK_LAT_DEG), math.radians(THBK_LON_DEG)
+    e, n, u = (range_km * math.cos(el) * math.sin(az), range_km * math.cos(el) * math.cos(az),
+               range_km * math.sin(el))
+    dx = -math.sin(lon) * e - math.sin(lat) * math.cos(lon) * n + math.cos(lat) * math.cos(lon) * u
+    dy = math.cos(lon) * e - math.sin(lat) * math.sin(lon) * n + math.cos(lat) * math.sin(lon) * u
+    dz = math.cos(lat) * n + math.sin(lat) * u
+    return sta[0] + dx, sta[1] + dy, sta[2] + dz

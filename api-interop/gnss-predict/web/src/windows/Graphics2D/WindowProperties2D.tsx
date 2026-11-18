@@ -1,6 +1,6 @@
 // 2D Graphics Window Properties (spec §9.3, STK ref §E): ค่าตั้งของหน้าต่าง 2D บานที่ params.target ชี้ (เปิดจากปุ่ม Properties ของแถบ 2D Window Defaults)
 // - Projection: Projection (Equidistant Cylindrical / Mercator), Display Coordinate Frame (ECF เท่านั้นใน v1 พร้อมหมายเหตุไทย)
-// - Details: Lat/Lon Lines, Show IPP (ของเราเอง)
+// - Details: Lat/Lon Lines, Show IPP (ของเราเอง), Show Ground Tracks (ของเราเอง, task 13c)
 // - Lighting: Show Outline (เส้นแบ่งกลางวันกลางคืน), Shading (พื้นที่กลางคืน)
 // Apply เขียน useLayout.windowProps[target] (ไปกับ workbook เมื่อ Save) หน้าต่าง 2D ปรับภาพทันที (Projection: สร้างภาพใหม่ที่พื้นที่เดิม)
 // แท็บ ปุ่ม และกรณีหน้าต่างเป้าหมายถูกปิด อยู่ในกรอบร่วม graphics/WindowPropertiesShell.tsx
@@ -26,7 +26,7 @@ const PROJECTION_LABELS: Record<Props2D["projection"], LabelKey> = {
   mercator: "option.projection.mercator",
 };
 
-type BoolKey = "latLonLines" | "showIpp" | "showOutline" | "shading";
+type BoolKey = "latLonLines" | "showIpp" | "showOutline" | "shading" | "showGroundTracks";
 
 export function WindowProperties2D({ params, panelId }: PanelProps) {
   const { target, stored, exists } = useTargetWindow(params);
@@ -93,6 +93,7 @@ export function WindowProperties2D({ params, panelId }: PanelProps) {
       {page === "details" && (
         <>
           {check("latLonLines", "field.latLonLines")}
+          {check("showGroundTracks", "field.showGroundTracks")}
           {check("showIpp", "field.showIpp")}
           <p className="props-note">{msg("g2d.ippNote")}</p>
         </>

@@ -23,7 +23,7 @@ import {
 import {
   CESIUM_GLTF_EXTENSIONS, cellNormalInvalid, cellNormalOf, glbProblem, loadModelGlb, resetModelLoads, resolveModel, WING_ZERO_NORMAL, wingNodesOf, wingZeroNormal, type ModelCatalog,
 } from "../../src/cesium/satModels";
-import { createViewer, destroyViewer } from "../../src/cesium/viewer";
+import { createViewer, destroyViewer, type RenderFailure } from "../../src/cesium/viewer";
 import { msg } from "../../src/labels/messages.th";
 import { useLayout } from "../../src/stores/layout";
 import { useMessages } from "../../src/stores/messages";
@@ -31,7 +31,7 @@ import { useResults } from "../../src/stores/results";
 import { useScenario } from "../../src/stores/scenario";
 import { useSelection } from "../../src/stores/selection";
 import { useTime } from "../../src/stores/time";
-import { mountScene3D, sunSideOffset } from "../../src/windows/Graphics3D/scene3d";
+import { mountScene3D, mountSensorView, sunSideOffset } from "../../src/windows/Graphics3D/scene3d";
 import type { SensorViewHandle } from "../../src/windows/SensorView/registry";
 import { MODEL_BATCH_MS, resetModelReports, SatModelSource } from "../../src/windows/Graphics3D/satModelSource";
 import { makeDoc } from "./helpers/chrome";
@@ -743,6 +743,17 @@ function stubDeferredGlbs() {
   return { release };
 }
 
+/** setTimeout จริง (จับไว้ก่อน test ใดใช้นาฬิกาปลอม) */
+const realSetTimeout = globalThis.setTimeout;
+/** รอด้วยเวลาจริงจนเงื่อนไขเป็นจริง (ไม่เลื่อนนาฬิกาปลอม ต่างจาก vi.waitFor) ไม่เกิน 5 วินาที */
+async function untilReal(ok: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (!ok()) {
+    if (Date.now() > deadline) throw new Error("untilReal: condition not met within 5 s");
+    await new Promise((r) => realSetTimeout(r, 5));
+  }
+}
+
 /** ให้คำขอที่ค้างเสร็จและชุดของ SatModelSource (MODEL_BATCH_MS) ปิด */
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -857,21 +868,33 @@ describe("SatModelSource: catalog and glb loading", () => {
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
     const sats = [{ block: "GPS-IIF", norad: 1 }, { block: "GPS-IIR-M", norad: 2 }, { block: "GAL-2", norad: 3 }, { block: "GLO-M+", norad: 4 }, { block: "BDS-3M-CAST", norad: 5 }];
     for (const s of sats) expect(src.specFor(s)).toBeNull();
-    // ห้าไฟล์มาถึงห่างกัน 15 ms (อยู่ในหน้าต่างเดียว MODEL_BATCH_MS)
-    for (const path of ["gps-iif", "gps-iir", "galileo-foc", "glonass-m", "bds3-meo-cast"].map((id) => `/models/${entryOf(id).glb}`)) {
-      release(path);
-      await new Promise((r) => setTimeout(r, 15));
+    // นาฬิกาของชุด (setTimeout) เป็นนาฬิกาปลอม: เวลาของชุดเดินเฉพาะเมื่อ test เลื่อน ไม่ขึ้นกับความช้าของเครื่อง
+    // การอ่าน glb (fetch/Response) ยังใช้เวลาจริง: รอจนโหลดเสร็จด้วย untilReal ที่ไม่เลื่อนนาฬิกาปลอม
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // ห้าไฟล์มาถึงห่างกัน 15 ms (อยู่ในหน้าต่างเดียว MODEL_BATCH_MS)
+      for (const path of ["gps-iif", "gps-iir", "galileo-foc", "glonass-m", "bds3-meo-cast"].map((id) => `/models/${entryOf(id).glb}`)) {
+        release(path);
+        await vi.advanceTimersByTimeAsync(15);
+      }
+      await untilReal(() => sats.every((s) => src.specFor(s) !== null));
+      expect(changed).toHaveBeenCalledTimes(1); // ชุดยังเปิดอยู่: เวลาปลอมเดินไปไม่เกิน 75 ms
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS);
+      expect(changed).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS * 2);
+      expect(changed).toHaveBeenCalledTimes(2);
+      // ไฟล์ที่ขอทีหลัง: อีกชุดหนึ่ง
+      expect(src.specFor({ block: null, norad: 41836 })).toBeNull();
+      release(`/models/${entryOf("himawari-9").glb}`);
+      await untilReal(() => src.specFor({ block: null, norad: 41836 }) !== null);
+      expect(changed).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(MODEL_BATCH_MS);
+      expect(changed).toHaveBeenCalledTimes(3);
+      expect(src.specFor({ block: null, norad: 41836 })?.id).toBe("himawari-9");
+    } finally {
+      src.dispose();
+      vi.useRealTimers();
     }
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
-    await new Promise((r) => setTimeout(r, MODEL_BATCH_MS * 2));
-    expect(changed).toHaveBeenCalledTimes(2);
-    for (const s of sats) expect(src.specFor(s)).not.toBeNull();
-    // ไฟล์ที่ขอทีหลัง: อีกชุดหนึ่ง
-    expect(src.specFor({ block: null, norad: 41836 })).toBeNull();
-    release(`/models/${entryOf("himawari-9").glb}`);
-    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(3));
-    expect(src.specFor({ block: null, norad: 41836 })?.id).toBe("himawari-9");
-    src.dispose();
   });
 
   test("a glb that fails (404 or the app's HTML page) leaves that model as points with one Thai message per model id", async () => {
@@ -1049,7 +1072,13 @@ describe("3D window with models", () => {
     vi.mocked(destroyViewer).mockReset();
   });
 
-  async function mount(windowProps: Record<string, unknown> = {}, sensors: Record<string, string[]> = {}) {
+  type Stopped = (reason: RenderFailure, error?: unknown, recovering?: boolean) => void;
+
+  async function mount(
+    windowProps: Record<string, unknown> = {},
+    sensors: Record<string, string[]> = {},
+    opts: { stopped?: Stopped; sensorView?: boolean } = {},
+  ) {
     stubModelFetch();
     const doc = makeScenarioDoc({}, sensors);
     for (const o of doc.objects as { name: string; graphics3d?: unknown }[]) if (o.name === "G05") o.graphics3d = { show: false };
@@ -1059,7 +1088,11 @@ describe("3D window with models", () => {
     useLayout.setState({ windowProps: { graphics3d: windowProps } });
     const viewer = fakeViewer();
     vi.mocked(createViewer).mockReturnValueOnce(viewer as never);
-    const scene = mountScene3D("graphics3d", document.createElement("div"));
+    const el = document.createElement("div");
+    // Sensor View เป็น Scene3D ตัวเดียวกัน (ค่าตั้งคงที่ SENSOR_VIEW_PROPS): ใช้ hook ของหน้าต่าง 3D ได้ครบ
+    const scene = opts.sensorView === true
+      ? (mountSensorView("sensorView1", el, opts.stopped) as unknown as ReturnType<typeof mountScene3D>)
+      : mountScene3D("graphics3d", el, opts.stopped);
     await vi.waitFor(() => expect(viewer.dataSources.length).toBe(1));
     const ds = viewer.dataSources.get(0);
     ds.entities.add(new Entity({ id: "sat/G01", position: satOrbit(1.75) }));
@@ -1231,6 +1264,95 @@ describe("3D window with models", () => {
     expect(angleDeg(viewer.camera.directionWC, look)).toBeLessThan(1e-6);
     expect(viewer.trackedEntity).toBeUndefined();
     expect(scene.modelCount()).toBe(2); // 50 km: ใกล้ (โมเดล) ทันที ไม่รอ camera.changed
+    scene.destroy();
+  });
+
+  // ---------- ตัวกัน: โมเดลที่วาดไม่ได้ (ข2 final C1, terra.glb ที่ shader คอมไพล์ไม่ผ่าน) ----------
+
+  const RENDER_ERROR = new Error("Fragment shader failed to compile. 'v_texCoord_0' : undeclared identifier");
+  const raiseRenderError = (viewer: { scene: { renderError: Cesium.Event } }, error: unknown = RENDER_ERROR) => {
+    act(() => viewer.scene.renderError.raiseEvent(viewer.scene, error));
+  };
+  const disabledMessages = () => useMessages.getState().items.filter((m) => m.code === "SCENE_MODELS_DISABLED");
+
+  test("a render error while models are drawn turns models off for this window: points, one warning, the window keeps drawing", async () => {
+    const stopped = vi.fn<Stopped>();
+    const { scene, ds, viewer } = await mount({}, {}, { stopped });
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    viewer.scene.requestRender.mockClear();
+    raiseRenderError(viewer);
+    expect(stopped).not.toHaveBeenCalled();
+    expect(scene.modelCount()).toBe(0);
+    const g01 = ds.entities.getById("sat/G01")!;
+    expect(g01.model).toBeUndefined();
+    expect(scene.pointShown("G01")).toBe(true);
+    expect(viewer.scene.requestRender).toHaveBeenCalled();
+    const items = disabledMessages();
+    expect(items).toHaveLength(1);
+    expect(items[0].level).toBe("warning");
+    expect(items[0].text).toBe(msg("scene.modelsDisabled", { window: "3D", message: RENDER_ERROR.message }));
+    expect(useMessages.getState().items.map((m) => m.code)).toEqual(["SCENE_MODELS_DISABLED"]);
+    // ค่าของหน้าต่าง (ไปกับ workbook) ไม่ถูกแตะ: ปิดในหน่วยความจำเท่านั้น
+    expect(useLayout.getState().windowProps.graphics3d).toEqual({});
+    // รอบ throttle, glb ชุดใหม่ (modelsChanged) และการเลือกดาวไม่ทำให้โมเดลกลับมา
+    act(() => useTime.getState().setCurrent(new Date(useTime.getState().current.getTime() + 60_000)));
+    viewer.camera.changed.raiseEvent(1);
+    await new Promise((r) => setTimeout(r, 300));
+    act(() => useSelection.getState().select("*/Satellite/G02"));
+    act(() => useScenario.setState({ doc: { ...useScenario.getState().doc! } }));
+    expect(scene.modelCount()).toBe(0);
+    expect(ds.entities.getById("sat/G02")!.model).toBeUndefined();
+    scene.destroy();
+  });
+
+  test("a second render error after the models are off goes to onRenderStopped as before, and posts no second warning", async () => {
+    const stopped = vi.fn<Stopped>();
+    const { scene, viewer } = await mount({}, {}, { stopped });
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    raiseRenderError(viewer);
+    expect(stopped).not.toHaveBeenCalled();
+    const second = new Error("still broken");
+    raiseRenderError(viewer, second);
+    expect(stopped).toHaveBeenCalledTimes(1);
+    expect(stopped).toHaveBeenCalledWith("renderError", second, false);
+    expect(disabledMessages()).toHaveLength(1);
+    scene.destroy();
+  });
+
+  test("a render error with no model drawn (Satellite Models off) goes to onRenderStopped unchanged", async () => {
+    const stopped = vi.fn<Stopped>();
+    const { scene, viewer } = await mount({ satelliteModels: false }, {}, { stopped });
+    await vi.waitFor(() => expect(scene.pointShown("G01")).toBe(true));
+    raiseRenderError(viewer);
+    expect(stopped).toHaveBeenCalledWith("renderError", RENDER_ERROR, true);
+    expect(disabledMessages()).toEqual([]);
+    scene.destroy();
+  });
+
+  test("switching Satellite Models off and on again in the window clears the fallback; a later failure warns no second time", async () => {
+    const stopped = vi.fn<Stopped>();
+    const { scene, viewer } = await mount({}, {}, { stopped });
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    raiseRenderError(viewer);
+    expect(scene.modelCount()).toBe(0);
+    // ค่าเปิดอยู่แล้ว: แก้ช่องอื่นไม่ล้างตัวกัน
+    act(() => useLayout.getState().setWindowProps("graphics3d", { satelliteModels: true, modelPixelSize: 64 }));
+    expect(scene.modelCount()).toBe(0);
+    act(() => useLayout.getState().setWindowProps("graphics3d", { satelliteModels: false }));
+    act(() => useLayout.getState().setWindowProps("graphics3d", { satelliteModels: true }));
+    expect(scene.modelCount()).toBe(2);
+    scene.destroy();
+  });
+
+  test("Sensor View: a render error while models are drawn turns them off there too, with the Sensor View wording", async () => {
+    const stopped = vi.fn<Stopped>();
+    const { scene, viewer } = await mount({}, {}, { stopped, sensorView: true });
+    await vi.waitFor(() => expect(scene.modelCount()).toBe(2));
+    raiseRenderError(viewer);
+    expect(stopped).not.toHaveBeenCalled();
+    expect(scene.modelCount()).toBe(0);
+    const items = disabledMessages();
+    expect(items.map((m) => m.text)).toEqual([msg("scene.modelsDisabledSensorView", { window: "Sensor View", message: RENDER_ERROR.message })]);
     scene.destroy();
   });
 

@@ -7,12 +7,14 @@ import { dirname, resolve } from "node:path";
 import { Cartesian3 } from "cesium";
 import { describe, expect, test } from "vitest";
 import {
-  coneHalfAngleOf, drawableSensors, groundPointEcef, radialLineEnds, radialLinePoints, sensor3dParts, sensorColor, sensorDrawState, sensorFillAlpha,
-  sensorViewPose, VELOCITY_STEP_S, type SensorObj,
+  coneHalfAngleOf, drawableSensors, groundPointEcef, isRectangular, radialLineEnds, radialLinePoints, sensor3dParts, sensorColor, sensorDrawState,
+  sensorFillAlpha, sensorHudShape, sensorViewPose, VELOCITY_STEP_S, viewHalfAngleOf, type SensorObj,
 } from "../../src/cesium/sensorDraw";
 import {
-  bodyFrame, cameraOrientation, earthDiscHalfAngleDeg, nadirCentralAngleRad, sensorViewFovDeg, type BodyFrame, type Vec3,
+  bodyFrame, boresightOf, cameraOrientation, earthDiscHalfAngleDeg, nadirCentralAngleRad, rectangleFootprint, rectangleRays, sensorFrame,
+  sensorViewFovDeg, type BodyFrame, type Vec3,
 } from "../../src/cesium/sensorGeometry";
+import { sensorFillStates } from "../../src/cesium/overlay2d";
 import { EARTH_RADIUS_KM } from "../../src/cesium/swath";
 import { makeDoc } from "./helpers/chrome";
 import { sensorObj } from "./helpers/objects";
@@ -239,6 +241,106 @@ describe("sensorViewPose (Sensor View camera, spec §5.4)", () => {
       expect(pose.position).toEqual(P); // ตำแหน่งและทิศยังตามดาว
     }
   });
+});
+
+// ---------- Sensor แบบ Rectangular (ข2 Ruling e, g, k) ----------
+
+/** Rectangular บน G01: Vertical 10° (ขวางแนวบิน ±Y), Horizontal 5° (ตามแนวบิน ±X) มุมพีระมิด ≈ 11.1° ยังอยู่ในจานโลกของ GPS (13.9°) */
+const rect = (over: Record<string, unknown> = {}, v = 10, h = 5): SensorObj =>
+  sensor("R", { definition: { type: "Rectangular", vertical_half_angle: v, horizontal_half_angle: h }, ...over });
+
+describe("Rectangular sensors", () => {
+  test("isRectangular and the view half angle: max(V, H) for Rectangular, the cone for Simple Conic", () => {
+    expect(isRectangular(rect())).toBe(true);
+    expect(isRectangular(sensor())).toBe(false);
+    expect(viewHalfAngleOf(rect())).toBe(10);
+    expect(viewHalfAngleOf(rect({}, 0.41, 55))).toBe(55);
+    expect(viewHalfAngleOf(sensor())).toBe(10);
+    expect(viewHalfAngleOf(sensor("S", { definition: { type: "Simple Conic" } }))).toBe(45);
+    // ไฟล์เก่าไม่มี type = Simple Conic
+    expect(isRectangular(sensor("S", { definition: { cone_half_angle: 12 } }))).toBe(false);
+  });
+
+  test("draw state: the pyramid footprint (4 × 18 points) in the sensor frame, no central angle (no 2D fill)", () => {
+    const st = sensorDrawState(rect(), P, PREV, NEXT)!;
+    expect(st.centralAngleRad).toBeNull();
+    expect(st.nadir).toBe(true);
+    expect(st.footprint.ring).toHaveLength(73);
+    expectFrame(st.sensorFrame, sensorFrame(st.frame, 0, 90));
+    expect(st.footprint).toEqual(rectangleFootprint(P, st.sensorFrame, 10, 5));
+    // ชี้ทางอื่น: กรอบ sensor หมุนตาม Az-El ของหน้า Basic - Pointing
+    const tilted = sensorDrawState(rect({ pointing: pointing(30, 80) }), P, PREV, NEXT)!;
+    expectVec(tilted.sensorFrame.z, boresightOf(tilted.frame, 30, 80));
+    expectVec(tilted.boresight, tilted.sensorFrame.z);
+    expect(tilted.footprint).toEqual(rectangleFootprint(P, tilted.sensorFrame, 10, 5));
+  });
+
+  test("radial lines: 4, ending at the ring corners (points 0, 18, 36, 54)", () => {
+    const st = sensorDrawState(rect(), P, PREV, NEXT)!;
+    const ring = st.footprint.ring;
+    expect(radialLineEnds(st)).toEqual([0, 18, 36, 54].map((i) => groundPointEcef(ring[i])));
+    expect(sensor3dParts(st).radials).toHaveLength(4);
+    expect(sensor3dParts(st).ring).toBe(ring);
+    expect(sensor3dParts(sensorDrawState(rect({ graphics3d: { show_radial_lines: false } }), P, PREV, NEXT)!).radials).toEqual([]);
+  });
+
+  test("a rectangle pointing away from the Earth draws 4 radial lines along the corner rays, horizon-long", () => {
+    const st = sensorDrawState(rect({ pointing: pointing(0, 0) }), P, PREV, NEXT)!;
+    expect(st.footprint.boresightHit).toBeNull();
+    const horizon = Math.sqrt(R * R - (EARTH_RADIUS_KM * 1000) ** 2);
+    const corners = rectangleRays(st.sensorFrame, 10, 5, 1);
+    const ends = radialLineEnds(st);
+    expect(ends).toHaveLength(4);
+    ends.forEach((end, i) => {
+      const d = { x: end.x - P.x, y: end.y - P.y, z: end.z - P.z };
+      expect(Math.hypot(d.x, d.y, d.z)).toBeCloseTo(horizon, 3);
+      expectVec({ x: d.x / horizon, y: d.y / horizon, z: d.z / horizon }, corners[i]);
+    });
+    expect(sensor3dParts(st).ring).toBeNull();
+  });
+
+  test("the 2D window draws no Fill for a Rectangular sensor even with Fill on", () => {
+    const st = sensorDrawState(rect({ graphics2d: { fill: true, fill_translucency: 0 } }), P, PREV, NEXT)!;
+    expect(sensorFillStates([st])).toEqual([]);
+    const cone = sensorDrawState(sensor("S", { graphics2d: { fill: true, fill_translucency: 0 } }), P, PREV, NEXT)!;
+    expect(sensorFillStates([cone])).toHaveLength(1);
+  });
+
+  test("Sensor View fov uses max(V, H); the HUD shape carries both half angles", () => {
+    const st = sensorDrawState(rect({}, 55, 0.41), P, PREV, NEXT)!;
+    expect(sensorViewPose(st, "north", 1).fovDeg).toBeCloseTo(115.5, 12);
+    expect(sensorHudShape(rect({}, 55, 0.41))).toEqual({ shape: "Rectangular", halfAngles: { vertical: 55, horizontal: 0.41 }, coneHalfAngle: 55 });
+    expect(sensorHudShape(sensor())).toEqual({ shape: "Simple Conic", halfAngles: null, coneHalfAngle: 10 });
+  });
+});
+
+test("Simple Conic output is unchanged by the Rectangular work (values recorded at 05ea7f7)", () => {
+  const cone = (az: number, el: number) => sensorDrawState(sensor("S", { pointing: pointing(az, el) }), P, PREV, NEXT)!;
+  const close = (got: number[], want: number[]) => got.forEach((g, i) => expect(g).toBeCloseTo(want[i], 9));
+  const nadir = cone(0, 90);
+  // เลขชุดเดียวกันจากเลขคณิตเดิม: บางค่าตรึงแบบตรงตัว (toBe) เพื่อจับการเปลี่ยนแม้หลักท้าย
+  expect(nadir.centralAngleRad).toBe(0.6345783828239923);
+  expect(nadir.footprint.ring[0]).toEqual([0, 36.54258210871501]);
+  expect(nadir.footprint.ring[9][0]).toBe(27.498647518464963);
+  expect(nadir.footprint.ring[9][1]).toBe(24.93086550763998);
+  close(nadir.footprint.ring[40], [-14.132099853013415, -34.03275125215621]);
+  const r1 = radialLineEnds(nadir)[1];
+  close([r1.x, r1.y, r1.z], [5133413.345010551, 2672131.8332672487, 2672131.833267247]);
+  expect(sensor3dParts(nadir).radials).toHaveLength(8);
+  expect(sensorViewPose(nadir, "north", 16 / 9).fovDeg).toBeCloseTo(36.47323853849586, 12);
+  const tilted = cone(30, 80);
+  expect(tilted.centralAngleRad).toBeNull();
+  close(tilted.footprint.ring[0], [75.85774935375139, -10.932383167882803]);
+  close(tilted.footprint.ring[40], [4.027238015665034, 10.413480448898534]);
+  close(tilted.footprint.boresightHit!, [35.83496116186802, -6.651675391200449]);
+  const t1 = radialLineEnds(tilted)[1];
+  close([t1.x, t1.y, t1.z], [1528938.7740517943, 5127913.911431156, -3459310.0967892837]);
+  const away = cone(0, 0);
+  expect(away.footprint.boresightHit).toBeNull();
+  close(away.footprint.ring[9], [75.83331168168615, 11.429010922802116]);
+  const a1 = radialLineEnds(away)[1];
+  close([a1.x, a1.y, a1.z], [29715901.81975222, 25048688.076588314, 5187773.412872447]);
+  expect(sensor3dParts(away).radials).toHaveLength(8);
 });
 
 test("sensorDraw.ts and everything it imports stay free of Cesium", () => {
