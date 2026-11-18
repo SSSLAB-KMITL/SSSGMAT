@@ -27,6 +27,9 @@ def _make_store(texdir, panel_l=1.2, panel_w=0.8, seed=2026700):
     store.make("optics_glass", (0.10, 0.22, 0.38), metallic=0.85, roughness=0.05)
     store.make("dish_mesh", (0.70, 0.63, 0.44), metallic=0.78, roughness=0.42)
     store.make("carbon_black", (0.045, 0.045, 0.050), metallic=0.25, roughness=0.38)
+    store.make("thai_red", (0.65, 0.10, 0.14), metallic=0.10, roughness=0.40)
+    store.make("thai_white", (0.92, 0.92, 0.94), metallic=0.05, roughness=0.40)
+    store.make("thai_blue", (0.14, 0.18, 0.44), metallic=0.10, roughness=0.40)
     pa = pl.tex_phased_array(texdir, "tex_sar_array", nx=16, ny=4)
     store.make("sar_array", (0.74, 0.74, 0.76), metallic=0.58, roughness=0.32, image=pa)
     return store
@@ -132,16 +135,121 @@ def _build_optical_bus(root_obj, store, bus_r, bus_h, tel_r, tel_l, hy, panel_l,
     return _add_wings(root_obj, store, hy=hy, panel_l=panel_l, panel_w=panel_w, n_panels=n_panels)
 
 
+def _add_thai_badge(part, x, y, z, width=0.52, height=0.30, axis="x"):
+    """Add Thailand tricolor flag stripe (red-white-blue-white-red) to highlight Thai satellites."""
+    strips = [(-0.415, 0.17, "thai_red"), (-0.25, 0.16, "thai_white"), (0.0, 0.34, "thai_blue"),
+              (0.25, 0.16, "thai_white"), (0.415, 0.17, "thai_red")]
+    for frac, hfrac, mat in strips:
+        if axis == "x":
+            pl.box(part, (x, y, z + frac * height), (0.025, width, height * hfrac), mat)
+        else:
+            pl.box(part, (x, y, z + frac * height), (width, 0.025, height * hfrac), mat)
+
+
+def build_theos_1(root_obj, store):
+    """THEOS (Thaichote, NORAD 33396) — Proteus cubic bus + NAOMI dual-aperture bench + Thai tricolor."""
+    bus = pl.Part("bus", store)
+    pl.bevel_box(bus, (0.0, 0.0, 0.0), (1.05, 1.05, 1.15), mat="mli_silver")
+    pl.box(bus, (0.0, 0.0, 0.54), (1.10, 1.10, 0.08), "mli_gold")
+    # NAOMI dual-telescope rectangular optical payload on +Z nadir
+    pl.box(bus, (0.0, 0.0, 0.78), (0.88, 0.72, 0.42), "carbon_black")
+    pl.cylinder(bus, (0.20, 0.0, 0.98), (0, 0, 1), 0.22, 0.34, 24, "white_paint", top="cavity_dark")
+    pl.cylinder(bus, (0.20, 0.0, 1.08), (0, 0, 1), 0.18, 0.03, 24, "optics_glass")
+    pl.cylinder(bus, (-0.24, 0.0, 0.98), (0, 0, 1), 0.13, 0.24, 20, "titanium_grey", top="cavity_dark")
+    pl.cylinder(bus, (-0.24, 0.0, 1.05), (0, 0, 1), 0.10, 0.03, 20, "optics_glass")
+    _add_thai_badge(bus, 0.54, 0.0, -0.05, width=0.58, height=0.34, axis="x")
+    _add_thai_badge(bus, -0.54, 0.0, -0.05, width=0.58, height=0.34, axis="x")
+    _add_aft_module(bus, -0.58, 0.50)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.54, panel_l=1.15, panel_w=0.82, n_panels=3)
+
+
 def build_theos_2(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.72, bus_h=1.45, tel_r=0.34, tel_l=0.68,
-                              hy=0.68, panel_l=1.35, panel_w=0.90, n_panels=2, hex_shape=True,
-                              extra_dish=True, body_mat="mli_gold", dorsal_wing=True)
+    """THEOS-2 (NORAD 58016) — Airbus AstroBus-S + 3-wing array + Thai tricolor accent."""
+    bus = pl.Part("bus", store)
+    pts = _hex_pts(0.76)
+    pl.prism(bus, (0.0, 0.0, -0.75), (0, 0, 1), pts, 1.50,
+             side="mli_gold", top="mli_black", bottom="mli_black")
+    for rz in (-0.50, 0.0, 0.50):
+        pl.prism(bus, (0.0, 0.0, rz), (0, 0, 1), [(x * 1.02, y * 1.02) for x, y in pts], 0.045,
+                 side="aluminium", top="aluminium", bottom="aluminium")
+    _add_thai_badge(bus, 0.76, 0.0, 0.0, width=0.56, height=0.34, axis="x")
+    _add_thai_badge(bus, -0.76, 0.0, 0.0, width=0.56, height=0.34, axis="x")
+    _add_telescope(bus, 0.70, 0.36, 0.72)
+    _add_aft_module(bus, -0.75, 0.76)
+    _add_xband_dish(bus, -0.55, 0.0, 0.88, r=0.24)
+    # 3rd cantilevered AstroBus dorsal solar wing
+    pl.bar(bus, (0.58, 0.0, -0.22), (0.85, 0.0, -0.36), 0.04, 0.04, "titanium_grey", (0, 1, 0))
+    pl.box(bus, (1.15, 0.0, -0.36), (1.00, 1.18, 0.03),
+           {"+x": "solar_cells", "-x": "solar_cells", "default": "aluminium"})
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.72, panel_l=1.35, panel_w=0.90, n_panels=2)
+
+
+def build_ikonos(root_obj, store):
+    """IKONOS-2 (LM900) — cylindrical titanium/black bus + flared telescope + 3-wing radial solar."""
+    bus = pl.Part("bus", store)
+    pl.cylinder(bus, (0.0, 0.0, -0.90), (0, 0, 1), 0.72, 1.80, 24, "mli_silver", top="carbon_black", bottom="titanium_grey")
+    _add_telescope(bus, 0.86, 0.36, 0.78, baffle_mat="titanium_grey", hood=True)
+    _add_aft_module(bus, -0.90, 0.70)
+    # 3rd dorsal solar wing
+    pl.bar(bus, (0.65, 0.0, -0.25), (0.95, 0.0, -0.38), 0.04, 0.04, "titanium_grey", (0, 1, 0))
+    pl.box(bus, (1.28, 0.0, -0.38), (0.90, 1.05, 0.028), {"+x": "solar_cells", "-x": "solar_cells", "default": "aluminium"})
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.72, panel_l=1.25, panel_w=0.92, n_panels=2)
+
+
+def build_geoeye_worldview(root_obj, store):
+    """GeoEye-1 / WorldView-1..3 (BCP-5000) — tall octagonal bus + giant 1.1m telescope + 4-panel wings."""
+    return _build_optical_bus(root_obj, store, bus_r=1.15, bus_h=3.10, tel_r=0.58, tel_l=1.45,
+                              hy=1.15, panel_l=1.60, panel_w=1.15, n_panels=4, hex_shape=False,
+                              extra_dish=True, body_mat="mli_gold")
+
+
+def build_cosmo_skymed(root_obj, store):
+    """COSMO-SkyMed (PRIMA bus) — 5.7 m flat SAR antenna + twin V-canted solar wings."""
+    bus = pl.Part("bus", store)
+    pl.prism(bus, (0.0, 0.0, -1.05), (0, 0, 1), _hex_pts(0.88), 2.10,
+             side="mli_gold", top="mli_black", bottom="mli_black")
+    pl.box(bus, (0.86, 0.0, 0.0), (0.025, 0.72, 1.15), "osr_radiator", uv="fit")
+    # Signature 5.7 m flat phased-array X-band SAR antenna
+    pl.box(bus, (0.0, 0.0, 1.24), (5.70, 1.35, 0.08),
+           {"+z": "sar_array", "-z": "mli_gold", "default": "aluminium"}, uv="fit")
+    pl.box(bus, (0.0, 0.0, 1.18), (5.60, 1.20, 0.04), "carbon_black")
+    for sx in (-2.1, -0.8, 0.8, 2.1):
+        pl.bar(bus, (sx * 0.32, -0.35, 1.02), (sx, -0.30, 1.16), 0.04, 0.04, "titanium_grey", (0, 1, 0))
+        pl.bar(bus, (sx * 0.32, 0.35, 1.02), (sx, 0.30, 1.16), 0.04, 0.04, "titanium_grey", (0, 1, 0))
+    _add_aft_module(bus, -1.05, 0.88)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.88, panel_l=1.35, panel_w=0.95, n_panels=3)
+
+
+def build_landsat(root_obj, store):
+    """Landsat 7/8/9 — large bus + dual OLI/TIRS instruments + single 4-panel solar wing."""
+    bus = pl.Part("bus", store)
+    pl.bevel_box(bus, (0.0, 0.0, 0.0), (2.75, 2.15, 2.15), mat="mli_gold")
+    pl.box(bus, (0.0, 1.08, 0.0), (1.95, 0.025, 1.35), "osr_radiator", uv="fit")
+    # OLI + TIRS dual optical instruments on +Z nadir
+    pl.cylinder(bus, (0.55, 0.0, 1.05), (0, 0, 1), 0.42, 0.72, 24, "white_paint", top="cavity_dark")
+    pl.cylinder(bus, (0.55, 0.0, 1.45), (0, 0, 1), 0.35, 0.04, 24, "optics_glass")
+    pl.cylinder(bus, (-0.55, 0.0, 1.05), (0, 0, 1), 0.28, 0.56, 20, "carbon_black", top="cavity_dark")
+    pl.cylinder(bus, (-0.55, 0.0, 1.38), (0, 0, 1), 0.22, 0.04, 20, "optics_glass")
+    _add_xband_dish(bus, -1.05, 0.45, 1.18, r=0.28)
+    _add_aft_module(bus, -1.08, 1.05)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=1.08, panel_l=1.65, panel_w=1.20, n_panels=4, single=True)
 
 
 def build_worldview_legion(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.82, bus_h=2.05, tel_r=0.40, tel_l=0.92,
-                              hy=0.82, panel_l=1.45, panel_w=1.05, n_panels=3, hex_shape=False,
-                              extra_dish=True, body_mat="mli_gold")
+    """WorldView Legion (Maxar) — compact wide white-MLI bus + side-mounted dual-baffle shroud."""
+    bus = pl.Part("bus", store)
+    pl.bevel_box(bus, (0.0, 0.0, 0.0), (1.70, 1.50, 1.75), mat="mli_white")
+    pl.box(bus, (0.86, 0.0, 0.0), (0.025, 1.10, 1.10), "osr_radiator", uv="fit")
+    _add_telescope(bus, 0.84, 0.42, 0.88, baffle_mat="white_paint", hood=True)
+    _add_xband_dish(bus, -0.78, 0.0, 0.95, r=0.25)
+    _add_aft_module(bus, -0.88, 0.80)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.76, panel_l=1.40, panel_w=1.05, n_panels=3)
 
 
 def build_pleiades_neo(root_obj, store):
@@ -151,27 +259,45 @@ def build_pleiades_neo(root_obj, store):
 
 
 def build_cartosat_3(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.80, bus_h=2.10, tel_r=0.38, tel_l=0.82,
-                              hy=0.78, panel_l=1.40, panel_w=0.95, n_panels=3, hex_shape=True,
-                              extra_dish=True, body_mat="mli_gold")
+    """Cartosat-3 (ISRO IRS) — boxy silver/gold bus + X-band phased array paddle + twin 3-panel wings."""
+    bus = pl.Part("bus", store)
+    pl.bevel_box(bus, (0.0, 0.0, 0.0), (1.55, 1.55, 2.05), mat="mli_silver")
+    pl.box(bus, (0.0, 0.0, 0.96), (1.62, 1.62, 0.14), "mli_gold")
+    _add_telescope(bus, 1.00, 0.38, 0.82, baffle_mat="carbon_black", hood=True)
+    # Side X-band phased-array panel
+    pl.box(bus, (0.88, 0.0, 0.35), (0.04, 0.65, 0.55), "sar_array", uv="fit")
+    _add_aft_module(bus, -1.02, 0.78)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.78, panel_l=1.40, panel_w=0.95, n_panels=3)
 
 
 def build_kompsat_7(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.85, bus_h=2.30, tel_r=0.42, tel_l=0.90,
+    """KOMPSAT-7 (KARI) — tall white-MLI hexagonal bus + oversized AEISS-HR telescope."""
+    return _build_optical_bus(root_obj, store, bus_r=0.85, bus_h=2.35, tel_r=0.44, tel_l=0.95,
                               hy=0.82, panel_l=1.45, panel_w=1.00, n_panels=3, hex_shape=True,
-                              extra_dish=True, body_mat="mli_gold")
+                              extra_dish=True, body_mat="mli_white")
 
 
 def build_superview_neo_1(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.72, bus_h=1.85, tel_r=0.34, tel_l=0.74,
-                              hy=0.70, panel_l=1.25, panel_w=0.88, n_panels=2, hex_shape=False,
-                              extra_dish=True, body_mat="mli_gold")
+    """SuperView Neo-1 — compact dark-carbon rectangular bus + single-wing high-agility layout."""
+    bus = pl.Part("bus", store)
+    pl.bevel_box(bus, (0.0, 0.0, 0.0), (1.25, 1.15, 1.80), mat="carbon_black")
+    pl.box(bus, (0.64, 0.0, 0.0), (0.02, 0.80, 1.05), "osr_radiator", uv="fit")
+    _add_telescope(bus, 0.88, 0.34, 0.74, baffle_mat="carbon_black", hood=True)
+    _add_aft_module(bus, -0.90, 0.62)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.58, panel_l=1.25, panel_w=0.88, n_panels=2, single=True)
 
 
 def build_eros_c3(root_obj, store):
-    return _build_optical_bus(root_obj, store, bus_r=0.70, bus_h=1.75, tel_r=0.32, tel_l=0.70,
-                              hy=0.68, panel_l=1.20, panel_w=0.85, n_panels=2, hex_shape=False,
-                              extra_dish=True, body_mat="mli_gold")
+    """EROS-C3 (OPUS) — cylindrical titanium/gold bus + short wide-aperture telescope."""
+    bus = pl.Part("bus", store)
+    pl.cylinder(bus, (0.0, 0.0, -0.85), (0, 0, 1), 0.68, 1.70, 24, "titanium_grey", top="mli_gold", bottom="mli_black")
+    _add_telescope(bus, 0.82, 0.34, 0.65, baffle_mat="white_paint", hood=False)
+    _add_xband_dish(bus, -0.58, 0.0, 0.92, r=0.22)
+    _add_aft_module(bus, -0.85, 0.68)
+    pl.finish(bus, root_obj)
+    return _add_wings(root_obj, store, hy=0.68, panel_l=1.20, panel_w=0.85, n_panels=2)
 
 
 def build_blacksky(root_obj, store):
@@ -275,7 +401,12 @@ def build_qps_sar(root_obj, store):
 
 
 SPECS = [
+    ("theos-1", build_theos_1, [33396]),
     ("theos-2", build_theos_2, [58016]),
+    ("ikonos", build_ikonos, [25919]),
+    ("geoeye-worldview", build_geoeye_worldview, [33331, 32060, 35946, 40115]),
+    ("cosmo-skymed", build_cosmo_skymed, [31598, 32376, 33412, 37216, 44873, 51444, 67304]),
+    ("landsat", build_landsat, [6126, 7615, 10702, 14780, 25682, 39084, 49260]),
     ("iceye", build_iceye, [43800, 44390, 46496, 46497, 56963, 58288, 58302, 59100, 59102, 59103, 60539, 60546, 60548, 60549, 62384, 62389, 62698, 62700, 62705, 62707, 63253, 63255, 63257, 63258, 64570, 64572, 64574, 64578, 64581, 64584, 66300, 66301, 66302, 66751, 66752, 66753, 66754, 66755, 67372, 67373, 68494, 68496, 68497, 68500, 68502, 68504, 68995, 68996, 69870, 69889, 69892, 69893, 100889, 100894, 100910, 100914, 101122, 101123, 101124, 101125]),
     ("umbra", build_umbra, [58297, 60541, 60547, 66748, 67371, 101129, 101130]),
     ("qps-sar", build_qps_sar, [58578, 59447, 60542, 63205, 64055, 64340, 65116, 66316, 66598, 67228, 67698, 68149, 69896, 100243, 100349, 100401, 100851, 100852, 101257, 101385]),

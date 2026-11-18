@@ -499,6 +499,26 @@
       "status": "done"
     },
     {
+      "id": "theos-1",
+      "glb": "theos-1/theos-1.glb",
+      "blocks": [],
+      "norad_ids": [
+        33396
+      ],
+      "size_m": [
+        1.105,
+        8.58,
+        2.1
+      ],
+      "triangles": 1562,
+      "wing_nodes": [
+        "wing+Y",
+        "wing-Y"
+      ],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
       "id": "theos-2",
       "glb": "theos-2/theos-2.glb",
       "blocks": [],
@@ -506,13 +526,107 @@
         58016
       ],
       "size_m": [
-        2.207,
-        7.28,
-        2.403
+        2.452,
+        7.36,
+        2.496
       ],
-      "triangles": 2094,
+      "triangles": 2190,
       "wing_nodes": [
         "wing+Y",
+        "wing-Y"
+      ],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "ikonos",
+      "glb": "ikonos/ikonos.glb",
+      "blocks": [],
+      "norad_ids": [
+        25919
+      ],
+      "size_m": [
+        2.45,
+        6.96,
+        2.866
+      ],
+      "triangles": 1650,
+      "wing_nodes": [
+        "wing+Y",
+        "wing-Y"
+      ],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "geoeye-worldview",
+      "glb": "geoeye-worldview/geoeye-worldview.glb",
+      "blocks": [],
+      "norad_ids": [
+        33331,
+        32060,
+        35946,
+        40115
+      ],
+      "size_m": [
+        2.335,
+        15.78,
+        4.854
+      ],
+      "triangles": 2342,
+      "wing_nodes": [
+        "wing+Y",
+        "wing-Y"
+      ],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "cosmo-skymed",
+      "glb": "cosmo-skymed/cosmo-skymed.glb",
+      "blocks": [],
+      "norad_ids": [
+        31598,
+        32376,
+        33412,
+        37216,
+        44873,
+        51444,
+        67304
+      ],
+      "size_m": [
+        5.7,
+        10.46,
+        2.53
+      ],
+      "triangles": 1166,
+      "wing_nodes": [
+        "wing+Y",
+        "wing-Y"
+      ],
+      "cell_normal": "-X",
+      "status": "done"
+    },
+    {
+      "id": "landsat",
+      "glb": "landsat/landsat.glb",
+      "blocks": [],
+      "norad_ids": [
+        6126,
+        7615,
+        10702,
+        14780,
+        25682,
+        39084,
+        49260
+      ],
+      "size_m": [
+        2.75,
+        9.113,
+        3.05
+      ],
+      "triangles": 1578,
+      "wing_nodes": [
         "wing-Y"
       ],
       "cell_normal": "-X",
@@ -673,11 +787,11 @@
         62901
       ],
       "size_m": [
-        1.675,
-        10.94,
-        3.251
+        1.915,
+        10.52,
+        2.933
       ],
-      "triangles": 2222,
+      "triangles": 2286,
       "wing_nodes": [
         "wing+Y",
         "wing-Y"
@@ -714,11 +828,11 @@
         44804
       ],
       "size_m": [
-        1.64,
+        1.71,
         10.56,
-        3.198
+        3.168
       ],
-      "triangles": 2190,
+      "triangles": 1866,
       "wing_nodes": [
         "wing+Y",
         "wing-Y"
@@ -736,7 +850,7 @@
       "size_m": [
         1.727,
         10.94,
-        3.483
+        3.586
       ],
       "triangles": 2190,
       "wing_nodes": [
@@ -757,13 +871,12 @@
         63126
       ],
       "size_m": [
-        1.491,
-        6.92,
-        2.863
+        1.275,
+        3.915,
+        2.843
       ],
-      "triangles": 2102,
+      "triangles": 1450,
       "wing_nodes": [
-        "wing+Y",
         "wing-Y"
       ],
       "cell_normal": "-X",
@@ -821,11 +934,11 @@
         54880
       ],
       "size_m": [
-        1.45,
+        1.491,
         6.68,
-        2.721
+        2.57
       ],
-      "triangles": 2102,
+      "triangles": 1976,
       "wing_nodes": [
         "wing+Y",
         "wing-Y"
