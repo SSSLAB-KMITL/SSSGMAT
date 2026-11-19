@@ -49,9 +49,12 @@ services:
     image: ${GNSS_STUDIO_IMAGE:-gnss-studio:prod}
     environment:
       GNSS_STUDIO_PORT: "8000"
+      GNSS_STUDIO_GPREDICT_DATA: "/gpredict-data"
       CESIUM_ION_TOKEN: ${CESIUM_ION_TOKEN:-}
     volumes:
       - gnss_data:/data
+      # read-only เพื่อให้ GNSS Studio ดึงรายชื่อดาว 17,071 ดวงของ Gpredict Web ได้โดยไม่แก้ไฟล์ของ Gpredict
+      - gpredict_data:/gpredict-data:ro
       - celestrak_cache:/data/orbits/_cache
     depends_on:
       init-volumes:
