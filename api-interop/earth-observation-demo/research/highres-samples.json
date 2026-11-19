@@ -114,6 +114,34 @@
         2,
         3
       ]
+    },
+    {
+      "image_type": "satellite_optical",
+      "processing": "True-color RGB from Sentinel-2 L2A TCI; 10 m/px local crop over Nong Khai–Vientiane.",
+      "context_note": "ภาพถ่ายสีจริง Sentinel-2A ความละเอียด 10 ม./พิกเซล ครอบคลุมแม่น้ำโขงและสะพานมิตรภาพไทย–ลาว แห่งที่ 1",
+      "id": "nong-khai-s2a",
+      "title": "Nong Khai–Vientiane · Friendship Bridge",
+      "description": "แม่น้ำโขงและสะพานมิตรภาพไทย–ลาว แห่งที่ 1 (Sentinel-2A สีจริง 10 ม./พิกเซล · 16 × 16 กม.)",
+      "platform": "Sentinel-2A",
+      "provider": "ESA Copernicus / Element 84 Earth Search",
+      "acquired_utc": "2026-11-08T03:53:25Z",
+      "date_precision": "second",
+      "gsd_m": 10,
+      "source_url": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/48/Q/TE/2026/11/S2A_48QTE_20261108_1_L2A/TCI.tif",
+      "source_page": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_48QTE_20261108_1_L2A",
+      "metadata_url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_48QTE_20261108_1_L2A",
+      "license": "Copernicus Sentinel Data Terms",
+      "license_url": "https://dataspace.copernicus.eu/",
+      "license_evidence_url": "https://dataspace.copernicus.eu/",
+      "license_note": "เปิดฟรี · อ้างอิง Copernicus Sentinel data (2026), ESA / Element 84 Earth Search",
+      "attribution": "Contains modified Copernicus Sentinel data (2026), processed by ESA; distributed by Element 84 Earth Search.",
+      "lon": 102.695,
+      "lat": 17.914,
+      "bands": [
+        1,
+        2,
+        3
+      ]
     }
   ]
 }

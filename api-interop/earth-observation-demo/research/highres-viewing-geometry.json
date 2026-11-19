@@ -79,6 +79,26 @@
       "scope": "Raw provider STAC viewing angles at the source scene centre; no satellite elevation or coordinate is inferred from them.",
       "note": "metadata สาธารณะนี้มีมุมถ่าย แต่ไม่มีพิกัด XYZ/ephemeris สำหรับระบุตำแหน่งดาวเทียมขณะถ่าย",
       "angle_note": "ค่า incidence แสดงตาม STAC ต้นทาง ไม่ใช้คำนวณความสูงหรือตำแหน่งดาวเทียม"
+    },
+    "nong-khai-s2a": {
+      "satellite_position_available": false,
+      "satellite_position": null,
+      "position_epoch": "image_acquisition",
+      "source_platform": "Sentinel-2A",
+      "acquired_utc": "2026-11-08T03:53:25Z",
+      "ground_point": {
+        "lat": 17.914,
+        "lon": 102.695
+      },
+      "status": "view_angles_only",
+      "source": "Element 84 Earth Search STAC view extension",
+      "source_url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_48QTE_20261108_1_L2A",
+      "catalog_id": "S2A_48QTE_20261108_1_L2A",
+      "view_azimuth_deg": 284.84011589191476,
+      "incidence_deg": 6.803377992059307,
+      "scope": "Raw provider STAC viewing angles for the Sentinel-2 L2A tile; no satellite elevation or coordinate is inferred from them.",
+      "note": "metadata สาธารณะนี้มีมุมถ่าย แต่ไม่มีพิกัด XYZ/ephemeris สำหรับระบุตำแหน่งดาวเทียมขณะถ่าย",
+      "angle_note": "ค่า incidence แสดงตาม STAC ต้นทาง ไม่ใช้คำนวณความสูงหรือตำแหน่งดาวเทียม"
     }
   }
 }

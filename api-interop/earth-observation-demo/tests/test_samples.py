@@ -9,11 +9,15 @@ from eo_engine import samples
 
 def test_curated_sources_use_public_hosts_and_distinguish_source_gsd_from_grid():
     rows = samples.catalog()
-    assert len(rows) == 4
-    assert {r["platform"] for r in rows} == {"WorldView-2", "WorldView-3", "GeoEye-1"}
+    assert len(rows) == 5
+    assert {r["platform"] for r in rows} == {"WorldView-2", "WorldView-3", "GeoEye-1", "Sentinel-2A"}
     assert min(r["gsd_m"] for r in rows) == 0.3
     for r in rows:
-        assert samples.sample(r["id"])["license"] in ("CC BY-SA 4.0", "CC BY-NC 4.0")
+        assert samples.sample(r["id"])["license"] in (
+            "CC BY-SA 4.0",
+            "CC BY-NC 4.0",
+            "Copernicus Sentinel Data Terms",
+        )
         assert r["date_precision"] in ("day", "second")
         assert r["license_evidence_url"].startswith("https://")
 
@@ -83,7 +87,7 @@ def test_public_optical_geometry_never_invents_satellite_coordinates():
         assert geometry["satellite_position_available"] is False
         assert geometry["satellite_position"] is None
         assert geometry["ground_point"] == {"lat": row["lat"], "lon": row["lon"]}
-        if row["id"] in ("bangkok-wv03", "mandalay-ge01"):
+        if row["id"] in ("bangkok-wv03", "mandalay-ge01", "nong-khai-s2a"):
             assert "elevation_deg" not in geometry
             assert geometry["view_azimuth_deg"] is not None
         if row["id"] == "vegas-wv3":

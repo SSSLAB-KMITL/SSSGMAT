@@ -19,7 +19,7 @@ from .color import read_grid
 from .pipeline import ENV
 
 VIEWS = {"area": 500, "detail": 250, "close": 100}
-HOSTS = {"spacenet-dataset.s3.amazonaws.com", "maxar-opendata.s3.amazonaws.com"}
+HOSTS = {"spacenet-dataset.s3.amazonaws.com", "maxar-opendata.s3.amazonaws.com", "sentinel-cogs.s3.us-west-2.amazonaws.com"}
 
 
 def catalog():

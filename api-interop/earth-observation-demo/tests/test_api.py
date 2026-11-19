@@ -196,7 +196,7 @@ def test_highres_catalog_and_file_allowlist(client, tmp_path, monkeypatch):
 
     monkeypatch.setattr(samples, "DATA", tmp_path)
     response = client.get("/api/eo/samples")
-    assert response.status_code == 200 and len(response.json()["samples"]) == 4
+    assert response.status_code == 200 and len(response.json()["samples"]) == 5
     sid = response.json()["samples"][0]["id"]
     folder = samples.folder(sid)
     folder.mkdir(parents=True)
